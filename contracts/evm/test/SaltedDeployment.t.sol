@@ -1,0 +1,396 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {OwnableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
+import {ChainRegistry, ProviderDeployment} from "src/registry/ChainRegistry.sol";
+import {Provenance} from "src/registry/ForeignRef.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
+import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {AddressDerive} from "src/derivation/AddressDerive.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainType} from "src/addressing/ChainType.sol";
+import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
+import {Call} from "src/messaging/Call.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+
+/// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
+contract MiniFactory {
+    function deploy(bytes32 salt, bytes memory initCode) external returns (address a) {
+        assembly {
+            a := create2(0, add(initCode, 32), mload(initCode), salt)
+        }
+        require(a != address(0), "create2 failed");
+    }
+
+    function arm(address proxy, address impl, bytes calldata data) external {
+        IXSafeProxy(proxy).upgradeInitializeAndLock(impl, data);
+    }
+}
+
+contract SaltedReceiver is ReceiverBase {}
+
+/// @dev Minimal transmitter logic — enough to prove which side armed the account.
+contract MiniTransmitter {
+    address public owner;
+    address public transceiver;
+
+    function initialize(address owner_, address transceiver_) external {
+        owner = owner_;
+        transceiver = transceiver_;
+    }
+}
+
+/// @dev A hub deployed from the SAME initcode as the spoke, so both land on one address.
+contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
+    function initialize(address owner_, address impl) external initializer {
+        __Ownable_init(owner_);
+        __TransceiverBase_init();
+        __HubTransceiverBase_init(impl);
+    }
+
+    function _checkAdmin() internal view override {
+        _checkOwner();
+    }
+}
+
+/// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
+///      `createReceiver` to call at all.
+contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
+    function initialize(address owner_, address impl) external initializer {
+        __Ownable_init(owner_);
+        __TransceiverBase_init();
+        __SpokeTransceiverBase_init(impl, abi.encodePacked(address(0xB0BB1E)));
+    }
+
+    function _checkAdmin() internal view override {
+        _checkOwner();
+    }
+
+    function _homeRoute() internal pure override returns (bytes memory) {
+        return abi.encode(uint32(1));
+    }
+
+    /// @dev Stands in for `_onInbound`, which authenticates and then self-calls.
+    function bootstrapFor(address owner_) external returns (address) {
+        this.bootstrapInbound(owner_, new Call[](0));
+        return predictXSafeAccount(owner_);
+    }
+}
+
+/// @dev A transmitter that answers `owner()`, which is how `createReceiver` decides who
+///      may stand a receiver up.
+contract OwnedTransmitter {
+    address public owner;
+
+    constructor(address owner_) {
+        owner = owner_;
+    }
+}
+
+/// @notice A provider's salt makes its transceiver — and every receiver under it —
+///         computable on Ethereum before either exists.
+contract SaltedDeploymentTest is Test {
+    ChainRegistry registry;
+    MiniFactory factory;
+
+    address owner = address(0xA11CE);
+    bytes32 provider;
+    bytes32 chainKey;
+
+    bytes32 constant SALT = keccak256("xsafe.lz.v1");
+
+    function setUp() public {
+        registry = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()),
+                    abi.encodeCall(ChainRegistry.initialize, (owner))
+                )
+            )
+        );
+        factory = new MiniFactory();
+
+        vm.startPrank(owner);
+        provider = registry.addMessageProvider("layerzero");
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        registry.setCreate2Factory(chainKey, address(factory));
+        vm.stopPrank();
+    }
+
+    /// @dev ONE CONSTANT, INDEPENDENT OF THE IMPLEMENTATION. `XSafeProxy` takes no
+    ///      constructor arguments, so every account — transmitter or receiver, on any
+    ///      chain — deploys from this exact byte string. That independence is what lets
+    ///      two accounts with different logic share an address; an EIP-1167 clone bakes
+    ///      the implementation into its initcode and could never manage it.
+    function _xsafeProxyInitCodeHash() internal pure returns (bytes32) {
+        return keccak256(type(XSafeProxy).creationCode);
+    }
+
+    function _record(bytes32 transceiverInitCodeHash, bytes32 receiverInitCodeHash)
+        internal
+    {
+        vm.prank(owner);
+        registry.setProviderDeployment(
+            provider, SALT, transceiverInitCodeHash, receiverInitCodeHash
+        );
+    }
+
+    /* ============================== the whole chain ============================= */
+
+    /// @dev THE LOAD-BEARING TEST. Ethereum predicts the transceiver from a recorded salt,
+    ///      the transceiver is then actually deployed at that address, it creates a
+    ///      receiver, and the receiver lands where Ethereum said it would — all without
+    ///      either contract existing when the prediction was made.
+    function test_bothAddressesArePredictedBeforeEitherExists() public {
+        bytes memory initCode = type(SaltedTransceiver).creationCode;
+        address impl = address(new SaltedReceiver());
+        _record(keccak256(initCode), _xsafeProxyInitCodeHash());
+
+        address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
+        address ownerOf = address(0x7A11);
+        address predictedReceiver =
+            registry.predictXSafeAccount(chainKey, provider, ownerOf);
+
+        // Nothing is deployed yet.
+        assertEq(predictedTransceiver.code.length, 0);
+        assertEq(predictedReceiver.code.length, 0);
+
+        // Now deploy for real, through the factory, with that salt.
+        address deployed = factory.deploy(SALT, initCode);
+        assertEq(deployed, predictedTransceiver, "the transceiver landed where predicted");
+
+        SaltedTransceiver t = SaltedTransceiver(payable(deployed));
+        t.initialize(owner, impl);
+
+        address receiver = t.bootstrapFor(ownerOf);
+        assertEq(receiver, predictedReceiver, "and so did its receiver");
+        assertTrue(receiver.code.length > 0);
+    }
+
+    /// @dev The two sides agree on the salt convention. The registry writes
+    ///      `keccak256(abi.encode(ownerOf))` out by hand because it runs on Ethereum
+    ///      and the transceiver runs on the destination; if those drift, every predicted
+    ///      receiver address is wrong and nothing says so until a payload is pinned to one.
+    function test_theReceiverSaltMatchesTheTransceiversOwn() public {
+        bytes memory initCode = type(SaltedTransceiver).creationCode;
+        address impl = address(new SaltedReceiver());
+        _record(keccak256(initCode), _xsafeProxyInitCodeHash());
+
+        SaltedTransceiver t = SaltedTransceiver(payable(factory.deploy(SALT, initCode)));
+        t.initialize(owner, impl);
+
+        address ownerOf = address(0x7A11);
+        assertEq(t.accountSalt(ownerOf), keccak256(abi.encode(ownerOf)));
+        assertEq(
+            registry.predictXSafeAccount(chainKey, provider, ownerOf),
+            t.predictXSafeAccount(ownerOf),
+            "one salt convention, two chains"
+        );
+    }
+
+    /// @dev One salt, one address everywhere. This is the property the whole
+    ///      default-counterpart argument rests on, now stated as inputs rather than
+    ///      assumed from a local deployment.
+    function test_oneSaltGivesOneAddressOnEveryParityChain() public {
+        _record(keccak256("initcode"), keccak256("receiver"));
+
+        vm.startPrank(owner);
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        registry.setCreate2Factory(arb, address(factory));
+        vm.stopPrank();
+
+        assertEq(
+            registry.predictTransceiver(chainKey, provider),
+            registry.predictTransceiver(arb, provider),
+            "the same salt lands on the same address"
+        );
+    }
+
+    /// @dev THE GOAL, END TO END. The transceiver itself is an `XSafeProxy`, deployed
+    ///      from one initcode at one salt — so the hub on Ethereum and the spoke on Base
+    ///      are the same address, and they differ only in the logic each is armed with.
+    ///      An owner's account then derives from that shared address, so their transmitter
+    ///      and their receiver land on one address too.
+    function test_anOwnerHasOneAddressOnBothSides() public {
+        address ownerOf = address(0x7A11);
+        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+
+        address transceiverAt = registry.predictTransceiver(chainKey, provider);
+        address predicted = registry.predictXSafeAccount(chainKey, provider, ownerOf);
+
+        uint256 world = vm.snapshotState();
+
+        // ---- destination chain: the spoke arms the account with receiver logic ----
+        address spokeAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        assertEq(spokeAt, transceiverAt, "hub and spoke share an address");
+        factory.arm(
+            spokeAt,
+            address(new SaltedTransceiver()),
+            abi.encodeCall(SaltedTransceiver.initialize, (owner, address(new SaltedReceiver())))
+        );
+
+        address receiver = SaltedTransceiver(payable(spokeAt)).bootstrapFor(ownerOf);
+        assertEq(receiver, predicted, "the receiver is where Ethereum said");
+        assertEq(
+            SaltedReceiver(payable(receiver)).sourceTransmitter(),
+            predicted,
+            "and its peer is that same address"
+        );
+
+        vm.revertToState(world);
+
+        // ---- Ethereum: the hub arms the SAME address with transmitter logic ----
+        address hubAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        factory.arm(
+            hubAt,
+            address(new HubForAccounts()),
+            abi.encodeCall(HubForAccounts.initialize, (owner, address(new MiniTransmitter())))
+        );
+
+        vm.prank(ownerOf);
+        address transmitter = HubForAccounts(payable(hubAt)).createTransmitter();
+
+        assertEq(
+            transmitter, predicted, "the transmitter occupies the address its receivers do"
+        );
+        assertEq(MiniTransmitter(transmitter).owner(), ownerOf, "and it is theirs");
+    }
+
+    /* ================================== mining ================================= */
+
+    /// @dev THE REASON THE SALT IS STORED AT ALL. A transceiver's address is fixed for the
+    ///      life of the protocol and appears in calldata forever after — peer tables,
+    ///      payload targets, every receiver derived from it. Calldata zero bytes cost 4 gas
+    ///      against 16, so a salt ground for leading zeros is a permanent discount.
+    ///      Recording the salt is what makes the mined address reproducible here.
+    function test_aSaltCanBeMinedForLeadingZeroBytes() public {
+        bytes32 initCodeHash = keccak256(type(SaltedTransceiver).creationCode);
+
+        bytes32 mined;
+        for (uint256 i = 1; i < 4096; ++i) {
+            bytes32 candidate = bytes32(i);
+            address a = AddressDerive.create2(address(factory), candidate, initCodeHash);
+            if (uint160(a) >> 152 == 0) {
+                mined = candidate;
+                break;
+            }
+        }
+        assertTrue(mined != bytes32(0), "a leading zero byte is findable by search");
+
+        _record(initCodeHash, keccak256("receiver"));
+        vm.prank(owner);
+        // The mined salt is what gets recorded; the registry reproduces its address.
+        ChainRegistry r2 = _freshRegistryWith(mined, initCodeHash);
+        address predicted = r2.predictTransceiver(chainKey, provider);
+        assertEq(uint160(predicted) >> 152, 0, "the recorded salt keeps the mined shape");
+    }
+
+    /* ================================== guards ================================= */
+
+    function test_aProviderWithNoRecordCannotBePredicted() public {
+        vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
+        registry.predictTransceiver(chainKey, provider);
+    }
+
+    /// @dev The derivation is only honest where the formula holds. zkSync and Tron are
+    ///      `eip155` with different CREATE2 formulas, and their provenance cap is what
+    ///      excludes them.
+    function test_aChainCappedBelowDerivedIsNotPredicted() public {
+        _record(keccak256("initcode"), keccak256("receiver"));
+
+        vm.startPrank(owner);
+        bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324));
+        registry.setMaxProvenance(zk, Provenance.Committed);
+        vm.stopPrank();
+
+        vm.expectRevert(ChainRegistry.NoCounterpart.selector);
+        registry.predictTransceiver(zk, provider);
+    }
+
+    function test_aNonEvmChainIsNotPredicted() public {
+        _record(keccak256("initcode"), keccak256("receiver"));
+
+        vm.prank(owner);
+        bytes32 sol = registry.addChainKey(
+            Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708")
+        );
+
+        vm.expectRevert(ChainRegistry.NoCounterpart.selector);
+        registry.predictTransceiver(sol, provider);
+    }
+
+    /// @dev WRITE-ONCE, because changing it moves every address derived from it — the
+    ///      transceiver on every chain and every receiver under all of them.
+    function test_theRecordCannotBeRepointed() public {
+        _record(keccak256("initcode"), keccak256("receiver"));
+
+        vm.prank(owner);
+        vm.expectRevert(ChainRegistry.AlreadySet.selector);
+        registry.setProviderDeployment(
+            provider, keccak256("other"), keccak256("initcode"), keccak256("receiver")
+        );
+
+        // Re-writing the identical record is a no-op, not a failure.
+        _record(keccak256("initcode"), keccak256("receiver"));
+        assertEq(registry.providerDeployment(provider).salt, SALT);
+    }
+
+    function test_zeroInputsAreRefused() public {
+        vm.startPrank(owner);
+        vm.expectRevert(ChainRegistry.ZeroSalt.selector);
+        registry.setProviderDeployment(provider, bytes32(0), keccak256("a"), keccak256("b"));
+
+        vm.expectRevert(ChainRegistry.ZeroInitCodeHash.selector);
+        registry.setProviderDeployment(provider, SALT, bytes32(0), keccak256("b"));
+        vm.stopPrank();
+    }
+
+    /* ============================ the default counterpart ====================== */
+
+    /// @dev A recorded deployment is preferred over address parity: both answer `Derived`,
+    ///      but this one states its inputs instead of assuming the remote deployment
+    ///      matches the local one — and it works before a hub exists at all.
+    function test_theRecordedDerivationOutranksAddressParity() public {
+        vm.prank(owner);
+        registry.setLocalTransceiver(provider, address(0xBEEF));
+        assertEq(
+            registry.defaultCounterpart(chainKey, provider),
+            abi.encodePacked(address(0xBEEF)),
+            "parity is the fallback"
+        );
+
+        _record(keccak256(type(SaltedTransceiver).creationCode), keccak256("receiver"));
+        assertEq(
+            registry.defaultCounterpart(chainKey, provider),
+            abi.encodePacked(registry.predictTransceiver(chainKey, provider)),
+            "the record wins once it exists"
+        );
+    }
+
+    /* ================================== helpers ================================ */
+
+    function _freshRegistryWith(bytes32 salt, bytes32 initCodeHash)
+        internal
+        returns (ChainRegistry r)
+    {
+        r = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()),
+                    abi.encodeCall(ChainRegistry.initialize, (owner))
+                )
+            )
+        );
+        vm.startPrank(owner);
+        r.addMessageProvider("layerzero");
+        r.addChainKey(Erc7930.encodeEvmChain(8453));
+        r.setCreate2Factory(chainKey, address(factory));
+        r.setProviderDeployment(provider, salt, initCodeHash, keccak256("receiver"));
+        vm.stopPrank();
+    }
+}

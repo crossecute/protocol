@@ -1,0 +1,20 @@
+# Foundry build output — regenerable from source, and large.
+contracts/evm/out/
+contracts/evm/cache/
+contracts/evm/broadcast/
+
+# Dependencies are vendored under contracts/evm/lib/ deliberately: CREATE2 parity depends
+# on byte-identical initcode, so the exact dependency bytes are load-bearing rather than a
+# convenience. See docs/todo.md if converting them to submodules.
+
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
+
+# Local editor / tool state
+.DS_Store
+.vscode/
+.idea/
+.claude/settings.local.json

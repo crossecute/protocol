@@ -1,0 +1,19 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+allow_paths = ["."]
+solc_version = "0.8.28"
+# Pinned to paris, NOT shanghai: PUSH0 is absent on zkSync, Tron, and several L2s.
+# The whole CREATE2 story depends on identical initcode producing identical addresses
+# everywhere, so the target must not vary by chain. Do not raise this per-network.
+evm_version = "paris"
+# Pinned, not left to defaults: optimizer settings change bytecode, and identical
+# bytecode across chains is what the CREATE2 derivation depends on.
+optimizer = true
+optimizer_runs = 200
+remappings = [
+    "src/=src/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+]
