@@ -957,8 +957,15 @@ execute(Call[] calls)                            onlyOwner payable   // local, n
 
 commitmentCall(receiver, commitment) pure        // deferring, as a call
 cancellationCall(receiver, index, expected) pure
-commitmentFor / commitmentForChain               // the hash a signer checks
+commitmentFor(chainId, Call[])                   // the hash a signer checks
+commitmentForChain(identifier, Call[])           // EVM by envelope
+commitmentForChain(identifier, Scheme, bytes[])  // portable
 ```
+
+**The preview surface mirrors the send surface.** One overload per shape a payload can
+legally take, and no cross combinations — the same `TypedPayloadToNonEvmDestination` /
+`OpaquePayloadToEvmDestination` pair guards both. A preview you can compute for a message
+you cannot send is a trap.
 
 **There is no `commit` entry point, because committing is not a message kind.** To approve
 a payload now and run it later, `send` a payload whose one element is `commitmentCall`. It

@@ -261,7 +261,7 @@ contract PayloadEncodingTest is Test {
 
         // Built the way portable tooling builds it: over opaque elements.
         bytes32 commitment =
-            Commitment.hashElements(ChainKey.local(), Calls.encodeAll(calls));
+            Commitment.hashCalls(ChainKey.local(), Calls.encodeAll(calls));
 
         OpenReceiver r = new OpenReceiver();
         r.initialize(address(this), new Call[](0));

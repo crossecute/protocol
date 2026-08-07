@@ -416,26 +416,17 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
 
     /* ================================= preview ================================= */
 
-    /// @notice The commitment the `bytes[]` overload would produce for these calls on that
-    ///         chain — and the value to pass to the `bytes32` overload.
+    /// @notice The commitment a payload will need on one EVM destination.
     ///
-    /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed.
-    ///      This is what makes the private overload usable: the array is checked here,
-    ///      the digest is what gets approved, and nothing on this chain reveals which was
-    ///      which. It is also what `predictReceiver` feeds into, so the receiver address
-    ///      can be pinned inside the payload it is going to execute.
-    function commitmentFor(uint256 destinationChainId, bytes[] calldata calls)
-        public
-        pure
-        returns (bytes32)
-    {
-        return Commitment.hashCalls(ChainKey.forEvm(destinationChainId), calls);
-    }
-
-    /// @notice `commitmentFor`, with the calls supplied in typed form.
-    /// @dev EQUAL TO THE OPAQUE OVERLOAD FOR THE SAME PAYLOAD. That is what lets a signer
-    ///      review typed calls and approve a digest the destination will match against
-    ///      whichever form the message actually carried.
+    /// @dev THE PREVIEW SURFACE MIRRORS THE SEND SURFACE, deliberately. There is one
+    ///      overload per shape a payload can legally take — typed to an EVM chain named by
+    ///      id, typed to one named by envelope, portable with a scheme to everything else
+    ///      — and no cross combinations, because the send path refuses those anyway. A
+    ///      preview you can compute for a message you cannot send is a trap.
+    ///
+    /// @dev `pure` where it can be, so it runs off-chain against the exact array the
+    ///      signers reviewed. It is what `commitmentCall` feeds, so the hash a deferred
+    ///      payload pins is checkable before anything is approved.
     function commitmentFor(uint256 destinationChainId, Call[] memory calls)
         public
         pure
@@ -444,8 +435,22 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         return Commitment.hashCalls(ChainKey.forEvm(destinationChainId), calls);
     }
 
-    /// @notice `commitmentFor`, for a destination named by its ERC-7930 identifier and
-    ///         hashing with `scheme`.
+    /// @notice `commitmentFor`, for an EVM destination named by its ERC-7930 identifier.
+    /// @dev No `Scheme` parameter: a typed payload only reaches a chain that executes
+    ///      `Call[]`, and every such chain hashes with keccak256.
+    function commitmentForChain(
+        bytes calldata destinationChainIdentifier,
+        Call[] memory calls
+    ) public pure returns (bytes32) {
+        if (!Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert TypedPayloadToNonEvmDestination();
+        }
+        return Commitment.hashCalls(
+            ChainKey.fromIdentifier(destinationChainIdentifier), calls
+        );
+    }
+
+    /// @notice The commitment a non-EVM destination will need, in its own hash scheme.
     ///
     /// @dev `view` RATHER THAN `pure`, AND ONE SCHEME IS WHY. `Blake2b256` reaches the
     ///      EIP-152 precompile through `staticcall`, which Solidity forbids inside `pure`,
@@ -456,30 +461,20 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev A scheme this chain cannot compute reverts with `SchemeNotComputable` rather
     ///      than falling back. For those destinations the digest is built off-chain and
-    ///      approved through `commitTo(bytes,bytes32)`.
+    ///      carried in an element that calls the receiver's own `commit`.
     function commitmentForChain(
         bytes calldata destinationChainIdentifier,
         Scheme scheme,
-        bytes[] calldata calls
+        bytes[] memory elements
     ) public view returns (bytes32) {
-        return Commitment.hashElements(
-            scheme, ChainKey.fromIdentifier(destinationChainIdentifier), calls
-        );
-    }
-
-    /// @notice `commitmentForChain`, with the calls supplied in typed form.
-    function commitmentForChain(
-        bytes calldata destinationChainIdentifier,
-        Scheme scheme,
-        Call[] memory calls
-    ) public view returns (bytes32) {
+        if (Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert OpaquePayloadToEvmDestination();
+        }
         return Commitment.hashCalls(
-            scheme, ChainKey.fromIdentifier(destinationChainIdentifier), calls
+            scheme, ChainKey.fromIdentifier(destinationChainIdentifier), elements
         );
     }
 
-    /// @dev It takes the owner only to emit it. Storing it is the concrete contract's
-    ///      job, because that is where the ownership system lives.
     function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_)
         internal
         onlyInitializing

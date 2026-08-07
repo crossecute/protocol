@@ -95,11 +95,15 @@ EVM destinations, where signers get a readable payload, and opaque bytes for eve
 else.
 
 ```solidity
-hashCalls(bytes32 chainKey, bytes[] elements)          // canonical, keccak256, pure
-hashCalls(bytes32 chainKey, Call[] calls)              // same hash, typed
-hashElements(Scheme, bytes32 chainKey, bytes[])        // per-destination, view
-hashCalls(Scheme, bytes32 chainKey, Call[])            // per-destination, view
+hashCalls(bytes32 chainKey, bytes[] elements)     // canonical, keccak256, pure
+hashCalls(bytes32 chainKey, Call[] calls)         // same hash, typed
+hashCalls(Scheme, bytes32 chainKey, bytes[])      // per-destination, view
+hashCalls(Scheme, bytes32 chainKey, Call[])       // per-destination, view
 ```
+
+One name, four shapes. Every array parameter is `memory`: Solidity will not overload on
+data location, so a `calldata` twin would need a different name — which is the only reason
+a second one ever existed.
 
 The unparameterized pair is the **EVM scheme** — keccak256 — and is what a receiver on an
 EVM chain calls. The `Scheme` overloads are for the source side, where Ethereum builds a

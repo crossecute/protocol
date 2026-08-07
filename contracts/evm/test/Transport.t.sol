@@ -13,7 +13,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {Commitment} from "src/messaging/Commitment.sol";
+import {Commitment, Scheme} from "src/messaging/Commitment.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -504,6 +504,46 @@ contract TransportTest is Test {
         vm.expectRevert();
         transmitter.bootstrap(DEST, _calls());
         vm.stopPrank();
+    }
+
+    /* ================================= preview ================================= */
+
+    /// @dev THE PREVIEW SURFACE MIRRORS THE SEND SURFACE. There is one overload per shape
+    ///      a payload can legally take, and no cross combinations — a preview you can
+    ///      compute for a message you cannot send is a trap.
+    function test_previewRefusesTheShapesSendRefuses() public {
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+
+        // Typed to a non-EVM chain: refused, exactly as sendTo refuses it.
+        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
+        transmitter.commitmentForChain(sol, _calls());
+
+        // Opaque to an EVM chain: likewise.
+        vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
+        transmitter.commitmentForChain(
+            Erc7930.encodeEvmChain(DEST), Scheme.Keccak256, elements
+        );
+    }
+
+    /// @dev And the two legal shapes agree with what the receiver will recompute.
+    function test_previewMatchesWhatTheReceiverRequires() public {
+        Call[] memory calls = _sinkCallsFor(address(0));
+        assertEq(
+            transmitter.commitmentFor(block.chainid, calls),
+            Commitment.hashCalls(ChainKey.local(), calls),
+            "by chain id"
+        );
+        assertEq(
+            transmitter.commitmentForChain(Erc7930.encodeEvmChain(block.chainid), calls),
+            Commitment.hashCalls(ChainKey.local(), calls),
+            "and by envelope"
+        );
+    }
+
+    function _sinkCallsFor(address) internal view returns (Call[] memory) {
+        return _calls();
     }
 
     /* ================================ the default ============================== */

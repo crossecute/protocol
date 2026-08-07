@@ -15,7 +15,7 @@ contract SchemeHarness {
         view
         returns (bytes32)
     {
-        return Commitment.hashElements(scheme, chainKey, elements);
+        return Commitment.hashCalls(scheme, chainKey, elements);
     }
 
     function hashCalls(Scheme scheme, bytes32 chainKey, Call[] memory calls)

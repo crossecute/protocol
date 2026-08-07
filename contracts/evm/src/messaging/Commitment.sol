@@ -59,36 +59,21 @@ library Commitment {
     ///      computed off-chain and approved as a digest.
     error SchemeNotComputable(Scheme scheme);
 
-    /// @notice The hash a receiver on THIS chain will require.
-    function hashCalls(bytes[] calldata calls) internal view returns (bytes32) {
-        return hashCalls(ChainKey.local(), calls);
-    }
-
     /// @notice The hash a receiver on THIS chain will require, for typed calls.
     function hashCalls(Call[] memory calls) internal view returns (bytes32) {
         return hashCalls(ChainKey.local(), calls);
     }
 
-    /// @notice CANONICAL. The hash a receiver on `destinationChainKey` requires.
-    /// @dev The source calls this with the DESTINATION's key. Passing the local one
-    ///      produces a commitment nothing on the far side can ever match, and it fails
-    ///      only on a live message.
-    function hashCalls(
-        bytes32 destinationChainKey,
-        bytes[] calldata calls
-    ) internal pure returns (bytes32 hashed) {
-        hashed = _seed(destinationChainKey);
-        uint256 len = calls.length;
-        for (uint256 i = 0; i < len; i++) {
-            hashed = _fold(hashed, keccak256(calls[i]));
-        }
-    }
-
     /// @notice The same value, from typed calls.
-    /// @dev Equal to the canonical overload applied to `Calls.encodeAll(calls)`, element
-    ///      for element. Asserted in `test/PayloadEncoding.t.sol` rather than assumed —
-    ///      if these two ever diverge, a payload approved in one form silently stops
-    ///      matching in the other.
+    ///
+    /// @dev Equal to the opaque overload applied to `Calls.encodeAll(calls)`, element for
+    ///      element. Asserted in `test/PayloadEncoding.t.sol` rather than assumed — if the
+    ///      two ever diverge, a payload approved in one form silently stops matching in
+    ///      the other, and it fails only on a live message.
+    ///
+    /// @dev EVERY ARRAY PARAMETER HERE IS `memory`. Solidity will not overload on data
+    ///      location, so a `calldata` twin needed a different name — which is the only
+    ///      reason `hashElements` ever existed. One location, one name.
     function hashCalls(
         bytes32 destinationChainKey,
         Call[] memory calls
@@ -100,11 +85,12 @@ library Commitment {
         }
     }
 
-    /// @notice The canonical fold over elements already in memory.
-    /// @dev A separate name rather than an overload only because Solidity does not
-    ///      resolve overloads on data location. Same rule, same value — both delegate to
-    ///      `_seed` and `_fold` so the rule itself is written once.
-    function hashElements(
+    /// @notice CANONICAL. The hash a receiver on `destinationChainKey` requires, over the
+    ///         portable opaque elements.
+    /// @dev The source calls this with the DESTINATION's key. Passing the local one
+    ///      produces a commitment nothing on the far side can ever match, and it fails
+    ///      only on a live message.
+    function hashCalls(
         bytes32 destinationChainKey,
         bytes[] memory elements
     ) internal pure returns (bytes32 hashed) {
@@ -113,13 +99,6 @@ library Commitment {
         for (uint256 i = 0; i < len; i++) {
             hashed = _fold(hashed, keccak256(elements[i]));
         }
-    }
-
-    function isHashedCall(
-        bytes32 hashed,
-        bytes[] calldata calls
-    ) internal view returns (bool) {
-        return hashed == hashCalls(calls);
     }
 
     function isHashedCall(
@@ -144,7 +123,7 @@ library Commitment {
     ///      The same tax was already paid by `IVmDeriver` for the same precompile. It
     ///      costs nothing where it matters: these are read through `eth_call` when a
     ///      signer checks a payload, so gas is not charged at all.
-    function hashElements(
+    function hashCalls(
         Scheme scheme,
         bytes32 destinationChainKey,
         bytes[] memory elements
