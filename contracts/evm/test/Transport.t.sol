@@ -34,9 +34,15 @@ contract MockTransmitter is TransmitterBase {
         __TransmitterBase_init(owner_, transceiver_, salt_);
     }
 
-    function _sendMessage(bytes32 chainKey, bytes memory payload) internal override {
+    bytes public sentProviderData;
+
+    function _sendMessage(bytes32 chainKey, bytes memory payload, bytes memory providerData)
+        internal
+        override
+    {
         sentChainKey = chainKey;
         sentPayload = payload;
+        sentProviderData = providerData;
         sentValue = msg.value;
         ++sentCount;
     }
@@ -103,8 +109,14 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
 
     /// @dev Records the raw payload. Which decoder applies is a property of the
     ///      DESTINATION, so the test picks it — a real spoke knows its own VM.
-    function _sendMessage(bytes32, bytes memory payload) internal override {
+    bytes public sentProviderData;
+
+    function _sendMessage(bytes32, bytes memory payload, bytes memory providerData)
+        internal
+        override
+    {
         sentPayload = payload;
+        sentProviderData = providerData;
         ++bootCount;
     }
 
@@ -179,6 +191,46 @@ contract TransportTest is Test {
             assertEq(logs[i].topics[2], keccak256(Payload.encodeCalls(calls)));
         }
         assertTrue(found);
+    }
+
+    /// @dev THE OPTIONS RIDE PER SEND, NOT AS CONFIGURATION. Destination gas is a property
+    ///      of the payload — a three-call array needs more than a bare `commit` — so a
+    ///      stored default would strand the first message that needed more.
+    function test_providerDataTravelsPerSend() public {
+        bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
+
+        vm.prank(owner);
+        transmitter.send(DEST, _calls(), opts);
+        assertEq(transmitter.sentProviderData(), opts);
+
+        vm.prank(owner);
+        transmitter.send(DEST, _calls());
+        assertEq(transmitter.sentProviderData(), "", "the short form asks for the default");
+    }
+
+    /// @dev Every entry point carries it, in both payload forms and on both paths.
+    function test_everyEntryPointCarriesProviderData() public {
+        bytes memory opts = hex"beef";
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+
+        vm.startPrank(owner);
+        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), _calls(), opts);
+        assertEq(transmitter.sentProviderData(), opts, "sendTo typed");
+
+        transmitter.sendTo(sol, elements, opts);
+        assertEq(transmitter.sentProviderData(), opts, "sendTo opaque");
+        vm.stopPrank();
+
+        (MockTransceiver t, MockTransmitter acct) = _account();
+        vm.startPrank(owner);
+        acct.bootstrap(DEST, _calls(), opts);
+        assertEq(t.sentProviderData(), opts, "bootstrap");
+
+        acct.bootstrapTo(sol, elements, opts);
+        assertEq(t.sentProviderData(), opts, "bootstrapTo opaque");
+        vm.stopPrank();
     }
 
     function test_sendIsOwnerGated() public {
@@ -349,7 +401,7 @@ contract TransportTest is Test {
                 TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
             )
         );
-        t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls());
+        t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), "");
     }
 
     /* ========================= path B: the two forms =========================== */
@@ -416,7 +468,7 @@ contract TransportTest is Test {
                 TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
             )
         );
-        t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements);
+        t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, "");
     }
 
     /* ================================ the default ============================== */

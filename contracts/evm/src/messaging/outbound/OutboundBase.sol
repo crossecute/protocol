@@ -31,12 +31,16 @@ abstract contract OutboundBase is MessagingContext {
     error SendNotImplemented();
 
     /// @notice Hand a payload to the message provider for one destination.
-    function _dispatch(bytes32 destinationChainKey, bytes memory payload) internal {
+    function _dispatch(
+        bytes32 destinationChainKey,
+        bytes memory payload,
+        bytes memory providerData
+    ) internal {
         if (destinationChainKey == bytes32(0)) revert NoDestination();
         if (payload.length == 0) revert EmptyPayload();
 
         emit Dispatched(destinationChainKey, keccak256(payload));
-        _sendMessage(destinationChainKey, payload);
+        _sendMessage(destinationChainKey, payload, providerData);
     }
 
     /// @notice Put the payload on the wire. Implemented per protocol.
@@ -60,10 +64,24 @@ abstract contract OutboundBase is MessagingContext {
     ///      `payable` and the provider adapter reads `msg.value` to pay the fee; refunding
     ///      the excess is the adapter's job, since only it knows the provider's refund
     ///      convention.
-    function _sendMessage(bytes32 destinationChainKey, bytes memory payload)
-        internal
-        virtual
-    {
+    ///
+    /// @param providerData Opaque, and per send. LayerZero wants executor options and a
+    ///        refund address, Wormhole a consistency level, CCIP an `extraArgs` blob —
+    ///        no argument list fits them all, and a fixed one would have to be widened
+    ///        again for the next provider. It is the same reasoning that keeps `route`
+    ///        opaque in the registry: this layer has no business knowing what an executor
+    ///        option is.
+    ///
+    ///        It is PER SEND rather than configuration because destination gas is a
+    ///        property of the payload — a three-call array needs more than a bare
+    ///        `commit`, and a stored default would strand the first message that needed
+    ///        more. Empty means "the adapter's default", which is what the convenience
+    ///        overloads pass.
+    function _sendMessage(
+        bytes32 destinationChainKey,
+        bytes memory payload,
+        bytes memory providerData
+    ) internal virtual {
         revert SendNotImplemented();
     }
 }

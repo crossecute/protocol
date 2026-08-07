@@ -955,6 +955,8 @@ bootstrapTo(bytes identifier, Call[] calls)      onlyOwner payable   // path B, 
 bootstrapTo(bytes identifier, bytes[] elements)  onlyOwner payable   // path B, portable
 execute(Call[] calls)                            onlyOwner payable   // local, no bridge
 
+// each send/bootstrap has a twin taking `bytes providerData` for this one message
+
 commitmentCall(receiver, commitment) pure        // deferring, as a call
 cancellationCall(receiver, index, expected) pure
 commitmentFor / commitmentForChain               // the hash a signer checks
@@ -971,6 +973,17 @@ message-type tag exists anywhere in the protocol.
 what every other VM receives and an EVM receiver cannot decode them. So each envelope-taking
 overload — `sendTo` and `bootstrapTo` alike — refuses the wrong pairing rather than letting
 a payload cross a bridge, cost a fee, and arrive undeliverable.
+
+**Provider options ride per send, opaquely.** `_sendMessage(chainKey, payload,
+providerData)` carries a blob the adapter decodes into whatever its provider wants —
+LayerZero executor options and a refund address, a Wormhole consistency level, a CCIP
+`extraArgs`. No fixed argument list fits them all, and one would have to be widened again
+for the next provider; it is the same reasoning that keeps `route` opaque in the registry.
+
+It is **per send rather than configuration** because destination gas is a property of the
+payload: a three-call array needs more than a bare `commit`, and a stored default would
+strand the first message that needed more. Every entry point has a twin that takes it, and
+the short form passes empty — which means "the adapter's default", not a silent fallback.
 
 **The check has to live here.** This is the last point that holds the ERC-7930 envelope;
 downstream everything speaks chainKeys, which are hashes and cannot be asked what chain type

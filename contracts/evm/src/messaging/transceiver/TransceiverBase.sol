@@ -167,7 +167,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         bytes32 destinationChainKey,
         address owner,
         bytes32 salt,
-        Call[] calldata calls
+        Call[] calldata calls,
+        bytes calldata providerData
     ) external payable {
         if (predictXSafeAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
@@ -178,7 +179,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         // counterpart reverts before anything crosses.
         _route(destinationChainKey);
 
-        _dispatch(destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls));
+        _dispatch(
+            destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData
+        );
     }
 
     /// @notice `bootstrap`, for a destination whose calls this chain cannot express.
@@ -191,7 +194,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         bytes32 destinationChainKey,
         address owner,
         bytes32 salt,
-        bytes[] calldata elements
+        bytes[] calldata elements,
+        bytes calldata providerData
     ) external payable {
         if (predictXSafeAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
@@ -200,7 +204,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _route(destinationChainKey);
 
         _dispatch(
-            destinationChainKey, Envelope.encodeBootstrapElements(owner, salt, elements)
+            destinationChainKey,
+            Envelope.encodeBootstrapElements(owner, salt, elements),
+            providerData
         );
     }
 
