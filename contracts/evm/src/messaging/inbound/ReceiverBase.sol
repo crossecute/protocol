@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ReentrancyGuardUpgradeable} from
     "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
+import {Commitment} from "src/messaging/Commitment.sol";
+import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {Executor} from "src/messaging/Executor.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
@@ -81,7 +82,7 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      here. Receivers are deployed at deterministic addresses across chains, which is
 ///      exactly the situation where a cross-chain replay would otherwise work.
 abstract contract ReceiverBase is
-    InboundBase,
+    MessagingContext,
     Executor,
     Initializable,
     ReentrancyGuardUpgradeable,
@@ -336,6 +337,40 @@ abstract contract ReceiverBase is
         if (calls.length == 0) revert EmptyExecution();
         emit ReceiverExecuted(msg.sender, calls.length);
         _execute(calls);
+    }
+
+    /* ================================= the rules =============================== */
+
+    /// @notice The discharge rule: only the approved array does anything.
+    ///
+    /// @dev THE CHAIN-BINDING TRAVELS WITH THE CHECK, NOT WITH THE CALLER.
+    ///      `Commitment.isHashedCall` folds in `ChainKey.local()`, so wherever this runs it
+    ///      binds to the chain it runs on. Accounts sit at deterministic addresses across
+    ///      chains, which is exactly where a cross-chain replay would otherwise work.
+    ///
+    /// @dev THE APPROVAL MAY HAVE BEEN BUILT IN EITHER FORM. `Commitment` hashes `Call[]`
+    ///      and the equivalent opaque elements to one value, so a commitment computed
+    ///      off-chain over `bytes[]` — the canonical, VM-agnostic form — is discharged by
+    ///      the typed array supplied here. The commitment approves the calls, not the
+    ///      serialization somebody chose to deliver them in.
+    function _requireMatchingCalls(bytes32 pending, Call[] memory calls) private view {
+        if (pending == bytes32(0)) revert NothingCommitted();
+        if (!Commitment.isHashedCall(pending, calls)) revert CommitmentMismatch();
+    }
+
+    /// @notice The pinning rule: an approval is never zero.
+    ///
+    /// @dev ZERO IS THE SENTINEL, WHICH IS THE WHOLE RULE. It marks a cancelled queue
+    ///      entry and an absent one, so accepting it as an approval would create a record
+    ///      that every reader treats as not there.
+    ///
+    /// @dev THERE IS NO "ONE LIVE APPROVAL" RULE, because approvals are a queue: a second
+    ///      commit appends rather than replacing, so there is nothing to overwrite and
+    ///      nothing to protect. Refusing a duplicate would be wrong on its own terms too —
+    ///      two identical payloads are two separate approvals, and each needs its own
+    ///      `finalize`.
+    function _requireCommittable(bytes32 incoming) private pure {
+        if (incoming == bytes32(0)) revert ZeroCommitment();
     }
 
     /// @dev Consume the head of the queue. The head advances BEFORE `_execute` runs, so a

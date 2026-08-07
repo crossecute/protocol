@@ -208,6 +208,8 @@ every other VM moves native currency as an explicit asset.
   does not set a commitment. A payload that should wait rather than run says so itself, by
   carrying a self-call to `commit`; nothing about the initializer needs to know the
   difference. The reentrancy guard must be initialized before the calls run.
+- The two commitment rules are `private` to the receiver: it is the only thing that holds
+  a commitment, so there is nowhere else they could be needed.
 - `_onMessage(bytes payload)` — the inbound funnel a provider adapter routes into. Decodes
   with `Payload.decodeCalls` and executes on arrival. `nonReentrant`, shared with `finalize`
   and `execute`.

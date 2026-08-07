@@ -471,14 +471,14 @@ contract on Ethereum a receiver answers to sits exactly where the receiver sits 
 ### Inherited contracts
 
 ```
-MessagingContext                       errors shared by both directions
+MessagingContext                       the commit/finalize error vocabulary
  ├── OutboundBase                      _sendMessage. NO owner, NO storage
- │     └── TransmitterBase             + owner, send/sendTo/bootstrap/execute
+ │     └── TransmitterBase             + the ownership seam, send/bootstrap/execute
  │                                       + the provider's endpoint half
- ├── InboundBase                       the two commitment rules. NO owner, NO storage
- │     └── ReceiverBase                + commitment queue, reentrancy guard
- │                                       + the provider's receiving half
  └── Executor                          _execute + isAllowed. NO owner, NO storage
+
+ReceiverBase is MessagingContext, Executor, ...   + queue, rules, reentrancy guard
+                                                  + the provider's receiving half
 
 TransceiverBase is OutboundBase, Initializable, UUPSUpgradeable
  ├── HubTransceiverBase                + registry, provenance bar, MAKES TRANSMITTERS
@@ -508,16 +508,14 @@ for the sending half and an inbound funnel of its own; it is deliberately neithe
   commitment rules (`_requireCommittable`, `_requireMatchingCalls`) live where the
   commitment lives, in the receiver. What the transceiver holds during bootstrap is
   *calls*, not a commitment
-- `OutboundBase`, `InboundBase`, and `Executor` all declare **no storage**, which is what
-  makes them free to mix into a contract that already has a layout: no slot to collide, no
-  gap to reserve
+- `OutboundBase` and `Executor` both declare **no storage**, which is what makes them free
+  to mix into a contract that already has a layout: no slot to collide, no gap to reserve
 
 #### MessagingContext
 
 Roles, modifiers, and errors shared by both halves. The commit/finalize error vocabulary
-(`NothingCommitted`, `CommitmentMismatch`, `ZeroCommitment`) is declared here because
-`OutboundBase`, `InboundBase`, and `Executor` all derive from it and duplicate declarations
-would collide in a contract that mixes them.
+(`NothingCommitted`, `CommitmentMismatch`, `ZeroCommitment`) is declared here rather than
+inline so the vocabulary is one list rather than several that drift.
 
 #### TransceiverBase
 
