@@ -53,8 +53,7 @@ contract MockReceiver is ReceiverBase {
 /// @dev A spoke-free stand-in for the hub: `TransceiverBase` with the two routing hooks
 ///      answered directly, so `bootstrap`'s provenance lookup succeeds without a registry.
 contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
-    address public bootOwner;
-    bytes32 public bootSalt;
+    bytes public sentPayload;
     uint256 public bootCount;
 
     address private _impl;
@@ -102,17 +101,11 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
+    /// @dev Records the raw payload. Which decoder applies is a property of the
+    ///      DESTINATION, so the test picks it — a real spoke knows its own VM.
     function _sendMessage(bytes32, bytes memory payload) internal override {
-        (bootOwner, bootSalt,) = this.peek(payload);
+        sentPayload = payload;
         ++bootCount;
-    }
-
-    function peek(bytes calldata m)
-        external
-        pure
-        returns (address, bytes32, Call[] memory)
-    {
-        return Envelope.decodeBootstrap(m);
     }
 
 }
@@ -232,6 +225,18 @@ contract TransportTest is Test {
         transmitter.sendTo(sol, _calls());
     }
 
+    /// @dev THE MIRROR, AND IT MATTERS AS MUCH. An EVM receiver decodes `Call[]` and only
+    ///      `Call[]`, so opaque elements sent there would arrive undeliverable — a payload
+    ///      that crossed a bridge, cost a fee, and can never execute.
+    function test_opaqueElementsAreRefusedForAnEvmDestination() public {
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"0102030405";
+
+        vm.prank(owner);
+        vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
+        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), elements);
+    }
+
     /// @dev The portable form reaches it instead. The elements are that VM's own call
     ///      encoding and nothing here inspects one.
     function test_opaqueElementsReachANonEvmDestination() public {
@@ -302,21 +307,35 @@ contract TransportTest is Test {
     /// @dev The transmitter states its owner and salt; the transceiver checks the pair
     ///      resolves back to the caller before anything crosses.
     function test_bootstrapStatesTheOwnerAndSalt() public {
-        MockTransceiver t = new MockTransceiver();
-        t.initialize(address(this), address(new MockTransmitter()));
-
-        // An account at the address that pair derives to.
-        address account = t.predictXSafeAccount(owner, SALT);
-        MockTransmitter acct = new MockTransmitter();
-        vm.etch(account, address(acct).code);
-        MockTransmitter(payable(account)).initialize(owner, address(t), SALT);
+        (MockTransceiver t, MockTransmitter acct) = _account();
 
         vm.prank(owner);
-        MockTransmitter(payable(account)).bootstrap(DEST, _calls());
+        acct.bootstrap(DEST, _calls());
 
+        (address gotOwner, bytes32 gotSalt,) = _decodeTyped(t.sentPayload());
         assertEq(t.bootCount(), 1);
-        assertEq(t.bootOwner(), owner);
-        assertEq(t.bootSalt(), SALT);
+        assertEq(gotOwner, owner);
+        assertEq(gotSalt, SALT);
+    }
+
+    /// @dev An account sitting at the address `(owner, SALT)` derives to, which is what
+    ///      the transceiver checks `msg.sender` against.
+    function _decodeTyped(bytes memory m)
+        internal
+        pure
+        returns (address, bytes32, Call[] memory)
+    {
+        return abi.decode(m, (address, bytes32, Call[]));
+    }
+
+    function _account() internal returns (MockTransceiver t, MockTransmitter acct) {
+        t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+
+        address at = t.predictXSafeAccount(owner, SALT);
+        vm.etch(at, address(new MockTransmitter()).code);
+        acct = MockTransmitter(payable(at));
+        acct.initialize(owner, address(t), SALT);
     }
 
     /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it —
@@ -331,6 +350,73 @@ contract TransportTest is Test {
             )
         );
         t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls());
+    }
+
+    /* ========================= path B: the two forms =========================== */
+
+    /// @dev A NON-EVM CHAIN NEEDS ITS OWN BOOTSTRAP, because it needs its own payload
+    ///      form. The account is stood up the same way; what differs is what it is handed.
+    function test_bootstrapToCarriesOpaqueElementsToANonEvmChain() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"0102030405";
+
+        vm.prank(owner);
+        acct.bootstrapTo(sol, elements);
+
+        (address gotOwner, bytes32 gotSalt, bytes[] memory got) =
+            abi.decode(t.sentPayload(), (address, bytes32, bytes[]));
+        assertEq(t.bootCount(), 1);
+        assertEq(gotOwner, owner);
+        assertEq(gotSalt, SALT);
+        assertEq(got[0], hex"0102030405", "and the elements crossed untouched");
+    }
+
+    /// @dev THE PAIRING IS ENFORCED WHERE THE CHAIN TYPE IS KNOWN. Downstream everything
+    ///      speaks chainKeys, which are hashes and cannot be asked what chain type they
+    ///      came from — so this is the last point that could catch it.
+    function test_typedBootstrapIsRefusedForANonEvmChain() public {
+        (, MockTransmitter acct) = _account();
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+
+        vm.prank(owner);
+        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
+        acct.bootstrapTo(sol, _calls());
+    }
+
+    function test_opaqueBootstrapIsRefusedForAnEvmChain() public {
+        (, MockTransmitter acct) = _account();
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"0102030405";
+
+        vm.prank(owner);
+        vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
+        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), elements);
+    }
+
+    /// @dev The envelope-taking typed form reaches an EVM chain, same as the chain-id one.
+    function test_bootstrapToReachesAnEvmChainWithTypedCalls() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+
+        vm.prank(owner);
+        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls());
+        assertEq(t.bootCount(), 1);
+    }
+
+    /// @dev Both forms prove the caller is the account, not just the typed one.
+    function test_theOpaqueBootstrapAlsoChecksTheCaller() public {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
+            )
+        );
+        t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements);
     }
 
     /* ================================ the default ============================== */

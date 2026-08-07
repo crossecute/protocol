@@ -53,7 +53,8 @@ waiting on.
 - **Poseidon for Starknet commitments.** `Scheme.Poseidon` is declared and reverts
   `SchemeNotComputable`. Porting it needs the exact round constants and MDS matrix over the
   Starknet field — a vector-checked task, not one to write from memory. Until then a
-  Starknet commitment is computed off-chain and approved through `commitTo(bytes,bytes32)`.
+  Starknet commitment is computed off-chain and carried in an opaque element that calls
+  that receiver's own `commit`.
 
 ## 4. Decisions taken that deserve a second look
 
@@ -112,9 +113,9 @@ mainnet.
 
 ## 6. Infrastructure — none of it exists
 
-- **The repo has zero commits and no `.gitignore`.** `out/`, `cache/`, and a vendored
-  (not submoduled) `lib/` are untracked; the first commit swallows all of it. **Highest
-  value per minute of anything on this page** — the tree is currently unrecoverable.
+- **`lib/` is vendored rather than submoduled** — forge-std 1.16.2, OZ 5.1.0,
+  OZ-upgradeable 5.1.0. Committed deliberately: CREATE2 parity depends on byte-identical
+  initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
 - **No `script/`.** The Assumptions section specifies an elaborate deploy story — Arachnid's
   factory, proxy with deployer-as-owner, immediate upgrade, ProxyAdmin under the msig — with
   no code behind it. The CREATE2 parity argument stands or falls on that initcode being

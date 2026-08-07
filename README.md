@@ -947,6 +947,8 @@ send(uint256 chainId, Call[] calls)              onlyOwner payable   // path A
 sendTo(bytes identifier, Call[] calls)           onlyOwner payable   // path A, EVM
 sendTo(bytes identifier, bytes[] elements)       onlyOwner payable   // path A, portable
 bootstrap(uint256 chainId, Call[] calls)         onlyOwner payable   // path B
+bootstrapTo(bytes identifier, Call[] calls)      onlyOwner payable   // path B, EVM
+bootstrapTo(bytes identifier, bytes[] elements)  onlyOwner payable   // path B, portable
 execute(Call[] calls)                            onlyOwner payable   // local, no bridge
 
 commitmentCall(receiver, commitment) pure        // deferring, as a call
@@ -960,9 +962,16 @@ arrives, executes, and stores the hash; anyone supplies the matching array to `f
 afterwards. Nothing on the wire distinguishes it from any other payload, which is why no
 message-type tag exists anywhere in the protocol.
 
-**The form follows the destination, and the wrong one is refused at the source.** `Call[]`
-is what an EVM receiver executes and nothing else decodes it, so `sendTo` with typed calls
-rejects a non-`eip155` destination rather than letting an undeliverable payload cross.
+**The form follows the destination, and both directions are enforced at the source.**
+`Call[]` is what an EVM receiver executes and nothing else decodes it; opaque elements are
+what every other VM receives and an EVM receiver cannot decode them. So each envelope-taking
+overload — `sendTo` and `bootstrapTo` alike — refuses the wrong pairing rather than letting
+a payload cross a bridge, cost a fee, and arrive undeliverable.
+
+**The check has to live here.** This is the last point that holds the ERC-7930 envelope;
+downstream everything speaks chainKeys, which are hashes and cannot be asked what chain type
+they came from. `bootstrap(uint256, Call[])` needs no check — a `uint256` chain id is an
+`eip155` reference by construction.
 
 | | `send` | `bootstrap` | `execute` |
 | --- | --- | --- | --- |

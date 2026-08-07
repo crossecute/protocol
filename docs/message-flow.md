@@ -185,6 +185,9 @@ every other VM moves native currency as an explicit asset.
 - Chains where deployment is not synchronous need somewhere to hold the payload between
   arrival and creation, keyed by owner so one cannot wedge another. On EVM nothing
   persists: deploy, arm, execute, and lock happen in the inbound handler.
+- `bootstrapElements` — the outbound opaque half. There is no inbound twin, because
+  `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain; the
+  decoder for an opaque bootstrap lives in whatever language that destination speaks.
 - `_configureReceiver(account)` — a virtual, because setting the new receiver's provider
   peer is provider-specific. The peer value is not: it is the account's own address.
 

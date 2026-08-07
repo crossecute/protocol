@@ -60,6 +60,13 @@ interface ITransceiverBootstrap {
         bytes32 salt,
         Call[] calldata calls
     ) external payable;
+
+    function bootstrapElements(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes[] calldata elements
+    ) external payable;
 }
 
 abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable {
@@ -79,6 +86,10 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     /// @dev `Call[]` is what an EVM receiver executes; nothing else decodes it. Sending it
     ///      to a chain that cannot is a mistake worth catching here rather than on arrival.
     error TypedPayloadToNonEvmDestination();
+    /// @dev The mirror. An EVM receiver decodes `Call[]` and only `Call[]` — opaque
+    ///      elements would arrive undeliverable, so the portable form is refused for a
+    ///      destination that has a typed one.
+    error OpaquePayloadToEvmDestination();
 
     /// @dev Distinct from a bridged delivery, because an execution the owner drove
     ///      directly must be distinguishable on-chain from one a commitment discharged.
@@ -136,6 +147,9 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         onlyOwner
     {
         if (destinationChainIdentifier.length == 0) revert NoDestination();
+        if (Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert OpaquePayloadToEvmDestination();
+        }
         _dispatch(
             ChainKey.fromIdentifier(destinationChainIdentifier),
             Payload.encodeElements(elements)
@@ -154,16 +168,63 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     ///      account's address from that pair; its own address could not serve, because a
     ///      CREATE2 address cannot be derived from itself. The transceiver checks the pair
     ///      resolves back to `msg.sender` before it sends anything.
+    /// @dev NO CHAIN-TYPE CHECK HERE, BECAUSE THERE IS NOTHING TO CHECK. A `uint256` chain
+    ///      id is an `eip155` reference by construction, so this overload can only ever
+    ///      name an EVM destination. The envelope-taking overloads below are where the
+    ///      pairing has to be enforced.
     function bootstrap(uint256 destinationChainId, Call[] calldata calls)
         external
         payable
         onlyOwner
     {
         if (destinationChainId == 0) revert NoDestination();
+        _bootstrapCalls(ChainKey.forEvm(destinationChainId), calls);
+    }
+
+    /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
+    /// @dev Typed calls, so the destination must be one that executes them.
+    function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
+        external
+        payable
+        onlyOwner
+    {
+        if (destinationChainIdentifier.length == 0) revert NoDestination();
+        if (!Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert TypedPayloadToNonEvmDestination();
+        }
+        _bootstrapCalls(ChainKey.fromIdentifier(destinationChainIdentifier), calls);
+    }
+
+    /// @notice `bootstrap`, in the portable form — for standing this account up on Solana,
+    ///         Sui, Starknet, or anything else with no `Call`.
+    ///
+    /// @dev THE PAIRING IS ENFORCED HERE, NOT AT THE TRANSCEIVER. This is the last point
+    ///      that holds the ERC-7930 envelope; downstream everything speaks chainKeys, which
+    ///      are hashes and cannot be asked what chain type they came from. Catching it here
+    ///      turns an undeliverable bootstrap into a revert at the source rather than an
+    ///      account standing up on a chain that cannot decode the payload it was given.
+    function bootstrapTo(
+        bytes calldata destinationChainIdentifier,
+        bytes[] calldata elements
+    ) external payable onlyOwner {
+        if (destinationChainIdentifier.length == 0) revert NoDestination();
+        if (Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert OpaquePayloadToEvmDestination();
+        }
         if (transceiver == address(0)) revert NoTransceiver();
 
+        ITransceiverBootstrap(transceiver).bootstrapElements{value: msg.value}(
+            ChainKey.fromIdentifier(destinationChainIdentifier),
+            owner(),
+            accountSalt,
+            elements
+        );
+    }
+
+    function _bootstrapCalls(bytes32 chainKey, Call[] calldata calls) private {
+        if (transceiver == address(0)) revert NoTransceiver();
         ITransceiverBootstrap(transceiver).bootstrap{value: msg.value}(
-            ChainKey.forEvm(destinationChainId), owner(), accountSalt, calls
+            chainKey, owner(), accountSalt, calls
         );
     }
 

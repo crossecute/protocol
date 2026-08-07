@@ -181,6 +181,29 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _dispatch(destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls));
     }
 
+    /// @notice `bootstrap`, for a destination whose calls this chain cannot express.
+    ///
+    /// @dev THE SAME CHECKS, THE OTHER FORM. Which one a caller may use is decided by the
+    ///      destination's chain type, and enforced where that type is known — at the
+    ///      transmitter, which holds the ERC-7930 envelope. This contract sees only a
+    ///      chainKey, which is a hash and cannot be asked what chain type it came from.
+    function bootstrapElements(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes[] calldata elements
+    ) external payable {
+        if (predictXSafeAccount(owner, salt) != msg.sender) {
+            revert NotTheAccount(owner, salt, msg.sender);
+        }
+
+        _route(destinationChainKey);
+
+        _dispatch(
+            destinationChainKey, Envelope.encodeBootstrapElements(owner, salt, elements)
+        );
+    }
+
     /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.
     function _accountImplementation() internal view virtual returns (address);
 
