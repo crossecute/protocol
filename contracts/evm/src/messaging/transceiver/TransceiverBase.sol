@@ -246,7 +246,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      salt travel in the message without a caller being able to claim another
     ///      account's identity — the address on this chain proves the pair.
     ///
-    /// @dev THE ONLY CALLER OF `_route`, and therefore the only place
+    /// @dev THE ONLY CALLER OF `_requireRoutable`, and therefore the only place
     ///      `minCounterpartProvenance` is enforced. A bar on the first message to a chain
     ///      rather than on every send: once an account exists there, its own sends go
     ///      straight to it and never reach this contract again.
@@ -261,10 +261,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
-        // The provenance bar lives inside this lookup. The values are read again by the
-        // provider adapter when it sends; what matters here is that an under-graded
-        // counterpart reverts before anything crosses.
-        _route(destinationChainKey);
+        // The provenance bar lives inside this check: an under-graded counterpart, or an
+        // unconfigured route, reverts before anything crosses.
+        _requireRoutable(destinationChainKey);
 
         _dispatch(
             destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData
@@ -288,7 +287,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
-        _route(destinationChainKey);
+        _requireRoutable(destinationChainKey);
 
         _dispatch(
             destinationChainKey,
@@ -383,12 +382,21 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     }
 
     /// @notice Both halves at once, for the send path, which needs each of them.
-    function _route(bytes32 chainKey)
-        internal
-        view
-        returns (bytes memory counterpart, bytes memory route)
-    {
-        return (_counterpartOn(chainKey), _routeTo(chainKey));
+    /// @notice Revert unless this transceiver can reach `chainKey` — a counterpart it
+    ///         trusts at its provenance bar, and a route to address it by.
+    ///
+    /// @dev IT IS CALLED FOR THE REVERT, AND THE NAME SAYS SO. Both lookups throw away
+    ///      their values here; what matters is that `_counterpartOn` refuses a counterpart
+    ///      below `minCounterpartProvenance` and `_routeTo` refuses an unconfigured
+    ///      destination. A function returning values nobody reads invites someone to
+    ///      remove the "unused" call and take the check with it.
+    ///
+    /// @dev The adapter reads both again when it sends. That is a second lookup rather
+    ///      than a threaded parameter on purpose: it keeps `_sendMessage` to three
+    ///      arguments, and both reads are `view` against this contract's own storage.
+    function _requireRoutable(bytes32 chainKey) internal view {
+        _counterpartOn(chainKey);
+        _routeTo(chainKey);
     }
 
     /// @notice Where this transceiver's counterpart lives on `chainKey`.

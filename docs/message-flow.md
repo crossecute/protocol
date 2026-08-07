@@ -182,7 +182,7 @@ every other VM moves native currency as an explicit asset.
   contract that sends: a registry read would put a second shared contract in the path of
   every send and let a compromised one misroute a payload. `LzHubTransceiver.setEid` is the
   typed wrapper.
-- It is the only caller of `_route`, `_counterpartOn`, and `_routeTo`, and therefore the
+- It is the only caller of `_requireRoutable`, and therefore the
   only place `minCounterpartProvenance` is enforced — a bar on the first message to a
   chain rather than on every send.
 - The spoke holds the callback the receiver's `initialize` reports through, and puts the

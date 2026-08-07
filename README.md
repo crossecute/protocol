@@ -558,7 +558,7 @@ rather than through a local receiver. There is no receiver on Ethereum to run it
 
 `bootstrap` is **permissionless**, and the argument is the one `createTransmitter` also
 rests on: the only reachable outcome is an account keyed to the caller's own address, which
-answers to nobody else. It is also the only caller of `_route`, and therefore the only
+answers to nobody else. It is also the only caller of `_requireRoutable`, and therefore the only
 place `minCounterpartProvenance` is enforced — a bar on the first message to a chain rather
 than on every send.
 
