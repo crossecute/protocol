@@ -38,10 +38,12 @@ contract SaltedReceiver is ReceiverBase {}
 contract MiniTransmitter {
     address public owner;
     address public transceiver;
+    bytes32 public accountSalt;
 
-    function initialize(address owner_, address transceiver_) external {
+    function initialize(address owner_, address transceiver_, bytes32 salt_) external {
         owner = owner_;
         transceiver = transceiver_;
+        accountSalt = salt_;
     }
 }
 

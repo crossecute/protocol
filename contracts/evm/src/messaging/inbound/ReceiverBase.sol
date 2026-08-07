@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import {InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {ReentrancyGuardUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Executor} from "src/messaging/Executor.sol";
 
@@ -77,7 +80,13 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      the first element, so a call array approved for one chain cannot be finalized
 ///      here. Receivers are deployed at deterministic addresses across chains, which is
 ///      exactly the situation where a cross-chain replay would otherwise work.
-abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceiverInit {
+abstract contract ReceiverBase is
+    InboundBase,
+    Executor,
+    Initializable,
+    ReentrancyGuardUpgradeable,
+    IReceiverInit
+{
     /// The transmitter this receiver answers to. Set once, at initialization.
     address public sourceTransmitter;
     /// The transceiver that cloned this receiver. Named to avoid colliding with
@@ -94,6 +103,9 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
     event ReceiverCancelled(uint256 indexed index, bytes32 commitment);
     event ReceiverFinalized(uint256 indexed index, bytes32 commitment, uint256 callCount);
     event ReceiverExecuted(address indexed caller, uint256 callCount);
+    /// @dev A payload that arrived over the wire and ran on arrival, as distinct from one
+    ///      a commitment discharged or the owner drove locally.
+    event ReceiverDelivered(uint256 callCount);
 
     error NotSourceTransmitter();
     error NotAuthorizedCommitter();
@@ -182,6 +194,11 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
         initializer
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
+
+        // BEFORE the payload runs. A proxy runs no constructor of its own, so the guard is
+        // uninitialized until this line — and `initialize` executes arbitrary calls.
+        __ReentrancyGuard_init();
+
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;
         emit ReceiverInitialized(sourceTransmitter_, msg.sender);
@@ -266,7 +283,7 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
     ///      hashes `Call[]` and the equivalent opaque elements to one value, so an
     ///      approval made over `bytes[]` off-chain is finalized by the typed array here.
     ///      The approval covers the calls, not the serialization somebody chose.
-    function finalize(Call[] calldata calls) external virtual {
+    function finalize(Call[] calldata calls) external virtual nonReentrant {
         _finalizeNext(calls);
     }
 
@@ -279,7 +296,7 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
     ///      batch as a unit and the head pointer advances as each is consumed, so letting
     ///      a prefix stand would discharge approvals whose payloads never completed and
     ///      leave the queue advanced past them unrepeatably.
-    function finalize(Call[][] calldata batches) external virtual {
+    function finalize(Call[][] calldata batches) external virtual nonReentrant {
         uint256 n = batches.length;
         if (n == 0) revert EmptyBatch();
         for (uint256 i; i < n; ++i) {
@@ -309,7 +326,13 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
     /// @dev The event is DISTINCT from `ReceiverFinalized` on purpose. An execution that
     ///      skipped the hash comparison must be distinguishable on-chain from one that
     ///      did not; a monitor that cannot tell them apart cannot audit either.
-    function execute(Call[] calldata calls) external payable virtual onlyAuthorizedCommitter {
+    function execute(Call[] calldata calls)
+        external
+        payable
+        virtual
+        onlyAuthorizedCommitter
+        nonReentrant
+    {
         if (calls.length == 0) revert EmptyExecution();
         emit ReceiverExecuted(msg.sender, calls.length);
         _execute(calls);
@@ -395,6 +418,26 @@ abstract contract ReceiverBase is InboundBase, Executor, Initializable, IReceive
     {
         Call memory c = Calls.decode(call);
         return (c.target, c.value, c.data);
+    }
+
+    /// @notice Run a payload that arrived over the wire.
+    ///
+    /// @dev THE INBOUND FUNNEL. A provider adapter authenticates its origin and routes the
+    ///      payload here; this decodes and executes it. Execution runs INSIDE the bridge
+    ///      callback, so a reverting payload fails the message rather than stranding
+    ///      anything — and every provider lets anyone re-execute a failed message, which
+    ///      makes it a retry rather than a loss.
+    ///
+    /// @dev A PAYLOAD THAT SHOULD WAIT SAYS SO ITSELF, by carrying a self-call to `commit`.
+    ///      Nothing here distinguishes the two, which is why no message-type tag exists.
+    ///
+    /// @dev `nonReentrant`, shared with `finalize` and `execute`. Execution calls arbitrary
+    ///      targets from inside a provider callback, which is a surface a purely local
+    ///      path would not have.
+    function _onMessage(bytes calldata payload) internal virtual nonReentrant {
+        Call[] memory calls = Payload.decodeCalls(payload);
+        emit ReceiverDelivered(calls.length);
+        _execute(calls);
     }
 
     /// @notice Accept ETH, so a receiver can be funded ahead of a `finalize` that spends it.

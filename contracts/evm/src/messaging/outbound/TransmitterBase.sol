@@ -8,6 +8,7 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Commitment, Scheme} from "src/messaging/Commitment.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @title TransmitterBase
@@ -52,152 +53,118 @@ import {Call} from "src/messaging/Call.sol";
 ///      with the destination's key, and the chain-binding still does its job: the payload
 ///      is pinned to exactly one destination and cannot be replayed onto a sibling
 ///      deployment at the same address.
+interface ITransceiverBootstrap {
+    function bootstrap(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        Call[] calldata calls
+    ) external payable;
+}
+
 abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
+    /// The caller-chosen half of this account's CREATE2 salt.
+    ///
+    /// @dev STORED BECAUSE `bootstrap` HAS TO STATE IT. The destination derives this
+    ///      account's address from `(owner, salt)`, and an address cannot be reversed into
+    ///      its own salt — so the value has to travel, and this contract is the only place
+    ///      that knows it without a lookup.
+    bytes32 public accountSalt;
 
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
-    /// @dev Emitted only by the `bytes[]` overloads. The array is already in calldata
-    ///      there, so logging it costs a little gas and makes the payload recoverable by
-    ///      an indexer rather than only by transaction replay.
-    event Disclosed(bytes32 indexed destinationChainKey, bytes32 indexed commitment, bytes[] calls);
-    /// @dev The typed twin of `Disclosed`. Kept as a SEPARATE event rather than folded in
-    ///      by re-encoding, because an indexer that decodes this one gets named fields
-    ///      without knowing the element layout — which is the entire reason a caller
-    ///      chooses the typed form.
-    event DisclosedCalls(
-        bytes32 indexed destinationChainKey, bytes32 indexed commitment, Call[] calls
-    );
 
     error NoTransceiver();
+    /// @dev `Call[]` is what an EVM receiver executes; nothing else decodes it. Sending it
+    ///      to a chain that cannot is a mistake worth catching here rather than on arrival.
+    error TypedPayloadToNonEvmDestination();
 
     /// @dev Distinct from a bridged delivery, because an execution the owner drove
     ///      directly must be distinguishable on-chain from one a commitment discharged.
     event Executed(address indexed caller, uint256 callCount);
 
-    /* ================================= commit ================================== */
+    /* ================================== send =================================== */
 
-    /// @notice Approve a payload on one EVM destination by its hash alone.
+    /// @notice Send a payload to this account's receiver on one EVM destination.
     ///
-    /// @dev PAYABLE FOR THE BRIDGE FEE. A message provider charges to carry the 32 bytes,
-    ///      and `_send` reads `msg.value` to pay it. Refunding any excess is the protocol
-    ///      adapter's job — LayerZero's `_lzSend` takes a refund address for exactly this.
-    ///      The default `_send` reverts, so the base never strands value in a transmitter
-    ///      whose protocol forgot to implement sending.
+    /// @dev PATH A, AND THE TRANSCEIVER IS NOT IN IT. This account is its own
+    ///      message-provider endpoint and its peer on the far side is its own address, so
+    ///      the payload goes straight there. The peer relationship is exactly 1:1 — one
+    ///      account, one chain pair — which is the shape every provider's peer table
+    ///      already has, and the reason an account can be an endpoint at all.
     ///
-    /// @dev THE OVERLOAD THAT KEEPS THE PAYLOAD PRIVATE. The array never appears in
-    ///      Ethereum calldata, so nothing on this chain reveals what was approved until
-    ///      somebody supplies the matching array on the destination and it executes.
-    ///      Derive the hash with `commitmentFor`, which is `pure` and can be run
-    ///      off-chain against the exact array the signers reviewed.
+    /// @dev THE CALLER NAMES A PLAIN CHAIN ID. `send(8453, calls)` is the whole interface:
+    ///      no chainKey to look up, no eid to know, no per-provider table to keep. A signer
+    ///      reviewing the payload sees the chain id they expect rather than a hash they
+    ///      would have to verify out of band.
     ///
-    ///      The trade is reviewability: the signers approve thirty-two bytes, and whether
-    ///      they can see what those bytes mean depends entirely on their tooling. Use the
-    ///      `bytes[]` overload when that matters more than disclosure.
-    function commit(uint256 destinationChainId, bytes32 commitment) external payable onlyOwner {
-        if (destinationChainId == 0) revert NoDestination();
-        _commitOut(ChainKey.forEvm(destinationChainId), commitment);
-    }
-
-    /// @notice Approve a payload on one EVM destination by its contents.
-    ///
-    /// @dev SAME WIRE MESSAGE, DIFFERENT DISCLOSURE. This hashes here and still sends only
-    ///      the hash — a transceiver has no way to carry an array — so the destination
-    ///      cannot tell the two overloads apart. What differs is on THIS chain: the array
-    ///      sits in the approved calldata, permanently recoverable from Ethereum, so the
-    ///      approval and the thing approved are one transaction rather than a digest and
-    ///      a promise.
-    /// @return commitment The hash the destination receiver will require.
-    function commit(uint256 destinationChainId, bytes[] calldata calls)
+    /// @dev PAYABLE FOR THE BRIDGE FEE. The provider adapter reads `msg.value` and refunds
+    ///      any excess per its own convention.
+    function send(uint256 destinationChainId, Call[] calldata calls)
         external
         payable
         onlyOwner
-        returns (bytes32 commitment)
     {
         if (destinationChainId == 0) revert NoDestination();
-        bytes32 chainKey = ChainKey.forEvm(destinationChainId);
-        commitment = Commitment.hashCalls(chainKey, calls);
-        emit Disclosed(chainKey, commitment, calls);
-        _commitOut(chainKey, commitment);
+        _dispatch(ChainKey.forEvm(destinationChainId), Payload.encodeCalls(calls));
     }
 
-    /// @notice `commit(uint256,bytes[])` with the calls supplied in typed form.
-    ///
-    /// @dev IT PRODUCES THE SAME COMMITMENT AS THE OPAQUE OVERLOAD, so the choice is
-    ///      purely about what the approving transaction says on Ethereum. Typed calldata
-    ///      decodes to named fields in a signing UI; opaque elements do not. Nothing on
-    ///      the destination can tell which was used.
-    function commit(uint256 destinationChainId, Call[] calldata calls)
-        external
-        payable
-        onlyOwner
-        returns (bytes32 commitment)
-    {
-        if (destinationChainId == 0) revert NoDestination();
-        bytes32 chainKey = ChainKey.forEvm(destinationChainId);
-        commitment = Commitment.hashCalls(chainKey, calls);
-        emit DisclosedCalls(chainKey, commitment, calls);
-        _commitOut(chainKey, commitment);
-    }
-
-    /// @notice `commit(uint256,bytes32)` for a destination with no EVM chain id.
-    ///
-    /// @dev THE ONLY OVERLOAD THAT REACHES EVERY DESTINATION, and the reason is the hash.
-    ///      The digest is computed off-chain, so it works for a chain whose scheme this
-    ///      one cannot run — Starknet, until Poseidon is ported. The disclosing overloads
-    ///      below hash here and therefore cannot.
-    function commitTo(bytes calldata destinationChainIdentifier, bytes32 commitment)
+    /// @notice `send`, for a destination named by its ERC-7930 identifier.
+    /// @dev The typed form is refused for a non-EVM destination: `Call[]` is what an EVM
+    ///      receiver executes, and nothing else decodes it. Use the opaque overload there.
+    function sendTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
         external
         payable
         onlyOwner
     {
         if (destinationChainIdentifier.length == 0) revert NoDestination();
-        _commitOut(ChainKey.fromIdentifier(destinationChainIdentifier), commitment);
+        if (!Payload.isTypedDestination(destinationChainIdentifier)) {
+            revert TypedPayloadToNonEvmDestination();
+        }
+        _dispatch(
+            ChainKey.fromIdentifier(destinationChainIdentifier), Payload.encodeCalls(calls)
+        );
     }
 
-    /// @notice `commit(uint256,bytes[])` for a destination with no EVM chain id.
-    ///
-    /// @dev IT TAKES THE SCHEME, AND THAT IS THE WHOLE POINT OF THE PARAMETER. This
-    ///      overload exists for Solana, Sui, Starknet, TON — chains that do not all hash
-    ///      the way the EVM does. Applying keccak256 unconditionally would return a
-    ///      perfectly well-formed commitment that a destination hashing with anything else
-    ///      could never match, discoverable only on a live message.
-    ///
-    ///      The scheme is a PARAMETER rather than a registry lookup, for two reasons: this
-    ///      contract holds no registry pointer by design, and a parameter puts the scheme
-    ///      in the calldata the signers approve — which is right, because the scheme is
-    ///      part of what makes the digest mean anything on the far side.
-    ///
-    ///      Getting it wrong still fails closed: the destination recomputes with its own
-    ///      scheme and simply does not match. That is the same failure mode as building a
-    ///      commitment with the local chainKey instead of the destination's.
-    function commitTo(
-        bytes calldata destinationChainIdentifier,
-        Scheme scheme,
-        bytes[] calldata calls
-    ) external payable onlyOwner returns (bytes32 commitment) {
+    /// @notice `send`, in the portable form — the escape hatch for Solana, Sui, Starknet,
+    ///         and anything else with no `uint256` chain id and no `Call`.
+    /// @dev The elements are that VM's own call encoding. Nothing here inspects one.
+    function sendTo(bytes calldata destinationChainIdentifier, bytes[] calldata elements)
+        external
+        payable
+        onlyOwner
+    {
         if (destinationChainIdentifier.length == 0) revert NoDestination();
-        bytes32 chainKey = ChainKey.fromIdentifier(destinationChainIdentifier);
-        commitment = Commitment.hashElements(scheme, chainKey, calls);
-        emit Disclosed(chainKey, commitment, calls);
-        _commitOut(chainKey, commitment);
+        _dispatch(
+            ChainKey.fromIdentifier(destinationChainIdentifier),
+            Payload.encodeElements(elements)
+        );
     }
 
-    /// @notice `commitTo(bytes,Scheme,bytes[])` with the calls supplied in typed form.
-    /// @dev Available for a non-EVM destination, and deliberately so: `Call[]` is how the
-    ///      payload is spelled HERE, and `Commitment` hashes it to the same value the
-    ///      opaque elements would produce. Whether the destination can execute those calls
-    ///      is a question for its own receiver, exactly as it is for the opaque overload.
-    function commitTo(
-        bytes calldata destinationChainIdentifier,
-        Scheme scheme,
-        Call[] calldata calls
-    ) external payable onlyOwner returns (bytes32 commitment) {
-        if (destinationChainIdentifier.length == 0) revert NoDestination();
-        bytes32 chainKey = ChainKey.fromIdentifier(destinationChainIdentifier);
-        commitment = Commitment.hashCalls(scheme, chainKey, calls);
-        emit DisclosedCalls(chainKey, commitment, calls);
-        _commitOut(chainKey, commitment);
+    /// @notice Stand this account up on a chain that has none, and run a payload there.
+    ///
+    /// @dev PATH B, AND THE ONLY ONE THE TRANSCEIVER IS IN. There is no peer to send to
+    ///      yet, so the message goes to the one contract that already exists on that
+    ///      chain. Afterwards every message takes path A and this contract is not involved
+    ///      again — which is why the provenance bar gates the FIRST message to a chain
+    ///      rather than every send.
+    ///
+    /// @dev IT PASSES THE OWNER AND SALT, NOT ITSELF. The destination derives this
+    ///      account's address from that pair; its own address could not serve, because a
+    ///      CREATE2 address cannot be derived from itself. The transceiver checks the pair
+    ///      resolves back to `msg.sender` before it sends anything.
+    function bootstrap(uint256 destinationChainId, Call[] calldata calls)
+        external
+        payable
+        onlyOwner
+    {
+        if (destinationChainId == 0) revert NoDestination();
+        if (transceiver == address(0)) revert NoTransceiver();
+
+        ITransceiverBootstrap(transceiver).bootstrap{value: msg.value}(
+            ChainKey.forEvm(destinationChainId), owner(), accountSalt, calls
+        );
     }
 
     /* ================================= execute ================================= */
@@ -231,6 +198,32 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         if (calls.length == 0) revert EmptyExecution();
         emit Executed(msg.sender, calls.length);
         _execute(calls);
+    }
+
+    /* ============================== payload helpers ============================ */
+
+    /// @notice The call that pins `commitment` on a receiver, for inclusion in a payload
+    ///         bound for that receiver's chain.
+    ///
+    /// @dev COMMITTING IS A CALL, NOT A MESSAGE KIND. To approve a payload now and run it
+    ///      later, `send` a payload whose one element is this. It arrives, executes, and
+    ///      stores the hash; anyone supplies the matching array to `finalize` afterwards.
+    ///      Nothing on the wire distinguishes it from any other payload, which is why
+    ///      there is no message-type tag anywhere in the protocol.
+    ///
+    /// @dev The receiver accepts a self-call because the only way to produce
+    ///      `msg.sender == address(this)` there is through `_execute`, reachable only from
+    ///      an authenticated inbound message or a gated `execute`.
+    function commitmentCall(address receiver, bytes32 commitment)
+        public
+        pure
+        returns (Call memory)
+    {
+        return Call({
+            target: receiver,
+            value: 0,
+            data: abi.encodeCall(ICommitFinalize.commit, (commitment))
+        });
     }
 
     /* ================================== cancel ================================= */
@@ -328,12 +321,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         );
     }
 
-    function _commitOut(bytes32 destinationChainKey, bytes32 commitment) private {
-        if (transceiver == address(0)) revert NoTransceiver();
-        _dispatch(destinationChainKey, commitment);
-    }
-
-    function __TransmitterBase_init(address owner_, address transceiver_)
+    function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_)
         internal
         onlyInitializing
     {
@@ -341,6 +329,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         __Ownable_init(owner_);
         if (transceiver_ == address(0)) revert NoTransceiver();
         transceiver = transceiver_;
+        accountSalt = salt_;
         emit TransmitterConfigured(owner_, transceiver_);
     }
 }

@@ -9,7 +9,7 @@ import {Call} from "src/messaging/Call.sol";
 
 /// @notice What a hub needs from the transmitter logic it arms an account with.
 interface ITransmitterInit {
-    function initialize(address owner, address transceiver) external;
+    function initialize(address owner, address transceiver, bytes32 salt) external;
 }
 
 /// @title HubTransceiverBase
@@ -88,13 +88,16 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev A transmitter takes no payload at creation. Its owner drives it directly and
     ///      can `execute` whenever it likes, so there is nothing a bootstrap payload would
     ///      be for on this side.
-    function _accountInitializer(address owner, bytes32, Call[] memory)
+    /// @dev THE SALT IS PASSED BACK IN. An account cannot recover its own salt from its
+    ///      address, and `bootstrap` has to state it — so the value is handed to the
+    ///      transmitter at the moment it is armed, by the one contract that knows it.
+    function _accountInitializer(address owner, bytes32 salt, Call[] memory)
         internal
         view
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ITransmitterInit.initialize, (owner, address(this)));
+        return abi.encodeCall(ITransmitterInit.initialize, (owner, address(this), salt));
     }
 
     /// @notice Create the caller's transmitter.

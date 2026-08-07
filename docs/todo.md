@@ -8,32 +8,30 @@ this file is the gap between that design and the tree.
 
 ---
 
-## 1. The transport is not built
+## 1. No message provider is integrated
 
-**This is the headline.** The destination half is real — account creation, the approval
-queue, cancellation, execution, the commitment schemes — and nothing can reach it, because
-no message can cross.
+**This is the headline.** Both paths are built end to end in-process — `_sendMessage`,
+`send` / `sendTo` / `bootstrap`, the inbound funnel, the reentrancy guard — and nothing
+crosses a real bridge, because `_sendMessage` reverts `SendNotImplemented` until a protocol
+binding overrides it.
+
+Still missing on the transport itself:
 
 | Missing | Where |
 | --- | --- |
-| `_sendMessage(bytes32 chainKey, bytes payload)` | `OutboundBase` still has `_send(bytes32, bytes32)`, which reverts `SendNotImplemented` |
-| `send` / `sendTo` / `bootstrap` | `TransmitterBase` has only `commit` / `commitTo` / `execute` |
-| `bootstrap(chainKey, calls)` outbound half | `TransceiverBase` has `bootstrapInbound` and no way to send one |
 | The spoke → hub report | `reportSelf` does not exist; `Envelope.encodeReceiverReport` has no caller |
-| `ReentrancyGuardUpgradeable` on `ReceiverBase` | Referenced in a comment, not inherited |
+| `_configureReceiver` | Setting a new receiver's provider peer is provider-specific and unimplemented |
 
-**`Payload.sol` has no caller in `src/`.** It is a finished, tested codec waiting for the
-rewrite to wire it in — as is `Commitment.hashElements`. Expected, but it means the
-encoding work is not load-bearing yet.
+## 2. The provider binding
 
-## 2. No message provider is integrated
+`LzTransmitter`, `LzReceiver`, `LzHubTransceiver`, and `LzSpokeTransceiver` inherit no
+LayerZero code — no `OApp`, no endpoint, no `@layerzerolabs` in `lib/` or in the remappings.
+**Nothing has ever crossed a bridge.**
 
-`_send` reverts. `LzTransmitter`, `LzReceiver`, `LzHubTransceiver`, and `LzSpokeTransceiver`
-inherit no LayerZero code — no `OApp`, no endpoint, no `@layerzerolabs` in `lib/` or in the
-remappings. **Nothing has ever crossed a bridge.**
-
-The claim the whole redesign rests on — that a transmitter can be its own provider
-endpoint, and that a *proxy* can hold one — is untested.
+The claim the whole redesign rests on — that an account can be its own provider endpoint,
+and that a *proxy* can hold one — is untested. This is the next thing to build: it is what
+turns `_sendMessage` from a seam into a send, and it is what every remaining path is
+waiting on.
 
 ## 3. Blockers on specific paths
 

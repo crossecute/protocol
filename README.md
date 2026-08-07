@@ -943,12 +943,26 @@ The source-side entry point, and **its own message-provider endpoint.** One tran
 per protocol per user, routing to every destination.
 
 ```
-send(uint256 destinationChainId, bytes[] calls)          onlyOwner payable
-sendTo(bytes chainIdentifier, bytes[] calls)             onlyOwner payable
-bootstrap(uint256 destinationChainId, bytes[] calls)     onlyOwner payable   // via transceiver
-execute(bytes[] calls)                                   onlyOwner payable -> address
-commitmentFor(uint256, bytes[]) / commitmentForChain(bytes, bytes[])     pure
+send(uint256 chainId, Call[] calls)              onlyOwner payable   // path A
+sendTo(bytes identifier, Call[] calls)           onlyOwner payable   // path A, EVM
+sendTo(bytes identifier, bytes[] elements)       onlyOwner payable   // path A, portable
+bootstrap(uint256 chainId, Call[] calls)         onlyOwner payable   // path B
+execute(Call[] calls)                            onlyOwner payable   // local, no bridge
+
+commitmentCall(receiver, commitment) pure        // deferring, as a call
+cancellationCall(receiver, index, expected) pure
+commitmentFor / commitmentForChain               // the hash a signer checks
 ```
+
+**There is no `commit` entry point, because committing is not a message kind.** To approve
+a payload now and run it later, `send` a payload whose one element is `commitmentCall`. It
+arrives, executes, and stores the hash; anyone supplies the matching array to `finalize`
+afterwards. Nothing on the wire distinguishes it from any other payload, which is why no
+message-type tag exists anywhere in the protocol.
+
+**The form follows the destination, and the wrong one is refused at the source.** `Call[]`
+is what an EVM receiver executes and nothing else decodes it, so `sendTo` with typed calls
+rejects a non-`eip155` destination rather than letting an undeliverable payload cross.
 
 | | `send` | `bootstrap` | `execute` |
 | --- | --- | --- | --- |

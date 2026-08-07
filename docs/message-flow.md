@@ -2,12 +2,12 @@
 
 The two paths a message takes, the wire formats, and what each contract does.
 
-**Status.** The destination half is built: the approval queue, cancellation, execution, and
-the commitment schemes. The transport is not — `_sendMessage(bytes32, bytes)`, the
-transmitter's `send`/`sendTo`/`bootstrap`, and the message-provider bindings do not exist,
-so nothing crosses a bridge yet. The README's `TransceiverBase` / `TransmitterBase`
-sections describe the same design; where they disagree with this file, this file is the
-newer statement.
+**Status.** Both paths are built end to end in-process: `_sendMessage(bytes32, bytes)`,
+`send` / `sendTo` / `bootstrap`, the inbound funnel, and the reentrancy guard. What is
+missing is a **message provider binding** — `_sendMessage` reverts `SendNotImplemented` by
+default, so nothing crosses a real bridge yet. The README's `TransceiverBase` /
+`TransmitterBase` sections describe the same design; where they disagree with this file,
+this file is the newer statement.
 
 ## Three properties the whole design turns on
 
@@ -197,6 +197,9 @@ every other VM moves native currency as an explicit asset.
   does not set a commitment. A payload that should wait rather than run says so itself, by
   carrying a self-call to `commit`; nothing about the initializer needs to know the
   difference. The reentrancy guard must be initialized before the calls run.
+- `_onMessage(bytes payload)` — the inbound funnel a provider adapter routes into. Decodes
+  with `Payload.decodeCalls` and executes on arrival. `nonReentrant`, shared with `finalize`
+  and `execute`.
 - `reportSelf()` — the one thing a receiver sends. Called during `initialize`, it hands the
   receiver's own address to `parentTransceiver`, which puts it on the wire. The receiver is
   not an `OutboundBase` and has no other outbound path.

@@ -8,6 +8,9 @@ import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {Executor} from "src/messaging/Executor.sol";
+import {ReentrancyGuardUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 
 /// @dev Records the order calls actually landed in, so ordering assertions are about
@@ -289,9 +292,12 @@ contract CommitmentQueueTest is Test {
 
     /* ============================ reentrancy on the head ======================== */
 
-    /// @dev The head advances BEFORE `_execute`, so a payload that re-enters `finalize`
-    ///      finds its own approval already spent rather than discharging it twice.
-    function test_theHeadAdvancesBeforeExecution() public {
+    /// @dev TWO DEFENCES, AND THE OUTER ONE FIRES FIRST. `finalize` is `nonReentrant`, so
+    ///      a payload that re-enters is stopped before it can reach the queue at all.
+    ///      Underneath that, the head still advances BEFORE `_execute` — so even without
+    ///      the guard a re-entrant call would find its own approval already spent. This
+    ///      asserts the guard; `test_theHeadIsSpentBeforeExecution` asserts the other.
+    function test_reentrantFinalizeIsRefused() public {
         Reenterer bad = new Reenterer();
         Call[] memory calls = new Call[](1);
         calls[0] = Call({
@@ -312,7 +318,9 @@ contract CommitmentQueueTest is Test {
             abi.encodeWithSelector(
                 Executor.CallFailed.selector,
                 uint256(0),
-                abi.encodeWithSelector(MessagingContext.NothingCommitted.selector)
+                abi.encodeWithSelector(
+                    ReentrancyGuardUpgradeable.ReentrancyGuardReentrantCall.selector
+                )
             )
         );
         r.finalize(calls);
@@ -341,6 +349,15 @@ contract CommitmentQueueTest is Test {
         calls = new Call[](1);
         calls[0] =
             Call({target: address(ledger), value: 0, data: abi.encodeCall(Ledger.boom, ())});
+    }
+}
+
+/// @dev Reads the receiver's pending count from inside the payload it is executing.
+contract Peeker {
+    uint256 public pendingDuring = type(uint256).max;
+
+    function look(address receiver) external {
+        pendingDuring = QueueReceiver(payable(receiver)).pendingCount();
     }
 }
 

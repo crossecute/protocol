@@ -5,6 +5,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+import {Envelope} from "src/messaging/Envelope.sol";
 import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -75,6 +76,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     error ZeroTransmitterCommit();
     error UpgradesAreLocked();
     error ZeroOwner();
+    /// @dev The caller is not the account `(owner, salt)` resolves to, so it is asking the
+    ///      protocol to stand up somebody else's account somewhere else.
+    error NotTheAccount(address owner, bytes32 salt, address caller);
     error XSafeAccountExists(address owner, bytes32 salt, address account);
     error NoAccountImplementation();
 
@@ -141,6 +145,40 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         );
 
         emit XSafeAccountCreated(owner, account, salt);
+    }
+
+    /// @notice Stand this account up on a chain that has none, and carry its payload.
+    ///
+    /// @dev PERMISSIONLESS, AND THE ARGUMENT IS THE ADDRESS. The only reachable outcome is
+    ///      an account keyed to `(owner, salt)` — and the caller must BE that account, so
+    ///      the only account anyone can bootstrap is the one that already answers to them.
+    ///      Nobody gains anything by paying to create somebody else's.
+    ///
+    /// @dev THE PAIR IS CHECKED, NOT TRUSTED. `msg.sender` must be what
+    ///      `predictXSafeAccount(owner, salt)` resolves to. That is what lets the owner and
+    ///      salt travel in the message without a caller being able to claim another
+    ///      account's identity — the address on this chain proves the pair.
+    ///
+    /// @dev THE ONLY CALLER OF `_route`, and therefore the only place
+    ///      `minCounterpartProvenance` is enforced. A bar on the first message to a chain
+    ///      rather than on every send: once an account exists there, its own sends go
+    ///      straight to it and never reach this contract again.
+    function bootstrap(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        Call[] calldata calls
+    ) external payable {
+        if (predictXSafeAccount(owner, salt) != msg.sender) {
+            revert NotTheAccount(owner, salt, msg.sender);
+        }
+
+        // The provenance bar lives inside this lookup. The values are read again by the
+        // provider adapter when it sends; what matters here is that an under-graded
+        // counterpart reverts before anything crosses.
+        _route(destinationChainKey);
+
+        _dispatch(destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls));
     }
 
     /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.
