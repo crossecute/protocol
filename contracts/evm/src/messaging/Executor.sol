@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @title Executor
@@ -20,7 +19,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev NO STORAGE, so it mixes into a contract that already has a layout without a slot
 ///      to collide or a gap to reserve.
-abstract contract Executor is MessagingContext {
+abstract contract Executor {
     error SelectorNotAllowed(address target, bytes4 selector);
     /// @dev Carries the index because the array is approved as a unit — knowing WHICH
     ///      element failed is the difference between a diagnosable payload and a rejected

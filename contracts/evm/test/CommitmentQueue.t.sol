@@ -6,7 +6,6 @@ import {Test} from "forge-std/Test.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
-import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {ReentrancyGuardUpgradeable} from
@@ -76,7 +75,7 @@ contract CommitmentQueueTest is Test {
         r.commit(_hash(1));
         r.commit(_hash(2));
 
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_calls(2));
 
         r.finalize(_calls(1));
@@ -87,7 +86,7 @@ contract CommitmentQueueTest is Test {
     }
 
     function test_finalizeOnAnEmptyQueueReverts() public {
-        vm.expectRevert(MessagingContext.NothingCommitted.selector);
+        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
         r.finalize(_calls(1));
     }
 
@@ -147,7 +146,7 @@ contract CommitmentQueueTest is Test {
         batches[0] = _calls(2);
         batches[1] = _calls(1);
 
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(batches);
     }
 
@@ -184,7 +183,7 @@ contract CommitmentQueueTest is Test {
         assertEq(r.pendingCount(), 1);
         assertEq(r.commitment(), _hash(2), "the survivor moved to the head");
 
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_calls(1));
 
         r.finalize(_calls(2));
@@ -200,7 +199,7 @@ contract CommitmentQueueTest is Test {
         // Head-of-line blocking, demonstrated rather than asserted in a comment.
         vm.expectRevert();
         r.finalize(_failingCalls());
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_calls(2));
 
         r.cancel(0, _failingHash());
@@ -228,7 +227,7 @@ contract CommitmentQueueTest is Test {
 
         assertEq(r.pendingCount(), 0);
         assertEq(r.commitment(), bytes32(0));
-        vm.expectRevert(MessagingContext.NothingCommitted.selector);
+        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
         r.finalize(_calls(1));
     }
 

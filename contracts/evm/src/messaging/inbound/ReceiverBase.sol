@@ -7,7 +7,6 @@ import {ReentrancyGuardUpgradeable} from
 import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
-import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {Executor} from "src/messaging/Executor.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
@@ -82,7 +81,6 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      here. Receivers are deployed at deterministic addresses across chains, which is
 ///      exactly the situation where a cross-chain replay would otherwise work.
 abstract contract ReceiverBase is
-    MessagingContext,
     Executor,
     Initializable,
     ReentrancyGuardUpgradeable,
@@ -107,6 +105,15 @@ abstract contract ReceiverBase is
     /// @dev A payload that arrived over the wire and ran on arrival, as distinct from one
     ///      a commitment discharged or the owner drove locally.
     event ReceiverDelivered(uint256 callCount);
+
+    /// @dev The commit/finalize vocabulary. Declared here because this is the only
+    ///      contract that holds a commitment — a shared base for three words would be a
+    ///      file whose whole job is to be inherited.
+    error NothingCommitted();
+    error CommitmentMismatch();
+    /// @dev Zero marks a cancelled queue entry and an absent one alike, so it can never
+    ///      be an approval.
+    error ZeroCommitment();
 
     error NotSourceTransmitter();
     error NotAuthorizedCommitter();

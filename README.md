@@ -22,7 +22,7 @@ src/
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
   registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRoutes
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
-  messaging/      MessagingContext, Commitment, Call, Payload, Envelope, Executor
+  messaging/      Commitment, Call, Payload, Envelope, Executor
     outbound/     OutboundBase -> TransmitterBase
     inbound/      InboundBase  -> ReceiverBase
     transceiver/  TransceiverBase -> Hub / Spoke
@@ -471,14 +471,14 @@ contract on Ethereum a receiver answers to sits exactly where the receiver sits 
 ### Inherited contracts
 
 ```
-MessagingContext                       the commit/finalize error vocabulary
- ├── OutboundBase                      _sendMessage. NO owner, NO storage
- │     └── TransmitterBase             + the ownership seam, send/bootstrap/execute
- │                                       + the provider's endpoint half
- └── Executor                          _execute + isAllowed. NO owner, NO storage
+OutboundBase                           _sendMessage. NO owner, NO storage
+ └── TransmitterBase                   + the ownership seam, send/bootstrap/execute
+                                         + the provider's endpoint half
 
-ReceiverBase is MessagingContext, Executor, ...   + queue, rules, reentrancy guard
-                                                  + the provider's receiving half
+Executor                               _execute + isAllowed. NO owner, NO storage
+ ├── TransmitterBase                   payloads its owner hands it directly
+ └── ReceiverBase                      + queue, rules, reentrancy guard
+                                         + the provider's receiving half
 
 TransceiverBase is OutboundBase, Initializable, UUPSUpgradeable
  ├── HubTransceiverBase                + registry, provenance bar, MAKES TRANSMITTERS
@@ -510,12 +510,6 @@ for the sending half and an inbound funnel of its own; it is deliberately neithe
   *calls*, not a commitment
 - `OutboundBase` and `Executor` both declare **no storage**, which is what makes them free
   to mix into a contract that already has a layout: no slot to collide, no gap to reserve
-
-#### MessagingContext
-
-Roles, modifiers, and errors shared by both halves. The commit/finalize error vocabulary
-(`NothingCommitted`, `CommitmentMismatch`, `ZeroCommitment`) is declared here rather than
-inline so the vocabulary is one list rather than several that drift.
 
 #### TransceiverBase
 

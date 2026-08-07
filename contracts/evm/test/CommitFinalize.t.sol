@@ -7,7 +7,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {MessagingContext} from "src/messaging/MessagingContext.sol";
 import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
@@ -307,7 +306,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.commitment(), pending, "approval untouched");
 
         // And it still requires its own matching array.
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_otherCalls());
         r.finalize(approved);
         assertEq(r.commitment(), bytes32(0));
@@ -481,7 +480,7 @@ contract CommitFinalizeTest is Test {
         tampered[1].data = abi.encodeWithSignature("bar(address)", address(0xBAD));
 
         vm.prank(relayer);
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(tampered);
     }
 
@@ -606,7 +605,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
         r.finalize(calls);
 
-        vm.expectRevert(MessagingContext.NothingCommitted.selector);
+        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
         r.finalize(calls);
     }
 
@@ -822,7 +821,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.pendingCount(), 2, "both recorded, neither blocked the other");
 
         // FIFO: the second cannot jump the first.
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(b);
 
         r.finalize(a);
@@ -931,7 +930,7 @@ contract CommitFinalizeTest is Test {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(address(r));
-        vm.expectRevert(MessagingContext.ZeroCommitment.selector);
+        vm.expectRevert(ReceiverBase.ZeroCommitment.selector);
         r.commit(bytes32(0));
     }
 
@@ -965,7 +964,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         vm.chainId(999);
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -978,7 +977,7 @@ contract CommitFinalizeTest is Test {
         r.commit(pending);
 
         vm.chainId(999);
-        vm.expectRevert(MessagingContext.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(later);
     }
 }

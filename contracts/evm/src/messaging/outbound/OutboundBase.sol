@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {MessagingContext} from "src/messaging/MessagingContext.sol";
 
 /// @title OutboundBase
 /// @notice The sending half, with no opinion about who is allowed to send.
@@ -16,7 +15,7 @@ import {MessagingContext} from "src/messaging/MessagingContext.sol";
 /// @dev IT DECLARES NO STORAGE, DELIBERATELY. That is what makes it free to mix into a
 ///      contract that already has a layout — there is no slot to collide, no gap to
 ///      reserve, and no ordering constraint on the `is` list beyond linearization.
-abstract contract OutboundBase is MessagingContext {
+abstract contract OutboundBase {
     /// @dev One event for the one fact: a payload left for a destination. It carries the
     ///      HASH rather than the payload — the bytes are already in this transaction's
     ///      calldata, so logging them again would double the cost of every send to make an
