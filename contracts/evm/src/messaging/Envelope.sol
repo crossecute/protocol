@@ -83,25 +83,29 @@ library Envelope {
     ///      Pedersen hash chain that the EVM cannot run at any price, so the destination
     ///      creates it, learns the address, and says so.
     ///
-    /// @dev IT CARRIES NO REQUEST ID, because the two fields it does carry already imply
-    ///      the correlation one would provide: the destination is established by the
-    ///      authenticated origin and the transmitter is stated here, which is exactly the
-    ///      pair the receiver slot is derived from. The registry refuses a second write to
-    ///      that slot outright, which is a stronger guarantee than matching an id.
+    /// @dev IT CARRIES NO REQUEST ID, because the fields it does carry already imply the
+    ///      correlation one would provide: the destination is established by the
+    ///      authenticated origin, and `(owner, salt)` is stated here — exactly the triple
+    ///      the receiver slot is derived from. The registry refuses a second write to that
+    ///      slot outright, which is a stronger guarantee than matching an id.
+    ///
+    ///      It states the OWNER AND SALT rather than the account's address, matching the
+    ///      bootstrap message it answers. The address is a derivation of that pair, so the
+    ///      pair is what identifies the account.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the reporting chain.
-    function encodeReceiverReport(address transmitter, bytes memory interop)
+    function encodeReceiverReport(address owner, bytes32 salt, bytes memory interop)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(transmitter, interop);
+        return abi.encode(owner, salt, interop);
     }
 
     function decodeReceiverReport(bytes calldata message)
         internal
         pure
-        returns (address transmitter, bytes memory interop)
+        returns (address owner, bytes32 salt, bytes memory interop)
     {
-        (transmitter, interop) = abi.decode(message, (address, bytes));
+        (owner, salt, interop) = abi.decode(message, (address, bytes32, bytes));
     }
 }

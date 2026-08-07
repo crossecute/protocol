@@ -179,11 +179,11 @@ contract InboundAuthTest is Test {
         hub.arrive(
             abi.encode(uint32(30184)),
             abi.encodePacked(counterpart),
-            Envelope.encodeReceiverReport(transmitter, interop)
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), interop)
         );
 
         assertEq(
-            hub.destinationReceiverOn(baseKey, transmitter),
+            hub.destinationReceiverOn(baseKey, transmitter, bytes32(0)),
             abi.encodePacked(address(0xBEEF)),
             "recorded against the chain the ROUTE resolved to"
         );
@@ -191,7 +191,7 @@ contract InboundAuthTest is Test {
 
     function test_hubRejectsAnUnknownRoute() public {
         bytes memory m =
-            Envelope.encodeReceiverReport(transmitter, bytes(""));
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
         vm.expectRevert(TransceiverBase.UnknownRoute.selector);
         hub.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
     }
@@ -201,7 +201,7 @@ contract InboundAuthTest is Test {
     function test_hubRejectsAKnownRouteFromTheWrongSender() public {
         bytes32 baseKey = _wireSpokeChain(30184, 8453, address(0xC0DE));
         bytes memory m =
-            Envelope.encodeReceiverReport(transmitter, bytes(""));
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
         vm.expectRevert(
             abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey)
@@ -230,7 +230,7 @@ contract InboundAuthTest is Test {
 
         // At the weakest bar the message is accepted.
         bytes memory report = Envelope.encodeReceiverReport(
-            transmitter, Erc7930.encodeEvm(8453, address(0xBEEF))
+            transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
         );
         hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(counterpart), report);
 
@@ -240,7 +240,7 @@ contract InboundAuthTest is Test {
             IChainRegistryRefs(address(registry)), provider, Provenance.Derived
         );
         bytes memory report2 = Envelope.encodeReceiverReport(
-            transmitter, Erc7930.encodeEvm(8453, address(0xBEEF))
+            transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
         );
         vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
         hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(counterpart), report2);

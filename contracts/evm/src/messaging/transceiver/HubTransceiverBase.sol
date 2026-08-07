@@ -53,7 +53,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     Provenance public minCounterpartProvenance;
 
     event DestinationReceiverReported(
-        bytes32 indexed chainKey, address indexed transmitter, bytes32 slot
+        bytes32 indexed chainKey, address indexed owner, bytes32 salt, bytes32 slot
     );
     event RoutingSet(
         address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance
@@ -191,9 +191,9 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev A hub receives receiver reports and nothing else. Commitments travel the other
     ///      way, because transmitters live on Ethereum.
     function _handleInbound(bytes32 chainKey, bytes calldata message) internal override {
-        (address transmitter, bytes memory interop) =
+        (address owner, bytes32 salt, bytes memory interop) =
             Envelope.decodeReceiverReport(message);
-        this.onDestinationReceiver(chainKey, transmitter, interop);
+        this.onDestinationReceiver(chainKey, owner, salt, interop);
     }
 
     /// @notice Turn a provider's native source id back into a chain, on the inbound path.
@@ -224,31 +224,36 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      in the report, so the destination cannot choose which slot it writes. The
     ///      registry then refuses a second write to that slot, so a replayed report is a
     ///      no-op rather than a repoint.
+    ///
+    /// @dev THE SLOT IS KEYED BY `(chainKey, owner, salt)`, which is what an account is.
+    ///      The account's address is a derivation of that pair, so the pair is the
+    ///      identity and the address is not.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(
         bytes32 chainKey,
-        address transmitter,
+        address owner,
+        bytes32 salt,
         bytes calldata interop
     ) external {
         require(msg.sender == address(this));
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        if (transmitter == address(0)) revert ZeroTransmitterCommit();
+        if (owner == address(0)) revert ZeroOwner();
 
-        bytes32 slot = chainRegistry.receiverSlot(chainKey, transmitter);
+        bytes32 slot = chainRegistry.receiverSlot(chainKey, owner, salt);
         chainRegistry.onForeignRefResolved(slot, interop, "");
-        emit DestinationReceiverReported(chainKey, transmitter, slot);
+        emit DestinationReceiverReported(chainKey, owner, salt, slot);
     }
 
-    /// @notice Where `transmitter`'s receiver lives on `chainKey`, at this transceiver's
+    /// @notice Where an account's receiver lives on `chainKey`, at this transceiver's
     ///         provenance bar.
-    function destinationReceiverOn(bytes32 chainKey, address transmitter)
+    function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt)
         external
         view
         returns (bytes memory)
     {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         return chainRegistry.destinationReceiverOf(
-            chainKey, transmitter, minCounterpartProvenance
+            chainKey, owner, salt, minCounterpartProvenance
         );
     }
 }

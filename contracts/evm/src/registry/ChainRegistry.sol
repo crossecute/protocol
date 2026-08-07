@@ -629,7 +629,7 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /* ========================= destination receivers ========================== */
 
-    /// @notice Slot holding a transmitter's receiver on one destination chain.
+    /// @notice Slot holding an account's receiver on one destination chain.
     /// @dev DERIVED, never chosen. Two slot kinds now share `_refs` — transceivers and
     ///      receivers — so each is namespaced by a distinct tag. Without the tag a
     ///      receiver could be written into a transceiver's slot and read back as one.
@@ -639,24 +639,30 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      so the receiver's address is not predictable here — it is reported back by
     ///      the destination and graded `Attested`, which is an honest description of
     ///      what we actually know.
-    function receiverSlot(bytes32 chainKey, address transmitter)
+    /// @dev KEYED BY `(owner, salt)`, WHICH IS WHAT AN ACCOUNT IS. Keying by the
+    ///      transmitter's address happens to give the same answer today, since an account
+    ///      and its receivers share one address — but it states a relationship that no
+    ///      longer holds, and if the two ever diverged the slot would silently point
+    ///      somewhere else. The pair is the identity; the address is a derivation of it.
+    function receiverSlot(bytes32 chainKey, address owner, bytes32 salt)
         public
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode("xsafe.receiver", chainKey, transmitter));
+        return keccak256(abi.encode("xsafe.receiver", chainKey, owner, salt));
     }
 
-    /// @notice Where a transmitter's receiver lives on `chainKey`, refusing anything
-    ///         below `minProvenance`.
+    /// @notice Where an account's receiver lives on `chainKey`, refusing anything below
+    ///         `minProvenance`.
     /// @dev A payload that moves funds should demand more than `Attested`; one that only
     ///      emits an event can live with it. Making the caller state its bar is the point.
     function destinationReceiverOf(
         bytes32 chainKey,
-        address transmitter,
+        address owner,
+        bytes32 salt,
         Provenance minProvenance
     ) external view returns (bytes memory) {
-        ForeignRef memory r = _refs[receiverSlot(chainKey, transmitter)];
+        ForeignRef memory r = _refs[receiverSlot(chainKey, owner, salt)];
         if (r.provenance == Provenance.Unresolved) revert NotResolved();
         if (uint8(r.provenance) < uint8(minProvenance)) revert InsufficientProvenance();
         return Erc7930.parseStrict(r.interop).addr;

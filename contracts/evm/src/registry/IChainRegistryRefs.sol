@@ -23,7 +23,7 @@ interface IChainRegistryRefs {
         Provenance minProvenance
     ) external view returns (bytes32 transceiverId, bytes memory location);
 
-    function receiverSlot(bytes32 chainKey, address transmitter)
+    function receiverSlot(bytes32 chainKey, address owner, bytes32 salt)
         external
         pure
         returns (bytes32);
@@ -36,7 +36,8 @@ interface IChainRegistryRefs {
 
     function destinationReceiverOf(
         bytes32 chainKey,
-        address transmitter,
+        address owner,
+        bytes32 salt,
         Provenance minProvenance
     ) external view returns (bytes memory);
 }

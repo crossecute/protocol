@@ -122,7 +122,7 @@ channel needs a tag.
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
 | hub → spoke transceiver | `abi.encode(address transmitter, Call[] calls)` |
-| spoke → hub transceiver | `abi.encode(address transmitter, bytes interop)` |
+| spoke → hub transceiver | `abi.encode(address owner, bytes32 salt, bytes interop)` |
 
 A call is `(address target, uint256 value, bytes data)` — the tuple ERC-7579 and ERC-7821
 use, so payload-building tooling that already speaks those formats works without custom
@@ -235,7 +235,9 @@ every other VM moves native currency as an explicit asset.
 ### Envelope
 
 - `encodeBootstrap` / `decodeBootstrap` — `(address transmitter, Call[] calls)`.
-- `encodeReceiverReport` / `decodeReceiverReport` — `(address transmitter, bytes interop)`.
+- `encodeReceiverReport` / `decodeReceiverReport` — `(address owner, bytes32 salt, bytes
+  interop)`. It names the pair rather than the account's address, matching the bootstrap
+  message it answers: the address is a derivation of the pair, so the pair is the identity.
 - There is no commitment envelope; committing is folded into the call array.
 
 ## Failure handling

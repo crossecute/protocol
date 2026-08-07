@@ -29,10 +29,10 @@ contract RoutingTransceiver is HubTransceiverBase, OwnableUpgradeable {
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
     function inboundReceiverReport(
         bytes32 chainKey,
-        address transmitter,
+        address owner,
         bytes calldata interop
     ) external {
-        this.onDestinationReceiver(chainKey, transmitter, interop);
+        this.onDestinationReceiver(chainKey, owner, bytes32(0), interop);
     }
 }
 
@@ -189,20 +189,20 @@ contract CounterpartRoutingTest is Test {
 
         // Nothing known yet.
         vm.expectRevert(ChainRegistry.NotResolved.selector);
-        transceiver.destinationReceiverOn(snKey, transmitter);
+        transceiver.destinationReceiverOn(snKey, transmitter, bytes32(0));
 
         transceiver.inboundReceiverReport(snKey, transmitter, snReceiver);
 
-        assertEq(transceiver.destinationReceiverOn(snKey, transmitter), snAddr);
+        assertEq(transceiver.destinationReceiverOn(snKey, transmitter, bytes32(0)), snAddr);
 
         // Graded Attested: worth exactly the bridge's security, and no more.
-        bytes32 slot = registry.receiverSlot(snKey, transmitter);
+        bytes32 slot = registry.receiverSlot(snKey, transmitter, bytes32(0));
         assertEq(
             uint8(registry.get(slot).provenance), uint8(Provenance.Attested)
         );
         // A caller demanding a stronger grade is refused.
         vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
-        registry.destinationReceiverOf(snKey, transmitter, Provenance.Committed);
+        registry.destinationReceiverOf(snKey, transmitter, bytes32(0), Provenance.Committed);
     }
 
     /// @dev A receiver must not land in the transceiver route table.
@@ -225,7 +225,7 @@ contract CounterpartRoutingTest is Test {
 
     function test_receiverCallbackIsSelfCallOnly() public {
         vm.expectRevert();
-        transceiver.onDestinationReceiver(keccak256("k"), address(0x7A11), "");
+        transceiver.onDestinationReceiver(keccak256("k"), address(0x7A11), bytes32(0), "");
     }
 
     /* =========================== the default counterpart ======================== */
