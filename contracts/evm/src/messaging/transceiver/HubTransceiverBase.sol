@@ -88,7 +88,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev A transmitter takes no payload at creation. Its owner drives it directly and
     ///      can `execute` whenever it likes, so there is nothing a bootstrap payload would
     ///      be for on this side.
-    function _accountInitializer(address owner, Call[] memory)
+    function _accountInitializer(address owner, bytes32, Call[] memory)
         internal
         view
         override
@@ -104,15 +104,34 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      is the party that asked for it. That binding is also what stops one party
     ///      squatting the address another intends to use — and here the address is not
     ///      merely theirs on this chain, it is theirs on every chain.
+    /// @dev THE SALT IS THE CALLER'S, AND IT BUYS MORE THAN ONE ACCOUNT. An owner is not
+    ///      limited to a single transmitter: one per purpose, per counterparty, per
+    ///      mandate. Each `(msg.sender, salt)` pair is a distinct account with its own
+    ///      address — and that address is theirs on every parity chain, not just this one.
+    ///
+    ///      It is hashed together with `msg.sender` rather than used raw, so one owner's
+    ///      choice of salt can never land on another owner's account however it is chosen.
+    ///
+    /// @param salt Chosen by the caller. `bytes32(0)` is a perfectly good default for an
+    ///        owner who wants exactly one account.
     /// @return account The transmitter, at the same address its receivers will occupy
     ///         everywhere else.
-    function createTransmitter() external returns (address account) {
-        account = _createXSafeAccount(msg.sender, new Call[](0));
+    function createTransmitter(bytes32 salt) external returns (address account) {
+        account = _createXSafeAccount(msg.sender, salt, new Call[](0));
     }
 
-    /// @notice Where an owner's transmitter lives, before it exists.
-    function predictTransmitter(address owner) external view returns (address) {
-        return predictXSafeAccount(owner);
+    /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.
+    ///
+    /// @dev THE POINT OF EXPOSING IT. An owner can compute the address they are about to
+    ///      claim — on this chain and, because all three CREATE2 inputs are shared, on
+    ///      every other one — before spending anything. It is also what lets an address be
+    ///      pinned inside a payload approved before the account has been created.
+    function predictTransmitter(address owner, bytes32 salt)
+        external
+        view
+        returns (address)
+    {
+        return predictXSafeAccount(owner, salt);
     }
 
     /// @notice Point this transceiver at the registry, and state its provenance bar.

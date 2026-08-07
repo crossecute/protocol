@@ -77,8 +77,8 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
 
     /// @dev Stands in for `_onInbound`, which authenticates and then self-calls.
     function bootstrapFor(address owner_) external returns (address) {
-        this.bootstrapInbound(owner_, new Call[](0));
-        return predictXSafeAccount(owner_);
+        this.bootstrapInbound(owner_, bytes32(0), new Call[](0));
+        return predictXSafeAccount(owner_, bytes32(0));
     }
 }
 
@@ -154,7 +154,7 @@ contract SaltedDeploymentTest is Test {
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
         address predictedReceiver =
-            registry.predictXSafeAccount(chainKey, provider, ownerOf);
+            registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
 
         // Nothing is deployed yet.
         assertEq(predictedTransceiver.code.length, 0);
@@ -173,7 +173,7 @@ contract SaltedDeploymentTest is Test {
     }
 
     /// @dev The two sides agree on the salt convention. The registry writes
-    ///      `keccak256(abi.encode(ownerOf))` out by hand because it runs on Ethereum
+    ///      `keccak256(abi.encode(ownerOf, bytes32(0)))` out by hand because it runs on Ethereum
     ///      and the transceiver runs on the destination; if those drift, every predicted
     ///      receiver address is wrong and nothing says so until a payload is pinned to one.
     function test_theReceiverSaltMatchesTheTransceiversOwn() public {
@@ -185,10 +185,10 @@ contract SaltedDeploymentTest is Test {
         t.initialize(owner, impl);
 
         address ownerOf = address(0x7A11);
-        assertEq(t.accountSalt(ownerOf), keccak256(abi.encode(ownerOf)));
+        assertEq(t.accountSalt(ownerOf, bytes32(0)), keccak256(abi.encode(ownerOf, bytes32(0))));
         assertEq(
-            registry.predictXSafeAccount(chainKey, provider, ownerOf),
-            t.predictXSafeAccount(ownerOf),
+            registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0)),
+            t.predictXSafeAccount(ownerOf, bytes32(0)),
             "one salt convention, two chains"
         );
     }
@@ -221,7 +221,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
 
         address transceiverAt = registry.predictTransceiver(chainKey, provider);
-        address predicted = registry.predictXSafeAccount(chainKey, provider, ownerOf);
+        address predicted = registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
 
         uint256 world = vm.snapshotState();
 
@@ -253,12 +253,79 @@ contract SaltedDeploymentTest is Test {
         );
 
         vm.prank(ownerOf);
-        address transmitter = HubForAccounts(payable(hubAt)).createTransmitter();
+        address transmitter = HubForAccounts(payable(hubAt)).createTransmitter(bytes32(0));
 
         assertEq(
             transmitter, predicted, "the transmitter occupies the address its receivers do"
         );
         assertEq(MiniTransmitter(transmitter).owner(), ownerOf, "and it is theirs");
+    }
+
+    /// @dev THE SALT BUYS MORE THAN ONE ACCOUNT PER OWNER — one per purpose, per
+    ///      counterparty, per mandate — and each keeps the one-address-everywhere property
+    ///      independently.
+    function test_oneOwnerCanHoldSeveralAccounts() public {
+        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+        address ownerOf = address(0x7A11);
+
+        address a = registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
+        address b = registry.predictXSafeAccount(chainKey, provider, ownerOf, keccak256("ops"));
+
+        assertTrue(a != b, "a different salt is a different account");
+
+        // Each is still the same address on every parity chain.
+        vm.startPrank(owner);
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        registry.setCreate2Factory(arb, address(factory));
+        vm.stopPrank();
+
+        assertEq(a, registry.predictXSafeAccount(arb, provider, ownerOf, bytes32(0)));
+        assertEq(b, registry.predictXSafeAccount(arb, provider, ownerOf, keccak256("ops")));
+    }
+
+    /// @dev ONE OWNER'S SALT CANNOT REACH ANOTHER OWNER'S ACCOUNT. The pair is hashed, so
+    ///      there is no choice of salt that lands on somebody else's address.
+    function testFuzz_theOwnerIsAlwaysPartOfTheSalt(
+        address ownerA,
+        address ownerB,
+        bytes32 saltA,
+        bytes32 saltB
+    ) public {
+        vm.assume(ownerA != address(0) && ownerB != address(0));
+        vm.assume(ownerA != ownerB);
+        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+
+        assertTrue(
+            registry.predictXSafeAccount(chainKey, provider, ownerA, saltA)
+                != registry.predictXSafeAccount(chainKey, provider, ownerB, saltB),
+            "different owners, different accounts, whatever salt either picks"
+        );
+    }
+
+    /// @dev The hub creates the caller's account, and `createTransmitter` binds the owner
+    ///      to `msg.sender` rather than taking it as an argument.
+    function test_createTransmitterUsesTheCallerAndTheirSalt() public {
+        address hubAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        factory.arm(
+            hubAt,
+            address(new HubForAccounts()),
+            abi.encodeCall(HubForAccounts.initialize, (owner, address(new MiniTransmitter())))
+        );
+        HubForAccounts hub = HubForAccounts(payable(hubAt));
+
+        address ownerOf = address(0x7A11);
+        bytes32 userSalt = keccak256("treasury");
+
+        address predicted = hub.predictTransmitter(ownerOf, userSalt);
+
+        vm.prank(ownerOf);
+        assertEq(hub.createTransmitter(userSalt), predicted, "where the view said");
+        assertEq(MiniTransmitter(predicted).owner(), ownerOf);
+
+        // A second account for the same owner, under a different salt.
+        vm.prank(ownerOf);
+        address second = hub.createTransmitter(bytes32(0));
+        assertTrue(second != predicted);
     }
 
     /* ================================== mining ================================= */

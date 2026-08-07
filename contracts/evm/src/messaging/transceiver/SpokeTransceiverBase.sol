@@ -190,8 +190,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A spoke receives bootstrap messages and nothing else. The chainKey is
     ///      discarded: it is `HOME_CHAIN_KEY` or `_authenticateOrigin` already reverted.
     function _handleInbound(bytes32, bytes calldata message) internal override {
-        (address owner, Call[] memory calls) = Envelope.decodeBootstrap(message);
-        this.bootstrapInbound(owner, calls);
+        (address owner, bytes32 salt, Call[] memory calls) =
+            Envelope.decodeBootstrap(message);
+        this.bootstrapInbound(owner, salt, calls);
     }
 
     /// @notice Whether an inbound message's origin is the hub, in one comparison.
@@ -220,14 +221,14 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      exactly the address this receiver occupies here. Passing it explicitly rather
     ///      than assuming `address(this)` keeps the peer a stored fact, so nothing breaks
     ///      if the two ever diverge.
-    function _accountInitializer(address owner, Call[] memory calls)
+    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
         internal
         view
         override
         returns (bytes memory)
     {
         return abi.encodeCall(
-            IReceiverInit.initialize, (predictXSafeAccount(owner), calls)
+            IReceiverInit.initialize, (predictXSafeAccount(owner, salt), calls)
         );
     }
 
@@ -251,8 +252,13 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      because a bootstrap message arrived, and nothing else. Leaving an open creation
     ///      path would let anyone deploy an owner's account empty, one transaction ahead of
     ///      their bootstrap, and permanently deny it — `XSafeProxy` arms exactly once.
-    function bootstrapInbound(address owner, Call[] calldata calls) external {
+    /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO. The account address is
+    ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the
+    ///      address its transmitter occupies on Ethereum — which is the entire property.
+    function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls)
+        external
+    {
         require(msg.sender == address(this));
-        _createXSafeAccount(owner, calls);
+        _createXSafeAccount(owner, salt, calls);
     }
 }

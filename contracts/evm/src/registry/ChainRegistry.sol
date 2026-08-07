@@ -496,26 +496,27 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///
     /// @dev TWO CREATE2 STEPS, AND BOTH INPUTS ARE KNOWN. The transceiver is derived from
     ///      the provider's salt; the account is derived from the transceiver, with the
-    ///      OWNER as its salt. So an account address is computable on Ethereum for any
-    ///      owner on any parity chain before a single message has crossed — and it is the
+    ///      `(owner, salt)` pair as its salt. So an account address is computable on
+    ///      Ethereum for any owner on any parity chain before a single message has crossed — and it is the
     ///      same address their transmitter occupies here, because both sides deploy the
     ///      same argument-free proxy from the same address at the same salt.
     ///
     ///      The salt must match `TransceiverBase.accountSalt`, which is
-    ///      `keccak256(abi.encode(owner))`. It is written out here rather than imported
+    ///      `keccak256(abi.encode(owner, salt))`. It is written out here rather than imported
     ///      because this contract is on Ethereum and that one is on the destination;
     ///      `test/SaltedDeployment.t.sol` asserts the two agree.
     function predictXSafeAccount(
         bytes32 chainKey,
         bytes32 messageProvider,
-        address owner
+        address owner,
+        bytes32 salt
     ) external view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
         return AddressDerive.create2(
-            transceiver, keccak256(abi.encode(owner)), d.accountInitCodeHash
+            transceiver, keccak256(abi.encode(owner, salt)), d.accountInitCodeHash
         );
     }
 

@@ -32,26 +32,27 @@ library Envelope {
     ///      rather than run carries a self-call to the receiver's own `commit`, so this
     ///      envelope needs no second shape for the deferred case.
     ///
-    /// @dev THE OWNER IS IN THE MESSAGE, AND IT IS THE OWNER RATHER THAN THE TRANSMITTER.
-    ///      The destination derives the account address from it — `accountSalt(owner)` —
+    /// @dev THE OWNER AND THE SALT ARE IN THE MESSAGE, AND IT IS THE OWNER RATHER THAN THE
+    ///      TRANSMITTER. The destination derives the account address from the pair —
+    ///      `accountSalt(owner, salt)` —
     ///      which is what puts an owner's transmitter and their receivers on one address.
     ///      The transmitter's own address could not serve: a CREATE2 address cannot be
     ///      derived from itself. Nothing the bridge reports says who on Ethereum authorized
     ///      the message, since the hub is shared by every owner, so it is stated.
-    function encodeBootstrap(address owner, Call[] memory calls)
+    function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(owner, calls);
+        return abi.encode(owner, salt, calls);
     }
 
     function decodeBootstrap(bytes calldata message)
         internal
         pure
-        returns (address owner, Call[] memory calls)
+        returns (address owner, bytes32 salt, Call[] memory calls)
     {
-        (owner, calls) = abi.decode(message, (address, Call[]));
+        (owner, salt, calls) = abi.decode(message, (address, bytes32, Call[]));
     }
 
     /* ============================== spoke -> hub =============================== */

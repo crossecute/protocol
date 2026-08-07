@@ -81,7 +81,7 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     }
 
     function inbound(address transmitter, Call[] calldata calls) external {
-        this.bootstrapInbound(transmitter, calls);
+        this.bootstrapInbound(transmitter, bytes32(0), calls);
     }
 }
 
@@ -206,7 +206,7 @@ contract SubmitTest is Test {
         t.initialize(address(this), address(new MockReceiver()));
 
         // The bootstrap arrives naming the OWNER, and the account is derived from it.
-        address account = t.predictXSafeAccount(owner);
+        address account = t.predictXSafeAccount(owner, bytes32(0));
         t.inbound(owner, _deferred(account, commitment));
 
         // Arrival manufactured the receiver and its payload pinned the hash. The array
@@ -237,7 +237,7 @@ contract SubmitTest is Test {
         vm.chainId(42161); // a different destination
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockReceiver()));
-        address account = t.predictXSafeAccount(owner);
+        address account = t.predictXSafeAccount(owner, bytes32(0));
         t.inbound(owner, _deferred(account, commitment));
 
         // Arrival cannot tell — it has no array. The mismatch surfaces when the payload

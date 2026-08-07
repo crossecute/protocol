@@ -64,32 +64,50 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         keccak256(type(XSafeProxy).creationCode);
 
     event UpgradesLocked();
-    event XSafeAccountCreated(address indexed owner, address indexed account);
+    /// @dev Owner and account are indexed; the salt rides in the data. Three indexed
+    ///      fields would exhaust the topic budget for a value nobody filters on — an
+    ///      indexer wants "this owner's accounts" or "this address", not "everyone who
+    ///      chose salt 7".
+    event XSafeAccountCreated(
+        address indexed owner, address indexed account, bytes32 salt
+    );
 
     error ZeroTransmitterCommit();
     error UpgradesAreLocked();
     error ZeroOwner();
-    error XSafeAccountExists(address owner, address account);
+    error XSafeAccountExists(address owner, bytes32 salt, address account);
     error NoAccountImplementation();
 
     /* ============================ account manufacture ========================== */
 
     /// @notice The salt an owner's account deploys at, on every chain.
-    /// @dev THE OWNER, AND NOTHING ELSE. It has to be a value that means the same thing on
-    ///      both sides — the transmitter's address cannot be it, because a CREATE2 address
-    ///      cannot be derived from itself. The owner is the one identity Ethereum and the
-    ///      destination both name.
-    function accountSalt(address owner) public pure returns (bytes32) {
-        return keccak256(abi.encode(owner));
+    ///
+    /// @dev THE OWNER AND A SALT THEY CHOOSE. The owner is what makes the address mean the
+    ///      same thing on both sides — a CREATE2 address cannot be derived from itself, so
+    ///      the transmitter's own address could never serve, and the owner is the one
+    ///      identity Ethereum and the destination both name. The salt is what lets one
+    ///      owner hold more than one account: one per purpose, per counterparty, per
+    ///      mandate, each with its own address on every chain.
+    ///
+    /// @dev IT IS HASHED, NOT CONCATENATED. `abi.encode` is fixed-width, so no
+    ///      `(owner, salt)` pair can collide with another by sliding bytes across the
+    ///      boundary — which `encodePacked` over an address and a bytes32 would not
+    ///      guarantee if either ever became variable-length.
+    function accountSalt(address owner, bytes32 salt) public pure returns (bytes32) {
+        return keccak256(abi.encode(owner, salt));
     }
 
     /// @notice Where an owner's account lives on this chain — before it exists.
     /// @dev Identical on every chain sharing Ethereum's CREATE2 formula, because all three
-    ///      inputs are: this contract's address (hub and spoke share one), the owner, and
-    ///      a constant initcode.
-    function predictXSafeAccount(address owner) public view returns (address) {
+    ///      inputs are: this contract's address (hub and spoke share one), the
+    ///      `(owner, salt)` pair, and a constant initcode.
+    function predictXSafeAccount(address owner, bytes32 salt)
+        public
+        view
+        returns (address)
+    {
         return Create2.computeAddress(
-            accountSalt(owner), XSAFE_PROXY_INIT_CODE_HASH, address(this)
+            accountSalt(owner, salt), XSAFE_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
@@ -105,7 +123,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev DEPLOY, ARM, AND LOCK IN ONE CALL. `XSafeProxy` offers no way to install logic
     ///      without surrendering the upgrade key in the same call, so there is no reachable
     ///      state in which an account has real logic and a live key. See `XSafeProxy`.
-    function _createXSafeAccount(address owner, Call[] memory calls)
+    function _createXSafeAccount(address owner, bytes32 salt, Call[] memory calls)
         internal
         returns (address account)
     {
@@ -114,15 +132,15 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address implementation = _accountImplementation();
         if (implementation == address(0)) revert NoAccountImplementation();
 
-        account = predictXSafeAccount(owner);
-        if (account.code.length != 0) revert XSafeAccountExists(owner, account);
+        account = predictXSafeAccount(owner, salt);
+        if (account.code.length != 0) revert XSafeAccountExists(owner, salt, account);
 
-        Create2.deploy(0, accountSalt(owner), type(XSafeProxy).creationCode);
+        Create2.deploy(0, accountSalt(owner, salt), type(XSafeProxy).creationCode);
         IXSafeProxy(account).upgradeInitializeAndLock(
-            implementation, _accountInitializer(owner, calls)
+            implementation, _accountInitializer(owner, salt, calls)
         );
 
-        emit XSafeAccountCreated(owner, account);
+        emit XSafeAccountCreated(owner, account, salt);
     }
 
     /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.
@@ -130,7 +148,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     /// @notice The initializer call that logic is armed with, run by delegatecall inside
     ///         the upgrade so the account is never live and uninitialized.
-    function _accountInitializer(address owner, Call[] memory calls)
+    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
         internal
         view
         virtual

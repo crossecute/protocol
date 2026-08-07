@@ -115,9 +115,9 @@ contract InboundAuthTest is Test {
     /// @dev ONE ORIGIN, SO IT IS A COMPARISON. No registry, no lookup that could return
     ///      the wrong answer if configuration drifted.
     function test_spokeAcceptsTheHubAndStandsTheReceiverUp() public {
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, _boot()));
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
 
-        MockReceiver r = MockReceiver(payable(spoke.predictXSafeAccount(transmitter)));
+        MockReceiver r = MockReceiver(payable(spoke.predictXSafeAccount(transmitter, bytes32(0))));
         assertEq(r.sourceTransmitter(), address(r), "its peer is its own address across chains");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }
@@ -125,13 +125,13 @@ contract InboundAuthTest is Test {
     /// @dev A sibling spoke sending from a chain the hub also talks to is still not the
     ///      hub. Both halves of the check are load-bearing.
     function test_spokeRejectsTheRightRouteFromTheWrongSender() public {
-        bytes memory msg_ = Envelope.encodeBootstrap(transmitter, _boot());
+        bytes memory msg_ = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
         vm.expectRevert(SpokeTransceiverBase.NotHomeOrigin.selector);
         spoke.arrive(HOME_ROUTE, abi.encodePacked(address(0xBAD)), msg_);
     }
 
     function test_spokeRejectsTheRightSenderFromTheWrongRoute() public {
-        bytes memory msg_ = Envelope.encodeBootstrap(transmitter, _boot());
+        bytes memory msg_ = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
         vm.expectRevert(SpokeTransceiverBase.NotHomeOrigin.selector);
         spoke.arrive(abi.encode(uint32(30184)), HOME_SENDER, msg_);
     }
@@ -248,7 +248,7 @@ contract InboundAuthTest is Test {
     ///      not a misread.
     function test_theWrongShapeDoesNotDecodeSilently() public {
         _wireSpokeChain(30184, 8453, address(0xC0DE));
-        bytes memory wrongWay = Envelope.encodeBootstrap(transmitter, _boot());
+        bytes memory wrongWay = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
 
         vm.expectRevert();
         hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(address(0xC0DE)), wrongWay);
@@ -261,8 +261,8 @@ contract InboundAuthTest is Test {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: target, value: 3, data: data});
 
-        (address gotT, Call[] memory got) =
-            this.peekBootstrap(Envelope.encodeBootstrap(t_, calls));
+        (address gotT,, Call[] memory got) =
+            this.peekBootstrap(Envelope.encodeBootstrap(t_, bytes32(0), calls));
 
         assertEq(gotT, t_);
         assertEq(got.length, 1);
@@ -274,7 +274,7 @@ contract InboundAuthTest is Test {
     function peekBootstrap(bytes calldata m)
         external
         pure
-        returns (address, Call[] memory)
+        returns (address, bytes32, Call[] memory)
     {
         return Envelope.decodeBootstrap(m);
     }

@@ -71,14 +71,14 @@ owner
  ▼
 hub transceiver .bootstrap(chainKey, calls)                            msg.sender = transmitter
  │    (counterpart, route) = _route(chainKey)                          ← provenance bar applies here
- │    _sendMessage(chainKey, Envelope.encodeBootstrap(owner, calls))
+ │    _sendMessage(chainKey, Envelope.encodeBootstrap(owner, salt, calls))
  ▼
  ══════════════════ bridge ══════════════════
  │
  ▼  spoke transceiver ._onInbound(route, sender, message)
       _authenticateOrigin  → must be the hub
-      _handleInbound → bootstrapInbound(owner, calls):
-        deploy XSafeProxy at accountSalt(owner)                        CREATE2, no args
+      _handleInbound → bootstrapInbound(owner, salt, calls):
+        deploy XSafeProxy at accountSalt(owner, salt)                  CREATE2, no args
         upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))
           │   installs logic, executes the calls, drops the upgrade key — one call
           └─  calls back: reportSelf()          ← the receiver's only outbound
@@ -88,8 +88,8 @@ hub transceiver .bootstrap(chainKey, calls)                            msg.sende
  ▼  hub transceiver ._handleInbound  → onDestinationReceiver → registry
 ```
 
-**The message carries the OWNER, not the transmitter.** The account address derives from
-it, which is what puts an owner's transmitter and their receivers on one address. The
+**The message carries the OWNER AND THEIR SALT, not the transmitter.** The account address
+derives from the pair, which is what puts an owner's transmitter and their receivers on one address. The
 transmitter's own address could not serve: a CREATE2 address cannot be derived from itself.
 The receiver's peer is therefore its own address, since that is where the transmitter sits
 on Ethereum.
@@ -169,7 +169,8 @@ every other VM moves native currency as an explicit asset.
 - `_createXSafeAccount(owner, calls)` on `TransceiverBase` — deploy, arm, lock, one call.
   Two virtuals decide what is installed: `_accountImplementation` (hub: transmitter, spoke:
   receiver) and `_accountInitializer`.
-- `createTransmitter()` on the hub — `owner` is `msg.sender` by construction.
+- `createTransmitter(bytes32 salt)` on the hub — `owner` is `msg.sender` by construction;
+  `predictTransmitter(owner, salt)` gives the address before it exists.
 - **No public creation path on a spoke.** An account there exists because a bootstrap
   arrived. An open one would let anyone deny an owner their bootstrap by deploying the
   account empty first, since `XSafeProxy` arms exactly once.
@@ -285,10 +286,11 @@ No fallback storage, and no payload size cap — the provider enforces the latte
 - **One owner, one address, every EVM chain.** An owner's transmitter on Ethereum and
   their receiver on Base are the same address. Both are deployed as `XSafeProxy` — an
   argument-free proxy, so its initcode is one constant — from the transceiver, at
-  `accountSalt(owner)`. Hub and spoke share an address, so all three CREATE2 inputs match
+  `accountSalt(owner, salt)`. The caller's salt lets one owner hold several accounts, each
+  keeping the one-address property independently. Hub and spoke share an address, so all three CREATE2 inputs match
   and only the installed implementation differs, which the derivation never sees. A minimal
   clone could not do this: EIP-1167 embeds the implementation in its initcode. Transmitters
-  are created by `createTransmitter()` on the hub, where `owner` is `msg.sender` by
+  are created by `createTransmitter(salt)` on the hub, where `owner` is `msg.sender` by
   construction.
 - **The upgrade key exists for part of one transaction.** `XSafeProxy` offers exactly one
   admin operation, which installs the implementation, runs the initializer, and zeroes the
@@ -333,6 +335,6 @@ list rather than three that drift.
   and how much they receive.
 - `finalize` is permissionless; `execute` is gated. Exactly one of "the payload is checked"
   or "the caller is checked" holds, and each entry point picks a different one.
-- Account addresses are CREATE2 on the owner alone, fixed for the life of the protocol and
-  pinnable in a signed payload. One owner has one address on every parity chain.
+- Account addresses are CREATE2 on `(owner, salt)`, fixed for the life of the protocol and
+  pinnable in a signed payload. Each account has one address on every parity chain.
 - Provenance gates bootstrap — the first message to a chain — rather than every send.

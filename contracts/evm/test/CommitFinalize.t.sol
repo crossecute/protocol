@@ -106,7 +106,7 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     /// @dev Stands in for `_onInbound`: the real path decodes the payload and reaches
     ///      `bootstrapInbound` via a self-call.
     function inbound(address transmitter, Call[] calldata calls) external {
-        this.bootstrapInbound(transmitter, calls);
+        this.bootstrapInbound(transmitter, bytes32(0), calls);
     }
 }
 
@@ -207,7 +207,7 @@ contract CommitFinalizeTest is Test {
         internal
         returns (MockReceiver r)
     {
-        address predicted = t_.predictXSafeAccount(tx_);
+        address predicted = t_.predictXSafeAccount(tx_, bytes32(0));
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -380,7 +380,7 @@ contract CommitFinalizeTest is Test {
     /// @dev An account is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
     function test_anOwnerGetsExactlyOneAccount() public {
-        address predicted = t.predictXSafeAccount(transmitter);
+        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertEq(
@@ -391,7 +391,7 @@ contract CommitFinalizeTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, predicted
+                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), predicted
             )
         );
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
@@ -399,7 +399,7 @@ contract CommitFinalizeTest is Test {
 
     function test_bootstrapInboundIsSelfCallOnly() public {
         vm.expectRevert();
-        t.bootstrapInbound(transmitter, new Call[](0));
+        t.bootstrapInbound(transmitter, bytes32(0), new Call[](0));
     }
 
     /// @dev THE TRANSCEIVER HAS NO WAY TO REACH A RECEIVER AFTER CREATING IT. Bootstrap is
@@ -411,7 +411,7 @@ contract CommitFinalizeTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, address(r)
+                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), address(r)
             )
         );
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
@@ -423,7 +423,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = t.predictXSafeAccount(transmitter);
+        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -439,7 +439,7 @@ contract CommitFinalizeTest is Test {
     /// @dev The salt is the transmitter alone, so the address does not move between
     ///      payloads — it is knowable before the first message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = t.predictXSafeAccount(transmitter);
+        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -456,7 +456,7 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public {
         assertTrue(
-            t.predictXSafeAccount(transmitter) != t.predictXSafeAccount(address(0xBEEF)),
+            t.predictXSafeAccount(transmitter, bytes32(0)) != t.predictXSafeAccount(address(0xBEEF), bytes32(0)),
             "transmitter must vary the address"
         );
     }
@@ -513,7 +513,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(t.predictXSafeAccount(transmitter)));
+        MockReceiver r = MockReceiver(payable(t.predictXSafeAccount(transmitter, bytes32(0))));
 
         assertEq(r.commitment(), pending, "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -535,7 +535,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = rt.predictXSafeAccount(transmitter);
+        address addr = rt.predictXSafeAccount(transmitter, bytes32(0));
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -566,7 +566,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = t.predictXSafeAccount(transmitter);
+        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -586,16 +586,16 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with — a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = t.predictXSafeAccount(transmitter);
+        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
 
         vm.expectEmit(true, true, false, false, address(t));
-        emit TransceiverBase.XSafeAccountCreated(transmitter, predicted);
+        emit TransceiverBase.XSafeAccountCreated(transmitter, predicted, bytes32(0));
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, predicted
+                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), predicted
             )
         );
         t.inbound(transmitter, _deferred(predicted, hashOf(_otherCalls())));
@@ -728,7 +728,7 @@ contract CommitFinalizeTest is Test {
     ///      because the CREATE2 salt is the transmitter. There is no shared slot and no
     ///      per-sender bookkeeping to get wrong.
     function test_transceiverHoldsNoCommitmentState() public {
-        t.inbound(transmitter, _deferred(t.predictXSafeAccount(transmitter), hashOf(_calls())));
+        t.inbound(transmitter, _deferred(t.predictXSafeAccount(transmitter, bytes32(0)), hashOf(_calls())));
 
         (bool a,) = address(t).staticcall(
             abi.encodeWithSignature("pendingOf(address)", transmitter)
@@ -738,7 +738,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "no single slot either");
 
         assertEq(
-            MockReceiver(payable(t.predictXSafeAccount(transmitter))).commitment(),
+            MockReceiver(payable(t.predictXSafeAccount(transmitter, bytes32(0)))).commitment(),
             hashOf(_calls()),
             "the approval lives with the sender it belongs to"
         );
@@ -765,7 +765,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = rt.predictXSafeAccount(transmitter);
+        address poisoned = rt.predictXSafeAccount(transmitter, bytes32(0));
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -779,7 +779,7 @@ contract CommitFinalizeTest is Test {
         RevertingReceiver(payable(poisoned)).finalize(stuck);
 
         // The other sender is entirely unaffected, now and repeatedly.
-        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictXSafeAccount(transmitter2)));
+        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictXSafeAccount(transmitter2, bytes32(0))));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 

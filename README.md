@@ -181,7 +181,7 @@ setProviderDeployment(messageProvider, salt, transceiverInitCodeHash, accountIni
 setCreate2Factory(chainKey, factory)          // defaults to Arachnid's 0x4e59..
 
 predictTransceiver(chainKey, messageProvider) view
-predictXSafeAccount(chainKey, messageProvider, owner) view
+predictXSafeAccount(chainKey, messageProvider, owner, salt) view
 ```
 
 - **The salt is per provider, not per chain.** One salt used everywhere is what makes a
@@ -375,21 +375,27 @@ selector delegates from then on and the proxy is indistinguishable from a plain 
 installs:
 
 ```
-accountSalt(address owner) pure            // keccak256(abi.encode(owner))
-predictXSafeAccount(address owner) view    // CREATE2(this, salt, XSAFE_PROXY_INIT_CODE_HASH)
-_createXSafeAccount(owner, calls)          // deploy -> arm -> locked, one call
+accountSalt(address owner, bytes32 salt) pure       // keccak256(abi.encode(owner, salt))
+predictXSafeAccount(address owner, bytes32 salt) view
+_createXSafeAccount(owner, salt, calls)             // deploy -> arm -> locked, one call
 
-_accountImplementation() virtual           // hub: transmitter   spoke: receiver
-_accountInitializer(owner, calls) virtual  // the initializer that logic is armed with
+_accountImplementation() virtual                    // hub: transmitter  spoke: receiver
+_accountInitializer(owner, salt, calls) virtual
 ```
 
-- **The salt is the owner, and it had to be.** A CREATE2 address cannot be derived from
-  itself, so the transmitter's own address could never have served as the receiver's salt.
-  The owner is the one identity Ethereum and the destination both name
+- **The salt is `(owner, salt)`, and the owner half had to be there.** A CREATE2 address
+  cannot be derived from itself, so the transmitter's own address could never have served;
+  the owner is the one identity Ethereum and the destination both name. The caller's half
+  is what lets one owner hold several accounts — one per purpose, per counterparty, per
+  mandate — each with its own address on every chain. The two are hashed together, so no
+  choice of salt reaches another owner's account
+- **The salt crosses with the bootstrap message.** A spoke that only knew the owner could
+  not reproduce the address its transmitter occupies on Ethereum, which is the whole
+  property
 - The proxy, the salt, and the deployer address are identical on both sides. Only
   `_accountImplementation` differs, and the derivation never sees it — the same argument
   that lets a hub and a spoke share an address, one level down
-- `createTransmitter()` on the hub takes no arguments: **`owner` is `msg.sender` by
+- `createTransmitter(bytes32 salt)` takes only the salt: **`owner` is `msg.sender` by
   construction, not by argument.** An owner passed in could be anyone, and the derivation
   only means something if the party it names is the party that asked for it. That binding
   is what stops one party squatting an address another intends to use — and here the
@@ -432,17 +438,17 @@ that chain.
 ```
 owner → transmitter.bootstrap(chainId, calls)  onlyOwner
       → hub transceiver: (counterpart, route) = _route(chainKey)   ← provenance bar here
-      ══ bridge ══   Envelope.encodeBootstrap(owner, calls)
+      ══ bridge ══   Envelope.encodeBootstrap(owner, salt, calls)
       → spoke transceiver: authenticate as the hub, then
         _createXSafeAccount(owner, calls):
-          deploy XSafeProxy at accountSalt(owner)
+          deploy XSafeProxy at accountSalt(owner, salt)
           arm it with the receiver implementation, run the payload, lock  — one call
         → receiver executes the calls, then reports its own address back
       ══ bridge ══
       → hub transceiver → onDestinationReceiver → registry
 ```
 
-**The message carries the owner, not the transmitter.** The destination derives the account
+**The message carries the owner and their salt, not the transmitter.** The destination derives the account
 address from it, which is what puts the transmitter and the receiver on one address; the
 transmitter's own address could not serve, since a CREATE2 address cannot be derived from
 itself.
@@ -536,11 +542,11 @@ routeTo(bytes32 chainKey) view             // -> _routeTo, hub or spoke
 lockUpgrades()
 
 // HubTransceiverBase — Ethereum
-createTransmitter() returns (address)      // owner is msg.sender
-predictTransmitter(address owner) view
+createTransmitter(bytes32 salt) returns (address)   // owner is msg.sender
+predictTransmitter(address owner, bytes32 salt) view
 
 // SpokeTransceiverBase — everywhere else
-bootstrapInbound(address owner, Call[] calls)   // self-call, from _onInbound
+bootstrapInbound(address owner, bytes32 salt, Call[] calls)   // self-call
 ```
 
 **A hub cannot make a receiver — not gated, absent.** Manufacturing lives on each side
@@ -617,11 +623,11 @@ split below. That asymmetry is isolated behind two virtual hooks, `_counterpartO
     calls back here with its own address so the transceiver can report it home
   - `_configureReceiver(account)` is a virtual: setting the new receiver's provider peer is
     provider-specific. The peer value itself is not — it is the account's own address
-- **Nothing to wedge.** A payload that can never execute fails at its own owner's account —
-  one per owner, since the CREATE2 salt is the owner — and blocks nobody. Isolation is
+- **Nothing to wedge.** A payload that can never execute fails at its own account — one per
+  `(owner, salt)` — and blocks nobody. Isolation is
   structural rather than bookkeeping
-- The salt is the **owner alone**. An owner's account address is therefore fixed for the
-  life of the protocol — known before the first message, unchanged after the thousandth —
+- The salt is the **owner and their chosen salt**. An account address is therefore fixed
+  for the life of the protocol — known before the first message, unchanged after the thousandth —
   so it can be pinned in a signed payload, and so the transmitter can point its peer at the
   address before the receiver exists
 - **Upgrades lock one way.** The proxy must be upgradeable to get off the
