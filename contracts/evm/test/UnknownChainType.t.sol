@@ -74,20 +74,15 @@ contract UnknownChainTypeTest is Test {
         assertEq(chainKey, keccak256(chainId), "the key is just the envelope hash");
     }
 
-    /// @dev Routing, the reverse index, and the directory are all chain-type-agnostic.
-    function test_routingWorksForAnUndefinedChainType() public {
+    /// @dev The directory is chain-type-agnostic: a transceiver id can be declared for a
+    ///      chain nothing here has ever heard of.
+    function test_theDirectoryWorksForAnUndefinedChainType() public {
         vm.startPrank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);
-        registry.setProviderRoute(chainKey, provider, abi.encode(uint32(4242)));
         registry.setTransceiverId(chainKey, provider, keccak256("tx.unknown"));
         vm.stopPrank();
 
-        assertEq(registry.providerRoute(chainKey, provider), abi.encode(uint32(4242)));
-        assertEq(
-            registry.chainKeyOfRoute(provider, abi.encode(uint32(4242))),
-            chainKey,
-            "the reverse index does not care what VM this is"
-        );
+        assertEq(registry.transceiverIdOf(chainKey, provider), keccak256("tx.unknown"));
     }
 
     /// @dev A destination on an unknown chain can report its receiver and be graded, which

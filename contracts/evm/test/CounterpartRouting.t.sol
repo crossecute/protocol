@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
 import {ChainType} from "src/addressing/ChainType.sol";

@@ -43,6 +43,8 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     }
 
     /// @notice LayerZero's endpoint id for the hub. Exposed for off-chain checks.
+    /// @dev A spoke needs no route TABLE — it has exactly one destination and knows it at
+    ///      compile time. `setEid` exists only on the hub, which faces N chains.
     function homeEid() external pure returns (uint32) {
         return LzCodec.ETHEREUM_EID;
     }

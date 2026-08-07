@@ -168,15 +168,6 @@ abstract contract HubTransceiverBase is TransceiverBase {
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev Reverts with `NoProviderRoute` when unset rather than returning empty: an
-    ///      unconfigured eid and an eid of zero are different states, and a send that
-    ///      confused them would go into the void.
-    function _routeTo(bytes32 chainKey) internal view override returns (bytes memory) {
-        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        return chainRegistry.providerRoute(chainKey, messageProvider);
-    }
-
-    /// @inheritdoc TransceiverBase
     ///
     /// @dev N ORIGINS, SO IT IS A LOOKUP. The route names the chain and the registry names
     ///      that chain's counterpart, at this transceiver's provenance bar — so a hub
@@ -206,12 +197,10 @@ abstract contract HubTransceiverBase is TransceiverBase {
     }
 
     /// @notice Turn a provider's native source id back into a chain, on the inbound path.
-    /// @dev The reverse of `_route`, and the reason the registry keeps a reverse index.
-    ///      A provider hands over a raw source eid; nothing else in the protocol speaks
-    ///      that language, so it is resolved once, here, at the edge.
+    /// @dev The reverse of `_routeTo`, answered from the same write-once table that serves
+    ///      the outbound direction — one setter for both, because two would drift.
     function _chainKeyOf(bytes memory route) internal view returns (bytes32) {
-        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        return chainRegistry.chainKeyOfRoute(messageProvider, route);
+        return chainKeyOfRoute(route);
     }
 
     /// @notice Inbound callback: the destination reports where it created the receiver.

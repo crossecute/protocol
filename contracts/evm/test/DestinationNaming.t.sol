@@ -8,6 +8,7 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBa
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzCodec} from "src/protocols/layerzero/LzCodec.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
@@ -111,7 +112,7 @@ contract DestinationNamingTest is Test {
         bytes32 id = keccak256("lz.base");
         registry.resolveEvmCreate2(id, 8453, address(0x4e59), bytes32(0), bytes32(0));
         registry.setTransceiverId(baseKey, provider, id);
-        registry.setProviderRoute(baseKey, provider, LzCodec.encodeEid(BASE_EID));
+        hub.setEid(baseKey, BASE_EID);
         vm.stopPrank();
     }
 
@@ -129,29 +130,21 @@ contract DestinationNamingTest is Test {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
-        vm.expectRevert(ChainRegistry.RouteInUse.selector);
-        registry.setProviderRoute(arbKey, provider, LzCodec.encodeEid(BASE_EID));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransceiverBase.RouteInUse.selector, keccak256(LzCodec.encodeEid(BASE_EID))
+            )
+        );
+        hub.setEid(arbKey, BASE_EID);
         vm.stopPrank();
-        assertEq(registry.chainKeyOfRoute(provider, LzCodec.encodeEid(BASE_EID)), baseKey);
-    }
-
-    /// @dev Repointing a chain to a new eid must clear the old reverse entry, or the
-    ///      stale one keeps resolving and the new one collides with itself.
-    function test_repointingAnEidClearsTheOldReverseEntry() public {
-        bytes32 baseKey = _wireBase();
-        vm.prank(msig);
-        registry.setProviderRoute(baseKey, provider, LzCodec.encodeEid(ARB_EID));
-
-        assertEq(hub.eidFor(baseKey), ARB_EID);
-        vm.expectRevert(ChainRegistry.NoProviderRoute.selector);
-        registry.chainKeyOfRoute(provider, LzCodec.encodeEid(BASE_EID));
+        assertEq(hub.chainKeyOfRoute(LzCodec.encodeEid(BASE_EID)), baseKey);
     }
 
     /// @dev Setting the same route twice is a no-op, not a self-collision.
     function test_rewritingTheSameRouteIsIdempotent() public {
         bytes32 baseKey = _wireBase();
         vm.prank(msig);
-        registry.setProviderRoute(baseKey, provider, LzCodec.encodeEid(BASE_EID));
+        hub.setEid(baseKey, BASE_EID);
         assertEq(hub.eidFor(baseKey), BASE_EID);
     }
 
@@ -161,23 +154,25 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         vm.stopPrank();
-        vm.expectRevert(ChainRegistry.NoProviderRoute.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NoRouteFor.selector, key)
+        );
         hub.eidFor(key);
     }
 
-    /// @dev A live provider route is a claim on the chain just as a transceiver id is.
-    function test_chainKeyWithALiveRouteCannotBeRemoved() public {
+    /// @dev A live transceiver id is a claim on the chain, so the directory refuses to
+    ///      drop it out from under one. Routes are no longer the registry's business, so
+    ///      they are not part of this check — they live on the transceiver.
+    function test_chainKeyWithALiveTransceiverCannotBeRemoved() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        registry.setProviderRoute(key, provider, LzCodec.encodeEid(30111));
+        registry.setTransceiverId(key, provider, keccak256("lz.op"));
 
         vm.expectRevert(ChainRegistry.ChainKeyInUse.selector);
         registry.removeChainKey(key);
-
-        registry.setProviderRoute(key, provider, "");
-        registry.removeChainKey(key);
         vm.stopPrank();
-        assertFalse(registry.hasChainKey(key));
+
+        assertTrue(registry.hasChainKey(key));
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable
@@ -191,25 +186,48 @@ contract DestinationNamingTest is Test {
         vm.stopPrank();
 
         assertEq(hub.counterpartOn(key).length, 20, "counterpart resolves");
-        vm.expectRevert(ChainRegistry.NoProviderRoute.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NoRouteFor.selector, key)
+        );
         hub.routeTo(key);
     }
 
     function test_setProviderRouteIsOwnerGated() public {
         bytes32 baseKey = _wireBase();
         vm.expectRevert();
-        registry.setProviderRoute(baseKey, provider, LzCodec.encodeEid(ARB_EID));
+        hub.setEid(baseKey, ARB_EID);
     }
 
-    function test_providerRouteRequiresARegisteredChainAndProvider() public {
-        vm.startPrank(msig);
-        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        registry.setProviderRoute(keccak256("nope"), provider, LzCodec.encodeEid(1));
+    /// @dev A route is WRITE-ONCE. Re-pointing one would redirect every message to that
+    ///      destination at once, which is a redeploy rather than a config edit.
+    function test_aRouteCannotBeRepointed() public {
+        bytes32 baseKey = _wireBase();
 
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        vm.expectRevert(ChainRegistry.UnknownMessageProvider.selector);
-        registry.setProviderRoute(key, keccak256("wormhole"), LzCodec.encodeEid(1));
-        vm.stopPrank();
+        vm.prank(msig);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.RouteAlreadySet.selector, baseKey)
+        );
+        hub.setEid(baseKey, ARB_EID);
+
+        assertEq(hub.eidFor(baseKey), BASE_EID, "unchanged");
+    }
+
+    /// @dev THE ROUTE LIVES WHERE THE SENDING HAPPENS. A registry read would put a second
+    ///      shared contract in the path of every send, and a compromised one could
+    ///      misroute a payload — which on the execute-on-arrival path means it runs on the
+    ///      wrong chain, with no commitment binding the destination.
+    function test_theRegistryHoldsNoRoutes() public {
+        (bool a,) = address(registry).call(
+            abi.encodeWithSignature(
+                "setProviderRoute(bytes32,bytes32,bytes)", bytes32(0), bytes32(0), ""
+            )
+        );
+        assertFalse(a, "no setProviderRoute");
+
+        (bool b,) = address(registry).staticcall(
+            abi.encodeWithSignature("providerRoute(bytes32,bytes32)", bytes32(0), bytes32(0))
+        );
+        assertFalse(b, "and no reader for one");
     }
 
     /* ================================ the spoke ================================ */
@@ -286,7 +304,8 @@ contract DestinationNamingTest is Test {
     function test_routeIsFixedWidthSoMistypedConfigFails() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        registry.setProviderRoute(key, provider, abi.encodePacked(uint32(30111)));
+        // Packed, not abi.encoded — the width a careless deploy script would write.
+        hub.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();
 
         assertEq(LzCodec.encodeEid(30111).length, 32, "abi.encode pads to a word");

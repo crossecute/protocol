@@ -98,19 +98,13 @@ declared routes, and a **resolution table** of where those routes actually land.
   - `addMessageProvider(string name)` / `removeMessageProvider(bytes32)`
 - `chainKey => messageProvider => transceiverId` via `setTransceiverId` (both keys must
   already be registered)
-- `chainKey => messageProvider => route` via `setProviderRoute` — the provider's **own**
-  name for that chain, stored as opaque bytes: a LayerZero uint32 eid, a Hyperlane uint32
-  domain, a Wormhole uint16, a CCIP uint64 selector, an Axelar chain-name string. This is
-  the only place an eid exists anywhere in the protocol
-  - Encoded with `abi.encode`, not `encodePacked`. Fixed width means a value configured at
-    the wrong width fails in `abi.decode` at the transceiver rather than silently
-    reinterpreting as a different chain
-  - A **reverse index** `messageProvider => keccak(route) => chainKey` is maintained in the
-    same setter, because inbound a provider hands over a raw source eid and nothing else in
-    the protocol speaks that language. It is injective per provider: two chainKeys sharing
-    one eid would let an inbound message be attributed to the wrong source chain, so a
-    collision reverts. Re-pointing clears the old entry first
-  - `removeChainKey` refuses while a route is live, same as for a transceiverId
+
+**The registry holds no provider routes.** A message provider's own name for a chain — a
+LayerZero eid, a Hyperlane domain, a Wormhole uint16 — lives on the **transceiver**,
+because that is the contract that sends and receives. Keeping it here would put a second
+shared contract in the path of every send and let a compromised one misroute a payload;
+on the execute-on-arrival path there is no commitment binding the destination, so a wrong
+id means the payload runs on the wrong chain.
 
 ##### Resolution (`transceiverId => ForeignRef`)
 
@@ -548,6 +542,18 @@ predictTransmitter(address owner, bytes32 salt) view
 // SpokeTransceiverBase — everywhere else
 bootstrapInbound(address owner, bytes32 salt, Call[] calls)   // self-call
 ```
+
+**The route table lives here, and both directions come from one setter.** `setRoute` is
+write-once and `onlyAdmin`: re-pointing one would redirect every message to that
+destination at once, which is a redeploy rather than an edit. It maintains the reverse
+index in the same call, because two setters is how the two directions drift apart, and it
+is injective — two chains sharing one provider id would let an inbound message be
+attributed to the wrong source, which is a forgery primitive rather than a config mistake.
+
+The stored type is `bytes`, because the shape is the provider's business. A concrete
+binding wraps it in a typed setter: `LzHubTransceiver.setEid(chainKey, uint32)`, and a
+Hyperlane one would wrap the same slot as a `uint32 domain`. A spoke needs no table at all
+— it has one destination and knows it at compile time.
 
 **A hub cannot make a receiver — not gated, absent.** Manufacturing lives on each side
 rather than in this base, so there is no entry point on the Ethereum side for a later

@@ -177,6 +177,11 @@ every other VM moves native currency as an explicit asset.
 - **A hub has no receiver machinery at all** — not gated, absent. An address holds one
   contract, so a receiver on Ethereum would collide with the transmitter that belongs
   there.
+- `setRoute(chainKey, bytes)` — write-once, `onlyAdmin`, maintaining the reverse index in
+  the same call. The route lives here rather than in the registry because this is the
+  contract that sends: a registry read would put a second shared contract in the path of
+  every send and let a compromised one misroute a payload. `LzHubTransceiver.setEid` is the
+  typed wrapper.
 - It is the only caller of `_route`, `_counterpartOn`, and `_routeTo`, and therefore the
   only place `minCounterpartProvenance` is enforced — a bar on the first message to a
   chain rather than on every send.

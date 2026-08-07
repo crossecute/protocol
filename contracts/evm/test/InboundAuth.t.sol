@@ -9,6 +9,7 @@ import {OwnableUpgradeable} from
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -160,7 +161,10 @@ contract InboundAuthTest is Test {
         bytes32 id = keccak256(abi.encode("t", chainId));
         registry.resolveDerived(id, Erc7930.encodeEvm(chainId, counterpart));
         registry.setTransceiverId(chainKey, provider, id);
-        registry.setProviderRoute(chainKey, provider, abi.encode(eid));
+        vm.stopPrank();
+        vm.prank(msig);
+        hub.setRoute(chainKey, abi.encode(eid));
+        vm.startPrank(msig);
         vm.stopPrank();
     }
 
@@ -188,7 +192,7 @@ contract InboundAuthTest is Test {
     function test_hubRejectsAnUnknownRoute() public {
         bytes memory m =
             Envelope.encodeReceiverReport(transmitter, bytes(""));
-        vm.expectRevert(ChainRegistry.NoProviderRoute.selector);
+        vm.expectRevert(TransceiverBase.UnknownRoute.selector);
         hub.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
     }
 
@@ -212,8 +216,9 @@ contract InboundAuthTest is Test {
         address counterpart = address(0xC0DE);
         vm.startPrank(msig);
         bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        registry.setProviderRoute(chainKey, provider, abi.encode(uint32(30184)));
         vm.stopPrank();
+        vm.prank(msig);
+        hub.setRoute(chainKey, abi.encode(uint32(30184)));
 
         // Learned from the destination, so `Attested` — the weakest grade there is.
         vm.prank(address(hub));

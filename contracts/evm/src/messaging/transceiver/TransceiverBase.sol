@@ -76,11 +76,98 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     error ZeroTransmitterCommit();
     error UpgradesAreLocked();
     error ZeroOwner();
+    error ZeroRoute();
+    /// @dev A route names the chain every message to it is addressed by. Re-pointing one
+    ///      would redirect every send to that destination at once, so it is a redeploy
+    ///      rather than a config edit.
+    error RouteAlreadySet(bytes32 chainKey);
+    error NoRouteFor(bytes32 chainKey);
+    /// @dev Two chains sharing one provider id would let an inbound message be attributed
+    ///      to the wrong source. A forgery primitive, not a config mistake.
+    error RouteInUse(bytes32 routeKey);
+    error UnknownRoute();
     /// @dev The caller is not the account `(owner, salt)` resolves to, so it is asking the
     ///      protocol to stand up somebody else's account somewhere else.
     error NotTheAccount(address owner, bytes32 salt, address caller);
     error XSafeAccountExists(address owner, bytes32 salt, address account);
     error NoAccountImplementation();
+
+    /* ================================== routing ================================ */
+
+    /// chainKey => the message provider's OWN name for that chain, opaque.
+    ///
+    /// @dev THE ONLY PLACE A PROVIDER-NATIVE ID LIVES ON THIS SIDE. Everything above
+    ///      speaks chainKeys, which every VM has; a provider needs its own identifier for
+    ///      a chain, which nothing else in the protocol can derive. One owner-set mapping
+    ///      is the whole translation layer.
+    ///
+    /// @dev IT IS ON THE TRANSCEIVER RATHER THAN THE REGISTRY BECAUSE THIS IS WHO SENDS.
+    ///      A registry read would put a second shared contract in the path of every send
+    ///      and give a compromised one the ability to misroute a payload — and on the
+    ///      execute-on-arrival path there is no commitment binding the destination, so a
+    ///      wrong id means the payload runs on the wrong chain. Keeping it here means the
+    ///      contract that sends is the contract that knows where.
+    mapping(bytes32 => bytes) private _routes;
+    /// keccak256(route) => chainKey. The reverse direction, which is not optional:
+    /// inbound, a provider hands over a source id and this contract has to turn it back
+    /// into a chain.
+    ///
+    /// @dev MAINTAINED IN THE SAME SETTER, because two setters is how the two directions
+    ///      drift apart. It is injective by construction: two chainKeys sharing one route
+    ///      would let an inbound message be attributed to the wrong source chain, which is
+    ///      a forgery primitive rather than a config mistake, so a collision reverts.
+    mapping(bytes32 => bytes32) private _chainKeyOfRoute;
+
+    event RouteSet(bytes32 indexed chainKey, bytes route);
+
+    /// @notice Teach this transceiver its provider's name for a destination. WRITE-ONCE.
+    ///
+    /// @dev Re-writing the SAME route is a no-op, so a replayed configuration transaction
+    ///      is not a failure. A DIFFERENT one reverts: it would redirect every message to
+    ///      that destination at once, which is a redeploy rather than an edit.
+    ///
+    /// @dev It is `bytes` rather than a `uint32`, because the shape is the provider's
+    ///      business — a LayerZero eid, a Hyperlane domain, a Wormhole uint16, a CCIP
+    ///      uint64 selector, an Axelar chain-name string. A concrete binding wraps this in
+    ///      a typed setter; see `LzHubTransceiver.setEid`.
+    function setRoute(bytes32 chainKey, bytes memory route) public onlyAdmin {
+        if (chainKey == bytes32(0)) revert NoDestination();
+        if (route.length == 0) revert ZeroRoute();
+
+        bytes memory existing = _routes[chainKey];
+        if (existing.length != 0) {
+            if (keccak256(existing) != keccak256(route)) revert RouteAlreadySet(chainKey);
+            return;
+        }
+
+        bytes32 routeKey = keccak256(route);
+        bytes32 held = _chainKeyOfRoute[routeKey];
+        if (held != bytes32(0) && held != chainKey) revert RouteInUse(routeKey);
+
+        _routes[chainKey] = route;
+        _chainKeyOfRoute[routeKey] = chainKey;
+        emit RouteSet(chainKey, route);
+    }
+
+    /// @notice The chain a provider's own id refers to. The inbound direction.
+    /// @dev Resolved once, here, at the edge — nothing above this contract speaks a
+    ///      provider's language.
+    function chainKeyOfRoute(bytes memory route) public view returns (bytes32 chainKey) {
+        chainKey = _chainKeyOfRoute[keccak256(route)];
+        if (chainKey == bytes32(0)) revert UnknownRoute();
+    }
+
+    /// @notice The provider's name for a chain. Reverts when unset, because an
+    ///         unconfigured id and an id of zero are different states and a send that
+    ///         confused them would go into the void.
+    function routeFor(bytes32 chainKey) public view returns (bytes memory route) {
+        route = _routes[chainKey];
+        if (route.length == 0) revert NoRouteFor(chainKey);
+    }
+
+    function hasRoute(bytes32 chainKey) external view returns (bool) {
+        return _routes[chainKey].length != 0;
+    }
 
     /* ============================ account manufacture ========================== */
 
@@ -288,7 +375,12 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      unresolved. Folding them into one lookup would make a half-wired destination
     ///      un-inspectable — you could not read the part that IS configured to find out
     ///      which part is not.
-    function _routeTo(bytes32 chainKey) internal view virtual returns (bytes memory);
+    /// @dev The default answers from this contract's own write-once table. A spoke
+    ///      overrides it, because its one destination is a compile-time literal rather
+    ///      than something anyone configures.
+    function _routeTo(bytes32 chainKey) internal view virtual returns (bytes memory) {
+        return routeFor(chainKey);
+    }
 
     /// @notice Both halves at once, for the send path, which needs each of them.
     function _route(bytes32 chainKey)

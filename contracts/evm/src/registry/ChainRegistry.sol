@@ -48,6 +48,13 @@ struct ProviderDeployment {
 ///      `messageProvider`, and `chainKey => messageProvider => transceiverId`. All
 ///      owner-controlled declarations. This half answers "who do I send through".
 ///
+///      IT HOLDS NO PROVIDER ROUTES. A message provider's own name for a chain — a
+///      LayerZero eid, a Hyperlane domain — lives on the TRANSCEIVER, because that is the
+///      contract that sends and receives. Keeping it here would put a second shared
+///      contract in the path of every send and let a compromised one misroute a payload;
+///      on the execute-on-arrival path there is no commitment binding the destination, so
+///      a wrong id means the payload runs on the wrong chain.
+///
 ///      RESOLUTION — `transceiverId => ForeignRef`, holding the transceiver's location
 ///      on its own chain. A location is not a declaration; it is a claim with a trust
 ///      grade, and the grade is the point:
@@ -88,16 +95,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// chainKey => messageProvider => transceiver id
     mapping(bytes32 => mapping(bytes32 => bytes32)) public transceiverIdOf;
 
-    /// chainKey => messageProvider => the provider's OWN name for that chain, opaque.
-    /// A LayerZero uint32 eid, a Hyperlane uint32 domain, a Wormhole uint16, a CCIP
-    /// uint64 selector, an Axelar chain-name string. Stored as bytes for the same reason
-    /// `_deriveParams` is: no argument list fits every provider, and the registry has no
-    /// business knowing what an eid is. The transceiver decodes it to its own type.
-    mapping(bytes32 => mapping(bytes32 => bytes)) private _providerRoute;
-    /// messageProvider => keccak256(route) => chainKey. The reverse direction, which is
-    /// not optional: inbound, a provider hands over a source eid and the transceiver has
-    /// to turn it back into a chain.
-    mapping(bytes32 => mapping(bytes32 => bytes32)) private _chainKeyOfRoute;
 
     /// transceiverId => its location on its own chain, with provenance.
     mapping(bytes32 => ForeignRef) private _refs;
@@ -147,9 +144,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     event MessageProviderRemoved(bytes32 indexed messageProvider);
     event TransceiverIdSet(
         bytes32 indexed chainKey, bytes32 indexed messageProvider, bytes32 transceiverId
-    );
-    event ProviderRouteSet(
-        bytes32 indexed chainKey, bytes32 indexed messageProvider, bytes route
     );
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
     event ProviderDeploymentSet(
@@ -205,8 +199,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     error ParamsCommitmentMismatch();
     error SchemeNotSupported();
     error NoRoute();
-    error NoProviderRoute();
-    error RouteInUse();
 
     /* =============================== initializer =============================== */
 
@@ -249,9 +241,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         for (uint256 i; i < n; ++i) {
             bytes32 mp = _messageProviders.at(i);
             if (transceiverIdOf[chainKey][mp] != bytes32(0)) revert ChainKeyInUse();
-            // A live provider route is just as much a claim on this chain as a
-            // transceiver id, and it owns a reverse-index entry that would be orphaned.
-            if (_providerRoute[chainKey][mp].length != 0) revert ChainKeyInUse();
         }
 
         _chainKeys.remove(chainKey);
@@ -312,66 +301,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
         transceiverIdOf[chainKey][messageProvider] = transceiverId;
         emit TransceiverIdSet(chainKey, messageProvider, transceiverId);
-    }
-
-    /// @notice Teach a provider its own name for a chain. Pass empty to clear.
-    ///
-    /// @dev THIS IS THE ONLY PLACE AN EID LIVES. A transmitter names a destination by
-    ///      chainKey, which every VM has; a message provider needs its own identifier for
-    ///      that chain, which nothing else in the protocol can derive. One owner-set
-    ///      mapping is the whole translation layer, and it sits next to
-    ///      `transceiverIdOf` because they are configured together and go stale together.
-    ///
-    /// @dev THE REVERSE INDEX MUST BE INJECTIVE. Two chainKeys sharing one eid would let
-    ///      an inbound message be attributed to the wrong source chain, which is a
-    ///      forgery primitive rather than a config mistake — so a collision reverts
-    ///      instead of overwriting. Clearing the old entry before writing the new one is
-    ///      what makes re-pointing a route possible without tripping that check.
-    ///
-    /// @param route The provider's native id, abi-encoded — `abi.encode(uint32(30184))`,
-    ///              not `abi.encodePacked`. Fixed width means a mis-typed value fails in
-    ///              `abi.decode` at the transceiver rather than silently truncating.
-    function setProviderRoute(
-        bytes32 chainKey,
-        bytes32 messageProvider,
-        bytes calldata route
-    ) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
-
-        bytes memory prev = _providerRoute[chainKey][messageProvider];
-        if (prev.length != 0) delete _chainKeyOfRoute[messageProvider][keccak256(prev)];
-
-        _providerRoute[chainKey][messageProvider] = route;
-        if (route.length != 0) {
-            bytes32 rk = keccak256(route);
-            bytes32 held = _chainKeyOfRoute[messageProvider][rk];
-            if (held != bytes32(0) && held != chainKey) revert RouteInUse();
-            _chainKeyOfRoute[messageProvider][rk] = chainKey;
-        }
-        emit ProviderRouteSet(chainKey, messageProvider, route);
-    }
-
-    /// @notice The provider's native id for a chain. Reverts when unset, because an
-    ///         empty route and a route of zero are not the same thing and a provider
-    ///         that guessed would send into the void.
-    function providerRoute(bytes32 chainKey, bytes32 messageProvider)
-        external
-        view
-        returns (bytes memory route)
-    {
-        route = _providerRoute[chainKey][messageProvider];
-        if (route.length == 0) revert NoProviderRoute();
-    }
-
-    /// @notice The chain a provider's native id refers to. The inbound direction.
-    function chainKeyOfRoute(bytes32 messageProvider, bytes calldata route)
-        external
-        view
-        returns (bytes32 chainKey)
-    {
-        chainKey = _chainKeyOfRoute[messageProvider][keccak256(route)];
-        if (chainKey == bytes32(0)) revert NoProviderRoute();
     }
 
     /* ============================== configuration ============================== */

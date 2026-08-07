@@ -17,16 +17,6 @@ interface IChainRegistryRoutes {
         Provenance minProvenance
     ) external view returns (bytes32 transceiverId, bytes memory location);
 
-    function providerRoute(bytes32 chainKey, bytes32 messageProvider)
-        external
-        view
-        returns (bytes memory route);
-
-    function chainKeyOfRoute(bytes32 messageProvider, bytes calldata route)
-        external
-        view
-        returns (bytes32 chainKey);
-
     function receiverSlot(bytes32 chainKey, address transmitter)
         external
         pure

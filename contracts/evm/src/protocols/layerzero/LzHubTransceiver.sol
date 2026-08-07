@@ -41,6 +41,18 @@ contract LzHubTransceiver is HubTransceiverBase, OwnableUpgradeable {
         _checkOwner();
     }
 
+    /// @notice Tie a LayerZero endpoint id to a chainKey. WRITE-ONCE, like the untyped
+    ///         `setRoute` it wraps.
+    ///
+    /// @dev THE TYPED SETTER IS WHY THE BASE STORES `bytes`. The base has no business
+    ///      knowing what an eid is — a Hyperlane binding would wrap the same slot as a
+    ///      `uint32 domain`, a Wormhole one as a `uint16` — so the shape is stated here,
+    ///      at the one layer that speaks LayerZero, and `abi.encode` keeps it fixed-width
+    ///      so a mistyped value fails in `decodeEid` rather than silently reinterpreting.
+    function setEid(bytes32 chainKey, uint32 eid) external {
+        setRoute(chainKey, LzCodec.encodeEid(eid));
+    }
+
     /// @notice The LayerZero endpoint id to send to for a destination chainKey.
     function eidFor(bytes32 chainKey) public view returns (uint32) {
         return LzCodec.decodeEid(routeTo(chainKey));
