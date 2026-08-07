@@ -11,7 +11,7 @@ import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
-import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
@@ -694,10 +694,10 @@ contract CommitFinalizeTest is Test {
         m.initialize(msig, address(receiverImpl));
 
         vm.expectRevert(MsigTransceiver.NotMsig.selector);
-        m.setRouting(IChainRegistryRoutes(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
 
         vm.prank(msig);
-        m.setRouting(IChainRegistryRoutes(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
         assertEq(address(m.chainRegistry()), address(0xDEED));
 
         // And it gates the upgrade lock too, which is the one that must not be bypassable.

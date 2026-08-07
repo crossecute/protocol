@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
-import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @notice What a hub needs from the transmitter logic it arms an account with.
@@ -41,7 +41,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     event TransmitterImplementationSet(address implementation);
 
     /// The registry this transceiver asks where its counterparts live.
-    IChainRegistryRoutes public chainRegistry;
+    IChainRegistryRefs public chainRegistry;
     /// keccak256 of this transceiver's message provider name, e.g. "layerzero".
     bytes32 public messageProvider;
     /// The weakest counterpart provenance this transceiver will send to.
@@ -140,7 +140,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
 
     /// @notice Point this transceiver at the registry, and state its provenance bar.
     function setRouting(
-        IChainRegistryRoutes chainRegistry_,
+        IChainRegistryRefs chainRegistry_,
         bytes32 messageProvider_,
         Provenance minCounterpartProvenance_
     ) external onlyAdmin {

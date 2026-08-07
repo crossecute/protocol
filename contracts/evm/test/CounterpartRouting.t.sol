@@ -8,7 +8,7 @@ import {OwnableUpgradeable} from
 
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
@@ -72,7 +72,7 @@ contract CounterpartRoutingTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         transceiver.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Derived
+            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
         );
         vm.stopPrank();
     }
@@ -148,7 +148,7 @@ contract CounterpartRoutingTest is Test {
         // Lowering the bar makes it reachable — explicitly, not by accident.
         vm.prank(msig);
         transceiver.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Attested
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         assertEq(transceiver.counterpartOn(solKey).length, 32);
     }
@@ -183,7 +183,7 @@ contract CounterpartRoutingTest is Test {
         registry.setMaxProvenance(snKey, Provenance.Committed);
         registry.setLocalTransceiver(provider, address(transceiver));
         transceiver.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Attested
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         vm.stopPrank();
 
@@ -315,7 +315,7 @@ contract CounterpartRoutingTest is Test {
         vm.startPrank(msig);
         registry.setTransceiverId(zkKey, provider, id);
         transceiver.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Attested
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         vm.stopPrank();
 
@@ -341,7 +341,7 @@ contract CounterpartRoutingTest is Test {
     function test_setRoutingIsOwnerGated() public {
         vm.expectRevert();
         transceiver.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Attested
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
     }
 }

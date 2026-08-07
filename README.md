@@ -20,7 +20,7 @@ Where this file and those disagree, they are the newer statement.
 src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
-  registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRoutes
+  registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRefs
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
   messaging/      Commitment, Call, Payload, Envelope, Executor
     outbound/     OutboundBase -> TransmitterBase

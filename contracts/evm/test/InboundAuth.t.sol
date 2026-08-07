@@ -17,7 +17,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 
 contract MockReceiver is ReceiverBase {
     uint256 public executedCount;
@@ -105,7 +105,7 @@ contract InboundAuthTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         hub.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Attested
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         registry.setLocalTransceiver(provider, address(hub));
         vm.stopPrank();
@@ -237,7 +237,7 @@ contract InboundAuthTest is Test {
         // Raise it, and the same well-formed message from the same contract is refused.
         vm.prank(msig);
         hub.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Derived
+            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
         );
         bytes memory report2 = Envelope.encodeReceiverReport(
             transmitter, Erc7930.encodeEvm(8453, address(0xBEEF))

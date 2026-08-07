@@ -14,7 +14,7 @@ import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {IChainRegistryRoutes} from "src/registry/IChainRegistryRoutes.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
@@ -69,7 +69,7 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         hub.setRouting(
-            IChainRegistryRoutes(address(registry)), provider, Provenance.Derived
+            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
         );
         vm.stopPrank();
     }
