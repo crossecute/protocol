@@ -1022,13 +1022,24 @@ they came from. `bootstrap(uint256, Call[])` needs no check — a `uint256` chai
   reviewed. The trade is reviewability: they approve thirty-two bytes inside a call, and
   whether they can see what those bytes mean depends on their tooling
 
-- **Ownership is `OwnableUpgradeable`.** A transmitter is per-user and its owner is the
-  party that asked the factory for it, so standard `Ownable` semantics — including
-  `transferOwnership` — are what a user expects. This is the opposite choice from
-  `TransceiverBase`, deliberately: a transceiver must compose with a message provider's SDK
-  that usually brings its own `Ownable`, so it declares `_checkAdmin` and inherits no
-  ownership at all. A transmitter is a leaf contract armed by the hub and composes with
-  nothing, so there is no second authority to collide with
+- **It inherits no ownership, for the same reason `TransceiverBase` does not.** An account
+  is its own message-provider endpoint, so it composes with that provider's SDK — and
+  those bring their own authority: LayerZero's `OAppCore` is `Ownable`, another might use
+  `AccessControl`. Two ownership systems in one contract is not a style problem; it means a
+  contract gated behind one authority can still be driven through the other.
+
+  So the base states the requirement — `_owner()` and `_checkOwner()`, declared and not
+  implemented — and the concrete contract satisfies both from whatever it already has.
+  `LzTransmitter` answers with `OwnableUpgradeable` today and will answer with OApp's own
+  `Ownable` when it becomes one, without `OApp` appearing anywhere in the base.
+
+  The modifier is **`onlyAccountOwner`, not `onlyOwner`** — an SDK that brings `Ownable`
+  brings an `onlyOwner` too, and two base classes declaring one modifier name forces every
+  derived contract to override it. `TransceiverBase` sidesteps the same trap with
+  `onlyAdmin`.
+
+  The user-facing half — `transferOwnership`, and the `renounceOwnership` that would brick
+  an account since every entry point is gated — therefore comes from the concrete contract
   - It also exposes `renounceOwnership`, which **bricks** the transmitter: every entry
     point is owner-gated. Recorded rather than prevented — disabling it is a separate
     decision

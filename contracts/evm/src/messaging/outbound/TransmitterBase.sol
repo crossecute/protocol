@@ -4,8 +4,7 @@ pragma solidity ^0.8.0;
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Commitment, Scheme} from "src/messaging/Commitment.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -71,7 +70,7 @@ interface ITransceiverBootstrap {
     ) external payable;
 }
 
-abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable {
+abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
     /// The caller-chosen half of this account's CREATE2 salt.
@@ -85,6 +84,22 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
 
     error NoTransceiver();
+
+    /// @notice The account's owner. Declared, not implemented — see the note above.
+    function _owner() internal view virtual returns (address);
+
+    /// @notice Reverts unless the caller is the owner.
+    function _checkOwner() internal view virtual;
+
+    /// @dev NAMED `onlyAccountOwner`, NOT `onlyAccountOwner`, and that is not cosmetic. A
+    ///      provider SDK that brings `Ownable` also brings an `onlyAccountOwner` modifier, and
+    ///      two base classes declaring one name forces every derived contract to override
+    ///      it — the same collision the seam exists to avoid, reappearing one level down.
+    ///      `TransceiverBase` sidesteps it the same way, with `onlyAdmin`.
+    modifier onlyAccountOwner() {
+        _checkOwner();
+        _;
+    }
     /// @dev `Call[]` is what an EVM receiver executes; nothing else decodes it. Sending it
     ///      to a chain that cannot is a mistake worth catching here rather than on arrival.
     error TypedPayloadToNonEvmDestination();
@@ -120,7 +135,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function send(uint256 destinationChainId, Call[] calldata calls)
         external
         payable
-        onlyOwner
+        onlyAccountOwner
     {
         _sendCalls(_evmKey(destinationChainId), calls, "");
     }
@@ -130,7 +145,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         uint256 destinationChainId,
         Call[] calldata calls,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _sendCalls(_evmKey(destinationChainId), calls, providerData);
     }
 
@@ -140,7 +155,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function sendTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
         external
         payable
-        onlyOwner
+        onlyAccountOwner
     {
         _sendCalls(_typedKey(destinationChainIdentifier), calls, "");
     }
@@ -149,7 +164,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         bytes calldata destinationChainIdentifier,
         Call[] calldata calls,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _sendCalls(_typedKey(destinationChainIdentifier), calls, providerData);
     }
 
@@ -159,7 +174,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function sendTo(bytes calldata destinationChainIdentifier, bytes[] calldata elements)
         external
         payable
-        onlyOwner
+        onlyAccountOwner
     {
         _sendElements(_opaqueKey(destinationChainIdentifier), elements, "");
     }
@@ -168,7 +183,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _sendElements(_opaqueKey(destinationChainIdentifier), elements, providerData);
     }
 
@@ -194,7 +209,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function bootstrap(uint256 destinationChainId, Call[] calldata calls)
         external
         payable
-        onlyOwner
+        onlyAccountOwner
     {
         _bootstrapCalls(_evmKey(destinationChainId), calls, "");
     }
@@ -203,7 +218,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         uint256 destinationChainId,
         Call[] calldata calls,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _bootstrapCalls(_evmKey(destinationChainId), calls, providerData);
     }
 
@@ -211,7 +226,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
         external
         payable
-        onlyOwner
+        onlyAccountOwner
     {
         _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, "");
     }
@@ -220,7 +235,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         bytes calldata destinationChainIdentifier,
         Call[] calldata calls,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, providerData);
     }
 
@@ -233,7 +248,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, "");
     }
 
@@ -241,7 +256,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
         bytes calldata providerData
-    ) external payable onlyOwner {
+    ) external payable onlyAccountOwner {
         _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, providerData);
     }
 
@@ -294,7 +309,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         ITransceiverBootstrap(transceiver).bootstrap{value: msg.value}(
-            chainKey, owner(), accountSalt, calls, providerData
+            chainKey, _owner(), accountSalt, calls, providerData
         );
     }
 
@@ -305,7 +320,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         ITransceiverBootstrap(transceiver).bootstrapElements{value: msg.value}(
-            chainKey, owner(), accountSalt, elements, providerData
+            chainKey, _owner(), accountSalt, elements, providerData
         );
     }
 
@@ -336,7 +351,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
     ///      this EVM chain by construction and there is no opaque payload it could
     ///      usefully carry. The opaque overloads on `commit`/`commitTo` remain, because
     ///      those approve payloads for destinations this contract cannot execute on.
-    function execute(Call[] calldata calls) external payable onlyOwner {
+    function execute(Call[] calldata calls) external payable onlyAccountOwner {
         if (calls.length == 0) revert EmptyExecution();
         emit Executed(msg.sender, calls.length);
         _execute(calls);
@@ -463,12 +478,12 @@ abstract contract TransmitterBase is OutboundBase, Executor, OwnableUpgradeable 
         );
     }
 
+    /// @dev It takes the owner only to emit it. Storing it is the concrete contract's
+    ///      job, because that is where the ownership system lives.
     function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_)
         internal
         onlyInitializing
     {
-        // `__Ownable_init` rejects the zero owner itself, with `OwnableInvalidOwner`.
-        __Ownable_init(owner_);
         if (transceiver_ == address(0)) revert NoTransceiver();
         transceiver = transceiver_;
         accountSalt = salt_;

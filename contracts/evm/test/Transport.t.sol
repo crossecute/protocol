@@ -21,7 +21,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's plumbing.
-contract MockTransmitter is TransmitterBase {
+contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
     bytes32 public sentChainKey;
     bytes public sentPayload;
     uint256 public sentCount;
@@ -31,7 +31,16 @@ contract MockTransmitter is TransmitterBase {
         external
         initializer
     {
+        __Ownable_init(owner_);
         __TransmitterBase_init(owner_, transceiver_, salt_);
+    }
+
+    function _owner() internal view override returns (address) {
+        return owner();
+    }
+
+    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
+        OwnableUpgradeable._checkOwner();
     }
 
     bytes public sentProviderData;
@@ -471,6 +480,32 @@ contract TransportTest is Test {
         t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, "");
     }
 
+    /* =============================== the authority ============================= */
+
+    /// @dev THE BASE HAS NO OWNERSHIP OF ITS OWN. It states the requirement — `_owner` and
+    ///      `_checkOwner` — and the concrete contract answers from whatever authority it
+    ///      already has. That is what lets an account inherit a provider SDK that brings
+    ///      its own `Ownable` without two ownership systems living in one contract.
+    function test_theBaseContributesNoOwnershipSurface() public view {
+        // `TransmitterBase` declares no owner storage and no `owner()`. The one reachable
+        // here comes from the concrete contract.
+        assertEq(transmitter.owner(), owner);
+    }
+
+    /// @dev And its modifier is `onlyAccountOwner`, not `onlyOwner` — two base classes
+    ///      declaring one modifier name would force every derived contract to override it,
+    ///      which is the same collision the seam exists to avoid, one level down.
+    function test_theSeamGatesEveryEntryPoint() public {
+        vm.startPrank(address(0xBAD));
+        vm.expectRevert();
+        transmitter.send(DEST, _calls());
+        vm.expectRevert();
+        transmitter.execute(_calls());
+        vm.expectRevert();
+        transmitter.bootstrap(DEST, _calls());
+        vm.stopPrank();
+    }
+
     /* ================================ the default ============================== */
 
     /// @dev A protocol that forgets to implement sending fails loudly on the first
@@ -486,11 +521,20 @@ contract TransportTest is Test {
 }
 
 /// @dev No `_sendMessage` override, to exercise the default.
-contract BareTransmitter is TransmitterBase {
+contract BareTransmitter is TransmitterBase, OwnableUpgradeable {
     function initialize(address owner_, address transceiver_, bytes32 salt_)
         external
         initializer
     {
+        __Ownable_init(owner_);
         __TransmitterBase_init(owner_, transceiver_, salt_);
+    }
+
+    function _owner() internal view override returns (address) {
+        return owner();
+    }
+
+    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
+        OwnableUpgradeable._checkOwner();
     }
 }
