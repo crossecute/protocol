@@ -211,7 +211,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      and it is deliberately the only thing: the proxy, the salt, and the deployer
     ///      address are identical on both sides, so an owner's transmitter and receiver
     ///      land on one address.
-    function _accountImplementation() internal view override returns (address) {
+    function _accountImplementation() internal view virtual override returns (address) {
         return receiverImplementation;
     }
 
@@ -224,6 +224,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
         internal
         view
+        virtual
         override
         returns (bytes memory)
     {

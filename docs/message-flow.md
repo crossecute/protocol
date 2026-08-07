@@ -188,8 +188,11 @@ every other VM moves native currency as an explicit asset.
 - `bootstrapElements` — the outbound opaque half. There is no inbound twin, because
   `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain; the
   decoder for an opaque bootstrap lives in whatever language that destination speaks.
-- `_configureReceiver(account)` — a virtual, because setting the new receiver's provider
-  peer is provider-specific. The peer value is not: it is the account's own address.
+- **Provider setup is folded into `_accountInitializer`**, which is `virtual` through Hub
+  and Spoke so a binding can override it. There is no post-creation hook and cannot be: the
+  proxy locks in the same call that arms it, and an account's peer table and delegate are
+  owner-gated — the transceiver is not the owner. The peer value is not provider-specific:
+  it is the account's own address.
 
 ### ReceiverBase
 

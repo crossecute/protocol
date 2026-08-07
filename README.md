@@ -621,8 +621,12 @@ split below. That asymmetry is isolated behind two virtual hooks, `_counterpartO
   - **`initialize` takes the calls and runs them**, delegatecalled inside the same
     `upgradeInitializeAndLock` that installs the logic and drops the key. The receiver then
     calls back here with its own address so the transceiver can report it home
-  - `_configureReceiver(account)` is a virtual: setting the new receiver's provider peer is
-    provider-specific. The peer value itself is not — it is the account's own address
+  - **Provider setup happens in the initializer, because there is no second chance.** The
+    proxy locks in the same call that arms it, and an account's peer table and delegate are
+    gated on its owner — which the transceiver is not. So a transceiver has no authority
+    over an account after creating it, and anything the provider needs configured is folded
+    into `_accountInitializer`, which is `virtual` all the way down for that reason. The
+    peer value itself is not provider-specific: it is the account's own address
 - **Nothing to wedge.** A payload that can never execute fails at its own account — one per
   `(owner, salt)` — and blocks nobody. Isolation is
   structural rather than bookkeeping

@@ -209,6 +209,15 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     /// @notice The initializer call that logic is armed with, run by delegatecall inside
     ///         the upgrade so the account is never live and uninitialized.
+    ///
+    /// @dev THIS IS WHERE PROVIDER SETUP HAS TO HAPPEN, and there is no second chance. The
+    ///      proxy locks in the same call that arms it, and an account's own configuration
+    ///      — a peer table, a delegate — is gated on its OWNER, which this contract is not.
+    ///      So a transceiver has no authority over an account after creating it, and
+    ///      anything the provider needs configured must be folded into this calldata.
+    ///
+    ///      It is `virtual` all the way down for exactly that reason: a protocol binding
+    ///      overrides it to build an initializer carrying whatever its SDK requires.
     function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
         internal
         view

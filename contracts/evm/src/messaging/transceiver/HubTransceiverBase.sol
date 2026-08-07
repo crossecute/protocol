@@ -80,7 +80,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      deliberately so — the proxy, the salt, and the deployer address are identical
     ///      on both sides, which is what puts an owner's transmitter and their receivers
     ///      on one address.
-    function _accountImplementation() internal view override returns (address) {
+    function _accountImplementation() internal view virtual override returns (address) {
         return transmitterImplementation;
     }
 
@@ -94,6 +94,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     function _accountInitializer(address owner, bytes32 salt, Call[] memory)
         internal
         view
+        virtual
         override
         returns (bytes memory)
     {

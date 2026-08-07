@@ -20,7 +20,7 @@ Still missing on the transport itself:
 | Missing | Where |
 | --- | --- |
 | The spoke → hub report | `reportSelf` does not exist; `Envelope.encodeReceiverReport` has no caller |
-| `_configureReceiver` | Setting a new receiver's provider peer is provider-specific and unimplemented |
+| Provider setup in `_accountInitializer` | The seam exists and is `virtual` throughout; no binding fills it yet |
 
 ## 2. The provider binding
 
