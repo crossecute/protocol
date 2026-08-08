@@ -121,7 +121,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @return account The transmitter, at the same address its receivers will occupy
     ///         everywhere else.
     function createTransmitter(bytes32 salt) external returns (address account) {
-        account = _createXSafeAccount(msg.sender, salt, new Call[](0));
+        account = _createCrossAccount(msg.sender, salt, new Call[](0));
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.
@@ -135,7 +135,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
         view
         returns (address)
     {
-        return predictXSafeAccount(owner, salt);
+        return predictCrossAccount(owner, salt);
     }
 
     /// @notice Point this transceiver at the registry, and state its provenance bar.

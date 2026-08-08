@@ -5,7 +5,7 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
 /// @title SpokeTransceiverBase
@@ -39,7 +39,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 ///      A constant used to be the stronger choice, on the argument that an immutable set
 ///      from a constructor argument lands in the deployed initcode and CREATE2 parity
 ///      needs byte-identical initcode everywhere. That does not apply: a transceiver is
-///      deployed as an `XSafeProxy`, which takes no constructor arguments at all, and an
+///      deployed as an `CrossProxy`, which takes no constructor arguments at all, and an
 ///      implementation's parameters never reach the proxy's initcode. The parity argument
 ///      is unaffected, and the write-once-at-initialization property is the same one
 ///      `_homeTransceiver` already relied on.
@@ -256,7 +256,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         returns (bytes memory)
     {
         return abi.encodeCall(
-            IReceiverInit.initialize, (predictXSafeAccount(owner, salt), calls)
+            IReceiverInit.initialize, (predictCrossAccount(owner, salt), calls)
         );
     }
 
@@ -279,7 +279,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev THERE IS NO PERMISSIONLESS `createReceiver`. An account on a spoke exists
     ///      because a bootstrap message arrived, and nothing else. Leaving an open creation
     ///      path would let anyone deploy an owner's account empty, one transaction ahead of
-    ///      their bootstrap, and permanently deny it — `XSafeProxy` arms exactly once.
+    ///      their bootstrap, and permanently deny it — `CrossProxy` arms exactly once.
     /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO. The account address is
     ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the
     ///      address its transmitter occupies at home — which is the entire property.
@@ -287,6 +287,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         external
     {
         require(msg.sender == address(this));
-        _createXSafeAccount(owner, salt, calls);
+        _createCrossAccount(owner, salt, calls);
     }
 }

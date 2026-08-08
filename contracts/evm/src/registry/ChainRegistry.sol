@@ -33,13 +33,13 @@ struct ProviderDeployment {
     /// placeholder implementation. Not an implementation's: the proxy is what the factory
     /// deploys, and it is byte-identical for a hub and a spoke.
     bytes32 transceiverInitCodeHash;
-    /// keccak256 of `XSafeProxy`'s initcode — the same constant for a transmitter and a
+    /// keccak256 of `CrossProxy`'s initcode — the same constant for a transmitter and a
     /// receiver, which is exactly why one owner has one address everywhere.
     bytes32 accountInitCodeHash;
 }
 
 /// @title ChainRegistry
-/// @notice The home-chain directory of every chain xsafe talks to, the transceiver
+/// @notice The home-chain directory of every chain crossecute talks to, the transceiver
 ///         that reaches each one, and where that transceiver actually lives.
 ///
 /// @dev Two halves that only make sense together:
@@ -206,7 +206,7 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         _disableInitializers();
     }
 
-    /// @param owner_ The xsafe msig.
+    /// @param owner_ The crossecute msig.
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
     }
@@ -426,15 +426,15 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @dev TWO CREATE2 STEPS, AND BOTH INPUTS ARE KNOWN. The transceiver is derived from
     ///      the provider's salt; the account is derived from the transceiver, with the
     ///      `(owner, salt)` pair as its salt. So an account address is computable on
-    ///      here for any owner on any parity chain before a single message has crossed — and it is the
-    ///      same address their transmitter occupies here, because both sides deploy the
+    ///      here for any owner on any parity chain before a single message has crossed —
+    ///      and it is the same address their transmitter occupies here, because both deploy the
     ///      same argument-free proxy from the same address at the same salt.
     ///
     ///      The salt must match `TransceiverBase.accountSalt`, which is
     ///      `keccak256(abi.encode(owner, salt))`. It is written out here rather than imported
     ///      because this contract is on the home chain and that one is on the destination;
     ///      `test/SaltedDeployment.t.sol` asserts the two agree.
-    function predictXSafeAccount(
+    function predictCrossAccount(
         bytes32 chainKey,
         bytes32 messageProvider,
         address owner,
@@ -649,7 +649,7 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode("xsafe.receiver", chainKey, owner, salt));
+        return keccak256(abi.encode("crossecute.receiver", chainKey, owner, salt));
     }
 
     /// @notice Where an account's receiver lives on `chainKey`, refusing anything below

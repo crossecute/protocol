@@ -5,16 +5,16 @@ import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-/// @notice The one call an `XSafeProxy` accepts from its deployer. Declared separately
+/// @notice The one call an `CrossProxy` accepts from its deployer. Declared separately
 ///         so callers have a typed interface and a selector to compute, without the proxy
 ///         declaring a function that would shadow the implementation's ABI.
-interface IXSafeProxy {
+interface ICrossProxy {
     function upgradeInitializeAndLock(address implementation, bytes calldata data)
         external;
 }
 
-/// @title XSafeProxy
-/// @notice The proxy every xsafe account is deployed as — transmitter and receiver alike.
+/// @title CrossProxy
+/// @notice The proxy every crossecute account is deployed as — transmitter and receiver alike.
 ///
 /// @dev IT TAKES NO CONSTRUCTOR ARGUMENTS, AND THAT IS THE ENTIRE POINT. CREATE2 hashes the
 ///      initcode, so anything baked into it changes the address. A minimal clone cannot be
@@ -43,7 +43,7 @@ interface IXSafeProxy {
 ///      admin is zeroed no caller can match it — `msg.sender` is never the zero address —
 ///      so every selector delegates from then on and this is indistinguishable from a
 ///      plain ERC-1967 proxy.
-contract XSafeProxy is Proxy {
+contract CrossProxy is Proxy {
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
@@ -67,7 +67,7 @@ contract XSafeProxy is Proxy {
             return;
         }
 
-        if (msg.sig != IXSafeProxy.upgradeInitializeAndLock.selector) {
+        if (msg.sig != ICrossProxy.upgradeInitializeAndLock.selector) {
             revert UnknownAdminCall(msg.sig);
         }
 

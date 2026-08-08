@@ -61,7 +61,7 @@ abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradea
 
 **One constructor argument, and it does not matter.** It is on the *implementation*, and an
 implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
-initcode — so `XSafeProxy` stays argument-free and no derived address moves. The endpoint
+initcode — so `CrossProxy` stays argument-free and no derived address moves. The endpoint
 being an `immutable` is correct rather than merely tolerable: every account on a chain uses
 the same endpoint, which is exactly what an implementation-level immutable expresses.
 
@@ -144,7 +144,7 @@ mainnet.
 - **Two `isAuthorizedCommitter` arms are the same address.** A receiver's peer is its own
   address, so `sourceTransmitter` and `address(this)` coincide. Collapse them, or keep them
   distinct against a future where they diverge?
-- **A blank `XSafeProxy` delegates to `address(0)` and succeeds silently.** Only safe
+- **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.
 - **Self-replaying payloads.** `finalize` clears an approval before executing, so a payload

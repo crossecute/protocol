@@ -115,7 +115,7 @@ contract InboundAuthTest is Test {
     function test_spokeAcceptsTheHubAndStandsTheReceiverUp() public {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
 
-        MockReceiver r = MockReceiver(payable(spoke.predictXSafeAccount(transmitter, bytes32(0))));
+        MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0))));
         assertEq(r.sourceTransmitter(), address(r), "its peer is its own address across chains");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }

@@ -6,7 +6,7 @@ import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from
@@ -57,19 +57,19 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
-    /// @notice The initcode hash every xsafe account deploys from — one constant, on
+    /// @notice The initcode hash every crossecute account deploys from — one constant, on
     ///         every chain, for transmitters and receivers alike.
     /// @dev Exposed so the hub can record it and reproduce these addresses without
-    ///      deploying anything. See `XSafeProxy` for why it has no constructor arguments.
-    bytes32 public constant XSAFE_PROXY_INIT_CODE_HASH =
-        keccak256(type(XSafeProxy).creationCode);
+    ///      deploying anything. See `CrossProxy` for why it has no constructor arguments.
+    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH =
+        keccak256(type(CrossProxy).creationCode);
 
     event UpgradesLocked();
     /// @dev Owner and account are indexed; the salt rides in the data. Three indexed
     ///      fields would exhaust the topic budget for a value nobody filters on — an
     ///      indexer wants "this owner's accounts" or "this address", not "everyone who
     ///      chose salt 7".
-    event XSafeAccountCreated(
+    event CrossAccountCreated(
         address indexed owner, address indexed account, bytes32 salt
     );
 
@@ -89,7 +89,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev The caller is not the account `(owner, salt)` resolves to, so it is asking the
     ///      protocol to stand up somebody else's account somewhere else.
     error NotTheAccount(address owner, bytes32 salt, address caller);
-    error XSafeAccountExists(address owner, bytes32 salt, address account);
+    error CrossAccountExists(address owner, bytes32 salt, address account);
     error NoAccountImplementation();
 
     /* ================================== routing ================================ */
@@ -192,13 +192,13 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev Identical on every chain sharing Ethereum's CREATE2 formula, because all three
     ///      inputs are: this contract's address (hub and spoke share one), the
     ///      `(owner, salt)` pair, and a constant initcode.
-    function predictXSafeAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt)
         public
         view
         returns (address)
     {
         return Create2.computeAddress(
-            accountSalt(owner, salt), XSAFE_PROXY_INIT_CODE_HASH, address(this)
+            accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
@@ -211,10 +211,10 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      transmitter on the home chain and their receiver on Base are one address. What
     ///      diverges is `_accountImplementation`, which the derivation never sees.
     ///
-    /// @dev DEPLOY, ARM, AND LOCK IN ONE CALL. `XSafeProxy` offers no way to install logic
+    /// @dev DEPLOY, ARM, AND LOCK IN ONE CALL. `CrossProxy` offers no way to install logic
     ///      without surrendering the upgrade key in the same call, so there is no reachable
-    ///      state in which an account has real logic and a live key. See `XSafeProxy`.
-    function _createXSafeAccount(address owner, bytes32 salt, Call[] memory calls)
+    ///      state in which an account has real logic and a live key. See `CrossProxy`.
+    function _createCrossAccount(address owner, bytes32 salt, Call[] memory calls)
         internal
         returns (address account)
     {
@@ -223,15 +223,15 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address implementation = _accountImplementation();
         if (implementation == address(0)) revert NoAccountImplementation();
 
-        account = predictXSafeAccount(owner, salt);
-        if (account.code.length != 0) revert XSafeAccountExists(owner, salt, account);
+        account = predictCrossAccount(owner, salt);
+        if (account.code.length != 0) revert CrossAccountExists(owner, salt, account);
 
-        Create2.deploy(0, accountSalt(owner, salt), type(XSafeProxy).creationCode);
-        IXSafeProxy(account).upgradeInitializeAndLock(
+        Create2.deploy(0, accountSalt(owner, salt), type(CrossProxy).creationCode);
+        ICrossProxy(account).upgradeInitializeAndLock(
             implementation, _accountInitializer(owner, salt, calls)
         );
 
-        emit XSafeAccountCreated(owner, account, salt);
+        emit CrossAccountCreated(owner, account, salt);
     }
 
     /// @notice Stand this account up on a chain that has none, and carry its payload.
@@ -242,7 +242,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      Nobody gains anything by paying to create somebody else's.
     ///
     /// @dev THE PAIR IS CHECKED, NOT TRUSTED. `msg.sender` must be what
-    ///      `predictXSafeAccount(owner, salt)` resolves to. That is what lets the owner and
+    ///      `predictCrossAccount(owner, salt)` resolves to. That is what lets the owner and
     ///      salt travel in the message without a caller being able to claim another
     ///      account's identity — the address on this chain proves the pair.
     ///
@@ -257,7 +257,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         Call[] calldata calls,
         bytes calldata providerData
     ) external payable {
-        if (predictXSafeAccount(owner, salt) != msg.sender) {
+        if (predictCrossAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
@@ -283,7 +283,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         bytes[] calldata elements,
         bytes calldata providerData
     ) external payable {
-        if (predictXSafeAccount(owner, salt) != msg.sender) {
+        if (predictCrossAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
@@ -316,7 +316,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         virtual
         returns (bytes memory);
 
-    /// @notice Bind the transceiver to the xsafe msig.
+    /// @notice Bind the transceiver to the crossecute msig.
     /// @dev The proxy starts on Nick's factory implementation with the deployer as owner,
     ///      is upgraded to the real transceiver, and then `lockUpgrades` is called. See
     ///      that function for why the lock exists.

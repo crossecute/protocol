@@ -393,7 +393,7 @@ contract TransportTest is Test {
         t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = t.predictXSafeAccount(owner, SALT);
+        address at = t.predictCrossAccount(owner, SALT);
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);

@@ -83,7 +83,7 @@ hub transceiver .bootstrap(chainKey, calls)                            msg.sende
  ▼  spoke transceiver ._onInbound(route, sender, message)
       _authenticateOrigin  → must be the hub
       _handleInbound → bootstrapInbound(owner, salt, calls):
-        deploy XSafeProxy at accountSalt(owner, salt)                  CREATE2, no args
+        deploy CrossProxy at accountSalt(owner, salt)                  CREATE2, no args
         upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))
           │   installs logic, executes the calls, drops the upgrade key — one call
           └─  calls back: reportSelf()          ← the receiver's only outbound
@@ -106,7 +106,7 @@ back into the transceiver that created it, and the transceiver puts the report o
 That is the right shape for a specific reason: on the chains this path exists for, the
 address is not predictable from the hub. Starknet's is a Pedersen hash chain the EVM
 cannot run. The receiver is the only party that knows what it is. Reporting through the
-receiver rather than from the transceiver's own `predictXSafeAccount` also means the address
+receiver rather than from the transceiver's own `predictCrossAccount` also means the address
 reported is one that exists and initialized successfully, rather than one that was
 computed and might not.
 
@@ -171,14 +171,14 @@ every other VM moves native currency as an explicit asset.
 - `bootstrap(bytes32 chainKey, Call[] calls) payable` — external, `msg.sender` is the
   transmitter. Permissionless: the only reachable outcome is a receiver keyed to the
   caller's own address, which answers to nobody else.
-- `_createXSafeAccount(owner, calls)` on `TransceiverBase` — deploy, arm, lock, one call.
+- `_createCrossAccount(owner, calls)` on `TransceiverBase` — deploy, arm, lock, one call.
   Two virtuals decide what is installed: `_accountImplementation` (hub: transmitter, spoke:
   receiver) and `_accountInitializer`.
 - `createTransmitter(bytes32 salt)` on the hub — `owner` is `msg.sender` by construction;
   `predictTransmitter(owner, salt)` gives the address before it exists.
 - **No public creation path on a spoke.** An account there exists because a bootstrap
   arrived. An open one would let anyone deny an owner their bootstrap by deploying the
-  account empty first, since `XSafeProxy` arms exactly once.
+  account empty first, since `CrossProxy` arms exactly once.
 - **A hub has no receiver machinery at all** — not gated, absent. An address holds one
   contract, so a receiver on the home chain would collide with the transmitter that
   belongs there.
@@ -307,7 +307,7 @@ No fallback storage, and no payload size cap — the provider enforces the latte
   (which is how zkSync and Tron are excluded).
 
 - **One owner, one address, every EVM chain.** An owner's transmitter on the home chain and
-  their receiver on Base are the same address. Both are deployed as `XSafeProxy` — an
+  their receiver on Base are the same address. Both are deployed as `CrossProxy` — an
   argument-free proxy, so its initcode is one constant — from the transceiver, at
   `accountSalt(owner, salt)`. The caller's salt lets one owner hold several accounts, each
   keeping the one-address property independently. Hub and spoke share an address, so all three CREATE2 inputs match
@@ -315,7 +315,7 @@ No fallback storage, and no payload size cap — the provider enforces the latte
   clone could not do this: EIP-1167 embeds the implementation in its initcode. Transmitters
   are created by `createTransmitter(salt)` on the hub, where `owner` is `msg.sender` by
   construction.
-- **The upgrade key exists for part of one transaction.** `XSafeProxy` offers exactly one
+- **The upgrade key exists for part of one transaction.** `CrossProxy` offers exactly one
   admin operation, which installs the implementation, runs the initializer, and zeroes the
   admin in that order — there is no way to upgrade without locking, and no reachable state
   in which an account has real logic and a live key. The transceiver that created the

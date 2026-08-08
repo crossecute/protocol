@@ -209,7 +209,7 @@ contract CommitFinalizeTest is Test {
         internal
         returns (MockReceiver r)
     {
-        address predicted = t_.predictXSafeAccount(tx_, bytes32(0));
+        address predicted = t_.predictCrossAccount(tx_, bytes32(0));
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -368,7 +368,7 @@ contract CommitFinalizeTest is Test {
     /// @dev THERE IS NO PUBLIC CREATION PATH ON A SPOKE. An account here exists because a
     ///      bootstrap message arrived, and nothing else. An open one would let anyone
     ///      deploy an owner's account empty, one transaction ahead of their bootstrap, and
-    ///      permanently deny it — `XSafeProxy` arms exactly once.
+    ///      permanently deny it — `CrossProxy` arms exactly once.
     function test_aSpokeHasNoPublicCreationPath() public {
         (bool a,) = address(t).call(
             abi.encodeWithSignature("createReceiver(address)", transmitter)
@@ -382,7 +382,7 @@ contract CommitFinalizeTest is Test {
     /// @dev An account is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
     function test_anOwnerGetsExactlyOneAccount() public {
-        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertEq(
@@ -393,7 +393,7 @@ contract CommitFinalizeTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), predicted
+                TransceiverBase.CrossAccountExists.selector, transmitter, bytes32(0), predicted
             )
         );
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
@@ -413,7 +413,7 @@ contract CommitFinalizeTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), address(r)
+                TransceiverBase.CrossAccountExists.selector, transmitter, bytes32(0), address(r)
             )
         );
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
@@ -425,7 +425,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -441,7 +441,7 @@ contract CommitFinalizeTest is Test {
     /// @dev The salt is the transmitter alone, so the address does not move between
     ///      payloads — it is knowable before the first message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -458,7 +458,7 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public {
         assertTrue(
-            t.predictXSafeAccount(transmitter, bytes32(0)) != t.predictXSafeAccount(address(0xBEEF), bytes32(0)),
+            t.predictCrossAccount(transmitter, bytes32(0)) != t.predictCrossAccount(address(0xBEEF), bytes32(0)),
             "transmitter must vary the address"
         );
     }
@@ -515,7 +515,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(t.predictXSafeAccount(transmitter, bytes32(0))));
+        MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0))));
 
         assertEq(r.commitment(), pending, "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -537,7 +537,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = rt.predictXSafeAccount(transmitter, bytes32(0));
+        address addr = rt.predictCrossAccount(transmitter, bytes32(0));
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -568,7 +568,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -576,7 +576,7 @@ contract CommitFinalizeTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] != TransceiverBase.XSafeAccountCreated.selector) continue;
+            if (logs[i].topics[0] != TransceiverBase.CrossAccountCreated.selector) continue;
             found = true;
             assertEq(address(uint160(uint256(logs[i].topics[1]))), transmitter);
             assertEq(address(uint160(uint256(logs[i].topics[2]))), predicted);
@@ -588,16 +588,16 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with — a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = t.predictXSafeAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
 
         vm.expectEmit(true, true, false, false, address(t));
-        emit TransceiverBase.XSafeAccountCreated(transmitter, predicted, bytes32(0));
+        emit TransceiverBase.CrossAccountCreated(transmitter, predicted, bytes32(0));
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.XSafeAccountExists.selector, transmitter, bytes32(0), predicted
+                TransceiverBase.CrossAccountExists.selector, transmitter, bytes32(0), predicted
             )
         );
         t.inbound(transmitter, _deferred(predicted, hashOf(_otherCalls())));
@@ -730,7 +730,7 @@ contract CommitFinalizeTest is Test {
     ///      because the CREATE2 salt is the transmitter. There is no shared slot and no
     ///      per-sender bookkeeping to get wrong.
     function test_transceiverHoldsNoCommitmentState() public {
-        t.inbound(transmitter, _deferred(t.predictXSafeAccount(transmitter, bytes32(0)), hashOf(_calls())));
+        t.inbound(transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0)), hashOf(_calls())));
 
         (bool a,) = address(t).staticcall(
             abi.encodeWithSignature("pendingOf(address)", transmitter)
@@ -740,7 +740,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "no single slot either");
 
         assertEq(
-            MockReceiver(payable(t.predictXSafeAccount(transmitter, bytes32(0)))).commitment(),
+            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).commitment(),
             hashOf(_calls()),
             "the approval lives with the sender it belongs to"
         );
@@ -767,7 +767,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = rt.predictXSafeAccount(transmitter, bytes32(0));
+        address poisoned = rt.predictCrossAccount(transmitter, bytes32(0));
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -781,7 +781,7 @@ contract CommitFinalizeTest is Test {
         RevertingReceiver(payable(poisoned)).finalize(stuck);
 
         // The other sender is entirely unaffected, now and repeatedly.
-        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictXSafeAccount(transmitter2, bytes32(0))));
+        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictCrossAccount(transmitter2, bytes32(0))));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 

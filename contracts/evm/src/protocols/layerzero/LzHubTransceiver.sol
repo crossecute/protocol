@@ -6,7 +6,7 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {LzCodec} from "./LzCodec.sol";
 
-/// @notice The LayerZero transceiver on the home chain. One instance, owned by the xsafe
+/// @notice The LayerZero transceiver on the home chain. One instance, owned by the crossecute
 ///         msig, shared by every user's transmitter.
 ///
 /// @dev Does NOT inherit `LzTransmitter`. A transceiver is shared, msig-owned

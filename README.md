@@ -1,11 +1,11 @@
-# xsafe protocol
+# crossecute protocol
 
 Secure multisig operations across chains, anchored on one of them.
 
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
-`CREATE2(transceiver, keccak256(owner, salt), XSafeProxy)` — and because all three inputs
+`CREATE2(transceiver, keccak256(owner, salt), CrossProxy)` — and because all three inputs
 are the same everywhere, so is the address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
 logic and driven by messages from the first. Same address, different half.
@@ -53,7 +53,7 @@ src/
     outbound/     OutboundBase -> TransmitterBase
     inbound/      ReceiverBase
     transceiver/  TransceiverBase -> Hub / Spoke
-  factories/      XSafeProxy
+  factories/      CrossProxy
   protocols/      per message provider; the only files naming an SDK
 ```
 
@@ -76,8 +76,8 @@ summary — the file is always the newer statement.
 
 | Question | Answered in |
 | --- | --- |
-| Why one address, and why a proxy rather than a clone | `factories/XSafeProxy.sol` |
-| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createXSafeAccount` |
+| Why one address, and why a proxy rather than a clone | `factories/CrossProxy.sol` |
+| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
 | Why a hub makes transmitters and a spoke makes receivers | `TransceiverBase`, `Hub` / `Spoke` |
 | Why approvals are an ordered queue, and why `cancel` is load-bearing | `inbound/ReceiverBase.sol` |
 | Why the wire carries a payload rather than a digest | `outbound/OutboundBase.sol` |
@@ -99,9 +99,9 @@ summary — the file is always the newer statement.
 - Transceivers are deployed as upgradeable proxies, upgraded to their real implementation,
   then `lockUpgrades()`. A transceiver decides which cross-chain payloads are authentic, so
   a live upgrade key is a standing ability to forge one.
-- Accounts are `XSafeProxy` and lock in the same call that arms them. There is no reachable
+- Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
-- The xsafe msig owns the registry and every transceiver.
+- The crossecute msig owns the registry and every transceiver.
 
 ## Docs
 

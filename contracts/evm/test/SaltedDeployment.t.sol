@@ -14,7 +14,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
@@ -29,7 +29,7 @@ contract MiniFactory {
     }
 
     function arm(address proxy, address impl, bytes calldata data) external {
-        IXSafeProxy(proxy).upgradeInitializeAndLock(impl, data);
+        ICrossProxy(proxy).upgradeInitializeAndLock(impl, data);
     }
 }
 
@@ -80,7 +80,7 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     /// @dev Stands in for `_onInbound`, which authenticates and then self-calls.
     function bootstrapFor(address owner_) external returns (address) {
         this.bootstrapInbound(owner_, bytes32(0), new Call[](0));
-        return predictXSafeAccount(owner_, bytes32(0));
+        return predictCrossAccount(owner_, bytes32(0));
     }
 }
 
@@ -104,7 +104,7 @@ contract SaltedDeploymentTest is Test {
     bytes32 provider;
     bytes32 chainKey;
 
-    bytes32 constant SALT = keccak256("xsafe.lz.v1");
+    bytes32 constant SALT = keccak256("crossecute.lz.v1");
 
     function setUp() public {
         registry = ChainRegistry(
@@ -124,13 +124,13 @@ contract SaltedDeploymentTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev ONE CONSTANT, INDEPENDENT OF THE IMPLEMENTATION. `XSafeProxy` takes no
+    /// @dev ONE CONSTANT, INDEPENDENT OF THE IMPLEMENTATION. `CrossProxy` takes no
     ///      constructor arguments, so every account — transmitter or receiver, on any
     ///      chain — deploys from this exact byte string. That independence is what lets
     ///      two accounts with different logic share an address; an EIP-1167 clone bakes
     ///      the implementation into its initcode and could never manage it.
-    function _xsafeProxyInitCodeHash() internal pure returns (bytes32) {
-        return keccak256(type(XSafeProxy).creationCode);
+    function _crossProxyInitCodeHash() internal pure returns (bytes32) {
+        return keccak256(type(CrossProxy).creationCode);
     }
 
     function _record(bytes32 transceiverInitCodeHash, bytes32 receiverInitCodeHash)
@@ -151,12 +151,12 @@ contract SaltedDeploymentTest is Test {
     function test_bothAddressesArePredictedBeforeEitherExists() public {
         bytes memory initCode = type(SaltedTransceiver).creationCode;
         address impl = address(new SaltedReceiver());
-        _record(keccak256(initCode), _xsafeProxyInitCodeHash());
+        _record(keccak256(initCode), _crossProxyInitCodeHash());
 
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
         address predictedReceiver =
-            registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
+            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
 
         // Nothing is deployed yet.
         assertEq(predictedTransceiver.code.length, 0);
@@ -181,7 +181,7 @@ contract SaltedDeploymentTest is Test {
     function test_theReceiverSaltMatchesTheTransceiversOwn() public {
         bytes memory initCode = type(SaltedTransceiver).creationCode;
         address impl = address(new SaltedReceiver());
-        _record(keccak256(initCode), _xsafeProxyInitCodeHash());
+        _record(keccak256(initCode), _crossProxyInitCodeHash());
 
         SaltedTransceiver t = SaltedTransceiver(payable(factory.deploy(SALT, initCode)));
         t.initialize(owner, impl);
@@ -189,8 +189,8 @@ contract SaltedDeploymentTest is Test {
         address ownerOf = address(0x7A11);
         assertEq(t.accountSalt(ownerOf, bytes32(0)), keccak256(abi.encode(ownerOf, bytes32(0))));
         assertEq(
-            registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0)),
-            t.predictXSafeAccount(ownerOf, bytes32(0)),
+            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0)),
+            t.predictCrossAccount(ownerOf, bytes32(0)),
             "one salt convention, two chains"
         );
     }
@@ -213,22 +213,22 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev THE GOAL, END TO END. The transceiver itself is an `XSafeProxy`, deployed
+    /// @dev THE GOAL, END TO END. The transceiver itself is an `CrossProxy`, deployed
     ///      from one initcode at one salt — so the hub on Ethereum and the spoke on Base
     ///      are the same address, and they differ only in the logic each is armed with.
     ///      An owner's account then derives from that shared address, so their transmitter
     ///      and their receiver land on one address too.
     function test_anOwnerHasOneAddressOnBothSides() public {
         address ownerOf = address(0x7A11);
-        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+        _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
 
         address transceiverAt = registry.predictTransceiver(chainKey, provider);
-        address predicted = registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
+        address predicted = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
 
         uint256 world = vm.snapshotState();
 
         // ---- destination chain: the spoke arms the account with receiver logic ----
-        address spokeAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        address spokeAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         assertEq(spokeAt, transceiverAt, "hub and spoke share an address");
         factory.arm(
             spokeAt,
@@ -247,7 +247,7 @@ contract SaltedDeploymentTest is Test {
         vm.revertToState(world);
 
         // ---- Ethereum: the hub arms the SAME address with transmitter logic ----
-        address hubAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         factory.arm(
             hubAt,
             address(new HubForAccounts()),
@@ -267,11 +267,11 @@ contract SaltedDeploymentTest is Test {
     ///      counterparty, per mandate — and each keeps the one-address-everywhere property
     ///      independently.
     function test_oneOwnerCanHoldSeveralAccounts() public {
-        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+        _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
         address ownerOf = address(0x7A11);
 
-        address a = registry.predictXSafeAccount(chainKey, provider, ownerOf, bytes32(0));
-        address b = registry.predictXSafeAccount(chainKey, provider, ownerOf, keccak256("ops"));
+        address a = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
+        address b = registry.predictCrossAccount(chainKey, provider, ownerOf, keccak256("ops"));
 
         assertTrue(a != b, "a different salt is a different account");
 
@@ -281,8 +281,8 @@ contract SaltedDeploymentTest is Test {
         registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
-        assertEq(a, registry.predictXSafeAccount(arb, provider, ownerOf, bytes32(0)));
-        assertEq(b, registry.predictXSafeAccount(arb, provider, ownerOf, keccak256("ops")));
+        assertEq(a, registry.predictCrossAccount(arb, provider, ownerOf, bytes32(0)));
+        assertEq(b, registry.predictCrossAccount(arb, provider, ownerOf, keccak256("ops")));
     }
 
     /// @dev ONE OWNER'S SALT CANNOT REACH ANOTHER OWNER'S ACCOUNT. The pair is hashed, so
@@ -295,11 +295,11 @@ contract SaltedDeploymentTest is Test {
     ) public {
         vm.assume(ownerA != address(0) && ownerB != address(0));
         vm.assume(ownerA != ownerB);
-        _record(keccak256(type(XSafeProxy).creationCode), _xsafeProxyInitCodeHash());
+        _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
 
         assertTrue(
-            registry.predictXSafeAccount(chainKey, provider, ownerA, saltA)
-                != registry.predictXSafeAccount(chainKey, provider, ownerB, saltB),
+            registry.predictCrossAccount(chainKey, provider, ownerA, saltA)
+                != registry.predictCrossAccount(chainKey, provider, ownerB, saltB),
             "different owners, different accounts, whatever salt either picks"
         );
     }
@@ -307,7 +307,7 @@ contract SaltedDeploymentTest is Test {
     /// @dev The hub creates the caller's account, and `createTransmitter` binds the owner
     ///      to `msg.sender` rather than taking it as an argument.
     function test_createTransmitterUsesTheCallerAndTheirSalt() public {
-        address hubAt = factory.deploy(SALT, type(XSafeProxy).creationCode);
+        address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         factory.arm(
             hubAt,
             address(new HubForAccounts()),

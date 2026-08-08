@@ -47,8 +47,8 @@ import {Call} from "src/messaging/Call.sol";
 /// @dev THE COMMITMENT IS HASHED FOR THE DESTINATION, NOT FOR HERE. This is the one thing
 ///      that is easy to get wrong and impossible to notice until a live message fails.
 ///      `Commitment.hashCalls(calls)` folds in the LOCAL chainKey, and on this contract
-///      that is the home chain. The receiver recomputes the same hash on the DESTINATION chain, so a
-///      commitment built with the local key can never match. `_submit` therefore hashes
+///      that is the home chain. The receiver recomputes the same hash on the DESTINATION
+///      chain, so a commitment built with the local key can never match. `_submit` therefore hashes
 ///      with the destination's key, and the chain-binding still does its job: the payload
 ///      is pinned to exactly one destination and cannot be replayed onto a sibling
 ///      deployment at the same address.

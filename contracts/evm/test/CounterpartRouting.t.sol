@@ -48,7 +48,7 @@ contract CounterpartRoutingTest is Test {
 
     /// The single CREATE2 address every EVM counterpart shares.
     address constant FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-    bytes32 constant SALT = keccak256("xsafe.transceiver.lz.v1");
+    bytes32 constant SALT = keccak256("crossecute.transceiver.lz.v1");
     bytes32 constant INIT_CODE_HASH = keccak256("lz-transceiver-initcode");
 
     function setUp() public {

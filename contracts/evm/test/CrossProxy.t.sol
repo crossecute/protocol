@@ -6,7 +6,7 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -36,16 +36,16 @@ contract LogicB {
 /// @dev Stands in for the transceiver: deploys an account and hands it its logic.
 contract Deployer {
     function deploy(bytes32 salt) external returns (address) {
-        return Create2.deploy(0, salt, type(XSafeProxy).creationCode);
+        return Create2.deploy(0, salt, type(CrossProxy).creationCode);
     }
 
     function arm(address proxy, address impl, bytes calldata data) external {
-        IXSafeProxy(proxy).upgradeInitializeAndLock(impl, data);
+        ICrossProxy(proxy).upgradeInitializeAndLock(impl, data);
     }
 }
 
 /// @notice The proxy that lets a transmitter and its receivers share one address.
-contract XSafeProxyTest is Test {
+contract CrossProxyTest is Test {
     Deployer deployer;
     bytes32 constant SALT = keccak256("account.1");
 
@@ -85,15 +85,15 @@ contract XSafeProxyTest is Test {
     /// @dev The initcode hash is a constant with no implementation in it, which is the
     ///      mechanical reason the above holds.
     function test_theInitCodeHashIsIndependentOfTheImplementation() public view {
-        bytes32 hash = keccak256(type(XSafeProxy).creationCode);
+        bytes32 hash = keccak256(type(CrossProxy).creationCode);
         assertEq(
             Create2.computeAddress(SALT, hash, address(deployer)),
             Create2.computeAddress(SALT, hash, address(deployer))
         );
         // No constructor arguments at all: the creation code IS the initcode.
         assertEq(
-            keccak256(type(XSafeProxy).creationCode),
-            keccak256(abi.encodePacked(type(XSafeProxy).creationCode))
+            keccak256(type(CrossProxy).creationCode),
+            keccak256(abi.encodePacked(type(CrossProxy).creationCode))
         );
     }
 
@@ -140,7 +140,7 @@ contract XSafeProxyTest is Test {
         address logic = address(new LogicA());
 
         vm.prank(address(0xBAD));
-        IXSafeProxy(p).upgradeInitializeAndLock(logic, "");
+        ICrossProxy(p).upgradeInitializeAndLock(logic, "");
 
         assertEq(_adminOf(p), address(deployer), "the admin is unchanged");
         assertEq(
@@ -176,7 +176,7 @@ contract XSafeProxyTest is Test {
         assertFalse(ok);
         assertEq(
             bytes4(ret),
-            XSafeProxy.UnknownAdminCall.selector,
+            CrossProxy.UnknownAdminCall.selector,
             "named, not a bare delegate failure"
         );
     }

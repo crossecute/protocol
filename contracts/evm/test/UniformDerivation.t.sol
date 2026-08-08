@@ -52,7 +52,7 @@ contract UniformDerivationTest is Test {
 
     function test_evmCreate2_derivesAndStoresAsDerived() public {
         address factory = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-        bytes32 salt = keccak256("xsafe.transceiver.v1");
+        bytes32 salt = keccak256("crossecute.transceiver.v1");
         bytes32 initCodeHash = keccak256("initcode");
 
         bytes memory params = abi.encode(
@@ -82,7 +82,7 @@ contract UniformDerivationTest is Test {
     ///      reads back through the same function as an EVM chain.
     function test_solanaPda_usesIdenticalCallShape() public {
         bytes[] memory seeds = new bytes[](1);
-        seeds[0] = bytes("xsafe");
+        seeds[0] = bytes("crossecute");
         bytes32 programId = keccak256("program");
 
         bytes memory params =

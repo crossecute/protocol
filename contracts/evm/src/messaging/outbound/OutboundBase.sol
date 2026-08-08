@@ -9,7 +9,7 @@ pragma solidity ^0.8.0;
 ///      mechanics — hand a payload to the message provider. The other is the per-user
 ///      entry point that owns those mechanics: `owner`, `onlyOwner`, `send`. A transceiver
 ///      needs the first and must not have the second, because it already has an owner (the
-///      xsafe msig) and that owner is a different party from an account's. Merging the two
+///      crossecute msig) and that owner is a different party from an account's. Merging the two
 ///      would collide on `owner` outright.
 ///
 /// @dev IT DECLARES NO STORAGE, DELIBERATELY. That is what makes it free to mix into a
