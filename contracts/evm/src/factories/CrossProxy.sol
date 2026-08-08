@@ -40,7 +40,7 @@ interface ICrossProxy {
 /// @dev DISPATCH IS TRANSPARENT-STYLE, WHICH MATTERS AFTER THE LOCK. The admin operation
 ///      is routed inside `fallback` rather than declared as an external function, because
 ///      a declared one would shadow that selector on the implementation forever. Once the
-///      admin is zeroed no caller can match it (`msg.sender` is never the zero address)
+///      admin is zeroed no caller can match it (`msg.sender` is never the zero address),
 ///      so every selector delegates from then on and this is indistinguishable from a
 ///      plain ERC-1967 proxy.
 contract CrossProxy is Proxy {

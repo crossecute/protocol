@@ -128,7 +128,7 @@ contract UnknownChainTypeTest is Test {
     /* =============================== what does not ============================= */
 
     /// @dev Address parity is an `eip155` argument, so there is no default counterpart,
-    ///      correctly, since a 20-byte EVM address means nothing here.
+    ///      and correctly so, since a 20-byte EVM address means nothing here.
     function test_thereIsNoDefaultCounterpartForAnUndefinedChainType() public {
         vm.prank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);

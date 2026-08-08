@@ -36,7 +36,7 @@ import {Call} from "src/messaging/Call.sol";
 ///      This is the opposite choice from `TransceiverBase`, deliberately. A transceiver
 ///      must compose with a message provider's SDK, which usually brings its own
 ///      `Ownable`, so it declares `_checkAdmin` and inherits no ownership at all. A
-///      transmitter composes with nothing (it is a leaf contract cloned by the factory)
+///      transmitter composes with nothing (it is a leaf contract cloned by the factory),
 ///      so there is no second authority for `Ownable` to collide with.
 ///
 /// @dev IT HOLDS NO REGISTRY POINTER, DELIBERATELY. The chainKey derivation is pure, so

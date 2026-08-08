@@ -373,7 +373,7 @@ abstract contract ReceiverBase is
     ///
     /// @dev THERE IS NO "ONE LIVE APPROVAL" RULE, because approvals are a queue: a second
     ///      commit appends rather than replacing, so there is nothing to overwrite and
-    ///      nothing to protect. Refusing a duplicate would be wrong on its own terms too,
+    ///      nothing to protect. Refusing a duplicate would be wrong on its own terms too:
     ///      two identical payloads are two separate approvals, and each needs its own
     ///      `finalize`.
     function _requireCommittable(bytes32 incoming) private pure {

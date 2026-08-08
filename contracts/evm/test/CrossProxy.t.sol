@@ -59,7 +59,7 @@ contract CrossProxyTest is Test {
 
     /* ============================== the whole point ============================= */
 
-    /// @dev THE PROPERTY THE PROXY EXISTS FOR. Same deployer, same salt, different logic,
+    /// @dev THE PROPERTY THE PROXY EXISTS FOR. Same deployer, same salt, different logic:
     ///      one address. A minimal clone cannot do this: EIP-1167 embeds the
     ///      implementation in its initcode, so the two would land apart no matter what.
     function test_twoImplementationsShareOneAddress() public {

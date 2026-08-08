@@ -48,7 +48,7 @@ contract OwnedTransmitter {
 }
 
 /// @dev A flag the CLONE can see. Clone storage starts empty and is never written by
-///      the test, so the switch is reached through an immutable in the implementation,
+///      the test, so the switch is reached through an immutable in the implementation:
 ///      immutables live in the implementation's bytecode, which is exactly what an
 ///      EIP-1167 clone delegatecalls into.
 contract Switchboard {

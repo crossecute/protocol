@@ -65,7 +65,7 @@ abstract contract OutboundBase {
     ///      convention.
     ///
     /// @param providerData Opaque, and per send. LayerZero wants executor options and a
-    ///        refund address, Wormhole a consistency level, CCIP an `extraArgs` blob,
+    ///        refund address, Wormhole a consistency level, CCIP an `extraArgs` blob:
     ///        no argument list fits them all, and a fixed one would have to be widened
     ///        again for the next provider. It is the same reasoning that keeps `route`
     ///        opaque in the registry: this layer has no business knowing what an executor

@@ -45,7 +45,7 @@ owner
       _execute(calls)                                                  nonReentrant
 ```
 
-The peer relationship is exactly 1:1 (one transmitter, one receiver, one chain pair)
+The peer relationship is exactly 1:1 (one transmitter, one receiver, one chain pair),
 which is the shape every provider's peer table already has. This is the reason the
 transmitter can be its own endpoint at all; a shared transceiver fanning in from N
 transmitters would not fit.

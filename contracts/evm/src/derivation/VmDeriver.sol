@@ -260,7 +260,7 @@ contract VmDeriver is IVmDeriver {
             bytes32 full = AddressDerive.cosmosInstantiate2(checksum, creator, salt, initMsg);
             // Canonical ADR-028 is 32 bytes. Forked wasmd chains that use 20 for
             // Ethereum-ecosystem compatibility (Injective) truncate. Only set addrLen
-            // below 32 if you have confirmed the target forked ContractAddrLen,
+            // below 32 if you have confirmed the target forked ContractAddrLen:
             // getting it wrong yields a well-formed address nothing will ever occupy.
             if (addrLen == 0 || addrLen > 32) revert BadCosmosAddressLength();
             if (addrLen == 32) return abi.encodePacked(full);
