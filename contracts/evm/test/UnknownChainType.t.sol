@@ -27,7 +27,7 @@ contract WidthValidator is IRefValidator {
 ///
 /// @dev `ChainType.sol` is an ALLOCATION TABLE, not an enum. Every value is a plain
 ///      `uint16` and nothing validates against the set, so the question is not whether an
-///      unknown type parses — it does — but which parts of the registry still work and
+///      unknown type parses (it does), but which parts of the registry still work and
 ///      which quietly do not.
 contract UnknownChainTypeTest is Test {
     ChainRegistry registry;
@@ -86,7 +86,7 @@ contract UnknownChainTypeTest is Test {
     }
 
     /// @dev A destination on an unknown chain can report its receiver and be graded, which
-    ///      is the whole attested path — no chain-type knowledge required to store bytes.
+    ///      is the whole attested path: no chain-type knowledge required to store bytes.
     function test_refsResolveAndGradeForAnUndefinedChainType() public {
         vm.prank(owner);
         registry.addChainKey(chainId);
@@ -127,7 +127,7 @@ contract UnknownChainTypeTest is Test {
 
     /* =============================== what does not ============================= */
 
-    /// @dev Address parity is an `eip155` argument, so there is no default counterpart —
+    /// @dev Address parity is an `eip155` argument, so there is no default counterpart,
     ///      correctly, since a 20-byte EVM address means nothing here.
     function test_thereIsNoDefaultCounterpartForAnUndefinedChainType() public {
         vm.prank(owner);
@@ -159,13 +159,13 @@ contract UnknownChainTypeTest is Test {
     /* ================================ the hazard =============================== */
 
     /// @dev THE REAL GAP, AND IT IS SILENT. `parseStrict` carries canonicity rules only
-    ///      for the profiles it knows — minimal chain references for `eip155`, fixed
+    ///      for the profiles it knows: minimal chain references for `eip155`, fixed
     ///      32-byte addresses for `starknet`. An unregistered chain type gets NO rule, so
     ///      two encodings of what a human would call one address both parse, both are
     ///      "canonical", and they hash to DIFFERENT keys.
     ///
     ///      That is precisely the split-brain the registry's whole canonicity argument
-    ///      exists to prevent, and adding a `ChainType` constant does not close it — the
+    ///      exists to prevent, and adding a `ChainType` constant does not close it: the
     ///      rule has to be written into `parseStrict` alongside it.
     function test_anUndefinedChainTypeHasNoCanonicityRule() public {
         bytes memory padded = Erc7930.encode(CT_UNKNOWN, hex"00cafe", hex"0011223344556677");

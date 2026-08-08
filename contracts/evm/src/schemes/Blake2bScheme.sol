@@ -8,7 +8,7 @@ import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
 /// @notice Cardano's primitive. `Scheme.Blake2b256Scheme` in the enum the frozen
 ///         transmitters carry.
 /// @dev THE ONE THAT COSTS `pure`. `Blake2b256` reaches the EIP-152 precompile at 0x09
-///      through `staticcall`, which Solidity forbids inside `pure` — so this member is
+///      through `staticcall`, which Solidity forbids inside `pure`, so this member is
 ///      why `ICommitmentScheme.hash` is `view`, exactly as it is why the library's
 ///      scheme-parameterized overloads are.
 contract Blake2bScheme is ICommitmentScheme {

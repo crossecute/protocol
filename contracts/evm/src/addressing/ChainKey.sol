@@ -20,7 +20,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///        1. The COMMITMENT DOMAIN, folded into `Commitment.hashCalls` and recomputed by the
 ///           receiver on the far side. It must be derivable there with zero configuration,
 ///           which rules out anything provider-specific.
-///        2. The PROVIDER ROUTING ID — a LayerZero uint32 eid, a Hyperlane uint32 domain,
+///        2. The PROVIDER ROUTING ID: a LayerZero uint32 eid, a Hyperlane uint32 domain,
 ///           a Wormhole uint16, a CCIP uint64 selector. Per-protocol, and pure config.
 ///
 ///      A raw `uint256` chain id serves (1) only on EVM destinations and never serves (2).
@@ -35,7 +35,7 @@ library ChainKey {
     /// @notice This chain's own key, as the destination-side receiver computes it.
     /// @dev The counterpart to `forEvm`, and the reason the commitment domain needs no
     ///      configuration on the destination. A non-EVM receiver overrides its equivalent
-    ///      with a literal for its own chain identifier — a property of the deployment
+    ///      with a literal for its own chain identifier: a property of the deployment
     ///      target, not something an operator sets.
     function local() internal view returns (bytes32) {
         return forEvm(block.chainid);

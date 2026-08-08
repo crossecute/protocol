@@ -82,7 +82,7 @@ contract PayloadEncodingTest is Test {
 
     /// THE PROPERTY EVERYTHING ELSE RESTS ON. An EVM destination receives `Call[]` and a
     /// non-EVM one receives opaque `bytes[]`, so the same logical payload is serialized two
-    /// different ways depending on where it is going — and it must approve to one hash
+    /// different ways depending on where it is going, and it must approve to one hash
     /// either way. If these diverge, a payload approved off-chain in the portable form
     /// silently stops matching, and it fails only on a live message.
     function test_typedAndOpaqueProduceTheSameCommitment() public view {
@@ -112,7 +112,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// The equivalence survives the wire. The two encodings share no bytes, and the
-    /// framing never enters the hash — which is what lets the wire format change without
+    /// framing never enters the hash, which is what lets the wire format change without
     /// invalidating a single commitment.
     function test_theWireFramingIsNotPartOfTheCommitment() public view {
         Call[] memory calls = _calls();
@@ -189,7 +189,7 @@ contract PayloadEncodingTest is Test {
     /// THERE IS NO TAG, AND NOTHING NEEDS ONE. The form is a property of the destination:
     /// an EVM chain always gets `Call[]`, everything else always gets `bytes[]`. Both
     /// sides know which before a byte is written, so a field saying so would carry a value
-    /// each already holds — the same reason `Envelope` has no message-type field.
+    /// each already holds: the same reason `Envelope` has no message-type field.
     function test_theFormIsDecidedByTheDestination() public view {
         assertTrue(
             harness.isTypedDestination(Erc7930.encodeEvmChain(8453)),
@@ -209,7 +209,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// @dev THE REASON THE TAG COULD GO, STATED AS A TEST RATHER THAN A COMMENT. Feeding a
-    ///      receiver the wrong encoding fails rather than being misread — but note this is
+    ///      receiver the wrong encoding fails rather than being misread, but note this is
     ///      a property of how these two layouts happen to collide, not a promise the ABI
     ///      decoder makes. What actually prevents the misread is that no path sends opaque
     ///      elements to an EVM receiver. If one is ever added, the tag has to come back.
@@ -251,8 +251,8 @@ contract PayloadEncodingTest is Test {
 
     /* ========================== against a real receiver ========================= */
 
-    /// THE EQUIVALENCE, END TO END. The receiver's entry point takes `Call[]` only — an
-    /// EVM receiver executes EVM calls and nothing else — but the approval it discharges
+    /// THE EQUIVALENCE, END TO END. The receiver's entry point takes `Call[]` only (an
+    /// EVM receiver executes EVM calls and nothing else), but the approval it discharges
     /// may have been computed over the canonical OPAQUE elements, which is what
     /// VM-agnostic off-chain tooling produces. This is the case that would break silently
     /// if `Calls.encode` ever stopped matching the opaque element.
@@ -272,7 +272,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// The typed path carries `value` from inside the committed element, not from
-    /// `msg.value` — the approval covers how much the target receives.
+    /// `msg.value`: the approval covers how much the target receives.
     function test_theTypedPathSpendsTheCommittedValue() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({
@@ -303,7 +303,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// The receiver exposes ONE execution shape. An opaque array is not an alternative
-    /// spelling of the entry point — it has no selector here at all.
+    /// spelling of the entry point: it has no selector here at all.
     function test_thereIsNoOpaqueEntryPoint() public {
         OpenReceiver r = new OpenReceiver();
         r.initialize(address(this), new Call[](0));

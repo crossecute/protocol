@@ -14,7 +14,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 ///
 /// @dev THE CARDINALITY IS THE WHOLE DESIGN. The hub holds N claims about where remote
 ///      code lives, so it needs a registry, a provenance grade per claim, and a routing
-///      table. A spoke holds one, and it is not a claim at all — its home's chainKey is
+///      table. A spoke holds one, and it is not a claim at all: its home's chainKey is
 ///      written into this contract once and never again. Every piece of resolution
 ///      machinery therefore collapses into a stored value, and the spoke carries no
 ///      `chainRegistry` pointer, no `minCounterpartProvenance`, and no chainKey => eid map.
@@ -25,7 +25,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 ///      configuration by which it could be made to accept a second origin, so the set of
 ///      chains that can drive this contract is fixed at INITIALIZATION and cannot be
 ///      widened by anyone afterwards, including the local msig. All three halves of the
-///      home — its chainKey, the provider's route to it, and the counterpart address —
+///      home (its chainKey, the provider's route to it, and the counterpart address)
 ///      are written once in the initializer, with no setter to follow any of them.
 ///
 /// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected choice and
@@ -33,7 +33,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 ///      team can centralize on whichever chain they are willing to anchor to, and every
 ///      spoke simply names that chain instead. What the hub must be is an EVM chain with
 ///      the EIP-152 precompile, because the registry recomputes addresses and commitments
-///      locally — see `ChainRegistry` and `Commitment`.
+///      locally: see `ChainRegistry` and `Commitment`.
 ///
 /// @dev THEY ARE INITIALIZER ARGUMENTS RATHER THAN CONSTANTS, AND THAT COSTS NOTHING NOW.
 ///      A constant used to be the stronger choice, on the argument that an immutable set
@@ -44,16 +44,16 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 ///      is unaffected, and the write-once-at-initialization property is the same one
 ///      `_homeTransceiver` already relied on.
 abstract contract SpokeTransceiverBase is TransceiverBase {
-    /// keccak256 of the home chain's canonical ERC-7930 chain identifier — the one chain
+    /// keccak256 of the home chain's canonical ERC-7930 chain identifier: the one chain
     /// this spoke will accept a message from, and the only one it will send to.
     ///
-    /// @dev For Ethereum mainnet — the expected home — this is
+    /// @dev For Ethereum mainnet (the expected home), this is
     ///      `keccak256(0x00010000010100)`: version 1,
     ///      chainType eip155, a one-byte chain reference `0x01`, and a zero-length
     ///      address. `ChainKey.forEvm(1)` computes it.
     bytes32 public homeChainKey;
 
-    /// The message provider's own identifier for the home chain — a LayerZero eid, a
+    /// The message provider's own identifier for the home chain: a LayerZero eid, a
     /// Hyperlane domain, a Wormhole chain id. Opaque here; the binding decodes it.
     bytes private _homeRoute;
 
@@ -68,7 +68,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      window: between the two calls the admin could repoint the one address this
     ///      contract authenticates every inbound message against. Writing it in the
     ///      initializer closes that window rather than
-    ///      documenting it — there is no reachable state in which the value has been set
+    ///      documenting it: there is no reachable state in which the value has been set
     ///      and can still be changed.
     ///
     ///      It costs nothing in practice. The hub address is knowable before the spoke is
@@ -79,8 +79,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///
     /// @dev SPLITTING HUB FROM SPOKE DID NOT MOVE ANY ADDRESS, DESPITE THE DIFFERENT
     ///      BYTECODE. A transceiver is deployed as a PROXY through Nick's factory, so the
-    ///      CREATE2 initcode is the proxy's — with the deployer as owner and the factory
-    ///      as the placeholder implementation — and is byte-identical for a hub and a
+    ///      CREATE2 initcode is the proxy's (with the deployer as owner and the factory
+    ///      as the placeholder implementation), and is byte-identical for a hub and a
     ///      spoke. They diverge only in what they are upgraded to afterwards, which the
     ///      address derivation never sees. On every EVM chain sharing Ethereum's CREATE2
     ///      formula the hub and all spokes therefore land on the SAME address.
@@ -91,8 +91,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      params must be the proxy's initcode hash, not an implementation's.
     ///
     ///      So why is this set rather than derived? Because the chains where a spoke most
-    ///      needs to be sure — zkSync and Tron, whose CREATE2 formulas differ, and every
-    ///      non-EVM VM — are exactly the ones where the derivation does not hold, and a
+    ///      needs to be sure (zkSync and Tron, whose CREATE2 formulas differ, and every
+    ///      non-EVM VM) are exactly the ones where the derivation does not hold, and a
     ///      spoke has no registry to ask. One write at initialization is both simpler and
     ///      stronger than a derivation with three exceptions baked into it.
     bytes private _homeTransceiver;
@@ -101,7 +101,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///
     /// @dev WRITE-ONCE, BECAUSE CHANGING IT IS NOT A CONFIG EDIT. Clone bytecode has the
     ///      implementation address baked in, so a change moves no receiver that already
-    ///      exists — it only affects transmitters whose receiver has not been deployed
+    ///      exists: it only affects transmitters whose receiver has not been deployed
     ///      yet, silently forking the population into two logic versions distinguishable
     ///      only by when each user first sent. A setter makes that one transaction away;
     ///      an initializer makes it a redeploy, which is what a change of this kind is.
@@ -128,7 +128,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NoHomeChainKey();
     error NoHomeRoute();
     /// @dev Bootstrap is for a chain with no receiver. One already exists, so its payload
-    ///      cannot be delivered through `initialize` — that is single-shot — and this
+    ///      cannot be delivered through `initialize` (that is single-shot), and this
     ///      contract has no other way to reach a receiver by design.
     error ReceiverAlreadyExists(address transmitter, address receiver);
     /// @dev Creating a receiver for a transmitter you do not control would deny it its
@@ -200,7 +200,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @inheritdoc TransceiverBase
     ///
     /// @dev ONE ORIGIN, SO IT IS A COMPARISON. No registry, no provenance, no lookup that
-    ///      could return the wrong answer if configuration drifted — and no configuration
+    ///      could return the wrong answer if configuration drifted, and no configuration
     ///      by which this could be made to accept a second origin, since both halves are
     ///      write-once. The set of chains that can drive a spoke is fixed at deployment.
     function _authenticateOrigin(bytes memory route, bytes memory sender)
@@ -224,7 +224,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
 
     /// @notice Whether an inbound message's origin is the hub, in one comparison.
     /// @dev The spoke's entire peer check. `sender` is the raw counterpart address as the
-    ///      provider reports it, and `route` the provider's source id — both compared
+    ///      provider reports it, and `route` the provider's source id, both compared
     ///      against values this contract cannot be reconfigured to widen.
     function _isHome(bytes memory route, bytes memory sender) internal view returns (bool) {
         return keccak256(route) == keccak256(homeRoute())
@@ -263,8 +263,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @notice Inbound path: stand this owner's receiver up and run the payload that
     ///         justified doing so.
     ///
-    /// @dev SELF-CALL ONLY, so it is reachable from `_onInbound` — which authenticates the
-    ///      origin — and nowhere else.
+    /// @dev SELF-CALL ONLY, so it is reachable from `_onInbound` (which authenticates the
+    ///      origin), and nowhere else.
     ///
     ///      IT CREATES AND INITIALIZES, AND THAT IS ITS ENTIRE RELATIONSHIP WITH A
     ///      RECEIVER. The transceiver never calls `commit`, `finalize`, or `execute`
@@ -279,10 +279,10 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev THERE IS NO PERMISSIONLESS `createReceiver`. An account on a spoke exists
     ///      because a bootstrap message arrived, and nothing else. Leaving an open creation
     ///      path would let anyone deploy an owner's account empty, one transaction ahead of
-    ///      their bootstrap, and permanently deny it — `CrossProxy` arms exactly once.
+    ///      their bootstrap, and permanently deny it: `CrossProxy` arms exactly once.
     /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO. The account address is
     ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the
-    ///      address its transmitter occupies at home — which is the entire property.
+    ///      address its transmitter occupies at home, which is the entire property.
     function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls)
         external
     {

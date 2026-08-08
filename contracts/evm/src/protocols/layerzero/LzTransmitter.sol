@@ -28,7 +28,7 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
     ///      `_checkAdmin`. Today the authority is `OwnableUpgradeable`, declared right
     ///      here rather than in the base. When this contract becomes an actual OApp the
     ///      inheritance list gains `OAppUpgradeable` and these two bodies answer from
-    ///      OApp's own `Ownable` instead — one line each, and nothing in `TransmitterBase`
+    ///      OApp's own `Ownable` instead, one line each, and nothing in `TransmitterBase`
     ///      changes, because it never had an opinion about ownership to begin with.
     function _owner() internal view override returns (address) {
         return owner();

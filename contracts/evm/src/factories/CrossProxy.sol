@@ -14,7 +14,7 @@ interface ICrossProxy {
 }
 
 /// @title CrossProxy
-/// @notice The proxy every crossecute account is deployed as — transmitter and receiver alike.
+/// @notice The proxy every crossecute account is deployed as: transmitter and receiver alike.
 ///
 /// @dev IT TAKES NO CONSTRUCTOR ARGUMENTS, AND THAT IS THE ENTIRE POINT. CREATE2 hashes the
 ///      initcode, so anything baked into it changes the address. A minimal clone cannot be
@@ -23,15 +23,15 @@ interface ICrossProxy {
 ///      address however their deployer and salt are chosen.
 ///
 ///      With no arguments the initcode is one constant byte string, identical everywhere.
-///      A transmitter deployed by the hub and a receiver deployed by a spoke — same
-///      deployer address, same salt, same initcode — therefore land on ONE address, and
+///      A transmitter deployed by the hub and a receiver deployed by a spoke (same
+///      deployer address, same salt, same initcode) therefore land on ONE address, and
 ///      diverge only in what they are upgraded to afterwards, which the derivation never
 ///      sees. That is the argument that lets a hub and a spoke share an address, applied
 ///      one level down.
 ///
 /// @dev THERE IS NO WAY TO UPGRADE WITHOUT LOCKING. The single admin operation upgrades,
 ///      runs the initializer, and zeroes the admin, in that order and in one call. Not
-///      "the deployer is expected to lock afterwards" — there is no reachable state in
+///      "the deployer is expected to lock afterwards": there is no reachable state in
 ///      which an account has a live upgrade key and a real implementation at the same
 ///      time. That is what makes an upgradeable full-power account acceptable: the key
 ///      exists for part of one transaction, held by the contract that created the account,
@@ -40,7 +40,7 @@ interface ICrossProxy {
 /// @dev DISPATCH IS TRANSPARENT-STYLE, WHICH MATTERS AFTER THE LOCK. The admin operation
 ///      is routed inside `fallback` rather than declared as an external function, because
 ///      a declared one would shadow that selector on the implementation forever. Once the
-///      admin is zeroed no caller can match it — `msg.sender` is never the zero address —
+///      admin is zeroed no caller can match it (`msg.sender` is never the zero address)
 ///      so every selector delegates from then on and this is indistinguishable from a
 ///      plain ERC-1967 proxy.
 contract CrossProxy is Proxy {
@@ -61,7 +61,7 @@ contract CrossProxy is Proxy {
     fallback() external payable override {
         address admin = ERC1967Utils.getAdmin();
 
-        // Not the admin — or there is no longer one — so this is an ordinary call.
+        // Not the admin (or there is no longer one), so this is an ordinary call.
         if (admin == address(0) || msg.sender != admin) {
             _fallback();
             return;
@@ -77,7 +77,7 @@ contract CrossProxy is Proxy {
         ERC1967Utils.upgradeToAndCall(implementation, data);
 
         // The slot is written directly because `ERC1967Utils.changeAdmin` refuses the
-        // zero address — it assumes an admin is being handed over rather than retired.
+        // zero address: it assumes an admin is being handed over rather than retired.
         // Retiring it is exactly what this does, and there is no other way to say so.
         StorageSlot.getAddressSlot(ERC1967Utils.ADMIN_SLOT).value = address(0);
         emit Locked(implementation);

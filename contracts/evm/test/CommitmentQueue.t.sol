@@ -191,7 +191,7 @@ contract CommitmentQueueTest is Test {
     }
 
     /// @dev THE WHOLE REASON CANCEL EXISTS. Ordered execution means a payload that can
-    ///      never succeed stalls everything behind it — until it is withdrawn.
+    ///      never succeed stalls everything behind it, until it is withdrawn.
     function test_cancelUnblocksAQueueStuckOnAFailingPayload() public {
         r.commit(_failingHash());
         r.commit(_hash(2));
@@ -293,7 +293,7 @@ contract CommitmentQueueTest is Test {
 
     /// @dev TWO DEFENCES, AND THE OUTER ONE FIRES FIRST. `finalize` is `nonReentrant`, so
     ///      a payload that re-enters is stopped before it can reach the queue at all.
-    ///      Underneath that, the head still advances BEFORE `_execute` — so even without
+    ///      Underneath that, the head still advances BEFORE `_execute`, so even without
     ///      the guard a re-entrant call would find its own approval already spent. This
     ///      asserts the guard; `test_theHeadIsSpentBeforeExecution` asserts the other.
     function test_reentrantFinalizeIsRefused() public {

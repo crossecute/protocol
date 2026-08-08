@@ -10,7 +10,7 @@ pragma solidity ^0.8.20;
 ///
 ///      ENDIANNESS. EIP-152 takes and returns the state `h` and message `m` as
 ///      little-endian 64-bit words. Because we carry `h` as opaque 64 raw bytes and pass
-///      message blocks through verbatim, no word swapping is ever needed — only the
+///      message blocks through verbatim, no word swapping is ever needed: only the
 ///      parameter-block XOR and the `t` counter are written in explicit little-endian.
 ///      This is the single most common source of wrong BLAKE2b ports; it is avoided here
 ///      rather than handled.
@@ -21,7 +21,7 @@ pragma solidity ^0.8.20;
 ///
 ///      GAS. The precompile costs 1 gas per round, 12 rounds per 128-byte block, so the
 ///      compression itself is free in practice. Cost is dominated by memory and the
-///      staticcall overhead — measured at roughly 3k gas for a single-block input.
+///      staticcall overhead: measured at roughly 3k gas for a single-block input.
 library Blake2b256 {
     /// @dev BLAKE2b IV, little-endian bytes, with h[0] already XORed by the parameter
     ///      block 0x01010020 (fanout=1, depth=1, key length=0, digest length=32).
@@ -103,7 +103,7 @@ library Blake2b256 {
             h, // 64
             blk, // 128
             _le64(t0), // 8   (t0)
-            bytes8(0), // 8   (t1 — messages beyond 2^64 bytes are not representable)
+            bytes8(0), // 8   (t1: messages beyond 2^64 bytes are not representable)
             last ? bytes1(0x01) : bytes1(0x00) // 1
         );
 

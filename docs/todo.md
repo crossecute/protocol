@@ -10,8 +10,8 @@ this file is the gap between that design and the tree.
 
 ## 1. No message provider is integrated
 
-**This is the headline.** Both paths are built end to end in-process — `_sendMessage`,
-`send` / `sendTo` / `bootstrap`, the inbound funnel, the reentrancy guard — and nothing
+**This is the headline.** Both paths are built end to end in-process (`_sendMessage`,
+`send` / `sendTo` / `bootstrap`, the inbound funnel, the reentrancy guard), and nothing
 crosses a real bridge, because `_sendMessage` reverts `SendNotImplemented` until a protocol
 binding overrides it.
 
@@ -25,11 +25,11 @@ Still missing on the transport itself:
 ## 2. The provider binding
 
 `LzTransmitter`, `LzReceiver`, `LzHubTransceiver`, and `LzSpokeTransceiver` inherit no
-LayerZero code — no `OApp`, no endpoint, no `@layerzerolabs` in `lib/` or in the remappings.
+LayerZero code: no `OApp`, no endpoint, no `@layerzerolabs` in `lib/` or in the remappings.
 **Nothing has ever crossed a bridge.**
 
-The claim the whole redesign rests on — that an account can be its own provider endpoint,
-and that a *proxy* can hold one — is untested. This is the next thing to build: it is what
+The claim the whole redesign rests on (that an account can be its own provider endpoint,
+and that a *proxy* can hold one) is untested. This is the next thing to build: it is what
 turns `_sendMessage` from a seam into a send, and it is what every remaining path is
 waiting on.
 
@@ -61,28 +61,28 @@ abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradea
 
 **One constructor argument, and it does not matter.** It is on the *implementation*, and an
 implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
-initcode — so `CrossProxy` stays argument-free and no derived address moves. The endpoint
+initcode, so `CrossProxy` stays argument-free and no derived address moves. The endpoint
 being an `immutable` is correct rather than merely tolerable: every account on a chain uses
 the same endpoint, which is exactly what an implementation-level immutable expresses.
 
 **It fits our layout without collisions.** `OAppCoreUpgradeable` keeps its peer mapping in
 ERC-7201 namespaced storage (`OAPP_CORE_STORAGE_LOCATION`), as do `OAppOptionsType3`,
 `PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `accountSalt`,
-or the approval queue however our layout changes — which also removes the storage-gap
+or the approval queue however our layout changes, which also removes the storage-gap
 question for accounts specifically.
 
 **`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
 is not initialized here on purpose. It should be initialized in the child contract to
 accommodate the different version of Ownable."* Since it derives OZ's `OwnableUpgradeable`,
 the same one `LzTransmitter` uses today, `__Ownable_init(owner)` plus `__OApp_init(delegate)`
-composes rather than collides — and `TransmitterBase`'s ownership seam means the base is
+composes rather than collides, and `TransmitterBase`'s ownership seam means the base is
 unaffected either way.
 
 ### Where each seam attaches
 
 | Our hook | LayerZero |
 | --- | --- |
-| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)` — decode `providerData` to `(bytes options, address refund)`; `eid` from `routeFor(chainKey)` |
+| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: decode `providerData` to `(bytes options, address refund)`; `eid` from `routeFor(chainKey)` |
 | `_onMessage(bytes payload)` | called from `_lzReceive(...)`, the override point |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | `_checkAdmin` / `_checkOwner` | answered from OApp's own `Ownable` |
@@ -94,14 +94,14 @@ receivers share one. One entry per destination, and the value never varies.
 
 - **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`.** That runs inside
   `upgradeInitializeAndLock`'s delegatecall, so `address(this)` is the proxy and the
-  delegate is registered per account — correct, but it means **every account creation
+  delegate is registered per account: correct, but it means **every account creation
   touches the endpoint**. Real gas on the bootstrap path, and the concrete form of the cost
   named as "peers and any send-side security configuration are per-user rather than shared".
 - **OApp authenticates inbound before our code runs.** `lzReceive` does
   `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
   `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
   the open question in §4 below, now concrete: it contradicts the rule stated for the
-  transceiver, and for a 1:1 pairing there is nothing extra to verify — so accepting it is
+  transceiver, and for a 1:1 pairing there is nothing extra to verify, so accepting it is
   defensible, but it should be a **written exception** rather than an omission.
 
 ## 3. Blockers on specific paths
@@ -117,19 +117,19 @@ receivers share one. One entry per destination, and the value never varies.
 - **A Move receiver model.** Move has no general dynamic dispatch, so a receiver can verify
   a commitment perfectly and have no way to perform the approved calls. It also has no
   per-owner deployment, so the one-account-per-owner model and its single address do not
-  survive. The largest unresolved piece of non-EVM support — see
+  survive. The largest unresolved piece of non-EVM support: see
   [`encoding.md`](encoding.md#commitments-off-the-evm).
 - **A Cardano receiver model, or a decision that Cardano is out of scope.** eUTxO
   validators approve spending; they do not execute.
 - **Poseidon for Starknet commitments.** `Scheme.Poseidon` is declared and reverts
   `SchemeNotComputable`. Porting it needs the exact round constants and MDS matrix over the
-  Starknet field — a vector-checked task, not one to write from memory. Until then a
+  Starknet field: a vector-checked task, not one to write from memory. Until then a
   Starknet commitment is computed off-chain and carried in an opaque element that calls
   that receiver's own `commit`.
 
   **No longer blocked on a redeploy.** `ICommitmentScheme` plus
   `ChainRegistry.setCommitmentScheme` make a primitive a per-chainKey plugin, so the port
-  lands as a deployment and one owner transaction rather than as new account bytecode —
+  lands as a deployment and one owner transaction rather than as new account bytecode,
   which frozen accounts could never receive anyway. The enum stays exactly as it is: it is
   compiled into every live transmitter and cannot grow, and new primitives get a contract
   instead of a member. What is still outstanding is Poseidon itself.
@@ -156,26 +156,26 @@ mainnet.
   split.
 - **Self-replaying payloads.** `finalize` clears an approval before executing, so a payload
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
-  Owner-approved either way, so not an escalation — but "approvals are single-use" stops
+  Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
 - **Who authenticates the receiver's inbound message.** A provider's own peer check runs
   before any of our code, which contradicts the rule stated for the transceiver. For a 1:1
-  pairing there is nothing extra to verify, so accepting it is defensible — but it should be
+  pairing there is nothing extra to verify, so accepting it is defensible, but it should be
   a written exception rather than an omission.
 
 ## 5. Smaller open questions
 
-- **The opaque container off the EVM** — ABI framing or a length-prefixed one. Not blocking
+- **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
   until a non-EVM receiver exists, because the commitment never sees the container.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
 - **Registry `slot` namespacing.** Raw `transceiverId`, so two callers choosing the same
   bytes32 collide; only the monotonic provenance rule limits the damage.
-- **Owner-writable non-EVM locations** — allowed directly, or only through the graded
+- **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 - **What else a self-call may reach.** Today `commit` / `cancel` / `finalize` / `execute`.
-  When a merkle-root setter lands, a self-call could rotate the policy — probably right,
+  When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
 - **Refund plumbing.** `bootstrap` should take a refund address and the transmitter should
@@ -190,26 +190,26 @@ mainnet.
   write-once initializer arguments. Two things follow that are worth deciding rather than
   inheriting: the hub must be an EVM chain with the EIP-152 precompile, since the registry
   recomputes addresses and commitments locally, and every spoke in one deployment must be
-  given the SAME home — nothing on-chain cross-checks that, because a spoke has no view of
+  given the SAME home: nothing on-chain cross-checks that, because a spoke has no view of
   its siblings. A deploy script is the natural place to enforce it, and there is no
   `script/` yet.
 - **Merkle-verified calls** as an opt-in policy, replacing the `(target, selector)`
   predicate. `isAllowed` defaults open, so this is an owner's restriction rather than a
   safety baseline.
 
-## 6. Infrastructure — none of it exists
+## 6. Infrastructure: None of it exists
 
-- **`lib/` is vendored rather than submoduled** — forge-std 1.16.2, OZ 5.1.0,
+- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.1.0,
   OZ-upgradeable 5.1.0. Committed deliberately: CREATE2 parity depends on byte-identical
   initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
-- **No `script/`.** The Assumptions section specifies an elaborate deploy story — Arachnid's
-  factory, proxy with deployer-as-owner, immediate upgrade, ProxyAdmin under the msig — with
+- **No `script/`.** The Assumptions section specifies an elaborate deploy story (Arachnid's
+  factory, proxy with deployer-as-owner, immediate upgrade, ProxyAdmin under the msig), with
   no code behind it. The CREATE2 parity argument stands or falls on that initcode being
   byte-identical, and nothing pins it.
 - **No CI.** No `.github/`.
 - **No `test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
-  no non-EVM tooling — cheap, and the only defence on the execute-on-arrival path where
+  no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where
   there is no commitment at all. **Now load-bearing for the scheme plugins**: an
   `ICommitmentScheme` is only as good as the evidence that its primitive matches what the
   destination's own receiver applies, and a wrong one wedges that receiver's FIFO queue

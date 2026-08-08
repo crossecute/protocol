@@ -21,7 +21,7 @@ import {Call} from "src/messaging/Call.sol";
 ///      to collide or a gap to reserve.
 abstract contract Executor {
     error SelectorNotAllowed(address target, bytes4 selector);
-    /// @dev Carries the index because the array is approved as a unit — knowing WHICH
+    /// @dev Carries the index because the array is approved as a unit: knowing WHICH
     ///      element failed is the difference between a diagnosable payload and a rejected
     ///      one, and the whole batch reverts either way.
     error CallFailed(uint256 index, bytes reason);
@@ -35,7 +35,7 @@ abstract contract Executor {
     ///      full-power and answer to one owner, the same way a Safe on Ethereum does:
     ///      anything that can deliver an authorized payload can already make one do
     ///      anything. The policy is a self-imposed restriction an owner opts into, not a
-    ///      defence against an outside party — a compromised bridge could forge a
+    ///      defence against an outside party: a compromised bridge could forge a
     ///      commitment hash just as easily as a call array, so gating on
     ///      `(target, selector)` was never what stood between a forged message and
     ///      execution.
@@ -64,7 +64,7 @@ abstract contract Executor {
     ///      redirected or re-priced at execution time.
     ///
     /// @dev ONE FAILURE REVERTS EVERYTHING. An approval covers the array as a unit, and a
-    ///      caller may already have consumed it by the time this runs — so executing a
+    ///      caller may already have consumed it by the time this runs, so executing a
     ///      prefix would discharge an approval that was never satisfied, and do it
     ///      unrepeatably. The original revert reason is carried out in `CallFailed` rather
     ///      than swallowed.
@@ -79,7 +79,7 @@ abstract contract Executor {
 
             // Under four bytes there is no selector: a bare value transfer, or a hit on
             // the target's fallback. `bytes4` of a short `bytes` right-pads with zeros, so
-            // reading one anyway would invent a selector the payload never named — and one
+            // reading one anyway would invent a selector the payload never named, and one
             // that could match a policy entry by accident.
             bytes4 selector = c.data.length >= 4 ? bytes4(c.data) : bytes4(0);
             if (!isAllowed(c.target, selector)) {

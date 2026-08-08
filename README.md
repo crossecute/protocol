@@ -4,12 +4,12 @@ Secure multisig operations across chains, anchored on one of them.
 
 ## Why
 
-A team on six chains runs six multisigs — six addresses, six signer sets to keep in step,
+A team on six chains runs six multisigs: six addresses, six signer sets to keep in step,
 six proposals per change, six sets of funded signers. Everything below follows from
 collapsing that to one.
 
 **A signer is removed once, not N times.** The signer set exists only in the home-chain
-multisig. Receivers elsewhere never learn who the signers are — they authenticate the
+multisig. Receivers elsewhere never learn who the signers are: they authenticate the
 origin address, fixed by CREATE2 at creation and unmoved by a signer change. Rotating a
 compromised key is one transaction, not N with a live attacker in the gaps.
 
@@ -20,11 +20,11 @@ stops scaling with the number of chains.
 The atomicity is in the authorization, not the settlement: messages land when their bridges
 deliver, and a revert on one chain leaves that chain behind until retry rather than rolling
 back the others (see [Failure handling](docs/message-flow.md#failure-handling)). What it
-removes is divergence at the point of decision — six chains cannot hold six different
+removes is divergence at the point of decision: six chains cannot hold six different
 payloads when only one was approved.
 
 **No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
-deployment there and someone's interface up — canonical, Protofire's, or self-hosted. Here
+deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here
 every operation starts on the home chain, so one interface covers all of them, and a chain
 needs no Safe at all: the authority on the spoke is the account this protocol deploys.
 
@@ -33,29 +33,29 @@ decentralized, so an operable Safe per chain means N signers funded on M chains 
 currencies. Here signers transact only at home. The bridge fee is paid there in one
 currency and execution runs inside the delivery callback. A payload that spends native
 currency draws on the receiver's address, which is derivable and fundable before the
-receiver exists — topped up once, not per signer.
+receiver exists: topped up once, not per signer.
 
 **One admin address everywhere.** Allowlists, deploy configs, an `owner()` read on an
-explorer, a runbook step — each names one address instead of a per-chain table someone has
+explorer, a runbook step: each names one address instead of a per-chain table someone has
 to keep correct. A wrong address is immediately visible rather than merely plausible.
 
 **One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
 and M chains means M batches reviewed separately plus the work of confirming they agree.
 Here it is one batch, reviewed in totality. The commitment folds the destination chainKey
-in with the calls, so an approval names what runs *and* where — confirming a payload
+in with the calls, so an approval names what runs *and* where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
 **What it costs.** The home chain and the message provider enter the trust path: a halt at
 home delays everything, and a provider that can forge a message can drive an account. No
 shared failure is exactly what N independent multisigs buy with N of everything else. The
-exposure is narrowed where it can be — a transceiver is upgradeable only until
+exposure is narrowed where it can be: a transceiver is upgradeable only until
 `lockUpgrades()`, an account's upgrade key dies in the call that arms it, and no shared
 contract sits in the path of a normal message.
 
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
-`CREATE2(transceiver, keccak256(owner, salt), CrossProxy)` — and because all three inputs
+`CREATE2(transceiver, keccak256(owner, salt), CrossProxy)`, and because all three inputs
 are the same everywhere, so is the address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
 logic and driven by messages from the first. Same address, different half.
@@ -63,7 +63,7 @@ logic and driven by messages from the first. Same address, different half.
 **The home chain is a choice.** Ethereum is the expected anchor and the reason the protocol
 reads that way, but nothing requires it: a team can centralize on whichever chain they are
 willing to anchor to, and every spoke names that one instead. A spoke is exactly as rigid
-either way — its home chainKey, route, and counterpart are all written once at
+either way: its home chainKey, route, and counterpart are all written once at
 initialization with no setters. What the home chain *must* be is an EVM chain with the
 EIP-152 precompile, because the registry recomputes addresses and commitments locally.
 
@@ -78,7 +78,7 @@ B · bootstrap      owner → account.bootstrap(8453, calls)
                    → hub transceiver: (owner, salt, calls)           ← provenance bar
                         ══ bridge ══
                    → spoke transceiver: deploy the account, arm it,
-                     run the payload, drop the upgrade key — one call
+                     run the payload, drop the upgrade key (one call)
                         ══ bridge ══
                    → hub → registry: where it landed
 ```
@@ -109,7 +109,7 @@ src/
   protocols/      per message provider; the only files naming an SDK
 ```
 
-Dependencies run one way — `addressing` is a leaf, and nothing above it is imported by
+Dependencies run one way: `addressing` is a leaf, and nothing above it is imported by
 anything below:
 
 ```
@@ -124,7 +124,7 @@ things rather than a statement about them.
 ## Where the reasoning lives
 
 Every design decision is argued in the contract that implements it. This is an index, not a
-summary — the file is always the newer statement.
+summary: the file is always the newer statement.
 
 | Question | Answered in |
 | --- | --- |
@@ -143,11 +143,11 @@ summary — the file is always the newer statement.
 
 ## Assumptions
 
-- All contracts are created through Arachnid's CREATE2 factory with a salt — `0x4e59..`
+- All contracts are created through Arachnid's CREATE2 factory with a salt: `0x4e59..`
   where it exists; zk-chains use their own.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
-  byte-identical initcode on every chain — so the target must not vary. Optimizer settings
+  byte-identical initcode on every chain, so the target must not vary. Optimizer settings
   are pinned for the same reason.
 - Transceivers are deployed as upgradeable proxies, upgraded to their real implementation,
   then `lockUpgrades()`. A transceiver decides which cross-chain payloads are authentic, so
@@ -158,11 +158,11 @@ summary — the file is always the newer statement.
 
 ## Docs
 
-- [`docs/message-flow.md`](docs/message-flow.md) — the two paths, wire formats, and what
+- [`docs/message-flow.md`](docs/message-flow.md): the two paths, wire formats, and what
   each contract does
-- [`docs/encoding.md`](docs/encoding.md) — call serialization, the commitment preimage, and
+- [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and
   what changes off the EVM
-- [`docs/todo.md`](docs/todo.md) — everything outstanding, ordered by what blocks what
+- [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status
 
@@ -174,6 +174,6 @@ cd contracts/evm && forge test        # 242 passing
 ```
 
 **Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` until a
-protocol binding overrides it, and no provider is bound — `LzTransmitter` and friends are
+protocol binding overrides it, and no provider is bound: `LzTransmitter` and friends are
 structure without an SDK behind them. That is the next thing to build, and every remaining
 path waits on it.

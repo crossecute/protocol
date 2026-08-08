@@ -54,7 +54,7 @@ library SuiDerive {
     /// @notice MultiSig address.
     /// @dev blake2b256( 0x03 ‖ le16(threshold) ‖ (flag_i ‖ pk_i ‖ weight_i)* )
     ///      Threshold is u16 little-endian; each weight is u8. Order of the member
-    ///      list is significant — it must match the on-chain MultiSigPublicKey.
+    ///      list is significant: it must match the on-chain MultiSigPublicKey.
     /// @param flags Per-member scheme flags.
     /// @param pubkeys Per-member raw public keys, same order as `flags`.
     /// @param weights Per-member weights, same order.

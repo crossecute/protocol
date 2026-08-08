@@ -124,8 +124,8 @@ contract CommitmentSchemeTest is Test {
     /* ============================ the primitives agree ========================== */
 
     /// @dev A one-element fold, computed by hand against the primitive itself. This is
-    ///      what pins the fold STRUCTURE — seed over the chainKey, then
-    ///      `H(acc ‖ H(element))` — rather than only asserting internal consistency.
+    ///      what pins the fold STRUCTURE (seed over the chainKey, then
+    ///      `H(acc ‖ H(element))`), rather than only asserting internal consistency.
     function test_theSha256FoldMatchesAHandComputation() public view {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"c0ffee";
@@ -148,7 +148,7 @@ contract CommitmentSchemeTest is Test {
         assertEq(h.hashElements(Scheme.Blake2b256Scheme, DEST, elements), expected);
     }
 
-    /// @dev An empty array is the seed alone — non-zero, and therefore a valid commitment
+    /// @dev An empty array is the seed alone: non-zero, and therefore a valid commitment
     ///      under every scheme, exactly as it is under keccak.
     function test_anEmptyArrayIsTheSeedUnderEveryScheme() public view {
         bytes[] memory none = new bytes[](0);

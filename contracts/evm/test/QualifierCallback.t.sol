@@ -119,7 +119,7 @@ contract QualifierCallbackTest is Test {
         assertEq(registry.get(SLOT).id, Erc7930.id(suiInterop));
     }
 
-    /// @dev Not even an identical repeat gets through — a replayed message is a revert,
+    /// @dev Not even an identical repeat gets through: a replayed message is a revert,
     ///      not a silent no-op that looks like success.
     function test_evenAnIdenticalReportIsRefusedTwice() public {
         vm.prank(transceiver);
@@ -142,7 +142,7 @@ contract QualifierCallbackTest is Test {
 
     /* ================================= grading ================================== */
 
-    /// @dev With nothing registered in advance the honest grade is `Attested` — worth
+    /// @dev With nothing registered in advance the honest grade is `Attested`: worth
     ///      exactly the security of the bridge that carried it, and no more.
     function test_aReportedRefIsAttestedAndNothingMore() public {
         vm.prank(transceiver);
@@ -170,7 +170,7 @@ contract QualifierCallbackTest is Test {
     }
 
     /// @dev A qualifier is validated against the chain it claims to be on, so Sui-only
-    ///      fields on an Aptos ref — or a malformed Move identifier — never land.
+    ///      fields on an Aptos ref (or a malformed Move identifier) never land.
     function test_aMalformedQualifierIsRefused() public {
         Move.MoveQualifier memory q = _qualifier();
         q.moduleName = "not a module name";

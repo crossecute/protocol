@@ -77,7 +77,7 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Same factory, same salt, same initcode — so Ethereum recomputes the Base
+    /// @dev Same factory, same salt, same initcode, so Ethereum recomputes the Base
     ///      counterpart locally at `Derived`. No message, no bridge trust.
     function test_evmCounterpartIsDerivedNotBridged() public {
         vm.startPrank(msig);
@@ -99,7 +99,7 @@ contract CounterpartRoutingTest is Test {
     }
 
     /// @dev The same salt lands at the same address on every chain sharing Ethereum's
-    ///      derivation — which is why no redeploy or repointing is ever needed.
+    ///      derivation, which is why no redeploy or repointing is ever needed.
     function test_sameAddressAcrossEvmChains() public {
         vm.startPrank(msig);
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
@@ -145,7 +145,7 @@ contract CounterpartRoutingTest is Test {
         vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
         transceiver.counterpartOn(solKey);
 
-        // Lowering the bar makes it reachable — explicitly, not by accident.
+        // Lowering the bar makes it reachable: explicitly, not by accident.
         vm.prank(msig);
         transceiver.setRouting(
             IChainRegistryRefs(address(registry)), provider, Provenance.Attested
@@ -168,7 +168,7 @@ contract CounterpartRoutingTest is Test {
 
     /// @dev Starknet's address derivation is Pedersen and cannot run on the EVM at any
     ///      price. So the destination creates the receiver, reports the address back, and
-    ///      the registry grades it `Attested` — an honest description of what we know.
+    ///      the registry grades it `Attested`: an honest description of what we know.
     function test_starknetReceiverLearnedFromCallback() public {
         bytes memory snChain = Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"));
         // A felt below L2_ADDRESS_UPPER_BOUND, zero-padded to the required 32 bytes.
@@ -292,7 +292,7 @@ contract CounterpartRoutingTest is Test {
     }
 
     /// @dev THE zkSYNC AND TRON CASE. Both are `eip155`, so the chain type alone says
-    ///      parity might hold — and both have different CREATE2 formulas, so it does not.
+    ///      parity might hold, and both have different CREATE2 formulas, so it does not.
     ///      `setMaxProvenance` is already the dial that records "addresses here cannot be
     ///      recomputed on the hub", so a cap below `Derived` withdraws the default rather
     ///      than needing a second flag that could disagree with it.
@@ -306,7 +306,7 @@ contract CounterpartRoutingTest is Test {
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
         transceiver.counterpartOn(zkKey);
 
-        // Declaring one explicitly still works — that is what the cap forces you to do,
+        // Declaring one explicitly still works: that is what the cap forces you to do,
         // and the cap is also why it can only ever be learned rather than derived.
         bytes32 id = keccak256("lz.zksync");
         vm.prank(address(transceiver));

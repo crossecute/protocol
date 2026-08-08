@@ -83,8 +83,8 @@ contract DestinationNamingTest is Test {
     /* ============================ the chainKey itself =========================== */
 
     /// @dev THE POINT OF THE WHOLE DESIGN. Both ends of a message derive the same key
-    ///      from values they already have — a chain id in the signed payload on one side,
-    ///      `block.chainid` on the other — so neither stores a chainKey anywhere.
+    ///      from values they already have (a chain id in the signed payload on one side,
+    ///      `block.chainid` on the other), so neither stores a chainKey anywhere.
     function test_chainKeyNeedsNoStorageOnEitherSide() public {
         vm.chainId(8453);
         assertEq(ChainKey.local(), ChainKey.forEvm(8453), "destination derives its own");
@@ -103,7 +103,7 @@ contract DestinationNamingTest is Test {
     }
 
     /// @dev THE LOAD-BEARING LITERAL. `homeChainKey` is hardcoded rather than computed
-    ///      so the spoke's initcode is byte-identical on every chain — CREATE2 parity
+    ///      so the spoke's initcode is byte-identical on every chain: CREATE2 parity
     ///      depends on that. This is the check that keeps the literal honest; if it ever
     ///      fails, every spoke is pointed at a chain that does not exist.
     /// @dev THIS deployment anchors on Ethereum, which is a fact about the initializer
@@ -116,8 +116,8 @@ contract DestinationNamingTest is Test {
     /// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected anchor,
     ///      but nothing in the protocol requires it: a team can centralize on whichever
     ///      chain they are willing to anchor to, and every spoke simply names that one
-    ///      instead. The spoke is exactly as rigid either way — three write-once values,
-    ///      no setters — so the choice costs nothing in guarantees.
+    ///      instead. The spoke is exactly as rigid either way (three write-once values,
+    ///      no setters), so the choice costs nothing in guarantees.
     function test_aTeamCanAnchorOnADifferentChain() public {
         address arbHub = address(0xA4B);
         LzSpokeTransceiver arbSpoke = LzSpokeTransceiver(
@@ -221,7 +221,7 @@ contract DestinationNamingTest is Test {
 
     /// @dev A live transceiver id is a claim on the chain, so the directory refuses to
     ///      drop it out from under one. Routes are no longer the registry's business, so
-    ///      they are not part of this check — they live on the transceiver.
+    ///      they are not part of this check: they live on the transceiver.
     function test_chainKeyWithALiveTransceiverCannotBeRemoved() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
@@ -235,7 +235,7 @@ contract DestinationNamingTest is Test {
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable
-    ///      separately — otherwise a half-wired chain cannot be diagnosed.
+    ///      separately: otherwise a half-wired chain cannot be diagnosed.
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
@@ -273,7 +273,7 @@ contract DestinationNamingTest is Test {
 
     /// @dev THE ROUTE LIVES WHERE THE SENDING HAPPENS. A registry read would put a second
     ///      shared contract in the path of every send, and a compromised one could
-    ///      misroute a payload — which on the execute-on-arrival path means it runs on the
+    ///      misroute a payload, which on the execute-on-arrival path means it runs on the
     ///      wrong chain, with no commitment binding the destination.
     function test_theRegistryHoldsNoRoutes() public {
         (bool a,) = address(registry).call(
@@ -291,7 +291,7 @@ contract DestinationNamingTest is Test {
 
     /* ================================ the spoke ================================ */
 
-    /// @dev The spoke's whole routing layer. No registry, no lookup — the one destination
+    /// @dev The spoke's whole routing layer. No registry, no lookup: the one destination
     ///      it has is a literal, and everything else is refused.
     function test_spokeRoutesHomeAndNowhereElse() public {
         bytes memory hubAddr = abi.encodePacked(address(hub));
@@ -348,7 +348,7 @@ contract DestinationNamingTest is Test {
     }
 
     /// @dev A spoke with no counterpart is not a half-configured spoke, it is one that
-    ///      should never have been deployed — so it fails at initialization.
+    ///      should never have been deployed, so it fails at initialization.
     function test_homeTransceiverIsRequiredAtInitialization() public {
         LzSpokeTransceiver impl = new LzSpokeTransceiver();
         vm.expectRevert(SpokeTransceiverBase.NoHomeTransceiver.selector);
@@ -370,7 +370,7 @@ contract DestinationNamingTest is Test {
     function test_routeIsFixedWidthSoMistypedConfigFails() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        // Packed, not abi.encoded — the width a careless deploy script would write.
+        // Packed, not abi.encoded: the width a careless deploy script would write.
         hub.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();
 

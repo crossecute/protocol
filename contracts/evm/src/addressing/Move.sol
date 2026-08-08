@@ -12,7 +12,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      1. NO ASSIGNED CHAIN TYPE. As of writing, the CASA namespace registry defines
 ///         CAIP-350 profiles for exactly four namespaces: eip155 (0x0000), bip122
 ///         (0x0001), solana (0x0002), starknet (0x0003). `aptos/` and `sui/` have
-///         CAIP-2 profiles only — no CAIP-10, no CAIP-350. There is therefore no
+///         CAIP-2 profiles only: no CAIP-10, no CAIP-350. There is therefore no
 ///         standard ChainType and no standard address serialization for Move chains.
 ///         The values below are PROVISIONAL. See the migration note.
 ///
@@ -20,12 +20,12 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///         `account_address::module_name`; on Sui it is a function in a package.
 ///         The 32-byte account or package ID fits the envelope's Address field, but
 ///         the qualified name does not, and no amount of length-prefixing changes
-///         that — it is a different kind of thing, not a longer address.
+///         that: it is a different kind of thing, not a longer address.
 ///
 /// @dev DESIGN: SEPARATION OF ADDRESS AND QUALIFICATION.
 ///      The 7930 Address field carries ONLY the 32-byte account/package ID, which is
 ///      almost certainly what a future CAIP-350 profile will specify. Everything else
-///      — module name, function name, type arguments, Sui package lineage — lives in
+/// (module name, function name, type arguments, Sui package lineage) lives in
 ///      a MoveQualifier attached alongside. When CASA assigns real chain types, only
 ///      the ChainType constants change; the qualifier structure is untouched.
 ///
@@ -45,7 +45,7 @@ library Move {
 
     /// @dev Aptos-Move address semantics: 32-byte AccountAddress, SHA3-256 derivation.
     ///      Movement shares this profile and is distinguished by ChainReference, not
-    ///      by ChainType — the address format is identical, which is the same basis
+    ///      by ChainType: the address format is identical, which is the same basis
     ///      CASA uses to group networks under one namespace.
     uint16 internal constant CT_PROV_APTOS = ChainType.APTOS;
 
@@ -93,7 +93,7 @@ library Move {
         /// Move Identifier. Empty unless kind is Entry.
         string functionName;
         /// BCS-serialized `Vec<TypeTag>`. Empty if the entry takes no type arguments.
-        /// Opaque here — serialize off-chain; do not build BCS in Solidity.
+        /// Opaque here: serialize off-chain; do not build BCS in Solidity.
         bytes typeArgs;
         /// SUI ONLY. A package upgrade mints a NEW package ID, but types retain the
         /// ORIGINAL package ID in their StructTag while calls target the latest. A

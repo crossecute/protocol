@@ -5,8 +5,8 @@ pragma solidity ^0.8.0;
 /// @notice LayerZero's own name for a chain, in the shape `ChainRegistry` stores.
 ///
 /// @dev THE ROUTE IS `bytes`, NOT `uint32`, AND IS ENCODED WITH `abi.encode`. The
-///      registry is provider-agnostic by design — it holds a Hyperlane uint32 domain, a
-///      Wormhole uint16, and a CCIP uint64 selector in the same slot — so the width has
+///      registry is provider-agnostic by design (it holds a Hyperlane uint32 domain, a
+///      Wormhole uint16, and a CCIP uint64 selector in the same slot), so the width has
 ///      to be carried by the value rather than by the mapping's type. Fixed-width
 ///      `abi.encode` means a value configured at the wrong width fails loudly in
 ///      `abi.decode` here, where `encodePacked` would silently reinterpret it and route

@@ -5,7 +5,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 
 /// @title Erc7930
 /// @notice Encoding, strict parsing, and key derivation for ERC-7930 Interoperable
-///         Addresses — the binary envelope that binds a chain identity to an address.
+///         Addresses: the binary envelope that binds a chain identity to an address.
 ///
 /// @dev Layout (all lengths in bytes):
 ///        ┌─────────┬───────────┬──────────────────────┬────────────────┬───────────────┬─────────┐
@@ -21,7 +21,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 /// @dev CANONICITY IS THE WHOLE GAME HERE. ERC-7930's own Security Considerations warn
 ///      implementers using these as mapping keys to check each CAIP-350 profile for
 ///      non-canonical encodings. Two byte strings that mean the same address but differ
-///      by one byte hash to different keys — a silent split-brain in any registry.
+///      by one byte hash to different keys: a silent split-brain in any registry.
 ///      This library therefore REJECTS non-minimal chain references (`0x0001` for
 ///      chain 1 is invalid; `0x01` is the only valid form) and rejects trailing bytes.
 ///      Never accept a raw interop blob from a remote caller without `parseStrict`.
@@ -34,7 +34,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 ///
 ///      **Adding a `ChainType` constant does not close that.** The rule has to be written
 ///      into `parseStrict` below, beside the eip155 and starknet cases. It is the one step
-///      of onboarding a chain that nothing here will remind you about — see the checklist
+///      of onboarding a chain that nothing here will remind you about: see the checklist
 ///      in the README. `test/UnknownChainType.t.sol` pins the current behaviour.
 library Erc7930 {
     uint16 internal constant VERSION_1 = 0x0001;
@@ -47,7 +47,7 @@ library Erc7930 {
 
     /// @dev Starknet chain references are the UTF-8 chain ID string, NOT an integer:
     ///      "SN_MAIN" is 7 bytes, "SN_SEPOLIA" is 10. Do not reuse the eip155 minimal
-    ///      big-endian rule here — it would reject every valid Starknet reference.
+    ///      big-endian rule here: it would reject every valid Starknet reference.
     bytes internal constant SN_MAIN = hex"534e5f4d41494e"; // "SN_MAIN"
 
     /// @dev Starknet addresses are 32-byte field elements, zero-padded. Unlike eip155,
@@ -99,7 +99,7 @@ library Erc7930 {
         );
     }
 
-    /// @notice A Chain Identifier — an interop address with a zero-length Address.
+    /// @notice A Chain Identifier: an interop address with a zero-length Address.
     ///         Identifies a chain rather than an account on it.
     function encodeChainId(uint16 chainType, bytes memory chainRef)
         internal
@@ -207,13 +207,13 @@ library Erc7930 {
         }
     }
 
-    /// @notice Minimal big-endian encoding of an integer — the eip155 chain-reference
+    /// @notice Minimal big-endian encoding of an integer: the eip155 chain-reference
     ///         rule: chain 1 is `0x01`, Base (8453) is `0x2105`, and a leading zero byte
     ///         is invalid.
     ///
     /// @dev IT LIVES HERE BECAUSE IT IS AN ENCODING RULE, NOT A DERIVATION. Putting it in
     ///      the address-derivation library would make `addressing` import `derivation`
-    ///      while every deriver imports `addressing` back — a cycle between the two
+    ///      while every deriver imports `addressing` back: a cycle between the two
     ///      folders over one integer helper. Canonicity is this library's
     ///      responsibility, so the rule that decides it belongs next to `parseStrict`,
     ///      which is what rejects violations of it.

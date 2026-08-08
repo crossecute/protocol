@@ -59,7 +59,7 @@ contract CrossProxyTest is Test {
 
     /* ============================== the whole point ============================= */
 
-    /// @dev THE PROPERTY THE PROXY EXISTS FOR. Same deployer, same salt, different logic —
+    /// @dev THE PROPERTY THE PROXY EXISTS FOR. Same deployer, same salt, different logic,
     ///      one address. A minimal clone cannot do this: EIP-1167 embeds the
     ///      implementation in its initcode, so the two would land apart no matter what.
     function test_twoImplementationsShareOneAddress() public {
@@ -101,7 +101,7 @@ contract CrossProxyTest is Test {
 
     /// @dev THERE IS NO STATE WITH A LIVE KEY AND A REAL IMPLEMENTATION. The single admin
     ///      operation upgrades, initializes, and retires the admin in that order. Not "the
-    ///      deployer is expected to lock afterwards" — it cannot do the first without the
+    ///      deployer is expected to lock afterwards": it cannot do the first without the
     ///      last.
     function test_theKeyIsGoneBeforeTheTransactionEnds() public {
         address p = deployer.deploy(SALT);
@@ -129,7 +129,7 @@ contract CrossProxyTest is Test {
 
     /// @dev Nobody else ever had it, including while the proxy is blank.
     ///
-    /// @dev A BLANK PROXY DELEGATES TO THE ZERO ADDRESS, WHICH SUCCEEDS SILENTLY — a call
+    /// @dev A BLANK PROXY DELEGATES TO THE ZERO ADDRESS, WHICH SUCCEEDS SILENTLY: a call
     ///      to an account with no code returns empty rather than reverting. So a stranger's
     ///      attempt is not refused, it is simply ignored: it changes nothing and installs
     ///      nothing. That is only tolerable because a blank proxy never survives the

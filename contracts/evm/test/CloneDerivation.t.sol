@@ -30,7 +30,7 @@ contract CloneDerivationTest is Test {
 
     /// @dev THE LOAD-BEARING CHECK. The 55-byte EIP-1167 layout is hardcoded in
     ///      `AddressDerive.cloneInitCodeHash`. If OpenZeppelin's proxy bytecode ever differs
-    ///      from it — including a future optimized variant — every predicted receiver
+    ///      from it (including a future optimized variant) every predicted receiver
     ///      address is silently wrong. So it is checked against OZ, not against itself.
     function test_cloneInitCodeHashMatchesOpenZeppelin() public {
         bytes32 salt = keccak256("transmitter-x");
@@ -67,7 +67,7 @@ contract CloneDerivationTest is Test {
         );
     }
 
-    /// @dev Same inputs, different domain byte — Tron must not collide with Ethereum.
+    /// @dev Same inputs, different domain byte: Tron must not collide with Ethereum.
     function test_tronCloneDiffersFromEvmClone() public view {
         address destTransceiver = address(0x7BAD);
         address destReceiverImpl = address(0xBEEF);
@@ -97,7 +97,7 @@ contract CloneDerivationTest is Test {
     }
 
     /// @dev Clones are an EVM construct. EraVM only deploys bytecode whose hash has been
-    ///      published, and a 55-byte EVM proxy is not valid EraVM bytecode — a zkSync
+    ///      published, and a 55-byte EVM proxy is not valid EraVM bytecode: a zkSync
     ///      "clone" is a real zksolc proxy, derived with `ZkSyncCreate2` instead.
     function test_cloneSchemesAreEvmOnly() public view {
         assertTrue(deriver.supportsScheme(ChainType.EIP155, uint8(VmDeriver.Scheme.EvmClone)));

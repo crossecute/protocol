@@ -48,7 +48,7 @@ contract OwnedTransmitter {
 }
 
 /// @dev A flag the CLONE can see. Clone storage starts empty and is never written by
-///      the test, so the switch is reached through an immutable in the implementation —
+///      the test, so the switch is reached through an immutable in the implementation,
 ///      immutables live in the implementation's bytecode, which is exactly what an
 ///      EIP-1167 clone delegatecalls into.
 contract Switchboard {
@@ -112,7 +112,7 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     }
 }
 
-/// @dev A transceiver with NO `Ownable` anywhere in its inheritance — authority is a raw
+/// @dev A transceiver with NO `Ownable` anywhere in its inheritance: authority is a raw
 ///      comparison. If this compiles and gates correctly, `TransceiverBase` genuinely has
 ///      no ownership opinion, which is the property that lets a protocol SDK bringing its
 ///      own `Ownable` (LayerZero's `OAppCore`, a Hyperlane mailbox client) be inherited
@@ -228,7 +228,7 @@ contract CommitFinalizeTest is Test {
         });
     }
 
-    /// @dev THE POINT OF THE PATH. No commit, no hash, no second transaction — the caller
+    /// @dev THE POINT OF THE PATH. No commit, no hash, no second transaction: the caller
     ///      already verified upstream, so the receiver takes its word.
     function test_executeRunsCallsWithNoCommitmentAtAll() public {
         MockReceiver r = _liveReceiver();
@@ -274,7 +274,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev THE AUTHORITY ARGUMENT, made concrete. Anyone who may `execute` could already
-    ///      commit any hash and let anyone finalize it — so the short path grants nothing
+    ///      commit any hash and let anyone finalize it, so the short path grants nothing
     ///      the long path did not. The two gates are deliberately the same set.
     function test_executeGrantsNothingCommitDoesNot() public {
         MockReceiver r = _liveReceiver();
@@ -347,7 +347,7 @@ contract CommitFinalizeTest is Test {
         bare.execute(_calls());
     }
 
-    /// @dev A transceiver has no level up to inherit a check from — it IS the check. It
+    /// @dev A transceiver has no level up to inherit a check from: it IS the check. It
     ///      does not inherit `ReceiverBase`, so `execute` is not merely refused, it is
     ///      absent from the ABI. Absence beats a revert: there is no function to reach, so
     ///      no future change to a committer predicate can expose one.
@@ -368,7 +368,7 @@ contract CommitFinalizeTest is Test {
     /// @dev THERE IS NO PUBLIC CREATION PATH ON A SPOKE. An account here exists because a
     ///      bootstrap message arrived, and nothing else. An open one would let anyone
     ///      deploy an owner's account empty, one transaction ahead of their bootstrap, and
-    ///      permanently deny it — `CrossProxy` arms exactly once.
+    ///      permanently deny it: `CrossProxy` arms exactly once.
     function test_aSpokeHasNoPublicCreationPath() public {
         (bool a,) = address(t).call(
             abi.encodeWithSignature("createReceiver(address)", transmitter)
@@ -439,7 +439,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev The salt is the transmitter alone, so the address does not move between
-    ///      payloads — it is knowable before the first message is ever sent.
+    ///      payloads: it is knowable before the first message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
         address predicted = t.predictCrossAccount(transmitter, bytes32(0));
 
@@ -505,7 +505,7 @@ contract CommitFinalizeTest is Test {
 
     /// @dev CREATION AND THE PAYLOAD ARE ONE TRANSACTION. The clone is created and its
     ///      payload runs inside `initialize`, so there is no window in which a receiver
-    ///      exists with its transmitter set and its payload unperformed — and no second
+    ///      exists with its transmitter set and its payload unperformed, and no second
     ///      call from the transceiver, which has no way to reach a receiver afterwards.
     function test_creationAndPayloadAreOneStep() public {
         Call[] memory calls = _calls();
@@ -528,7 +528,7 @@ contract CommitFinalizeTest is Test {
 
     /// @dev A FAILING PAYLOAD NEVER TOUCHES THE TRANSCEIVER. Arrival only pins a hash,
     ///      so it cannot fail on the payload's behalf. Execution fails later, at the
-    ///      receiver, leaving the approval pinned there for anyone to retry — and the
+    ///      receiver, leaving the approval pinned there for anyone to retry, and the
     ///      transceiver, which is shared by every transmitter, was never involved.
     function test_failingPayloadStrandsOnlyItsOwnReceiver() public {
         Switchboard sw = new Switchboard();
@@ -585,7 +585,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev Deployment happens once per transmitter, and there is no second bootstrap to
-    ///      confuse it with — a later one reverts rather than redeploying.
+    ///      confuse it with: a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
         address predicted = t.predictCrossAccount(transmitter, bytes32(0));
@@ -622,7 +622,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev A transceiver is a proxy, not a cloned receiver, and does not inherit the
-    ///      clone's `initialize` at all — so there is no one-shot slot for anyone to
+    ///      clone's `initialize` at all, so there is no one-shot slot for anyone to
     ///      consume, rather than an inherited entry point overridden into reverting.
     function test_transceiverHasNoCloneInitializer() public {
         (bool ok,) = address(t).call(
@@ -634,7 +634,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev THERE IS NO SETTER. Changing the implementation does not move receivers that
-    ///      already exist — clone bytecode has the old address baked in — so a change
+    ///      already exist (clone bytecode has the old address baked in), so a change
     ///      silently forks the population into two logic versions. Removing the setter
     ///      makes that a redeploy, which is what it always was.
     function test_receiverImplementationCannotBeChanged() public {
@@ -665,7 +665,7 @@ contract CommitFinalizeTest is Test {
         );
         assertFalse(proxied.upgradesLocked());
 
-        // While unlocked, the owner can still upgrade — that is how the proxy gets off
+        // While unlocked, the owner can still upgrade: that is how the proxy gets off
         // the Arachnid/Nick's-factory implementation in the first place.
         // `new` is hoisted: a CREATE inside the pranked expression consumes the prank.
         address nextImpl = address(new MockTransceiver());
@@ -690,7 +690,7 @@ contract CommitFinalizeTest is Test {
     /// @dev THE SEAM THAT LETS AN OAPP JOIN. The base declares `_checkAdmin` and never
     ///      implements it, so the authority can be anything the concrete contract already
     ///      has. Here it is a bare address comparison with no OpenZeppelin `Ownable` in
-    ///      the tree at all — the same slot a LayerZero `OAppCore` would fill with
+    ///      the tree at all: the same slot a LayerZero `OAppCore` would fill with
     ///      `_checkOwner()`.
     function test_authorityCanBeSuppliedWithoutOwnable() public {
         MsigTransceiver m = new MsigTransceiver();

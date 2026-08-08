@@ -117,7 +117,7 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     }
 
     /// @dev Records the raw payload. Which decoder applies is a property of the
-    ///      DESTINATION, so the test picks it — a real spoke knows its own VM.
+    ///      DESTINATION, so the test picks it: a real spoke knows its own VM.
     bytes public sentProviderData;
 
     function _sendMessage(bytes32, bytes memory payload, bytes memory providerData)
@@ -182,7 +182,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentValue(), 0.3 ether);
     }
 
-    /// @dev `Dispatched` carries the HASH — the bytes are already in calldata, so logging
+    /// @dev `Dispatched` carries the HASH: the bytes are already in calldata, so logging
     ///      them again would double the cost of every send.
     function test_dispatchedCarriesThePayloadHash() public {
         Call[] memory calls = _calls();
@@ -203,7 +203,7 @@ contract TransportTest is Test {
     }
 
     /// @dev THE OPTIONS RIDE PER SEND, NOT AS CONFIGURATION. Destination gas is a property
-    ///      of the payload — a three-call array needs more than a bare `commit` — so a
+    ///      of the payload (a three-call array needs more than a bare `commit`), so a
     ///      stored default would strand the first message that needed more.
     function test_providerDataTravelsPerSend() public {
         bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
@@ -287,7 +287,7 @@ contract TransportTest is Test {
     }
 
     /// @dev THE MIRROR, AND IT MATTERS AS MUCH. An EVM receiver decodes `Call[]` and only
-    ///      `Call[]`, so opaque elements sent there would arrive undeliverable — a payload
+    ///      `Call[]`, so opaque elements sent there would arrive undeliverable: a payload
     ///      that crossed a bridge, cost a fee, and can never execute.
     function test_opaqueElementsAreRefusedForAnEvmDestination() public {
         bytes[] memory elements = new bytes[](1);
@@ -324,7 +324,7 @@ contract TransportTest is Test {
     /* ============================ path A: arrival ============================== */
 
     /// @dev END TO END. The payload the transmitter put on the wire is the payload the
-    ///      receiver runs — no commitment, no second transaction.
+    ///      receiver runs: no commitment, no second transaction.
     function test_aSentPayloadExecutesOnArrival() public {
         Call[] memory calls = _calls();
 
@@ -399,7 +399,7 @@ contract TransportTest is Test {
         acct.initialize(owner, address(t), SALT);
     }
 
-    /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it —
+    /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it,
     ///      so the only account anyone can stand up is the one that answers to them.
     function test_bootstrapRefusesACallerThatIsNotTheAccount() public {
         MockTransceiver t = new MockTransceiver();
@@ -436,7 +436,7 @@ contract TransportTest is Test {
 
     /// @dev THE PAIRING IS ENFORCED WHERE THE CHAIN TYPE IS KNOWN. Downstream everything
     ///      speaks chainKeys, which are hashes and cannot be asked what chain type they
-    ///      came from — so this is the last point that could catch it.
+    ///      came from, so this is the last point that could catch it.
     function test_typedBootstrapIsRefusedForANonEvmChain() public {
         (, MockTransmitter acct) = _account();
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
@@ -482,8 +482,8 @@ contract TransportTest is Test {
 
     /* =============================== the authority ============================= */
 
-    /// @dev THE BASE HAS NO OWNERSHIP OF ITS OWN. It states the requirement — `_owner` and
-    ///      `_checkOwner` — and the concrete contract answers from whatever authority it
+    /// @dev THE BASE HAS NO OWNERSHIP OF ITS OWN. It states the requirement (`_owner` and
+    ///      `_checkOwner`), and the concrete contract answers from whatever authority it
     ///      already has. That is what lets an account inherit a provider SDK that brings
     ///      its own `Ownable` without two ownership systems living in one contract.
     function test_theBaseContributesNoOwnershipSurface() public view {
@@ -492,7 +492,7 @@ contract TransportTest is Test {
         assertEq(transmitter.owner(), owner);
     }
 
-    /// @dev And its modifier is `onlyAccountOwner`, not `onlyOwner` — two base classes
+    /// @dev And its modifier is `onlyAccountOwner`, not `onlyOwner`, two base classes
     ///      declaring one modifier name would force every derived contract to override it,
     ///      which is the same collision the seam exists to avoid, one level down.
     function test_theSeamGatesEveryEntryPoint() public {
@@ -509,7 +509,7 @@ contract TransportTest is Test {
     /* ================================= preview ================================= */
 
     /// @dev THE TRANSMITTER PREVIEWS EVM DESTINATIONS AND NOTHING ELSE. The portable
-    ///      overload that took a `Scheme` is gone — a preview frozen with the account can
+    ///      overload that took a `Scheme` is gone: a preview frozen with the account can
     ///      only answer for primitives that existed when the account was created, so
     ///      non-EVM destinations are previewed through `ChainRegistry.commitmentFor`
     ///      instead. What remains still refuses a shape it cannot answer for, rather than

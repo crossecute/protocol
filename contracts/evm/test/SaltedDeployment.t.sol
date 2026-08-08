@@ -35,7 +35,7 @@ contract MiniFactory {
 
 contract SaltedReceiver is ReceiverBase {}
 
-/// @dev Minimal transmitter logic — enough to prove which side armed the account.
+/// @dev Minimal transmitter logic: enough to prove which side armed the account.
 contract MiniTransmitter {
     address public owner;
     address public transceiver;
@@ -94,7 +94,7 @@ contract OwnedTransmitter {
     }
 }
 
-/// @notice A provider's salt makes its transceiver — and every receiver under it —
+/// @notice A provider's salt makes its transceiver (and every receiver under it)
 ///         computable on the hub before either exists.
 contract SaltedDeploymentTest is Test {
     ChainRegistry registry;
@@ -125,8 +125,8 @@ contract SaltedDeploymentTest is Test {
     }
 
     /// @dev ONE CONSTANT, INDEPENDENT OF THE IMPLEMENTATION. `CrossProxy` takes no
-    ///      constructor arguments, so every account — transmitter or receiver, on any
-    ///      chain — deploys from this exact byte string. That independence is what lets
+    ///      constructor arguments, so every account (transmitter or receiver, on any
+    ///      chain) deploys from this exact byte string. That independence is what lets
     ///      two accounts with different logic share an address; an EIP-1167 clone bakes
     ///      the implementation into its initcode and could never manage it.
     function _crossProxyInitCodeHash() internal pure returns (bytes32) {
@@ -146,7 +146,7 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev THE LOAD-BEARING TEST. Ethereum predicts the transceiver from a recorded salt,
     ///      the transceiver is then actually deployed at that address, it creates a
-    ///      receiver, and the receiver lands where Ethereum said it would — all without
+    ///      receiver, and the receiver lands where Ethereum said it would: all without
     ///      either contract existing when the prediction was made.
     function test_bothAddressesArePredictedBeforeEitherExists() public {
         bytes memory initCode = type(SaltedTransceiver).creationCode;
@@ -214,7 +214,7 @@ contract SaltedDeploymentTest is Test {
     }
 
     /// @dev THE GOAL, END TO END. The transceiver itself is an `CrossProxy`, deployed
-    ///      from one initcode at one salt — so the hub on Ethereum and the spoke on Base
+    ///      from one initcode at one salt, so the hub on Ethereum and the spoke on Base
     ///      are the same address, and they differ only in the logic each is armed with.
     ///      An owner's account then derives from that shared address, so their transmitter
     ///      and their receiver land on one address too.
@@ -263,8 +263,8 @@ contract SaltedDeploymentTest is Test {
         assertEq(MiniTransmitter(transmitter).owner(), ownerOf, "and it is theirs");
     }
 
-    /// @dev THE SALT BUYS MORE THAN ONE ACCOUNT PER OWNER — one per purpose, per
-    ///      counterparty, per mandate — and each keeps the one-address-everywhere property
+    /// @dev THE SALT BUYS MORE THAN ONE ACCOUNT PER OWNER (one per purpose, per
+    ///      counterparty, per mandate), and each keeps the one-address-everywhere property
     ///      independently.
     function test_oneOwnerCanHoldSeveralAccounts() public {
         _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
@@ -333,7 +333,7 @@ contract SaltedDeploymentTest is Test {
     /* ================================== mining ================================= */
 
     /// @dev THE REASON THE SALT IS STORED AT ALL. A transceiver's address is fixed for the
-    ///      life of the protocol and appears in calldata forever after — peer tables,
+    ///      life of the protocol and appears in calldata forever after: peer tables,
     ///      payload targets, every receiver derived from it. Calldata zero bytes cost 4 gas
     ///      against 16, so a salt ground for leading zeros is a permanent discount.
     ///      Recording the salt is what makes the mined address reproducible here.
@@ -393,7 +393,7 @@ contract SaltedDeploymentTest is Test {
         registry.predictTransceiver(sol, provider);
     }
 
-    /// @dev WRITE-ONCE, because changing it moves every address derived from it — the
+    /// @dev WRITE-ONCE, because changing it moves every address derived from it: the
     ///      transceiver on every chain and every receiver under all of them.
     function test_theRecordCannotBeRepointed() public {
         _record(keccak256("initcode"), keccak256("receiver"));
@@ -423,7 +423,7 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev A recorded deployment is preferred over address parity: both answer `Derived`,
     ///      but this one states its inputs instead of assuming the remote deployment
-    ///      matches the local one — and it works before a hub exists at all.
+    ///      matches the local one, and it works before a hub exists at all.
     function test_theRecordedDerivationOutranksAddressParity() public {
         vm.prank(owner);
         registry.setLocalTransceiver(provider, address(0xBEEF));

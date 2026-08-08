@@ -10,15 +10,15 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
-/// @dev `commit` is gated and `finalize` is not, and that is the whole point — the
+/// @dev `commit` is gated and `finalize` is not, and that is the whole point: the
 ///      approval lives in the hash, so the only array that does anything is the one
 ///      already approved and whoever relays it is irrelevant.
 ///
 /// @dev IT TAKES `Call[]`, AND ONLY `Call[]`. An EVM receiver executes EVM calls; there is
 ///      no payload it can run that is not `(target, value, data)`, so an opaque overload
 ///      would accept elements it could only decode into this shape anyway or revert on.
-///      The commitment stays defined over opaque elements — that layer must be
-///      VM-agnostic, and `Commitment` hashes both forms to one value — but the ENTRY
+///      The commitment stays defined over opaque elements (that layer must be
+///      VM-agnostic, and `Commitment` hashes both forms to one value), but the ENTRY
 ///      POINT does not, because this contract only ever runs on an EVM chain.
 interface ICommitFinalize {
     function commit(bytes32 commitment) external returns (uint256 index);
@@ -53,19 +53,19 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 /// @dev THE QUEUE IS ORDERED, AND EXECUTION IS STRICTLY FIFO. `finalize` will only accept
 ///      the array matching the OLDEST outstanding approval. That is a deliberate
 ///      constraint rather than an implementation artifact: a multisig payload sequence
-///      usually means something only in order — approve then transfer, set then use — and
+///      usually means something only in order (approve then transfer, set then use), and
 ///      a queue that executed out of order would let a relayer choose which half of that
 ///      pair lands first.
 ///
 ///      The cost is head-of-line blocking, and it is worth naming plainly. A payload that
-///      can never execute — a target that always reverts, a call that is now invalid —
+///      can never execute (a target that always reverts, a call that is now invalid)
 ///      would otherwise stall every approval behind it forever. `cancel` is the escape
 ///      hatch, and the two features are load-bearing for each other: ordering is only
 ///      safe because a stuck entry can be removed, and cancellation is only necessary
 ///      because execution is ordered. Neither should be removed without the other.
 ///
 /// @dev THE QUEUE IS APPEND-ONLY. An entry is never moved, so the index `commit` returns
-///      names that approval for the life of the receiver — which is what lets `cancel`
+///      names that approval for the life of the receiver, which is what lets `cancel`
 ///      take an index and not race against anything. A cancelled entry is zeroed in
 ///      place; a consumed one keeps its value and is passed by the head pointer, so the
 ///      two remain distinguishable on-chain after the fact.
@@ -89,7 +89,7 @@ abstract contract ReceiverBase is
     /// The transmitter this receiver answers to. Set once, at initialization.
     address public sourceTransmitter;
     /// The transceiver that cloned this receiver. Named to avoid colliding with
-    /// `TransmitterBase.transceiver`, which means the opposite direction — a Transceiver
+    /// `TransmitterBase.transceiver`, which means the opposite direction: a Transceiver
     /// inherits both.
     address public parentTransceiver;
     /// The approvals, oldest first. Append-only; a cancelled entry is zeroed in place.
@@ -107,7 +107,7 @@ abstract contract ReceiverBase is
     event ReceiverDelivered(uint256 callCount);
 
     /// @dev The commit/finalize vocabulary. Declared here because this is the only
-    ///      contract that holds a commitment — a shared base for three words would be a
+    ///      contract that holds a commitment: a shared base for three words would be a
     ///      file whose whole job is to be inherited.
     error NothingCommitted();
     error CommitmentMismatch();
@@ -120,7 +120,7 @@ abstract contract ReceiverBase is
     error ZeroTransmitter();
     error IndexOutOfRange(uint256 index);
     /// @dev Already executed. Cancelling it would suggest the payload can still be
-    ///      stopped, and it cannot — it already ran.
+    ///      stopped, and it cannot: it already ran.
     error AlreadyConsumed(uint256 index);
     error AlreadyCancelled(uint256 index);
     /// @dev The entry at that index is not the approval the caller meant to withdraw.
@@ -142,7 +142,7 @@ abstract contract ReceiverBase is
     /// @dev THREE CALLERS, each for a different reason. The source transmitter is the
     ///      owner, and its arm covers a same-chain deployment where it can reach this
     ///      contract directly. The parent transceiver is what created this receiver, and
-    ///      needs the authority only for the bootstrap payload it initializes with — it
+    ///      needs the authority only for the bootstrap payload it initializes with: it
     ///      never calls `commit` afterwards. `address(this)` is what a deferred payload
     ///      uses to pin its own hash; see below.
     /// @dev IT ACCEPTS `address(this)`, AND THAT IS WHAT MAKES A DEFERRED PAYLOAD WORK. A
@@ -180,7 +180,7 @@ abstract contract ReceiverBase is
     ///
     /// @dev A PAYLOAD THAT SHOULD WAIT SAYS SO ITSELF, which is why the initializer needs
     ///      no second mode. To pin a hash rather than execute, the array carries one
-    ///      element targeting this receiver's own `commit` — the same trick every deferred
+    ///      element targeting this receiver's own `commit`: the same trick every deferred
     ///      payload uses, so nothing here has to distinguish "run now" from "approve for
     ///      later". Taking a `bytes32` here instead would need that distinction, and would
     ///      make the clone path and the ordinary path disagree about what a payload is.
@@ -192,7 +192,7 @@ abstract contract ReceiverBase is
     ///      receiver and the calls are the optional part.
     ///
     /// @dev THE REENTRANCY GUARD MUST BE INITIALIZED BEFORE THE CALLS RUN, once there is
-    ///      one. There is not yet — `ReentrancyGuardUpgradeable` lands with the transport
+    ///      one. There is not yet: `ReentrancyGuardUpgradeable` lands with the transport
     ///      rewrite, and a clone runs no constructor, so its `__ReentrancyGuard_init` has
     ///      to come above this line rather than after it.
     function initialize(address sourceTransmitter_, Call[] calldata calls)
@@ -204,7 +204,7 @@ abstract contract ReceiverBase is
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 
         // BEFORE the payload runs. A proxy runs no constructor of its own, so the guard is
-        // uninitialized until this line — and `initialize` executes arbitrary calls.
+        // uninitialized until this line, and `initialize` executes arbitrary calls.
         __ReentrancyGuard_init();
 
         sourceTransmitter = sourceTransmitter_;
@@ -218,7 +218,7 @@ abstract contract ReceiverBase is
     ///      a payload waiting on a slow relayer cannot stop the next from being recorded.
     ///      The same hash may be queued twice: two identical payloads are two separate
     ///      approvals and each needs its own `finalize`.
-    /// @return index The queue position, stable for the life of this receiver. Keep it —
+    /// @return index The queue position, stable for the life of this receiver. Keep it:
     ///         it is what `cancel` takes.
     function commit(bytes32 commitment_)
         external
@@ -251,7 +251,7 @@ abstract contract ReceiverBase is
     ///      and `expected` says which approval, so a caller working from stale state
     ///      cannot withdraw a different payload than the one it meant. Indices are stable
     ///      and the guards above already catch the ordinary mistakes, so this is not
-    ///      protecting against a race — it is protecting against an off-by-one being
+    ///      protecting against a race: it is protecting against an off-by-one being
     ///      indistinguishable from success. Cancelling the wrong approval is silent
     ///      otherwise: the queue simply loses a payload nobody chose to drop, and the
     ///      first sign of it is a `finalize` that stops matching.
@@ -279,12 +279,12 @@ abstract contract ReceiverBase is
     /// @notice Supply the calls the OLDEST outstanding approval was made over, and run them.
     ///
     /// @dev Deliberately NOT gated on the transmitter. Anyone may supply the calls,
-    ///      because only the array matching the commitment does anything — that is the
+    ///      because only the array matching the commitment does anything: that is the
     ///      point of committing to a hash instead of trusting a caller.
     ///
     /// @dev IT TAKES THE HEAD OF THE QUEUE AND NOTHING ELSE. A caller cannot choose which
     ///      approval to discharge, so a relayer holding two valid payloads cannot decide
-    ///      which lands first. Skipping one requires `cancel`, which is gated — so
+    ///      which lands first. Skipping one requires `cancel`, which is gated, so
     ///      reordering is an owner decision, recorded on-chain, rather than a relayer's.
     ///
     /// @dev THE COMMITMENT IT DISCHARGES MAY HAVE BEEN BUILT IN EITHER FORM. `Commitment`
@@ -297,7 +297,7 @@ abstract contract ReceiverBase is
 
     /// @notice Discharge several queued approvals in one transaction, in queue order.
     ///
-    /// @dev `batches[i]` must match the i-th outstanding approval — this is the same FIFO
+    /// @dev `batches[i]` must match the i-th outstanding approval: this is the same FIFO
     ///      rule applied repeatedly, not a way to pick entries out of order.
     ///
     /// @dev ALL OR NOTHING, for the same reason one array is. Each approval covers its
@@ -322,7 +322,7 @@ abstract contract ReceiverBase is
     ///      widen both together, which is the correct coupling.
     ///
     /// @dev THE CHECK IT SKIPS IS ONE THE CALLER HAS ALREADY MADE. The commit/finalize path
-    ///      exists for when the two steps are separated in TIME — a payload that arrives
+    ///      exists for when the two steps are separated in TIME: a payload that arrives
     ///      now and is pushed through later, by anyone. When they happen in one
     ///      transaction there is nothing left for a commitment to protect against.
     ///
@@ -357,7 +357,7 @@ abstract contract ReceiverBase is
     ///
     /// @dev THE APPROVAL MAY HAVE BEEN BUILT IN EITHER FORM. `Commitment` hashes `Call[]`
     ///      and the equivalent opaque elements to one value, so a commitment computed
-    ///      off-chain over `bytes[]` — the canonical, VM-agnostic form — is discharged by
+    ///      off-chain over `bytes[]` (the canonical, VM-agnostic form) is discharged by
     ///      the typed array supplied here. The commitment approves the calls, not the
     ///      serialization somebody chose to deliver them in.
     function _requireMatchingCalls(bytes32 pending, Call[] memory calls) private view {
@@ -373,7 +373,7 @@ abstract contract ReceiverBase is
     ///
     /// @dev THERE IS NO "ONE LIVE APPROVAL" RULE, because approvals are a queue: a second
     ///      commit appends rather than replacing, so there is nothing to overwrite and
-    ///      nothing to protect. Refusing a duplicate would be wrong on its own terms too —
+    ///      nothing to protect. Refusing a duplicate would be wrong on its own terms too,
     ///      two identical payloads are two separate approvals, and each needs its own
     ///      `finalize`.
     function _requireCommittable(bytes32 incoming) private pure {
@@ -467,7 +467,7 @@ abstract contract ReceiverBase is
     /// @dev THE INBOUND FUNNEL. A provider adapter authenticates its origin and routes the
     ///      payload here; this decodes and executes it. Execution runs INSIDE the bridge
     ///      callback, so a reverting payload fails the message rather than stranding
-    ///      anything — and every provider lets anyone re-execute a failed message, which
+    ///      anything, and every provider lets anyone re-execute a failed message, which
     ///      makes it a retry rather than a loss.
     ///
     /// @dev A PAYLOAD THAT SHOULD WAIT SAYS SO ITSELF, by carrying a self-call to `commit`.
@@ -484,7 +484,7 @@ abstract contract ReceiverBase is
 
     /// @notice Accept ETH, so a receiver can be funded ahead of a `finalize` that spends it.
     /// @dev `execute` is payable and carries its own value, but `finalize` is permissionless
-    ///      and takes none — a payload with value finalized by a third party has to spend a
+    ///      and takes none: a payload with value finalized by a third party has to spend a
     ///      balance that is already here.
     receive() external payable {}
 

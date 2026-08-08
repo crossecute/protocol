@@ -5,8 +5,8 @@ pragma solidity ^0.8.20;
 /// @notice The registry's per-chain validation hook.
 ///
 /// @dev EXTRACTED FROM `StarknetDerive`, WHERE IT DID NOT BELONG. This is the generic
-///      extension point `ChainRegistry.setValidator` wires per chainKey — Move uses it
-///      for AIP-40 address width, Starknet for the felt bound — so declaring it inside
+///      extension point `ChainRegistry.setValidator` wires per chainKey (Move uses it
+///      for AIP-40 address width, Starknet for the felt bound), so declaring it inside
 ///      one chain's derivation file meant every other chain's validator had to import
 ///      Starknet to say what shape it was.
 ///

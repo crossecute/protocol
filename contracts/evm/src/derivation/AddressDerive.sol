@@ -84,7 +84,7 @@ library AddressDerive {
     ///      receivers are clones, so their address is CREATE2 over the destination
     ///      transceiver (deployer), the transmitter-derived salt, and this hash.
     ///
-    ///      The 55-byte layout is EIP-1167 verbatim — 10 bytes of creation code, then the
+    ///      The 55-byte layout is EIP-1167 verbatim: 10 bytes of creation code, then the
     ///      45-byte runtime with the implementation address spliced in at byte 20:
     ///        3d602d80600a3d3981f3  363d3d373d3d3d363d73 <impl> 5af43d82803e903d91602b57fd5bf3
     ///      Verified against OpenZeppelin's `Clones.predictDeterministicAddress` in tests
@@ -115,7 +115,7 @@ library AddressDerive {
     bytes32 internal constant CREATE3_PROXY_INITCODE_HASH =
         0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f;
 
-    /// @notice CREATE3: address depends only on (factory, salt) — never on bytecode.
+    /// @notice CREATE3: address depends only on (factory, salt), never on bytecode.
     /// @dev Two stages. A fixed-initcode proxy is CREATE2-deployed, then that proxy
     ///      does a plain CREATE at nonce 1. The nonce is a hardcoded 1 from a fresh
     ///      contract, not the deployer's transaction history.
@@ -156,7 +156,7 @@ library AddressDerive {
 
     /// @param sender If an L1 *contract* triggers the deploy via Bridgehub/Mailbox, pass
     ///        the ALIASED address. EOAs are not aliased.
-    /// @param bytecodeHash EraVM versioned hash — see `hashL2Bytecode`, NOT keccak(initcode).
+    /// @param bytecodeHash EraVM versioned hash: see `hashL2Bytecode`, NOT keccak(initcode).
     function zksyncCreate2(
         address sender,
         bytes32 salt,
@@ -261,7 +261,7 @@ library AddressDerive {
     bytes32 internal constant COSMOS_MODULE_TAG =
         0x120970d812836f19888625587a4606a5ad23cef31c8684e601771552548fc6b9;
 
-    /// @notice CosmWasm Instantiate2 — the CREATE2 analogue on Cosmos.
+    /// @notice CosmWasm Instantiate2: the CREATE2 analogue on Cosmos.
     /// @dev sha256( sha256("module") ++ key ), key = "wasm\0" ++ be64/value pairs.
     ///      The "wasm\0" prefix exists in cosmwasm-std but is ABSENT from the published
     ///      spec page. Verified against cosmwasm-std's own test vectors.
@@ -315,7 +315,7 @@ library AddressDerive {
     }
 
     /// @notice SPL Associated Token Account.
-    /// @dev Seed order is [owner, tokenProgram, mint] — the token program sits in the
+    /// @dev Seed order is [owner, tokenProgram, mint]: the token program sits in the
     ///      middle, which is easy to get backwards. Verified against solders.
     function solanaAssociatedTokenAccount(
         bytes32 owner,
@@ -350,7 +350,7 @@ library AddressDerive {
     /*                                 NEAR                                    */
     /* ====================================================================== */
 
-    /// @notice NEAR deterministic account — NEAR's CREATE2, and free here since it
+    /// @notice NEAR deterministic account: NEAR's CREATE2, and free here since it
     ///         uses keccak256. Render as "0s" + lowercase hex, NOT "0x".
     /// @param borshStateInit Borsh-serialized DeterministicAccountStateInit. Serialize
     ///        off-chain; do not build Borsh in Solidity.

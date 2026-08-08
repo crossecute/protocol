@@ -30,7 +30,7 @@ contract Target {
     }
 }
 
-/// @dev Uses the CONCRETE `_execute` — no override — with an openable allowlist.
+/// @dev Uses the CONCRETE `_execute` (no override), with an openable allowlist.
 contract PolicyReceiver is ReceiverBase {
     mapping(address => mapping(bytes4 => bool)) public permitted;
 
@@ -83,7 +83,7 @@ contract ExecutionTest is Test {
     ///      a full-power account answering to one owner, the same way a Safe is: anything
     ///      that can deliver an authenticated message to it can already make it do
     ///      anything. A `(target, selector)` gate was never what stood between a forged
-    ///      message and execution — a compromised bridge could forge a commitment hash
+    ///      message and execution: a compromised bridge could forge a commitment hash
     ///      just as easily as a call array. The policy is a restriction an owner opts
     ///      into.
     function test_aReceiverWithNoPolicyExecutesEverything() public {
@@ -115,7 +115,7 @@ contract ExecutionTest is Test {
     }
 
     /// @dev The policy is per (target, selector), not per selector. The same function on
-    ///      a different contract is a different operation — `transfer` on the token you
+    ///      a different contract is a different operation: `transfer` on the token you
     ///      meant and `transfer` on one an attacker deployed are not interchangeable.
     function test_policyIsPerTargetNotPerSelector() public {
         r.allow(address(t), Target.ping.selector);
@@ -135,7 +135,7 @@ contract ExecutionTest is Test {
 
     /// @dev Under four bytes there is no selector. `bytes4` of a short `bytes` right-pads
     ///      with zeros, so reading one anyway would invent a selector the payload never
-    ///      named — and could match an allowlist entry by accident.
+    ///      named, and could match an allowlist entry by accident.
     function test_bareTransferUsesTheZeroSelector() public {
         vm.deal(address(r), 1 ether);
 
@@ -156,7 +156,7 @@ contract ExecutionTest is Test {
     /* ================================== value ================================== */
 
     /// @dev The value is INSIDE the committed element, so the approval covers how much
-    ///      each target receives — a payload cannot be re-priced at execution time.
+    ///      each target receives: a payload cannot be re-priced at execution time.
     function test_valueComesFromTheCommittedElement() public {
         r.allow(address(t), Target.ping.selector);
         vm.deal(transmitter, 5 ether);
@@ -193,7 +193,7 @@ contract ExecutionTest is Test {
     /* ============================== all or nothing ============================= */
 
     /// @dev The commitment approves the array as a UNIT, and `finalize` has already
-    ///      cleared it by the time execution runs — so a partial success would discharge
+    ///      cleared it by the time execution runs, so a partial success would discharge
     ///      an approval that was never satisfied, unrepeatably.
     function test_oneFailureRevertsTheWholeBatch() public {
         r.allow(address(t), Target.ping.selector);

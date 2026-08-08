@@ -8,7 +8,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice Uniform address derivation across every VM the protocol targets.
 ///
-/// @dev THE NORMALIZATION PROBLEM. Every VM's derivation takes different inputs — CREATE2
+/// @dev THE NORMALIZATION PROBLEM. Every VM's derivation takes different inputs: CREATE2
 ///      wants (deployer, salt, initCodeHash), a Solana PDA wants (seeds[], bump,
 ///      programId), CosmWasm wants (checksum, creator, salt, initMsg). There is no
 ///      argument list that fits all of them, so the parameters stay OPAQUE: the caller
@@ -23,7 +23,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      is a `staticcall`. One non-pure member forces the whole interface to `view`.
 interface IVmDeriver {
     /// @param chainIdentifier Canonical ERC-7930 chain identifier (zero-length address).
-    /// @param params          `abi.encode(Scheme, bytes)` — see `VmDeriver.Scheme`.
+    /// @param params          `abi.encode(Scheme, bytes)`: see `VmDeriver.Scheme`.
     /// @return interop        Canonical ERC-7930 account envelope on that same chain.
     function deriveAddress(bytes calldata chainIdentifier, bytes calldata params)
         external
@@ -60,7 +60,7 @@ interface IVmDeriver {
 ///        - Bitcoin P2TR: taproot output keys need secp256k1 point addition; ecrecover
 ///          is not a general curve operation.
 ///      These revert with `UnsupportedScheme`. Route them through the registry's
-///      committed or attested path — that is exactly what the provenance grades are for.
+///      committed or attested path: that is exactly what the provenance grades are for.
 contract VmDeriver is IVmDeriver {
     /// @notice Which derivation to run. The chain type says which VM; this says which
     ///         formula within it.
@@ -68,7 +68,7 @@ contract VmDeriver is IVmDeriver {
         Unset,
         /// EIP-1014. (address deployer, bytes32 salt, bytes32 initCodeHash)
         EvmCreate2,
-        /// (address factory, bytes32 salt) — bytecode-independent.
+        /// (address factory, bytes32 salt): bytecode-independent.
         EvmCreate3,
         /// Nonce-based. (address deployer, uint256 nonce)
         EvmCreate,
@@ -102,7 +102,7 @@ contract VmDeriver is IVmDeriver {
         SuiAddress,
         /// (uint16 threshold, uint8[] flags, bytes[] pubkeys, uint8[] weights)
         SuiMultisig,
-        /// (bytes32 txDigest, uint64 creationNum) — verification only, see note.
+        /// (bytes32 txDigest, uint64 creationNum): verification only, see note.
         SuiObjectId,
         /// EIP-1167 clone. (address deployer, address implementation, bytes32 salt)
         /// This is how a RECEIVER address is predicted: deployer is the destination
@@ -147,7 +147,7 @@ contract VmDeriver is IVmDeriver {
 
     /// @inheritdoc IVmDeriver
     /// @dev The legality table. Ethereum/zkSync/Tron all being `eip155` is why this is
-    ///      keyed on the pair and not on either half alone — the registry pins the exact
+    ///      keyed on the pair and not on either half alone: the registry pins the exact
     ///      scheme per chainKey, so a zkSync chainKey cannot be resolved with Ethereum's
     ///      formula just because both are eip155.
     function supportsScheme(uint16 chainType, uint8 scheme)
@@ -212,7 +212,7 @@ contract VmDeriver is IVmDeriver {
         // bytecode whose hash has been published, and a 55-byte EVM proxy is not valid
         // EraVM bytecode at all. A zkSync "clone" is a real proxy contract compiled with
         // zksolc, so it is derived with `ZkSyncCreate2` using that proxy's versioned
-        // bytecode hash — no separate scheme, because it is not a clone in this sense.
+        // bytecode hash: no separate scheme, because it is not a clone in this sense.
         if (s == Scheme.EvmClone) {
             (address deployer, address implementation, bytes32 salt) =
                 abi.decode(p, (address, address, bytes32));
@@ -260,7 +260,7 @@ contract VmDeriver is IVmDeriver {
             bytes32 full = AddressDerive.cosmosInstantiate2(checksum, creator, salt, initMsg);
             // Canonical ADR-028 is 32 bytes. Forked wasmd chains that use 20 for
             // Ethereum-ecosystem compatibility (Injective) truncate. Only set addrLen
-            // below 32 if you have confirmed the target forked ContractAddrLen —
+            // below 32 if you have confirmed the target forked ContractAddrLen,
             // getting it wrong yields a well-formed address nothing will ever occupy.
             if (addrLen == 0 || addrLen > 32) revert BadCosmosAddressLength();
             if (addrLen == 32) return abi.encodePacked(full);

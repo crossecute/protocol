@@ -18,7 +18,7 @@ import {Blake2bScheme} from "src/schemes/Blake2bScheme.sol";
 /* ============================ the simulated new chain ========================== */
 
 /// @notice A primitive with NO MEMBER IN `Scheme`, which is the entire point of it.
-///         Bitcoin's hash256 — sha256 applied twice — standing in for whatever a chain
+///         Bitcoin's hash256 (sha256 applied twice) standing in for whatever a chain
 ///         onboarded after every live transmitter was compiled turns out to hash with.
 /// @dev Chosen because it is real, plausible as a destination's choice, and computable
 ///      from EVM builtins, so the test asserts a value rather than a mock.
@@ -41,7 +41,7 @@ contract NotReallyPoseidonScheme is ICommitmentScheme {
 
 /// @notice Returns a constant, ignoring its input entirely.
 /// @dev The adversary the interface is shaped against. It can corrupt its own digest and
-///      nothing else — the fold stays in the registry, so the commitment's STRUCTURE is
+///      nothing else: the fold stays in the registry, so the commitment's STRUCTURE is
 ///      not a plugin's to choose.
 contract ConstantScheme is ICommitmentScheme {
     bytes32 constant C = bytes32(uint256(0xC0FFEE));
@@ -156,8 +156,8 @@ contract CommitmentSchemePluginTest is Test {
     }
 
     /// @dev The two other primitives already in the enum, for the same reason. No
-    ///      transmitter can be asked for these any more — the overload that took a
-    ///      `Scheme` is gone — so the registry is the only surface that answers. Pinning
+    ///      transmitter can be asked for these any more (the overload that took a
+    ///      `Scheme` is gone), so the registry is the only surface that answers. Pinning
     ///      it to the library keeps the enum honest as the reference implementation of a
     ///      fold that non-EVM receivers are written against.
     function test_pluginPathReproducesEveryEnumScheme() public view {
@@ -180,7 +180,7 @@ contract CommitmentSchemePluginTest is Test {
         );
     }
 
-    /// @dev An empty payload hashes to the seed alone — non-zero, and therefore a valid
+    /// @dev An empty payload hashes to the seed alone: non-zero, and therefore a valid
     ///      commitment. Matches the library, which `finalize` relies on.
     function test_emptyElementsHashToTheSeedAlone() public view {
         bytes[] memory none = new bytes[](0);
@@ -195,7 +195,7 @@ contract CommitmentSchemePluginTest is Test {
     ///      this shape through `commitmentForChain(bytes, Scheme, bytes[])`, which was
     ///      removed because a preview frozen with the account can only ever name
     ///      primitives that already existed. For a destination the enum DOES cover, the
-    ///      registry returns the identical value — so nothing a signer could ask before
+    ///      registry returns the identical value, so nothing a signer could ask before
     ///      has become unanswerable, it is asked somewhere that can still learn.
     function test_theRegistryAnswersTheShapeTheTransmitterNoLongerDoes() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
@@ -265,7 +265,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /// @dev `Scheme.Poseidon` is declared and reverts on every frozen transmitter, so
     ///      Starknet commitments have to be computed off-chain today. The seam closes
-    ///      that with a deployment rather than a redeploy — whenever someone ports the
+    ///      that with a deployment rather than a redeploy: whenever someone ports the
     ///      real thing against a vector corpus.
     function test_poseidonBecomesPreviewableThroughThePlugin() public {
         bytes[] memory elements = _elements();
@@ -287,7 +287,7 @@ contract CommitmentSchemePluginTest is Test {
     /// @dev A plugin that ignores its input entirely still cannot choose the SHAPE of the
     ///      commitment: the registry seeds with the chainKey and folds per element, so
     ///      the result is the fold applied to that constant rather than the constant.
-    ///      That is what makes a swappable plugin bounded — the worst case is a digest
+    ///      That is what makes a swappable plugin bounded: the worst case is a digest
     ///      the destination refuses, never a differently-structured one it accepts.
     function test_aHostilePluginCannotChangeTheFold() public {
         ICommitmentScheme hostile = new ConstantScheme();
@@ -297,7 +297,7 @@ contract CommitmentSchemePluginTest is Test {
         bytes32 c = bytes32(uint256(0xC0FFEE));
         bytes[] memory elements = _elements();
 
-        // Seed, then one fold per element — every call returning the same constant.
+        // Seed, then one fold per element: every call returning the same constant.
         assertEq(registry.commitmentFor(evmKey, elements), c);
         // And the element count still drives the loop: an empty array is the seed alone.
         assertEq(registry.commitmentFor(evmKey, new bytes[](0)), c);
@@ -350,7 +350,7 @@ contract CommitmentSchemePluginTest is Test {
         registry.commitmentFor(evmKey, _elements());
     }
 
-    /// @dev No silent keccak fallback for a chain nobody configured — the same rule
+    /// @dev No silent keccak fallback for a chain nobody configured: the same rule
     ///      `Commitment._hash` follows, for the same reason.
     function test_unconfiguredChainRefusesRatherThanFallingBackToKeccak() public {
         vm.prank(owner);

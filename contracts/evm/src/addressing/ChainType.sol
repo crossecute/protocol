@@ -10,7 +10,7 @@ pragma solidity ^0.8.20;
 ///      constant used anywhere in this repo is allocated here and nowhere else.
 ///
 /// @dev ALLOCATING A VALUE HERE IS NOT THE WHOLE JOB. Nothing validates a chain type
-///      against this table — `Erc7930.parseStrict` reads the field as an opaque `uint16` —
+///      against this table (`Erc7930.parseStrict` reads the field as an opaque `uint16`)
 ///      so a value's presence here buys collision avoidance and nothing else. In
 ///      particular, the profile's CANONICITY RULE must be written into `parseStrict`
 ///      alongside it, or two encodings of one address will hash to two registry keys with

@@ -15,15 +15,15 @@ import {LzCodec} from "./LzCodec.sol";
 ///      it faces N chains.
 ///
 /// @dev The eid is an initializer argument rather than a literal because the home chain
-///      is a deployment choice — see `SpokeTransceiverBase`. It is still wrong once and
+///      is a deployment choice: see `SpokeTransceiverBase`. It is still wrong once and
 ///      wrong forever, which is why there is no setter for it.
 contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
-    /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier —
+    /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier,
     ///        `ChainKey.forEvm(1)` if the deployment anchors on Ethereum.
     /// @param homeEid_ LayerZero's endpoint id for that chain. Typed here, opaque in the
     ///        base, which is the same split `setEid` uses on the hub.
     /// @param homeTransceiver_ The hub, in this chain's address format. Fixed for the life
-    ///        of the contract — there is no setter, by design.
+    ///        of the contract: there is no setter, by design.
     function initialize(
         address owner_,
         address receiverImplementation_,
@@ -49,7 +49,7 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     }
 
     /// @notice LayerZero's endpoint id for the hub. Exposed for off-chain checks.
-    /// @dev A spoke needs no route TABLE — it has exactly one destination, written once.
+    /// @dev A spoke needs no route TABLE: it has exactly one destination, written once.
     ///      `setEid` exists only on the hub, which faces N chains.
     function homeEid() external view returns (uint32) {
         return LzCodec.decodeEid(homeRoute());

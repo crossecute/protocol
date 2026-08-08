@@ -7,14 +7,14 @@ commitment is computed over, on EVM and elsewhere.
 
 They get conflated, and keeping them apart is what lets each VM do the sensible thing:
 
-**Wire encoding** — how the payload travels. The receiver decodes it.
+**Wire encoding**: how the payload travels. The receiver decodes it.
 
-**Commitment preimage** — what gets hashed. The receiver re-derives it from the decoded
+**Commitment preimage**: what gets hashed. The receiver re-derives it from the decoded
 fields and compares.
 
 They are independent. The wire format can change without changing any commitment, and both
-are owned by the receiver on the destination chain. Nothing above them — not the
-transceiver, not the transmitter, not the bridge — inspects either one.
+are owned by the receiver on the destination chain. Nothing above them (not the
+transceiver, not the transmitter, not the bridge) inspects either one.
 
 ## The commitment is defined over opaque elements
 
@@ -33,7 +33,7 @@ function hashCalls(bytes32 destinationChainKey, bytes[] calldata elements)
 ```
 
 An element is bytes. The hash never looks inside one. The destination chainKey is folded in
-first, so a payload approved for one chain cannot be finalized on another — and, usefully
+first, so a payload approved for one chain cannot be finalized on another, and, usefully
 here, so the element format is namespaced per destination for free.
 
 **The hub's contracts therefore never need to understand a non-EVM call.** `commitTo`
@@ -55,7 +55,7 @@ struct Call {
 ```
 
 This is the ERC-7579 `Execution` tuple, also used by ERC-7821. The reason to prefer it over
-`bytes[]` is not the bytes saved — it is that payload builders which already speak modular-
+`bytes[]` is not the bytes saved: it is that payload builders which already speak modular-
 account formats work without custom code.
 
 Layout for one call carrying 36 bytes of data:
@@ -90,7 +90,7 @@ the one that matches the opaque form.
 
 That equivalence is the point: `hashCall(c)` equals `keccak256(element)` whenever the
 element is `abi.encode(target, value, data)`. So a typed overload and the canonical opaque
-form produce identical commitments, and the transmitter can offer both — typed calls for
+form produce identical commitments, and the transmitter can offer both: typed calls for
 EVM destinations, where signers get a readable payload, and opaque bytes for everywhere
 else.
 
@@ -102,14 +102,14 @@ hashCalls(Scheme, bytes32 chainKey, Call[])       // per-destination, view
 ```
 
 One name, four shapes. Every array parameter is `memory`: Solidity will not overload on
-data location, so a `calldata` twin would need a different name — which is the only reason
+data location, so a `calldata` twin would need a different name, which is the only reason
 a second one ever existed.
 
-The unparameterized pair is the **EVM scheme** — keccak256 — and is what a receiver on an
+The unparameterized pair is the **EVM scheme** (keccak256), and is what a receiver on an
 EVM chain calls. The `Scheme` overloads are for the source side, where the hub builds a
 commitment a *different* VM will recompute. See below.
 
-This is asserted directly, not assumed — `test/PayloadEncoding.t.sol` includes a fuzz case
+This is asserted directly, not assumed: `test/PayloadEncoding.t.sol` includes a fuzz case
 over `(target, value, data, chainKey)`. If the two ever diverge, a payload approved in one
 form silently stops matching in the other, and it fails only on a live message.
 
@@ -123,18 +123,18 @@ EVM destination       wire = abi.encode(Call[] calls)
 everything else       wire = abi.encode(bytes[] elements)
 ```
 
-The sender picks by destination chain type — `send(uint256)` is `eip155` by construction,
+The sender picks by destination chain type: `send(uint256)` is `eip155` by construction,
 and `sendTo(bytes)` reads it off the envelope it was handed. The receiver decodes the
 single shape its own VM implies. Both sides know which before a byte is written, so a field
 saying so would carry a value each already holds. That is the same reason `Envelope` has no
 message-type tag, and it now holds here too: **every channel carries exactly one shape.**
 
 **This is a structural guarantee, not a decoder guarantee**, and the distinction is worth
-holding onto. `abi.decode` of the wrong shape does revert for these two layouts — asserted
-in `test_theTwoEncodingsDoNotDecodeAsEachOther` — but that is a property of how they
+holding onto. `abi.decode` of the wrong shape does revert for these two layouts (asserted
+in `test_theTwoEncodingsDoNotDecodeAsEachOther`), but that is a property of how they
 collide, not a promise the ABI decoder makes. What actually prevents a misread is that no
-path exists which sends opaque elements to an EVM receiver. If one is ever added — a
-transmitter running on a spoke, a destination that accepts both — the tag has to come back,
+path exists which sends opaque elements to an EVM receiver. If one is ever added (a
+transmitter running on a spoke, a destination that accepts both), the tag has to come back,
 because at that point direction stops determining shape. `Payload.sol` carries that
 tripwire in a comment.
 
@@ -146,7 +146,7 @@ receiver executes EVM calls; there is no payload it can run that is not
 into this shape anyway or revert on. One entry shape means one place the caller gate lives
 and one place the policy check lives.
 
-The **commitment** it discharges may still have been built in either form — that layer is
+The **commitment** it discharges may still have been built in either form: that layer is
 VM-agnostic and off-chain tooling naturally produces the canonical opaque elements. The
 equivalence is what makes this work: an approval computed over `bytes[]` is satisfied by
 the typed array supplied here.
@@ -164,7 +164,7 @@ whether an empty payload should be committable at all.
 
 ## Non-EVM
 
-There is no portable `Call`. The blocker is not address width — it is that the call *shape*
+There is no portable `Call`. The blocker is not address width: it is that the call *shape*
 differs structurally per VM:
 
 | VM | Call shape | Native serialization |
@@ -177,7 +177,7 @@ differs structurally per VM:
 
 Starknet carries the selector as its own field rather than as the first four bytes of
 calldata. Solana requires every account an instruction touches to be enumerated with
-signer/writable flags — information that does not exist in an EVM call and cannot be
+signer/writable flags: information that does not exist in an EVM call and cannot be
 derived from one. Sui arguments can reference the output of an earlier command in the same
 block.
 
@@ -186,7 +186,7 @@ A universal struct would compile everywhere and be a lie on four of those five, 
 an explicit asset or resource.
 
 **So each VM's receiver owns both its wire format and its commitment preimage**, in its own
-native serialization. The container above them is uniform; the elements are not — and
+native serialization. The container above them is uniform; the elements are not, and
 neither, necessarily, is the hash. See `Scheme` below.
 
 ### Starknet: `starknet_keccak` is not `keccak256`
@@ -229,35 +229,35 @@ else and the source has to build the commitment the same way.
 | `APTOS` | `aptos_hash::keccak256` | `Keccak256` |
 | `SUI` | `sui::hash::keccak256` | `Keccak256` |
 | `NEAR` | `env::keccak256` host fn | `Keccak256` |
-| `COSMOS` | **no host function** — compiled into the wasm | `Keccak256`, priced by payload |
+| `COSMOS` | **no host function**: compiled into the wasm | `Keccak256`, priced by payload |
 | `STARKNET` | library code, not a builtin; `starknet_keccak` is a *different* hash | `Poseidon` |
-| `BIP122` | no opcode exists | n/a — no executor |
+| `BIP122` | no opcode exists | n/a: no executor |
 
 Out of scope but referenced elsewhere in the README: **Cardano** would use `Blake2b256`
 (its `keccak_256` builtin arrived later than its other hashes, so the Plutus version needs
-checking), and **TON** would use `Sha256` — TVM has SHA256 natively and no keccak
+checking), and **TON** would use `Sha256`: TVM has SHA256 natively and no keccak
 primitive. Neither has a `ChainType` allocated today.
 
 **So Starknet is the only in-scope chain where keccak is the deciding obstacle.**
-CosmWasm's is a cost difference rather than a capability one — the hash is wasm rather than
+CosmWasm's is a cost difference rather than a capability one: the hash is wasm rather than
 a host call, so it is priced by payload size instead of being nearly free.
 
-### `Scheme` — the fold is fixed, the primitive varies
+### `Scheme`: The fold is fixed, the primitive varies
 
 ```solidity
 enum Scheme { Keccak256, Sha256, Blake2b256Scheme, Poseidon }
 ```
 
 This is a deliberate narrowing and it gives something up. A fully VM-native commitment
-would be TON's **cell hash** — sha256 over a cell tree, because a TVM cell holds only 1023
-bits and any real payload is therefore a tree — or Starknet's `poseidon_hash_span` over a
+would be TON's **cell hash** (sha256 over a cell tree, because a TVM cell holds only 1023
+bits and any real payload is therefore a tree), or Starknet's `poseidon_hash_span` over a
 felt array. Neither is a byte-oriented fold, and neither could be reproduced on the hub to
 show a signer what they are approving. Holding the fold fixed keeps both sides able to
 compute one value; the cost is that a non-EVM receiver implements a byte fold rather than
 its idiomatic digest.
 
 **The hub can still compute most of them**, which matters more than it first appears
-because a preview is read through `eth_call` when a signer checks a payload — so gas is
+because a preview is read through `eth_call` when a signer checks a payload, so gas is
 not charged in the path that matters.
 
 | Scheme | On the hub | Mutability |
@@ -273,7 +273,7 @@ precompile, for the same reason.
 
 `Poseidon` is **declared and not implemented.** Poseidon over the Starknet field needs the
 exact round constants and MDS matrix, and one wrong constant produces a silently wrong
-digest — so it is not written from memory. It reverts with `SchemeNotComputable` rather
+digest, so it is not written from memory. It reverts with `SchemeNotComputable` rather
 than falling back to keccak, because a silent fallback would hand back a well-formed
 commitment that a Starknet receiver can never match, failing only on a live message. Until
 it is ported and checked against `test/vectors/starknet.json`, a Starknet commitment is
@@ -283,8 +283,8 @@ computed off-chain and approved through the digest-only `commitTo(bytes,bytes32)
 `Commitment` dispatches internally, and it is compiled into every account. But no entry
 point on a transmitter takes one any more.
 
-`commitmentFor`/`commitmentForChain` name an EVM destination — by `uint256` chain id or by
-ERC-7930 envelope — and every chain that executes `Call[]` hashes with keccak256, so both
+`commitmentFor`/`commitmentForChain` name an EVM destination (by `uint256` chain id or by
+ERC-7930 envelope), and every chain that executes `Call[]` hashes with keccak256, so both
 stay keccak-only and `pure`. There is exactly one primitive they can ever need, which is
 what makes it safe for them to be frozen with the account.
 
@@ -299,31 +299,31 @@ grow with an owner transaction.
 **The plugin supplies the primitive, never the fold.** `ICommitmentScheme.hash(bytes)` is
 one function wide; the registry seeds with the chainKey and folds per element itself. So
 "the fold is fixed, the primitive varies" is structural rather than conventional, and a
-wrong or hostile plugin can only produce a digest the destination refuses — never a
+wrong or hostile plugin can only produce a digest the destination refuses: never a
 differently-shaped one it accepts. That bound is what makes a *mutable* preview acceptable
 at all.
 
 Nothing on the execution path reads any of this. A receiver enforces with the keccak fold
 compiled into `ReceiverBase`, which is frozen with the account and can never consult a
-lookup. **Advisory on the hub, enforced on the destination** — that split is the whole
+lookup. **Advisory on the hub, enforced on the destination**: that split is the whole
 safety argument for letting the preview be swappable.
 
-Getting the primitive wrong fails closed — the destination recomputes with its own scheme
+Getting the primitive wrong fails closed: the destination recomputes with its own scheme
 and simply does not match, the same failure mode as building a commitment with the local
 chainKey instead of the destination's. It is not free, though: an unmatched commitment
 sits in a strict-FIFO queue and blocks everything behind it until a `cancel` crosses,
 which is why a plugin is checked against `test/vectors/` rather than trusted.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
-derives it from `block.chainid` and nothing has to be configured — which is exactly why the
+derives it from `block.chainid` and nothing has to be configured, which is exactly why the
 commitment binds to a chain for free there. Off the EVM that does not hold:
 
 | VM | Can it derive its own chainKey? |
 | --- | --- |
 | EVM | yes, from `block.chainid` |
 | Starknet | yes, from `get_tx_info().chain_id` |
-| Aptos | partially — `chain_id::get()` is a `u8` |
-| Solana | **no** — a program cannot tell which cluster it is on |
+| Aptos | partially: `chain_id::get()` is a `u8` |
+| Solana | **no**: a program cannot tell which cluster it is on |
 | Sui | **no** |
 
 So on the chains where the receiver address is least predictable, the chainKey also has to
@@ -336,16 +336,16 @@ the spoke: assert the constant against a derived value in that chain's own test 
 
 | VM | Verify | Execute an arbitrary approved array |
 | --- | --- | --- |
-| EVM | yes | **yes** — a full-power account |
+| EVM | yes | **yes**: a full-power account |
 | Solana | yes | **yes**, via CPI, with the account list committed |
-| Starknet | yes, awkwardly | **yes** — multicall is already idiomatic |
-| Aptos / Sui | yes | **no** — Move has no general dynamic dispatch |
-| Cardano | version-dependent | **no** — validators are not executors |
+| Starknet | yes, awkwardly | **yes**: multicall is already idiomatic |
+| Aptos / Sui | yes | **no**: Move has no general dynamic dispatch |
+| Cardano | version-dependent | **no**: validators are not executors |
 
 **Solana: the account list has to be inside the committed element.** Every account an
 instruction touches must be enumerated in the transaction with signer/writable flags, and a
 program can only CPI into accounts already in scope. The executor therefore supplies that
-list — which means the approval has to cover it. If the accounts sit outside the
+list, which means the approval has to cover it. If the accounts sit outside the
 commitment, a relayer can substitute a destination token account and redirect funds at a
 perfectly matching hash. That is a privilege escalation, not a formatting detail, and it is
 the direct analogue of why `target` and `value` live *inside* the committed element on the
@@ -355,7 +355,7 @@ accounts against the committed ones before invoking.
 Two Solana limits also shape the flow rather than just the encoding: the 1232-byte
 transaction limit means a large payload has to be buffered into an account before it can be
 executed, and a batch of CPIs has to fit the compute budget. The commit/finalize split maps
-onto the first unusually well — pin the hash, write the payload across several
+onto the first unusually well: pin the hash, write the payload across several
 transactions, then execute against it.
 
 **Starknet: executable, and the obstacles are all encoding.** `Array<Call>` with
@@ -364,7 +364,7 @@ approved batch is idiomatic. What stands in the way is keccak, `felt252` not hol
 32-byte word, and the unsettled bytes↔felt packing convention below.
 
 **Move: a receiver can verify perfectly and still be unable to act.** Move has no general
-dynamic dispatch — a module cannot call an arbitrary `address::module::function` chosen at
+dynamic dispatch: a module cannot call an arbitrary `address::module::function` chosen at
 runtime. Entry functions are dispatched by the transaction, not by other modules. Sui's
 programmable transaction blocks come closest, but a PTB is composed off-chain by the sender
 and a module cannot introspect the PTB it is part of.
@@ -388,7 +388,7 @@ Move case is where each of them breaks.
 Ethereum is."** That is the justification for `isAllowed` defaulting to `true` and for
 treating the call policy as a self-imposed restriction rather than a defence. On a Move
 chain the receiver is vocabulary-limited whether anyone wants it to be or not, so the
-premise is false there — and the merkle-policy work is moot, because **the vocabulary is
+premise is false there, and the merkle-policy work is moot, because **the vocabulary is
 the policy**. Non-EVM receivers are constrained accounts by construction.
 
 **"Deployed as a proxy at a CREATE2 address derived from the owner alone."** Move modules
@@ -396,7 +396,7 @@ are published at addresses, not instantiated; there is no per-owner deployment a
 Move deployment is one module holding a table keyed by owner. The one-account-per-owner
 model, and the single address that goes with it, does not survive the trip.
 
-**"Nothing to wedge — a payload that can never execute fails at its own transmitter's
+**"Nothing to wedge: a payload that can never execute fails at its own transmitter's
 receiver and blocks nobody. Isolation is structural rather than bookkeeping."** That rests
 on one contract per owner. Under a shared Move module it becomes bookkeeping again,
 which is the thing that section says it was avoiding. Whatever a Move receiver does about
@@ -415,7 +415,7 @@ optional.
   non-EVM support.
 - **A receiver model for Cardano**, or a decision that Cardano is out of scope.
 - **Whether the Solana element carries the account list**, which the argument above says it
-  must — worth stating as settled once someone writes the first vector.
+  must: worth stating as settled once someone writes the first vector.
 
 ## Testing
 
@@ -437,7 +437,7 @@ expected commitment hash. Every implementation reads the same file and neither d
 the other.
 
 **The VM that executes owns its format and generates its own vectors.** The decoder is the
-spec, not the encoder — off-chain tooling that builds payloads is checked against the
+spec, not the encoder: off-chain tooling that builds payloads is checked against the
 destination's vectors, not the other way round.
 
 ### Who checks what
@@ -445,7 +445,7 @@ destination's vectors, not the other way round.
 | | Checked by | Needs |
 | --- | --- | --- |
 | Commitment hash, any VM | Foundry | keccak over bytes it never parses |
-| EVM wire format and decode | Foundry | — |
+| EVM wire format and decode | Foundry |: |
 | Non-EVM decode, field by field | that VM's own suite | that toolchain |
 | Encoder/decoder round-trip | Foundry `--ffi` | target toolchain installed |
 | End to end | devnet lane per VM | deployed contracts |
@@ -458,7 +458,7 @@ instruction.
 ### Assert fields, not bytes
 
 Matching hashes prove byte agreement, not semantic agreement. A mismatched *encoder* is
-fail-closed — the commitment does not match and nothing runs. A mismatched *decoder* is
+fail-closed: the commitment does not match and nothing runs. A mismatched *decoder* is
 not: if the hub's tooling encodes "transfer 100 to A" and the destination reads "transfer
 1000 to B" out of those same bytes, the hash matches perfectly and the wrong thing executes.
 
@@ -470,8 +470,8 @@ decoder is the only thing between a delivered message and execution.
 
 `Payload.encodeElements(bytes[])` wraps the portable form in `abi.encode`, which is an
 EVM-ism imposed on exactly the chains least able to pay for it. That contradicts the
-principle stated at the top of this file — the container is supposed to be uniform, not
-EVM-shaped — and it should be decided before the first non-EVM receiver is written.
+principle stated at the top of this file (the container is supposed to be uniform, not
+EVM-shaped), and it should be decided before the first non-EVM receiver is written.
 
 Nothing decodes ABI for free off the EVM. Per VM, roughly in order of pain:
 
@@ -483,7 +483,7 @@ Nothing decodes ABI for free off the EVM. Per VM, roughly in order of pain:
 | Cardano | wrong model | eUTxO validators are not executors; needs a different receiver design |
 
 This table is about *decoding the container*, and it does not line up with the execution
-table above — Move decodes ABI easily and still cannot execute an arbitrary array. The two
+table above: Move decodes ABI easily and still cannot execute an arbitrary array. The two
 are independent problems and picking a container format solves neither of the hard ones.
 
 A length-prefixed container decodes with a cursor in any language, has no 32-byte-word
@@ -494,7 +494,7 @@ count(u32 BE) | [ len(u32 BE) | element bytes ]*
 ```
 
 One element carrying 36 bytes: **44 bytes packed against 192 ABI-framed.** Most of ABI's
-overhead is zero-padding — cheap in EVM calldata gas, but several providers price by raw
+overhead is zero-padding: cheap in EVM calldata gas, but several providers price by raw
 byte.
 
 **This costs nothing to defer, and that is why it is deferred rather than guessed at.** The
@@ -511,7 +511,7 @@ wrong once and wrong forever.
 
 Also unverified: **keccak256 availability on Cardano.** Solana, Aptos, and Sui all expose
 it natively; Plutus gained a `keccak_256` builtin later than the others and the target
-version needs checking. Starknet's `starknet_keccak` is *not* keccak256 — see above.
+version needs checking. Starknet's `starknet_keccak` is *not* keccak256: see above.
 
 ## Rejected
 
@@ -526,7 +526,7 @@ destination receives.
 property of the destination and both sides know it in advance, so the byte would carry a
 value neither side needs told. See above for the condition that would make one necessary.
 
-**Packed, Safe `MultiSend` style** — `to(20) | value(32) | len(2) | data`. Smallest by a
+**Packed, Safe `MultiSend` style**: `to(20) | value(32) | len(2) | data`. Smallest by a
 wide margin, and reads straight from calldata with no memory copy. Rejected for now: it
 needs hand-written cursor parsing, has no standard tooling, and bakes in a 20-byte address.
 Revisit if bridge fees show up in cost modelling.

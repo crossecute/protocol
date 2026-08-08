@@ -13,7 +13,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 ///      That holds because transmitters live on the home chain only. If one ever runs on a
 ///      spoke, the hub starts receiving commitments as well as reports, the direction
-///      stops determining the shape, and a tag becomes mandatory — decoding the wrong
+///      stops determining the shape, and a tag becomes mandatory: decoding the wrong
 ///      shape off a `bytes` blob is not a revert, it is a silent misread. This comment is
 ///      the tripwire for that change.
 ///
@@ -33,9 +33,9 @@ library Envelope {
     ///      envelope needs no second shape for the deferred case.
     ///
     /// @dev THE OWNER AND THE SALT ARE IN THE MESSAGE, AND IT IS THE OWNER RATHER THAN THE
-    ///      TRANSMITTER. The destination derives the account address from the pair —
-    ///      `accountSalt(owner, salt)` —
-    ///      which is what puts an owner's transmitter and their receivers on one address.
+    ///      TRANSMITTER. The destination derives the account address from the pair,
+    ///      `accountSalt(owner, salt)`, which is what puts an owner's transmitter and
+    ///      their receivers on one address.
     ///      The transmitter's own address could not serve: a CREATE2 address cannot be
     ///      derived from itself. Nothing the bridge reports says who on the home chain authorized
     ///      the message, since the hub is shared by every owner, so it is stated.
@@ -60,7 +60,7 @@ library Envelope {
     /// @dev A SECOND SHAPE, NOT A TAGGED ONE. Which form a spoke receives follows from its
     ///      VM: an EVM spoke decodes `Call[]`, a Solana or Move one decodes its own
     ///      elements. Each side knows which before a byte is written, so a discriminant
-    ///      would carry a value both already hold — the same reason nothing else here has
+    ///      would carry a value both already hold: the same reason nothing else here has
     ///      a type tag.
     ///
     ///      There is no `decodeBootstrapElements` because nothing written in Solidity ever
@@ -85,7 +85,7 @@ library Envelope {
     ///
     /// @dev IT CARRIES NO REQUEST ID, because the fields it does carry already imply the
     ///      correlation one would provide: the destination is established by the
-    ///      authenticated origin, and `(owner, salt)` is stated here — exactly the triple
+    ///      authenticated origin, and `(owner, salt)` is stated here: exactly the triple
     ///      the receiver slot is derived from. The registry refuses a second write to that
     ///      slot outright, which is a stronger guarantee than matching an id.
     ///

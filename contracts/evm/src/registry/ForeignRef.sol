@@ -30,7 +30,7 @@ struct ForeignRef {
     bytes32 chainKey;
     Provenance provenance;
     /// keccak256 of the attached MoveQualifier, or zero when none. Kept OUTSIDE `id`
-    /// so that `id` stays a pure function of the ERC-7930 envelope — a call target and
+    /// so that `id` stays a pure function of the ERC-7930 envelope: a call target and
     /// the address it lives at must remain the same registry key.
     bytes32 qualifierHash;
     /// Canonical ERC-7930 bytes, re-encoded from parsed parts on store.
@@ -41,7 +41,7 @@ struct ForeignRef {
 ///
 /// @dev NO REQUEST ID, AND NOTHING TO REGISTER IN ADVANCE. Correlation needs no
 ///      identifier: the slot is derived from `(chainKey, transmitter)`, and the
-///      authenticated message establishes both — the chain through `_authenticateOrigin`,
+///      authenticated message establishes both: the chain through `_authenticateOrigin`,
 ///      the transmitter by stating it. A destination therefore cannot choose which slot
 ///      it writes.
 ///

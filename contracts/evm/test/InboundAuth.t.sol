@@ -217,7 +217,7 @@ contract InboundAuthTest is Test {
         vm.prank(msig);
         hub.setRoute(chainKey, abi.encode(uint32(30184)));
 
-        // Learned from the destination, so `Attested` — the weakest grade there is.
+        // Learned from the destination, so `Attested`: the weakest grade there is.
         vm.prank(address(hub));
         registry.onForeignRefResolved(
             keccak256("lz.base"), Erc7930.encodeEvm(8453, counterpart), ""

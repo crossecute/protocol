@@ -7,7 +7,7 @@ import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
 /// @notice The primitive every EVM destination uses, plus Solana, Aptos, Sui, NEAR, and
 ///         Cosmos. `Scheme.Keccak256` in the enum the frozen transmitters carry.
 ///
-/// @dev IT EXISTS TO BE THE CONTROL. An EVM chain never needs the plugin path — its
+/// @dev IT EXISTS TO BE THE CONTROL. An EVM chain never needs the plugin path: its
 ///      receiver enforces with the keccak fold compiled into `ReceiverBase`. Registering
 ///      this one anyway means `ChainRegistry.commitmentFor` can be checked against
 ///      `Commitment.hashCalls` for the same inputs, which is the assertion that the

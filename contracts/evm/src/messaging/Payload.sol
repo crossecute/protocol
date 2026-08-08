@@ -23,8 +23,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      matters. `abi.decode` of the wrong shape happens to revert for these two layouts,
 ///      but that is a property of how they collide, not a promise the ABI decoder makes.
 ///      What actually prevents a misread is that no path exists which sends opaque
-///      elements to an EVM receiver. If one is ever added — a transmitter running on a
-///      spoke, a destination that accepts both — the tag has to come back, because at that
+///      elements to an EVM receiver. If one is ever added (a transmitter running on a
+///      spoke, a destination that accepts both), the tag has to come back, because at that
 ///      point the direction stops determining the shape. This comment is the tripwire.
 ///
 /// @dev THE COMMITMENT IS UNAFFECTED EITHER WAY. `Commitment` folds `keccak256(element)`
@@ -51,7 +51,7 @@ library Payload {
     /* ============================ non-EVM destinations ========================== */
 
     /// @notice Wire bytes for a destination whose calls this chain cannot express.
-    /// @dev The elements are that VM's own call encoding — a Solana instruction with its
+    /// @dev The elements are that VM's own call encoding: a Solana instruction with its
     ///      account list, a Starknet `(to, selector, calldata)`, an Aptos entry function.
     ///      Nothing here parses one, and nothing here needs to.
     function encodeElements(bytes[] memory elements) internal pure returns (bytes memory) {
@@ -68,7 +68,7 @@ library Payload {
     ///
     /// @dev IT TAKES THE IDENTIFIER, NOT THE CHAINKEY, because a chainKey is
     ///      `keccak256(identifier)` and a hash cannot be asked what chain type it came
-    ///      from. Anywhere the form has to be chosen, the envelope is still in hand — the
+    ///      from. Anywhere the form has to be chosen, the envelope is still in hand: the
     ///      transmitter's `send(uint256)` is `eip155` by construction, and `sendTo(bytes)`
     ///      has the envelope as its argument.
     function isTypedDestination(bytes memory chainIdentifier)

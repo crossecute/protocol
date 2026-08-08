@@ -20,7 +20,7 @@ import {Call} from "src/messaging/Call.sol";
 ///      transmitter, and there is exactly one transmitter per user per protocol.
 ///
 /// @dev THE CALLER STILL NAMES A PLAIN CHAIN ID. `submit(8453, calls)` is the whole
-///      interface for an EVM destination — no chainKey to look up, no eid to know, no
+///      interface for an EVM destination: no chainKey to look up, no eid to know, no
 ///      per-provider table to keep. The transmitter derives the chainKey purely (see
 ///      `ChainKey`) and the transceiver turns that into whatever its provider addresses
 ///      by. `submitTo` is the escape hatch for destinations that have no `uint256` chain
@@ -28,7 +28,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev OWNERSHIP IS `OwnableUpgradeable`, NOT A HAND-ROLLED FIELD. A transmitter is
 ///      per-user and its owner is the party that asked the factory for it, so the standard
-///      two-step-free `Ownable` semantics are what a user expects — including
+///      two-step-free `Ownable` semantics are what a user expects, including
 ///      `transferOwnership`, which a hand-rolled immutable `owner` could not offer.
 ///      Note this also exposes `renounceOwnership`: renouncing bricks the transmitter,
 ///      since `submit` is the only way to use one and it is owner-gated.
@@ -36,7 +36,7 @@ import {Call} from "src/messaging/Call.sol";
 ///      This is the opposite choice from `TransceiverBase`, deliberately. A transceiver
 ///      must compose with a message provider's SDK, which usually brings its own
 ///      `Ownable`, so it declares `_checkAdmin` and inherits no ownership at all. A
-///      transmitter composes with nothing — it is a leaf contract cloned by the factory —
+///      transmitter composes with nothing (it is a leaf contract cloned by the factory)
 ///      so there is no second authority for `Ownable` to collide with.
 ///
 /// @dev IT HOLDS NO REGISTRY POINTER, DELIBERATELY. The chainKey derivation is pure, so
@@ -77,7 +77,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev STORED BECAUSE `bootstrap` HAS TO STATE IT. The destination derives this
     ///      account's address from `(owner, salt)`, and an address cannot be reversed into
-    ///      its own salt — so the value has to travel, and this contract is the only place
+    ///      its own salt, so the value has to travel, and this contract is the only place
     ///      that knows it without a lookup.
     bytes32 public accountSalt;
 
@@ -85,7 +85,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
 
     error NoTransceiver();
 
-    /// @notice The account's owner. Declared, not implemented — see the note above.
+    /// @notice The account's owner. Declared, not implemented: see the note above.
     function _owner() internal view virtual returns (address);
 
     /// @notice Reverts unless the caller is the owner.
@@ -94,7 +94,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     /// @dev NAMED `onlyAccountOwner`, NOT `onlyAccountOwner`, and that is not cosmetic. A
     ///      provider SDK that brings `Ownable` also brings an `onlyAccountOwner` modifier, and
     ///      two base classes declaring one name forces every derived contract to override
-    ///      it — the same collision the seam exists to avoid, reappearing one level down.
+    ///      it: the same collision the seam exists to avoid, reappearing one level down.
     ///      `TransceiverBase` sidesteps it the same way, with `onlyAdmin`.
     modifier onlyAccountOwner() {
         _checkOwner();
@@ -103,7 +103,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     /// @dev `Call[]` is what an EVM receiver executes; nothing else decodes it. Sending it
     ///      to a chain that cannot is a mistake worth catching here rather than on arrival.
     error TypedPayloadToNonEvmDestination();
-    /// @dev The mirror. An EVM receiver decodes `Call[]` and only `Call[]` — opaque
+    /// @dev The mirror. An EVM receiver decodes `Call[]` and only `Call[]`: opaque
     ///      elements would arrive undeliverable, so the portable form is refused for a
     ///      destination that has a typed one.
     error OpaquePayloadToEvmDestination();
@@ -118,8 +118,8 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev PATH A, AND THE TRANSCEIVER IS NOT IN IT. This account is its own
     ///      message-provider endpoint and its peer on the far side is its own address, so
-    ///      the payload goes straight there. The peer relationship is exactly 1:1 — one
-    ///      account, one chain pair — which is the shape every provider's peer table
+    ///      the payload goes straight there. The peer relationship is exactly 1:1 (one
+    ///      account, one chain pair), which is the shape every provider's peer table
     ///      already has, and the reason an account can be an endpoint at all.
     ///
     /// @dev THE CALLER NAMES A PLAIN CHAIN ID. `send(8453, calls)` is the whole interface:
@@ -168,7 +168,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         _sendCalls(_typedKey(destinationChainIdentifier), calls, providerData);
     }
 
-    /// @notice `send`, in the portable form — the escape hatch for Solana, Sui, Starknet,
+    /// @notice `send`, in the portable form: the escape hatch for Solana, Sui, Starknet,
     ///         and anything else with no `uint256` chain id and no `Call`.
     /// @dev The elements are that VM's own call encoding. Nothing here inspects one.
     function sendTo(bytes calldata destinationChainIdentifier, bytes[] calldata elements)
@@ -194,7 +194,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     /// @dev PATH B, AND THE ONLY ONE THE TRANSCEIVER IS IN. There is no peer to send to
     ///      yet, so the message goes to the one contract that already exists on that
     ///      chain. Afterwards every message takes path A and this contract is not involved
-    ///      again — which is why the provenance bar gates the FIRST message to a chain
+    ///      again, which is why the provenance bar gates the FIRST message to a chain
     ///      rather than every send.
     ///
     /// @dev IT PASSES THE OWNER AND SALT, NOT ITSELF. The destination derives this
@@ -239,7 +239,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, providerData);
     }
 
-    /// @notice `bootstrap`, in the portable form — for standing this account up on Solana,
+    /// @notice `bootstrap`, in the portable form: for standing this account up on Solana,
     ///         Sui, Starknet, or anything else with no `Call`.
     ///
     /// @dev THE PAIRING IS ENFORCED HERE, NOT AT THE TRANSCEIVER. This is the last point
@@ -276,7 +276,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         return ChainKey.fromIdentifier(identifier);
     }
 
-    /// @dev And the portable form only reaches one that does not — an EVM receiver decodes
+    /// @dev And the portable form only reaches one that does not: an EVM receiver decodes
     ///      `Call[]` and only `Call[]`, so opaque elements would arrive undeliverable.
     function _opaqueKey(bytes calldata identifier) private pure returns (bytes32) {
         if (identifier.length == 0) revert NoDestination();
@@ -330,7 +330,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev PAYABLE, AND THE VALUE GOES STRAIGHT THROUGH to the receiver, which spends it
     ///      per the `uint256 value` inside each committed call element. Anything the
-    ///      payload does not spend stays in the receiver — it is at a deterministic address
+    ///      payload does not spend stays in the receiver: it is at a deterministic address
     ///      the owner controls, so it is recoverable by a later payload rather than lost.
     ///
     /// @dev IT TAKES NO DESTINATION, BECAUSE IT CANNOT HAVE ONE. There is no bridge in the
@@ -338,7 +338,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev IT RUNS THEM ITSELF RATHER THAN THROUGH A LOCAL RECEIVER. There is no receiver
     ///      on this chain to run them in: a transmitter and its receivers share one
-    ///      address across chains, and an address holds one contract — so at home that
+    ///      address across chains, and an address holds one contract, so at home that
     ///      address is the transmitter. `HubTransceiverBase` has no `createReceiver` to
     ///      call, which is what makes that a structural fact rather than a convention.
     ///
@@ -393,7 +393,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///      `msg.sender == address(this)` is reachable only through `_execute`, which
     ///      needs an authenticated inbound message or a gated `execute` to run at all.
     /// @dev CANCELLATION IS INHERENTLY REMOTE, because approvals are. A transmitter holds
-    ///      no queue — it executes directly — so there is nothing local to withdraw. This
+    ///      no queue (it executes directly), so there is nothing local to withdraw. This
     ///      builds the element that withdraws one on the receiver's own chain, to be
     ///      carried in a payload once the transport can carry one.
     ///
@@ -431,7 +431,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///      from bytecode frozen alongside this. So for an EVM destination the answer is
     ///      fixed for the life of the account, and reading it here rather than from the
     ///      registry is strictly better: it holds without trusting whoever administers a
-    ///      plugin table. The split is not a compromise between two surfaces — it is the
+    ///      plugin table. The split is not a compromise between two surfaces: it is the
     ///      frozen answer where one exists and the extensible answer where none can.
     ///
     /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed. It

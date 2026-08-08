@@ -13,8 +13,8 @@ import {Provenance} from "src/registry/ForeignRef.sol";
 ///      from carrying a dependency it can never satisfy.
 ///
 /// @dev IT HOLDS NO ROUTES, WHICH IS WHY IT IS NOT NAMED FOR THEM. A message provider's
-///      own name for a chain lives on the transceiver — the contract that sends and
-///      receives — so what remains here is references: counterparts, account slots, and
+///      own name for a chain lives on the transceiver (the contract that sends and
+///      receives), so what remains here is references: counterparts, account slots, and
 ///      the callback that records one.
 interface IChainRegistryRefs {
     function transceiverFor(
