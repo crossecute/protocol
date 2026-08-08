@@ -148,7 +148,10 @@ summary: the file is always the newer statement.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
   byte-identical initcode on every chain, so the target must not vary. Optimizer settings
-  are pinned for the same reason.
+  are pinned for the same reason, as are `bytecode_hash = "none"` and
+  `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
+  comments included, which would otherwise put every derived address one comment edit
+  away from moving.
 - Transceivers are deployed as upgradeable proxies, upgraded to their real implementation,
   then `lockUpgrades()`. A transceiver decides which cross-chain payloads are authentic, so
   a live upgrade key is a standing ability to forge one.

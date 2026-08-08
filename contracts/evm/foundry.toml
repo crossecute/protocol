@@ -12,6 +12,14 @@ evm_version = "paris"
 # bytecode across chains is what the CREATE2 derivation depends on.
 optimizer = true
 optimizer_runs = 200
+# The default embeds an IPFS hash of the SOURCE, comments included, in the trailing
+# metadata. That put every derived address one comment edit away from moving, which is
+# not a property this protocol can have: CrossProxy's initcode hash is what fixes an
+# account's address on every chain, and the registry stores initcode hashes to derive
+# transceiver locations. "none" drops the source hash; cbor_metadata = false drops the
+# rest of the trailer, leaving initcode that depends on the code and nothing else.
+bytecode_hash = "none"
+cbor_metadata = false
 remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
