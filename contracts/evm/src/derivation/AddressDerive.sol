@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Erc7930} from "src/addressing/Erc7930.sol";
+
 /// @title AddressDerive
 /// @notice Deterministic address derivation across EVM and non-EVM chains, computed
 ///         on-chain inside an Ethereum transaction. Pure where possible, no chain state.
@@ -47,6 +49,16 @@ library AddressDerive {
     /// @dev RLP has three cases for the nonce and getting them wrong is a classic bug:
     ///      0 encodes as 0x80 (empty string, NOT 0x00), 1..127 encode as themselves,
     ///      and anything larger takes a 0x80+len prefix over minimal big-endian bytes.
+    ///
+    /// @dev THE LIST PREFIX IS `0xc0 + payload`, AND THE PAYLOAD GROWS WITH THE NONCE.
+    ///      The address item is always 21 bytes (0x94 plus twenty), and the nonce item is
+    ///      1 byte in the first two arms but `1 + len` in the third, so the prefix is
+    ///      0xd6 in the first two and `0xd6 + len` in the third. It read `0xd5 + len`
+    ///      until `test/CreateDerivation.t.sol` was written: every nonce at or above 128
+    ///      produced a well-formed address that was not the one Ethereum would use. Only
+    ///      `create3` called this, always with a hardcoded nonce of 1, so nothing
+    ///      exercised the arm. `VmDeriver.Scheme.EvmCreate` takes the nonce from
+    ///      registry params and could have reached it with any value.
     function create(
         address deployer,
         uint256 nonce
@@ -67,9 +79,13 @@ library AddressDerive {
                 uint8(nonce)
             );
         } else {
-            bytes memory n = _minimalBE(nonce);
+            // Minimal big-endian, the same rule the eip155 chain reference uses.
+            // Borrowed from `Erc7930` rather than restated: `derivation` imports
+            // `addressing` and never the reverse, so this is the direction the
+            // dependency graph already runs, and one encoder cannot drift from itself.
+            bytes memory n = Erc7930.minimalBigEndian(nonce);
             rlp = abi.encodePacked(
-                bytes1(uint8(0xd5 + n.length)),
+                bytes1(uint8(0xd6 + n.length)),
                 bytes1(0x94),
                 deployer,
                 bytes1(uint8(0x80 + n.length)),
@@ -129,19 +145,6 @@ library AddressDerive {
     ) internal pure returns (address) {
         address proxy = create2(factory, salt, CREATE3_PROXY_INITCODE_HASH);
         return create(proxy, 1);
-    }
-
-    function _minimalBE(uint256 x) private pure returns (bytes memory out) {
-        uint256 len;
-        uint256 t = x;
-        while (t != 0) {
-            ++len;
-            t >>= 8;
-        }
-        out = new bytes(len);
-        for (uint256 i; i < len; ++i) {
-            out[len - 1 - i] = bytes1(uint8(x >> (8 * i)));
-        }
     }
 
     /* ====================================================================== */

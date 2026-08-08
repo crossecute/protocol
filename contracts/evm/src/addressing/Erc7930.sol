@@ -217,6 +217,11 @@ library Erc7930 {
     ///      folders over one integer helper. Canonicity is this library's
     ///      responsibility, so the rule that decides it belongs next to `parseStrict`,
     ///      which is what rejects violations of it.
+    ///
+    /// @dev `AddressDerive` USES IT TOO, for the RLP nonce in a CREATE derivation. That
+    ///      is a different rule reached by the same encoding, and it had its own private
+    ///      copy of this body until the two were merged here. `derivation` imports
+    ///      `addressing`, which is the direction this comment always said was open.
     function minimalBigEndian(uint256 x) internal pure returns (bytes memory out) {
         uint256 len;
         uint256 t = x;

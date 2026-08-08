@@ -173,7 +173,7 @@ The EVM side is built and tested: account creation, the approval queue, cancella
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```
-cd contracts/evm && forge test        # 242 passing
+cd contracts/evm && forge test        # 247 passing
 ```
 
 **Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` until a

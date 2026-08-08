@@ -30,3 +30,45 @@ interface ICommitmentScheme {
     ///      crosses, so it is verified against `test/vectors/` rather than assumed.
     function hash(bytes calldata data) external view returns (bytes32);
 }
+
+/// @title SchemeFold
+/// @notice The commitment fold, over a plugin's primitive.
+///
+/// @dev THIS IS THE SECOND DEFINITION OF ONE FOLD, AND IT IS DELIBERATE RATHER THAN AN
+///      OVERSIGHT. `Commitment.hashCalls` is the first, and the two must agree byte for
+///      byte. They cannot be merged: `Commitment` lives in `messaging`, which imports
+///      `registry`, so a registry contract importing `Commitment` would close a cycle in
+///      a dependency graph the README states runs one way. Solidity offers no third
+///      option either, because the only difference between the two bodies is whether the
+///      primitive is an enum arm or an external call, and an internal function pointer
+///      cannot close over the value that decides.
+///
+///      So it is written out once here, kept adjacent to the interface it folds with, and
+///      pinned equal to the library by `test/CommitmentSchemePlugin.t.sol` for every
+///      primitive the enum carries. If that test ever goes, this comment is the warning.
+///
+/// @dev IT LIVES HERE RATHER THAN IN `ChainRegistry` because a registry stores bindings.
+///      Defining a hash is not that, and a thousand-line contract is the wrong place to
+///      hide four lines everything else in the protocol has to match.
+library SchemeFold {
+    /// @notice The commitment `scheme`'s chain will require over `elements`.
+    ///
+    /// @dev THE CHAINKEY IS THE SEED, and the plugin never learns it as a chainKey, only
+    ///      as bytes to hash. Cross-chain replay protection is therefore not a plugin's
+    ///      to weaken: it cannot bind a commitment to a chain other than the one asked
+    ///      for, however wrong its primitive is.
+    ///
+    /// @dev AN EMPTY ARRAY HASHES TO THE SEED ALONE, matching `Commitment`. Non-zero, and
+    ///      therefore a valid commitment.
+    function hashCalls(
+        ICommitmentScheme scheme,
+        bytes32 destinationChainKey,
+        bytes[] memory elements
+    ) internal view returns (bytes32 hashed) {
+        hashed = scheme.hash(abi.encode(destinationChainKey));
+        uint256 len = elements.length;
+        for (uint256 i = 0; i < len; i++) {
+            hashed = scheme.hash(abi.encodePacked(hashed, scheme.hash(elements[i])));
+        }
+    }
+}

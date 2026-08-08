@@ -137,17 +137,24 @@ library Commitment {
     }
 
     /// @notice The same value, from typed calls.
+    ///
+    /// @dev IT DELEGATES RATHER THAN REPEATING THE FOLD, and that is the point.
+    ///      `Calls.encodeAll` produces exactly the elements the overload above folds, so
+    ///      routing through it makes "both spellings of one payload produce one hash" a
+    ///      structural fact rather than a property two copies of one loop happen to
+    ///      share. A second copy is a second place the fold can drift, in a library whose
+    ///      first line is that the fold does not.
+    ///
+    /// @dev THE ARRAY COPY IS FREE WHERE THIS RUNS. `Calls.encodeAll` materializes every
+    ///      element, which is exactly what the keccak overloads avoid by folding
+    ///      `Calls.hash` directly, because those are on the gas-paying `finalize` path.
+    ///      A scheme-parameterized commitment is only ever read through `eth_call`.
     function hashCalls(
         Scheme scheme,
         bytes32 destinationChainKey,
         Call[] memory calls
-    ) internal view returns (bytes32 hashed) {
-        hashed = _hash(scheme, abi.encode(destinationChainKey));
-        uint256 len = calls.length;
-        for (uint256 i = 0; i < len; i++) {
-            hashed =
-                _hash(scheme, abi.encodePacked(hashed, _hash(scheme, Calls.encode(calls[i]))));
-        }
+    ) internal view returns (bytes32) {
+        return hashCalls(scheme, destinationChainKey, Calls.encodeAll(calls));
     }
 
     /// @notice Whether this chain can compute `scheme` at all.

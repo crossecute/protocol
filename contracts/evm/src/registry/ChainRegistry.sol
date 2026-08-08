@@ -10,7 +10,7 @@ import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {ForeignRef, IForeignRefReceiver, Provenance} from "src/registry/ForeignRef.sol";
 import {Move} from "src/addressing/Move.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
-import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
+import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
@@ -519,19 +519,10 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /// @notice PREVIEW. The commitment `chainKey`'s receiver will require over `elements`.
     ///
-    /// @dev THE FOLD LIVES HERE AND THE PRIMITIVE LIVES IN THE PLUGIN. Byte for byte the
-    ///      structure of `Commitment.hashCalls(Scheme, bytes32, bytes[])` (seed over the
-    ///      abi-encoded chainKey, then `hash(acc ++ hash(element))` per element), with
-    ///      every `_hash` replaced by a call out. `test/CommitmentSchemePlugin.t.sol`
-    ///      asserts the equality for all three primitives the enum already carries,
-    ///      because a seam that merely resembles the frozen path is worse than none.
-    ///
-    /// @dev THE CHAINKEY IS FOLDED IN AS THE SEED, which is the cross-chain replay
-    ///      protection and not the plugin's business. A plugin never learns which chain
-    ///      it is hashing for and so cannot bind a commitment to the wrong one.
-    ///
-    /// @dev AN EMPTY ARRAY HASHES TO THE SEED ALONE, matching the library. Non-zero, and
-    ///      therefore a valid commitment.
+    /// @dev THIS CONTRACT RESOLVES THE PLUGIN AND NOTHING ELSE. The fold is `SchemeFold`,
+    ///      beside the interface, which also carries the argument for why it is a second
+    ///      copy of `Commitment.hashCalls` rather than a call into it. A registry stores
+    ///      bindings; defining the hash every other chain has to match is not that.
     ///
     /// @dev `view`, and read through `eth_call` by a signer checking a payload. Nothing
     ///      on-chain calls this, and nothing on-chain may: a commitment is enforced by
@@ -540,16 +531,11 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     function commitmentFor(bytes32 chainKey, bytes[] calldata elements)
         external
         view
-        returns (bytes32 hashed)
+        returns (bytes32)
     {
         ICommitmentScheme scheme = commitmentSchemeOf[chainKey];
         if (address(scheme) == address(0)) revert NoCommitmentScheme();
-
-        hashed = scheme.hash(abi.encode(chainKey));
-        uint256 len = elements.length;
-        for (uint256 i = 0; i < len; i++) {
-            hashed = scheme.hash(abi.encodePacked(hashed, scheme.hash(elements[i])));
-        }
+        return SchemeFold.hashCalls(scheme, chainKey, elements);
     }
 
     /// @notice Cap the strongest provenance a chain may be recorded at.
