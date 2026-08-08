@@ -2,6 +2,56 @@
 
 Secure multisig operations across chains, anchored on one of them.
 
+## Why
+
+A team on six chains runs six multisigs — six addresses, six signer sets to keep in step,
+six proposals per change, six sets of funded signers. Everything below follows from
+collapsing that to one.
+
+**A signer is removed once, not N times.** The signer set exists only in the home-chain
+multisig. Receivers elsewhere never learn who the signers are — they authenticate the
+origin address, fixed by CREATE2 at creation and unmoved by a signer change. Rotating a
+compromised key is one transaction, not N with a live attacker in the gaps.
+
+**One decision, one authorization, one fan-out.** A change touching six chains is one
+payload, approved once, dispatched from one home-chain transaction. Team and DAO process
+stops scaling with the number of chains.
+
+The atomicity is in the authorization, not the settlement: messages land when their bridges
+deliver, and a revert on one chain leaves that chain behind until retry rather than rolling
+back the others (see [Failure handling](docs/message-flow.md#failure-handling)). What it
+removes is divergence at the point of decision — six chains cannot hold six different
+payloads when only one was approved.
+
+**No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
+deployment there and someone's interface up — canonical, Protofire's, or self-hosted. Here
+every operation starts on the home chain, so one interface covers all of them, and a chain
+needs no Safe at all: the authority on the spoke is the account this protocol deploys.
+
+**Gas is funded in one place.** A multisig only one person can afford to execute is not
+decentralized, so an operable Safe per chain means N signers funded on M chains in M
+currencies. Here signers transact only at home. The bridge fee is paid there in one
+currency and execution runs inside the delivery callback. A payload that spends native
+currency draws on the receiver's address, which is derivable and fundable before the
+receiver exists — topped up once, not per signer.
+
+**One admin address everywhere.** Allowlists, deploy configs, an `owner()` read on an
+explorer, a runbook step — each names one address instead of a per-chain table someone has
+to keep correct. A wrong address is immediately visible rather than merely plausible.
+
+**One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
+and M chains means M batches reviewed separately plus the work of confirming they agree.
+Here it is one batch, reviewed in totality. The commitment folds the destination chainKey
+in with the calls, so an approval names what runs *and* where — confirming a payload
+confirms its destination, and the same bytes cannot be replayed onto another chain.
+
+**What it costs.** The home chain and the message provider enter the trust path: a halt at
+home delays everything, and a provider that can forge a message can drive an account. No
+shared failure is exactly what N independent multisigs buy with N of everything else. The
+exposure is narrowed where it can be — a transceiver is upgradeable only until
+`lockUpgrades()`, an account's upgrade key dies in the call that arms it, and no shared
+contract sits in the path of a normal message.
+
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
