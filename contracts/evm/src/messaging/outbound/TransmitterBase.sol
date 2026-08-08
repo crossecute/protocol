@@ -6,7 +6,7 @@ import {ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {Commitment, Scheme} from "src/messaging/Commitment.sol";
+import {Commitment} from "src/messaging/Commitment.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
 
@@ -418,15 +418,25 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
 
     /// @notice The commitment a payload will need on one EVM destination.
     ///
-    /// @dev THE PREVIEW SURFACE MIRRORS THE SEND SURFACE, deliberately. There is one
-    ///      overload per shape a payload can legally take — typed to an EVM chain named by
-    ///      id, typed to one named by envelope, portable with a scheme to everything else
-    ///      — and no cross combinations, because the send path refuses those anyway. A
-    ///      preview you can compute for a message you cannot send is a trap.
+    /// @dev THIS CONTRACT PREVIEWS EVM DESTINATIONS AND NOTHING ELSE. The portable
+    ///      overload that took a `Scheme` was removed: a preview here is frozen with the
+    ///      account, so it could only ever answer for primitives that existed when the
+    ///      account was created, and it answered from a mutable-looking parameter that no
+    ///      longer had a mutable home. Non-EVM destinations are previewed through
+    ///      `ChainRegistry.commitmentFor`, where the primitive is a per-chainKey plugin
+    ///      and the set of them can grow. See `registry/ICommitmentScheme.sol`.
     ///
-    /// @dev `pure` where it can be, so it runs off-chain against the exact array the
-    ///      signers reviewed. It is what `commitmentCall` feeds, so the hash a deferred
-    ///      payload pins is checkable before anything is approved.
+    /// @dev WHAT STAYS HERE STAYS BECAUSE IT CANNOT GO STALE. Every chain that executes
+    ///      `Call[]` hashes with keccak256, and `ReceiverBase` enforces that exact fold
+    ///      from bytecode frozen alongside this. So for an EVM destination the answer is
+    ///      fixed for the life of the account, and reading it here rather than from the
+    ///      registry is strictly better: it holds without trusting whoever administers a
+    ///      plugin table. The split is not a compromise between two surfaces — it is the
+    ///      frozen answer where one exists and the extensible answer where none can.
+    ///
+    /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed. It
+    ///      is what `commitmentCall` feeds, so the hash a deferred payload pins is
+    ///      checkable before anything is approved.
     function commitmentFor(uint256 destinationChainId, Call[] memory calls)
         public
         pure
@@ -436,8 +446,15 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     }
 
     /// @notice `commitmentFor`, for an EVM destination named by its ERC-7930 identifier.
-    /// @dev No `Scheme` parameter: a typed payload only reaches a chain that executes
-    ///      `Call[]`, and every such chain hashes with keccak256.
+    /// @dev No `Scheme` parameter, and now no sibling that takes one: a typed payload only
+    ///      reaches a chain that executes `Call[]`, and every such chain hashes with
+    ///      keccak256. There is exactly one primitive this contract can ever need.
+    ///
+    /// @dev IT STILL REFUSES A NON-EVM IDENTIFIER RATHER THAN DEFERRING TO THE REGISTRY.
+    ///      A preview you can compute for a message you cannot send in this shape is a
+    ///      trap, and that argument did not change when the other overload left. The
+    ///      revert names the mistake; `ChainRegistry.commitmentFor` is where that
+    ///      destination is answered.
     function commitmentForChain(
         bytes calldata destinationChainIdentifier,
         Call[] memory calls
@@ -447,31 +464,6 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         }
         return Commitment.hashCalls(
             ChainKey.fromIdentifier(destinationChainIdentifier), calls
-        );
-    }
-
-    /// @notice The commitment a non-EVM destination will need, in its own hash scheme.
-    ///
-    /// @dev `view` RATHER THAN `pure`, AND ONE SCHEME IS WHY. `Blake2b256` reaches the
-    ///      EIP-152 precompile through `staticcall`, which Solidity forbids inside `pure`,
-    ///      so the whole dispatching function loses `pure` — the same tax `IVmDeriver`
-    ///      already pays for the same precompile. It changes nothing in practice: this is
-    ///      read through `eth_call` when a signer checks a payload, where no gas is
-    ///      charged and `view` is as good as `pure`.
-    ///
-    /// @dev A scheme this chain cannot compute reverts with `SchemeNotComputable` rather
-    ///      than falling back. For those destinations the digest is built off-chain and
-    ///      carried in an element that calls the receiver's own `commit`.
-    function commitmentForChain(
-        bytes calldata destinationChainIdentifier,
-        Scheme scheme,
-        bytes[] memory elements
-    ) public view returns (bytes32) {
-        if (Payload.isTypedDestination(destinationChainIdentifier)) {
-            revert OpaquePayloadToEvmDestination();
-        }
-        return Commitment.hashCalls(
-            scheme, ChainKey.fromIdentifier(destinationChainIdentifier), elements
         );
     }
 

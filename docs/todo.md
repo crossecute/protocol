@@ -127,6 +127,13 @@ receivers share one. One entry per destination, and the value never varies.
   Starknet commitment is computed off-chain and carried in an opaque element that calls
   that receiver's own `commit`.
 
+  **No longer blocked on a redeploy.** `ICommitmentScheme` plus
+  `ChainRegistry.setCommitmentScheme` make a primitive a per-chainKey plugin, so the port
+  lands as a deployment and one owner transaction rather than as new account bytecode —
+  which frozen accounts could never receive anyway. The enum stays exactly as it is: it is
+  compiled into every live transmitter and cannot grow, and new primitives get a contract
+  instead of a member. What is still outstanding is Poseidon itself.
+
 ## 4. Decisions taken that deserve a second look
 
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
@@ -203,4 +210,8 @@ mainnet.
 - **No `test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling — cheap, and the only defence on the execute-on-arrival path where
-  there is no commitment at all.
+  there is no commitment at all. **Now load-bearing for the scheme plugins**: an
+  `ICommitmentScheme` is only as good as the evidence that its primitive matches what the
+  destination's own receiver applies, and a wrong one wedges that receiver's FIFO queue
+  until a `cancel` crosses. The corpus is what turns "we believe this is Blake2b" into a
+  check.

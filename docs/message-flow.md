@@ -283,12 +283,20 @@ No fallback storage, and no payload size cap — the provider enforces the latte
   implemented** — it reverts with `SchemeNotComputable` rather than falling back to keccak
   and handing back a digest the destination could never match. The fold structure is held
   fixed so both sides can compute it, which is a deliberate trade against TON's cell hash
-  and Starknet's felt-span Poseidon being more idiomatic there. Only
-  `commitTo`/`commitmentForChain` take the parameter, since `commit`/`commitmentFor` name
-  an `eip155` chain id by construction. Starknet commitments are computed off-chain and
-  approved through `commitTo(bytes,bytes32)` until Poseidon is ported against a vector
-  corpus. Blake2b's precompile forces those functions from `pure` to `view`, the same tax
-  `IVmDeriver` already pays.
+  and Starknet's felt-span Poseidon being more idiomatic there. Blake2b's precompile
+  forces the dispatching functions from `pure` to `view`, the same tax `IVmDeriver`
+  already pays.
+- **No transmitter entry point takes a `Scheme`.** `commitmentFor`/`commitmentForChain`
+  name an EVM destination and stay keccak-only and `pure`; the overload that took a
+  `Scheme` was removed. A preview is frozen with the account — a `CrossProxy` locks in the
+  call that arms it — so it could only ever name primitives that already existed, which is
+  exactly wrong for the part of the protocol most likely to grow. Non-EVM destinations are
+  previewed through `ChainRegistry.commitmentFor`, where the primitive is an
+  `ICommitmentScheme` bound per chainKey. The plugin supplies the primitive and the
+  registry keeps the fold, so a bad plugin can only produce a digest the destination
+  refuses. Nothing on the execution path reads it: `ReceiverBase` enforces with its own
+  frozen keccak fold, and advisory-here / enforced-there is what makes a mutable preview
+  safe. See [`encoding.md`](encoding.md) and `registry/ICommitmentScheme.sol`.
 - **A destination report carries no `requestId`, and nothing is registered in advance.**
   The correlation an id would provide is already implied: the slot is derived from
   `(chainKey, transmitter)`, the chainKey comes from `_authenticateOrigin`, and the

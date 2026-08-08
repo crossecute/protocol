@@ -98,7 +98,9 @@ src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
   registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRefs
+                  ICommitmentScheme
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
+  schemes/        Keccak, Sha256, Blake2b                   pluggable, per chainKey
   messaging/      Commitment, Call, Payload, Envelope, Executor
     outbound/     OutboundBase -> TransmitterBase
     inbound/      ReceiverBase
@@ -137,6 +139,7 @@ summary — the file is always the newer statement.
 | Why routes live on the transceiver rather than in the registry | `TransceiverBase.setRoute` |
 | Why neither base inherits an ownership system | `TransmitterBase`, `TransceiverBase` |
 | Why a chain type needs more than a `ChainType` constant | `addressing/Erc7930.sol` |
+| Why the commitment *preview* is swappable when the commitment is not | `registry/ICommitmentScheme.sol` |
 
 ## Assumptions
 
@@ -167,7 +170,7 @@ The EVM side is built and tested: account creation, the approval queue, cancella
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```
-cd contracts/evm && forge test        # 224 passing
+cd contracts/evm && forge test        # 242 passing
 ```
 
 **Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` until a

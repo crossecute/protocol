@@ -257,8 +257,8 @@ compute one value; the cost is that a non-EVM receiver implements a byte fold ra
 its idiomatic digest.
 
 **The hub can still compute most of them**, which matters more than it first appears
-because `commitmentForChain` is read through `eth_call` when a signer checks a payload —
-so gas is not charged in the path that matters.
+because a preview is read through `eth_call` when a signer checks a payload — so gas is
+not charged in the path that matters.
 
 | Scheme | On the hub | Mutability |
 | --- | --- | --- |
@@ -279,17 +279,40 @@ commitment that a Starknet receiver can never match, failing only on a live mess
 it is ported and checked against `test/vectors/starknet.json`, a Starknet commitment is
 computed off-chain and approved through the digest-only `commitTo(bytes,bytes32)`.
 
-**Where the scheme is and is not a parameter.** `commit`/`commitmentFor` take a `uint256`
-chain id, which is `eip155` by construction, so they stay keccak-only and `pure`. Only
-`commitTo`/`commitmentForChain` — the ERC-7930 entry points, which exist precisely for
-non-EVM destinations — take a `Scheme`. It is a parameter rather than a registry lookup
-for two reasons: the transmitter holds no registry pointer by design, and a parameter puts
-the scheme in the calldata the signers approve, which is right because the scheme is part
-of what makes the digest mean anything on the far side.
+**Where the scheme is a parameter, and where it stopped being one.** The enum is still how
+`Commitment` dispatches internally, and it is compiled into every account. But no entry
+point on a transmitter takes one any more.
 
-Getting it wrong fails closed — the destination recomputes with its own scheme and simply
-does not match, the same failure mode as building a commitment with the local chainKey
-instead of the destination's.
+`commitmentFor`/`commitmentForChain` name an EVM destination — by `uint256` chain id or by
+ERC-7930 envelope — and every chain that executes `Call[]` hashes with keccak256, so both
+stay keccak-only and `pure`. There is exactly one primitive they can ever need, which is
+what makes it safe for them to be frozen with the account.
+
+The overload that took a `Scheme` is **gone**. It was the one that could go stale, and it
+was frozen in the worst possible place: a transmitter is a `CrossProxy` that locks in the
+call that arms it, so the set of primitives it could name was fixed at its creation and a
+chain onboarded later with a new hash would be unpreviewable on every account already
+live. Non-EVM destinations are previewed through `ChainRegistry.commitmentFor` instead,
+where the primitive is an `ICommitmentScheme` plugin bound per chainKey and the set can
+grow with an owner transaction.
+
+**The plugin supplies the primitive, never the fold.** `ICommitmentScheme.hash(bytes)` is
+one function wide; the registry seeds with the chainKey and folds per element itself. So
+"the fold is fixed, the primitive varies" is structural rather than conventional, and a
+wrong or hostile plugin can only produce a digest the destination refuses — never a
+differently-shaped one it accepts. That bound is what makes a *mutable* preview acceptable
+at all.
+
+Nothing on the execution path reads any of this. A receiver enforces with the keccak fold
+compiled into `ReceiverBase`, which is frozen with the account and can never consult a
+lookup. **Advisory on the hub, enforced on the destination** — that split is the whole
+safety argument for letting the preview be swappable.
+
+Getting the primitive wrong fails closed — the destination recomputes with its own scheme
+and simply does not match, the same failure mode as building a commitment with the local
+chainKey instead of the destination's. It is not free, though: an unmatched commitment
+sits in a strict-FIFO queue and blocks everything behind it until a `cancel` crosses,
+which is why a plugin is checked against `test/vectors/` rather than trusted.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured — which is exactly why the

@@ -10,6 +10,7 @@ import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {ForeignRef, IForeignRefReceiver, Provenance} from "src/registry/ForeignRef.sol";
 import {Move} from "src/addressing/Move.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
+import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
@@ -136,6 +137,22 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// its address derivation is Pedersen and cannot be recomputed on the EVM at all.
     mapping(bytes32 => Provenance) public maxProvenanceOf;
 
+    /// chainKey => the primitive that chain's receiver hashes commitments with.
+    ///
+    /// @dev THE ENUM COULD NOT GROW AND THIS CAN. `Scheme` is compiled into every
+    ///      transmitter, and a transmitter is a `CrossProxy` that locks in the call that
+    ///      arms it — so the set of primitives an account can name is fixed at its
+    ///      creation, forever. A chain onboarded later with a hash nobody had written
+    ///      yet would be unpreviewable on every account already live. Behind a mapping
+    ///      the set grows with a `setCommitmentScheme` transaction instead.
+    ///
+    /// @dev SAFE TO MAKE MUTABLE ONLY BECAUSE NOTHING ENFORCES WITH IT. This registry is
+    ///      deliberately out of the send path — the same argument `TransceiverBase`
+    ///      makes for holding routes itself — and a commitment is enforced by the
+    ///      destination's own receiver, never by a read from here. Advisory here,
+    ///      enforced there.
+    mapping(bytes32 => ICommitmentScheme) public commitmentSchemeOf;
+
     /* ================================== events ================================= */
 
     event ChainKeyAdded(bytes32 indexed chainKey, bytes chainIdentifier);
@@ -158,6 +175,7 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
     event MaxProvenanceSet(bytes32 indexed chainKey, Provenance maxProvenance);
+    event CommitmentSchemeSet(bytes32 indexed chainKey, address scheme);
     event RefResolved(
         bytes32 indexed slot,
         bytes32 indexed chainKey,
@@ -199,6 +217,11 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     error ParamsCommitmentMismatch();
     error SchemeNotSupported();
     error NoRoute();
+    /// @dev No primitive registered for this chain, so nothing here can say what its
+    ///      receiver will require. Reverting beats returning a keccak digest the
+    ///      destination could never match — the same reason `Commitment._hash` refuses
+    ///      to fall back rather than guessing.
+    error NoCommitmentScheme();
 
     /* =============================== initializer =============================== */
 
@@ -470,6 +493,63 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         validatorOf[chainKey] = validator;
         emit ValidatorSet(chainKey, address(validator));
+    }
+
+    /* ========================== commitment preview ============================ */
+
+    /// @notice Teach this registry the primitive `chainKey`'s receiver hashes with.
+    ///
+    /// @dev REBINDABLE, LIKE `setDeriver` AND `setValidator` AND UNLIKE `setRoute`. A
+    ///      route is write-once because re-pointing one redirects live messages; this
+    ///      points at nothing and redirects nothing, so a wrong primitive has to be
+    ///      fixable. It is the only part of the commitment story that ever can be.
+    ///
+    /// @dev Passing the zero address unregisters, which makes `commitmentFor` revert
+    ///      rather than answer. That is the correct response to "we no longer trust this
+    ///      plugin": a signer who cannot get an answer goes and computes one, where a
+    ///      signer given a wrong answer approves it.
+    function setCommitmentScheme(bytes32 chainKey, ICommitmentScheme scheme)
+        external
+        onlyOwner
+    {
+        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        commitmentSchemeOf[chainKey] = scheme;
+        emit CommitmentSchemeSet(chainKey, address(scheme));
+    }
+
+    /// @notice PREVIEW. The commitment `chainKey`'s receiver will require over `elements`.
+    ///
+    /// @dev THE FOLD LIVES HERE AND THE PRIMITIVE LIVES IN THE PLUGIN. Byte for byte the
+    ///      structure of `Commitment.hashCalls(Scheme, bytes32, bytes[])` — seed over the
+    ///      abi-encoded chainKey, then `hash(acc ++ hash(element))` per element — with
+    ///      every `_hash` replaced by a call out. `test/CommitmentSchemePlugin.t.sol`
+    ///      asserts the equality for all three primitives the enum already carries,
+    ///      because a seam that merely resembles the frozen path is worse than none.
+    ///
+    /// @dev THE CHAINKEY IS FOLDED IN AS THE SEED, which is the cross-chain replay
+    ///      protection and not the plugin's business. A plugin never learns which chain
+    ///      it is hashing for and so cannot bind a commitment to the wrong one.
+    ///
+    /// @dev AN EMPTY ARRAY HASHES TO THE SEED ALONE, matching the library. Non-zero, and
+    ///      therefore a valid commitment.
+    ///
+    /// @dev `view`, and read through `eth_call` by a signer checking a payload. Nothing
+    ///      on-chain calls this, and nothing on-chain may: a commitment is enforced by
+    ///      the destination's receiver against its own frozen fold, never against a
+    ///      mutable lookup on the home chain.
+    function commitmentFor(bytes32 chainKey, bytes[] calldata elements)
+        external
+        view
+        returns (bytes32 hashed)
+    {
+        ICommitmentScheme scheme = commitmentSchemeOf[chainKey];
+        if (address(scheme) == address(0)) revert NoCommitmentScheme();
+
+        hashed = scheme.hash(abi.encode(chainKey));
+        uint256 len = elements.length;
+        for (uint256 i = 0; i < len; i++) {
+            hashed = scheme.hash(abi.encodePacked(hashed, scheme.hash(elements[i])));
+        }
     }
 
     /// @notice Cap the strongest provenance a chain may be recorded at.
