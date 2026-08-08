@@ -6,28 +6,39 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {LzCodec} from "./LzCodec.sol";
 
-/// @notice The LayerZero transceiver on every chain that is not Ethereum.
+/// @notice The LayerZero transceiver on every chain that is not the home chain.
 ///
-/// @dev THE ENTIRE ROUTING LAYER IS TWO CONSTANTS. `HOME_CHAIN_KEY` names Ethereum and
-///      `_homeRoute` is eid 30101; there is no registry to read, no eid table to
-///      maintain, and no destination to choose. Compare `LzHubTransceiver`, which needs
-///      all three because it faces N chains.
+/// @dev THE ENTIRE ROUTING LAYER IS THREE WRITE-ONCE VALUES. `homeChainKey` names the
+///      home chain, `homeRoute()` holds its eid, and `homeTransceiver()` holds the hub's
+///      address; there is no registry to read, no eid table to maintain, and no
+///      destination to choose. Compare `LzHubTransceiver`, which needs all three because
+///      it faces N chains.
 ///
-/// @dev The literal lives here rather than in a deploy script deliberately. An eid is
-///      exactly the kind of value that is wrong once and wrong forever, and it belongs in
-///      the source of the contract that uses it, where a reviewer reading the send path
-///      will see it.
+/// @dev The eid is an initializer argument rather than a literal because the home chain
+///      is a deployment choice — see `SpokeTransceiverBase`. It is still wrong once and
+///      wrong forever, which is why there is no setter for it.
 contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
-    /// @param homeTransceiver_ The Ethereum hub, in this chain's address format. Fixed
-    ///        for the life of the contract — there is no setter, by design.
+    /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier —
+    ///        `ChainKey.forEvm(1)` if the deployment anchors on Ethereum.
+    /// @param homeEid_ LayerZero's endpoint id for that chain. Typed here, opaque in the
+    ///        base, which is the same split `setEid` uses on the hub.
+    /// @param homeTransceiver_ The hub, in this chain's address format. Fixed for the life
+    ///        of the contract — there is no setter, by design.
     function initialize(
         address owner_,
         address receiverImplementation_,
+        bytes32 homeChainKey_,
+        uint32 homeEid_,
         bytes calldata homeTransceiver_
     ) external initializer {
         __Ownable_init(owner_);
         __TransceiverBase_init();
-        __SpokeTransceiverBase_init(receiverImplementation_, homeTransceiver_);
+        __SpokeTransceiverBase_init(
+            receiverImplementation_,
+            homeChainKey_,
+            LzCodec.encodeEid(homeEid_),
+            homeTransceiver_
+        );
     }
 
     /// @notice Satisfies `TransceiverBase._checkAdmin`. The local msig owns the spoke.
@@ -37,15 +48,10 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         _checkOwner();
     }
 
-    /// @inheritdoc SpokeTransceiverBase
-    function _homeRoute() internal pure override returns (bytes memory) {
-        return LzCodec.encodeEid(LzCodec.ETHEREUM_EID);
-    }
-
     /// @notice LayerZero's endpoint id for the hub. Exposed for off-chain checks.
-    /// @dev A spoke needs no route TABLE — it has exactly one destination and knows it at
-    ///      compile time. `setEid` exists only on the hub, which faces N chains.
-    function homeEid() external pure returns (uint32) {
-        return LzCodec.ETHEREUM_EID;
+    /// @dev A spoke needs no route TABLE — it has exactly one destination, written once.
+    ///      `setEid` exists only on the hub, which faces N chains.
+    function homeEid() external view returns (uint32) {
+        return LzCodec.decodeEid(homeRoute());
     }
 }

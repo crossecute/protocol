@@ -13,7 +13,7 @@ interface ITransmitterInit {
 }
 
 /// @title HubTransceiverBase
-/// @notice The Ethereum side. One transceiver, N counterparts, one registry to tell them
+/// @notice The home side. One transceiver, N counterparts, one registry to tell them
 ///         apart.
 ///
 /// @dev WHY THE REGISTRY IS ONLY EVER HERE. The fan-out is entirely one-directional: the
@@ -45,8 +45,8 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// keccak256 of this transceiver's message provider name, e.g. "layerzero".
     bytes32 public messageProvider;
     /// The weakest counterpart provenance this transceiver will send to.
-    /// @dev Every EVM counterpart is `Derived` — same CREATE2 address, recomputed on
-    ///      Ethereum, no bridge trust. Chains where that breaks (Solana, Sui, Aptos,
+    /// @dev Every EVM counterpart is `Derived` — same CREATE2 address, recomputed here,
+    ///      no bridge trust. Chains where that breaks (Solana, Sui, Aptos,
     ///      Starknet, and also zkSync and Tron, whose CREATE2 formulas differ) can only
     ///      reach `Committed` or `Attested`, so this is the dial that decides whether
     ///      this transceiver is willing to talk to them at all.
@@ -189,7 +189,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
 
     /// @inheritdoc TransceiverBase
     /// @dev A hub receives receiver reports and nothing else. Commitments travel the other
-    ///      way, because transmitters live on Ethereum.
+    ///      way, because transmitters live on the home chain.
     function _handleInbound(bytes32 chainKey, bytes calldata message) internal override {
         (address owner, bytes32 salt, bytes memory interop) =
             Envelope.decodeReceiverReport(message);
@@ -205,7 +205,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
 
     /// @notice Inbound callback: the destination reports where it created the receiver.
     /// @dev THE ESCAPE HATCH FOR UNDERIVABLE CHAINS. Most destinations need nothing like
-    ///      this — an EVM receiver is a CREATE2 clone whose address Ethereum can compute
+    ///      this — an EVM receiver is a CREATE2 clone whose address the hub can compute
     ///      before the first message. Starknet cannot: its address derivation is a
     ///      Pedersen hash chain that the EVM cannot run at any price. So the destination
     ///      creates the receiver, learns the address, and sends it back here.

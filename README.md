@@ -1,14 +1,21 @@
 # xsafe protocol
 
-Secure multisig operations across chains, anchored on the most decentralized EVM: Ethereum.
+Secure multisig operations across chains, anchored on one of them.
 
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
 `CREATE2(transceiver, keccak256(owner, salt), XSafeProxy)` — and because all three inputs
-are the same everywhere, so is the address. On Ethereum it is armed with transmitter logic
-and driven by its owner; on every other chain it is armed with receiver logic and driven by
-messages from the first. Same address, different half.
+are the same everywhere, so is the address. On the **home chain** it is armed with
+transmitter logic and driven by its owner; on every other chain it is armed with receiver
+logic and driven by messages from the first. Same address, different half.
+
+**The home chain is a choice.** Ethereum is the expected anchor and the reason the protocol
+reads that way, but nothing requires it: a team can centralize on whichever chain they are
+willing to anchor to, and every spoke names that one instead. A spoke is exactly as rigid
+either way — its home chainKey, route, and counterpart are all written once at
+initialization with no setters. What the home chain *must* be is an EVM chain with the
+EIP-152 precompile, because the registry recomputes addresses and commitments locally.
 
 Two paths, and only the second involves a transceiver:
 

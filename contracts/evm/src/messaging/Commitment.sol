@@ -12,12 +12,12 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 ///      would be TON's cell hash (sha256 over a cell tree, because a TVM cell holds only
 ///      1023 bits and a payload is therefore a tree) or Starknet's `poseidon_hash_span`
 ///      over a felt array — neither of which is a byte-oriented fold, and neither of which
-///      Ethereum could reproduce to show a signer what they are approving. Holding the
+///      the hub could reproduce to show a signer what they are approving. Holding the
 ///      fold fixed keeps both sides able to compute the same value. The cost is that a
 ///      non-EVM receiver implements a byte fold rather than its idiomatic digest.
 ///
 /// @dev keccak256 IS THE ONLY ONE AN EVM RECEIVER EVER USES, because an EVM receiver runs
-///      on an EVM chain. The rest exist for the source side, where Ethereum builds a
+///      on an EVM chain. The rest exist for the source side, where the hub builds a
 ///      commitment a *different* VM will recompute.
 enum Scheme {
     /// EVM. The opcode.
@@ -47,7 +47,7 @@ enum Scheme {
 ///      so nothing on the destination has to be configured for this to work.
 ///
 /// @dev THE COMMITMENT IS DEFINED OVER OPAQUE ELEMENTS, AND THAT IS WHAT KEEPS IT
-///      PORTABLE. The fold never looks inside an element, so Ethereum's contracts never
+///      PORTABLE. The fold never looks inside an element, so the hub's contracts never
 ///      need to understand a Solana instruction or a Move entry function — there is no
 ///      Borsh and no BCS anywhere in Solidity. The typed overload is a convenience for
 ///      EVM destinations layered on top, not a second scheme: `Calls.encode` produces
@@ -114,7 +114,8 @@ library Commitment {
     ///
     /// @dev FOR THE SOURCE SIDE ONLY. An EVM receiver always uses keccak256, so the
     ///      overloads above are what it calls and they stay `pure`. This exists because a
-    ///      transmitter on Ethereum builds commitments for chains that hash differently —
+    ///      transmitter on the home chain builds commitments for chains that hash
+    ///      differently —
     ///      and if it built them with the wrong scheme the destination would simply never
     ///      match, which fails only on a live message.
     ///

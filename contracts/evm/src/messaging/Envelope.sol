@@ -11,7 +11,7 @@ import {Call} from "src/messaging/Call.sol";
 ///      side decodes exactly one shape and the direction is the discriminant. A tag would
 ///      be a field whose only correct value each contract already knows.
 ///
-///      That holds because transmitters live on Ethereum only. If one ever runs on a
+///      That holds because transmitters live on the home chain only. If one ever runs on a
 ///      spoke, the hub starts receiving commitments as well as reports, the direction
 ///      stops determining the shape, and a tag becomes mandatory — decoding the wrong
 ///      shape off a `bytes` blob is not a revert, it is a silent misread. This comment is
@@ -37,7 +37,7 @@ library Envelope {
     ///      `accountSalt(owner, salt)` —
     ///      which is what puts an owner's transmitter and their receivers on one address.
     ///      The transmitter's own address could not serve: a CREATE2 address cannot be
-    ///      derived from itself. Nothing the bridge reports says who on Ethereum authorized
+    ///      derived from itself. Nothing the bridge reports says who on the home chain authorized
     ///      the message, since the hub is shared by every owner, so it is stated.
     function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls)
         internal
@@ -79,7 +79,7 @@ library Envelope {
     /// @notice Where the destination created a transmitter's receiver.
     ///
     /// @dev Only underivable chains need this. An EVM spoke's receiver is a CREATE2 clone
-    ///      whose address Ethereum computes before the first message; Starknet's is a
+    ///      whose address the hub computes before the first message; Starknet's is a
     ///      Pedersen hash chain that the EVM cannot run at any price, so the destination
     ///      creates it, learns the address, and says so.
     ///

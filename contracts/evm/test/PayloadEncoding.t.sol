@@ -234,7 +234,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// ...but it still HASHES, which is the property that keeps the commitment layer
-    /// portable: Ethereum can approve a payload for a VM whose calls it cannot parse.
+    /// portable: the hub can approve a payload for a VM whose calls it cannot parse.
     function test_aNonEvmElementStillCommits() public view {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";

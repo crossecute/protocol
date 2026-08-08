@@ -6,9 +6,9 @@ import {Provenance} from "src/registry/ForeignRef.sol";
 /// @notice The slice of `ChainRegistry` a hub transceiver needs: where remote things
 ///         live, and how much each claim about them is worth.
 ///
-/// @dev DECLARED SEPARATELY BECAUSE ONLY ONE SIDE HAS IT. The registry exists on
-///      Ethereum and nowhere else: the hub has N counterparts and needs a directory to
-///      tell them apart, while a spoke has exactly one and knows it at compile time.
+/// @dev DECLARED SEPARATELY BECAUSE ONLY ONE SIDE HAS IT. The registry exists on the
+///      home chain and nowhere else: the hub has N counterparts and needs a directory to
+///      tell them apart, while a spoke has exactly one and is told which at deployment.
 ///      Keeping this interface out of the shared transceiver base is what stops a spoke
 ///      from carrying a dependency it can never satisfy.
 ///

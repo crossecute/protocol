@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
@@ -90,12 +91,14 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __TransceiverBase_init();
-        __SpokeTransceiverBase_init(receiverImplementation_, abi.encodePacked(address(0xB0BB1E)));
+        __SpokeTransceiverBase_init(
+            receiverImplementation_,
+            ChainKey.forEvm(1),
+            abi.encode(uint32(1)),
+            abi.encodePacked(address(0xB0BB1E))
+        );
     }
 
-    function _homeRoute() internal pure override returns (bytes memory) {
-        return abi.encode(uint32(1));
-    }
 
     /// @dev The mock supplies its own authority, exactly as a real protocol binding does.
     function _checkAdmin() internal view override {

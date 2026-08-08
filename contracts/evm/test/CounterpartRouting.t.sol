@@ -294,7 +294,7 @@ contract CounterpartRoutingTest is Test {
     /// @dev THE zkSYNC AND TRON CASE. Both are `eip155`, so the chain type alone says
     ///      parity might hold — and both have different CREATE2 formulas, so it does not.
     ///      `setMaxProvenance` is already the dial that records "addresses here cannot be
-    ///      recomputed on Ethereum", so a cap below `Derived` withdraws the default rather
+    ///      recomputed on the hub", so a cap below `Derived` withdraws the default rather
     ///      than needing a second flag that could disagree with it.
     function test_aChainCappedBelowDerivedGetsNoDefault() public {
         vm.startPrank(msig);

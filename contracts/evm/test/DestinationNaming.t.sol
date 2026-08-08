@@ -60,7 +60,13 @@ contract DestinationNamingTest is Test {
                     address(new LzSpokeTransceiver()),
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
-                        (msig, recvImpl, abi.encodePacked(address(hub)))
+                        (
+                            msig,
+                            recvImpl,
+                            ChainKey.forEvm(1),
+                            LzCodec.ETHEREUM_EID,
+                            abi.encodePacked(address(hub))
+                        )
                     )
                 )
             )
@@ -96,12 +102,65 @@ contract DestinationNamingTest is Test {
         assertEq(ChainKey.fromIdentifier(acct), ChainKey.forEvm(8453));
     }
 
-    /// @dev THE LOAD-BEARING LITERAL. `HOME_CHAIN_KEY` is hardcoded rather than computed
+    /// @dev THE LOAD-BEARING LITERAL. `homeChainKey` is hardcoded rather than computed
     ///      so the spoke's initcode is byte-identical on every chain — CREATE2 parity
     ///      depends on that. This is the check that keeps the literal honest; if it ever
     ///      fails, every spoke is pointed at a chain that does not exist.
-    function test_homeChainKeyMatchesEthereum() public view {
-        assertEq(spoke.HOME_CHAIN_KEY(), ChainKey.forEvm(1));
+    /// @dev THIS deployment anchors on Ethereum, which is a fact about the initializer
+    ///      arguments above and not about the protocol. See the next test.
+    function test_thisDeploymentIsAnchoredOnEthereum() public view {
+        assertEq(spoke.homeChainKey(), ChainKey.forEvm(1));
+        assertEq(spoke.homeEid(), LzCodec.ETHEREUM_EID);
+    }
+
+    /// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected anchor,
+    ///      but nothing in the protocol requires it: a team can centralize on whichever
+    ///      chain they are willing to anchor to, and every spoke simply names that one
+    ///      instead. The spoke is exactly as rigid either way — three write-once values,
+    ///      no setters — so the choice costs nothing in guarantees.
+    function test_aTeamCanAnchorOnADifferentChain() public {
+        address arbHub = address(0xA4B);
+        LzSpokeTransceiver arbSpoke = LzSpokeTransceiver(
+            address(
+                new ERC1967Proxy(
+                    address(new LzSpokeTransceiver()),
+                    abi.encodeCall(
+                        LzSpokeTransceiver.initialize,
+                        (
+                            msig,
+                            address(new LzReceiver()),
+                            ChainKey.forEvm(42161),
+                            30110,
+                            abi.encodePacked(arbHub)
+                        )
+                    )
+                )
+            )
+        );
+
+        assertEq(arbSpoke.homeChainKey(), ChainKey.forEvm(42161), "Arbitrum is home");
+        assertEq(arbSpoke.homeEid(), 30110);
+        assertEq(arbSpoke.homeTransceiver(), abi.encodePacked(arbHub));
+        assertEq(arbSpoke.counterpartOn(ChainKey.forEvm(42161)), abi.encodePacked(arbHub));
+
+        // And Ethereum is now just another chain it refuses to talk to.
+        vm.expectRevert(
+            abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, ChainKey.forEvm(1))
+        );
+        arbSpoke.counterpartOn(ChainKey.forEvm(1));
+    }
+
+    /// @dev The home values are write-once with no setters, whichever chain they name.
+    function test_theHomeCannotBeRepointedOnAnyChain() public {
+        (bool a,) = address(spoke).call(
+            abi.encodeWithSignature("setHomeChainKey(bytes32)", bytes32(uint256(1)))
+        );
+        assertFalse(a, "no setHomeChainKey");
+
+        (bool b,) = address(spoke).call(
+            abi.encodeWithSignature("setHomeRoute(bytes)", abi.encode(uint32(1)))
+        );
+        assertFalse(b, "no setHomeRoute");
     }
 
     /* =========================== provider route table ========================== */
@@ -236,9 +295,9 @@ contract DestinationNamingTest is Test {
     ///      it has is a literal, and everything else is refused.
     function test_spokeRoutesHomeAndNowhereElse() public {
         bytes memory hubAddr = abi.encodePacked(address(hub));
-        assertEq(spoke.counterpartOn(spoke.HOME_CHAIN_KEY()), hubAddr);
+        assertEq(spoke.counterpartOn(spoke.homeChainKey()), hubAddr);
         assertEq(spoke.homeEid(), LzCodec.ETHEREUM_EID);
-        assertEq(LzCodec.decodeEid(spoke.routeTo(spoke.HOME_CHAIN_KEY())), 30101);
+        assertEq(LzCodec.decodeEid(spoke.routeTo(spoke.homeChainKey())), 30101);
 
         bytes32 baseKey = ChainKey.forEvm(8453);
         vm.expectRevert(
@@ -278,7 +337,13 @@ contract DestinationNamingTest is Test {
 
         vm.prank(msig);
         vm.expectRevert();
-        spoke.initialize(msig, address(0xBEEF), abi.encodePacked(address(0xBAD)));
+        spoke.initialize(
+            msig,
+            address(0xBEEF),
+            ChainKey.forEvm(1),
+            LzCodec.ETHEREUM_EID,
+            abi.encodePacked(address(0xBAD))
+        );
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)), "unchanged");
     }
 
@@ -290,7 +355,8 @@ contract DestinationNamingTest is Test {
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                LzSpokeTransceiver.initialize, (msig, address(0xBEEF), bytes(""))
+                LzSpokeTransceiver.initialize,
+                (msig, address(0xBEEF), ChainKey.forEvm(1), LzCodec.ETHEREUM_EID, bytes(""))
             )
         );
     }

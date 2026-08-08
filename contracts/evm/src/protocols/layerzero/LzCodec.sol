@@ -13,6 +13,9 @@ pragma solidity ^0.8.0;
 ///      to whatever chain the truncated bits happen to name.
 library LzCodec {
     /// @notice LayerZero V2 endpoint id for Ethereum mainnet.
+    /// @dev A CONVENIENCE, NOT A SETTING. The home chain is an initialization parameter,
+    ///      so nothing here is wired to Ethereum; this is the value a deployment anchoring
+    ///      there would pass.
     uint32 internal constant ETHEREUM_EID = 30101;
 
     function encodeEid(uint32 eid) internal pure returns (bytes memory) {

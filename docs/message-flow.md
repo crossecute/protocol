@@ -11,6 +11,11 @@ this file is the newer statement.
 
 ## Three properties the whole design turns on
 
+**The home chain is a parameter.** Ethereum is the expected anchor, and a spoke names its
+home — chainKey, provider route, and counterpart — once at initialization with no setters.
+Everything below reads "hub" and "spoke" rather than "Ethereum" and "elsewhere" for that
+reason.
+
 1. **A transmitter is its own message-provider endpoint.** It sends to its receiver
    directly, so the transceiver is not in the path of a normal message.
 2. **The wire carries a payload, not a commitment.** A message is a call array, executed
@@ -92,14 +97,14 @@ hub transceiver .bootstrap(chainKey, calls)                            msg.sende
 derives from the pair, which is what puts an owner's transmitter and their receivers on one address. The
 transmitter's own address could not serve: a CREATE2 address cannot be derived from itself.
 The receiver's peer is therefore its own address, since that is where the transmitter sits
-on Ethereum.
+on the home chain.
 
 **The receiver reports its own address, and that is the only message it can send.** It has
 no general outbound — no `_sendMessage`, no `OutboundBase`. During `initialize` it calls
 back into the transceiver that created it, and the transceiver puts the report on the wire.
 
 That is the right shape for a specific reason: on the chains this path exists for, the
-address is not predictable from Ethereum. Starknet's is a Pedersen hash chain the EVM
+address is not predictable from the hub. Starknet's is a Pedersen hash chain the EVM
 cannot run. The receiver is the only party that knows what it is. Reporting through the
 receiver rather than from the transceiver's own `predictXSafeAccount` also means the address
 reported is one that exists and initialized successfully, rather than one that was
@@ -175,8 +180,8 @@ every other VM moves native currency as an explicit asset.
   arrived. An open one would let anyone deny an owner their bootstrap by deploying the
   account empty first, since `XSafeProxy` arms exactly once.
 - **A hub has no receiver machinery at all** — not gated, absent. An address holds one
-  contract, so a receiver on Ethereum would collide with the transmitter that belongs
-  there.
+  contract, so a receiver on the home chain would collide with the transmitter that
+  belongs there.
 - `setRoute(chainKey, bytes)` — write-once, `onlyAdmin`, maintaining the reverse index in
   the same call. The route lives here rather than in the registry because this is the
   contract that sends: a registry read would put a second shared contract in the path of
@@ -301,7 +306,7 @@ No fallback storage, and no payload size cap — the provider enforces the latte
   formula holds, and withdraws on non-EVM chains and on any chain capped below `Derived`
   (which is how zkSync and Tron are excluded).
 
-- **One owner, one address, every EVM chain.** An owner's transmitter on Ethereum and
+- **One owner, one address, every EVM chain.** An owner's transmitter on the home chain and
   their receiver on Base are the same address. Both are deployed as `XSafeProxy` — an
   argument-free proxy, so its initcode is one constant — from the transceiver, at
   `accountSalt(owner, salt)`. The caller's salt lets one owner hold several accounts, each
@@ -315,7 +320,7 @@ No fallback storage, and no payload size cap — the provider enforces the latte
   admin in that order — there is no way to upgrade without locking, and no reachable state
   in which an account has real logic and a live key. The transceiver that created the
   account holds it in between and cannot outlive the call.
-- **A transmitter executes its own local payloads.** There is no receiver on Ethereum to
+- **A transmitter executes its own local payloads.** There is no receiver on the home chain to
   run them in, so `TransmitterBase` and `ReceiverBase` share `messaging/Executor` — one
   loop, one policy check, one all-or-nothing rule. `TransceiverBase` deliberately does not
   inherit it. Cancellation is inherently remote — a transmitter holds no queue — so

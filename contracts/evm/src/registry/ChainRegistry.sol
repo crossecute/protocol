@@ -24,7 +24,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      after: in peer tables, in payload targets, in every receiver address derived from
 ///      it. Zero bytes in calldata cost 4 gas against 16 for non-zero, so a salt ground for
 ///      leading zeros is a permanent discount on every message that names the address. The
-///      salt has to be recorded somewhere for that address to be reproducible on Ethereum;
+///      salt has to be recorded somewhere for that address to be reproducible on the hub;
 ///      this is that somewhere.
 struct ProviderDeployment {
     /// The mined salt, identical on every chain.
@@ -39,7 +39,7 @@ struct ProviderDeployment {
 }
 
 /// @title ChainRegistry
-/// @notice The Ethereum-side directory of every chain xsafe talks to, the transceiver
+/// @notice The home-chain directory of every chain xsafe talks to, the transceiver
 ///         that reaches each one, and where that transceiver actually lives.
 ///
 /// @dev Two halves that only make sense together:
@@ -340,7 +340,7 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      a failure.
     ///
     /// @dev IT DOES NOT DEPLOY ANYTHING. The salt is mined and used off-chain by whoever
-    ///      calls the factory; this records it so Ethereum can reproduce the resulting
+    ///      calls the factory; this records it so the hub can reproduce the resulting
     ///      addresses. A record that does not match what was actually deployed yields
     ///      predictions that match nothing, which surfaces the first time a counterpart is
     ///      read rather than silently.
@@ -426,13 +426,13 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @dev TWO CREATE2 STEPS, AND BOTH INPUTS ARE KNOWN. The transceiver is derived from
     ///      the provider's salt; the account is derived from the transceiver, with the
     ///      `(owner, salt)` pair as its salt. So an account address is computable on
-    ///      Ethereum for any owner on any parity chain before a single message has crossed — and it is the
+    ///      here for any owner on any parity chain before a single message has crossed — and it is the
     ///      same address their transmitter occupies here, because both sides deploy the
     ///      same argument-free proxy from the same address at the same salt.
     ///
     ///      The salt must match `TransceiverBase.accountSalt`, which is
     ///      `keccak256(abi.encode(owner, salt))`. It is written out here rather than imported
-    ///      because this contract is on Ethereum and that one is on the destination;
+    ///      because this contract is on the home chain and that one is on the destination;
     ///      `test/SaltedDeployment.t.sol` asserts the two agree.
     function predictXSafeAccount(
         bytes32 chainKey,

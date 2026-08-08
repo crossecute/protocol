@@ -57,16 +57,13 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __TransceiverBase_init();
-        __SpokeTransceiverBase_init(impl, home);
+        __SpokeTransceiverBase_init(impl, ChainKey.forEvm(1), abi.encode(uint32(30101)), home);
     }
 
     function _checkAdmin() internal view override {
         _checkOwner();
     }
 
-    function _homeRoute() internal pure override returns (bytes memory) {
-        return abi.encode(uint32(30101));
-    }
 
     function arrive(bytes memory route, bytes memory sender, bytes calldata message)
         external

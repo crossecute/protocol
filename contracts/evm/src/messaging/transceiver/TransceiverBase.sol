@@ -20,8 +20,8 @@ import {UUPSUpgradeable} from
 ///      `SpokeTransceiverBase` rather than in this base, so a hub does not merely decline
 ///      to create a receiver — it has no function that could. That matters because a
 ///      transmitter and its receivers are meant to share one address across chains, and an
-///      address holds exactly one contract: a receiver on Ethereum would collide with the
-///      transmitter that belongs there. Absence beats a revert, because there is no entry
+///      address holds exactly one contract: a receiver on the home chain would collide
+///      with the transmitter that belongs there. Absence beats a revert, because there is no entry
 ///      point for a later change to expose.
 ///
 ///      It does not inherit `Executor` either — a transceiver has no payload of its own.
@@ -43,8 +43,8 @@ import {UUPSUpgradeable} from
 /// @dev THIS BASE IS THE SYMMETRIC HALF, AND ONLY THAT. Cloning, initialization, and the
 ///      upgrade lock work identically wherever the transceiver is deployed. Everything
 ///      about ADDRESSING a counterpart does not, because the two sides have opposite
-///      cardinality: Ethereum's hub has N counterparts and needs a registry to tell them
-///      apart, while a spoke has exactly one — Ethereum — and knows it at compile time.
+///      cardinality: the hub has N counterparts and needs a registry to tell them apart,
+///      while a spoke has exactly one — its home — and is told which at deployment.
 ///      That asymmetry is isolated behind `_route`, so a spoke never carries a registry
 ///      pointer, a provenance dial, or a routing table it has no use for.
 ///
@@ -59,7 +59,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     /// @notice The initcode hash every xsafe account deploys from — one constant, on
     ///         every chain, for transmitters and receivers alike.
-    /// @dev Exposed so Ethereum can record it and reproduce these addresses without
+    /// @dev Exposed so the hub can record it and reproduce these addresses without
     ///      deploying anything. See `XSafeProxy` for why it has no constructor arguments.
     bytes32 public constant XSAFE_PROXY_INIT_CODE_HASH =
         keccak256(type(XSafeProxy).creationCode);
@@ -176,7 +176,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev THE OWNER AND A SALT THEY CHOOSE. The owner is what makes the address mean the
     ///      same thing on both sides — a CREATE2 address cannot be derived from itself, so
     ///      the transmitter's own address could never serve, and the owner is the one
-    ///      identity Ethereum and the destination both name. The salt is what lets one
+    ///      identity the home chain and the destination both name. The salt is what lets one
     ///      owner hold more than one account: one per purpose, per counterparty, per
     ///      mandate, each with its own address on every chain.
     ///
@@ -208,7 +208,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev ONE FUNCTION, TWO OUTCOMES, AND THE ADDRESS DOES NOT KNOW THE DIFFERENCE. A hub
     ///      installs a transmitter, a spoke installs a receiver, and both deploy the same
     ///      argument-free proxy at the same salt from the same address — so an owner's
-    ///      transmitter on Ethereum and their receiver on Base are one address. What
+    ///      transmitter on the home chain and their receiver on Base are one address. What
     ///      diverges is `_accountImplementation`, which the derivation never sees.
     ///
     /// @dev DEPLOY, ARM, AND LOCK IN ONE CALL. `XSafeProxy` offers no way to install logic
@@ -353,8 +353,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @notice THE SEAM BETWEEN HUB AND SPOKE, one half: where the counterpart lives.
     ///
     /// @dev A hub answers this out of the registry, applying a provenance bar to the
-    ///      counterpart's claimed location. A spoke answers it from a stored constant and
-    ///      rejects every key but Ethereum's. Protocol code above calls the same function
+    ///      counterpart's claimed location. A spoke answers it from a write-once value and
+    ///      rejects every key but its home's. Protocol code above calls the same function
     ///      either way.
     ///
     ///      The counterpart is NOT assumed to be at this contract's own address. That

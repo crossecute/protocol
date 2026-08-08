@@ -41,13 +41,13 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev IT HOLDS NO REGISTRY POINTER, DELIBERATELY. The chainKey derivation is pure, so
 ///      nothing here needs to read the directory; the hub transceiver does that lookup
-///      once, on Ethereum. Keeping the dependency in one contract on one chain is what
+///      once, on the home chain. Keeping the dependency in one contract on one chain is what
 ///      lets the same transmitter code be a pure commit-and-forward contract.
 ///
 /// @dev THE COMMITMENT IS HASHED FOR THE DESTINATION, NOT FOR HERE. This is the one thing
 ///      that is easy to get wrong and impossible to notice until a live message fails.
-///      `Commitment.hashCalls(calls)` folds in the LOCAL chainKey, and on this contract that
-///      is Ethereum. The receiver recomputes the same hash on the DESTINATION chain, so a
+///      `Commitment.hashCalls(calls)` folds in the LOCAL chainKey, and on this contract
+///      that is the home chain. The receiver recomputes the same hash on the DESTINATION chain, so a
 ///      commitment built with the local key can never match. `_submit` therefore hashes
 ///      with the destination's key, and the chain-binding still does its job: the payload
 ///      is pinned to exactly one destination and cannot be replayed onto a sibling
@@ -338,7 +338,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///
     /// @dev IT RUNS THEM ITSELF RATHER THAN THROUGH A LOCAL RECEIVER. There is no receiver
     ///      on this chain to run them in: a transmitter and its receivers share one
-    ///      address across chains, and an address holds one contract — so on Ethereum that
+    ///      address across chains, and an address holds one contract — so at home that
     ///      address is the transmitter. `HubTransceiverBase` has no `createReceiver` to
     ///      call, which is what makes that a structural fact rather than a convention.
     ///

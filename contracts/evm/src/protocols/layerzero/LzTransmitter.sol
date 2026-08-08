@@ -5,7 +5,7 @@ import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-/// @notice The per-user LayerZero transmitter on Ethereum, cloned by
+/// @notice The per-user LayerZero transmitter on the home chain, cloned by
 ///         `TransmitterFactory`.
 ///
 /// @dev It holds no registry pointer and knows no eids. `send(8453, calls)` derives the

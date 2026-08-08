@@ -178,6 +178,14 @@ mainnet.
   is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs
   contradiction. A one-afternoon empirical check that de-risks a whole chain family.
+- **The home chain is now a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
+  takes its home chainKey, the provider's route to it, and the hub's address as
+  write-once initializer arguments. Two things follow that are worth deciding rather than
+  inheriting: the hub must be an EVM chain with the EIP-152 precompile, since the registry
+  recomputes addresses and commitments locally, and every spoke in one deployment must be
+  given the SAME home — nothing on-chain cross-checks that, because a spoke has no view of
+  its siblings. A deploy script is the natural place to enforce it, and there is no
+  `script/` yet.
 - **Merkle-verified calls** as an opt-in policy, replacing the `(target, selector)`
   predicate. `isAllowed` defaults open, so this is an owner's restriction rather than a
   safety baseline.

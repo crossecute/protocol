@@ -9,40 +9,55 @@ import {XSafeProxy, IXSafeProxy} from "src/factories/XSafeProxy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
 /// @title SpokeTransceiverBase
-/// @notice Every chain that is not Ethereum. Exactly one counterpart, known at compile
-///         time.
+/// @notice Every chain that is not the home chain. Exactly one counterpart, named at
+///         initialization.
 ///
 /// @dev THE CARDINALITY IS THE WHOLE DESIGN. The hub holds N claims about where remote
 ///      code lives, so it needs a registry, a provenance grade per claim, and a routing
-///      table. A spoke holds one, and it is not a claim at all — Ethereum's chainKey is a
-///      literal in this contract's own bytecode. Every piece of resolution machinery
-///      therefore collapses into constants, and the spoke carries no `chainRegistry`
-///      pointer, no `minCounterpartProvenance`, and no chainKey => eid mapping.
+///      table. A spoke holds one, and it is not a claim at all — its home's chainKey is
+///      written into this contract once and never again. Every piece of resolution
+///      machinery therefore collapses into a stored value, and the spoke carries no
+///      `chainRegistry` pointer, no `minCounterpartProvenance`, and no chainKey => eid map.
 ///
 /// @dev THAT IS A SECURITY PROPERTY, NOT JUST A SAVING. A hub must authenticate inbound
 ///      messages against an N-entry peer set, which is mutable state an owner could
 ///      repoint. A spoke's check is a comparison against a constant: there is no
 ///      configuration by which it could be made to accept a second origin, so the set of
-///      chains that can drive this contract is fixed at deployment and cannot be widened
-///      by anyone, including the local msig. Both halves of the counterpart are now
-///      write-once: `HOME_CHAIN_KEY` is a compile-time literal and `_homeTransceiver` is
-///      set in the initializer with no setter to follow it.
+///      chains that can drive this contract is fixed at INITIALIZATION and cannot be
+///      widened by anyone afterwards, including the local msig. All three halves of the
+///      home — its chainKey, the provider's route to it, and the counterpart address —
+///      are written once in the initializer, with no setter to follow any of them.
 ///
-/// @dev `HOME_CHAIN_KEY` IS A `constant`, NOT AN `immutable`, AND THAT MATTERS. An
-///      immutable set from a constructor argument lands in the deployed initcode, and
-///      README's CREATE2 story requires byte-identical initcode on every chain for the
-///      counterpart derivation to hold. A literal keeps the initcode identical
-///      everywhere; `test_homeChainKeyMatchesEthereum` is what keeps the literal honest.
+/// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected choice and
+///      the reason the protocol is described that way, but nothing here requires it: a
+///      team can centralize on whichever chain they are willing to anchor to, and every
+///      spoke simply names that chain instead. What the hub must be is an EVM chain with
+///      the EIP-152 precompile, because the registry recomputes addresses and commitments
+///      locally — see `ChainRegistry` and `Commitment`.
+///
+/// @dev THEY ARE INITIALIZER ARGUMENTS RATHER THAN CONSTANTS, AND THAT COSTS NOTHING NOW.
+///      A constant used to be the stronger choice, on the argument that an immutable set
+///      from a constructor argument lands in the deployed initcode and CREATE2 parity
+///      needs byte-identical initcode everywhere. That does not apply: a transceiver is
+///      deployed as an `XSafeProxy`, which takes no constructor arguments at all, and an
+///      implementation's parameters never reach the proxy's initcode. The parity argument
+///      is unaffected, and the write-once-at-initialization property is the same one
+///      `_homeTransceiver` already relied on.
 abstract contract SpokeTransceiverBase is TransceiverBase {
-    /// @notice keccak256 of Ethereum mainnet's canonical ERC-7930 chain identifier.
-    /// @dev The envelope is `0x00010000010100` — version 1, chainType eip155 (0x0000),
-    ///      a one-byte chain reference `0x01`, and a zero-length address. Equal to
-    ///      `ChainKey.forEvm(1)`, asserted in test rather than computed here so the value
-    ///      stays a compile-time constant.
-    bytes32 public constant HOME_CHAIN_KEY =
-        0x4a5ac42ddf574e75d42d0b36f60a4bd738a67ebe641504827bbe7544337b4169;
+    /// keccak256 of the home chain's canonical ERC-7930 chain identifier — the one chain
+    /// this spoke will accept a message from, and the only one it will send to.
+    ///
+    /// @dev For Ethereum mainnet — the expected home — this is
+    ///      `keccak256(0x00010000010100)`: version 1,
+    ///      chainType eip155, a one-byte chain reference `0x01`, and a zero-length
+    ///      address. `ChainKey.forEvm(1)` computes it.
+    bytes32 public homeChainKey;
 
-    /// The Ethereum hub transceiver, in THIS chain's address format. Set at
+    /// The message provider's own identifier for the home chain — a LayerZero eid, a
+    /// Hyperlane domain, a Wormhole chain id. Opaque here; the binding decodes it.
+    bytes private _homeRoute;
+
+    /// The hub transceiver, in THIS chain's address format. Set at
     /// initialization, never after.
     ///
     /// @dev Storage rather than a constant only because it cannot be known before the hub
@@ -101,15 +116,17 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     );
     /// @dev Fires once per transmitter, on the message that actually creates the clone.
     event ReceiverDeployed(address indexed transmitter, address indexed receiver);
-    event HomeTransceiverSet(bytes homeTransceiver);
+    event HomeSet(bytes32 homeChainKey, bytes homeRoute, bytes homeTransceiver);
 
-    /// @dev The only destination a spoke has is Ethereum; anything else is a bug or an
+    /// @dev The only destination a spoke has is its home; anything else is a bug or an
     ///      attempt to make this contract talk to a sibling spoke, which the protocol
     ///      has no path for.
     error NotHome(bytes32 chainKey);
     error NoHomeTransceiver();
     /// @dev Something that is not the hub tried to drive this contract.
     error NotHomeOrigin();
+    error NoHomeChainKey();
+    error NoHomeRoute();
     /// @dev Bootstrap is for a chain with no receiver. One already exists, so its payload
     ///      cannot be delivered through `initialize` — that is single-shot — and this
     ///      contract has no other way to reach a receiver by design.
@@ -119,22 +136,29 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      bootstrapped.
     error NotTransmitterOwner(address transmitter, address caller);
 
-    /// @notice Bind this spoke to the Ethereum hub, permanently.
-    /// @dev The counterpart becomes as fixed as `HOME_CHAIN_KEY` is by construction: one
-    ///      is a literal in the bytecode, the other is written once and has no setter.
-    ///      Neither the local msig nor an upgrade of any other contract can widen the set
-    ///      of origins this spoke will accept.
-    function __SpokeTransceiverBase_init(address receiverImplementation_, bytes memory homeTransceiver_)
-        internal
-        onlyInitializing
-    {
+    /// @notice Bind this spoke to its hub, permanently.
+    /// @dev All three values are written once and none has a setter, so neither the local
+    ///      msig nor an upgrade of any other contract can widen the set of origins this
+    ///      spoke will accept. There is no reachable state in which any of them has been
+    ///      set and can still be changed.
+    function __SpokeTransceiverBase_init(
+        address receiverImplementation_,
+        bytes32 homeChainKey_,
+        bytes memory homeRoute_,
+        bytes memory homeTransceiver_
+    ) internal onlyInitializing {
+        if (homeChainKey_ == bytes32(0)) revert NoHomeChainKey();
+        if (homeRoute_.length == 0) revert NoHomeRoute();
         if (homeTransceiver_.length == 0) revert NoHomeTransceiver();
         if (receiverImplementation_ == address(0)) revert NoAccountImplementation();
+
         receiverImplementation = receiverImplementation_;
         emit ReceiverImplementationSet(receiverImplementation_);
 
+        homeChainKey = homeChainKey_;
+        _homeRoute = homeRoute_;
         _homeTransceiver = homeTransceiver_;
-        emit HomeTransceiverSet(homeTransceiver_);
+        emit HomeSet(homeChainKey_, homeRoute_, homeTransceiver_);
     }
 
     function homeTransceiver() public view returns (bytes memory h) {
@@ -142,12 +166,15 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         if (h.length == 0) revert NoHomeTransceiver();
     }
 
-    /// @notice The message provider's own identifier for Ethereum — LayerZero eid 30101,
-    ///         Hyperlane domain 1, Wormhole chain id 2.
-    /// @dev A literal in the concrete protocol contract rather than a constructor
-    ///      argument or a stored setting, so the value is readable in the source of the
-    ///      contract that uses it instead of living in a deploy script nobody reviews.
-    function _homeRoute() internal view virtual returns (bytes memory);
+    /// @notice The message provider's own identifier for the home chain.
+    /// @dev Set at initialization and never after. The value is approved by whoever signs
+    ///      the initialization rather than read out of a deploy script afterwards, which
+    ///      is the same guarantee a source literal gave and the only one available once
+    ///      the home chain is a choice rather than a constant.
+    function homeRoute() public view returns (bytes memory r) {
+        r = _homeRoute;
+        if (r.length == 0) revert NoHomeRoute();
+    }
 
     /// @inheritdoc TransceiverBase
     /// @dev No lookup, no registry, no provenance: a comparison against a constant and
@@ -160,14 +187,14 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         override
         returns (bytes memory)
     {
-        if (chainKey != HOME_CHAIN_KEY) revert NotHome(chainKey);
+        if (chainKey != homeChainKey) revert NotHome(chainKey);
         return homeTransceiver();
     }
 
     /// @inheritdoc TransceiverBase
     function _routeTo(bytes32 chainKey) internal view override returns (bytes memory) {
-        if (chainKey != HOME_CHAIN_KEY) revert NotHome(chainKey);
-        return _homeRoute();
+        if (chainKey != homeChainKey) revert NotHome(chainKey);
+        return homeRoute();
     }
 
     /// @inheritdoc TransceiverBase
@@ -183,12 +210,12 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         returns (bytes32)
     {
         if (!_isHome(route, sender)) revert NotHomeOrigin();
-        return HOME_CHAIN_KEY;
+        return homeChainKey;
     }
 
     /// @inheritdoc TransceiverBase
     /// @dev A spoke receives bootstrap messages and nothing else. The chainKey is
-    ///      discarded: it is `HOME_CHAIN_KEY` or `_authenticateOrigin` already reverted.
+    ///      discarded: it is `homeChainKey` or `_authenticateOrigin` already reverted.
     function _handleInbound(bytes32, bytes calldata message) internal override {
         (address owner, bytes32 salt, Call[] memory calls) =
             Envelope.decodeBootstrap(message);
@@ -200,7 +227,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      provider reports it, and `route` the provider's source id — both compared
     ///      against values this contract cannot be reconfigured to widen.
     function _isHome(bytes memory route, bytes memory sender) internal view returns (bool) {
-        return keccak256(route) == keccak256(_homeRoute())
+        return keccak256(route) == keccak256(homeRoute())
             && keccak256(sender) == keccak256(_homeTransceiver);
     }
 
@@ -217,7 +244,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
 
     /// @inheritdoc TransceiverBase
     /// @dev THE RECEIVER'S PEER IS ITS OWN ADDRESS. A transmitter and its receivers share
-    ///      one address, so the contract on Ethereum that this receiver answers to sits at
+    ///      one address, so the contract at home that this receiver answers to sits at
     ///      exactly the address this receiver occupies here. Passing it explicitly rather
     ///      than assuming `address(this)` keeps the peer a stored fact, so nothing breaks
     ///      if the two ever diverge.
@@ -255,7 +282,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      their bootstrap, and permanently deny it — `XSafeProxy` arms exactly once.
     /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO. The account address is
     ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the
-    ///      address its transmitter occupies on Ethereum — which is the entire property.
+    ///      address its transmitter occupies at home — which is the entire property.
     function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls)
         external
     {

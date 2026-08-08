@@ -36,7 +36,7 @@ An element is bytes. The hash never looks inside one. The destination chainKey i
 first, so a payload approved for one chain cannot be finalized on another — and, usefully
 here, so the element format is namespaced per destination for free.
 
-**Ethereum's contracts therefore never need to understand a non-EVM call.** `commitTo`
+**The hub's contracts therefore never need to understand a non-EVM call.** `commitTo`
 hashes opaque bytes; Solana and Move payload construction happens entirely in off-chain
 tooling. There is no Borsh or BCS anywhere in Solidity, ever.
 
@@ -106,7 +106,7 @@ data location, so a `calldata` twin would need a different name — which is the
 a second one ever existed.
 
 The unparameterized pair is the **EVM scheme** — keccak256 — and is what a receiver on an
-EVM chain calls. The `Scheme` overloads are for the source side, where Ethereum builds a
+EVM chain calls. The `Scheme` overloads are for the source side, where the hub builds a
 commitment a *different* VM will recompute. See below.
 
 This is asserted directly, not assumed — `test/PayloadEncoding.t.sol` includes a fuzz case
@@ -193,7 +193,7 @@ neither, necessarily, is the hash. See `Scheme` below.
 
 It masks the output to 250 bits so the result fits in a felt, and it is what Cairo uses for
 entrypoint selectors. A Starknet receiver that computes the commitment with it will never
-match Ethereum. Full keccak256 is available but is the less obvious import.
+match the hub. Full keccak256 is available but is the less obvious import.
 
 ## Commitments off the EVM
 
@@ -251,16 +251,16 @@ enum Scheme { Keccak256, Sha256, Blake2b256Scheme, Poseidon }
 This is a deliberate narrowing and it gives something up. A fully VM-native commitment
 would be TON's **cell hash** — sha256 over a cell tree, because a TVM cell holds only 1023
 bits and any real payload is therefore a tree — or Starknet's `poseidon_hash_span` over a
-felt array. Neither is a byte-oriented fold, and neither could be reproduced on Ethereum to
+felt array. Neither is a byte-oriented fold, and neither could be reproduced on the hub to
 show a signer what they are approving. Holding the fold fixed keeps both sides able to
 compute one value; the cost is that a non-EVM receiver implements a byte fold rather than
 its idiomatic digest.
 
-**Ethereum can still compute most of them**, which matters more than it first appears
+**The hub can still compute most of them**, which matters more than it first appears
 because `commitmentForChain` is read through `eth_call` when a signer checks a payload —
 so gas is not charged in the path that matters.
 
-| Scheme | On Ethereum | Mutability |
+| Scheme | On the hub | Mutability |
 | --- | --- | --- |
 | `Keccak256` | opcode | `pure` |
 | `Sha256` | builtin (precompile 0x02) | `pure` |
@@ -396,7 +396,7 @@ optional.
 
 ## Testing
 
-The Ethereum side and each destination are written in different languages with
+The home side and each destination are written in different languages with
 non-overlapping toolchains, so they cannot import each other. The interface between them is
 a file.
 
@@ -436,7 +436,7 @@ instruction.
 
 Matching hashes prove byte agreement, not semantic agreement. A mismatched *encoder* is
 fail-closed — the commitment does not match and nothing runs. A mismatched *decoder* is
-not: if Ethereum tooling encodes "transfer 100 to A" and the destination reads "transfer
+not: if the hub's tooling encodes "transfer 100 to A" and the destination reads "transfer
 1000 to B" out of those same bytes, the hash matches perfectly and the wrong thing executes.
 
 So vectors must assert the decoded fields individually, not that a blob round-trips. This
