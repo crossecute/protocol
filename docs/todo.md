@@ -33,6 +33,77 @@ and that a *proxy* can hold one — is untested. This is the next thing to build
 turns `_sendMessage` from a seam into a send, and it is what every remaining path is
 waiting on.
 
+### What was found in the package
+
+Verified against `@layerzerolabs/oapp-evm-upgradeable@0.1.3` (it imports interfaces from
+`@layerzerolabs/oapp-evm`, 0.4.1 at the time of checking). Vendor both under
+`contracts/evm/lib/`, matching the existing convention.
+
+```solidity
+abstract contract OAppCoreUpgradeable is IOAppCore, OwnableUpgradeable {
+    ILayerZeroEndpointV2 public immutable endpoint;
+    constructor(address _endpoint) { endpoint = ILayerZeroEndpointV2(_endpoint); }
+    function __OAppCore_init(address _delegate) internal onlyInitializing {
+        if (_delegate == address(0)) revert InvalidDelegate();
+        endpoint.setDelegate(_delegate);
+    }
+}
+
+abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradeable {
+    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {}
+    function __OApp_init(address _delegate) internal onlyInitializing {
+        __OAppCore_init(_delegate);
+        __OAppReceiver_init_unchained();
+        __OAppSender_init_unchained();
+    }
+}
+```
+
+**One constructor argument, and it does not matter.** It is on the *implementation*, and an
+implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
+initcode — so `XSafeProxy` stays argument-free and no derived address moves. The endpoint
+being an `immutable` is correct rather than merely tolerable: every account on a chain uses
+the same endpoint, which is exactly what an implementation-level immutable expresses.
+
+**It fits our layout without collisions.** `OAppCoreUpgradeable` keeps its peer mapping in
+ERC-7201 namespaced storage (`OAPP_CORE_STORAGE_LOCATION`), as do `OAppOptionsType3`,
+`PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `accountSalt`,
+or the approval queue however our layout changes — which also removes the storage-gap
+question for accounts specifically.
+
+**`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
+is not initialized here on purpose. It should be initialized in the child contract to
+accommodate the different version of Ownable."* Since it derives OZ's `OwnableUpgradeable`,
+the same one `LzTransmitter` uses today, `__Ownable_init(owner)` plus `__OApp_init(delegate)`
+composes rather than collides — and `TransmitterBase`'s ownership seam means the base is
+unaffected either way.
+
+### Where each seam attaches
+
+| Our hook | LayerZero |
+| --- | --- |
+| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)` — decode `providerData` to `(bytes options, address refund)`; `eid` from `routeFor(chainKey)` |
+| `_onMessage(bytes payload)` | called from `_lzReceive(...)`, the override point |
+| `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
+| `_checkAdmin` / `_checkOwner` | answered from OApp's own `Ownable` |
+
+**The peer value is always the account's own address**, since a transmitter and its
+receivers share one. One entry per destination, and the value never varies.
+
+### Two consequences to decide on
+
+- **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`.** That runs inside
+  `upgradeInitializeAndLock`'s delegatecall, so `address(this)` is the proxy and the
+  delegate is registered per account — correct, but it means **every account creation
+  touches the endpoint**. Real gas on the bootstrap path, and the concrete form of the cost
+  named as "peers and any send-side security configuration are per-user rather than shared".
+- **OApp authenticates inbound before our code runs.** `lzReceive` does
+  `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
+  `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
+  the open question in §4 below, now concrete: it contradicts the rule stated for the
+  transceiver, and for a 1:1 pairing there is nothing extra to verify — so accepting it is
+  defensible, but it should be a **written exception** rather than an omission.
+
 ## 3. Blockers on specific paths
 
 - **Funding the return report.** `reportSelf` fires from inside the destination's inbound
