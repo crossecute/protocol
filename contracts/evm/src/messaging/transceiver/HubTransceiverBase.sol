@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Call} from "src/messaging/Call.sol";
 
@@ -63,6 +64,8 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev The route resolved to a known chain, but the sender is not that chain's
     ///      counterpart, so either the wrong contract spoke, or the registry is stale.
     error NotCounterpart(bytes32 chainKey);
+    /// @dev A chain reported an address that says it lives somewhere else.
+    error ReportedChainMismatch(bytes32 authenticated, bytes32 reported);
 
     function __HubTransceiverBase_init(address transmitterImplementation_)
         internal
@@ -228,6 +231,20 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev THE SLOT IS KEYED BY `(chainKey, owner, salt)`, which is what an account is.
     ///      The account's address is a derivation of that pair, so the pair is the
     ///      identity and the address is not.
+    ///
+    /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT. An ERC-7930
+    ///      envelope names its own chain, and nothing else compared that name against the
+    ///      origin this contract just authenticated: the registry keys the ref by whatever
+    ///      the envelope claims, while the SLOT is keyed by where the message came from. A
+    ///      mismatch therefore stored a reference that contradicted its own address,
+    ///      readable as an account on one chain and recorded under another.
+    ///
+    ///      It buys an attacker nothing on its own, which is why it is a check rather than
+    ///      a fix: an authenticated spoke can already report a wrong address on its own
+    ///      chain, and payloads route by chainKey regardless, so naming a different chain
+    ///      adds no reach. What it buys is a stored ref that cannot disagree with itself,
+    ///      and it is the check that gives the registry's own `UnknownChainKey` guard its
+    ///      intended meaning here.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(
         bytes32 chainKey,
@@ -238,6 +255,9 @@ abstract contract HubTransceiverBase is TransceiverBase {
         require(msg.sender == address(this));
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (owner == address(0)) revert ZeroOwner();
+
+        bytes32 reported = Erc7930.chainKey(interop);
+        if (reported != chainKey) revert ReportedChainMismatch(chainKey, reported);
 
         bytes32 slot = chainRegistry.receiverSlot(chainKey, owner, salt);
         chainRegistry.onForeignRefResolved(slot, interop, "");

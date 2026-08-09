@@ -550,7 +550,17 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   `receiverSlot(chainKey, owner, salt)`, the chainKey comes from `_authenticateOrigin`, and
   the pair is stated in the report, so a destination cannot choose which slot it writes.
   It is keyed by `(owner, salt)` rather than by the transmitter's address because that pair
-  is what an account IS; the address is a derivation of it.
+  is what an account IS; the address is a derivation of it. That argument is about
+  CORRELATION only: whether any channel needs a message id for IDEMPOTENCY is open, and an
+  execute-on-arrival payload is the case with no structural protection of its own. See
+  [`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look).
+- **A reported address must be on the chain that reported it.** An ERC-7930 envelope names
+  its own chain, and `onDestinationReceiver` compares that against the origin it
+  authenticated. Without the check the registry keyed the ref by whatever the envelope
+  claimed while the slot was keyed by where the message came from, so a stored reference
+  could contradict its own address. It grants no reach on its own, since an authenticated
+  spoke can already report a wrong address on its own chain and payloads route by chainKey
+  regardless; what it buys is a ref that cannot disagree with itself.
   The slot is **write-once**, so a replayed or hostile second report cannot repoint a
   receiver already on record.
 - **The registry authenticates per provider.** `localTransceiver[messageProvider]` and the

@@ -175,6 +175,38 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
+- **RESEARCH: a requestId, or any unique identifier, for messages.** Nothing on any channel
+  carries one today, and `Envelope` argues explicitly against one for the receiver report.
+  That argument holds for CORRELATION and should not be revisited on those grounds: the
+  slot is `receiverSlot(chainKey, owner, salt)`, the chainKey comes from
+  `_authenticateOrigin` and the pair is stated, so a destination cannot choose which slot
+  it writes, and the slot is write-once. An id would restate what the fields already imply.
+
+  **IDEMPOTENCY is the open half, and it is a different question.** Ask it per channel:
+
+  - *Bootstrap* is structurally idempotent. `CrossProxy` arms exactly once and the
+    receiver's `initialize` is single-shot, so a duplicated delivery reverts rather than
+    creating a second account. The transmitter's bootstrap record refuses a second SEND
+    of one, which is a different guard on the same shape.
+  - *The receiver report* is structurally idempotent. The registry slot is write-once, so a
+    replay is refused outright.
+  - *An execute-on-arrival payload has NOTHING.* Path A carries a call array with no
+    commitment, no nonce, and no id, so a duplicate delivery executes the payload twice.
+    Nothing in this repo prevents that; the protection is entirely the provider's
+    exactly-once guarantee, which is currently relied on IMPLICITLY and stated nowhere.
+
+  So the research is: which guarantee does each candidate provider actually make, is it
+  uniform across them, does it survive a permissionless retry of a failed message (the
+  property [Failure handling](message-flow.md#failure-handling) already depends on), and is
+  it worth making provider-independent with a per-account nonce or message id.
+
+  Note what an id would cost. Every channel carries exactly one shape today and nothing
+  needs a type tag; a mandatory id is a field on all of them, and one the receiver has to
+  store to check, which turns a stateless funnel into a growing set. A nonce ordered per
+  destination would be cheaper to store but reintroduces head-of-line blocking, which
+  ordered delivery was rejected for. Deferred payloads are the reason it is not obviously
+  unnecessary: `commit`/`finalize` protects the payload it approves, but the arrival that
+  DELIVERS the commit is itself an execute-on-arrival message.
 - **Who authenticates the receiver's inbound message.** A provider's own peer check runs
   before any of our code, which contradicts the rule stated for the transceiver. For a 1:1
   pairing there is nothing extra to verify, so accepting it is defensible, but it should be
