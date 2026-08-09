@@ -175,38 +175,36 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
-- **RESEARCH: a requestId, or any unique identifier, for messages.** Nothing on any channel
-  carries one today, and `Envelope` argues explicitly against one for the receiver report.
-  That argument holds for CORRELATION and should not be revisited on those grounds: the
-  slot is `receiverSlot(chainKey, owner, salt)`, the chainKey comes from
-  `_authenticateOrigin` and the pair is stated, so a destination cannot choose which slot
-  it writes, and the slot is write-once. An id would restate what the fields already imply.
+- ~~**RESEARCH: a requestId, or any unique identifier, for messages.**~~ RESEARCHED, and the
+  answer is no protocol-level id. The two halves of the question have different answers.
 
-  **IDEMPOTENCY is the open half, and it is a different question.** Ask it per channel:
+  **Correlation never needed one, and that argument stands.** The receiver report's slot is
+  `receiverSlot(chainKey, owner, salt)`, the chainKey comes from `_authenticateOrigin`, the
+  pair is stated, and the slot is write-once. An id would restate what the fields imply.
 
-  - *Bootstrap* is structurally idempotent. `CrossProxy` arms exactly once and the
-    receiver's `initialize` is single-shot, so a duplicated delivery reverts rather than
-    creating a second account. The transmitter's bootstrap record refuses a second SEND
-    of one, which is a different guard on the same shape.
-  - *The receiver report* is structurally idempotent. The registry slot is write-once, so a
-    replay is refused outright.
-  - *An execute-on-arrival payload has NOTHING.* Path A carries a call array with no
-    commitment, no nonce, and no id, so a duplicate delivery executes the payload twice.
-    Nothing in this repo prevents that; the protection is entirely the provider's
-    exactly-once guarantee, which is currently relied on IMPLICITLY and stated nowhere.
+  **Idempotency does need one, and the transport already has it.** Bootstrap and the report
+  are structurally single-shot, but an execute-on-arrival payload carries no commitment and
+  no id, so a duplicated delivery runs it twice. Checked against deployed source: LayerZero
+  keys `inboundPayloadHash` by `[receiver][srcEid][sender][nonce]` and clears it before
+  calling; Hyperlane keeps `deliveries[messageId]` and refuses a repeat; CCIP makes
+  `SUCCESS` terminal in `s_executionStates`; Axelar consumes the `commandId` inside
+  `validateContractCall`. All four write the mark FIRST and then make a plain external call,
+  so a revert rolls the mark back: exactly-once on success and retryable on failure out of
+  one mechanism.
 
-  So the research is: which guarantee does each candidate provider actually make, is it
-  uniform across them, does it survive a permissionless retry of a failed message (the
-  property [Failure handling](message-flow.md#failure-handling) already depends on), and is
-  it worth making provider-independent with a per-account nonce or message id.
+  **Wormhole's core layer does not dedupe at all**, by its own documentation, so a Wormhole
+  binding must carry replay protection itself, keyed on the VAA digest or
+  `(emitterChain, emitterAddress, sequence)`.
 
-  Note what an id would cost. Every channel carries exactly one shape today and nothing
-  needs a type tag; a mandatory id is a field on all of them, and one the receiver has to
-  store to check, which turns a stateless funnel into a growing set. A nonce ordered per
-  destination would be cheaper to store but reintroduces head-of-line blocking, which
-  ordered delivery was rejected for. Deferred payloads are the reason it is not obviously
-  unnecessary: `commit`/`finalize` protects the payload it approves, but the arrival that
-  DELIVERS the commit is itself an execute-on-arrival message.
+  So the requirement is recorded rather than built: a provider prerequisite (P7), three
+  rules on the inbound path (R3.5 through R3.7), and three compliance tests (C29 through
+  C31) in [`provider-spec.md`](provider-spec.md#12-appendix-transport-replay-guarantees),
+  which carries the full matrix. Adding a protocol-level id would put a field on every
+  channel and a growing set on every receiver to buy what four of five transports give free.
+
+  **The one thing to keep in view**: a binding must never wrap the delivery call in
+  `try/catch`. That consumes the message and drops the payload, turning a retry into a loss,
+  and it looks like defensive coding.
 - **Who authenticates the receiver's inbound message.** A provider's own peer check runs
   before any of our code, which contradicts the rule stated for the transceiver. For a 1:1
   pairing there is nothing extra to verify, so accepting it is defensible, but it should be

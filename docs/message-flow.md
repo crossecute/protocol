@@ -496,6 +496,20 @@ fixed.
 ordered execution would let one permanently-failing message block every message behind it
 on that lane.
 
+**And it holds only because the payload is all-or-nothing.** `_execute` reverts the whole
+array on one failure, so a retry re-runs a payload that did nothing rather than re-applying
+a prefix that already landed.
+
+**Replay protection on path A is the transport's, not this protocol's.** An
+execute-on-arrival payload carries no commitment and no identifier, so a second delivery
+would run it twice; bootstrap and the receiver report are structurally single-shot and need
+nothing. Every provider currently in scope except Wormhole's core layer guarantees
+exactly-once at the transport, by the same shape that gives retry: mark the message
+consumed, then call the receiver with a plain external call, so a revert rolls the mark
+back. It is an imported guarantee rather than an enforced one, which is why it is a stated
+provider prerequisite and a compliance test rather than a comment. See
+[`provider-spec.md`](provider-spec.md#12-appendix-transport-replay-guarantees).
+
 No fallback storage, and no payload size cap: the provider enforces the latter.
 
 ## Design decisions

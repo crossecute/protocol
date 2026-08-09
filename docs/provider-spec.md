@@ -43,8 +43,8 @@ independently.
 
 ## 2. Provider prerequisites: the go or no-go checklist
 
-Before any code is written, the provider must be able to do all thirteen of these. A "no"
-on any of P1 through P9 disqualifies the provider outright; P10 through P13 are costs
+Before any code is written, the provider must be able to do all fourteen of these. A "no"
+on any of P1 through P10 disqualifies the provider outright; P11 through P14 are costs
 rather than blockers, and each has a stated fallback.
 
 | # | Requirement | Why the protocol needs it |
@@ -55,19 +55,20 @@ rather than blockers, and each has a stated fallback.
 | **P4** | Report the source chain and source address to the receiving contract | `_onInbound(route, sender, message)` cannot authenticate without both. A provider that reports only "some peer" is not authenticable at our layer. |
 | **P5** | Unordered delivery | Ordered lanes turn one permanently-failing message into a halt on that lane. See [Failure handling](message-flow.md#failure-handling). |
 | **P6** | Permissionless retry of a failed message | Execution runs inside the delivery callback, so a revert must be a retry and not a loss. |
-| **P7** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
-| **P8** | **Quote that fee at source, as a `view`, before the send** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. Without a quote a caller either overpays blindly or has a send revert after the signers have already approved it. See [R2](#r2-quote). |
-| **P9** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
-| **P10** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
-| **P11** | Per-message destination gas or execution options | Carried opaquely in `providerData`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
-| **P12** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
-| **P13** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
+| **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [§12](#12-appendix-transport-replay-guarantees). |
+| **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
+| **P9** | **Quote that fee at source, as a `view`, before the send** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. Without a quote a caller either overpays blindly or has a send revert after the signers have already approved it. See [R2](#r2-quote). |
+| **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
+| **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
+| **P12** | Per-message destination gas or execution options | Carried opaquely in `providerData`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
+| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
+| **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 
 **P2 and P3 together are the real filter.** They are what "an account is its own endpoint"
 means, and they are the claim the entire redesign rests on. Verify them against the
 provider's actual code, not its documentation, before writing anything else.
 
-Every provider in scope satisfies P8 today: LayerZero's `endpoint.quote(MessagingParams,
+Every provider in scope satisfies P9 today: LayerZero's `endpoint.quote(MessagingParams,
 address) -> MessagingFee`, Hyperlane's `quoteDispatch`, CCIP's `getFee`, Wormhole's
 `quoteEVMDeliveryPrice`, Axelar's off-chain gas estimator with an on-chain equivalent. All
 but Axelar's are `view`.
@@ -374,6 +375,35 @@ still open.
 arrival. The binding MUST NOT decode the payload itself: `Payload.decodeCalls` happens
 inside `_onMessage`, so every provider gets the same decoder and the same failure mode.
 
+**R3.5 Replay protection on path A is the transport's, and a binding whose transport does
+not provide it MUST supply it.** This is the one protocol-level guarantee that is imported
+rather than enforced here, and it is worth stating precisely because it is invisible in
+this repo's source.
+
+An execute-on-arrival payload carries no commitment and no identifier, so a second delivery
+of the same message runs it again. Bootstrap and the receiver report are both structurally
+single-shot and need nothing (`CrossProxy` arms exactly once, `initialize` is single-shot,
+and the registry slot is write-once), but path A has no such property, and it is the path
+every message after the first takes.
+
+Four of the five providers in scope already guarantee it at the transport, and the
+binding does nothing. Wormhole's core layer does not, and there a binding MUST dedupe
+inside `<P>Endpoint` before reaching `_onMessage`, keyed on the VAA digest or on
+`(emitterChain, emitterAddress, sequence)`. See [§12](#12-appendix-transport-replay-guarantees)
+for what each provider actually does.
+
+**R3.6 The dedupe MUST be per receiving account, not global to the binding.** Accounts are
+their own endpoints, so one account's replay record must not be exhaustible by another's
+traffic. Every transport that provides this already keys it correctly (LayerZero by
+`[receiver][srcEid][sender][nonce]`, Hyperlane by a message id covering the recipient); a
+binding supplying its own MUST match that shape.
+
+**R3.7 A binding MUST NOT swallow a failing delivery**, with `try/catch` or otherwise. The
+retry property in P6 exists because the mark-consumed write is rolled back by the same
+revert that failed the payload. Catching the failure would consume the message and drop the
+payload, converting a retry into a loss. `_execute` being all-or-nothing is the other half
+of that: a partially applied payload could not be safely retried.
+
 ### R4. The byte forms, which are the authentication
 
 This is the rule most likely to be got wrong, and it fails at runtime rather than at
@@ -621,6 +651,14 @@ Everything below is written once, against those hooks.
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. |
 | C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. |
 | C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). |
+| C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. |
+| C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. |
+| C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). |
+
+**C29 is the one nobody writes.** It tests a property of somebody else's contract, which
+feels out of scope until you notice that no line in this repo enforces it and path A has no
+other defence. On a transport that provides it the test is three lines and passes
+immediately; on one that does not, it is the only thing that fails before mainnet.
 
 **C7, C8, C10, and C11 are the ones that would otherwise be found in production.** The
 first three are the only defence on the byte forms, and no unit test of either side alone
@@ -879,3 +917,48 @@ A binding is done when every line is true.
 - [ ] No new setter for any write-once value
 - [ ] `script/` deploys in the order of [§6](#6-configuration-a-compliant-deployment-performs)
 - [ ] `ProviderCompliance.t.sol` C1 through C28 pass
+
+---
+
+## 12. Appendix: transport replay guarantees
+
+What each candidate provider actually does about a message being delivered twice, checked
+against the deployed source rather than the marketing. This is the evidence behind
+[P7](#2-provider-prerequisites-the-go-or-no-go-checklist) and [R3.5](#r3-receive).
+
+| Provider | Dedupes a successful message | Mechanism | Failed message retryable |
+| --- | --- | --- | --- |
+| **LayerZero V2** | Yes | `inboundPayloadHash[receiver][srcEid][sender][nonce]`, cleared by `_clearPayload` before the receiver is called | Yes, `lzReceive` is permissionless and a revert rolls the clear back |
+| **Hyperlane** | Yes | `deliveries[messageId]` in `Mailbox`, written before `handle()`; `require(delivered(_id) == false, "Mailbox: already delivered")` | Yes, `process()` again; the `handle` call is plain, so a revert rolls the write back |
+| **CCIP** | Yes | `s_executionStates[sourceChainSelector][seqNum]`; `SUCCESS` is terminal | Yes, manual execution from the `FAILURE` state |
+| **Axelar** | Yes | the gateway marks a `commandId` consumed inside `validateContractCall`, which cannot be called twice | Yes, the whole `execute` reverts, so the approval survives |
+| **Wormhole (core)** | **No** | `parseAndVerifyVM` verifies signatures and nothing else; the core contract keeps no record of consumed VAAs | n/a, replay is the integrator's problem |
+
+**The pattern is the same in all four that provide it, and it is worth naming**: write the
+consumed mark FIRST, then make a plain external call to the receiver. The write-first order
+is reentrancy protection; the plain call is what gives retry, because the revert that fails
+the payload also rolls the mark back. One mechanism, both properties. A binding that wraps
+that call in `try/catch` breaks the second while appearing to improve it, which is
+[R3.7](#r3-receive).
+
+**Wormhole is the outlier and it is a documented one.** Its own guidance says integrators
+must implement replay protection themselves, offering the VAA digest or the
+`(emitterChain, emitterAddress, sequence)` triple as the key, and the same is true of the
+newer Executor framework. A Wormhole binding is therefore not simply more code, it is code
+carrying a guarantee the other four inherit for free, and it is the one place in this
+protocol where a binding holds a security property rather than a translation.
+
+**What this settles.** The protocol needs no `requestId` and no per-message nonce of its
+own. Correlation never needed one: the receiver report's slot is derived from the
+authenticated origin plus the stated `(owner, salt)`, and the slot is write-once.
+Idempotency does need one, but it exists at the transport for every provider currently in
+scope, and adding a protocol-level id would put a field on every channel plus a growing set
+on every receiver to buy something four of five transports already give. The correct shape
+is what is written above: state the requirement, test it per binding, and make the one
+provider that lacks it carry the cost in its own `<P>Endpoint`.
+
+Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZero-v2/blob/main/packages/layerzero-v2/evm/protocol/contracts/EndpointV2.sol),
+[Hyperlane `Mailbox.sol`](https://github.com/hyperlane-xyz/hyperlane-monorepo/blob/main/solidity/contracts/Mailbox.sol),
+[CCIP manual execution](https://docs.chain.link/ccip/concepts/manual-execution),
+[Axelar Executable](https://docs.axelar.dev/dev/general-message-passing/executable),
+[Wormhole core contracts](https://wormhole.com/docs/products/messaging/guides/core-contracts/).
