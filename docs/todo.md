@@ -5,6 +5,7 @@ what rather than by size.
 
 [`message-flow.md`](message-flow.md) and [`encoding.md`](encoding.md) describe the design;
 this file is the gap between that design and the tree.
+[`provider-spec.md`](provider-spec.md) is what closing the first gap below requires.
 
 ---
 
@@ -82,7 +83,8 @@ unaffected either way.
 
 | Our hook | LayerZero |
 | --- | --- |
-| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: decode `providerData` to `(bytes options, address refund)`; `eid` from `routeFor(chainKey)` |
+| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `options` decoded from `providerData`, `refund` from `_refundTo()`, `eid` from `routeFor(chainKey)` |
+| `_quoteMessage(chainKey, payload, providerData)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
 | `_onMessage(bytes payload)` | called from `_lzReceive(...)`, the override point |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | `_checkAdmin` / `_checkOwner` | answered from OApp's own `Ownable` |
@@ -148,9 +150,16 @@ mainnet.
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.
-- **Two `isAuthorizedCommitter` arms are the same address.** A receiver's peer is its own
-  address, so `sourceTransmitter` and `address(this)` coincide. Collapse them, or keep them
-  distinct against a future where they diverge?
+- ~~**Two `isAuthorizedCommitter` arms are the same address.**~~ SETTLED, and the third arm
+  went with it. `commit`, `cancel`, and `execute` are now gated on `isAuthorizedCaller`:
+  the source transmitter, or a self-call. The PARENT TRANSCEIVER was removed outright,
+  because it only ever needed authority for the bootstrap payload and it has that inside
+  `__ReceiverBase_init`; keeping it made the contract that authenticates every inbound
+  message on a spoke a standing authority over every receiver it had created. The
+  `address(this)` arm was kept explicitly rather than left to coincide with
+  `sourceTransmitter`: the two share an address wherever Ethereum's CREATE2 formula holds,
+  but not on zkSync or Tron, and without the arm deferred payloads would work on most of a
+  deployment and fail silently on the rest.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.
@@ -178,8 +187,11 @@ mainnet.
   When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
-- **Refund plumbing.** `bootstrap` should take a refund address and the transmitter should
-  pass its owner.
+- ~~**Refund plumbing.**~~ SETTLED, and it needed no parameter. `OutboundBase._refundTo()`
+  is `msg.sender`, which is already the right answer on both paths: `send` is owner-gated
+  so it is the owner, and `bootstrap` refuses any caller that is not the account so it is
+  the account. The shared transceiver cannot be its own refund target because it is never
+  the caller of its own `bootstrap`. `TransmitterBase` gained a `receive` to accept one.
 - **No storage gaps anywhere.** The transceiver is UUPS until `lockUpgrades()`.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
