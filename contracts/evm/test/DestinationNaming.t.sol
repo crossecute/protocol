@@ -65,7 +65,8 @@ contract DestinationNamingTest is Test {
                             recvImpl,
                             ChainKey.forEvm(1),
                             LzCodec.ETHEREUM_EID,
-                            abi.encodePacked(address(hub))
+                            abi.encodePacked(address(hub)),
+                            false
                         )
                     )
                 )
@@ -131,7 +132,8 @@ contract DestinationNamingTest is Test {
                             address(new LzReceiver()),
                             ChainKey.forEvm(42161),
                             30110,
-                            abi.encodePacked(arbHub)
+                            abi.encodePacked(arbHub),
+                            false
                         )
                     )
                 )
@@ -342,7 +344,8 @@ contract DestinationNamingTest is Test {
             address(0xBEEF),
             ChainKey.forEvm(1),
             LzCodec.ETHEREUM_EID,
-            abi.encodePacked(address(0xBAD))
+            abi.encodePacked(address(0xBAD)),
+            false
         );
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)), "unchanged");
     }
@@ -356,7 +359,14 @@ contract DestinationNamingTest is Test {
             address(impl),
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
-                (msig, address(0xBEEF), ChainKey.forEvm(1), LzCodec.ETHEREUM_EID, bytes(""))
+                (
+                    msig,
+                    address(0xBEEF),
+                    ChainKey.forEvm(1),
+                    LzCodec.ETHEREUM_EID,
+                    bytes(""),
+                    false
+                )
             )
         );
     }

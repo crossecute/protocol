@@ -57,7 +57,9 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __TransceiverBase_init();
-        __SpokeTransceiverBase_init(impl, ChainKey.forEvm(1), abi.encode(uint32(30101)), home);
+        __SpokeTransceiverBase_init(
+            impl, ChainKey.forEvm(1), abi.encode(uint32(30101)), home, false
+        );
     }
 
     function _checkAdmin() internal view override {

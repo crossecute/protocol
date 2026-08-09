@@ -20,8 +20,11 @@ Still missing on the transport itself:
 
 | Missing | Where |
 | --- | --- |
-| The spoke → hub report | `reportSelf` does not exist; `Envelope.encodeReceiverReport` has no caller |
 | Provider setup in `_accountInitializer` | The seam exists and is `virtual` throughout; no binding fills it yet |
+
+The spoke → hub report is no longer on this list: `SpokeTransceiverBase` sends it from
+`bootstrapInbound`, gated on a write-once `addressesDiverge` flag, so it fires only where
+the hub cannot derive the address itself. What remains is funding a diverging spoke, below.
 
 ## 2. The provider binding
 
@@ -108,10 +111,15 @@ receivers share one. One entry per destination, and the value never varies.
 
 ## 3. Blockers on specific paths
 
-- **Funding the return report.** `reportSelf` fires from inside the destination's inbound
-  callback, and putting a message on the wire costs native currency there. Either the spoke
-  carries a msig-funded balance per chain, or the bootstrap message drops value across.
-  Without one, bootstrap reverts on the return leg. **Top blocker on the report path.**
+- **Funding a diverging spoke.** The report fires from inside the destination's inbound
+  callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
+  one reverts the bootstrap with it. That revert is deliberate and keeps the operation
+  retryable, but the balance still has to come from somewhere: either the msig funds each
+  diverging spoke, or the bootstrap message drops value across.
+
+  **Much smaller than it was.** `addressesDiverge` keeps the report off every chain sharing
+  Ethereum's CREATE2 formula, so this is an operational requirement on zkSync, Tron, and the
+  non-EVM spokes rather than on the whole deployment.
 - **Starknet bytes↔felt packing.** Bridges deliver Starknet payloads as `Array<felt252>`,
   not bytes. Before any container format can be parsed there has to be an agreed packing
   rule. Unspecified, needed in either container format, and the kind of value that is wrong

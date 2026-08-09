@@ -6,7 +6,8 @@ import {Vm} from "forge-std/Vm.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {TransmitterBase, IAccountTransceiver} from
+    "src/messaging/outbound/TransmitterBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -746,6 +747,33 @@ contract TransportTest is Test {
         (bool ok,) = payable(address(acct)).call{value: 0.1 ether}("");
         assertTrue(ok, "the transmitter accepts a refunded fee");
         assertEq(address(acct).balance, 0.1 ether);
+    }
+
+    /* ============================ the account's view =========================== */
+
+    /// @dev AN ACCOUNT HOLDS ONE TRANSCEIVER ADDRESS AND ONE INTERFACE OVER IT. `routeTo`
+    ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on
+    ///      a second type, so a binding cannot hold a reference that can send but not
+    ///      resolve where to.
+    function test_theAccountInterfaceResolvesARoute() public {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+
+        assertEq(
+            IAccountTransceiver(address(t)).routeTo(ChainKey.forEvm(DEST)),
+            abi.encode(uint32(30184)),
+            "the provider's own name for the chain, opaque"
+        );
+    }
+
+    /// @dev AND THE ACCOUNT STORES NO COPY OF IT. A msig adding a destination is one
+    ///      configuration change on the transceiver, not a migration across every account
+    ///      that might want to reach it.
+    function test_theAccountHoldsNoRouteTable() public {
+        (bool ok,) = address(transmitter).staticcall(
+            abi.encodeWithSignature("routeTo(bytes32)", ChainKey.forEvm(DEST))
+        );
+        assertFalse(ok, "an account cannot answer this itself");
     }
 
     function _oneCall() internal view returns (Call[] memory calls) {

@@ -95,7 +95,8 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
             receiverImplementation_,
             ChainKey.forEvm(1),
             abi.encode(uint32(1)),
-            abi.encodePacked(address(0xB0BB1E))
+            abi.encodePacked(address(0xB0BB1E)),
+            false
         );
     }
 

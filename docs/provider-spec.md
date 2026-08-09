@@ -681,27 +681,33 @@ receiver will ever need into that one initializer call. A transceiver holding st
 authority over every receiver it created, on the chain where it is also the contract that
 authenticates every inbound message, was one compromise away from every account.
 
-### 9.3 The receiver report has no sender
+### 9.3 The receiver report. LANDED, GATED ON A FLAG
 
-`Envelope.encodeReceiverReport` exists with no caller, and `reportSelf` does not exist
-([todo §1](todo.md#1-no-message-provider-is-integrated)). Where it belongs is a design
-decision this spec takes:
+`SpokeTransceiverBase` gained `addressesDiverge`, written once in the initializer beside
+the other home values and with no setter. When it is true, `bootstrapInbound` reports the
+account it just created back to the hub; when it is false, nothing is sent.
 
-**The spoke transceiver sends the report, from inside `bootstrapInbound`.** It is the only
-contract that holds all four things the report needs: the home route, the hub's address, the
-authenticated `(owner, salt)` pair, and the freshly created receiver's address. A receiver
-holds none of them, and giving it a route table to hold would contradict
-[R1.2](#r1-send). The name `reportSelf` in `todo.md` should be read as naming the message,
-not the sender.
+**The flag exists because the hub cannot work this out.** It derives a receiver's address by
+recomputing Ethereum's CREATE2 formula over the recorded factory, salt, and initcode hash,
+which is right on most EVM chains and wrong on zkSync and Tron. The chain itself is the only
+party that knows which it is, so it says so once rather than leaving the hub to infer it
+from a provenance cap that means something adjacent but not the same thing.
 
-Two consequences the binding inherits: the send is nested inside a delivery callback
-([R7.3](#r7-fees-and-value)), and the spoke must carry a balance or the bootstrap message
-must drop value across. Without one, bootstrap reverts on the return leg.
+**On a parity chain the report would be a downgrade, not merely waste.** A local derivation
+is `Derived`; anything arriving over a bridge is graded `Attested`. So most spokes send
+nothing, and only the ones that must be believed have to be funded to speak, which is what
+confines the funding problem to the chains that actually have it.
 
-**It SHOULD be conditional on the chain.** An EVM receiver's address is a CREATE2 clone the
-hub already computed before the first message, so the report tells it nothing it does not
-know and costs a message for it. The report exists for chains whose addresses the EVM cannot
-recompute at any price, Starknet being the case that forced it.
+**A failed report takes the account creation with it, and must.** The send is nested inside
+a delivery callback where `msg.value` is zero, so a diverging spoke pays from its own
+balance and a dry one reverts. Catching that would create an account the home chain could
+never address: `CrossProxy` arms exactly once and `initialize` is single-shot, so there is
+no second bootstrap to carry a second report. All-or-nothing is the only recoverable shape,
+and it makes the bootstrap retryable once the balance is topped up.
+
+Note that `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain,
+so the live cases for the flag here are zkSync and Tron. A Starknet or Move spoke implements
+the same rule in its own language, with the flag always set.
 
 ### 9.4 Refund plumbing. LANDED, WITH NO PARAMETER AT ALL
 
@@ -721,13 +727,12 @@ The rejected alternatives are worth recording, because each looks reasonable fir
 - **Transient-storage context set by `bootstrap`.** Keeps the primitive narrow, but this
   codebase already removed a contract for being exactly that (`Dissolve MessagingContext`).
 
-### 9.5 A route read for accounts
+### 9.5 A route read for accounts. LANDED
 
-[R1.2](#r1-send) has an account call `routeTo` on its transceiver. That function is already
-`public view` (`TransceiverBase:408`), so nothing is missing, but there is no typed
-interface for an account to import. A three-line `ITransceiverRoutes` alongside
-`ITransceiverBootstrap` in `TransmitterBase` closes it, and the quote path needs the same
-read, so it is one interface serving both.
+`ITransceiverBootstrap` is now `IAccountTransceiver` and carries `routeTo` alongside
+bootstrap and the two quotes. An account holds exactly one transceiver address, so one
+interface over it is the shape that cannot drift; the old name was already strained by the
+quotes and `routeTo` broke it outright.
 
 ---
 

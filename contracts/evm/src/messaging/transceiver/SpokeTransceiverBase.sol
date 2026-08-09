@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Envelope} from "src/messaging/Envelope.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -107,6 +108,29 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      an initializer makes it a redeploy, which is what a change of this kind is.
     address public receiverImplementation;
 
+    /// Whether an account's address on THIS chain differs from the one the hub derives for
+    /// it. When true, every account created here is reported home.
+    ///
+    /// @dev THE HUB CANNOT WORK THIS OUT, WHICH IS WHY IT IS STATED HERE. It derives a
+    ///      receiver's address by recomputing Ethereum's CREATE2 formula over the recorded
+    ///      factory, salt, and initcode hash. That is correct on most EVM chains and wrong
+    ///      on zkSync and Tron, whose formulas differ, and the chain itself is the only
+    ///      party that knows which it is. A flag set at initialization says so once instead
+    ///      of leaving the hub to infer it from a provenance cap that means something
+    ///      adjacent but not the same thing.
+    ///
+    /// @dev IT IS WHAT KEEPS THE REPORT OFF THE CHAINS THAT DO NOT NEED IT. On a parity
+    ///      chain the hub computed the address before the first message ever went out, so a
+    ///      report would spend a message to tell it something it already knows, and would
+    ///      DOWNGRADE what it knows: a derivation is `Derived`, and anything arriving over
+    ///      a bridge is `Attested`. Most spokes therefore send nothing, and only the ones
+    ///      that must be believed have to be funded to speak.
+    ///
+    /// @dev WRITE-ONCE, LIKE EVERYTHING ELSE HERE. Flipping it later would either start
+    ///      reporting addresses the hub already holds, or stop reporting ones it cannot
+    ///      derive, and the second is silent: accounts would be created here that the home
+    ///      chain can never address.
+    bool public addressesDiverge;
 
     event ReceiverImplementationSet(address implementation);
     /// @dev Fires on the one message that stands a receiver up. There is no later inbound
@@ -117,6 +141,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev Fires once per transmitter, on the message that actually creates the clone.
     event ReceiverDeployed(address indexed transmitter, address indexed receiver);
     event HomeSet(bytes32 homeChainKey, bytes homeRoute, bytes homeTransceiver);
+    event AddressesDivergeSet(bool addressesDiverge);
+    /// @dev Fires on the chains that report, which is not most of them.
+    event ReceiverReported(address indexed owner, bytes32 salt, address receiver);
 
     /// @dev The only destination a spoke has is its home; anything else is a bug or an
     ///      attempt to make this contract talk to a sibling spoke, which the protocol
@@ -141,11 +168,17 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      msig nor an upgrade of any other contract can widen the set of origins this
     ///      spoke will accept. There is no reachable state in which any of them has been
     ///      set and can still be changed.
+    /// @param addressesDiverge_ True only where an account's address here is NOT the one
+    ///        the hub derives for it: zkSync and Tron among EVM chains. It makes every
+    ///        account created here report itself home, and is the reason a spoke needs a
+    ///        balance, so leaving it false where it should be true creates accounts the
+    ///        home chain can never address.
     function __SpokeTransceiverBase_init(
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes memory homeRoute_,
-        bytes memory homeTransceiver_
+        bytes memory homeTransceiver_,
+        bool addressesDiverge_
     ) internal onlyInitializing {
         if (homeChainKey_ == bytes32(0)) revert NoHomeChainKey();
         if (homeRoute_.length == 0) revert NoHomeRoute();
@@ -159,6 +192,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         _homeRoute = homeRoute_;
         _homeTransceiver = homeTransceiver_;
         emit HomeSet(homeChainKey_, homeRoute_, homeTransceiver_);
+
+        addressesDiverge = addressesDiverge_;
+        emit AddressesDivergeSet(addressesDiverge_);
     }
 
     function homeTransceiver() public view returns (bytes memory h) {
@@ -287,6 +323,45 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         external
     {
         require(msg.sender == address(this));
-        _createCrossAccount(owner, salt, calls);
+        address receiver = _createCrossAccount(owner, salt, calls);
+        if (addressesDiverge) _reportReceiver(owner, salt, receiver);
+    }
+
+    /* ================================ the report =============================== */
+
+    /// @notice Tell the hub where the receiver actually landed.
+    ///
+    /// @dev ONLY WHERE THE HUB COULD NOT WORK IT OUT. See `addressesDiverge`: on a parity
+    ///      chain this would spend a message to restate a derivation the hub already holds,
+    ///      and would replace a `Derived` fact with an `Attested` one, which is strictly
+    ///      worse. The registry grades whatever arrives here at `Attested`, because that is
+    ///      what a claim carried over a bridge is worth.
+    ///
+    /// @dev IT NAMES THE PAIR, NOT THE ADDRESS ALONE. `(owner, salt)` is what an account
+    ///      IS; the address is a derivation of it, and on this chain a different one. The
+    ///      hub derives the registry slot from the pair plus the origin it already
+    ///      authenticated, so the destination cannot choose which slot it writes, and the
+    ///      slot is write-once, so a replayed report is a no-op rather than a repoint. That
+    ///      is why no request id is needed.
+    ///
+    /// @dev IT IS PAID FROM THIS CONTRACT'S BALANCE, AND THAT IS THE COST OF THE FLAG. The
+    ///      send is nested inside a delivery callback, where `msg.value` is zero, so a
+    ///      diverging spoke has to be funded by whoever operates it. A dry one reverts.
+    ///
+    /// @dev THE REVERT IS CORRECT, AND MUST NOT BE SWALLOWED. It takes the account creation
+    ///      down with it, which is what makes the bootstrap retryable once the balance is
+    ///      topped up. Catching the failure would create an account here and leave the hub
+    ///      permanently unable to address it: `CrossProxy` arms exactly once and
+    ///      `initialize` is single-shot, so there is no second bootstrap to carry a second
+    ///      report. All-or-nothing is the only recoverable shape.
+    function _reportReceiver(address owner, bytes32 salt, address receiver) internal {
+        emit ReceiverReported(owner, salt, receiver);
+        _dispatch(
+            homeChainKey,
+            Envelope.encodeReceiverReport(
+                owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
+            ),
+            ""
+        );
     }
 }

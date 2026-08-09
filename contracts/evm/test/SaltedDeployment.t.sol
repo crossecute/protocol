@@ -68,7 +68,11 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         __Ownable_init(owner_);
         __TransceiverBase_init();
         __SpokeTransceiverBase_init(
-            impl, ChainKey.forEvm(1), abi.encode(uint32(1)), abi.encodePacked(address(0xB0BB1E))
+            impl,
+            ChainKey.forEvm(1),
+            abi.encode(uint32(1)),
+            abi.encodePacked(address(0xB0BB1E)),
+            false
         );
     }
 

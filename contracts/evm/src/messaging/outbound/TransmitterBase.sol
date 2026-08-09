@@ -52,7 +52,14 @@ import {Call} from "src/messaging/Call.sol";
 ///      with the destination's key, and the chain-binding still does its job: the payload
 ///      is pinned to exactly one destination and cannot be replayed onto a sibling
 ///      deployment at the same address.
-interface ITransceiverBootstrap {
+/// @notice Everything an account needs from the transceiver whose address it already
+///         stores. Bootstrap, the quotes that price it, and the route lookup.
+///
+/// @dev NAMED FOR THE RELATIONSHIP RATHER THAN FOR ONE OF ITS FUNCTIONS. It was
+///      `ITransceiverBootstrap` when bootstrap was all it carried; the quotes strained
+///      that and `routeTo` breaks it outright. An account holds exactly one transceiver
+///      address, so one interface over it is the shape that cannot drift.
+interface IAccountTransceiver {
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -86,6 +93,16 @@ interface ITransceiverBootstrap {
         bytes[] calldata elements,
         bytes calldata providerData
     ) external view returns (uint256);
+
+    /// @notice The message provider's own name for a chain, opaque.
+    ///
+    /// @dev THIS IS WHY AN ACCOUNT HOLDS NO ROUTE TABLE. The provider's identifier for a
+    ///      chain is the one thing about a destination that nothing here can derive, and
+    ///      it lives on the transceiver because that is the contract that sends. Reading
+    ///      it through this call rather than storing a copy means a msig adding a
+    ///      destination is one configuration change, not a migration across every account
+    ///      that might want to reach it.
+    function routeTo(bytes32 chainKey) external view returns (bytes memory);
 }
 
 abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
@@ -372,7 +389,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata providerData
     ) external view returns (uint256 nativeFee) {
         if (transceiver == address(0)) revert NoTransceiver();
-        return ITransceiverBootstrap(transceiver).quoteBootstrapElements(
+        return IAccountTransceiver(transceiver).quoteBootstrapElements(
             _opaqueKey(destinationChainIdentifier),
             _owner(),
             accountSalt,
@@ -387,7 +404,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata providerData
     ) private view returns (uint256) {
         if (transceiver == address(0)) revert NoTransceiver();
-        return ITransceiverBootstrap(transceiver).quoteBootstrap(
+        return IAccountTransceiver(transceiver).quoteBootstrap(
             chainKey, _owner(), accountSalt, calls, providerData
         );
     }
@@ -440,7 +457,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes memory providerData
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
-        ITransceiverBootstrap(transceiver).bootstrap{value: msg.value}(
+        IAccountTransceiver(transceiver).bootstrap{value: msg.value}(
             chainKey, _owner(), accountSalt, calls, providerData
         );
     }
@@ -451,7 +468,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes memory providerData
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
-        ITransceiverBootstrap(transceiver).bootstrapElements{value: msg.value}(
+        IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
             chainKey, _owner(), accountSalt, elements, providerData
         );
     }

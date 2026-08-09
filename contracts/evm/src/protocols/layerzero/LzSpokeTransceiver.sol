@@ -24,12 +24,15 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     ///        base, which is the same split `setEid` uses on the hub.
     /// @param homeTransceiver_ The hub, in this chain's address format. Fixed for the life
     ///        of the contract: there is no setter, by design.
+    /// @param addressesDiverge_ True on zkSync and Tron, false on every EVM chain that
+    ///        shares Ethereum's CREATE2 formula. See `SpokeTransceiverBase`.
     function initialize(
         address owner_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         uint32 homeEid_,
-        bytes calldata homeTransceiver_
+        bytes calldata homeTransceiver_,
+        bool addressesDiverge_
     ) external initializer {
         __Ownable_init(owner_);
         __TransceiverBase_init();
@@ -37,7 +40,8 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
             receiverImplementation_,
             homeChainKey_,
             LzCodec.encodeEid(homeEid_),
-            homeTransceiver_
+            homeTransceiver_,
+            addressesDiverge_
         );
     }
 

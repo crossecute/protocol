@@ -89,8 +89,9 @@ hub transceiver .bootstrap(chainKey, owner, salt, calls, providerData) msg.sende
         deploy CrossProxy at accountSalt(owner, salt)                  CREATE2, no args
         upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))
               installs logic, executes the calls, drops the upgrade key (one call)
+        if (addressesDiverge) _reportReceiver(owner, salt, receiver)
  ▼
- ══════════════════ bridge ══════════════════          ← NOT BUILT: see below
+ ══════════════════ bridge ══════════════════          ← only where the flag is set
  │
  ▼  hub transceiver ._handleInbound  → onDestinationReceiver → registry
 ```
@@ -101,23 +102,25 @@ transmitter's own address could not serve: a CREATE2 address cannot be derived f
 The receiver's peer is therefore its own address, since that is where the transmitter sits
 on the home chain.
 
-**The return leg is not built.** `Envelope.encodeReceiverReport` exists and has no caller.
-The receiver cannot be the sender of it: it is not an `OutboundBase`, has no
-`_sendMessage`, and holds neither the home route nor the hub's address. When the report
-lands it belongs on the **spoke transceiver**, inside `bootstrapInbound`, which is the only
-contract holding all four things it needs at once: the home route, the hub's address, the
-authenticated `(owner, salt)` pair, and the address of the receiver it has just created.
+**The return leg is sent by the spoke transceiver, and only where it buys something.** The
+receiver cannot be its sender: it is not an `OutboundBase`, has no `_sendMessage`, and holds
+neither the home route nor the hub's address. The spoke transceiver holds all four things
+the report needs at once, which is the home route, the hub's address, the authenticated
+`(owner, salt)` pair, and the address of the receiver it has just created.
 
-It exists for a specific set of chains and should be conditional on them. An EVM receiver
-is a CREATE2 clone whose address the hub computed before the first message, so a report
-tells it nothing and costs a message for it. Starknet's address is a Pedersen hash chain
-the EVM cannot run at any price, and that is the case that forced the path. Reporting after
-creation rather than from the hub's own `predictCrossAccount` also means the address on
-record is one that exists and initialized successfully rather than one that was computed
-and might not.
+**`addressesDiverge` decides whether it fires.** On a chain sharing Ethereum's CREATE2
+formula the hub computed the receiver's address before the first message ever left, so a
+report would spend a message to restate a derivation it already holds, and would replace a
+`Derived` fact with an `Attested` one. The flag is written once at initialization because
+the hub cannot work this out for itself: it recomputes Ethereum's formula, which is right on
+most EVM chains and wrong on zkSync and Tron, and only the chain itself knows which it is.
 
-It is blocked on funding: the send is nested inside a delivery callback where `msg.value`
-is zero, so the spoke must carry a balance or the bootstrap must drop value across.
+**A failed report takes the account creation with it.** The send is nested inside the
+delivery callback, where `msg.value` is zero, so a diverging spoke pays from its own balance
+and a dry one reverts. That is the correct shape rather than something to catch: creating
+the account anyway would leave the hub permanently unable to address it, since `CrossProxy`
+arms exactly once and `initialize` is single-shot, so there is no second bootstrap to carry
+a second report. All or nothing keeps the operation retryable once the spoke is funded.
 
 On an EVM destination nothing persists past the transaction: deploy, arm, execute, and lock
 all happen in the inbound handler. Chains where deployment is not synchronous (Starknet,
@@ -263,7 +266,9 @@ storage is `transceiver` and `accountSalt`, and nothing else.
 - `receive()`: a refunded fee comes back here on path B, and a provider's refund is a plain
   value transfer, so without it the refund would revert the bootstrap.
 - **It holds no registry pointer and knows no routes.** The chainKey derivation is pure, and
-  the provider's name for a chain is read from the transceiver at send time.
+  the provider's name for a chain is read from the transceiver at send time, through
+  `IAccountTransceiver`: one interface over the single transceiver address an account
+  stores, carrying bootstrap, the quotes that price it, and `routeTo`.
 
 ### TransceiverBase
 
@@ -384,11 +389,17 @@ Every chain that is not the home chain: exactly one counterpart, named at initia
   exactly once.
 - `bootstrapElements` has an outbound half on the hub and no inbound twin here, because
   `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain.
-- **The return report is not built.** `Envelope.encodeReceiverReport` has no caller. When it
-  lands it belongs here rather than on the receiver: this is the only contract holding the
-  home route, the hub's address, the authenticated pair, and the new receiver's address at
-  once. It is blocked on funding, because the send is nested inside a delivery callback
-  where `msg.value` is zero.
+- `addressesDiverge`, write-once: whether an account's address here differs from the one the
+  hub derives for it. True on zkSync and Tron among EVM chains, false everywhere parity
+  holds. The hub cannot determine this, and a provenance cap means something adjacent but
+  not the same thing, so it is stated once here.
+- `_reportReceiver(owner, salt, receiver)`, called from `bootstrapInbound` when that flag is
+  set, sending `Envelope.encodeReceiverReport` home with canonical ERC-7930 bytes for the
+  receiver on this chain. It names the pair rather than the address alone, because the hub
+  derives the registry slot from the pair plus the origin it already authenticated. Paid
+  from this contract's balance, since the send is nested inside a delivery callback; a dry
+  spoke reverts, which takes the account creation with it and keeps the bootstrap
+  retryable.
 
 ### ReceiverBase
 
@@ -492,8 +503,9 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   authority over every receiver it had created would sit on the same contract that
   authenticates every inbound message.
 - **A receiver has no outbound at all.** It is not an `OutboundBase`, so it has no
-  `_sendMessage` and no quote surface. The return report is sent by the spoke transceiver
-  and is not built yet.
+  `_sendMessage` and no quote surface. The return report is sent by the spoke transceiver,
+  gated on `addressesDiverge`, so it costs nothing on the chains where the hub can derive
+  the address itself.
 - **`Call[]` vs `bytes[]` is settled: the form follows the destination.** An EVM
   destination always gets `abi.encode(Call[])`; every other VM always gets opaque
   `bytes[]`. **There is no form tag**: the sender picks by destination chain type and the
