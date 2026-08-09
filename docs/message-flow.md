@@ -230,6 +230,13 @@ storage is `transceiver` and `accountSalt`, and nothing else.
 
 - **The destination is a parameter, not state.** One transmitter fans out to every chain,
   which is also what keeps one receiver per (transmitter, destination).
+- **A per-destination bootstrap record**, `isBootstrapped(chainKey)`. `send` requires the
+  destination present in it and `bootstrap` requires it absent, so a payload cannot be paid
+  for and sent to a chain where this account has no receiver, and a second bootstrap cannot
+  be paid for to revert on arrival. It records that a bootstrap was DISPATCHED rather than
+  that one landed: the message is asynchronous, and on a parity chain no report ever comes
+  back, so there is no confirmation to wait for. Delivery is retryable at the provider, so
+  a bootstrap that reverts on arrival is pending rather than lost.
 - `send(uint256 chainId, Call[] calls)` and `send(uint256, Call[], bytes providerData)`:
   path A. The caller names a plain chain id and the chainKey is derived purely, so there is
   no eid to know and no per-provider table to keep.
@@ -612,3 +619,5 @@ list rather than three that drift.
 - Account addresses are CREATE2 on `(owner, salt)`, fixed for the life of the protocol and
   pinnable in a signed payload. Each account has one address on every parity chain.
 - Provenance gates bootstrap (the first message to a chain), rather than every send.
+- A destination is bootstrapped exactly once per account, and a send to one that has not
+  been is refused locally rather than paid for and failed on arrival.

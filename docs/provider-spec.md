@@ -190,6 +190,12 @@ empty `providerData` MUST mean "the binding's default" and MUST NOT mean zero ga
 **R1.6** A send with an unconfigured route MUST revert, not succeed. `routeFor` already
 reverts `NoRouteFor`; a binding that catches this and falls back is non-compliant.
 
+**R1.7** Path A is reachable only after path B has run for that destination.
+`TransmitterBase` refuses a send to a chainKey it has not recorded a bootstrap for, and
+refuses a second bootstrap to one it has. A binding inherits both gates and MUST NOT add a
+send entry point that bypasses them: the peer address on an un-bootstrapped chain holds no
+code, so such a send is a fee spent on a message that cannot be delivered.
+
 ### R2. Quote
 
 Every send has a fee, and the fee is not derivable off-chain from first principles: it is a

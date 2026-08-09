@@ -171,16 +171,39 @@ contract Sink {
 
 contract TransportTest is Test {
     MockTransmitter transmitter;
+    MockTransceiver hub;
     Sink sink;
 
     address owner = address(0xA11CE);
     uint256 constant DEST = 8453;
     bytes32 constant SALT = keccak256("acct");
 
+    /// @dev THE ACCOUNT SITS AT THE ADDRESS ITS TRANSCEIVER DERIVES FOR IT, because
+    ///      `bootstrap` refuses any caller that is not that address. Sending now requires
+    ///      the destination to have been bootstrapped, so the fixture performs the real
+    ///      sequence rather than reaching into storage: stand the account up on DEST, then
+    ///      send to it.
     function setUp() public {
-        transmitter = new MockTransmitter();
-        transmitter.initialize(owner, address(0xBEEF), SALT);
+        hub = new MockTransceiver();
+        hub.initialize(address(this), address(new MockTransmitter()));
+
+        address at = hub.predictCrossAccount(owner, SALT);
+        vm.etch(at, address(new MockTransmitter()).code);
+        transmitter = MockTransmitter(payable(at));
+        transmitter.initialize(owner, address(hub), SALT);
+
+        vm.prank(owner);
+        transmitter.bootstrap(DEST, new Call[](0));
+
         sink = new Sink();
+    }
+
+    /// @dev Stand the account up on a destination named by envelope, for the tests that
+    ///      reach somewhere other than DEST.
+    function _bootstrapTo(bytes memory identifier) internal {
+        bytes[] memory none = new bytes[](0);
+        vm.prank(owner);
+        transmitter.bootstrapTo(identifier, none);
     }
 
     function _calls() internal view returns (Call[] memory calls) {
@@ -253,6 +276,8 @@ contract TransportTest is Test {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"01";
+
+        _bootstrapTo(sol);
 
         vm.startPrank(owner);
         transmitter.sendTo(Erc7930.encodeEvmChain(DEST), _calls(), opts);
@@ -335,6 +360,7 @@ contract TransportTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
 
+        _bootstrapTo(sol);
         vm.prank(owner);
         transmitter.sendTo(sol, elements);
 
@@ -586,12 +612,28 @@ contract TransportTest is Test {
     /// @dev A protocol that forgets to implement sending fails loudly on the first
     ///      message rather than reporting success for a payload that never left.
     function test_theDefaultSendReverts() public {
-        BareTransmitter bare = new BareTransmitter();
-        bare.initialize(owner, address(0xBEEF), bytes32(0));
+        BareTransmitter bare = _bareAccount();
 
         vm.prank(owner);
         vm.expectRevert(OutboundBase.SendNotImplemented.selector);
         bare.send(DEST, _calls());
+    }
+
+    /// @dev A transmitter with no `_sendMessage`, standing at the address its transceiver
+    ///      derives and already bootstrapped on DEST, so a send reaches the default body
+    ///      rather than stopping at the bootstrap gate. Bootstrap itself never touches
+    ///      `_sendMessage`: it is the transceiver that sends.
+    function _bareAccount() internal returns (BareTransmitter bare) {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new BareTransmitter()));
+
+        address at = t.predictCrossAccount(owner, bytes32(0));
+        vm.etch(at, address(new BareTransmitter()).code);
+        bare = BareTransmitter(payable(at));
+        bare.initialize(owner, address(t), bytes32(0));
+
+        vm.prank(owner);
+        bare.bootstrap(DEST, new Call[](0));
     }
 
     /* ================================== quote ================================== */
@@ -600,8 +642,7 @@ contract TransportTest is Test {
     ///      A quote that returned zero would be indistinguishable from a free message, and
     ///      the first thing anyone does with the answer is send exactly that much.
     function test_theDefaultQuoteReverts() public {
-        BareTransmitter bare = new BareTransmitter();
-        bare.initialize(owner, address(0xBEEF), bytes32(0));
+        BareTransmitter bare = _bareAccount();
 
         vm.expectRevert(OutboundBase.QuoteNotImplemented.selector);
         bare.quoteSend(DEST, _calls(), "");
@@ -747,6 +788,130 @@ contract TransportTest is Test {
         (bool ok,) = payable(address(acct)).call{value: 0.1 ether}("");
         assertTrue(ok, "the transmitter accepts a refunded fee");
         assertEq(address(acct).balance, 0.1 ether);
+    }
+
+    /* ============================== the bootstrap gate ========================= */
+
+    /// @dev A SEND TO A CHAIN THIS ACCOUNT IS NOT ON HAS NOTHING TO ARRIVE AT. The peer
+    ///      address holds no code there, so the payload fails on delivery with the fee
+    ///      already spent. Refusing locally turns a paid-for failure into a free one.
+    function test_sendToAnUnbootstrappedDestinationReverts() public {
+        uint256 other = 42161;
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
+            )
+        );
+        transmitter.send(other, _calls());
+    }
+
+    /// @dev And it lifts for that destination once, and only for that destination.
+    function test_bootstrappingOneDestinationDoesNotOpenAnother() public {
+        uint256 other = 42161;
+        assertTrue(transmitter.isBootstrappedOn(DEST));
+        assertFalse(transmitter.isBootstrappedOn(other));
+
+        vm.prank(owner);
+        transmitter.bootstrap(other, new Call[](0));
+
+        assertTrue(transmitter.isBootstrappedOn(other));
+        vm.prank(owner);
+        transmitter.send(other, _calls());
+        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(other));
+
+        assertFalse(transmitter.isBootstrappedOn(10), "and nothing else moved");
+    }
+
+    /// @dev THE GATE IS ON THE CHAINKEY, NOT ON THE SPELLING OF IT. `send(8453)` and
+    ///      `sendTo(<eip155:8453 envelope>)` name one destination, so bootstrapping through
+    ///      either satisfies both.
+    function test_theGateIsKeyedByChainNotByEntryPoint() public {
+        vm.prank(owner);
+        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), _calls());
+        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(DEST));
+    }
+
+    /// @dev A SECOND BOOTSTRAP CANNOT DELIVER ITS PAYLOAD ANYWAY. `CrossProxy` arms exactly
+    ///      once and the receiver's `initialize` is single-shot, so it would burn a fee to
+    ///      revert on arrival.
+    function test_rebootstrappingIsRefused() public {
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
+            )
+        );
+        transmitter.bootstrap(DEST, _calls());
+    }
+
+    /// @dev Including through the envelope-taking form, which names the same chain.
+    function test_rebootstrappingThroughTheOtherFormIsAlsoRefused() public {
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
+            )
+        );
+        transmitter.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls());
+    }
+
+    /// @dev THE QUOTES CARRY THE SAME GATE, both ways round. A quote that succeeded where
+    ///      its send would fail reports the operation ready when it is not.
+    function test_theQuotesRevertWhereTheirSendsWould() public {
+        uint256 other = 42161;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
+            )
+        );
+        transmitter.quoteSend(other, _calls(), "");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
+            )
+        );
+        transmitter.quoteBootstrap(DEST, _calls(), "");
+    }
+
+    /// @dev And each is answerable in the state its own message belongs to: bootstrap is
+    ///      quotable before, send is quotable after.
+    function test_eachQuoteIsAnswerableWhenItsMessageIsSendable() public {
+        uint256 other = 42161;
+
+        assertGt(transmitter.quoteBootstrap(other, _calls(), ""), 0, "before");
+        assertGt(transmitter.quoteSend(DEST, _calls(), ""), 0, "after");
+    }
+
+    /// @dev THE FLAG RECORDS A DISPATCH, NOT A DELIVERY, and it is set BEFORE the
+    ///      transceiver is called so a re-entrant second bootstrap meets it. If the
+    ///      dispatch reverts the whole transaction unwinds and the flag goes with it.
+    function test_aFailedBootstrapLeavesNothingRecorded() public {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+
+        address at = t.predictCrossAccount(owner, SALT);
+        vm.etch(at, address(new MockTransmitter()).code);
+        MockTransmitter acct = MockTransmitter(payable(at));
+        acct.initialize(owner, address(t), SALT);
+
+        // The transceiver has no code path that reverts, so revert the whole call from
+        // outside it: an unowned caller cannot bootstrap.
+        vm.expectRevert();
+        acct.bootstrap(DEST, new Call[](0));
+
+        assertFalse(acct.isBootstrappedOn(DEST), "nothing recorded");
+    }
+
+    /// @dev `execute` is local, so the gate does not apply: there is no destination and no
+    ///      bridge in that path.
+    function test_localExecuteIsNotGated() public {
+        vm.prank(owner);
+        transmitter.execute(_calls());
+        assertEq(sink.total(), 3);
     }
 
     /* ============================ the account's view =========================== */

@@ -116,9 +116,61 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///      that knows it without a lookup.
     bytes32 public accountSalt;
 
+    /// Destinations this account has already been stood up on.
+    ///
+    /// @dev IT RECORDS THAT A BOOTSTRAP WAS DISPATCHED, NOT THAT ONE LANDED, and the
+    ///      difference is worth stating because nothing on this chain can close it. The
+    ///      message is asynchronous, and on a parity chain no report ever comes back: the
+    ///      hub derives the receiver's address rather than being told it, which is the
+    ///      whole point of `SpokeTransceiverBase.addressesDiverge`. So there is no
+    ///      confirmation signal to wait for, and a flag that waited for one would never be
+    ///      set on most chains.
+    ///
+    ///      That is sound because delivery is retryable at the provider rather than here:
+    ///      a bootstrap that reverts on arrival can be re-executed by anyone, so the
+    ///      message is pending rather than lost. See
+    ///      [Failure handling](../../../../docs/message-flow.md#failure-handling).
+    ///
+    /// @dev THE ONE CASE IT CANNOT SURVIVE is a bootstrap that is permanently undeliverable:
+    ///      a route configured to the wrong chain, or a destination that will never accept
+    ///      it. This flag then blocks the retry, since `bootstrap` refuses a second attempt.
+    ///      Both causes are transceiver misconfiguration, which is write-once and a redeploy
+    ///      to correct, so the account was stranded on that destination either way. It is
+    ///      recorded here rather than defended against.
+    mapping(bytes32 destinationChainKey => bool) private _bootstrapped;
+
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
+    event DestinationBootstrapped(bytes32 indexed destinationChainKey);
 
     error NoTransceiver();
+    /// @dev A send to a chain this account has not been stood up on has nothing to arrive
+    ///      at: the peer address holds no code, so the payload fails on delivery after the
+    ///      fee is already spent. Refusing here turns that into a local revert.
+    error NotBootstrapped(bytes32 destinationChainKey);
+    /// @dev Bootstrap is for a chain with no account. A second one cannot deliver its
+    ///      payload anyway, because `CrossProxy` arms exactly once and the receiver's
+    ///      `initialize` is single-shot, so it would burn a fee to revert on arrival.
+    error AlreadyBootstrapped(bytes32 destinationChainKey);
+
+    /// @notice Whether this account has been stood up on `destinationChainKey`.
+    /// @dev Exposed so a caller can check before spending anything, and so an interface can
+    ///      show which destinations are reachable without simulating a send.
+    function isBootstrapped(bytes32 destinationChainKey) public view returns (bool) {
+        return _bootstrapped[destinationChainKey];
+    }
+
+    /// @notice Whether this account has been stood up on an EVM chain, by plain chain id.
+    function isBootstrappedOn(uint256 destinationChainId) external view returns (bool) {
+        return _bootstrapped[ChainKey.forEvm(destinationChainId)];
+    }
+
+    function _requireBootstrapped(bytes32 chainKey) private view {
+        if (!_bootstrapped[chainKey]) revert NotBootstrapped(chainKey);
+    }
+
+    function _requireNotBootstrapped(bytes32 chainKey) private view {
+        if (_bootstrapped[chainKey]) revert AlreadyBootstrapped(chainKey);
+    }
 
     /// @notice The account's owner. Declared, not implemented: see the note above.
     function _owner() internal view virtual returns (address);
@@ -320,12 +372,18 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     ///      builder, two consumers: that is what makes "the quote prices the exact bytes
     ///      that go out" a structural fact rather than a promise two code paths make
     ///      separately.
+    /// @dev THEY CARRY THE BOOTSTRAP GATE TOO, because a quote that succeeded for a message
+    ///      the send would refuse tells a caller the operation is ready when it is not.
+    ///      `quoteSend` therefore requires the destination bootstrapped and `quoteBootstrap`
+    ///      requires it not, exactly as their twins do.
     function quoteSend(
         uint256 destinationChainId,
         Call[] calldata calls,
         bytes calldata providerData
     ) external view returns (uint256 nativeFee) {
-        return _quote(_evmKey(destinationChainId), Payload.encodeCalls(calls), providerData);
+        bytes32 chainKey = _evmKey(destinationChainId);
+        _requireBootstrapped(chainKey);
+        return _quote(chainKey, Payload.encodeCalls(calls), providerData);
     }
 
     /// @notice `quoteSend`, for a destination named by its ERC-7930 identifier.
@@ -334,9 +392,9 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         Call[] calldata calls,
         bytes calldata providerData
     ) external view returns (uint256 nativeFee) {
-        return _quote(
-            _typedKey(destinationChainIdentifier), Payload.encodeCalls(calls), providerData
-        );
+        bytes32 chainKey = _typedKey(destinationChainIdentifier);
+        _requireBootstrapped(chainKey);
+        return _quote(chainKey, Payload.encodeCalls(calls), providerData);
     }
 
     /// @notice `quoteSend`, in the portable form.
@@ -345,11 +403,9 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes[] calldata elements,
         bytes calldata providerData
     ) external view returns (uint256 nativeFee) {
-        return _quote(
-            _opaqueKey(destinationChainIdentifier),
-            Payload.encodeElements(elements),
-            providerData
-        );
+        bytes32 chainKey = _opaqueKey(destinationChainIdentifier);
+        _requireBootstrapped(chainKey);
+        return _quote(chainKey, Payload.encodeElements(elements), providerData);
     }
 
     /// @notice What standing this account up on a chain that has none would cost.
@@ -389,12 +445,11 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata providerData
     ) external view returns (uint256 nativeFee) {
         if (transceiver == address(0)) revert NoTransceiver();
+        bytes32 chainKey = _opaqueKey(destinationChainIdentifier);
+        _requireNotBootstrapped(chainKey);
+
         return IAccountTransceiver(transceiver).quoteBootstrapElements(
-            _opaqueKey(destinationChainIdentifier),
-            _owner(),
-            accountSalt,
-            elements,
-            providerData
+            chainKey, _owner(), accountSalt, elements, providerData
         );
     }
 
@@ -404,6 +459,8 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata providerData
     ) private view returns (uint256) {
         if (transceiver == address(0)) revert NoTransceiver();
+        _requireNotBootstrapped(chainKey);
+
         return IAccountTransceiver(transceiver).quoteBootstrap(
             chainKey, _owner(), accountSalt, calls, providerData
         );
@@ -440,6 +497,7 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     function _sendCalls(bytes32 chainKey, Call[] calldata calls, bytes memory providerData)
         private
     {
+        _requireBootstrapped(chainKey);
         _dispatch(chainKey, Payload.encodeCalls(calls), providerData);
     }
 
@@ -448,15 +506,24 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes[] calldata elements,
         bytes memory providerData
     ) private {
+        _requireBootstrapped(chainKey);
         _dispatch(chainKey, Payload.encodeElements(elements), providerData);
     }
 
+    /// @dev THE FLAG IS SET BEFORE THE TRANSCEIVER IS CALLED, not after. That call reaches
+    ///      a provider endpoint and, through it, arbitrary code; recording first means a
+    ///      re-entrant second bootstrap for the same destination meets the flag it would
+    ///      otherwise race. If the dispatch reverts the whole transaction unwinds and the
+    ///      flag goes with it, so the ordering costs nothing.
     function _bootstrapCalls(
         bytes32 chainKey,
         Call[] calldata calls,
         bytes memory providerData
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
+        _requireNotBootstrapped(chainKey);
+        _markBootstrapped(chainKey);
+
         IAccountTransceiver(transceiver).bootstrap{value: msg.value}(
             chainKey, _owner(), accountSalt, calls, providerData
         );
@@ -468,9 +535,17 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes memory providerData
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
+        _requireNotBootstrapped(chainKey);
+        _markBootstrapped(chainKey);
+
         IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
             chainKey, _owner(), accountSalt, elements, providerData
         );
+    }
+
+    function _markBootstrapped(bytes32 chainKey) private {
+        _bootstrapped[chainKey] = true;
+        emit DestinationBootstrapped(chainKey);
     }
 
     /* ================================= execute ================================= */
