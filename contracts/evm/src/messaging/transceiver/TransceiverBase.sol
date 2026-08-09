@@ -296,6 +296,51 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         );
     }
 
+    /// @notice What `bootstrap` would cost, before anything is spent.
+    ///
+    /// @dev THE MESSAGE A CALLER IS LEAST ABLE TO GUESS THE PRICE OF, AND THE ONE THAT
+    ///      FAILS MOST EXPENSIVELY. A bootstrap carries account creation as well as the
+    ///      payload, and an underfunded one is not a retry: the account still does not
+    ///      exist on that chain, so nothing there can be driven until someone pays again.
+    ///
+    /// @dev IT DOES NOT CHECK THE CALLER, AND THAT IS NOT AN OVERSIGHT. `bootstrap` insists
+    ///      the caller BE the account, which is what stops anyone standing up somebody
+    ///      else's; a quote is taken by an interface or a signer BEFORE that account
+    ///      exists, so the same check here would make the function uncallable in exactly
+    ///      the case it is for. There is nothing to protect on a `view` that spends
+    ///      nothing and writes nothing.
+    ///
+    /// @dev IT STILL APPLIES `_requireRoutable`, so the provenance bar and the route
+    ///      requirement fail the quote wherever they would fail the send.
+    function quoteBootstrap(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        _requireRoutable(destinationChainKey);
+        return _quote(
+            destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData
+        );
+    }
+
+    /// @notice `quoteBootstrap`, for a destination whose calls this chain cannot express.
+    function quoteBootstrapElements(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes[] calldata elements,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        _requireRoutable(destinationChainKey);
+        return _quote(
+            destinationChainKey,
+            Envelope.encodeBootstrapElements(owner, salt, elements),
+            providerData
+        );
+    }
+
     /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.
     function _accountImplementation() internal view virtual returns (address);
 

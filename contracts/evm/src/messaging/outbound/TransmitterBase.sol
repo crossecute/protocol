@@ -68,6 +68,24 @@ interface ITransceiverBootstrap {
         bytes[] calldata elements,
         bytes calldata providerData
     ) external payable;
+
+    /// @dev The quotes live on the same interface as the sends they price, so a
+    ///      transmitter cannot hold a reference that can bootstrap but not quote.
+    function quoteBootstrap(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256);
+
+    function quoteBootstrapElements(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes[] calldata elements,
+        bytes calldata providerData
+    ) external view returns (uint256);
 }
 
 abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
@@ -258,6 +276,120 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata providerData
     ) external payable onlyAccountOwner {
         _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, providerData);
+    }
+
+    /* ================================== quote ================================== */
+
+    /// @notice What each entry point above would cost, in this chain's native currency.
+    ///
+    /// @dev THE MIRROR OF THE SEND SURFACE, ARGUMENT FOR ARGUMENT, MINUS `msg.value`. That
+    ///      correspondence is the whole design: a caller builds the payload once, quotes
+    ///      it, and sends the same arguments with the answer attached. Anything that
+    ///      changes the price is an argument to both.
+    ///
+    /// @dev EVERY QUOTE STATES ITS `providerData`, INCLUDING WHEN IT IS EMPTY, and there is
+    ///      no two-argument convenience form the way `send` has one. The options ARE most
+    ///      of what a quote prices: destination gas is the largest term in every provider's
+    ///      fee. A form that let a caller omit them would answer for the adapter's default
+    ///      and be spent on a message carrying something else, which is a wrong number
+    ///      dressed as a convenience. Pass `""` to price the default explicitly.
+    ///
+    /// @dev THEY ARE UNGATED, UNLIKE THE SENDS THEY PRICE. `onlyAccountOwner` protects
+    ///      spending; these spend nothing, write nothing, and reveal nothing an observer
+    ///      could not compute from the same public state. A signer reviewing a payload
+    ///      before the owner submits it has to be able to call these.
+    ///
+    /// @dev THEY BUILD THE PAYLOAD THROUGH THE SAME `Payload` FUNCTIONS THE SENDS DO. One
+    ///      builder, two consumers: that is what makes "the quote prices the exact bytes
+    ///      that go out" a structural fact rather than a promise two code paths make
+    ///      separately.
+    function quoteSend(
+        uint256 destinationChainId,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        return _quote(_evmKey(destinationChainId), Payload.encodeCalls(calls), providerData);
+    }
+
+    /// @notice `quoteSend`, for a destination named by its ERC-7930 identifier.
+    function quoteSendTo(
+        bytes calldata destinationChainIdentifier,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        return _quote(
+            _typedKey(destinationChainIdentifier), Payload.encodeCalls(calls), providerData
+        );
+    }
+
+    /// @notice `quoteSend`, in the portable form.
+    function quoteSendTo(
+        bytes calldata destinationChainIdentifier,
+        bytes[] calldata elements,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        return _quote(
+            _opaqueKey(destinationChainIdentifier),
+            Payload.encodeElements(elements),
+            providerData
+        );
+    }
+
+    /// @notice What standing this account up on a chain that has none would cost.
+    ///
+    /// @dev IT ASKS THE TRANSCEIVER, BECAUSE THE TRANSCEIVER IS WHAT SENDS. Path B leaves
+    ///      from there, with a different envelope and a different counterpart, so pricing
+    ///      it here against this contract's own `_quoteMessage` would answer for a message
+    ///      nobody sends. The same delegation `_bootstrapCalls` already makes, in the
+    ///      direction that returns a number.
+    ///
+    /// @dev THE PAIR IS NOT CHECKED HERE OR THERE. `bootstrap` proves `(owner, salt)`
+    ///      resolves to `msg.sender` before it spends anything; a quote spends nothing, and
+    ///      is taken before the account it prices exists.
+    function quoteBootstrap(
+        uint256 destinationChainId,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        return _quoteBootstrapCalls(_evmKey(destinationChainId), calls, providerData);
+    }
+
+    /// @notice `quoteBootstrap`, for a destination named by its ERC-7930 identifier.
+    function quoteBootstrapTo(
+        bytes calldata destinationChainIdentifier,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        return _quoteBootstrapCalls(
+            _typedKey(destinationChainIdentifier), calls, providerData
+        );
+    }
+
+    /// @notice `quoteBootstrap`, in the portable form.
+    function quoteBootstrapTo(
+        bytes calldata destinationChainIdentifier,
+        bytes[] calldata elements,
+        bytes calldata providerData
+    ) external view returns (uint256 nativeFee) {
+        if (transceiver == address(0)) revert NoTransceiver();
+        return ITransceiverBootstrap(transceiver).quoteBootstrapElements(
+            _opaqueKey(destinationChainIdentifier),
+            _owner(),
+            accountSalt,
+            elements,
+            providerData
+        );
+    }
+
+    function _quoteBootstrapCalls(
+        bytes32 chainKey,
+        Call[] calldata calls,
+        bytes calldata providerData
+    ) private view returns (uint256) {
+        if (transceiver == address(0)) revert NoTransceiver();
+        return ITransceiverBootstrap(transceiver).quoteBootstrap(
+            chainKey, _owner(), accountSalt, calls, providerData
+        );
     }
 
     /* ============================== destination keys =========================== */
@@ -466,6 +598,20 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
             ChainKey.fromIdentifier(destinationChainIdentifier), calls
         );
     }
+
+    /// @notice Accept ETH, so a refunded fee has somewhere to land.
+    ///
+    /// @dev IT IS THE OTHER HALF OF `_refundTo`, AND IT IS LOAD-BEARING ON THE BOOTSTRAP
+    ///      PATH. `bootstrap` proves the caller IS this account, so a path B refund comes
+    ///      back HERE, and a provider's refund is a plain value transfer: without this the
+    ///      transfer reverts and takes the bootstrap with it, which is the one message that
+    ///      cannot simply be retried cheaply.
+    ///
+    /// @dev NOTHING IS STRANDED. This contract sits at an address its owner controls and
+    ///      `execute` is payable, so a balance accumulated here is spendable by the next
+    ///      payload or recoverable by one written for the purpose. `ReceiverBase` declares
+    ///      the same function for the same reason on the other side.
+    receive() external payable {}
 
     function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_)
         internal

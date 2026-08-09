@@ -44,6 +44,7 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
     }
 
     bytes public sentProviderData;
+    address public sentRefund;
 
     function _sendMessage(bytes32 chainKey, bytes memory payload, bytes memory providerData)
         internal
@@ -53,7 +54,21 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
         sentPayload = payload;
         sentProviderData = providerData;
         sentValue = msg.value;
+        sentRefund = _refundTo();
         ++sentCount;
+    }
+
+    /// @dev Priced per byte, which is what every real provider does, so a test can tell a
+    ///      quote that read the payload from one that guessed at its size.
+    uint256 public constant WEI_PER_BYTE = 7;
+
+    function _quoteMessage(bytes32, bytes memory payload, bytes memory providerData)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
+        return payload.length * WEI_PER_BYTE + providerData.length;
     }
 }
 
@@ -70,6 +85,7 @@ contract MockReceiver is ReceiverBase {
 contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     bytes public sentPayload;
     uint256 public bootCount;
+    address public bootRefund;
 
     address private _impl;
 
@@ -126,9 +142,22 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     {
         sentPayload = payload;
         sentProviderData = providerData;
+        bootRefund = _refundTo();
         ++bootCount;
     }
 
+    /// @dev A different rate from the transmitter's, so a bootstrap quote that answered
+    ///      from the account instead of delegating to here is visible in the number.
+    uint256 public constant WEI_PER_BYTE = 11;
+
+    function _quoteMessage(bytes32, bytes memory payload, bytes memory)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
+        return payload.length * WEI_PER_BYTE;
+    }
 }
 
 contract Sink {
@@ -562,6 +591,167 @@ contract TransportTest is Test {
         vm.prank(owner);
         vm.expectRevert(OutboundBase.SendNotImplemented.selector);
         bare.send(DEST, _calls());
+    }
+
+    /* ================================== quote ================================== */
+
+    /// @dev THE SAME ARGUMENT AS `SendNotImplemented`, in the direction that matters more.
+    ///      A quote that returned zero would be indistinguishable from a free message, and
+    ///      the first thing anyone does with the answer is send exactly that much.
+    function test_theDefaultQuoteReverts() public {
+        BareTransmitter bare = new BareTransmitter();
+        bare.initialize(owner, address(0xBEEF), bytes32(0));
+
+        vm.expectRevert(OutboundBase.QuoteNotImplemented.selector);
+        bare.quoteSend(DEST, _calls(), "");
+    }
+
+    /// @dev THE QUOTE PRICES THE EXACT BYTES THE SEND PUTS ON THE WIRE. Asserted against
+    ///      the payload the send actually recorded, so a quote built from a second,
+    ///      drifting encoder fails here rather than in production.
+    function test_quotePricesTheExactPayloadTheSendCarries() public {
+        Call[] memory calls = _calls();
+
+        uint256 quoted = transmitter.quoteSend(DEST, calls, "");
+
+        vm.prank(owner);
+        transmitter.send(DEST, calls);
+
+        assertEq(
+            quoted,
+            transmitter.sentPayload().length * transmitter.WEI_PER_BYTE(),
+            "priced the bytes that left"
+        );
+    }
+
+    /// @dev A LONGER PAYLOAD COSTS MORE, which is the property a caller is relying on. A
+    ///      quote that ignored its argument would return one number for both.
+    function test_quoteTracksThePayloadSize() public view {
+        uint256 small = transmitter.quoteSend(DEST, _oneCall(), "");
+        uint256 large = transmitter.quoteSend(DEST, _calls(), "");
+        assertGt(large, small, "two calls cost more than one");
+    }
+
+    /// @dev THE OPTIONS ARE MOST OF WHAT A QUOTE PRICES, so they are an argument to it.
+    function test_quoteReflectsProviderData() public view {
+        uint256 bare = transmitter.quoteSend(DEST, _calls(), "");
+        uint256 withOptions = transmitter.quoteSend(DEST, _calls(), hex"c0ffee");
+        assertGt(withOptions, bare);
+    }
+
+    /// @dev IT IS A VIEW, WHICH IS THE WHOLE POINT OF IT. The only way a quote is ever
+    ///      used is an `eth_call` before the send, so a mutable one is not a quote.
+    function test_quoteIsStaticallyCallable() public view {
+        (bool ok, bytes memory ret) = address(transmitter).staticcall(
+            abi.encodeWithSignature(
+                "quoteSend(uint256,(address,uint256,bytes)[],bytes)", DEST, _calls(), ""
+            )
+        );
+        assertTrue(ok, "staticcall succeeded, so it wrote nothing");
+        assertEq(abi.decode(ret, (uint256)), transmitter.quoteSend(DEST, _calls(), ""));
+    }
+
+    /// @dev UNGATED, UNLIKE THE SEND IT PRICES. A signer reviewing a payload before the
+    ///      owner submits it has to be able to call this.
+    function test_quoteIsNotOwnerGated() public {
+        vm.prank(address(0xDEAD));
+        transmitter.quoteSend(DEST, _calls(), "");
+    }
+
+    /// @dev THE BOOTSTRAP QUOTE ASKS THE TRANSCEIVER, because the transceiver is what
+    ///      sends path B. The two mocks price at different rates, so an answer computed
+    ///      locally would not match.
+    function test_bootstrapQuoteDelegatesToTheTransceiver() public {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+
+        MockTransmitter acct = new MockTransmitter();
+        acct.initialize(owner, address(t), SALT);
+
+        Call[] memory calls = _calls();
+        uint256 quoted = acct.quoteBootstrap(DEST, calls, "");
+
+        assertEq(
+            quoted,
+            Envelope.encodeBootstrap(owner, SALT, calls).length * t.WEI_PER_BYTE(),
+            "the transceiver priced its own envelope"
+        );
+    }
+
+    /// @dev A QUOTE IS TAKEN BEFORE THE ACCOUNT IT PRICES EXISTS, so it cannot carry
+    ///      `bootstrap`'s "you must BE the account" check. There is nothing to protect on
+    ///      a view that spends nothing.
+    function test_bootstrapQuoteDoesNotRequireTheCallerToBeTheAccount() public {
+        MockTransceiver t = new MockTransceiver();
+        t.initialize(address(this), address(new MockTransmitter()));
+
+        vm.prank(address(0xDEAD));
+        uint256 quoted = t.quoteBootstrap(
+            ChainKey.forEvm(DEST), owner, SALT, _calls(), ""
+        );
+        assertGt(quoted, 0);
+    }
+
+    /// @dev A RECEIVER HAS NO QUOTE SURFACE, AND THAT IS STRUCTURAL RATHER THAN GATED. It
+    ///      does not inherit `OutboundBase` at all, so there is no seam to leave
+    ///      unimplemented and no selector to reach: a receiver never sends, so pricing a
+    ///      send from one would be pricing a message that has no path.
+    function test_aReceiverExposesNoQuote() public {
+        MockReceiver r = new MockReceiver();
+        r.initialize(address(transmitter), new Call[](0));
+
+        (bool ok,) = address(r).staticcall(
+            abi.encodeWithSignature(
+                "quoteSend(uint256,(address,uint256,bytes)[],bytes)", DEST, _calls(), ""
+            )
+        );
+        assertFalse(ok, "no such function on a receiver");
+    }
+
+    /* ================================== refund ================================= */
+
+    /// @dev THE PARTY WHO OVERPAID IS THE PARTY WHO GETS IT BACK. On path A the sender is
+    ///      the owner, because `send` is owner-gated, so the remainder goes to the wallet
+    ///      that signed and funded the message.
+    function test_pathARefundsToTheOwner() public {
+        vm.deal(owner, 1 ether);
+        vm.prank(owner);
+        transmitter.send{value: 0.3 ether}(DEST, _calls());
+        assertEq(transmitter.sentRefund(), owner);
+    }
+
+    /// @dev ON PATH B IT IS THE ACCOUNT, AND NEVER THE TRANSCEIVER. This is the one this
+    ///      has to get right: a shared transceiver refunding to itself would pool every
+    ///      user's excess into infrastructure with no per-user way out. `bootstrap` refuses
+    ///      any caller that is not the account, so the transceiver cannot be its own
+    ///      caller and cannot be the refund target.
+    function test_pathBRefundsToTheAccountNotTheTransceiver() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+
+        vm.deal(owner, 1 ether);
+        vm.prank(owner);
+        acct.bootstrap{value: 0.2 ether}(DEST, _calls());
+
+        assertEq(t.bootRefund(), address(acct), "the account that asked for the message");
+        assertTrue(t.bootRefund() != address(t), "never the shared transceiver");
+    }
+
+    /// @dev A REFUND IS A PLAIN VALUE TRANSFER, so the account has to be able to take one.
+    ///      Without `receive` on the transmitter the refund reverts and takes the bootstrap
+    ///      with it, which is the one message that cannot be retried cheaply.
+    function test_theAccountCanReceiveARefund() public {
+        (, MockTransmitter acct) = _account();
+
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = payable(address(acct)).call{value: 0.1 ether}("");
+        assertTrue(ok, "the transmitter accepts a refunded fee");
+        assertEq(address(acct).balance, 0.1 ether);
+    }
+
+    function _oneCall() internal view returns (Call[] memory calls) {
+        calls = new Call[](1);
+        calls[0] =
+            Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.hit, (1))});
     }
 }
 
