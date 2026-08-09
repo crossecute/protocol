@@ -165,6 +165,8 @@ summary: the file is always the newer statement.
   each contract does
 - [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and
   what changes off the EVM
+- [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
+  implement to be compliant, and what the provider itself must be capable of
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status
