@@ -298,7 +298,7 @@ contract PayloadEncodingTest is Test {
         r.initialize(address(this), new Call[](0));
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.execute(_sinkCalls());
     }
 

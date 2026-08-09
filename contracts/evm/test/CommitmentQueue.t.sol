@@ -48,8 +48,11 @@ contract CommitmentQueueTest is Test {
     function setUp() public {
         ledger = new Ledger();
         r = new QueueReceiver();
-        // The test contract is the parent transceiver, so it is an authorized committer.
         r.initialize(TRANSMITTER, new Call[](0));
+        // The transmitter is the only party that may queue or withdraw an approval. The
+        // test contract created this receiver and has no authority over it afterwards,
+        // which is the property being relied on rather than worked around.
+        vm.startPrank(TRANSMITTER);
     }
 
     /* ================================== ordering ================================ */
@@ -279,12 +282,14 @@ contract CommitmentQueueTest is Test {
     function test_cancelIsGatedOnTheSameBarAsCommit() public {
         r.commit(_hash(1));
 
+        // Step out of the standing transmitter prank to speak as somebody else.
+        vm.stopPrank();
         vm.prank(address(0xBAD));
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.cancel(0, _hash(1));
 
-        // The source transmitter is an authorized committer, so it may withdraw.
-        vm.prank(TRANSMITTER);
+        // The source transmitter queued it, so the source transmitter may withdraw it.
+        vm.startPrank(TRANSMITTER);
         r.cancel(0, _hash(1));
         assertEq(r.pendingCount(), 0);
     }

@@ -102,7 +102,7 @@ contract ExecutionTest is Test {
         s.initialize(transmitter, new Call[](0));
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         s.execute(_one(_call(address(t), 0, abi.encodeCall(Target.ping, (1)))));
     }
 

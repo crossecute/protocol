@@ -235,7 +235,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.commitment(), bytes32(0), "nothing pending");
 
         Call[] memory calls = _otherCalls();
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.execute(calls);
 
         assertEq(r.executedCount(), 3, "2 from delivery + 1 from execute");
@@ -248,29 +248,39 @@ contract CommitFinalizeTest is Test {
         Call[] memory calls = _otherCalls();
 
         vm.prank(relayer);
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.execute(calls);
 
         // The same relayer may still finalize, because that path proves the payload.
         bytes32 pending = hashOf(calls);
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.commit(pending);
         vm.prank(relayer);
         r.finalize(calls);
         assertEq(r.executedCount(), 3);
     }
 
-    /// @dev Both committers, for the same reason they may commit: the transceiver relays
-    ///      after verifying, the transmitter covers a same-chain deployment.
-    function test_executeAllowsBothCommitters() public {
+    /// @dev THE TRANSCEIVER IS REFUSED, AND THAT IS THE WHOLE POINT OF THE GATE. It
+    ///      created this receiver and it initialized it; letting it drive one afterwards
+    ///      would make it a standing authority over every receiver it had ever created,
+    ///      on the chain where it is also the contract that authenticates every inbound
+    ///      message. Its one call was `__ReceiverBase_init`, and it already spent it.
+    function test_executeRefusesTheParentTransceiver() public {
         MockReceiver r = _liveReceiver();
+        assertEq(r.parentTransceiver(), address(t), "it did create this receiver");
 
         vm.prank(address(t));
-        r.execute(_otherCalls());
-        vm.prank(address(r));
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.execute(_otherCalls());
 
-        assertEq(r.executedCount(), 4);
+        vm.prank(address(t));
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
+        r.commit(keccak256("anything"));
+
+        // The transmitter, which is what a receiver actually answers to, still may.
+        vm.prank(address(r));
+        r.execute(_otherCalls());
+        assertEq(r.executedCount(), 3);
     }
 
     /// @dev THE AUTHORITY ARGUMENT, made concrete. Anyone who may `execute` could already
@@ -282,14 +292,14 @@ contract CommitFinalizeTest is Test {
 
         // Long way round: commit, then let an unrelated relayer push it through.
         bytes32 pending = hashOf(arbitrary);
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.commit(pending);
         vm.prank(relayer);
         r.finalize(arbitrary);
         uint256 viaCommit = r.executedCount();
 
         // Short way: same caller, same effect, one transaction.
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.execute(arbitrary);
         assertEq(r.executedCount(), viaCommit + arbitrary.length);
     }
@@ -301,10 +311,10 @@ contract CommitFinalizeTest is Test {
         Call[] memory approved = _calls();
         bytes32 pending = hashOf(approved);
 
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.commit(pending);
 
-        vm.prank(address(t));
+        vm.prank(address(r));
         r.execute(_otherCalls());
         assertEq(r.commitment(), pending, "approval untouched");
 
@@ -322,8 +332,8 @@ contract CommitFinalizeTest is Test {
         Call[] memory calls = _otherCalls();
 
         vm.expectEmit(true, false, false, true, address(r));
-        emit ReceiverBase.ReceiverExecuted(address(t), calls.length);
-        vm.prank(address(t));
+        emit ReceiverBase.ReceiverExecuted(address(r), calls.length);
+        vm.prank(address(r));
         r.execute(calls);
     }
 
@@ -331,7 +341,7 @@ contract CommitFinalizeTest is Test {
     ///      rather than succeeding as a no-op.
     function test_executeRejectsAnEmptyArray() public {
         MockReceiver r = _liveReceiver();
-        vm.prank(address(t));
+        vm.prank(address(r));
         vm.expectRevert(Executor.EmptyExecution.selector);
         r.execute(new Call[](0));
     }
@@ -340,10 +350,10 @@ contract CommitFinalizeTest is Test {
     ///      onto a counterfactual receiver before the transceiver deploys it.
     function test_executeOnAnUninitializedReceiverAuthorizesNobody() public {
         MockReceiver bare = new MockReceiver();
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         bare.execute(_calls());
         vm.prank(address(0));
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         bare.execute(_calls());
     }
 
@@ -872,21 +882,32 @@ contract CommitFinalizeTest is Test {
         assertFalse(r.isSourceTransmitter(address(0)));
     }
 
-    /// @dev The transceiver relays each new payload; the transmitter is the owner. Both
-    ///      may pin a commitment, nobody else may.
-    function test_authorizedCommitters() public {
+    /// @dev ONE PREDICATE, ONE CALLER. The transmitter is the only party that may drive a
+    ///      receiver, and the transceiver that created it is not on the list: its whole
+    ///      relationship with a receiver is the initializer it already spent.
+    function test_theTransmitterIsTheOnlyAuthority() public {
         (MockReceiver r,) = _deployedReceiver();
-        assertTrue(r.isAuthorizedCommitter(address(t)), "the relaying transceiver");
-        assertTrue(r.isAuthorizedCommitter(address(r)), "the owning transmitter");
-        assertFalse(r.isAuthorizedCommitter(relayer));
-        assertFalse(r.isAuthorizedCommitter(address(0)));
+        assertTrue(r.isSourceTransmitter(address(r)), "the owning transmitter");
+        assertFalse(r.isSourceTransmitter(address(t)), "the parent transceiver may not");
+        assertFalse(r.isSourceTransmitter(relayer));
+        assertFalse(r.isSourceTransmitter(address(0)));
+    }
+
+    /// @dev THE DEFERRED PAYLOAD STILL WORKS, and this is why: a receiver and its
+    ///      transmitter share one address, so the self-call an approving payload makes to
+    ///      its own `commit` arrives as the source transmitter. If those two addresses
+    ///      ever diverge, this assertion is what fails first.
+    function test_aSelfCallIsTheSourceTransmitter() public {
+        (MockReceiver r,) = _deployedReceiver();
+        assertEq(r.sourceTransmitter(), address(r));
+        assertTrue(r.isSourceTransmitter(address(r)));
     }
 
     function test_receiverCommitIsGated() public {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(relayer);
-        vm.expectRevert(ReceiverBase.NotAuthorizedCommitter.selector);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.commit(keccak256("new"));
 
         vm.prank(address(r));

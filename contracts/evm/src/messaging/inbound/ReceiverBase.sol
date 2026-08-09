@@ -116,7 +116,6 @@ abstract contract ReceiverBase is
     error ZeroCommitment();
 
     error NotSourceTransmitter();
-    error NotAuthorizedCommitter();
     error ZeroTransmitter();
     error IndexOutOfRange(uint256 index);
     /// @dev Already executed. Cancelling it would suggest the payload can still be
@@ -138,35 +137,41 @@ abstract contract ReceiverBase is
         return account != address(0) && account == sourceTransmitter;
     }
 
-    /// @notice Who may pin a new commitment here.
-    /// @dev THREE CALLERS, each for a different reason. The source transmitter is the
-    ///      owner, and its arm covers a same-chain deployment where it can reach this
-    ///      contract directly. The parent transceiver is what created this receiver, and
-    ///      needs the authority only for the bootstrap payload it initializes with: it
-    ///      never calls `commit` afterwards. `address(this)` is what a deferred payload
-    ///      uses to pin its own hash; see below.
-    /// @dev IT ACCEPTS `address(this)`, AND THAT IS WHAT MAKES A DEFERRED PAYLOAD WORK. A
-    ///      payload that should wait rather than run carries one element targeting this
-    ///      receiver's own `commit`, so the queue is filled by the payload itself rather
-    ///      than by anything holding standing authority over the receiver.
+    /// @notice Who may drive this receiver: its transmitter, and the payload itself.
+    ///
+    /// @dev THE TRANSCEIVER IS NOT ON THIS LIST, AND ITS ABSENCE IS THE POINT. It created
+    ///      this receiver and it initialized it, and that is the whole of its relationship:
+    ///      `__ReceiverBase_init` runs the bootstrap payload on its authority, once, and
+    ///      there is no way back in afterwards. Letting it `commit` would make it a
+    ///      STANDING authority over every receiver it had ever created, on the chain where
+    ///      it is also the contract that authenticates every inbound message: one
+    ///      compromise, every account. The only thing it needs authority for is the first
+    ///      message, and the initializer is where it has it.
+    ///
+    /// @dev `address(this)` IS WHAT MAKES A DEFERRED PAYLOAD WORK, and it is not a second
+    ///      authority. A payload that should wait rather than run carries one element
+    ///      targeting this receiver's own `commit`, so the queue is filled by the approved
+    ///      payload itself rather than by anything holding standing power over the
+    ///      receiver.
     ///
     ///      It is safe for a specific reason: the only way to produce
-    ///      `msg.sender == address(this)` is through `_execute`, which is reachable only
-    ///      from an authenticated inbound message or a gated `execute`. A target calling
-    ///      back presents itself, not this contract.
-    function isAuthorizedCommitter(address account) public view returns (bool) {
-        return account == address(this)
-            || (account != address(0) && account == parentTransceiver)
-            || isSourceTransmitter(account);
+    ///      `msg.sender == address(this)` is through `_execute`, reachable only from an
+    ///      authenticated inbound message or a gated entry point. A target calling back
+    ///      presents itself, not this contract.
+    ///
+    /// @dev IT IS STATED RATHER THAN INHERITED FROM THE ADDRESS COINCIDENCE. A receiver and
+    ///      its transmitter share one address wherever Ethereum's CREATE2 formula holds, so
+    ///      `isSourceTransmitter(address(this))` is already true on most chains and this arm
+    ///      looks redundant there. It is not redundant on zkSync or Tron, whose formulas
+    ///      differ and where the two addresses part company: without this, deferring would
+    ///      work on most of the deployment and fail silently on the rest, which is the
+    ///      worst shape a bug of this kind can take.
+    function isAuthorizedCaller(address account) public view returns (bool) {
+        return account == address(this) || isSourceTransmitter(account);
     }
 
     modifier onlySourceTransmitter() {
-        if (!isSourceTransmitter(msg.sender)) revert NotSourceTransmitter();
-        _;
-    }
-
-    modifier onlyAuthorizedCommitter() {
-        if (!isAuthorizedCommitter(msg.sender)) revert NotAuthorizedCommitter();
+        if (!isAuthorizedCaller(msg.sender)) revert NotSourceTransmitter();
         _;
     }
 
@@ -191,20 +196,58 @@ abstract contract ReceiverBase is
     ///      nothing else establishes intent, whereas here the intent is to create the
     ///      receiver and the calls are the optional part.
     ///
-    /// @dev THE REENTRANCY GUARD MUST BE INITIALIZED BEFORE THE CALLS RUN, once there is
-    ///      one. There is not yet: `ReentrancyGuardUpgradeable` lands with the transport
-    ///      rewrite, and a clone runs no constructor, so its `__ReentrancyGuard_init` has
-    ///      to come above this line rather than after it.
+    /// @dev THE REENTRANCY GUARD MUST BE INITIALIZED BEFORE THE CALLS RUN. A clone runs no
+    ///      constructor of its own, so `__ReentrancyGuard_init` has to come above the
+    ///      payload rather than after it.
+    ///
+    /// @dev IT IS A THIN WRAPPER, AND THE WORK IS IN `__ReceiverBase_init`. This is the
+    ///      default entry point, for a protocol binding that needs nothing of its own at
+    ///      creation. One that does declares its own `initialize` and sequences its setup
+    ///      ahead of the internal initializer; see that function for why the split is the
+    ///      only shape that works.
     function initialize(address sourceTransmitter_, Call[] calldata calls)
         external
         virtual
         override
         initializer
     {
+        __ReceiverBase_init(sourceTransmitter_, calls);
+    }
+
+    /// @notice Bind this clone to its transmitter and run the payload it was created for.
+    ///
+    /// @dev SPLIT OUT SO A PROTOCOL BINDING CAN GET IN FRONT OF THE PAYLOAD, and it is the
+    ///      only arrangement that compiles. A binding needs its provider configured after
+    ///      the reentrancy guard and before `_execute`, and with the work inside an
+    ///      `external initializer` there is no way to say that:
+    ///
+    ///      - calling `super.initialize` first runs the payload against an unconfigured
+    ///        provider, which is the ordering the guard exists to prevent one level down;
+    ///      - configuring first and then calling `super.initialize` reverts, because the
+    ///        SDK's own `onlyInitializing` setup would run while `_initializing` is still
+    ///        false;
+    ///      - declaring `initializer` on both reverts `InvalidInitialization`, since a
+    ///        nested `initializer` on a contract that already has code is not a valid
+    ///        top-level call.
+    ///
+    ///      `internal onlyInitializing` is the shape the rest of the codebase already
+    ///      uses: `__TransmitterBase_init`, `__TransceiverBase_init`, and
+    ///      `__SpokeTransceiverBase_init`. This contract was the exception, and the
+    ///      exception was load-bearing in the wrong direction.
+    ///
+    /// @dev THIS IS THE TRANSCEIVER'S ONLY REACH INTO A RECEIVER, AND IT ENDS HERE.
+    ///      `_execute` runs on the transceiver's authority in this one call, because a
+    ///      bootstrap message means "stand the receiver up and perform the payload that
+    ///      justified it". Afterwards `commit`, `cancel`, and `execute` are gated on the
+    ///      transmitter alone: see `onlySourceTransmitter`.
+    function __ReceiverBase_init(address sourceTransmitter_, Call[] calldata calls)
+        internal
+        onlyInitializing
+    {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 
         // BEFORE the payload runs. A proxy runs no constructor of its own, so the guard is
-        // uninitialized until this line, and `initialize` executes arbitrary calls.
+        // uninitialized until this line, and the payload is arbitrary calls.
         __ReentrancyGuard_init();
 
         sourceTransmitter = sourceTransmitter_;
@@ -224,7 +267,7 @@ abstract contract ReceiverBase is
         external
         virtual
         override
-        onlyAuthorizedCommitter
+        onlySourceTransmitter
         returns (uint256 index)
     {
         _requireCommittable(commitment_);
@@ -264,7 +307,7 @@ abstract contract ReceiverBase is
         external
         virtual
         override
-        onlyAuthorizedCommitter
+        onlySourceTransmitter
     {
         if (index >= _commitments.length) revert IndexOutOfRange(index);
         bytes32 pending = _commitments[index];
@@ -315,11 +358,11 @@ abstract contract ReceiverBase is
     /// @notice Run these calls now, with no commitment and no hash comparison.
     ///
     /// @dev IT GRANTS NO AUTHORITY THAT `commit` DOES NOT ALREADY GRANT. That is the
-    ///      argument the gate rests on, and it is worth stating precisely: an authorized
-    ///      committer can pin the hash of ANY array and then let anyone finalize it, so
-    ///      it can already cause any array to run here. `execute` removes a round trip
-    ///      and a redundant hash, not a check. Widening `isAuthorizedCommitter` would
-    ///      widen both together, which is the correct coupling.
+    ///      argument the gate rests on, and it is worth stating precisely: the transmitter
+    ///      can pin the hash of ANY array and then let anyone finalize it, so it can
+    ///      already cause any array to run here. `execute` removes a round trip and a
+    ///      redundant hash, not a check. The three entry points therefore share ONE gate,
+    ///      so widening it is a single decision rather than three that could disagree.
     ///
     /// @dev THE CHECK IT SKIPS IS ONE THE CALLER HAS ALREADY MADE. The commit/finalize path
     ///      exists for when the two steps are separated in TIME: a payload that arrives
@@ -338,7 +381,7 @@ abstract contract ReceiverBase is
         external
         payable
         virtual
-        onlyAuthorizedCommitter
+        onlySourceTransmitter
         nonReentrant
     {
         if (calls.length == 0) revert EmptyExecution();
