@@ -64,6 +64,12 @@ rather than blockers, and each has a stated fallback.
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 
+**Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
+gateway satisfies P1 through P4 cleanly and would be less code, but ERC-7786 defines no
+quote at all, so P9 fails outright and the entire quote surface goes dead for that binding.
+See [§13](#13-appendix-erc-7786-as-a-transport) for how a 7786 binding would map and what
+else it gives up.
+
 **P2 and P3 together are the real filter.** They are what "an account is its own endpoint"
 means, and they are the claim the entire redesign rests on. Verify them against the
 provider's actual code, not its documentation, before writing anything else.
@@ -219,10 +225,38 @@ function _quoteMessage(
 
 **R2.2 It MUST be `view`.** A quote that writes state cannot be called from an off-chain
 `eth_call` in the same block as the send it prices, which is the only way it is ever used.
-A provider whose quote is not `view` fails [P8](#2-provider-prerequisites-the-go-or-no-go-checklist)
+A provider whose quote is not `view` fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist)
 and the binding MUST document the fallback rather than making the seam non-view: making
 `_quoteMessage` mutable would force the whole read surface below to be mutable too, and a
 `quoteSend` that cannot be `eth_call`ed is not a quote.
+
+**R2.2.1 A binding MUST NOT try to derive the fee by simulating its own send, and it could
+not if it tried.** The idea is the obvious one and it fails for three independent reasons,
+recorded here so nobody rediscovers them:
+
+- `STATICCALL` forbids `LOG`, and every send emits. ERC-7786 requires a `MessageSent`
+  event and every native SDK logs too, so the simulation reverts at the first log, before
+  reaching anything worth reading.
+- `STATICCALL` cannot carry value, so a fee-taking send cannot be simulated at all. The
+  question becomes "does this succeed with nothing attached", whose answer is always no.
+- There is nothing to read even if it ran. A send returns a message id, not a price. It
+  CONSUMES `msg.value`; it never computes a number to hand back.
+
+The mutating variant (perform the send, revert with the answer, call it through `eth_call`
+so the state change is discarded) is a real pattern and is how Uniswap's quoter works. It
+is still refused here. It requires the gateway to reveal the fee somehow, it needs a
+balance override to fund the simulation, and it would make the whole read surface above
+non-view, which is the property R2.2 exists to protect.
+
+**R2.2.2 Where a provider offers no quote, the fallback is off-chain and MUST be
+documented.** A caller can `eth_call` the real send with a value attached and binary-search
+that value down to the least that succeeds. That is the honest substitute, and it belongs
+in the binding's NatSpec next to the `_quoteMessage` that reverts `QuoteNotImplemented`.
+
+Note also the cheaper mitigation, which is why a missing quote is a cost rather than a
+disqualification: if the provider refunds excess reliably, a caller can simply overpay and
+let [`_refundTo`](#r7-fees-and-value) return the difference. A quote buys capital
+efficiency and a failure that happens before the signers commit, not correctness.
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, calls)`, the same
@@ -962,3 +996,77 @@ Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZer
 [CCIP manual execution](https://docs.chain.link/ccip/concepts/manual-execution),
 [Axelar Executable](https://docs.axelar.dev/dev/general-message-passing/executable),
 [Wormhole core contracts](https://wormhole.com/docs/products/messaging/guides/core-contracts/).
+
+---
+
+## 13. Appendix: ERC-7786 as a transport
+
+OpenZeppelin ships `interfaces/draft-IERC7786.sol` and `crosschain/ERC7786Recipient.sol`,
+and this protocol arrived at nearly the same shape independently: an opaque `bytes` payload
+to a recipient named by an interoperable address, with an opaque per-send options blob
+(`attributes` here, `providerData` there). So the question is worth answering once rather
+than rediscovering per provider.
+
+**It is a binding, not a refactor.** The base contracts need no change. What follows is a
+paper analysis against both interfaces, not something compiled.
+
+### The one thing that does not map, and how it resolves
+
+ERC-7786 addresses a recipient as a binary interoperable address: chain and address in one
+ERC-7930 blob. This protocol holds a `chainKey`, which is
+`keccak256(<canonical chain identifier>)` and therefore one-way. A chainKey cannot produce a
+7786 recipient.
+
+**Store the chain identifier in the route slot.** `setRoute(chainKey, identifier)` makes the
+reverse index correct BY CONSTRUCTION rather than by configuration, since
+`keccak256(identifier) == chainKey` is the definition of a chainKey. `setRoute` already
+enforces injectivity and chain identifiers are unique per chain, so nothing else changes.
+The route slot holds a chain identifier instead of an eid, and every other piece of the
+routing machinery works untouched.
+
+That is the whole trick. A 7786 gateway needs no provider-native chain id, which is what the
+route table existed to hold.
+
+### Where each seam attaches
+
+| Our hook | ERC-7786 |
+| --- | --- |
+| `_sendMessage(chainKey, payload, providerData)` | `gateway.sendMessage(recipient, payload, attributes)`, with `recipient` built by parsing `routeTo(chainKey)` and re-encoding it with the destination address |
+| `_quoteMessage(...)` | **nothing.** See below |
+| `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
+| `providerData` | `bytes` decoded to `bytes[] attributes` |
+
+The inbound split is the pleasing part: `Erc7930.toChainIdentifier` already reduces an
+account envelope to a bare chain identifier, which is exactly the `route` the hub's
+`chainKeyOfRoute` and the spoke's `_isHome` expect. `_authenticateOrigin` needs no override
+on either side.
+
+### What ERC-7786 gives up
+
+1. **No quote, at all.** The interface is `supportsAttribute` and `sendMessage`. A payable
+   send with no way to ask its price fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist)
+   and kills eight functions of read surface. This is the largest cost and the reason to
+   prefer a native SDK where one exists. Fallbacks are in [R2.2.2](#r2-quote).
+2. **`sendMessage` may not complete the send.** It returns a `sendId`, and a non-zero value
+   means further gateway-specific, non-standardised action is required. `_sendMessage`
+   returns nothing and assumes the message is away, so a binding must either handle a
+   two-step send or restrict itself to gateways that return zero, and say which.
+3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
+   requires nothing about replay, so [R3.5](#r3-receive) stays a per-gateway question rather
+   than being answered by the standard. Note the `receiveId` is free where our own channels
+   carry no id; see [`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look) for why
+   we concluded none was needed.
+
+### The other draft worth knowing about
+
+`utils/draft-InteroperableAddress.sol` is OpenZeppelin's ERC-7930, 245 lines against this
+repo's 248-line `src/addressing/Erc7930.sol`, covering the same ground with `formatEvmV1`,
+`parseEvmV1`, and `try` and calldata variants. Replacing ours with it is a real candidate:
+audited, maintained, and one fewer library to own.
+
+Two things block a straight swap. It is a `draft-`, which OpenZeppelin explicitly excludes
+from its API stability guarantee and may change in a MINOR release, and this codebase freezes
+accounts against exact bytes. And `Erc7930.parseStrict` enforces strictness the registry
+depends on, rejecting non-minimal `eip155` references and trailing bytes; whether `parseV1`
+matches has not been checked. Neither is a reason not to do it, both are reasons it is its
+own task with its own vectors.

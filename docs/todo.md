@@ -175,6 +175,22 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
+- **ERC-7786, and OpenZeppelin's ERC-7930.** 5.6.1 brought `draft-IERC7786` and
+  `draft-InteroperableAddress`, and the analysis is in
+  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport). Two decisions
+  fall out of it, neither taken.
+
+  **Whether to bind to a 7786 gateway at all.** It is a binding rather than a refactor, and
+  the base contracts need nothing: storing the chain IDENTIFIER in the route slot makes the
+  reverse index correct by construction, since `keccak256(identifier)` IS the chainKey. But
+  ERC-7786 defines no quote, so a gateway binding loses the whole quote surface. Prefer a
+  native SDK where a provider offers both.
+
+  **Whether to replace `src/addressing/Erc7930.sol` with OZ's library.** 245 lines against
+  our 248, audited and maintained. Blocked on two checks: it is a `draft-`, which OZ excludes
+  from API stability and may change in a minor release, and our `parseStrict` enforces
+  strictness the registry depends on that `parseV1` may not match.
+
 - ~~**RESEARCH: a requestId, or any unique identifier, for messages.**~~ RESEARCHED, and the
   answer is no protocol-level id. The two halves of the question have different answers.
 
