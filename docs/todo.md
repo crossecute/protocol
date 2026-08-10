@@ -175,6 +175,20 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
+- **Split `provider-spec.md` into a normative half and a research half.** It is past a
+  thousand lines and carries three appendices, which is the size at which a reader stops
+  being able to tell what they MUST do from what we happen to have found out. The normative
+  part is §1 through §8: the prerequisites, the seams, the rules, the prohibitions, the
+  compliance suite. The research part is §12 and §13 and growing: what each transport
+  actually guarantees about replay, how ERC-7786 would attach, what OpenZeppelin's ERC-7930
+  would replace.
+
+  They have different lifetimes, which is the real argument. The normative half changes when
+  this protocol changes; the research half goes stale when somebody ELSE ships a release,
+  and it carries version-pinned claims about contracts we do not control. Splitting them
+  makes the second half's staleness visible instead of letting it rot inside a document
+  people read as a specification. A table of contents on whatever remains, too.
+
 - **ERC-7786, and OpenZeppelin's ERC-7930.** 5.6.1 brought `draft-IERC7786` and
   `draft-InteroperableAddress`, and the analysis is in
   [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport). Two decisions

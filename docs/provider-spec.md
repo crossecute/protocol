@@ -248,10 +248,35 @@ is still refused here. It requires the gateway to reveal the fee somehow, it nee
 balance override to fund the simulation, and it would make the whole read surface above
 non-view, which is the property R2.2 exists to protect.
 
-**R2.2.2 Where a provider offers no quote, the fallback is off-chain and MUST be
-documented.** A caller can `eth_call` the real send with a value attached and binary-search
-that value down to the least that succeeds. That is the honest substitute, and it belongs
-in the binding's NatSpec next to the `_quoteMessage` that reverts `QuoteNotImplemented`.
+**R2.2.2 Where a provider offers no quote, the fallback is off-chain, and it MEASURES
+rather than searches.** The constraints in R2.2.1 are the EVM's static context, and a
+simulator is not bound by them. A Foundry fork test or script can call the REAL send,
+overfunded, against the real endpoint, and read the exact net cost off the balance delta:
+
+```solidity
+uint256 snap = vm.snapshotState();
+vm.deal(owner, 100 ether);
+uint256 before = owner.balance;
+
+vm.prank(owner);
+transmitter.send{value: 100 ether}(destinationChainId, calls);
+
+uint256 fee = before - owner.balance;   // charged minus refunded, exactly
+vm.revertToState(snap);
+```
+
+That is one call and an exact number, not a bound from bisection, because the refund lands
+back on `_refundTo()` and the delta is therefore the net. It cannot be exposed through
+`IMessageQuote`, since the on-chain constraints still hold, so it belongs in `script/` and
+in the compliance suite rather than in the contracts.
+
+The same measurement answers two other open questions, and should be written once and
+reused: it is how [C11](#8-the-compliance-suite) checks that a quote equals what the send
+actually consumes, and it is how an operator sizes the balance a diverging spoke needs for
+its return report under [R7.5](#r7-fees-and-value).
+
+A binding whose provider has no quote MUST say so in the NatSpec of the `_quoteMessage`
+that reverts `QuoteNotImplemented`, and point at the script that measures instead.
 
 Note also the cheaper mitigation, which is why a missing quote is a cost rather than a
 disqualification: if the provider refunds excess reliably, a caller can simply overpay and
@@ -688,6 +713,12 @@ Everything below is written once, against those hooks.
 | C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. |
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. |
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). |
+
+**C11, C29 and C30 want FORK tests, against the real endpoint.** A mock provider does
+whatever the harness makes it do, so exercising a binding against one proves the harness
+dedupes, prices, and retries: it proves nothing about the transport, which is where all
+three properties actually live. Run them against a forked chain with the provider's real
+deployment, or accept that P7 and P9 remain documented assumptions.
 
 **C29 is the one nobody writes.** It tests a property of somebody else's contract, which
 feels out of scope until you notice that no line in this repo enforces it and path A has no
