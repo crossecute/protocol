@@ -9,6 +9,12 @@ worth writing.
 designs and a transport: everything a binding MUST satisfy, everything it MUST NOT do, and
 the fixed set of tests that decide whether it did.
 
+**The core contracts now speak ERC-7786 directly.** `TransmitterBase` is an
+`IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so a binding attaches a
+GATEWAY rather than translating a bespoke send. That narrows what a binding is, and several
+rules below narrowed with it; [§13](#13-appendix-erc-7786-as-a-transport) records what the
+standard gives up in exchange.
+
 Nothing here is LayerZero-specific. LayerZero is used for worked examples because it is the
 first binding, and its findings are recorded in [`todo.md`](todo.md#2-the-provider-binding).
 
@@ -60,7 +66,7 @@ rather than blockers, and each has a stated fallback.
 | **P9** | **Quote that fee at source, as a `view`, before the send** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. Without a quote a caller either overpays blindly or has a send revert after the signers have already approved it. See [R2](#r2-quote). |
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
-| **P12** | Per-message destination gas or execution options | Carried opaquely in `providerData`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
+| **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 
@@ -96,7 +102,7 @@ LayerZero skeleton.
 | `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase`, `<P>Endpoint` | Receives bootstrap, sends the report. |
 
 **`<P>Endpoint` is not optional structure, it is the deduplication that keeps the four in
-agreement.** Fee handling, `providerData` decoding, the route byte form, and the sender byte
+agreement.** Fee handling, attribute decoding, the recipient byte form, and the sender byte
 form must be identical across all four or authentication silently diverges between path A
 and path B, and a quote stops predicting its own send. Writing them once is what makes that
 structural. It declares no storage of its own beyond what the SDK brings.
@@ -111,8 +117,8 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_sendMessage(bytes32 chainKey, bytes payload, bytes providerData)` | `OutboundBase:79` | MUST override. The default reverts `SendNotImplemented`. See [R1](#r1-send). |
-| `_quoteMessage(bytes32 chainKey, bytes payload, bytes providerData)` | `OutboundBase` | MUST override, `view`. The default reverts `QuoteNotImplemented`. See [R2](#r2-quote). |
+| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, returning the gateway's `sendId`. The default reverts `SendNotImplemented`. See [R1](#r1-send). |
+| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. The default reverts `QuoteNotImplemented`. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
 ### 4.2 Required on the transmitter
@@ -137,7 +143,7 @@ Every abstract or virtual member a binding must answer, and where.
 | --- | --- | --- |
 | `_checkAdmin()` | `TransceiverBase:344` | Answer from the SDK's ownership, or from `OwnableUpgradeable`. MUST NOT introduce a second authority: two owners on one transceiver means an upgrade lock held by one can be undone through the other. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase:313` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
-| a typed route setter | convention | `setEid(bytes32 chainKey, uint32 eid)` style, wrapping `setRoute`. See [R5](#r5-the-route-codec). |
+| nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds. A binding adds a wrapper only if it keeps a provider-native value of its own. |
 | a typed route reader | convention | `eidFor(bytes32)` and `chainKeyForEid(uint32)` style, for off-chain checks. |
 
 ### 4.5 Required on the spoke transceiver
@@ -171,31 +177,34 @@ A binding MUST NOT expect any of these, and MUST NOT add them.
 `_sendMessage` MUST put `payload` on the wire addressed to `destinationChainKey`, and MUST
 revert if it cannot.
 
-**R1.1** It MUST resolve the provider's chain id through the route table and nowhere else.
-The table is `TransceiverBase._routes`, write-once, injective in both directions.
+**R1.1 The recipient arrives built, and the binding MUST NOT re-derive it.** It is a
+binary interoperable address naming its own chain, so there is no chain id to resolve and
+no route table to consult inside `_sendMessage`. The route table still exists, but it holds
+each chain's ERC-7930 IDENTIFIER now rather than a provider's private id, and it is read by
+`TransceiverBase._recipientOn` on the way in.
 
-**R1.2** On a transceiver, resolve with `_routeTo(chainKey)`. On an account, resolve by
-calling `routeTo(chainKey)` on the transceiver the account already stores
-(`TransmitterBase.transceiver`, `ReceiverBase.parentTransceiver`). Both are `public view`
-on `TransceiverBase:408`. An account MUST NOT hold a route table of its own: a user adding
-a destination is a msig configuration change, not a per-account migration.
+**R1.2** An account MUST NOT hold a route table of its own: a user adding a destination is
+a msig configuration change, not a per-account migration. `IAccountTransceiver.routeTo` is
+the read, on the transceiver an account already stores.
 
-**R1.3** The destination address on path A is `address(this)`, always. An account's peer is
-its own address on every chain. A binding MUST NOT make this a stored, settable value on
-an account when the SDK allows it to be derived. Where the SDK insists on a peer table,
-the binding SHOULD override the peer lookup to return `address(this)` unconditionally
-rather than populate it. A value with exactly one correct answer is not configuration, and
-storing it creates a state in which it can be wrong.
+**R1.3** The destination on path A is this account's own address, and `TransmitterBase`
+already enforces it on `eip155` recipients. A binding MUST NOT store a peer to reach that
+answer when the SDK allows it to be derived; where the SDK insists on a peer table, the
+binding SHOULD override the lookup to return `address(this)` unconditionally. A value with
+exactly one correct answer is not configuration, and storing it creates a state in which it
+can be wrong.
 
-**R1.4** The destination address on path B is `_counterpartOn(chainKey)` on the hub and
-`homeTransceiver()` on the spoke. Both return raw bytes in the destination's format. The
-binding MUST NOT assume 20 bytes without checking the chain type.
+**R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
+`_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking
+the chain type.
 
-**R1.5** `providerData` is opaque above the binding and MUST be decoded only inside it. An
-empty `providerData` MUST mean "the binding's default" and MUST NOT mean zero gas.
+**R1.5** `attributes` are decoded only inside the binding, and an empty array MUST mean
+"the gateway's default" rather than zero gas. A binding MUST answer `supportsAttribute`
+honestly, and a gateway that refuses an attribute it does not know is behaving correctly.
 
-**R1.6** A send with an unconfigured route MUST revert, not succeed. `routeFor` already
-reverts `NoRouteFor`; a binding that catches this and falls back is non-compliant.
+**R1.6** A send to an unconfigured destination MUST revert, not succeed. `routeFor` reverts
+`NoRouteFor` and `_requireBootstrapped` reverts `NotBootstrapped`; a binding that catches
+either and falls back is non-compliant.
 
 **R1.7** Path A is reachable only after path B has run for that destination.
 `TransmitterBase` refuses a send to a chainKey it has not recorded a bootstrap for, and
@@ -215,9 +224,9 @@ mirror it exactly:
 ```solidity
 /// @notice What `_sendMessage` would cost, in this chain's native currency.
 function _quoteMessage(
-    bytes32 destinationChainKey,
+    bytes memory recipient,
     bytes memory payload,
-    bytes memory providerData
+    bytes[] memory attributes
 ) internal view virtual returns (uint256 nativeFee) {
     revert QuoteNotImplemented();
 }
@@ -228,7 +237,7 @@ function _quoteMessage(
 A provider whose quote is not `view` fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist)
 and the binding MUST document the fallback rather than making the seam non-view: making
 `_quoteMessage` mutable would force the whole read surface below to be mutable too, and a
-`quoteSend` that cannot be `eth_call`ed is not a quote.
+`quoteMessage` that cannot be `eth_call`ed is not a quote.
 
 **R2.2.1 A binding MUST NOT try to derive the fee by simulating its own send, and it could
 not if it tried.** The idea is the obvious one and it fails for three independent reasons,
@@ -267,7 +276,7 @@ vm.revertToState(snap);
 
 That is one call and an exact number, not a bound from bisection, because the refund lands
 back on `_refundTo()` and the delta is therefore the net. It cannot be exposed through
-`IMessageQuote`, since the on-chain constraints still hold, so it belongs in `script/` and
+`quoteMessage`, since the on-chain constraints still hold, so it belongs in `script/` and
 in the compliance suite rather than in the contracts.
 
 The same measurement answers two other open questions, and should be written once and
@@ -293,7 +302,7 @@ rather than taking raw `bytes`.
 **R2.4 It MUST use the same route, destination, and options resolution as the send.** Any
 divergence between `_quoteMessage` and `_sendMessage` is a quote that prices a different
 message than the one that goes out. In practice this means both call one shared internal
-helper for route resolution and one for `providerData` decoding, which is
+helper for recipient construction and one for attribute decoding, which is
 [§3](#3-the-contract-set)'s argument for `<P>Endpoint` restated.
 
 **R2.5 It MUST revert exactly where the send would.** An unconfigured route, an
@@ -314,71 +323,29 @@ own token (LayerZero's `lzTokenFee`), the binding MUST quote the native-only pat
 the protocol's funding model is native currency at home. A binding MAY expose a second,
 clearly-named function for the token path; the compliance surface below is native.
 
-**The public read surface.** Each entry point that spends a fee MUST have a quote whose
-arguments are identical to it, minus `msg.value`. Declared as an interface so tooling has
-one thing to import:
+**The public read surface is one function now.** ERC-7786 gave the send a single shape, so
+the quote has a single shape too, and the seven-function `IMessageQuote` that used to mirror
+six send overloads is gone with them:
 
 ```solidity
-/// @notice What a message would cost to send, in this chain's native currency.
-/// @dev Mirrors the send surface argument for argument. Every function is `view` and
-///      prices the exact payload bytes its sending twin would put on the wire.
-interface IMessageQuote {
-    /* -------- path A: transmitter to its own receiver -------- */
-
-    function quoteSend(uint256 destinationChainId, Call[] calldata calls)
-        external view returns (uint256 nativeFee);
-
-    function quoteSend(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-
-    function quoteSendTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-
-    function quoteSendTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-
-    /* -------- path B: bootstrap -------- */
-
-    function quoteBootstrap(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-
-    function quoteBootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-
-    function quoteBootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee);
-}
+/// @notice What `sendMessage` would cost, in this chain's native currency.
+/// @dev Its arguments are `sendMessage`'s, minus the value. A caller builds the recipient
+///      and the payload once, prices them, and sends the same three arguments with the
+///      answer attached.
+function quoteMessage(
+    bytes calldata recipient,
+    bytes calldata payload,
+    bytes[] calldata attributes
+) external view returns (uint256 nativeFee);
 ```
 
-`TransmitterBase` implements all seven, each a two-line body that builds the payload the
-matching send would build and hands it to `_quoteMessage`. They belong on the base rather
-than on a binding for the same reason `send` does: the payload construction and the
-destination-key rules (`_evmKey`, `_typedKey`, `_opaqueKey`, and the typed-versus-opaque
-pairing checks) must not be re-derived per provider.
+It carries the same gates the send does, for the reason in R2.5: an unbootstrapped
+destination and a recipient that is not this account fail here too. It is ungated, unlike
+the send, because a signer reviewing a payload before the owner submits it has to be able
+to call it.
 
-The bootstrap quotes are the ones that matter most in practice. Bootstrap is the message a
-caller is least able to guess the cost of, because it carries the account creation as well
-as the payload, and it is the message that fails most expensively: the account is not there
-yet, so an underfunded send is not a retry, it is a chain the account still does not exist
-on.
+`quoteBootstrap` and `quoteBootstrapTo` remain in their `Call[]` and `bytes[]` forms,
+because path B's envelope is built by the transceiver rather than handed to it.
 
 **The transceiver's quote.** `TransceiverBase` MUST expose the path B quote it is asked
 for, matching its `bootstrap` and `bootstrapElements` entry points:
@@ -389,7 +356,7 @@ function quoteBootstrap(
     address owner,
     bytes32 salt,
     Call[] calldata calls,
-    bytes calldata providerData
+    bytes[] calldata attributes
 ) external view returns (uint256 nativeFee);
 ```
 
@@ -405,11 +372,19 @@ standing up somebody else's account, and there is nothing to protect on a `view`
 The provider's delivery callback MUST route into exactly one funnel per contract, and MUST
 do nothing else with the message.
 
-| Contract | Funnel | Signature |
+| Contract | Entry point | Then |
 | --- | --- | --- |
-| transceiver (hub or spoke) | `_onInbound` | `(bytes route, bytes sender, bytes calldata message)` |
-| receiver | `_onMessage` | `(bytes calldata payload)` |
+| receiver | `receiveMessage(receiveId, sender, payload)` | `_onMessage(payload)`, after both checks below |
+| transceiver (hub or spoke) | the binding's callback | `_onInbound(route, sender, message)` |
 | transmitter | none | MUST revert |
+
+**R3.0 `ReceiverBase.receiveMessage` is `external`, so it carries its own gate.** Two
+checks, and they are not the same check. `_isAuthorizedGateway(msg.sender)` says the
+message came through transport this account trusts, and is the binding's to answer. The
+sender's address must equal `address(this)`, which says it came from THIS account on the
+other side; that one needs no configuration and is therefore answered in the base. An
+honest but shared gateway would otherwise let one account's payload land in another's
+receiver.
 
 **R3.1 The transmitter MUST reject inbound messages.** There is no path in which a
 transmitter receives. If the SDK's base contract provides a receive entry point, the
@@ -501,7 +476,9 @@ on write-once having no recovery path.
 registry and the transceiver hold a LayerZero `uint32`, a Hyperlane `uint32`, a Wormhole
 `uint16`, and a CCIP `uint64` in the same `bytes` slot, so the width has to travel with the
 value. A value configured at the wrong width MUST fail loudly in `abi.decode` rather than
-silently reinterpret. `LzCodec` is the reference.
+silently reinterpret. Under ERC-7786 the route holds a chain's ERC-7930 identifier rather
+than a provider id, so this rule now binds only where a binding keeps a provider-native
+value of its own.
 
 **R5.2** The provider's native type MUST appear in exactly two places: the codec library
 and the typed setters that wrap it. It MUST NOT appear in any base contract, in the
@@ -537,7 +514,7 @@ binding reads `msg.value` and pays the provider from it.
 **R7.2** Refunding the excess is the binding's job, because only the binding knows the
 provider's refund convention. The address it refunds to is NOT the binding's choice: it
 MUST be `OutboundBase._refundTo()`, which is `msg.sender`, and a binding MUST NOT read a
-refund address out of `providerData` or substitute one of its own.
+refund address out of the attributes or substitute one of its own.
 
 The rule is one sentence: a fee is overpaid by whoever paid it, so the remainder goes back
 to the party that sent the value. It resolves correctly on both paths without anything
@@ -595,7 +572,7 @@ rather than transcribe it.
 `transmitterImplementation`, `homeChainKey`, `homeRoute`, `homeTransceiver`, a resolved ref
 slot.
 
-**R9.2** A typed wrapper around a write-once setter (`setEid` over `setRoute`) is the
+**R9.2** A typed wrapper around a write-once setter is the
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
 **R9.3** The binding MUST NOT expose an upgrade path that survives `lockUpgrades`. If the
@@ -616,7 +593,7 @@ chain unless noted:
 | 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
 | 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Also authorizes the hub as the only caller of `onForeignRefResolved` for that provider. |
 | 6 | `ChainRegistry.setProviderDeployment(provider, salt, transceiverInitCodeHash, accountInitCodeHash)` | Write-once. `accountInitCodeHash` per [R8.4](#r8-storage-and-address-parity). |
-| 7 | `<P>HubTransceiver.setEid(chainKey, id)` per destination | Write-once, injective. |
+| 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must hash to the chainKey. |
 | 8 | `ChainRegistry.setCreate2Factory(chainKey, factory)` for zk-chains | Defaults to Arachnid's. |
 | 9 | `ChainRegistry.setMaxProvenance(chainKey, cap)` for chains whose addresses cannot be recomputed here | zkSync and Tron are `eip155` with different CREATE2 formulas; capping below `Derived` is what withdraws the default counterpart. |
 | 10 | `ChainRegistry.setTransceiverId` plus a resolution for any chain with no derivable counterpart | The exception path. Most EVM chains need neither. |
@@ -845,107 +822,67 @@ quotes and `routeTo` broke it outright.
 
 ---
 
-## 10. Worked skeleton: LayerZero
+## 10. Worked skeleton: an ERC-7786 gateway binding
 
-Verified against `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, whose findings are in
-[todo §2](todo.md#2-the-provider-binding). Abbreviated to the compliance-relevant lines.
+Abbreviated to the compliance-relevant lines. The core contracts already speak the
+standard, so a binding is thinner than it was: it names a gateway, decides who may deliver,
+and answers the quote the standard does not define.
 
 ```solidity
-abstract contract LzEndpoint is OAppUpgradeable {
-    // R8.1: on the implementation, so it never reaches CrossProxy's initcode.
-    constructor(address endpoint_) OAppCoreUpgradeable(endpoint_) {}
+abstract contract GatewayEndpoint {
+    /// R8.1: on the implementation, so it never reaches CrossProxy's initcode. Every
+    /// account on a chain uses the same gateway, which is what an immutable expresses.
+    IERC7786GatewaySource public immutable gateway;
 
-    // R1.5: the one place providerData has a shape. Shared by send AND quote, which is
-    // what keeps R2.4 true rather than merely intended.
-    function _decodeProviderData(bytes memory d, address defaultRefund)
-        internal pure returns (bytes memory options, address refund)
-    {
-        if (d.length == 0) return ("", defaultRefund);
-        (options, refund) = abi.decode(d, (bytes, address));
-        if (refund == address(0)) refund = defaultRefund;
-    }
-
-    // R4.2: the ONE narrowing, shared by all four contracts.
-    function _senderBytes(bytes32 sender) internal pure returns (bytes memory) {
-        // R4.3: refuse a wide sender rather than truncate it.
-        require(uint256(sender) >> 160 == 0, "wide sender");
-        return abi.encodePacked(address(uint160(uint256(sender))));
+    constructor(address gateway_) {
+        gateway = IERC7786GatewaySource(gateway_);
     }
 }
 
-contract LzTransmitter is TransmitterBase, LzEndpoint {
-    function _sendMessage(bytes32 chainKey, bytes memory payload, bytes memory providerData)
-        internal override
-    {
-        (uint32 eid, bytes memory options, address refund) = _resolve(chainKey, providerData);
-        // R1.3: the peer is this account's own address, derived rather than stored.
-        _lzSend(eid, payload, options, MessagingFee(msg.value, 0), refund);
+contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
+    /// R1: the recipient arrives built and checked. Nothing to resolve, nothing to encode.
+    function _sendMessage(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes
+    ) internal override returns (bytes32 sendId) {
+        sendId = gateway.sendMessage{value: msg.value}(recipient, payload, attributes);
+        // R1: a non-zero id means the gateway has NOT sent it yet. Refuse rather than
+        // report success for a message still sitting in a queue somebody else must poke.
+        if (sendId != bytes32(0)) revert TwoStepGatewayUnsupported(sendId);
     }
 
-    // R2: the same resolution, the same payload, the same options. Different verb.
-    function _quoteMessage(bytes32 chainKey, bytes memory payload, bytes memory providerData)
-        internal view override returns (uint256)
+    /// R2: ERC-7786 defines no quote, so this is the gateway's own extension or nothing.
+    /// Reverting is the honest answer; the binding then documents the measurement in
+    /// R2.2.2 that replaces it.
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        override
+        returns (uint256)
     {
-        (uint32 eid, bytes memory options,) = _resolve(chainKey, providerData);
-        // R2.8: native only. `false` is payInLzToken.
-        return endpoint.quote(
-            MessagingParams(eid, _getPeerOrRevert(eid), payload, options, false), address(this)
-        ).nativeFee;
+        revert QuoteNotImplemented();
     }
 
-    // R2.4: one resolver, so a quote cannot price a different route than the send uses.
-    // R1.2: the account holds no route table; it asks its transceiver.
-    function _resolve(bytes32 chainKey, bytes memory providerData)
-        private view returns (uint32 eid, bytes memory options, address refund)
-    {
-        eid = LzCodec.decodeEid(ITransceiverRoutes(transceiver).routeTo(chainKey));
-        (options, refund) = _decodeProviderData(providerData, _owner());
-    }
-
-    // R3.1: a transmitter never receives.
-    function _lzReceive(Origin calldata, bytes32, bytes calldata, address, bytes calldata)
-        internal pure override
-    { revert InboundToTransmitter(); }
-
-    // R1.3: one correct answer, so it is derived, not configuration.
-    function _getPeerOrRevert(uint32) internal view override returns (bytes32) {
-        return bytes32(uint256(uint160(address(this))));
+    function supportsAttribute(bytes4 selector) external view override returns (bool) {
+        return gateway.supportsAttribute(selector);
     }
 }
 
-contract LzSpokeTransceiver is SpokeTransceiverBase, LzEndpoint {
-    // R3: translate, do not authenticate. _onInbound does that.
-    function _lzReceive(Origin calldata o, bytes32, bytes calldata message, address, bytes calldata)
-        internal override
-    {
-        _onInbound(LzCodec.encodeEid(o.srcEid), _senderBytes(o.sender), message);
-    }
-
-    // R6: provider setup folded into the account initializer, with the owner carried.
-    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
-        internal view override returns (bytes memory)
-    {
-        return abi.encodeCall(
-            ILzReceiverInit.initialize, (predictCrossAccount(owner, salt), owner, calls)
-        );
+contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
+    /// R3.0: the binding answers WHICH gateway. The base answers whether the sender is
+    /// this account, because that half needs no configuration.
+    function _isAuthorizedGateway(address instance) internal view override returns (bool) {
+        return instance == address(gateway);
     }
 }
 ```
 
-Note `_resolve`: the reason the quote and the send agree is not that both were written
-carefully, it is that neither can name a route or an option the other did not. That is the
-shape every binding's quote should take.
-
-Note also `endpoint.quote` taking `address(this)` as the sender: on path A the account is
-the OApp, so it quotes for itself. A transceiver's quote passes `address(this)` for the same
-reason, and the two are different contracts quoting different lanes, which is why
-[R2.4](#r2-quote) is stated per contract rather than once.
-
-The `Origin` struct's `srcEid` goes back through `LzCodec.encodeEid`, not through a
-hand-written `abi.encode`: that is
-[R4.1](#r4-the-byte-forms-which-are-the-authentication) in one line.
-
----
+Note what is absent. There is no codec, because a recipient names its own chain and the
+route slot holds that chain's identifier. There is no peer table, because an account's peer
+is its own address and `TransmitterBase` checks it. There is no inbound authentication,
+because `receiveMessage` performs both halves before `_onMessage` runs. What remains is a
+gateway address, a policy about two-step sends, and a quote the standard did not define.
 
 ## 11. Checklist
 
@@ -1038,8 +975,14 @@ to a recipient named by an interoperable address, with an opaque per-send option
 (`attributes` here, `providerData` there). So the question is worth answering once rather
 than rediscovering per provider.
 
-**It is a binding, not a refactor.** The base contracts need no change. What follows is a
-paper analysis against both interfaces, not something compiled.
+**MOSTLY LANDED.** The core contracts now implement `IERC7786GatewaySource` and
+`IERC7786Recipient` directly, the route slot holds a chain identifier, and
+`TransceiverBase._recipientOn` builds the recipient. What is NOT adopted is
+`CrosschainLinked(Upgradeable)`: it sits behind `Bytes.sol` and its four `mcopy` sites, so
+it cannot compile at `paris`, and independently its per-contract `_links` table and
+`_isAuthorizedGateway` would replace the shared-transceiver routing and bypass the
+registry's provenance dial. The analysis below is kept because it is the reasoning, and
+because the gaps it names are now the protocol's gaps.
 
 ### The one thing that does not map, and how it resolves
 
@@ -1062,10 +1005,10 @@ route table existed to hold.
 
 | Our hook | ERC-7786 |
 | --- | --- |
-| `_sendMessage(chainKey, payload, providerData)` | `gateway.sendMessage(recipient, payload, attributes)`, with `recipient` built by parsing `routeTo(chainKey)` and re-encoding it with the destination address |
+| `_sendMessage(recipient, payload, attributes)` | `gateway.sendMessage(recipient, payload, attributes)`, one to one |
 | `_quoteMessage(...)` | **nothing.** See below |
 | `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
-| `providerData` | `bytes` decoded to `bytes[] attributes` |
+| `attributes` | passed straight through |
 
 The inbound split is the pleasing part: `Erc7930.toChainIdentifier` already reduces an
 account envelope to a bare chain identifier, which is exactly the `route` the hub's

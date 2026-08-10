@@ -18,12 +18,16 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 
-contract Receiver is ReceiverBase {}
+contract Receiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+}
 
 /// @dev A spoke whose divergence flag is a constructor-time choice, so both arms can be
 ///      exercised against otherwise identical contracts.
 contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
-    bytes32 public sentChainKey;
+    bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
 
@@ -41,7 +45,7 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
         __SpokeTransceiverBase_init(
             impl,
             ChainKey.forEvm(1),
-            abi.encode(uint32(30101)),
+            Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xB0BB1E)),
             addressesDiverge_
         );
@@ -58,14 +62,16 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
 
     error NoBalanceForTheReport();
 
-    function _sendMessage(bytes32 chainKey, bytes memory payload, bytes memory)
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory)
         internal
         override
+        returns (bytes32)
     {
         if (sendReverts) revert NoBalanceForTheReport();
-        sentChainKey = chainKey;
+        sentRecipient = recipient;
         sentPayload = payload;
         ++sentCount;
+        return bytes32(0);
     }
 
     /// @dev Stands in for `_onInbound`, which reaches `bootstrapInbound` by self-call
@@ -130,7 +136,11 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1, "one report");
-        assertEq(s.sentChainKey(), s.homeChainKey(), "addressed home");
+        assertEq(
+            ChainKey.fromIdentifier(s.sentRecipient()),
+            s.homeChainKey(),
+            "addressed home"
+        );
 
         (address gotOwner, bytes32 gotSalt, bytes memory interop) =
             abi.decode(s.sentPayload(), (address, bytes32, bytes));

@@ -4,21 +4,21 @@ pragma solidity ^0.8.0;
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {LzCodec} from "./LzCodec.sol";
 
-/// @notice The LayerZero transceiver on the home chain. One instance, owned by the crossecute
-///         msig, shared by every user's transmitter.
+/// @notice The transceiver on the home chain. One instance, owned by the crossecute msig,
+///         shared by every user's transmitter.
 ///
-/// @dev Does NOT inherit `LzTransmitter`. A transceiver is shared, msig-owned
-///      infrastructure; a transmitter is per-user and deployed by `TransmitterFactory`.
-///      Merging them would give one contract two different owners (the msig for the
-///      transceiver half, the user for the transmitter half), which is why `owner` and
-///      `onlyOwner` collide outright when you try.
+/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL NOW, and that is what ERC-7786 bought.
+///      The route table used to hold a LayerZero endpoint id, wrapped in a typed `setEid`
+///      over the base's untyped `setRoute`, because every provider names chains its own
+///      way and the base had no business knowing which. A gateway takes a recipient that
+///      NAMES ITS OWN CHAIN, so there is nothing left to translate: the route slot holds
+///      the chain's ERC-7930 identifier, `setRoute` is already typed for that, and
+///      `LzCodec` is gone.
 ///
-/// @dev THE EID NEVER APPEARS IN THIS CONTRACT'S STATE. `HubTransceiverBase._route`
-///      returns it from the registry as opaque bytes and `LzCodec` decodes it at the
-///      point of use, so adding a destination is a registry write rather than a
-///      transceiver upgrade.
+/// @dev Does NOT inherit a transmitter. A transceiver is shared, msig-owned
+///      infrastructure; a transmitter is per-user. Merging them would give one contract
+///      two different owners, which is why `owner` and `onlyOwner` collide when you try.
 contract LzHubTransceiver is HubTransceiverBase, OwnableUpgradeable {
     /// @dev NO RECEIVER IMPLEMENTATION, because a hub never makes a receiver. The
     ///      manufacturing half lives on the spoke; see `TransceiverBase`.
@@ -32,34 +32,7 @@ contract LzHubTransceiver is HubTransceiverBase, OwnableUpgradeable {
     }
 
     /// @notice Where the transceiver's `_checkAdmin` requirement is satisfied.
-    /// @dev THIS IS THE SEAM. Today the authority is `OwnableUpgradeable`, declared right
-    ///      here rather than in the base. When this contract becomes an actual OApp the
-    ///      inheritance list gains `OAppUpgradeable` and this body becomes `_checkOwner()`
-    ///      against OApp's own `Ownable`, one line, and nothing in `TransceiverBase`
-    ///      changes, because it never had an opinion about ownership to begin with.
     function _checkAdmin() internal view override {
         _checkOwner();
-    }
-
-    /// @notice Tie a LayerZero endpoint id to a chainKey. WRITE-ONCE, like the untyped
-    ///         `setRoute` it wraps.
-    ///
-    /// @dev THE TYPED SETTER IS WHY THE BASE STORES `bytes`. The base has no business
-    ///      knowing what an eid is (a Hyperlane binding would wrap the same slot as a
-    ///      `uint32 domain`, a Wormhole one as a `uint16`), so the shape is stated here,
-    ///      at the one layer that speaks LayerZero, and `abi.encode` keeps it fixed-width
-    ///      so a mistyped value fails in `decodeEid` rather than silently reinterpreting.
-    function setEid(bytes32 chainKey, uint32 eid) external {
-        setRoute(chainKey, LzCodec.encodeEid(eid));
-    }
-
-    /// @notice The LayerZero endpoint id to send to for a destination chainKey.
-    function eidFor(bytes32 chainKey) public view returns (uint32) {
-        return LzCodec.decodeEid(routeTo(chainKey));
-    }
-
-    /// @notice The chain a LayerZero source eid refers to, on the inbound path.
-    function chainKeyForEid(uint32 srcEid) public view returns (bytes32) {
-        return _chainKeyOf(LzCodec.encodeEid(srcEid));
     }
 }

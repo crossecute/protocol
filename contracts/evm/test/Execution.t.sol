@@ -32,6 +32,10 @@ contract Target {
 
 /// @dev Uses the CONCRETE `_execute` (no override), with an openable allowlist.
 contract PolicyReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
     mapping(address => mapping(bytes4 => bool)) public permitted;
 
     function allow(address target, bytes4 selector) external {
@@ -49,7 +53,11 @@ contract PolicyReceiver is ReceiverBase {
 }
 
 /// @dev A receiver that implements no policy at all, to check the open default.
-contract SilentReceiver is ReceiverBase {}
+contract SilentReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+}
 
 contract ExecutionTest is Test {
     PolicyReceiver r;

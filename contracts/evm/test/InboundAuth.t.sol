@@ -20,6 +20,10 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 
 contract MockReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
     uint256 public executedCount;
 
     function isAllowed(address, bytes4) public pure override returns (bool) {
@@ -58,7 +62,7 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
         __Ownable_init(owner_);
         __TransceiverBase_init();
         __SpokeTransceiverBase_init(
-            impl, ChainKey.forEvm(1), abi.encode(uint32(30101)), home, false
+            impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
         );
     }
 
@@ -84,7 +88,7 @@ contract InboundAuthTest is Test {
     bytes32 provider;
 
     bytes HOME_SENDER = abi.encodePacked(address(0xB0B0));
-    bytes constant HOME_ROUTE = abi.encode(uint32(30101));
+    bytes HOME_ROUTE = Erc7930.encodeEvmChain(1);
 
     function setUp() public {
         registry = ChainRegistry(
@@ -133,7 +137,7 @@ contract InboundAuthTest is Test {
     function test_spokeRejectsTheRightSenderFromTheWrongRoute() public {
         bytes memory msg_ = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
         vm.expectRevert(SpokeTransceiverBase.NotHomeOrigin.selector);
-        spoke.arrive(abi.encode(uint32(30184)), HOME_SENDER, msg_);
+        spoke.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
     /// @dev There is no setter by which a spoke could be made to accept a second origin.
@@ -151,7 +155,7 @@ contract InboundAuthTest is Test {
 
     /* =================================== hub =================================== */
 
-    function _wireSpokeChain(uint32 eid, uint256 chainId, address counterpart)
+    function _wireSpokeChain(uint32, uint256 chainId, address counterpart)
         internal
         returns (bytes32 chainKey)
     {
@@ -162,7 +166,8 @@ contract InboundAuthTest is Test {
         registry.setTransceiverId(chainKey, provider, id);
         vm.stopPrank();
         vm.prank(msig);
-        hub.setRoute(chainKey, abi.encode(eid));
+        // The route IS the chain identifier now, so `keccak256(route) == chainKey`.
+        hub.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
         vm.startPrank(msig);
         vm.stopPrank();
     }
@@ -176,7 +181,7 @@ contract InboundAuthTest is Test {
 
         bytes memory interop = Erc7930.encodeEvm(8453, address(0xBEEF));
         hub.arrive(
-            abi.encode(uint32(30184)),
+            Erc7930.encodeEvmChain(8453),
             abi.encodePacked(counterpart),
             Envelope.encodeReceiverReport(transmitter, bytes32(0), interop)
         );
@@ -205,7 +210,7 @@ contract InboundAuthTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey)
         );
-        hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(address(0xBAD)), m);
+        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
     /// @dev The provenance bar gates the inbound path too. A chain whose counterpart is
@@ -217,7 +222,7 @@ contract InboundAuthTest is Test {
         bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
         vm.stopPrank();
         vm.prank(msig);
-        hub.setRoute(chainKey, abi.encode(uint32(30184)));
+        hub.setRoute(chainKey, Erc7930.encodeEvmChain(8453));
 
         // Learned from the destination, so `Attested`: the weakest grade there is.
         vm.prank(address(hub));
@@ -231,7 +236,7 @@ contract InboundAuthTest is Test {
         bytes memory report = Envelope.encodeReceiverReport(
             transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
         );
-        hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(counterpart), report);
+        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
 
         // Raise it, and the same well-formed message from the same contract is refused.
         vm.prank(msig);
@@ -242,7 +247,7 @@ contract InboundAuthTest is Test {
             transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
         );
         vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
-        hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(counterpart), report2);
+        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
     }
 
     /* ================================= envelope ================================ */
@@ -255,7 +260,7 @@ contract InboundAuthTest is Test {
         bytes memory wrongWay = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
 
         vm.expectRevert();
-        hub.arrive(abi.encode(uint32(30184)), abi.encodePacked(address(0xC0DE)), wrongWay);
+        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xC0DE)), wrongWay);
     }
 
     function testFuzz_bootstrapEnvelopeRoundTrips(address t_, address target, bytes memory data)

@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -154,6 +155,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NotHomeOrigin();
     error NoHomeChainKey();
     error NoHomeRoute();
+    /// @dev The stated route does not hash to the stated home chainKey.
+    error HomeRouteMismatch();
     /// @dev Bootstrap is for a chain with no receiver. One already exists, so its payload
     ///      cannot be delivered through `initialize` (that is single-shot), and this
     ///      contract has no other way to reach a receiver by design.
@@ -182,6 +185,11 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ) internal onlyInitializing {
         if (homeChainKey_ == bytes32(0)) revert NoHomeChainKey();
         if (homeRoute_.length == 0) revert NoHomeRoute();
+        // The route IS the chain identifier now, so the pair cannot be allowed to
+        // disagree: a chainKey is `keccak256(identifier)` by definition, and a spoke whose
+        // two halves named different chains would authenticate against one and send to the
+        // other.
+        if (ChainKey.fromIdentifier(homeRoute_) != homeChainKey_) revert HomeRouteMismatch();
         if (homeTransceiver_.length == 0) revert NoHomeTransceiver();
         if (receiverImplementation_ == address(0)) revert NoAccountImplementation();
 
@@ -357,11 +365,11 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     function _reportReceiver(address owner, bytes32 salt, address receiver) internal {
         emit ReceiverReported(owner, salt, receiver);
         _dispatch(
-            homeChainKey,
+            _recipientOn(homeChainKey),
             Envelope.encodeReceiverReport(
                 owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
             ),
-            ""
+            new bytes[](0)
         );
     }
 }

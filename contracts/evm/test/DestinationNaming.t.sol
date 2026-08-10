@@ -9,7 +9,6 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {LzCodec} from "src/protocols/layerzero/LzCodec.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
@@ -31,8 +30,11 @@ contract DestinationNamingTest is Test {
     address msig = address(0x5165);
     bytes32 provider;
 
-    uint32 constant BASE_EID = 30184;
-    uint32 constant ARB_EID = 30110;
+    /// @dev The route slot holds a chain's ERC-7930 identifier now, not a provider's id
+    ///      for it: an ERC-7786 recipient names its own chain, so there is nothing left to
+    ///      translate. `keccak256(BASE_ROUTE)` IS `baseKey`, by definition.
+    bytes BASE_ROUTE = Erc7930.encodeEvmChain(8453);
+    bytes ARB_ROUTE = Erc7930.encodeEvmChain(42161);
 
     function setUp() public {
         registry = ChainRegistry(
@@ -64,7 +66,7 @@ contract DestinationNamingTest is Test {
                             msig,
                             recvImpl,
                             ChainKey.forEvm(1),
-                            LzCodec.ETHEREUM_EID,
+                            Erc7930.encodeEvmChain(1),
                             abi.encodePacked(address(hub)),
                             false
                         )
@@ -111,7 +113,7 @@ contract DestinationNamingTest is Test {
     ///      arguments above and not about the protocol. See the next test.
     function test_thisDeploymentIsAnchoredOnEthereum() public view {
         assertEq(spoke.homeChainKey(), ChainKey.forEvm(1));
-        assertEq(spoke.homeEid(), LzCodec.ETHEREUM_EID);
+        assertEq(spoke.homeRoute(), Erc7930.encodeEvmChain(1));
     }
 
     /// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected anchor,
@@ -131,7 +133,7 @@ contract DestinationNamingTest is Test {
                             msig,
                             address(new LzReceiver()),
                             ChainKey.forEvm(42161),
-                            30110,
+                            Erc7930.encodeEvmChain(42161),
                             abi.encodePacked(arbHub),
                             false
                         )
@@ -141,7 +143,7 @@ contract DestinationNamingTest is Test {
         );
 
         assertEq(arbSpoke.homeChainKey(), ChainKey.forEvm(42161), "Arbitrum is home");
-        assertEq(arbSpoke.homeEid(), 30110);
+        assertEq(arbSpoke.homeRoute(), Erc7930.encodeEvmChain(42161));
         assertEq(arbSpoke.homeTransceiver(), abi.encodePacked(arbHub));
         assertEq(arbSpoke.counterpartOn(ChainKey.forEvm(42161)), abi.encodePacked(arbHub));
 
@@ -160,7 +162,7 @@ contract DestinationNamingTest is Test {
         assertFalse(a, "no setHomeChainKey");
 
         (bool b,) = address(spoke).call(
-            abi.encodeWithSignature("setHomeRoute(bytes)", abi.encode(uint32(1)))
+            abi.encodeWithSignature("setHomeRoute(bytes)", Erc7930.encodeEvmChain(1))
         );
         assertFalse(b, "no setHomeRoute");
     }
@@ -173,7 +175,7 @@ contract DestinationNamingTest is Test {
         bytes32 id = keccak256("lz.base");
         registry.resolveEvmCreate2(id, 8453, address(0x4e59), bytes32(0), bytes32(0));
         registry.setTransceiverId(baseKey, provider, id);
-        hub.setEid(baseKey, BASE_EID);
+        hub.setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
     }
 
@@ -181,8 +183,8 @@ contract DestinationNamingTest is Test {
     ///      `8453`, and the eid appears for the first time inside the transceiver.
     function test_chainKeyResolvesToTheProvidersOwnId() public {
         bytes32 baseKey = _wireBase();
-        assertEq(hub.eidFor(baseKey), BASE_EID);
-        assertEq(hub.chainKeyForEid(BASE_EID), baseKey, "and back again, for inbound");
+        assertEq(hub.routeTo(baseKey), BASE_ROUTE);
+        assertEq(hub.chainKeyOfRoute(BASE_ROUTE), baseKey, "and back again, for inbound");
     }
 
     /// @dev Two chains sharing one eid would let an inbound message be attributed to the
@@ -193,20 +195,20 @@ contract DestinationNamingTest is Test {
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.RouteInUse.selector, keccak256(LzCodec.encodeEid(BASE_EID))
+                TransceiverBase.RouteInUse.selector, keccak256(BASE_ROUTE)
             )
         );
-        hub.setEid(arbKey, BASE_EID);
+        hub.setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
-        assertEq(hub.chainKeyOfRoute(LzCodec.encodeEid(BASE_EID)), baseKey);
+        assertEq(hub.chainKeyOfRoute(BASE_ROUTE), baseKey);
     }
 
     /// @dev Setting the same route twice is a no-op, not a self-collision.
     function test_rewritingTheSameRouteIsIdempotent() public {
         bytes32 baseKey = _wireBase();
         vm.prank(msig);
-        hub.setEid(baseKey, BASE_EID);
-        assertEq(hub.eidFor(baseKey), BASE_EID);
+        hub.setRoute(baseKey, BASE_ROUTE);
+        assertEq(hub.routeTo(baseKey), BASE_ROUTE);
     }
 
     /// @dev An unset route reverts rather than reading as eid 0, which is a real
@@ -218,7 +220,7 @@ contract DestinationNamingTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(TransceiverBase.NoRouteFor.selector, key)
         );
-        hub.eidFor(key);
+        hub.routeTo(key);
     }
 
     /// @dev A live transceiver id is a claim on the chain, so the directory refuses to
@@ -256,7 +258,7 @@ contract DestinationNamingTest is Test {
     function test_setProviderRouteIsOwnerGated() public {
         bytes32 baseKey = _wireBase();
         vm.expectRevert();
-        hub.setEid(baseKey, ARB_EID);
+        hub.setRoute(baseKey, ARB_ROUTE);
     }
 
     /// @dev A route is WRITE-ONCE. Re-pointing one would redirect every message to that
@@ -268,9 +270,9 @@ contract DestinationNamingTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(TransceiverBase.RouteAlreadySet.selector, baseKey)
         );
-        hub.setEid(baseKey, ARB_EID);
+        hub.setRoute(baseKey, ARB_ROUTE);
 
-        assertEq(hub.eidFor(baseKey), BASE_EID, "unchanged");
+        assertEq(hub.routeTo(baseKey), BASE_ROUTE, "unchanged");
     }
 
     /// @dev THE ROUTE LIVES WHERE THE SENDING HAPPENS. A registry read would put a second
@@ -298,8 +300,8 @@ contract DestinationNamingTest is Test {
     function test_spokeRoutesHomeAndNowhereElse() public {
         bytes memory hubAddr = abi.encodePacked(address(hub));
         assertEq(spoke.counterpartOn(spoke.homeChainKey()), hubAddr);
-        assertEq(spoke.homeEid(), LzCodec.ETHEREUM_EID);
-        assertEq(LzCodec.decodeEid(spoke.routeTo(spoke.homeChainKey())), 30101);
+        assertEq(spoke.homeRoute(), Erc7930.encodeEvmChain(1));
+        assertEq(spoke.routeTo(spoke.homeChainKey()), Erc7930.encodeEvmChain(1));
 
         bytes32 baseKey = ChainKey.forEvm(8453);
         vm.expectRevert(
@@ -343,7 +345,7 @@ contract DestinationNamingTest is Test {
             msig,
             address(0xBEEF),
             ChainKey.forEvm(1),
-            LzCodec.ETHEREUM_EID,
+            Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xBAD)),
             false
         );
@@ -363,7 +365,7 @@ contract DestinationNamingTest is Test {
                     msig,
                     address(0xBEEF),
                     ChainKey.forEvm(1),
-                    LzCodec.ETHEREUM_EID,
+                    Erc7930.encodeEvmChain(1),
                     bytes(""),
                     false
                 )
@@ -377,19 +379,39 @@ contract DestinationNamingTest is Test {
 
     /// @dev Fixed-width encoding, so a value configured at the wrong width fails in
     ///      `decode` rather than being silently reinterpreted as another chain.
-    function test_routeIsFixedWidthSoMistypedConfigFails() public {
+    /// @dev A ROUTE THAT IS NOT A CANONICAL CHAIN IDENTIFIER CANNOT BE USED. The old test
+    ///      here checked that a mistyped endpoint id failed in `abi.decode`; there is no
+    ///      endpoint id any more, and the equivalent mistake is a route that does not parse
+    ///      as ERC-7930. It is caught when a recipient is built from it rather than at
+    ///      `setRoute`, which stores opaque bytes by design.
+    function test_aRouteThatIsNotAChainIdentifierFailsWhenUsed() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        // Packed, not abi.encoded: the width a careless deploy script would write.
         hub.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();
 
-        assertEq(LzCodec.encodeEid(30111).length, 32, "abi.encode pads to a word");
+        // Stored happily, because the base has no opinion about what a route contains.
+        assertEq(hub.routeTo(key), abi.encodePacked(uint32(30111)));
+
+        // And refused the moment anything asks it to name a chain. The read happens
+        // first, so `expectRevert` lands on the call under test rather than on it.
+        bytes memory stored = hub.routeTo(key);
         vm.expectRevert();
-        hub.eidFor(key);
+        this.chainKeyOf(stored);
     }
 
-    function testFuzz_eidRoundTrips(uint32 eid) public pure {
-        assertEq(LzCodec.decodeEid(LzCodec.encodeEid(eid)), eid);
+    function chainKeyOf(bytes memory route) external pure returns (bytes32) {
+        return ChainKey.fromIdentifier(route);
+    }
+
+    /// @dev `keccak256(identifier) == chainKey` is the DEFINITION of a chainKey, which is
+    ///      what lets the route slot hold an identifier and the reverse index be correct
+    ///      without being maintained.
+    function testFuzz_aChainIdentifierRoundTripsToItsKey(uint256 chainId) public pure {
+        vm.assume(chainId != 0);
+        assertEq(
+            ChainKey.fromIdentifier(Erc7930.encodeEvmChain(chainId)),
+            ChainKey.forEvm(chainId)
+        );
     }
 }

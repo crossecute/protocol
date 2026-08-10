@@ -7,6 +7,8 @@ import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {IERC7786Recipient} from "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
 /// @dev `commit` is gated and `finalize` is not, and that is the whole point: the
@@ -90,7 +92,13 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      explicitly, so zero reads as not-entered, which is the same answer the initializer
 ///      used to write. It costs one cold SSTORE on an account's first guarded call and
 ///      nothing afterwards.
-abstract contract ReceiverBase is Executor, Initializable, ReentrancyGuard, IReceiverInit {
+abstract contract ReceiverBase is
+    Executor,
+    Initializable,
+    ReentrancyGuard,
+    IReceiverInit,
+    IERC7786Recipient
+{
     /// The transmitter this receiver answers to. Set once, at initialization.
     address public sourceTransmitter;
     /// The transceiver that cloned this receiver. Named to avoid colliding with
@@ -122,6 +130,12 @@ abstract contract ReceiverBase is Executor, Initializable, ReentrancyGuard, IRec
 
     error NotSourceTransmitter();
     error ZeroTransmitter();
+    /// @dev Something that is not a gateway this receiver trusts tried to deliver a message.
+    error NotAuthorizedGateway(address gateway);
+    /// @dev The message claims to come from an address that is not this account. An
+    ///      account's peer is itself on every chain, so anything else is another account's
+    ///      payload arriving at the wrong receiver.
+    error SenderIsNotThisAccount(bytes sender);
     error IndexOutOfRange(uint256 index);
     /// @dev Already executed. Cancelling it would suggest the payload can still be
     ///      stopped, and it cannot: it already ran.
@@ -501,6 +515,51 @@ abstract contract ReceiverBase is Executor, Initializable, ReentrancyGuard, IRec
         Call memory c = Calls.decode(call);
         return (c.target, c.value, c.data);
     }
+
+    /// @notice ERC-7786 delivery: the gateway hands over an authenticated message.
+    ///
+    /// @dev THE TWO CHECKS ARE NOT THE SAME CHECK, AND BOTH ARE REQUIRED. `receiveMessage`
+    ///      is `external`, so without them anyone could hand this receiver a payload and
+    ///      have it executed. The gateway check says the message came through transport
+    ///      this account trusts; the sender check says it came from THIS ACCOUNT on the
+    ///      other side. A gateway that is honest but shared would otherwise let one
+    ///      account's payload land in another's receiver.
+    ///
+    /// @dev THE SENDER CHECK NEEDS NO CONFIGURATION, which is why it is here rather than in
+    ///      a binding. An account's peer is its own address on every chain, so the expected
+    ///      sender is `address(this)` and is derived rather than stored. There is no state
+    ///      an operator could set wrongly.
+    ///
+    /// @dev THE `receiveId` IS DELIBERATELY IGNORED. ERC-7786 offers it for correlation,
+    ///      and this protocol needs none: a payload either matches a queued commitment or
+    ///      executes on arrival, and neither asks which message carried it. Replay is the
+    ///      transport's to prevent; see the provider spec.
+    function receiveMessage(bytes32, bytes calldata sender, bytes calldata payload)
+        external
+        payable
+        virtual
+        override
+        returns (bytes4)
+    {
+        if (!_isAuthorizedGateway(msg.sender)) revert NotAuthorizedGateway(msg.sender);
+
+        Erc7930.Interop memory io = Erc7930.parseStrict(sender);
+        if (io.addr.length != 20 || address(bytes20(io.addr)) != address(this)) {
+            revert SenderIsNotThisAccount(sender);
+        }
+
+        _onMessage(payload);
+        return IERC7786Recipient.receiveMessage.selector;
+    }
+
+    /// @notice Whether `gateway` may deliver to this receiver.
+    ///
+    /// @dev DECLARED, NOT IMPLEMENTED, for the same reason `_checkAdmin` is on the
+    ///      transceiver: which gateway is trusted is a property of the protocol binding,
+    ///      and a base that guessed would either name a contract that does not exist on
+    ///      this chain or accept one that should not be trusted. The sender half of the
+    ///      check above is answered here, because that half needs no configuration.
+    function _isAuthorizedGateway(address gateway) internal view virtual returns (bool);
 
     /// @notice Run a payload that arrived over the wire.
     ///

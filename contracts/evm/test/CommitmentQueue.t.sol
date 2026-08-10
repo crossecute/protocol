@@ -31,6 +31,10 @@ contract Ledger {
 }
 
 contract QueueReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
     function isAllowed(address, bytes4) public pure override returns (bool) {
         return true;
     }

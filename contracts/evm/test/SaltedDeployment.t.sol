@@ -33,7 +33,11 @@ contract MiniFactory {
     }
 }
 
-contract SaltedReceiver is ReceiverBase {}
+contract SaltedReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+}
 
 /// @dev Minimal transmitter logic: enough to prove which side armed the account.
 contract MiniTransmitter {
@@ -70,7 +74,7 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         __SpokeTransceiverBase_init(
             impl,
             ChainKey.forEvm(1),
-            abi.encode(uint32(1)),
+            Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xB0BB1E)),
             false
         );

@@ -23,7 +23,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's plumbing.
 contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
-    bytes32 public sentChainKey;
+    bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
     uint256 public sentValue;
@@ -44,37 +44,46 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
         OwnableUpgradeable._checkOwner();
     }
 
-    bytes public sentProviderData;
+    bytes[] public sentAttributes;
     address public sentRefund;
 
-    function _sendMessage(bytes32 chainKey, bytes memory payload, bytes memory providerData)
-        internal
-        override
-    {
-        sentChainKey = chainKey;
+    function attributeCount() external view returns (uint256) {
+        return sentAttributes.length;
+    }
+
+    function _sendMessage(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes
+    ) internal override returns (bytes32) {
+        sentRecipient = recipient;
         sentPayload = payload;
-        sentProviderData = providerData;
+        sentAttributes = attributes;
         sentValue = msg.value;
         sentRefund = _refundTo();
         ++sentCount;
+        return bytes32(0);
     }
 
     /// @dev Priced per byte, which is what every real provider does, so a test can tell a
     ///      quote that read the payload from one that guessed at its size.
     uint256 public constant WEI_PER_BYTE = 7;
 
-    function _quoteMessage(bytes32, bytes memory payload, bytes memory providerData)
-        internal
-        pure
-        override
-        returns (uint256)
-    {
-        return payload.length * WEI_PER_BYTE + providerData.length;
+    function _quoteMessage(
+        bytes memory,
+        bytes memory payload,
+        bytes[] memory attributes
+    ) internal pure override returns (uint256) {
+        return payload.length * WEI_PER_BYTE + attributes.length;
     }
 }
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
 contract MockReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
     function deliver(bytes calldata payload) external {
         _onMessage(payload);
     }
@@ -119,7 +128,7 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     }
 
     function _routeTo(bytes32) internal pure override returns (bytes memory) {
-        return abi.encode(uint32(30184));
+        return Erc7930.encodeEvmChain(8453);
     }
 
     function _handleInbound(bytes32, bytes calldata) internal override {}
@@ -135,23 +144,29 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
 
     /// @dev Records the raw payload. Which decoder applies is a property of the
     ///      DESTINATION, so the test picks it: a real spoke knows its own VM.
-    bytes public sentProviderData;
+    bytes[] public sentAttributes;
 
-    function _sendMessage(bytes32, bytes memory payload, bytes memory providerData)
+    function attributeCount() external view returns (uint256) {
+        return sentAttributes.length;
+    }
+
+    function _sendMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
         internal
         override
+        returns (bytes32)
     {
         sentPayload = payload;
-        sentProviderData = providerData;
+        sentAttributes = attributes;
         bootRefund = _refundTo();
         ++bootCount;
+        return bytes32(0);
     }
 
     /// @dev A different rate from the transmitter's, so a bootstrap quote that answered
     ///      from the account instead of delegating to here is visible in the number.
     uint256 public constant WEI_PER_BYTE = 11;
 
-    function _quoteMessage(bytes32, bytes memory payload, bytes memory)
+    function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
         internal
         pure
         override
@@ -206,6 +221,37 @@ contract TransportTest is Test {
         transmitter.bootstrapTo(identifier, none);
     }
 
+    bytes[] internal NONE;
+
+    /// @dev A non-EVM recipient: the account's address there is not `address(this)` and is
+    ///      not derivable here, which is why `sendMessage` only binds the address check on
+    ///      eip155 destinations.
+    function _solRecipient(bytes memory chainIdentifier)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        Erc7930.Interop memory io = Erc7930.parseStrict(chainIdentifier);
+        return Erc7930.encode(io.chainType, io.chainRef, hex"0badc0de");
+    }
+
+    function _attrs() internal pure returns (bytes[] memory a) {
+        a = new bytes[](1);
+        a[0] = hex"c0ffee";
+    }
+
+    /// @dev The account's own interoperable address on a chain, computed here rather than
+    ///      read off the account, so it costs no external call and cannot swallow a prank.
+    function _recip(uint256 chainId) internal view returns (bytes memory) {
+        return Erc7930.encodeEvm(chainId, address(transmitter));
+    }
+
+    /// @dev One `sendMessage` now, so the tests spell the destination the way the ERC does:
+    ///      an interoperable address the account builds for itself.
+    function _sendCalls(uint256 chainId, Call[] memory calls) internal {
+        transmitter.sendMessage(_recip(chainId), Payload.encodeCalls(calls), NONE);
+    }
+
     function _calls() internal view returns (Call[] memory calls) {
         calls = new Call[](2);
         calls[0] = Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.hit, (1))});
@@ -220,10 +266,10 @@ contract TransportTest is Test {
         Call[] memory calls = _calls();
 
         vm.prank(owner);
-        transmitter.send(DEST, calls);
+        _sendCalls(DEST, calls);
 
         assertEq(transmitter.sentCount(), 1);
-        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(DEST));
+        assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
@@ -231,7 +277,9 @@ contract TransportTest is Test {
     function test_sendForwardsTheBridgeFee() public {
         vm.deal(owner, 1 ether);
         vm.prank(owner);
-        transmitter.send{value: 0.3 ether}(DEST, _calls());
+        transmitter.sendMessage{value: 0.3 ether}(
+            _recip(DEST), Payload.encodeCalls(_calls()), NONE
+        );
         assertEq(transmitter.sentValue(), 0.3 ether);
     }
 
@@ -242,14 +290,14 @@ contract TransportTest is Test {
 
         vm.recordLogs();
         vm.prank(owner);
-        transmitter.send(DEST, calls);
+        _sendCalls(DEST, calls);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].topics[0] != OutboundBase.Dispatched.selector) continue;
             found = true;
-            assertEq(logs[i].topics[1], ChainKey.forEvm(DEST));
+            assertEq(logs[i].topics[1], keccak256(_recip(DEST)), "the recipient, hashed");
             assertEq(logs[i].topics[2], keccak256(Payload.encodeCalls(calls)));
         }
         assertTrue(found);
@@ -262,17 +310,16 @@ contract TransportTest is Test {
         bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
 
         vm.prank(owner);
-        transmitter.send(DEST, _calls(), opts);
-        assertEq(transmitter.sentProviderData(), opts);
+        transmitter.sendMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
+        assertEq(transmitter.attributeCount(), 1);
 
         vm.prank(owner);
-        transmitter.send(DEST, _calls());
-        assertEq(transmitter.sentProviderData(), "", "the short form asks for the default");
+        _sendCalls(DEST, _calls());
+        assertEq(transmitter.attributeCount(), 0, "no attributes is the default");
     }
 
     /// @dev Every entry point carries it, in both payload forms and on both paths.
     function test_everyEntryPointCarriesProviderData() public {
-        bytes memory opts = hex"beef";
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"01";
@@ -280,101 +327,112 @@ contract TransportTest is Test {
         _bootstrapTo(sol);
 
         vm.startPrank(owner);
-        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), _calls(), opts);
-        assertEq(transmitter.sentProviderData(), opts, "sendTo typed");
+        transmitter.sendMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
+        assertEq(transmitter.attributeCount(), 1, "typed destination");
 
-        transmitter.sendTo(sol, elements, opts);
-        assertEq(transmitter.sentProviderData(), opts, "sendTo opaque");
+        transmitter.sendMessage(_solRecipient(sol), Payload.encodeElements(elements), _attrs());
+        assertEq(transmitter.attributeCount(), 1, "opaque destination");
         vm.stopPrank();
 
         (MockTransceiver t, MockTransmitter acct) = _account();
         vm.startPrank(owner);
-        acct.bootstrap(DEST, _calls(), opts);
-        assertEq(t.sentProviderData(), opts, "bootstrap");
+        acct.bootstrap(DEST, _calls(), _attrs());
+        assertEq(t.attributeCount(), 1, "bootstrap");
 
-        acct.bootstrapTo(sol, elements, opts);
-        assertEq(t.sentProviderData(), opts, "bootstrapTo opaque");
+        acct.bootstrapTo(sol, elements, _attrs());
+        assertEq(t.attributeCount(), 1, "bootstrapTo opaque");
         vm.stopPrank();
     }
 
     function test_sendIsOwnerGated() public {
         vm.prank(address(0xBAD));
         vm.expectRevert();
-        transmitter.send(DEST, _calls());
+        _sendCalls(DEST, _calls());
     }
 
     function test_sendRejectsChainZero() public {
         vm.prank(owner);
-        vm.expectRevert(OutboundBase.NoDestination.selector);
-        transmitter.send(0, _calls());
+        vm.expectRevert(Erc7930.EmptyEnvelope.selector);
+        _sendCalls(0, _calls());
     }
 
     /* ========================== path A: naming a chain ========================= */
 
-    /// @dev `sendTo` is the escape hatch for destinations with no `uint256` chain id.
-    function test_sendToNamesAChainByEnvelope() public {
+    /// @dev A recipient carries its own chain, which is what collapsed six send overloads
+    ///      into one. The chainKey is read back out of it rather than supplied alongside.
+    function test_theRecipientNamesItsOwnChain() public {
         Call[] memory calls = _calls();
 
         vm.prank(owner);
-        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), calls);
+        _sendCalls(DEST, calls);
 
-        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(DEST));
+        assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev An account envelope is reduced to its chain, so a caller holding only a remote
-    ///      address need not strip it by hand.
-    function test_sendToAcceptsAnAccountEnvelope() public {
-        vm.prank(owner);
-        transmitter.sendTo(Erc7930.encodeEvm(DEST, address(0xBEEF)), _calls());
-        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(DEST));
-    }
-
-    /// @dev THE FORM FOLLOWS THE DESTINATION. `Call[]` is what an EVM receiver executes and
-    ///      nothing else decodes it, so sending it to a chain that cannot is caught here
-    ///      rather than on arrival.
-    function test_typedPayloadIsRefusedForANonEvmDestination() public {
-        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+    /// @dev AN ACCOUNT'S PEER IS ITSELF, AND THE RECIPIENT IS CHECKED AGAINST THAT. Taking
+    ///      the destination as an argument reopened something that used to be structural,
+    ///      so a recipient naming anything else on an EVM chain is refused here rather than
+    ///      arriving at a contract that is not this account's receiver.
+    function test_aRecipientThatIsNotThisAccountIsRefused() public {
+        bytes memory notUs = Erc7930.encodeEvm(DEST, address(0xBEEF));
 
         vm.prank(owner);
-        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
-        transmitter.sendTo(sol, _calls());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.RecipientIsNotThisAccount.selector, notUs
+            )
+        );
+        transmitter.sendMessage(notUs, Payload.encodeCalls(_calls()), NONE);
     }
 
-    /// @dev THE MIRROR, AND IT MATTERS AS MUCH. An EVM receiver decodes `Call[]` and only
-    ///      `Call[]`, so opaque elements sent there would arrive undeliverable: a payload
-    ///      that crossed a bridge, cost a fee, and can never execute.
-    function test_opaqueElementsAreRefusedForAnEvmDestination() public {
-        bytes[] memory elements = new bytes[](1);
-        elements[0] = hex"0102030405";
-
-        vm.prank(owner);
-        vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
-        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), elements);
-    }
-
-    /// @dev The portable form reaches it instead. The elements are that VM's own call
-    ///      encoding and nothing here inspects one.
-    function test_opaqueElementsReachANonEvmDestination() public {
+    /// @dev THE CHECK BINDS ON EVM AND ONLY THERE, DELIBERATELY. On a non-EVM chain the
+    ///      account is not a 20-byte address and is not derivable from here, so there is
+    ///      nothing to compare against; the same is true on zkSync and Tron, which is what
+    ///      `addressesDiverge` names from the other end. The recipient is the caller's to
+    ///      get right there, and this test records that rather than hiding it.
+    function test_aNonEvmRecipientIsNotAddressChecked() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
 
         _bootstrapTo(sol);
         vm.prank(owner);
-        transmitter.sendTo(sol, elements);
+        transmitter.sendMessage(_solRecipient(sol), Payload.encodeElements(elements), NONE);
 
-        assertEq(transmitter.sentChainKey(), ChainKey.fromIdentifier(sol));
-        assertEq(transmitter.sentPayload(), Payload.encodeElements(elements));
+        assertEq(
+            ChainKey.fromIdentifier(transmitter.sentRecipient()),
+            ChainKey.fromIdentifier(sol)
+        );
     }
 
-    function test_sendToRejectsANonCanonicalEnvelope() public {
+    /// @dev THE PAIRING CHECK IS GONE, AND THIS IS WHERE THAT IS RECORDED. The six
+    ///      overloads knew whether they held `Call[]` or `bytes[]`, so a typed payload
+    ///      bound for a non-EVM chain and an opaque one bound for an EVM chain were both
+    ///      refused before they cost a fee. `bytes payload` cannot be asked which it is, so
+    ///      that pairing is now the caller's, and `payloadForCalls` / `payloadForElements`
+    ///      exist so it is at least spelled once. This test asserts the loss so nobody
+    ///      rediscovers it as a bug.
+    function test_aMismatchedPayloadIsNoLongerRefusedLocally() public {
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+
+        _bootstrapTo(sol);
+        vm.prank(owner);
+        // `Call[]` bound for a chain that cannot decode it. This used to revert.
+        transmitter.sendMessage(_solRecipient(sol), Payload.encodeCalls(_calls()), NONE);
+
+        assertEq(transmitter.sentCount(), 1, "it left, and will fail on arrival instead");
+    }
+
+    /// @dev The envelope is still parsed strictly, so a non-canonical one cannot become a
+    ///      chainKey nothing else reproduces.
+    function test_aNonCanonicalRecipientIsRejected() public {
         bytes memory bad =
             abi.encodePacked(uint16(1), ChainType.EIP155, uint8(2), hex"0001", uint8(0));
 
         vm.prank(owner);
         vm.expectRevert(Erc7930.NonMinimalChainRef.selector);
-        transmitter.sendTo(bad, _calls());
+        transmitter.sendMessage(bad, Payload.encodeCalls(_calls()), NONE);
     }
 
     /* ============================ path A: arrival ============================== */
@@ -385,7 +443,7 @@ contract TransportTest is Test {
         Call[] memory calls = _calls();
 
         vm.prank(owner);
-        transmitter.send(DEST, calls);
+        _sendCalls(DEST, calls);
 
         MockReceiver r = new MockReceiver();
         r.initialize(address(transmitter), new Call[](0));
@@ -408,7 +466,7 @@ contract TransportTest is Test {
         deferred[0] = transmitter.commitmentCall(address(r), hash);
 
         vm.prank(owner);
-        transmitter.send(DEST, deferred);
+        _sendCalls(DEST, deferred);
         r.deliver(transmitter.sentPayload());
 
         assertEq(sink.total(), 0, "nothing ran on arrival");
@@ -466,7 +524,7 @@ contract TransportTest is Test {
                 TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
             )
         );
-        t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), "");
+        t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE);
     }
 
     /* ========================= path B: the two forms =========================== */
@@ -533,7 +591,7 @@ contract TransportTest is Test {
                 TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
             )
         );
-        t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, "");
+        t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, NONE);
     }
 
     /* =============================== the authority ============================= */
@@ -554,7 +612,7 @@ contract TransportTest is Test {
     function test_theSeamGatesEveryEntryPoint() public {
         vm.startPrank(address(0xBAD));
         vm.expectRevert();
-        transmitter.send(DEST, _calls());
+        _sendCalls(DEST, _calls());
         vm.expectRevert();
         transmitter.execute(_calls());
         vm.expectRevert();
@@ -616,7 +674,7 @@ contract TransportTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(OutboundBase.SendNotImplemented.selector);
-        bare.send(DEST, _calls());
+        bare.sendMessage(Erc7930.encodeEvm(DEST, address(bare)), Payload.encodeCalls(_calls()), NONE);
     }
 
     /// @dev A transmitter with no `_sendMessage`, standing at the address its transceiver
@@ -645,7 +703,7 @@ contract TransportTest is Test {
         BareTransmitter bare = _bareAccount();
 
         vm.expectRevert(OutboundBase.QuoteNotImplemented.selector);
-        bare.quoteSend(DEST, _calls(), "");
+        bare.quoteMessage(Erc7930.encodeEvm(DEST, address(bare)), Payload.encodeCalls(_calls()), NONE);
     }
 
     /// @dev THE QUOTE PRICES THE EXACT BYTES THE SEND PUTS ON THE WIRE. Asserted against
@@ -654,10 +712,10 @@ contract TransportTest is Test {
     function test_quotePricesTheExactPayloadTheSendCarries() public {
         Call[] memory calls = _calls();
 
-        uint256 quoted = transmitter.quoteSend(DEST, calls, "");
+        uint256 quoted = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(calls), NONE);
 
         vm.prank(owner);
-        transmitter.send(DEST, calls);
+        _sendCalls(DEST, calls);
 
         assertEq(
             quoted,
@@ -669,15 +727,15 @@ contract TransportTest is Test {
     /// @dev A LONGER PAYLOAD COSTS MORE, which is the property a caller is relying on. A
     ///      quote that ignored its argument would return one number for both.
     function test_quoteTracksThePayloadSize() public view {
-        uint256 small = transmitter.quoteSend(DEST, _oneCall(), "");
-        uint256 large = transmitter.quoteSend(DEST, _calls(), "");
+        uint256 small = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_oneCall()), NONE);
+        uint256 large = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
         assertGt(large, small, "two calls cost more than one");
     }
 
     /// @dev THE OPTIONS ARE MOST OF WHAT A QUOTE PRICES, so they are an argument to it.
     function test_quoteReflectsProviderData() public view {
-        uint256 bare = transmitter.quoteSend(DEST, _calls(), "");
-        uint256 withOptions = transmitter.quoteSend(DEST, _calls(), hex"c0ffee");
+        uint256 bare = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
+        uint256 withOptions = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
         assertGt(withOptions, bare);
     }
 
@@ -685,19 +743,20 @@ contract TransportTest is Test {
     ///      used is an `eth_call` before the send, so a mutable one is not a quote.
     function test_quoteIsStaticallyCallable() public view {
         (bool ok, bytes memory ret) = address(transmitter).staticcall(
-            abi.encodeWithSignature(
-                "quoteSend(uint256,(address,uint256,bytes)[],bytes)", DEST, _calls(), ""
+            abi.encodeCall(
+                TransmitterBase.quoteMessage,
+                (_recip(DEST), Payload.encodeCalls(_calls()), NONE)
             )
         );
         assertTrue(ok, "staticcall succeeded, so it wrote nothing");
-        assertEq(abi.decode(ret, (uint256)), transmitter.quoteSend(DEST, _calls(), ""));
+        assertEq(abi.decode(ret, (uint256)), transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE));
     }
 
     /// @dev UNGATED, UNLIKE THE SEND IT PRICES. A signer reviewing a payload before the
     ///      owner submits it has to be able to call this.
     function test_quoteIsNotOwnerGated() public {
         vm.prank(address(0xDEAD));
-        transmitter.quoteSend(DEST, _calls(), "");
+        transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
     }
 
     /// @dev THE BOOTSTRAP QUOTE ASKS THE TRANSCEIVER, because the transceiver is what
@@ -711,7 +770,7 @@ contract TransportTest is Test {
         acct.initialize(owner, address(t), SALT);
 
         Call[] memory calls = _calls();
-        uint256 quoted = acct.quoteBootstrap(DEST, calls, "");
+        uint256 quoted = acct.quoteBootstrap(DEST, calls, NONE);
 
         assertEq(
             quoted,
@@ -729,7 +788,7 @@ contract TransportTest is Test {
 
         vm.prank(address(0xDEAD));
         uint256 quoted = t.quoteBootstrap(
-            ChainKey.forEvm(DEST), owner, SALT, _calls(), ""
+            ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE
         );
         assertGt(quoted, 0);
     }
@@ -744,7 +803,7 @@ contract TransportTest is Test {
 
         (bool ok,) = address(r).staticcall(
             abi.encodeWithSignature(
-                "quoteSend(uint256,(address,uint256,bytes)[],bytes)", DEST, _calls(), ""
+                "quoteMessage(bytes,bytes,bytes[])", DEST, _calls(), NONE
             )
         );
         assertFalse(ok, "no such function on a receiver");
@@ -758,7 +817,9 @@ contract TransportTest is Test {
     function test_pathARefundsToTheOwner() public {
         vm.deal(owner, 1 ether);
         vm.prank(owner);
-        transmitter.send{value: 0.3 ether}(DEST, _calls());
+        transmitter.sendMessage{value: 0.3 ether}(
+            _recip(DEST), Payload.encodeCalls(_calls()), NONE
+        );
         assertEq(transmitter.sentRefund(), owner);
     }
 
@@ -804,7 +865,7 @@ contract TransportTest is Test {
                 TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
             )
         );
-        transmitter.send(other, _calls());
+        _sendCalls(other, _calls());
     }
 
     /// @dev And it lifts for that destination once, and only for that destination.
@@ -818,8 +879,8 @@ contract TransportTest is Test {
 
         assertTrue(transmitter.isBootstrappedOn(other));
         vm.prank(owner);
-        transmitter.send(other, _calls());
-        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(other));
+        _sendCalls(other, _calls());
+        assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(other));
 
         assertFalse(transmitter.isBootstrappedOn(10), "and nothing else moved");
     }
@@ -829,8 +890,8 @@ contract TransportTest is Test {
     ///      either satisfies both.
     function test_theGateIsKeyedByChainNotByEntryPoint() public {
         vm.prank(owner);
-        transmitter.sendTo(Erc7930.encodeEvmChain(DEST), _calls());
-        assertEq(transmitter.sentChainKey(), ChainKey.forEvm(DEST));
+        _sendCalls(DEST, _calls());
+        assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
     }
 
     /// @dev A SECOND BOOTSTRAP CANNOT DELIVER ITS PAYLOAD ANYWAY. `CrossProxy` arms exactly
@@ -867,14 +928,14 @@ contract TransportTest is Test {
                 TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
             )
         );
-        transmitter.quoteSend(other, _calls(), "");
+        transmitter.quoteMessage(_recip(other), Payload.encodeCalls(_calls()), NONE);
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
             )
         );
-        transmitter.quoteBootstrap(DEST, _calls(), "");
+        transmitter.quoteBootstrap(DEST, _calls(), NONE);
     }
 
     /// @dev And each is answerable in the state its own message belongs to: bootstrap is
@@ -882,8 +943,8 @@ contract TransportTest is Test {
     function test_eachQuoteIsAnswerableWhenItsMessageIsSendable() public {
         uint256 other = 42161;
 
-        assertGt(transmitter.quoteBootstrap(other, _calls(), ""), 0, "before");
-        assertGt(transmitter.quoteSend(DEST, _calls(), ""), 0, "after");
+        assertGt(transmitter.quoteBootstrap(other, _calls(), NONE), 0, "before");
+        assertGt(transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE), 0, "after");
     }
 
     /// @dev THE FLAG RECORDS A DISPATCH, NOT A DELIVERY, and it is set BEFORE the
@@ -926,7 +987,7 @@ contract TransportTest is Test {
 
         assertEq(
             IAccountTransceiver(address(t)).routeTo(ChainKey.forEvm(DEST)),
-            abi.encode(uint32(30184)),
+            Erc7930.encodeEvmChain(8453),
             "the provider's own name for the chain, opaque"
         );
     }

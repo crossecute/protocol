@@ -30,6 +30,10 @@ contract Sink {
 /// @dev A receiver with an open policy, so these tests are about encoding rather than
 ///      about `isAllowed`.
 contract OpenReceiver is ReceiverBase {
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
     function isAllowed(address, bytes4) public pure override returns (bool) {
         return true;
     }

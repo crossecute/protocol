@@ -20,7 +20,7 @@ abstract contract OutboundBase {
     ///      HASH rather than the payload: the bytes are already in this transaction's
     ///      calldata, so logging them again would double the cost of every send to make an
     ///      indexer's job marginally easier.
-    event Dispatched(bytes32 indexed destinationChainKey, bytes32 indexed payloadHash);
+    event Dispatched(bytes32 indexed recipientHash, bytes32 indexed payloadHash);
 
     error NoDestination();
     error EmptyPayload();
@@ -34,17 +34,23 @@ abstract contract OutboundBase {
     ///      with the answer is send exactly that much.
     error QuoteNotImplemented();
 
-    /// @notice Hand a payload to the message provider for one destination.
+    /// @notice Hand a payload to the gateway for one recipient.
+    ///
+    /// @dev THE ARGUMENTS ARE ERC-7786's, AND THAT IS THE WHOLE CHANGE. A recipient is a
+    ///      binary interoperable address carrying its own chain, so the destination is
+    ///      named by the message rather than resolved from a key the caller supplied
+    ///      separately. Attributes replace the opaque `providerData` blob for the same
+    ///      reason: the standard already has a shape for per-send options.
     function _dispatch(
-        bytes32 destinationChainKey,
+        bytes memory recipient,
         bytes memory payload,
-        bytes memory providerData
-    ) internal {
-        if (destinationChainKey == bytes32(0)) revert NoDestination();
+        bytes[] memory attributes
+    ) internal returns (bytes32 sendId) {
+        if (recipient.length == 0) revert NoDestination();
         if (payload.length == 0) revert EmptyPayload();
 
-        emit Dispatched(destinationChainKey, keccak256(payload));
-        _sendMessage(destinationChainKey, payload, providerData);
+        emit Dispatched(keccak256(recipient), keccak256(payload));
+        return _sendMessage(recipient, payload, attributes);
     }
 
     /// @notice Where a provider's excess fee goes back to.
@@ -100,23 +106,23 @@ abstract contract OutboundBase {
     ///      the excess is the adapter's job, since only it knows the provider's refund
     ///      convention.
     ///
-    /// @param providerData Opaque, and per send. LayerZero wants executor options and a
-    ///        refund address, Wormhole a consistency level, CCIP an `extraArgs` blob:
-    ///        no argument list fits them all, and a fixed one would have to be widened
-    ///        again for the next provider. It is the same reasoning that keeps `route`
-    ///        opaque in the registry: this layer has no business knowing what an executor
-    ///        option is.
-    ///
-    ///        It is PER SEND rather than configuration because destination gas is a
-    ///        property of the payload: a three-call array needs more than a bare
-    ///        `commit`, and a stored default would strand the first message that needed
-    ///        more. Empty means "the adapter's default", which is what the convenience
-    ///        overloads pass.
+    /// @param attributes Per send, and the standard's own shape for what used to be an
+    ///        opaque `providerData` blob. Each is a selector-prefixed value the gateway
+    ///        understands, and a gateway MUST refuse one it does not; see
+    ///        `supportsAttribute`. They are per send rather than configuration because
+    ///        destination gas is a property of the payload: a three-call array needs more
+    ///        than a bare `commit`, and a stored default would strand the first message
+    ///        that needed more.
+    /// @dev IT RETURNS THE GATEWAY'S `sendId`, WHICH IS NOT ALWAYS "DONE". ERC-7786 says a
+    ///      zero id means the message is away and a non-zero one means the gateway needs
+    ///      further, unstandardised action before it goes. A binding MUST NOT discard a
+    ///      non-zero id silently: either it handles the second step or it refuses gateways
+    ///      that need one, and it says which in its NatSpec.
     function _sendMessage(
-        bytes32 destinationChainKey,
+        bytes memory recipient,
         bytes memory payload,
-        bytes memory providerData
-    ) internal virtual {
+        bytes[] memory attributes
+    ) internal virtual returns (bytes32 sendId) {
         revert SendNotImplemented();
     }
 
@@ -128,14 +134,14 @@ abstract contract OutboundBase {
     ///      have already approved the payload. So the two entry points agree on what is
     ///      quotable, by sharing the checks rather than by restating them.
     function _quote(
-        bytes32 destinationChainKey,
+        bytes memory recipient,
         bytes memory payload,
-        bytes memory providerData
+        bytes[] memory attributes
     ) internal view returns (uint256 nativeFee) {
-        if (destinationChainKey == bytes32(0)) revert NoDestination();
+        if (recipient.length == 0) revert NoDestination();
         if (payload.length == 0) revert EmptyPayload();
 
-        return _quoteMessage(destinationChainKey, payload, providerData);
+        return _quoteMessage(recipient, payload, attributes);
     }
 
     /// @notice What putting `payload` on the wire costs, in THIS chain's native currency.
@@ -167,10 +173,14 @@ abstract contract OutboundBase {
     /// @dev IT ANSWERS IN NATIVE CURRENCY AND NOTHING ELSE. Where a provider also accepts
     ///      its own token, the binding quotes the native path: signers fund one currency on
     ///      one chain, which is the property the whole protocol is arranged around.
+    /// @dev ITS ARGUMENTS ARE `sendMessage`'s, EXACTLY. ERC-7786 defines no quote at all,
+    ///      so this is the protocol's own addition, and the one thing it must not do is
+    ///      diverge from the call it prices. Same recipient, same payload, same attributes,
+    ///      minus the value.
     function _quoteMessage(
-        bytes32 destinationChainKey,
+        bytes memory recipient,
         bytes memory payload,
-        bytes memory providerData
+        bytes[] memory attributes
     ) internal view virtual returns (uint256 nativeFee) {
         revert QuoteNotImplemented();
     }

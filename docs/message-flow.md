@@ -2,9 +2,10 @@
 
 The two paths a message takes, the wire formats, and what each contract does.
 
-**Status.** Both paths are built end to end in-process:
-`_sendMessage(bytes32, bytes, bytes)`, `send` / `sendTo` / `bootstrap`, the quote surface,
-the inbound funnel, and the reentrancy guard. What is missing is a **message provider
+**Status.** Both paths are built end to end in-process: `_sendMessage(bytes, bytes,
+bytes[])`, `sendMessage` / `bootstrap`, the quote surface, the inbound funnel, and the
+reentrancy guard. The send and receive surfaces are ERC-7786's:
+`TransmitterBase` is an `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`. What is missing is a **message provider
 binding**: `_sendMessage` reverts `SendNotImplemented` and `_quoteMessage` reverts
 `QuoteNotImplemented` by default, so nothing crosses a real bridge yet. What a binding must
 implement is specified in [`provider-spec.md`](provider-spec.md). The README's `TransceiverBase` /
@@ -35,14 +36,16 @@ reporting back where it landed.
 
 ```
 owner
- │  transmitter.send{value: fee}(8453, calls)                          onlyOwner
- │    chainKey = ChainKey.forEvm(8453)                                 pure
- │    _sendMessage(chainKey, abi.encode(calls), providerData)
+ │  transmitter.sendMessage{value: fee}(recipient, payload, attributes)  onlyOwner
+ │    recipient = <erc7930: chain 8453, address(this)>                  checked, not trusted
+ │    payload   = abi.encode(calls)                                     built by the caller
+ │    _sendMessage(recipient, payload, attributes)
  ▼
  ══════════════════ bridge ══════════════════
  │
- ▼  receiver.<provider callback>(origin, payload)
-      origin.sender == peer                                            1:1, see below
+ ▼  receiver.receiveMessage(receiveId, sender, payload)
+      _isAuthorizedGateway(msg.sender)                                 binding answers
+      sender's address == address(this)                                1:1, derived
       _onMessage(payload):
         calls = Payload.decodeCalls(payload)                           abi.decode(_, (Call[]))
         _execute(calls)                                                nonReentrant
@@ -77,9 +80,9 @@ on that chain.
 owner
  │  transmitter.bootstrap{value: fee}(chainId, calls)                  onlyOwner
  ▼
-hub transceiver .bootstrap(chainKey, owner, salt, calls, providerData) msg.sender must BE the account
+hub transceiver .bootstrap(chainKey, owner, salt, calls, attributes)   msg.sender must BE the account
  │    _requireRoutable(chainKey)                                       ← provenance bar applies here
- │    _sendMessage(chainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData)
+ │    _sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)
  ▼
  ══════════════════ bridge ══════════════════
  │
@@ -135,6 +138,9 @@ is where its receiver sits on every chain, so it is derived rather than configur
 
 Each channel carries exactly one shape, so direction remains the discriminant and no
 channel needs a tag.
+
+A recipient is a binary interoperable address (ERC-7930) carrying its own chain, so no
+channel names a destination separately from its message.
 
 | Channel | Payload |
 | --- | --- |
@@ -200,13 +206,15 @@ The shared execution loop, inherited by `TransmitterBase` and `ReceiverBase` ali
 The sending half, with no opinion about who is allowed to send, and no storage at all. That
 is what makes it free to mix into a contract that already has a layout.
 
-- `_dispatch(bytes32 chainKey, bytes payload, bytes providerData)`: rejects a zero
-  destination and an empty payload, emits `Dispatched`, and hands off to `_sendMessage`.
-- `_sendMessage(bytes32 chainKey, bytes payload, bytes providerData)`: `internal virtual`,
-  reverting `SendNotImplemented` until a protocol binding overrides it. **One primitive for
-  every channel.** A payload to an account, a bootstrap to a spoke transceiver, and a
-  receiver report back are all `bytes` to a chainKey; three signatures would be three places
-  for a binding to get authentication or fee handling subtly different.
+- `_dispatch(bytes recipient, bytes payload, bytes[] attributes)`: rejects an empty
+  recipient and an empty payload, emits `Dispatched`, and hands off to `_sendMessage`.
+- `_sendMessage(bytes recipient, bytes payload, bytes[] attributes) returns (bytes32
+  sendId)`: `internal virtual`, reverting `SendNotImplemented` until a protocol binding
+  overrides it. **One primitive for every channel**, and now ERC-7786's own: a payload to
+  an account, a bootstrap to a spoke transceiver, and a receiver report back are all
+  `bytes` to an interoperable address. The `sendId` is the gateway's, and a non-zero one
+  means the message is NOT away yet; a binding either handles the second step or refuses
+  gateways that need one.
 - `_quote(...)` / `_quoteMessage(...)`: the same three arguments, `view`, reverting
   `QuoteNotImplemented` by default. `_quote` applies the same validation as `_dispatch`
   minus the event, so a quote cannot succeed for a message the send would refuse. Nothing on
@@ -217,9 +225,10 @@ is what makes it free to mix into a contract that already has a layout.
   refuses any caller that is not `predictCrossAccount(owner, salt)`. The shared transceiver
   is structurally incapable of being its own refund target, since it is never the caller of
   its own `bootstrap`.
-- `providerData` is opaque here and per send, not configuration: destination gas is a
-  property of the payload, so a stored default would strand the first message that needed
-  more. Empty means "the binding's default".
+- `attributes` are per send, not configuration: destination gas is a property of the
+  payload, so a stored default would strand the first message that needed more. An empty
+  array means "the gateway's default", and `supportsAttribute` is how a caller learns what
+  a given binding understands.
 - `Dispatched(destinationChainKey, payloadHash)` carries the hash rather than the payload:
   the bytes are already in the transaction's calldata.
 
@@ -237,24 +246,31 @@ storage is `transceiver` and `accountSalt`, and nothing else.
   that one landed: the message is asynchronous, and on a parity chain no report ever comes
   back, so there is no confirmation to wait for. Delivery is retryable at the provider, so
   a bootstrap that reverts on arrival is pending rather than lost.
-- `send(uint256 chainId, Call[] calls)` and `send(uint256, Call[], bytes providerData)`:
-  path A. The caller names a plain chain id and the chainKey is derived purely, so there is
-  no eid to know and no per-provider table to keep.
-- `sendTo(bytes chainIdentifier, Call[] calls)` and `sendTo(bytes, bytes[] elements)`, each
-  with a `providerData` overload: path A for destinations named by an ERC-7930 identifier.
-  The typed form is refused for a non-EVM destination and the opaque form for an EVM one,
-  enforced here because this is the last layer holding the envelope: downstream everything
-  speaks chainKeys, which are hashes and cannot be asked what chain type they came from.
-- `bootstrap(uint256 chainId, Call[] calls)` and `bootstrapTo(...)`, same four shapes: path
-  B, forwarded to the transceiver with the whole `msg.value`. They pass `_owner()` and
-  `accountSalt` rather than this contract's own address, because a CREATE2 address cannot be
-  derived from itself.
-- `quoteSend`, `quoteSendTo` (typed and opaque), `quoteBootstrap`, and `quoteBootstrapTo`
-  (typed and opaque): `view`, ungated, and each mirrors its sending twin argument for
-  argument minus `msg.value`. Every one states its `providerData`, including when empty:
-  the options are most of what a quote prices, so a form that let a caller omit them would
-  answer for the default and be spent on a message carrying something else. The bootstrap
-  quotes delegate to the transceiver, because that is what sends path B.
+- `sendMessage(bytes recipient, bytes payload, bytes[] attributes)`: path A, and the ONLY
+  send. It is `IERC7786GatewaySource`'s signature, which is why the six `send` and `sendTo`
+  overloads are gone: a recipient carries its own chain, so the chain id, the ERC-7930
+  envelope, and the typed and opaque variants collapse into one argument.
+- **The recipient is checked, not trusted.** An account's peer is its own address on every
+  parity chain, which used to be structural and became an argument, so a recipient naming
+  anything else on an `eip155` chain is refused. The check is skipped where the address is
+  not derivable here (zkSync, Tron, every non-EVM chain), because there is nothing to
+  compare against; that is `addressesDiverge` seen from the sending end.
+- **The payload arrives built, and one guarantee went with that.** The old overloads knew
+  whether they held `Call[]` or `bytes[]`, so a typed payload bound for a non-EVM chain and
+  an opaque one bound for an EVM chain were both refused before they cost a fee. `bytes
+  payload` cannot be asked which it is. `payloadForCalls` and `payloadForElements` are pure
+  builders so the pairing is at least spelled the same way here as it is decoded there, and
+  `recipientOn` builds the address so a caller never assembles one by hand.
+- `supportsAttribute(bytes4)`: required by ERC-7786, answered by the binding. The base
+  understands none, which is the honest answer for a base with no gateway behind it.
+- `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: `sendMessage`'s
+  arguments minus the value. ERC-7786 defines no quote, so this is the protocol's own, and
+  it carries the same gates the send does.
+- `bootstrap` and `bootstrapTo`, four shapes: path B, forwarded to the transceiver with the
+  whole `msg.value`. They pass `_owner()` and `accountSalt` rather than this contract's own
+  address, because a CREATE2 address cannot be derived from itself. They keep `Call[]` and
+  `bytes[]` arguments, and therefore keep the pairing check, because the transceiver
+  encodes the envelope rather than taking one prebuilt.
 - `execute(Call[] calls) payable onlyAccountOwner`: local, no bridge and no commitment. It
   takes no destination because it cannot have one.
 - `commitmentCall(receiver, commitment)` and `cancellationCall(receiver, index, expected)`:
@@ -292,6 +308,14 @@ colliding with one declared here.
   deploying anything.
 - `setRoute(bytes32 chainKey, bytes route)`: `onlyAdmin` and **write-once**, maintaining the
   reverse index in the same call because two setters is how the two directions drift apart.
+  **The route is the chain's ERC-7930 identifier**, not a provider's private id for it: an
+  ERC-7786 recipient names its own chain, so there is nothing left to translate. That also
+  makes the reverse index correct by construction, since `keccak256(identifier)` IS the
+  chainKey.
+- `_recipientOn(chainKey)`: the two halves of `_requireRoutable` joined into the
+  interoperable address a gateway takes. Building it here means both lookups happen on the
+  send path, so the provenance bar and the route requirement are enforced by construction
+  rather than by a separate call somebody could drop.
   Re-writing the same route is a no-op; a different one reverts, and so does a route already
   held by another chain, since two chains sharing one provider id is a forgery primitive.
   Reads are `routeFor`, `chainKeyOfRoute`, `hasRoute`, and the public `routeTo` an account
@@ -304,7 +328,7 @@ colliding with one declared here.
   decide what is installed: `_accountImplementation` (hub: transmitter, spoke: receiver) and
   `_accountInitializer`. The proxy, the salt, and the deployer address are identical on both
   sides, which is what puts an owner's transmitter and their receivers on one address.
-- `bootstrap(chainKey, owner, salt, calls, providerData) payable` and `bootstrapElements`:
+- `bootstrap(chainKey, owner, salt, calls, attributes) payable` and `bootstrapElements`:
   permissionless, because the caller must BE `predictCrossAccount(owner, salt)`, so the only
   account anyone can stand up is the one that already answers to them. **The only caller of
   `_requireRoutable`, and therefore the only place `minCounterpartProvenance` is enforced:**
@@ -410,12 +434,13 @@ Every chain that is not the home chain: exactly one counterpart, named at initia
 
 ### ReceiverBase
 
-`Executor` + `Initializable` + `ReentrancyGuard` + `IReceiverInit`. Exactly one
+`Executor` + `Initializable` + `ReentrancyGuard` + `IReceiverInit` + `IERC7786Recipient`.
+Exactly one
 receiver per transmitter per destination, reused for every payload that transmitter ever
 sends.
 
 **It is not an `OutboundBase`.** A receiver never sends, so it has no `_sendMessage`, no
-`_quoteMessage`, and no quote surface. The absence is structural rather than a gate someone
+`_quoteMessage`, and no quote surface. It is a recipient and nothing else. The absence is structural rather than a gate someone
 could widen later.
 
 - `initialize(address sourceTransmitter, Call[] calls)` is a thin `initializer` wrapper over
@@ -452,7 +477,18 @@ could widen later.
   safe because the only way to produce `msg.sender == address(this)` is through `_execute`,
   reachable only from an authenticated inbound message or a gated entry point.
 - `commit` is `external`, so the self-call is a real CALL rather than an internal jump.
-- `_onMessage(bytes payload)`: the inbound funnel a binding routes into. Decodes with
+- `receiveMessage(bytes32 receiveId, bytes sender, bytes payload)`: `IERC7786Recipient`'s
+  entry point, and the only way in. It is `external`, so it carries TWO checks rather than
+  one: `_isAuthorizedGateway(msg.sender)` says the message came through transport this
+  account trusts, and the sender's address must be `address(this)`, which says it came from
+  THIS account on the other side. An honest but shared gateway would otherwise let one
+  account's payload land in another's receiver. The `receiveId` is ignored: a payload either
+  matches a queued commitment or executes on arrival, and neither asks which message
+  carried it.
+- `_isAuthorizedGateway(address)`: declared, not implemented, for the same reason
+  `_checkAdmin` is on the transceiver. Which gateway is trusted is a property of the
+  binding; the sender half needs no configuration, so it is answered in the base.
+- `_onMessage(bytes payload)`: the inbound funnel `receiveMessage` routes into. Decodes with
   `Payload.decodeCalls` and executes on arrival. The binding does not decode: every provider
   gets the same decoder and the same failure mode.
 - Queue reads: `commitment()`, `nextIndex()`, `queueLength()`, `head()`, `commitmentAt()`,

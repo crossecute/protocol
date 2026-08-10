@@ -9,6 +9,9 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {IERC7786GatewaySource} from
+    "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
 
 /// @title TransmitterBase
 /// @notice The source-side entry point. One transmitter per protocol per user, routing
@@ -65,7 +68,7 @@ interface IAccountTransceiver {
         address owner,
         bytes32 salt,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable;
 
     function bootstrapElements(
@@ -73,7 +76,7 @@ interface IAccountTransceiver {
         address owner,
         bytes32 salt,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable;
 
     /// @dev The quotes live on the same interface as the sends they price, so a
@@ -83,7 +86,7 @@ interface IAccountTransceiver {
         address owner,
         bytes32 salt,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256);
 
     function quoteBootstrapElements(
@@ -91,7 +94,7 @@ interface IAccountTransceiver {
         address owner,
         bytes32 salt,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256);
 
     /// @notice The message provider's own name for a chain, opaque.
@@ -105,7 +108,12 @@ interface IAccountTransceiver {
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
 }
 
-abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
+abstract contract TransmitterBase is
+    OutboundBase,
+    Executor,
+    Initializable,
+    IERC7786GatewaySource
+{
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
     /// The caller-chosen half of this account's CREATE2 salt.
@@ -143,6 +151,10 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     event DestinationBootstrapped(bytes32 indexed destinationChainKey);
 
     error NoTransceiver();
+    /// @dev The recipient names something other than this account. An account's peer is
+    ///      itself on every chain, so any other address is either a typo or an attempt to
+    ///      route this account's payload somewhere it has no receiver.
+    error RecipientIsNotThisAccount(bytes recipient);
     /// @dev A send to a chain this account has not been stood up on has nothing to arrive
     ///      at: the peer address holds no code, so the payload fails on delivery after the
     ///      fee is already spent. Refusing here turns that into a local revert.
@@ -201,77 +213,113 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
 
     /* ================================== send =================================== */
 
-    /// @notice Send a payload to this account's receiver on one EVM destination.
+    /// @notice Put a payload on the wire for this account's receiver on another chain.
     ///
-    /// @dev PATH A, AND THE TRANSCEIVER IS NOT IN IT. This account is its own
-    ///      message-provider endpoint and its peer on the far side is its own address, so
-    ///      the payload goes straight there. The peer relationship is exactly 1:1 (one
-    ///      account, one chain pair), which is the shape every provider's peer table
-    ///      already has, and the reason an account can be an endpoint at all.
+    /// @dev THE ERC-7786 SOURCE ENTRY POINT, AND NOW THE ONLY ONE. The six `send` and
+    ///      `sendTo` overloads are gone: a recipient is a binary interoperable address that
+    ///      carries its own chain, so the chain id, the ERC-7930 envelope, and the typed and
+    ///      opaque variants all collapse into one argument. What used to be six signatures
+    ///      differing only in how the destination was spelled is one signature that takes
+    ///      the destination already spelled.
     ///
-    /// @dev THE CALLER NAMES A PLAIN CHAIN ID. `send(8453, calls)` is the whole interface:
-    ///      no chainKey to look up, no eid to know, no per-provider table to keep. A signer
-    ///      reviewing the payload sees the chain id they expect rather than a hash they
-    ///      would have to verify out of band.
+    /// @dev THE PAYLOAD ARRIVES BUILT, WHICH MOVES ONE CHECK OFF THIS CONTRACT. The old
+    ///      overloads took `Call[]` or `bytes[]` and encoded them here, which let this
+    ///      contract refuse a typed payload bound for a non-EVM chain and an opaque one
+    ///      bound for an EVM chain. `bytes payload` cannot be asked which it is, so that
+    ///      pairing is now the caller's to get right, and `payloadForCalls` and
+    ///      `payloadForElements` exist so it is at least spelled the same way here as it
+    ///      is decoded there.
     ///
-    /// @dev THE TWO-ARGUMENT FORM TAKES THE ADAPTER'S DEFAULTS. Pass `providerData` when a
-    ///      payload needs more destination gas than the default buys, or when the fee
-    ///      should refund somewhere other than the owner. Empty is not a silent fallback:
-    ///      it is the adapter deciding, and the adapter is the only thing that knows what
-    ///      its provider expects.
-    function send(uint256 destinationChainId, Call[] calldata calls)
-        external
-        payable
-        onlyAccountOwner
+    /// @dev THE RECIPIENT MUST BE THIS ACCOUNT'S OWN ADDRESS. An account's peer is itself on
+    ///      every chain, which is the property that lets it be its own endpoint, and it is
+    ///      derived rather than configured precisely so it cannot be wrong. Taking the
+    ///      recipient as an argument reopens that, so the argument is CHECKED rather than
+    ///      trusted: a payload addressed anywhere else would arrive at a contract that is
+    ///      not this account's receiver, would not accept a `commit` from it, and would not
+    ///      match a commitment bound to it.
+    ///
+    /// @return sendId Zero when the gateway has taken the message. A binding that returns
+    ///         non-zero has a second step to perform and says so in its own NatSpec.
+    function sendMessage(
+        bytes calldata recipient,
+        bytes calldata payload,
+        bytes[] calldata attributes
+    ) external payable onlyAccountOwner returns (bytes32 sendId) {
+        bytes32 chainKey = _requireOwnRecipient(recipient);
+        _requireBootstrapped(chainKey);
+
+        emit MessageSent(
+            bytes32(0),
+            Erc7930.encodeEvm(block.chainid, address(this)),
+            recipient,
+            payload,
+            msg.value,
+            attributes
+        );
+        return _dispatch(recipient, payload, attributes);
+    }
+
+    /// @notice Whether this account understands a per-send attribute.
+    ///
+    /// @dev REQUIRED BY ERC-7786 AND ANSWERED BY THE BINDING. This contract has no opinion
+    ///      about attributes: they are the provider's vocabulary, decoded where the
+    ///      provider is known. The default understands none, which is the honest answer for
+    ///      a base with no gateway behind it.
+    function supportsAttribute(bytes4) external view virtual returns (bool) {
+        return false;
+    }
+
+    /// @notice The interoperable address of this account on `destinationChainId`.
+    /// @dev The value `sendMessage` expects, so a caller never has to assemble one. It is
+    ///      this account's own address by construction; see `sendMessage`.
+    function recipientOn(uint256 destinationChainId) public view returns (bytes memory) {
+        return Erc7930.encodeEvm(destinationChainId, address(this));
+    }
+
+    /// @notice The wire bytes for an EVM destination, which decodes `Call[]`.
+    function payloadForCalls(Call[] calldata calls) public pure returns (bytes memory) {
+        return Payload.encodeCalls(calls);
+    }
+
+    /// @notice The wire bytes for a destination whose calls this chain cannot express.
+    function payloadForElements(bytes[] calldata elements)
+        public
+        pure
+        returns (bytes memory)
     {
-        _sendCalls(_evmKey(destinationChainId), calls, "");
+        return Payload.encodeElements(elements);
     }
 
-    /// @notice `send`, with provider-specific options for this one message.
-    function send(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external payable onlyAccountOwner {
-        _sendCalls(_evmKey(destinationChainId), calls, providerData);
-    }
-
-    /// @notice `send`, for a destination named by its ERC-7930 identifier.
-    /// @dev The typed form is refused for a non-EVM destination: `Call[]` is what an EVM
-    ///      receiver executes, and nothing else decodes it. Use the opaque overload there.
-    function sendTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
-        external
-        payable
-        onlyAccountOwner
+    /// @notice The recipient must name this account, and the chain must be one this account
+    ///         has been stood up on. Returns the chainKey so nothing parses twice.
+    ///
+    /// @dev THE ADDRESS CHECK ONLY BINDS WHERE THE ADDRESS IS DERIVABLE, WHICH IS EVM
+    ///      PARITY AND NOTHING ELSE. An account's peer is its own address on every chain
+    ///      that shares Ethereum's CREATE2 formula, so there `address(this)` is the answer
+    ///      and any other recipient is a mistake worth refusing locally. It is NOT the
+    ///      answer on zkSync or Tron, whose formulas differ, nor on any non-EVM chain,
+    ///      where the account is not a 20-byte address at all. This is the same divergence
+    ///      `SpokeTransceiverBase.addressesDiverge` exists to name, seen from the other end.
+    ///
+    ///      So the check is applied where it holds and skipped where it cannot, rather than
+    ///      being weakened to something that holds everywhere and means nothing. On a
+    ///      diverging or non-EVM destination the recipient is the caller's to get right,
+    ///      and the address the hub recorded for it is in the registry under
+    ///      `receiverSlot(chainKey, owner, salt)`.
+    function _requireOwnRecipient(bytes calldata recipient)
+        private
+        view
+        returns (bytes32 chainKey)
     {
-        _sendCalls(_typedKey(destinationChainIdentifier), calls, "");
-    }
+        if (recipient.length == 0) revert NoDestination();
 
-    function sendTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external payable onlyAccountOwner {
-        _sendCalls(_typedKey(destinationChainIdentifier), calls, providerData);
-    }
-
-    /// @notice `send`, in the portable form: the escape hatch for Solana, Sui, Starknet,
-    ///         and anything else with no `uint256` chain id and no `Call`.
-    /// @dev The elements are that VM's own call encoding. Nothing here inspects one.
-    function sendTo(bytes calldata destinationChainIdentifier, bytes[] calldata elements)
-        external
-        payable
-        onlyAccountOwner
-    {
-        _sendElements(_opaqueKey(destinationChainIdentifier), elements, "");
-    }
-
-    function sendTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes calldata providerData
-    ) external payable onlyAccountOwner {
-        _sendElements(_opaqueKey(destinationChainIdentifier), elements, providerData);
+        Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
+        if (io.chainType == Erc7930.CT_EIP155) {
+            if (io.addr.length != 20 || address(bytes20(io.addr)) != address(this)) {
+                revert RecipientIsNotThisAccount(recipient);
+            }
+        }
+        return ChainKey.fromIdentifier(recipient);
     }
 
     /* ================================= bootstrap =============================== */
@@ -298,15 +346,15 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         payable
         onlyAccountOwner
     {
-        _bootstrapCalls(_evmKey(destinationChainId), calls, "");
+        _bootstrapCalls(_evmKey(destinationChainId), calls, new bytes[](0));
     }
 
     function bootstrap(
         uint256 destinationChainId,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapCalls(_evmKey(destinationChainId), calls, providerData);
+        _bootstrapCalls(_evmKey(destinationChainId), calls, attributes);
     }
 
     /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
@@ -315,15 +363,15 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         payable
         onlyAccountOwner
     {
-        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, "");
+        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, new bytes[](0));
     }
 
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, providerData);
+        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, attributes);
     }
 
     /// @notice `bootstrap`, in the portable form: for standing this account up on Solana,
@@ -336,85 +384,53 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements
     ) external payable onlyAccountOwner {
-        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, "");
+        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, new bytes[](0));
     }
 
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, providerData);
+        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, attributes);
     }
-
     /* ================================== quote ================================== */
 
-    /// @notice What each entry point above would cost, in this chain's native currency.
+    /// @notice What `sendMessage` would cost, in this chain's native currency.
     ///
-    /// @dev THE MIRROR OF THE SEND SURFACE, ARGUMENT FOR ARGUMENT, MINUS `msg.value`. That
-    ///      correspondence is the whole design: a caller builds the payload once, quotes
-    ///      it, and sends the same arguments with the answer attached. Anything that
-    ///      changes the price is an argument to both.
+    /// @dev ITS ARGUMENTS ARE `sendMessage`'s, MINUS THE VALUE, AND THAT IS THE POINT. A
+    ///      caller builds the recipient and the payload once, prices them, and sends the
+    ///      same three arguments with the answer attached. Anything that changes the price
+    ///      is an argument to both, which is what stops the two drifting.
     ///
-    /// @dev EVERY QUOTE STATES ITS `providerData`, INCLUDING WHEN IT IS EMPTY, and there is
-    ///      no two-argument convenience form the way `send` has one. The options ARE most
-    ///      of what a quote prices: destination gas is the largest term in every provider's
-    ///      fee. A form that let a caller omit them would answer for the adapter's default
-    ///      and be spent on a message carrying something else, which is a wrong number
-    ///      dressed as a convenience. Pass `""` to price the default explicitly.
+    /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own. A gateway that cannot
+    ///      answer it leaves `_quoteMessage` reverting `QuoteNotImplemented`, and the
+    ///      binding documents the off-chain measurement that replaces it.
     ///
-    /// @dev THEY ARE UNGATED, UNLIKE THE SENDS THEY PRICE. `onlyAccountOwner` protects
-    ///      spending; these spend nothing, write nothing, and reveal nothing an observer
-    ///      could not compute from the same public state. A signer reviewing a payload
-    ///      before the owner submits it has to be able to call these.
+    /// @dev IT CARRIES THE SAME GATES `sendMessage` DOES. A quote that succeeded for a
+    ///      message the send would refuse reports the operation ready when it is not, so an
+    ///      unbootstrapped destination and a recipient that is not this account fail here
+    ///      too.
     ///
-    /// @dev THEY BUILD THE PAYLOAD THROUGH THE SAME `Payload` FUNCTIONS THE SENDS DO. One
-    ///      builder, two consumers: that is what makes "the quote prices the exact bytes
-    ///      that go out" a structural fact rather than a promise two code paths make
-    ///      separately.
-    /// @dev THEY CARRY THE BOOTSTRAP GATE TOO, because a quote that succeeded for a message
-    ///      the send would refuse tells a caller the operation is ready when it is not.
-    ///      `quoteSend` therefore requires the destination bootstrapped and `quoteBootstrap`
-    ///      requires it not, exactly as their twins do.
-    function quoteSend(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes calldata providerData
+    /// @dev UNGATED, UNLIKE THE SEND. It spends nothing, writes nothing, and reveals
+    ///      nothing an observer could not compute from the same public state; a signer
+    ///      reviewing a payload before the owner submits it has to be able to call it.
+    function quoteMessage(
+        bytes calldata recipient,
+        bytes calldata payload,
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        bytes32 chainKey = _evmKey(destinationChainId);
+        bytes32 chainKey = _requireOwnRecipient(recipient);
         _requireBootstrapped(chainKey);
-        return _quote(chainKey, Payload.encodeCalls(calls), providerData);
-    }
-
-    /// @notice `quoteSend`, for a destination named by its ERC-7930 identifier.
-    function quoteSendTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee) {
-        bytes32 chainKey = _typedKey(destinationChainIdentifier);
-        _requireBootstrapped(chainKey);
-        return _quote(chainKey, Payload.encodeCalls(calls), providerData);
-    }
-
-    /// @notice `quoteSend`, in the portable form.
-    function quoteSendTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes calldata providerData
-    ) external view returns (uint256 nativeFee) {
-        bytes32 chainKey = _opaqueKey(destinationChainIdentifier);
-        _requireBootstrapped(chainKey);
-        return _quote(chainKey, Payload.encodeElements(elements), providerData);
+        return _quote(recipient, payload, attributes);
     }
 
     /// @notice What standing this account up on a chain that has none would cost.
     ///
     /// @dev IT ASKS THE TRANSCEIVER, BECAUSE THE TRANSCEIVER IS WHAT SENDS. Path B leaves
-    ///      from there, with a different envelope and a different counterpart, so pricing
-    ///      it here against this contract's own `_quoteMessage` would answer for a message
-    ///      nobody sends. The same delegation `_bootstrapCalls` already makes, in the
-    ///      direction that returns a number.
+    ///      from there, with a different envelope and a different counterpart, so pricing it
+    ///      against this contract's own `_quoteMessage` would answer for a message nobody
+    ///      sends.
     ///
     /// @dev THE PAIR IS NOT CHECKED HERE OR THERE. `bootstrap` proves `(owner, salt)`
     ///      resolves to `msg.sender` before it spends anything; a quote spends nothing, and
@@ -422,19 +438,19 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     function quoteBootstrap(
         uint256 destinationChainId,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        return _quoteBootstrapCalls(_evmKey(destinationChainId), calls, providerData);
+        return _quoteBootstrapCalls(_evmKey(destinationChainId), calls, attributes);
     }
 
     /// @notice `quoteBootstrap`, for a destination named by its ERC-7930 identifier.
     function quoteBootstrapTo(
         bytes calldata destinationChainIdentifier,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrapCalls(
-            _typedKey(destinationChainIdentifier), calls, providerData
+            _typedKey(destinationChainIdentifier), calls, attributes
         );
     }
 
@@ -442,27 +458,27 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     function quoteBootstrapTo(
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         if (transceiver == address(0)) revert NoTransceiver();
         bytes32 chainKey = _opaqueKey(destinationChainIdentifier);
         _requireNotBootstrapped(chainKey);
 
         return IAccountTransceiver(transceiver).quoteBootstrapElements(
-            chainKey, _owner(), accountSalt, elements, providerData
+            chainKey, _owner(), accountSalt, elements, attributes
         );
     }
 
     function _quoteBootstrapCalls(
         bytes32 chainKey,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) private view returns (uint256) {
         if (transceiver == address(0)) revert NoTransceiver();
         _requireNotBootstrapped(chainKey);
 
         return IAccountTransceiver(transceiver).quoteBootstrap(
-            chainKey, _owner(), accountSalt, calls, providerData
+            chainKey, _owner(), accountSalt, calls, attributes
         );
     }
 
@@ -494,22 +510,6 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
 
     /* ================================= plumbing ================================ */
 
-    function _sendCalls(bytes32 chainKey, Call[] calldata calls, bytes memory providerData)
-        private
-    {
-        _requireBootstrapped(chainKey);
-        _dispatch(chainKey, Payload.encodeCalls(calls), providerData);
-    }
-
-    function _sendElements(
-        bytes32 chainKey,
-        bytes[] calldata elements,
-        bytes memory providerData
-    ) private {
-        _requireBootstrapped(chainKey);
-        _dispatch(chainKey, Payload.encodeElements(elements), providerData);
-    }
-
     /// @dev THE FLAG IS SET BEFORE THE TRANSCEIVER IS CALLED, not after. That call reaches
     ///      a provider endpoint and, through it, arbitrary code; recording first means a
     ///      re-entrant second bootstrap for the same destination meets the flag it would
@@ -518,28 +518,28 @@ abstract contract TransmitterBase is OutboundBase, Executor, Initializable {
     function _bootstrapCalls(
         bytes32 chainKey,
         Call[] calldata calls,
-        bytes memory providerData
+        bytes[] memory attributes
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         _requireNotBootstrapped(chainKey);
         _markBootstrapped(chainKey);
 
         IAccountTransceiver(transceiver).bootstrap{value: msg.value}(
-            chainKey, _owner(), accountSalt, calls, providerData
+            chainKey, _owner(), accountSalt, calls, attributes
         );
     }
 
     function _bootstrapElements(
         bytes32 chainKey,
         bytes[] calldata elements,
-        bytes memory providerData
+        bytes[] memory attributes
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         _requireNotBootstrapped(chainKey);
         _markBootstrapped(chainKey);
 
         IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
-            chainKey, _owner(), accountSalt, elements, providerData
+            chainKey, _owner(), accountSalt, elements, attributes
         );
     }
 

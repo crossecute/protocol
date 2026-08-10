@@ -6,6 +6,7 @@ import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
@@ -255,7 +256,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address owner,
         bytes32 salt,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable {
         if (predictCrossAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
@@ -266,7 +267,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _requireRoutable(destinationChainKey);
 
         _dispatch(
-            destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData
+            _recipientOn(destinationChainKey),
+            Envelope.encodeBootstrap(owner, salt, calls),
+            attributes
         );
     }
 
@@ -281,7 +284,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address owner,
         bytes32 salt,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external payable {
         if (predictCrossAccount(owner, salt) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
@@ -290,9 +293,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _requireRoutable(destinationChainKey);
 
         _dispatch(
-            destinationChainKey,
+            _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
-            providerData
+            attributes
         );
     }
 
@@ -317,11 +320,13 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address owner,
         bytes32 salt,
         Call[] calldata calls,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
         return _quote(
-            destinationChainKey, Envelope.encodeBootstrap(owner, salt, calls), providerData
+            _recipientOn(destinationChainKey),
+            Envelope.encodeBootstrap(owner, salt, calls),
+            attributes
         );
     }
 
@@ -331,13 +336,13 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address owner,
         bytes32 salt,
         bytes[] calldata elements,
-        bytes calldata providerData
+        bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
         return _quote(
-            destinationChainKey,
+            _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
-            providerData
+            attributes
         );
     }
 
@@ -447,6 +452,25 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     function _requireRoutable(bytes32 chainKey) internal view {
         _counterpartOn(chainKey);
         _routeTo(chainKey);
+    }
+
+    /// @notice The counterpart on `chainKey`, as a binary interoperable address.
+    ///
+    /// @dev IT IS THE TWO HALVES OF `_requireRoutable`, JOINED. The route holds the chain
+    ///      and `_counterpartOn` holds the address, which is exactly the pair ERC-7930
+    ///      encodes and exactly what an ERC-7786 gateway takes as a recipient. Building it
+    ///      here rather than in a binding means both lookups happen on the send path, so
+    ///      the provenance bar and the route requirement are enforced by construction
+    ///      rather than by a separate call somebody could drop.
+    ///
+    /// @dev THE ROUTE SLOT HOLDS A CHAIN IDENTIFIER NOW, not a provider's private id. That
+    ///      is what ERC-7786 removed the need for: a gateway is told the chain by the
+    ///      recipient. It also makes the reverse index correct by construction, since
+    ///      `keccak256(identifier)` IS the chainKey, which is what `chainKeyOfRoute`
+    ///      already assumes.
+    function _recipientOn(bytes32 chainKey) internal view returns (bytes memory) {
+        Erc7930.Interop memory io = Erc7930.parseStrict(_routeTo(chainKey));
+        return Erc7930.encode(io.chainType, io.chainRef, _counterpartOn(chainKey));
     }
 
     /// @notice Where this transceiver's counterpart lives on `chainKey`.
