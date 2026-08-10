@@ -247,6 +247,7 @@ abstract contract TransmitterBase is
     ) external payable onlyAccountOwner returns (bytes32 sendId) {
         bytes32 chainKey = _requireOwnRecipient(recipient);
         _requireBootstrapped(chainKey);
+        if (payload.length == 0) revert EmptyPayload();
 
         emit MessageSent(
             bytes32(0),
@@ -256,7 +257,7 @@ abstract contract TransmitterBase is
             msg.value,
             attributes
         );
-        return _dispatch(recipient, payload, attributes);
+        return _sendMessage(recipient, payload, attributes);
     }
 
     /// @notice Whether this account understands a per-send attribute.
@@ -422,7 +423,9 @@ abstract contract TransmitterBase is
     ) external view returns (uint256 nativeFee) {
         bytes32 chainKey = _requireOwnRecipient(recipient);
         _requireBootstrapped(chainKey);
-        return _quote(recipient, payload, attributes);
+        if (payload.length == 0) revert EmptyPayload();
+
+        return _quoteMessage(recipient, payload, attributes);
     }
 
     /// @notice What standing this account up on a chain that has none would cost.

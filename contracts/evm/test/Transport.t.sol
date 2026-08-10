@@ -9,6 +9,8 @@ import {OwnableUpgradeable} from
 import {TransmitterBase, IAccountTransceiver} from
     "src/messaging/outbound/TransmitterBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {IERC7786GatewaySource} from
+    "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
 import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
@@ -283,9 +285,10 @@ contract TransportTest is Test {
         assertEq(transmitter.sentValue(), 0.3 ether);
     }
 
-    /// @dev `Dispatched` carries the HASH: the bytes are already in calldata, so logging
-    ///      them again would double the cost of every send.
-    function test_dispatchedCarriesThePayloadHash() public {
+    /// @dev ERC-7786 REQUIRES `MessageSent`, AND IT SUPERSEDED OUR OWN EVENT. `Dispatched`
+    ///      carried two hashes; this carries the recipient, the payload, the value, and the
+    ///      attributes, so there is nothing left for a second event to add.
+    function test_theSendEmitsTheStandardEvent() public {
         Call[] memory calls = _calls();
 
         vm.recordLogs();
@@ -295,17 +298,29 @@ contract TransportTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] != OutboundBase.Dispatched.selector) continue;
+            if (logs[i].topics[0] != IERC7786GatewaySource.MessageSent.selector) continue;
             found = true;
-            assertEq(logs[i].topics[1], keccak256(_recip(DEST)), "the recipient, hashed");
-            assertEq(logs[i].topics[2], keccak256(Payload.encodeCalls(calls)));
+            (bytes memory sender, bytes memory recipient, bytes memory payload,,) =
+                abi.decode(logs[i].data, (bytes, bytes, bytes, uint256, bytes[]));
+            assertEq(sender, Erc7930.encodeEvm(block.chainid, address(transmitter)));
+            assertEq(recipient, _recip(DEST));
+            assertEq(payload, Payload.encodeCalls(calls));
         }
-        assertTrue(found);
+        assertTrue(found, "MessageSent is mandatory for a gateway source");
     }
 
-    /// @dev THE OPTIONS RIDE PER SEND, NOT AS CONFIGURATION. Destination gas is a property
-    ///      of the payload (a three-call array needs more than a bare `commit`), so a
-    ///      stored default would strand the first message that needed more.
+    /// @dev PATH B IS NOT A GATEWAY SOURCE, so it emits its own record, and names the pair
+    ///      rather than hashing it: `(chainKey, owner, salt)` is what an account is, and
+    ///      what the return leg's registry slot is keyed by.
+    function test_bootstrapEmitsItsOwnRecord() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+
+        vm.expectEmit(true, true, false, true, address(t));
+        emit TransceiverBase.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
+        vm.prank(owner);
+        acct.bootstrap(DEST, _calls());
+    }
+
     function test_providerDataTravelsPerSend() public {
         bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
 

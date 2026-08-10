@@ -206,8 +206,10 @@ The shared execution loop, inherited by `TransmitterBase` and `ReceiverBase` ali
 The sending half, with no opinion about who is allowed to send, and no storage at all. That
 is what makes it free to mix into a contract that already has a layout.
 
-- `_dispatch(bytes recipient, bytes payload, bytes[] attributes)`: rejects an empty
-  recipient and an empty payload, emits `Dispatched`, and hands off to `_sendMessage`.
+- **There is no `_dispatch` wrapper.** Entry points call `_sendMessage` directly. The
+  wrapper used to validate, emit, and forward; the validation moved to the entry point where
+  the untrusted argument arrives, and the event went, because a gateway source must emit
+  `MessageSent` and that carries strictly more than the two hashes `Dispatched` did.
 - `_sendMessage(bytes recipient, bytes payload, bytes[] attributes) returns (bytes32
   sendId)`: `internal virtual`, reverting `SendNotImplemented` until a protocol binding
   overrides it. **One primitive for every channel**, and now ERC-7786's own: a payload to
@@ -215,11 +217,11 @@ is what makes it free to mix into a contract that already has a layout.
   `bytes` to an interoperable address. The `sendId` is the gateway's, and a non-zero one
   means the message is NOT away yet; a binding either handles the second step or refuses
   gateways that need one.
-- `_quote(...)` / `_quoteMessage(...)`: the same three arguments, `view`, reverting
-  `QuoteNotImplemented` by default. `_quote` applies the same validation as `_dispatch`
-  minus the event, so a quote cannot succeed for a message the send would refuse. Nothing on
-  the send path consults it: the quote is advisory, and a price that moved in between is the
-  provider's refund to make rather than a revert.
+- `_quoteMessage(...)`: the same three arguments, `view`, reverting `QuoteNotImplemented`
+  by default, and called directly for the same reason `_sendMessage` is. `quoteMessage`
+  repeats the entry point's checks so a quote cannot succeed for a message the send would
+  refuse. Nothing on the send path consults it: the quote is advisory, and a price that
+  moved in between is the provider's refund to make rather than a revert.
 - `_refundTo()`: `msg.sender`. A fee is overpaid by whoever paid it. On path A that is the
   owner, because `send` is owner-gated; on path B it is the account, because `bootstrap`
   refuses any caller that is not `predictCrossAccount(owner, salt)`. The shared transceiver
@@ -229,8 +231,11 @@ is what makes it free to mix into a contract that already has a layout.
   payload, so a stored default would strand the first message that needed more. An empty
   array means "the gateway's default", and `supportsAttribute` is how a caller learns what
   a given binding understands.
-- `Dispatched(destinationChainKey, payloadHash)` carries the hash rather than the payload:
-  the bytes are already in the transaction's calldata.
+- Events are the standard's where there is one and the protocol's where there is not.
+  Path A emits `MessageSent`, which ERC-7786 requires of a gateway source. Path B is not a
+  gateway source, so `TransceiverBase` emits `BootstrapSent(chainKey, owner, salt)`, which
+  names the pair rather than hashing it: that triple is what an account is, and what the
+  return leg's registry slot is keyed by.
 
 ### TransmitterBase
 

@@ -15,13 +15,28 @@ pragma solidity ^0.8.0;
 /// @dev IT DECLARES NO STORAGE, DELIBERATELY. That is what makes it free to mix into a
 ///      contract that already has a layout: there is no slot to collide, no gap to
 ///      reserve, and no ordering constraint on the `is` list beyond linearization.
+/// @dev THERE IS NO `_dispatch` WRAPPER, AND ITS ABSENCE IS THE POINT. It used to validate
+///      the recipient and payload, emit a `Dispatched` event, and call `_sendMessage`. All
+///      three jobs moved or went:
+///
+///      The VALIDATION belongs at the entry point, where the untrusted argument arrives.
+///      `sendMessage` already parses its recipient to check it names this account, so a
+///      wrapper re-checking it downstream was a second guard on a value that had been
+///      proved; the transceiver builds its recipient with `_recipientOn` and its payload
+///      with `Envelope`, neither of which can produce an empty one.
+///
+///      The EVENT was redundant once the send surface became ERC-7786's. A gateway source
+///      MUST emit `MessageSent`, which carries the recipient, the payload, the value, and
+///      the attributes; `Dispatched` carried two hashes of a subset of that. Path B, which
+///      is not a gateway source, emits `BootstrapSent` instead, and that names the owner
+///      and salt rather than hashing them beyond recognition.
+///
+///      What is left is `_sendMessage` itself, which is what a binding implements and the
+///      only thing a caller needs. One primitive, called directly, with nothing between
+///      the entry point and the gateway to drift out of step with either.
 abstract contract OutboundBase {
-    /// @dev One event for the one fact: a payload left for a destination. It carries the
-    ///      HASH rather than the payload: the bytes are already in this transaction's
-    ///      calldata, so logging them again would double the cost of every send to make an
-    ///      indexer's job marginally easier.
-    event Dispatched(bytes32 indexed recipientHash, bytes32 indexed payloadHash);
-
+    /// @dev Raised where the untrusted argument arrives, which is the entry point rather
+    ///      than a shared internal. See the contract note on why there is no `_dispatch`.
     error NoDestination();
     error EmptyPayload();
     /// @dev The default `_sendMessage` body. A protocol that forgets to implement it fails
@@ -33,25 +48,6 @@ abstract contract OutboundBase {
     ///      be indistinguishable from a free message, and the first thing anyone would do
     ///      with the answer is send exactly that much.
     error QuoteNotImplemented();
-
-    /// @notice Hand a payload to the gateway for one recipient.
-    ///
-    /// @dev THE ARGUMENTS ARE ERC-7786's, AND THAT IS THE WHOLE CHANGE. A recipient is a
-    ///      binary interoperable address carrying its own chain, so the destination is
-    ///      named by the message rather than resolved from a key the caller supplied
-    ///      separately. Attributes replace the opaque `providerData` blob for the same
-    ///      reason: the standard already has a shape for per-send options.
-    function _dispatch(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes
-    ) internal returns (bytes32 sendId) {
-        if (recipient.length == 0) revert NoDestination();
-        if (payload.length == 0) revert EmptyPayload();
-
-        emit Dispatched(keccak256(recipient), keccak256(payload));
-        return _sendMessage(recipient, payload, attributes);
-    }
 
     /// @notice Where a provider's excess fee goes back to.
     ///
@@ -124,24 +120,6 @@ abstract contract OutboundBase {
         bytes[] memory attributes
     ) internal virtual returns (bytes32 sendId) {
         revert SendNotImplemented();
-    }
-
-    /// @notice What `_dispatch` would cost, without dispatching anything.
-    ///
-    /// @dev THE SAME VALIDATION AS `_dispatch`, MINUS THE EVENT. A quote that succeeded for
-    ///      a message the send would refuse tells a caller the operation is ready when it
-    ///      is not, which is worse than no quote: the refusal arrives after the signers
-    ///      have already approved the payload. So the two entry points agree on what is
-    ///      quotable, by sharing the checks rather than by restating them.
-    function _quote(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes
-    ) internal view returns (uint256 nativeFee) {
-        if (recipient.length == 0) revert NoDestination();
-        if (payload.length == 0) revert EmptyPayload();
-
-        return _quoteMessage(recipient, payload, attributes);
     }
 
     /// @notice What putting `payload` on the wire costs, in THIS chain's native currency.

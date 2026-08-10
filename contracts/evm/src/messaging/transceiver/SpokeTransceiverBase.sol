@@ -364,7 +364,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      report. All-or-nothing is the only recoverable shape.
     function _reportReceiver(address owner, bytes32 salt, address receiver) internal {
         emit ReceiverReported(owner, salt, receiver);
-        _dispatch(
+        _sendMessage(
             _recipientOn(homeChainKey),
             Envelope.encodeReceiverReport(
                 owner, salt, Erc7930.encodeEvm(block.chainid, receiver)

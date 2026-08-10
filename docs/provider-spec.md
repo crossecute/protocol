@@ -294,7 +294,7 @@ efficiency and a failure that happens before the signers commit, not correctness
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, calls)`, the same
-function `_dispatch` receives, not over an estimate of the length. Every provider prices
+function `sendMessage` puts on the wire, not over an estimate of the length. Every provider prices
 per byte. This is what makes `quote` a number a caller can send rather than a number a
 caller must pad, and it is why the public surface below takes the same arguments as `send`
 rather than taking raw `bytes`.
@@ -804,7 +804,7 @@ owner-gated `send` makes it the owner, and account-gated `bootstrap` makes it th
 
 The rejected alternatives are worth recording, because each looks reasonable first:
 
-- **A fourth argument on `_dispatch`/`_sendMessage`.** Explicit and hard to get wrong, but
+- **A fourth argument on `_sendMessage`.** Explicit and hard to get wrong, but
   it widens the one primitive every binding implements, to carry a value both call sites
   can already read off the stack.
 - **A refund address inside `providerData`.** No base change, but an empty blob on a

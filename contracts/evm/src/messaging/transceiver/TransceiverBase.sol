@@ -120,6 +120,12 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     mapping(bytes32 => bytes32) private _chainKeyOfRoute;
 
     event RouteSet(bytes32 indexed chainKey, bytes route);
+    /// @dev Path B's own record, replacing the generic `Dispatched` this used to share
+    ///      with path A. A transceiver is not an ERC-7786 gateway source, so nothing else
+    ///      here emits `MessageSent`, and naming the pair is more use to an operator than
+    ///      hashing it: `(chainKey, owner, salt)` is what an account IS, and it is what the
+    ///      registry slot on the return leg is keyed by.
+    event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
 
     /// @notice Teach this transceiver its provider's name for a destination. WRITE-ONCE.
     ///
@@ -266,7 +272,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         // unconfigured route, reverts before anything crosses.
         _requireRoutable(destinationChainKey);
 
-        _dispatch(
+        emit BootstrapSent(destinationChainKey, owner, salt);
+        _sendMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrap(owner, salt, calls),
             attributes
@@ -292,7 +299,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
         _requireRoutable(destinationChainKey);
 
-        _dispatch(
+        emit BootstrapSent(destinationChainKey, owner, salt);
+        _sendMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
             attributes
@@ -323,7 +331,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
-        return _quote(
+        return _quoteMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrap(owner, salt, calls),
             attributes
@@ -339,7 +347,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
-        return _quote(
+        return _quoteMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
             attributes
