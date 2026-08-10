@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC20/extensions/draft-ERC20TemporaryApproval.sol)
+// OpenZeppelin Contracts (last updated v5.3.0) (token/ERC20/extensions/draft-ERC20TemporaryApproval.sol)
 
 pragma solidity ^0.8.24;
 
@@ -9,7 +9,7 @@ import {IERC7674} from "@openzeppelin/contracts/interfaces/draft-IERC7674.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {ERC20} that adds support for temporary allowances following ERC-7674.
@@ -68,7 +68,7 @@ abstract contract ERC20TemporaryApprovalUpgradeable is Initializable, ERC20Upgra
     }
 
     /**
-     * @dev Sets `value` as the temporary allowance of `spender` over the `owner` s tokens.
+     * @dev Sets `value` as the temporary allowance of `spender` over the `owner`'s tokens.
      *
      * This internal function is equivalent to `temporaryApprove`, and can be used to e.g. set automatic allowances
      * for certain subsystems, etc.

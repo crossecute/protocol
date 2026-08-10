@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (governance/extensions/GovernorStorage.sol)
+// OpenZeppelin Contracts (last updated v5.6.0) (governance/extensions/GovernorStorage.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
-import {Initializable} from "../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
- * @dev Extension of {Governor} that implements storage of proposal details. This modules also provides primitives for
+ * @dev Extension of {Governor} that implements storage of proposal details. This module also provides primitives for
  * the enumerability of proposals.
  *
  * Use cases for this module include:
@@ -69,12 +69,15 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
     }
 
     /**
-     * @dev Version of {IGovernorTimelock-queue} with only `proposalId` as an argument.
+     * @dev Version of {IGovernor-queue} with only `proposalId` as an argument.
      */
     function queue(uint256 proposalId) public virtual {
         GovernorStorageStorage storage $ = _getGovernorStorageStorage();
         // here, using storage is more efficient than memory
         ProposalDetails storage details = $._proposalDetails[proposalId];
+        if (details.descriptionHash == 0) {
+            revert GovernorNonexistentProposal(proposalId);
+        }
         queue(details.targets, details.values, details.calldatas, details.descriptionHash);
     }
 
@@ -85,6 +88,9 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
         GovernorStorageStorage storage $ = _getGovernorStorageStorage();
         // here, using storage is more efficient than memory
         ProposalDetails storage details = $._proposalDetails[proposalId];
+        if (details.descriptionHash == 0) {
+            revert GovernorNonexistentProposal(proposalId);
+        }
         execute(details.targets, details.values, details.calldatas, details.descriptionHash);
     }
 
@@ -95,6 +101,9 @@ abstract contract GovernorStorageUpgradeable is Initializable, GovernorUpgradeab
         GovernorStorageStorage storage $ = _getGovernorStorageStorage();
         // here, using storage is more efficient than memory
         ProposalDetails storage details = $._proposalDetails[proposalId];
+        if (details.descriptionHash == 0) {
+            revert GovernorNonexistentProposal(proposalId);
+        }
         cancel(details.targets, details.values, details.calldatas, details.descriptionHash);
     }
 

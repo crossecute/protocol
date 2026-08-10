@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (governance/extensions/GovernorTimelockCompound.sol)
+// OpenZeppelin Contracts (last updated v5.5.0) (governance/extensions/GovernorTimelockCompound.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
 import {ICompoundTimelock} from "@openzeppelin/contracts/vendor/compound/ICompoundTimelock.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {Initializable} from "../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {Governor} that binds the execution process to a Compound Timelock. This adds a delay, enforced by
- * the external timelock to all successful proposal (in addition to the voting duration). The {Governor} needs to be
+ * the external timelock to all successful proposals (in addition to the voting duration). The {Governor} needs to be
  * the admin of the timelock for any operation to be performed. A public, unrestricted,
  * {GovernorTimelockCompound-__acceptAdmin} is available to accept ownership of the timelock.
  *
@@ -73,9 +73,7 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
         return address($._timelock);
     }
 
-    /**
-     * @dev See {IGovernor-proposalNeedsQueuing}.
-     */
+    /// @inheritdoc IGovernor
     function proposalNeedsQueuing(uint256) public view virtual override returns (bool) {
         return true;
     }
@@ -162,7 +160,7 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
     /**
      * @dev Accept admin right over the timelock.
      */
-    // solhint-disable-next-line private-vars-leading-underscore
+    // solhint-disable-next-line openzeppelin/leading-underscore
     function __acceptAdmin() public {
         GovernorTimelockCompoundStorage storage $ = _getGovernorTimelockCompoundStorage();
         $._timelock.acceptAdmin();
@@ -181,7 +179,7 @@ abstract contract GovernorTimelockCompoundUpgradeable is Initializable, Governor
 
      * CAUTION: It is not recommended to change the timelock while there are other queued governance proposals.
      */
-    function updateTimelock(ICompoundTimelock newTimelock) external virtual onlyGovernance {
+    function updateTimelock(ICompoundTimelock newTimelock) public virtual onlyGovernance {
         _updateTimelock(newTimelock);
     }
 

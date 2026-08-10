@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC721/extensions/ERC721Wrapper.sol)
+// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC721/extensions/ERC721Wrapper.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ERC721Upgradeable} from "../ERC721Upgradeable.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of the ERC-721 token contract to support token wrapping.
@@ -55,7 +55,7 @@ abstract contract ERC721WrapperUpgradeable is Initializable, ERC721Upgradeable, 
             // This is an "unsafe" transfer that doesn't call any hook on the receiver. With underlying() being trusted
             // (by design of this contract) and no other contracts expected to be called from there, we are safe.
             // slither-disable-next-line reentrancy-no-eth
-            underlying().transferFrom(_msgSender(), address(this), tokenId);
+            underlying().transferFrom(_msgSender(), address(this), tokenId); // forge-lint: disable-line(erc20-unchecked-transfer)
             _safeMint(account, tokenId);
         }
 

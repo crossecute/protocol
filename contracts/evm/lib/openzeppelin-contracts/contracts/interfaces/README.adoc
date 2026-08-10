@@ -30,6 +30,8 @@ are useful to interact with third party contracts that implement them.
 - {IERC1820Implementer}
 - {IERC1820Registry}
 - {IERC1822Proxiable}
+- {IERC1967}
+- {IERC2309}
 - {IERC2612}
 - {IERC2981}
 - {IERC3156FlashLender}
@@ -40,7 +42,22 @@ are useful to interact with third party contracts that implement them.
 - {IERC5313}
 - {IERC5805}
 - {IERC6372}
+- {IERC6909}
+- {IERC6909ContentURI}
+- {IERC6909Metadata}
+- {IERC6909TokenSupply}
+- {IERC7579Module}
+- {IERC7579Validator}
+- {IERC7579Hook}
+- {IERC7579Execution}
+- {IERC7579AccountConfig}
+- {IERC7579ModuleConfig}
 - {IERC7674}
+- {IERC7751}
+- {IERC7786GatewaySource}
+- {IERC7786Recipient}
+- {IERC7802}
+- {IERC7913SignatureVerifier}
 
 == Detailed ABI
 
@@ -64,6 +81,10 @@ are useful to interact with third party contracts that implement them.
 
 {{IERC1822Proxiable}}
 
+{{IERC1967}}
+
+{{IERC2309}}
+
 {{IERC2612}}
 
 {{IERC2981}}
@@ -74,12 +95,44 @@ are useful to interact with third party contracts that implement them.
 
 {{IERC4626}}
 
-{{IERC5313}}
+{{IERC4906}}
 
 {{IERC5267}}
+
+{{IERC5313}}
 
 {{IERC5805}}
 
 {{IERC6372}}
 
+{{IERC6909}}
+
+{{IERC6909ContentURI}}
+
+{{IERC6909Metadata}}
+
+{{IERC6909TokenSupply}}
+
+{{IERC7579Module}}
+
+{{IERC7579Validator}}
+
+{{IERC7579Hook}}
+
+{{IERC7579Execution}}
+
+{{IERC7579AccountConfig}}
+
+{{IERC7579ModuleConfig}}
+
 {{IERC7674}}
+
+{{IERC7751}}
+
+{{IERC7786GatewaySource}}
+
+{{IERC7786Recipient}}
+
+{{IERC7802}}
+
+{{IERC7913SignatureVerifier}}

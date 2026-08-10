@@ -249,9 +249,28 @@ mainnet.
 
 ## 6. Infrastructure: None of it exists
 
-- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.1.0,
-  OZ-upgradeable 5.1.0. Committed deliberately: CREATE2 parity depends on byte-identical
+- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.6.1,
+  OZ-upgradeable 5.6.1. Committed deliberately: CREATE2 parity depends on byte-identical
   initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
+
+  **A dependency bump moves every account address**, which is why this one happened before
+  `script/` exists rather than after. `CrossProxy`'s initcode hash went
+  `0xf2d41a...` (5.1.0) to `0xc3e962...` (5.6.1). Free today because nothing is deployed;
+  after a deployment it is not a bump, it is a migration of every account on every chain.
+
+- **The `paris` pin and OpenZeppelin are on a collision course.** Taking 5.6.1 already
+  required forking `EnumerableSet` into `registry/Bytes32Set.sol`, because it now imports
+  `Arrays`, which uses `mcopy`, which needs Cancun. The pin exists because PUSH0 is absent
+  on zkSync, Tron, and several L2s, and identical initcode everywhere is the whole CREATE2
+  story, so the pin won.
+
+  It will recur, and next time larger: OZ has DEPRECATED the storage-based `ReentrancyGuard`
+  and says it will be replaced by `ReentrancyGuardTransient` in v6.0, which needs TSTORE and
+  therefore Cancun as well. The question to settle before then is which chains the pin is
+  actually buying, since zkSync and Tron are ALREADY excluded from address derivation by
+  their provenance caps: their CREATE2 formulas differ, so parity never held for them. If
+  the pin is only protecting chains that the registry already declines to derive, it is
+  costing more than it buys.
 - **No `script/`.** The Assumptions section specifies an elaborate deploy story (Arachnid's
   factory, proxy with deployer-as-owner, immediate upgrade, ProxyAdmin under the msig), with
   no code behind it. The CREATE2 parity argument stands or falls on that initcode being

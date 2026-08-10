@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
 import {PausableUpgradeable} from "../../../utils/PausableUpgradeable.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev ERC-20 token with pausable token transfers, minting and burning.
@@ -22,7 +22,6 @@ import {Initializable} from "../../../proxy/utils/Initializable.sol";
  */
 abstract contract ERC20PausableUpgradeable is Initializable, ERC20Upgradeable, PausableUpgradeable {
     function __ERC20Pausable_init() internal onlyInitializing {
-        __Pausable_init_unchained();
     }
 
     function __ERC20Pausable_init_unchained() internal onlyInitializing {

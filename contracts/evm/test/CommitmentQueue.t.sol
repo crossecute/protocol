@@ -8,8 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
-import {ReentrancyGuardUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 
 /// @dev Records the order calls actually landed in, so ordering assertions are about
@@ -323,7 +322,7 @@ contract CommitmentQueueTest is Test {
                 Executor.CallFailed.selector,
                 uint256(0),
                 abi.encodeWithSelector(
-                    ReentrancyGuardUpgradeable.ReentrancyGuardReentrantCall.selector
+                    ReentrancyGuard.ReentrancyGuardReentrantCall.selector
                 )
             )
         );

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ReentrancyGuardUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -80,12 +79,18 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      the first element, so a call array approved for one chain cannot be finalized
 ///      here. Receivers are deployed at deterministic addresses across chains, which is
 ///      exactly the situation where a cross-chain replay would otherwise work.
-abstract contract ReceiverBase is
-    Executor,
-    Initializable,
-    ReentrancyGuardUpgradeable,
-    IReceiverInit
-{
+/// @dev THE GUARD IS THE NON-UPGRADEABLE ONE, AND THAT IS NOT A DOWNGRADE. OpenZeppelin
+///      removed `ReentrancyGuardUpgradeable` in 5.6.0, flagging the contract stateless
+///      and stopping transpilation of it: the guard keeps its state in an ERC-7201
+///      namespaced slot rather than a linear one, so there was never an upgradeable variant
+///      to maintain. The namespacing is why swapping it moves no field of ours.
+///
+///      A proxy runs no constructor, so the slot is never set to `NOT_ENTERED` and stays
+///      zero. That is SAFE rather than merely tolerable: the guard tests for `ENTERED`
+///      explicitly, so zero reads as not-entered, which is the same answer the initializer
+///      used to write. It costs one cold SSTORE on an account's first guarded call and
+///      nothing afterwards.
+abstract contract ReceiverBase is Executor, Initializable, ReentrancyGuard, IReceiverInit {
     /// The transmitter this receiver answers to. Set once, at initialization.
     address public sourceTransmitter;
     /// The transceiver that cloned this receiver. Named to avoid colliding with
@@ -196,10 +201,6 @@ abstract contract ReceiverBase is
     ///      nothing else establishes intent, whereas here the intent is to create the
     ///      receiver and the calls are the optional part.
     ///
-    /// @dev THE REENTRANCY GUARD MUST BE INITIALIZED BEFORE THE CALLS RUN. A clone runs no
-    ///      constructor of its own, so `__ReentrancyGuard_init` has to come above the
-    ///      payload rather than after it.
-    ///
     /// @dev IT IS A THIN WRAPPER, AND THE WORK IS IN `__ReceiverBase_init`. This is the
     ///      default entry point, for a protocol binding that needs nothing of its own at
     ///      creation. One that does declares its own `initialize` and sequences its setup
@@ -245,10 +246,6 @@ abstract contract ReceiverBase is
         onlyInitializing
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
-
-        // BEFORE the payload runs. A proxy runs no constructor of its own, so the guard is
-        // uninitialized until this line, and the payload is arbitrary calls.
-        __ReentrancyGuard_init();
 
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;

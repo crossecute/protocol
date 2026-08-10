@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC1155/extensions/ERC1155Supply.sol)
+// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC1155/extensions/ERC1155Supply.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {ERC1155Upgradeable} from "../ERC1155Upgradeable.sol";
 import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of ERC-1155 that adds tracking of total supply per id.
  *
  * Useful for scenarios where Fungible and Non-fungible tokens have to be
- * clearly identified. Note: While a totalSupply of 1 might mean the
- * corresponding is an NFT, there is no guarantees that no other token with the
- * same id are not going to be minted.
+ * clearly identified. Note: While a `totalSupply` of 1 may mean the
+ * corresponding token is an NFT, there are no inherent guarantees that
+ * no more tokens with the same id will be minted in future.
  *
  * NOTE: This contract implies a global limit of 2**256 - 1 to the number of tokens
  * that can be minted.
@@ -44,7 +44,7 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
     function __ERC1155Supply_init_unchained() internal onlyInitializing {
     }
     /**
-     * @dev Total value of tokens in with a given id.
+     * @dev Total value of tokens with a given id.
      */
     function totalSupply(uint256 id) public view virtual returns (uint256) {
         ERC1155SupplyStorage storage $ = _getERC1155SupplyStorage();
@@ -60,15 +60,13 @@ abstract contract ERC1155SupplyUpgradeable is Initializable, ERC1155Upgradeable 
     }
 
     /**
-     * @dev Indicates whether any token exist with a given id, or not.
+     * @dev Indicates whether any tokens exist with a given id, or not.
      */
     function exists(uint256 id) public view virtual returns (bool) {
         return totalSupply(id) > 0;
     }
 
-    /**
-     * @dev See {ERC1155-_update}.
-     */
+    /// @inheritdoc ERC1155Upgradeable
     function _update(
         address from,
         address to,

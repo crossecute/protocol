@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC20/extensions/ERC20FlashMint.sol)
+// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC20/extensions/ERC20FlashMint.sol)
 
 pragma solidity ^0.8.20;
 
 import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
 import {IERC3156FlashLender} from "@openzeppelin/contracts/interfaces/IERC3156FlashLender.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the ERC-3156 Flash loans extension, as defined in
@@ -44,12 +44,13 @@ abstract contract ERC20FlashMintUpgradeable is Initializable, ERC20Upgradeable, 
     }
     /**
      * @dev Returns the maximum amount of tokens available for loan.
+     *
+     * NOTE: This function will not automatically detect any supply cap
+     * added by other extensions, such as {ERC20Capped}. If necessary,
+     * override this function to take a supply cap into account.
+     *
      * @param token The address of the token that is requested.
      * @return The amount of token that can be loaned.
-     *
-     * NOTE: This function does not consider any form of supply cap, so in case
-     * it's used in a token with a cap like {ERC20Capped}, make sure to override this
-     * function to integrate the cap instead of `type(uint256).max`.
      */
     function maxFlashLoan(address token) public view virtual returns (uint256) {
         return token == address(this) ? type(uint256).max - totalSupply() : 0;
@@ -74,14 +75,9 @@ abstract contract ERC20FlashMintUpgradeable is Initializable, ERC20Upgradeable, 
      * @dev Returns the fee applied when doing flash loans. By default this
      * implementation has 0 fees. This function can be overloaded to make
      * the flash loan mechanism deflationary.
-     * @param token The token to be flash loaned.
-     * @param value The amount of tokens to be loaned.
      * @return The fees applied to the corresponding flash loan.
      */
-    function _flashFee(address token, uint256 value) internal view virtual returns (uint256) {
-        // silence warning about unused variable without the addition of bytecode.
-        token;
-        value;
+    function _flashFee(address /*token*/, uint256 /*value*/) internal view virtual returns (uint256) {
         return 0;
     }
 

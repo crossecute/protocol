@@ -3,10 +3,10 @@
 pragma solidity ^0.8.20;
 
 import {AccessControlUpgradeable} from "../../../access/AccessControlUpgradeable.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract AccessControlModifiedUpgradeable is Initializable, AccessControlUpgradeable {
-    error AccessControlNonRevokable();
+    error AccessControlNonRevocable();
 
     function __AccessControlModified_init() internal onlyInitializing {
     }
@@ -15,6 +15,6 @@ contract AccessControlModifiedUpgradeable is Initializable, AccessControlUpgrade
     }
     // Override the revokeRole function
     function revokeRole(bytes32, address) public pure override {
-        revert AccessControlNonRevokable();
+        revert AccessControlNonRevocable();
     }
 }

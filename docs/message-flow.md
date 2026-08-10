@@ -410,7 +410,7 @@ Every chain that is not the home chain: exactly one counterpart, named at initia
 
 ### ReceiverBase
 
-`Executor` + `Initializable` + `ReentrancyGuardUpgradeable` + `IReceiverInit`. Exactly one
+`Executor` + `Initializable` + `ReentrancyGuard` + `IReceiverInit`. Exactly one
 receiver per transmitter per destination, reused for every payload that transmitter ever
 sends.
 
@@ -463,10 +463,14 @@ could widen later.
 - The commitment is chain-bound. `Commitment.hashCalls` folds in `ChainKey.local()`, so an
   array approved for one chain cannot be finalized here. Accounts sit at deterministic
   addresses across chains, which is exactly where a cross-chain replay would otherwise work.
-- `ReentrancyGuardUpgradeable` is the **storage** version, not the transient one, because
-  `TSTORE` needs Cancun and the build is pinned to `paris` for CREATE2 parity. It guards
-  `_onMessage`, `finalize`, and `execute` under one lock, and is initialized before the
-  payload runs, since a proxy runs no constructor of its own.
+- `ReentrancyGuard` is the **storage** version, not the transient one, because `TSTORE`
+  needs Cancun and the build is pinned to `paris` for CREATE2 parity. It guards
+  `_onMessage`, `finalize`, and `execute` under one lock. It is the NON-upgradeable
+  contract: OpenZeppelin removed the upgradeable variant in 5.6.0, having flagged the guard
+  stateless, because it keeps its state in an ERC-7201 namespaced slot rather than a linear
+  one. Nothing initializes it, and nothing needs to: a proxy runs no constructor, so the
+  slot stays zero, and the guard tests for `ENTERED` explicitly, so zero reads as
+  not-entered. It costs one cold write on an account's first guarded call.
 - `receive()`: `finalize` is permissionless and carries no value, so a payload that spends
   native draws on a balance already here. The address is deterministic and fundable before
   the receiver exists, which makes a shortfall "top it up and retry" rather than a loss.

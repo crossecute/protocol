@@ -33,7 +33,7 @@ describe('GovernorStorage', function () {
       const [deployer, owner, proposer, voter1, voter2, voter3, voter4] = await ethers.getSigners();
       const receiver = await ethers.deployContract('CallReceiverMock');
 
-      const token = await ethers.deployContract(Token, [tokenName, tokenSymbol, version]);
+      const token = await ethers.deployContract(Token, [tokenName, tokenSymbol, tokenName, version]);
       const timelock = await ethers.deployContract('TimelockController', [delay, [], [], deployer]);
       const mock = await ethers.deployContract('$GovernorStorageMock', [
         name,
@@ -149,6 +149,26 @@ describe('GovernorStorage', function () {
         await expect(this.mock.connect(this.proposer).cancel(this.proposal.id))
           .to.emit(this.mock, 'ProposalCanceled')
           .withArgs(this.proposal.id);
+      });
+
+      describe('with non-existing proposalId', function () {
+        it('queue', async function () {
+          await expect(this.mock.queue(this.proposal.id))
+            .to.be.revertedWithCustomError(this.mock, 'GovernorNonexistentProposal')
+            .withArgs(this.proposal.id);
+        });
+
+        it('execute', async function () {
+          await expect(this.mock.execute(this.proposal.id))
+            .to.be.revertedWithCustomError(this.mock, 'GovernorNonexistentProposal')
+            .withArgs(this.proposal.id);
+        });
+
+        it('cancel', async function () {
+          await expect(this.mock.cancel(this.proposal.id))
+            .to.be.revertedWithCustomError(this.mock, 'GovernorNonexistentProposal')
+            .withArgs(this.proposal.id);
+        });
       });
     });
   }

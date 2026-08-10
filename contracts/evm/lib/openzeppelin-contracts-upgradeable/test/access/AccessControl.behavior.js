@@ -21,7 +21,7 @@ function shouldBehaveLikeAccessControl() {
       expect(await this.mock.hasRole(DEFAULT_ADMIN_ROLE, this.defaultAdmin)).to.be.true;
     });
 
-    it("other roles's admin is the default admin role", async function () {
+    it("other role's admin is the default admin role", async function () {
       expect(await this.mock.getRoleAdmin(ROLE)).to.equal(DEFAULT_ADMIN_ROLE);
     });
 
@@ -464,7 +464,7 @@ function shouldBehaveLikeAccessControlDefaultAdminRules() {
           // Wait until schedule + fromSchedule
           await time.increaseTo.timestamp(this.acceptSchedule + fromSchedule, false);
 
-          // defaultAdmin changes its mind and begin again to another address
+          // defaultAdmin changes its mind and begins again to another address
           await expect(this.mock.connect(this.defaultAdmin).beginDefaultAdminTransfer(this.other)).to.emit(
             this.mock,
             'DefaultAdminTransferCanceled', // Cancellation is always emitted since it was never accepted

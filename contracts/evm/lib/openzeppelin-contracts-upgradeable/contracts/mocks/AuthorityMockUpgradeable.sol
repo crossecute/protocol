@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {IAuthority} from "@openzeppelin/contracts/access/manager/IAuthority.sol";
-import {Initializable} from "../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
     function __NotAuthorityMock_init() internal onlyInitializing {
@@ -13,12 +13,12 @@ contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
     function __NotAuthorityMock_init_unchained() internal onlyInitializing {
     }
     function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external pure returns (bool) {
-        revert("AuthorityNoDelayMock: not implemented");
+        revert("NotAuthorityMock: not implemented");
     }
 }
 
 contract AuthorityNoDelayMockUpgradeable is Initializable, IAuthority {
-    bool _immediate;
+    bool private _immediate;
 
     function __AuthorityNoDelayMock_init() internal onlyInitializing {
     }
@@ -39,8 +39,8 @@ contract AuthorityNoDelayMockUpgradeable is Initializable, IAuthority {
 }
 
 contract AuthorityDelayMockUpgradeable is Initializable {
-    bool _immediate;
-    uint32 _delay;
+    bool private _immediate;
+    uint256 private _delay;
 
     function __AuthorityDelayMock_init() internal onlyInitializing {
     }
@@ -51,7 +51,7 @@ contract AuthorityDelayMockUpgradeable is Initializable {
         address /* caller */,
         address /* target */,
         bytes4 /* selector */
-    ) external view returns (bool immediate, uint32 delay) {
+    ) external view returns (bool immediate, uint256 delay) {
         return (_immediate, _delay);
     }
 
@@ -59,7 +59,7 @@ contract AuthorityDelayMockUpgradeable is Initializable {
         _immediate = immediate;
     }
 
-    function _setDelay(uint32 delay) external {
+    function _setDelay(uint256 delay) external {
         _delay = delay;
     }
 }

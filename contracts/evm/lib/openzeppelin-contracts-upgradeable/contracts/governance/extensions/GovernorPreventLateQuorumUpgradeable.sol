@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.0.0) (governance/extensions/GovernorPreventLateQuorum.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorPreventLateQuorum.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {GovernorUpgradeable} from "../GovernorUpgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Initializable} from "../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev A module that ensures there is a minimum voting period after quorum is reached. This prevents a large voter from
@@ -62,21 +62,13 @@ abstract contract GovernorPreventLateQuorumUpgradeable is Initializable, Governo
     }
 
     /**
-     * @dev Casts a vote and detects if it caused quorum to be reached, potentially extending the voting period. See
-     * {Governor-_castVote}.
+     * @dev Vote tally updated and detects if it caused quorum to be reached, potentially extending the voting period.
      *
      * May emit a {ProposalExtended} event.
      */
-    function _castVote(
-        uint256 proposalId,
-        address account,
-        uint8 support,
-        string memory reason,
-        bytes memory params
-    ) internal virtual override returns (uint256) {
+    function _tallyUpdated(uint256 proposalId) internal virtual override {
         GovernorPreventLateQuorumStorage storage $ = _getGovernorPreventLateQuorumStorage();
-        uint256 result = super._castVote(proposalId, account, support, reason, params);
-
+        super._tallyUpdated(proposalId);
         if ($._extendedDeadlines[proposalId] == 0 && _quorumReached(proposalId)) {
             uint48 extendedDeadline = clock() + lateQuorumVoteExtension();
 
@@ -86,8 +78,6 @@ abstract contract GovernorPreventLateQuorumUpgradeable is Initializable, Governo
 
             $._extendedDeadlines[proposalId] = extendedDeadline;
         }
-
-        return result;
     }
 
     /**

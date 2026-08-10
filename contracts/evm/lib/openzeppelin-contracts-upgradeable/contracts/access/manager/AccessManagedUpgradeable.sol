@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (access/manager/AccessManaged.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (access/manager/AccessManaged.sol)
 
 pragma solidity ^0.8.20;
 
-import {IAuthority} from "@openzeppelin/contracts/access/manager/IAuthority.sol";
 import {AuthorityUtils} from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import {IAccessManager} from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {ContextUpgradeable} from "../../utils/ContextUpgradeable.sol";
-import {Initializable} from "../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev This contract module makes available a {restricted} modifier. Functions decorated with this modifier will be

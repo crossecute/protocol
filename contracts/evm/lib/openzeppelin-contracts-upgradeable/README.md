@@ -1,10 +1,11 @@
 # <img src="logo.svg" alt="OpenZeppelin" height="40px">
 
+[![Github Release](https://img.shields.io/github/v/tag/OpenZeppelin/openzeppelin-contracts.svg?filter=v*&sort=semver&label=github)](https://github.com/OpenZeppelin/openzeppelin-contracts/releases/latest)
 [![NPM Package](https://img.shields.io/npm/v/@openzeppelin/contracts.svg)](https://www.npmjs.org/package/@openzeppelin/contracts)
 [![Coverage Status](https://codecov.io/gh/OpenZeppelin/openzeppelin-contracts/graph/badge.svg)](https://codecov.io/gh/OpenZeppelin/openzeppelin-contracts)
 [![GitPOAPs](https://public-api.gitpoap.io/v1/repo/OpenZeppelin/openzeppelin-contracts/badge)](https://www.gitpoap.io/gh/OpenZeppelin/openzeppelin-contracts)
 [![Docs](https://img.shields.io/badge/docs-%F0%9F%93%84-yellow)](https://docs.openzeppelin.com/contracts)
-[![Forum](https://img.shields.io/badge/forum-%F0%9F%92%AC-yellow)](https://docs.openzeppelin.com/contracts)
+[![Forum](https://img.shields.io/badge/forum-%F0%9F%92%AC-yellow)](https://forum.openzeppelin.com/)
 
 **A library for secure smart contract development.** Build on a solid foundation of community-vetted code.
 
@@ -14,15 +15,23 @@
 
 :mage: **Not sure how to get started?** Check out [Contracts Wizard](https://wizard.openzeppelin.com/) — an interactive smart contract generator.
 
-:building_construction: **Want to scale your decentralized application?** Check out [OpenZeppelin Defender](https://openzeppelin.com/defender) — a mission-critical developer security platform to code, audit, deploy, monitor, and operate with confidence.
-
 > [!IMPORTANT]
 > OpenZeppelin Contracts uses semantic versioning to communicate backwards compatibility of its API and storage layout. For upgradeable contracts, the storage layout of different major versions should be assumed incompatible, for example, it is unsafe to upgrade from 4.9.3 to 5.0.0. Learn more at [Backwards Compatibility](https://docs.openzeppelin.com/contracts/backwards-compatibility).
 
-+> [!NOTE]
-+> You are looking at the upgradeable variant of OpenZeppelin Contracts. Be sure to review the documentation on [Using OpenZeppelin Contracts with Upgrades](https://docs.openzeppelin.com/contracts/upgradeable).
-+
+> [!NOTE]
+> You are looking at the upgradeable variant of OpenZeppelin Contracts. Be sure to review the documentation on [Using OpenZeppelin Contracts with Upgrades](https://docs.openzeppelin.com/contracts/upgradeable).
+
 ## Overview
+
+### Release tags
+
+We use NPM tags to clearly distinguish between audited and non-audited versions of our package:
+
+| Tag        | Purpose                  | Description                                                                                                                                                                   |
+| :--------- | :----------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **latest** | ✅ Audited releases      | Stable, audited versions of the package. This is the **default** version installed when users run `npm install @openzeppelin/contracts`.                                      |
+| **dev**    | 🧪 Final but not audited | Versions that are finalized and feature-complete but have **not yet been audited**. This version is fully tested, can be used in production and is covered by the bug bounty. |
+| **next**   | 🚧 Release candidates    | Pre-release versions that are **not final**. Used for testing and validation before the version becomes a final `dev` or `latest` release.                                    |
 
 ### Installation
 
@@ -31,6 +40,12 @@
 ```
 $ npm install @openzeppelin/contracts-upgradeable
 ```
+→ Installs the latest audited release (`latest`).
+
+```
+$ npm install @openzeppelin/contracts-upgradeable@dev
+```
+→ Installs the latest unaudited release (`dev`).
 
 #### Foundry (git)
 
@@ -44,7 +59,7 @@ $ npm install @openzeppelin/contracts-upgradeable
 $ forge install OpenZeppelin/openzeppelin-contracts-upgradeable
 ```
 
-Add `@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/` in `remappings.txt.`
+Add `@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/` in `remappings.txt`.
 
 ### Usage
 
@@ -71,10 +86,10 @@ To keep your system secure, you should **always** use the installed code as-is, 
 The guides in the [documentation site](https://docs.openzeppelin.com/contracts) will teach about different concepts, and how to use the related contracts that OpenZeppelin Contracts provides:
 
 * [Access Control](https://docs.openzeppelin.com/contracts/access-control): decide who can perform each of the actions on your system.
-* [Tokens](https://docs.openzeppelin.com/contracts/tokens): create tradeable assets or collectives, and distribute them via [Crowdsales](https://docs.openzeppelin.com/contracts/crowdsales).
+* [Tokens](https://docs.openzeppelin.com/contracts/tokens): create tradeable assets or collectibles for popular ERC standards like ERC-20, ERC-721, ERC-1155, and ERC-6909.
 * [Utilities](https://docs.openzeppelin.com/contracts/utilities): generic useful tools including non-overflowing math, signature verification, and trustless paying systems.
 
-The [full API](https://docs.openzeppelin.com/contracts/api/token/ERC20) is also thoroughly documented, and serves as a great reference when developing your smart contract application. You can also ask for help or follow Contracts's development in the [community forum](https://forum.openzeppelin.com).
+The [full API](https://docs.openzeppelin.com/contracts/api/token/ERC20) is also thoroughly documented, and serves as a great reference when developing your smart contract application. You can also ask for help or follow Contracts' development in the [community forum](https://forum.openzeppelin.com).
 
 Finally, you may want to take a look at the [guides on our blog](https://blog.openzeppelin.com/), which cover several common use cases and good practices. The following articles provide great background reading, though please note that some of the referenced tools have changed, as the tooling in the ecosystem continues to rapidly evolve.
 

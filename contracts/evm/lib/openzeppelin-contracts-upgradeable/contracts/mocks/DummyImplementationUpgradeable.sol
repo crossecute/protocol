@@ -1,19 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.21;
 
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
-import {Initializable} from "../proxy/utils/Initializable.sol";
-
-abstract contract ImplUpgradeable is Initializable {
-    function __Impl_init() internal onlyInitializing {
-    }
-
-    function __Impl_init_unchained() internal onlyInitializing {
-    }
-    function version() public pure virtual returns (string memory);
-}
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract DummyImplementationUpgradeable is Initializable {
     uint256 public value;

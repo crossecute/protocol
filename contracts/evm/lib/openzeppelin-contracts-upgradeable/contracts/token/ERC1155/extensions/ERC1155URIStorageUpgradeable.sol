@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC1155/extensions/ERC1155URIStorage.sol)
+// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC1155/extensions/ERC1155URIStorage.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ERC1155Upgradeable} from "../ERC1155Upgradeable.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev ERC-1155 token with storage based token URI management.
  * Inspired by the {ERC721URIStorage} extension
  */
 abstract contract ERC1155URIStorageUpgradeable is Initializable, ERC1155Upgradeable {
-    using Strings for uint256;
-
     /// @custom:storage-location erc7201:openzeppelin.storage.ERC1155URIStorage
     struct ERC1155URIStorageStorage {
         // Optional base URI

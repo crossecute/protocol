@@ -2,7 +2,8 @@ const { ethers } = require('hardhat');
 const { expect } = require('chai');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
-const { domainSeparator, hashTypedData } = require('../../helpers/eip712');
+const { domainType, domainSeparator, hashTypedData } = require('../../helpers/eip712');
+const { generators } = require('../../helpers/random');
 
 async function fixture() {
   const mock = await ethers.deployContract('$MessageHashUtils');
@@ -19,14 +20,16 @@ describe('MessageHashUtils', function () {
       const message = ethers.randomBytes(32);
       const expectedHash = ethers.hashMessage(message);
 
-      expect(await this.mock.getFunction('$toEthSignedMessageHash(bytes32)')(message)).to.equal(expectedHash);
+      await expect(this.mock.getFunction('$toEthSignedMessageHash(bytes32)')(message)).to.eventually.equal(
+        expectedHash,
+      );
     });
 
     it('prefixes dynamic length data correctly', async function () {
       const message = ethers.randomBytes(128);
       const expectedHash = ethers.hashMessage(message);
 
-      expect(await this.mock.getFunction('$toEthSignedMessageHash(bytes)')(message)).to.equal(expectedHash);
+      await expect(this.mock.getFunction('$toEthSignedMessageHash(bytes)')(message)).to.eventually.equal(expectedHash);
     });
 
     it('version match for bytes32', async function () {
@@ -39,7 +42,20 @@ describe('MessageHashUtils', function () {
   });
 
   describe('toDataWithIntendedValidatorHash', function () {
-    it('returns the digest correctly', async function () {
+    it('returns the digest of `bytes32 messageHash` correctly', async function () {
+      const verifier = ethers.Wallet.createRandom().address;
+      const message = ethers.randomBytes(32);
+      const expectedHash = ethers.solidityPackedKeccak256(
+        ['string', 'address', 'bytes32'],
+        ['\x19\x00', verifier, message],
+      );
+
+      await expect(
+        this.mock.getFunction('$toDataWithIntendedValidatorHash(address,bytes32)')(verifier, message),
+      ).to.eventually.equal(expectedHash);
+    });
+
+    it('returns the digest of `bytes memory message` correctly', async function () {
       const verifier = ethers.Wallet.createRandom().address;
       const message = ethers.randomBytes(128);
       const expectedHash = ethers.solidityPackedKeccak256(
@@ -47,7 +63,21 @@ describe('MessageHashUtils', function () {
         ['\x19\x00', verifier, message],
       );
 
-      expect(await this.mock.$toDataWithIntendedValidatorHash(verifier, message)).to.equal(expectedHash);
+      await expect(
+        this.mock.getFunction('$toDataWithIntendedValidatorHash(address,bytes)')(verifier, message),
+      ).to.eventually.equal(expectedHash);
+    });
+
+    it('version match for bytes32', async function () {
+      const verifier = ethers.Wallet.createRandom().address;
+      const message = ethers.randomBytes(32);
+      const fixed = await this.mock.getFunction('$toDataWithIntendedValidatorHash(address,bytes)')(verifier, message);
+      const dynamic = await this.mock.getFunction('$toDataWithIntendedValidatorHash(address,bytes32)')(
+        verifier,
+        message,
+      );
+
+      expect(fixed).to.equal(dynamic);
     });
   });
 
@@ -62,7 +92,58 @@ describe('MessageHashUtils', function () {
       const structhash = ethers.randomBytes(32);
       const expectedHash = hashTypedData(domain, structhash);
 
-      expect(await this.mock.$toTypedDataHash(domainSeparator(domain), structhash)).to.equal(expectedHash);
+      await expect(this.mock.$toTypedDataHash(domainSeparator(domain), structhash)).to.eventually.equal(expectedHash);
     });
+  });
+
+  describe('ERC-5267', function () {
+    const fullDomain = {
+      name: generators.string(),
+      version: generators.string(),
+      chainId: generators.uint256(),
+      verifyingContract: generators.address(),
+      salt: generators.bytes32(),
+    };
+
+    for (let fields = 0; fields < 1 << Object.keys(fullDomain).length; ++fields) {
+      const domain = Object.fromEntries(Object.entries(fullDomain).filter((_, i) => fields & (1 << i)));
+      const domainTypeName = new ethers.TypedDataEncoder({ EIP712Domain: domainType(domain) }).encodeType(
+        'EIP712Domain',
+      );
+
+      describe(domainTypeName, function () {
+        it('toDomainSeparator(bytes1,string,string,uint256,address,bytes32)', async function () {
+          await expect(
+            this.mock.$toDomainSeparator(
+              ethers.toBeHex(fields),
+              ethers.Typed.string(fullDomain.name),
+              ethers.Typed.string(fullDomain.version),
+              fullDomain.chainId,
+              fullDomain.verifyingContract,
+              fullDomain.salt,
+            ),
+          ).to.eventually.equal(domainSeparator(domain));
+        });
+
+        it('toDomainSeparator(bytes1,bytes32,bytes32,uint256,address,bytes32)', async function () {
+          await expect(
+            this.mock.$toDomainSeparator(
+              ethers.toBeHex(fields),
+              ethers.Typed.bytes32(ethers.id(fullDomain.name)),
+              ethers.Typed.bytes32(ethers.id(fullDomain.version)),
+              fullDomain.chainId,
+              fullDomain.verifyingContract,
+              fullDomain.salt,
+            ),
+          ).to.eventually.equal(domainSeparator(domain));
+        });
+
+        it('toDomainTypeHash', async function () {
+          await expect(this.mock.$toDomainTypeHash(ethers.toBeHex(fields))).to.eventually.equal(
+            ethers.id(domainTypeName),
+          );
+        });
+      });
+    }
   });
 });

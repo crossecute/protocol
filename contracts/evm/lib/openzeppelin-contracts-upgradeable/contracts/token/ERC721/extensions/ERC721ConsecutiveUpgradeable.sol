@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC721/extensions/ERC721Consecutive.sol)
+// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC721/extensions/ERC721Consecutive.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {ERC721Upgradeable} from "../ERC721Upgradeable.sol";
 import {IERC2309} from "@openzeppelin/contracts/interfaces/IERC2309.sol";
 import {BitMaps} from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the ERC-2309 "Consecutive Transfer Extension" as defined in
@@ -21,7 +21,7 @@ import {Initializable} from "../../../proxy/utils/Initializable.sol";
  * regained after construction. During construction, only batch minting is allowed.
  *
  * IMPORTANT: This extension does not call the {_update} function for tokens minted in batch. Any logic added to this
- * function through overrides will not be triggered when token are minted in batch. You may want to also override
+ * function through overrides will not be triggered when tokens are minted in batch. You may want to also override
  * {_increaseBalance} or {_mintConsecutive} to account for these mints.
  *
  * IMPORTANT: When overriding {_mintConsecutive}, be careful about call ordering. {ownerOf} may return invalid
@@ -180,7 +180,7 @@ abstract contract ERC721ConsecutiveUpgradeable is Initializable, IERC2309, ERC72
     }
 
     /**
-     * @dev Used to offset the first token id in {_nextConsecutiveId}
+     * @dev Used to offset the first token id in `_nextConsecutiveId`
      */
     function _firstConsecutiveId() internal view virtual returns (uint96) {
         return 0;

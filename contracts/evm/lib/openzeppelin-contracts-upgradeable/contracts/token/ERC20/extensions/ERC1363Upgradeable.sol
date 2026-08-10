@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.1.0) (token/ERC20/extensions/ERC1363.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/extensions/ERC1363.sol)
 
 pragma solidity ^0.8.20;
 
@@ -8,7 +8,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165Upgradeable} from "../../../utils/introspection/ERC165Upgradeable.sol";
 import {IERC1363} from "@openzeppelin/contracts/interfaces/IERC1363.sol";
 import {ERC1363Utils} from "@openzeppelin/contracts/token/ERC20/utils/ERC1363Utils.sol";
-import {Initializable} from "../../../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 /**
  * @title ERC1363
@@ -46,16 +46,15 @@ abstract contract ERC1363Upgradeable is Initializable, ERC20Upgradeable, ERC165U
 
     function __ERC1363_init_unchained() internal onlyInitializing {
     }
-    /**
-     * @inheritdoc IERC165
-     */
+    /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165Upgradeable, IERC165) returns (bool) {
         return interfaceId == type(IERC1363).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /**
      * @dev Moves a `value` amount of tokens from the caller's account to `to`
-     * and then calls {IERC1363Receiver-onTransferReceived} on `to`.
+     * and then calls {IERC1363Receiver-onTransferReceived} on `to`. Returns a flag that indicates
+     * if the call succeeded.
      *
      * Requirements:
      *
@@ -82,7 +81,8 @@ abstract contract ERC1363Upgradeable is Initializable, ERC20Upgradeable, ERC165U
 
     /**
      * @dev Moves a `value` amount of tokens from `from` to `to` using the allowance mechanism
-     * and then calls {IERC1363Receiver-onTransferReceived} on `to`.
+     * and then calls {IERC1363Receiver-onTransferReceived} on `to`. Returns a flag that indicates
+     * if the call succeeded.
      *
      * Requirements:
      *
@@ -115,6 +115,7 @@ abstract contract ERC1363Upgradeable is Initializable, ERC20Upgradeable, ERC165U
     /**
      * @dev Sets a `value` amount of tokens as the allowance of `spender` over the
      * caller's tokens and then calls {IERC1363Spender-onApprovalReceived} on `spender`.
+     * Returns a flag that indicates if the call succeeded.
      *
      * Requirements:
      *

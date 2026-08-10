@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Payload} from "src/messaging/Payload.sol";

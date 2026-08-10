@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {MerkleTree} from "@openzeppelin/contracts/utils/structs/MerkleTree.sol";
-import {Initializable} from "../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract MerkleTreeMockUpgradeable is Initializable {
     using MerkleTree for MerkleTree.Bytes32PushTree;
@@ -15,6 +15,7 @@ contract MerkleTreeMockUpgradeable is Initializable {
     bytes32 public root;
 
     event LeafInserted(bytes32 leaf, uint256 index, bytes32 root);
+    event LeafUpdated(bytes32 oldLeaf, bytes32 newLeaf, uint256 index, bytes32 root);
 
     function __MerkleTreeMock_init() internal onlyInitializing {
     }
@@ -29,6 +30,13 @@ contract MerkleTreeMockUpgradeable is Initializable {
         (uint256 leafIndex, bytes32 currentRoot) = _tree.push(leaf);
         emit LeafInserted(leaf, leafIndex, currentRoot);
         root = currentRoot;
+    }
+
+    function update(uint256 index, bytes32 oldValue, bytes32 newValue, bytes32[] memory proof) public {
+        (bytes32 oldRoot, bytes32 newRoot) = _tree.update(index, oldValue, newValue, proof);
+        if (oldRoot != root) revert MerkleTree.MerkleTreeUpdateInvalidProof();
+        emit LeafUpdated(oldValue, newValue, index, newRoot);
+        root = newRoot;
     }
 
     function depth() public view returns (uint256) {

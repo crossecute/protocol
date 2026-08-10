@@ -94,7 +94,7 @@ For more information about the metadata JSON Schema, check out the https://githu
 
 NOTE: You'll notice that the item's information is included in the metadata, but that information isn't on-chain! So a game developer could change the underlying metadata, changing the rules of the game!
 
-TIP: If you'd like to put all item information on-chain, you can extend ERC-721 to do so (though it will be rather costly) by providing a xref:utilities.adoc#base64[`Base64`] Data URI with the JSON schema encoded. You could also leverage IPFS to store the URI information, but these techniques are out of the scope of this overview guide
+TIP: If you'd like to put all item information on-chain, you can override the `uri()` function in your ERC-1155 contract (or use xref:api:token/ERC1155.adoc#ERC1155URIStorage[`ERC1155URIStorage`]) to return a xref:utilities.adoc#base64[`Base64`] Data URI with the JSON schema encoded, though it will be rather costly. You could also leverage IPFS to store the URI information, but these techniques are out of the scope of this overview guide
 
 [[sending-to-contracts]]
 == Sending Tokens to Contracts
@@ -106,9 +106,9 @@ A key difference when using xref:api:token/ERC1155.adoc#IERC1155-safeTransferFro
 ERC1155InvalidReceiver("<ADDRESS>")
 ----
 
-This is a good thing! It means that the recipient contract has not registered itself as aware of the ERC-1155 protocol, so transfers to it are disabled to *prevent tokens from being locked forever*. As an example, https://etherscan.io/token/0xa74476443119A942dE498590Fe1f2454d7D4aC0d?a=0xa74476443119A942dE498590Fe1f2454d7D4aC0d[the Golem contract currently holds over 350k `GNT` tokens], worth multiple tens of thousands of dollars, and lacks methods to get them out of there. This has happened to virtually every ERC20-backed project, usually due to user error.
+This is a good thing! It means that the recipient contract has not registered itself as aware of the ERC-1155 protocol, so transfers to it are disabled to *prevent tokens from being locked forever*. As an example, https://etherscan.io/token/0xa74476443119A942dE498590Fe1f2454d7D4aC0d?a=0xa74476443119A942dE498590Fe1f2454d7D4aC0d[the Golem contract currently holds over 350k `GNT` tokens], and lacks methods to get them out of there. This has happened to virtually every ERC20-backed project, usually due to user error.
 
-In order for our contract to receive ERC-1155 tokens we can inherit from the convenience contract xref:api:token/ERC1155.adoc#ERC1155Holder[`ERC1155Holder`] which handles the registering for us. Though we need to remember to implement functionality to allow tokens to be transferred out of our contract:
+In order for our contract to receive ERC-1155 tokens we can inherit from the convenience contract xref:api:token/ERC1155.adoc#ERC1155Holder[`ERC1155Holder`] which handles the registering for us. However, we need to remember to implement functionality to allow tokens to be transferred out of our contract:
 
 [source,solidity]
 ----

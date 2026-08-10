@@ -2,15 +2,14 @@
 
 pragma solidity ^0.8.20;
 
-import {ReentrancyGuardUpgradeable} from "../utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ReentrancyAttackUpgradeable} from "./ReentrancyAttackUpgradeable.sol";
-import {Initializable} from "../proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-contract ReentrancyMockUpgradeable is Initializable, ReentrancyGuardUpgradeable {
+contract ReentrancyMockUpgradeable is Initializable, ReentrancyGuard {
     uint256 public counter;
 
     function __ReentrancyMock_init() internal onlyInitializing {
-        __ReentrancyGuard_init_unchained();
         __ReentrancyMock_init_unchained();
     }
 
@@ -20,6 +19,10 @@ contract ReentrancyMockUpgradeable is Initializable, ReentrancyGuardUpgradeable 
 
     function callback() external nonReentrant {
         _count();
+    }
+
+    function viewCallback() external view nonReentrantView returns (uint256) {
+        return counter;
     }
 
     function countLocalRecursive(uint256 n) public nonReentrant {
@@ -40,6 +43,11 @@ contract ReentrancyMockUpgradeable is Initializable, ReentrancyGuardUpgradeable 
     function countAndCall(ReentrancyAttackUpgradeable attacker) public nonReentrant {
         _count();
         attacker.callSender(abi.encodeCall(this.callback, ()));
+    }
+
+    function countAndCallView(ReentrancyAttackUpgradeable attacker) public nonReentrant {
+        _count();
+        attacker.staticcallSender(abi.encodeCall(this.viewCallback, ()));
     }
 
     function _count() private {

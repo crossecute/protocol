@@ -8,9 +8,9 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+    "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 /// @title TransceiverBase
 /// @notice Authentication, routing, and the upgrade lock. What a transceiver MAKES is not
@@ -365,9 +365,14 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev The proxy starts on Nick's factory implementation with the deployer as owner,
     ///      is upgraded to the real transceiver, and then `lockUpgrades` is called. See
     ///      that function for why the lock exists.
-    function __TransceiverBase_init() internal onlyInitializing {
-        __UUPSUpgradeable_init();
-    }
+    /// @dev IT NOW INITIALIZES NOTHING, AND THERE IS NOTHING TO INITIALIZE. OpenZeppelin
+    ///      stopped transpiling `UUPSUpgradeable` in 5.6.0: it holds no state of its own
+    ///      (the implementation address lives in the ERC-1967 slot the proxy owns), so
+    ///      `__UUPSUpgradeable_init` was an empty function and is gone. The hook stays
+    ///      because it is what every concrete transceiver calls and what a later base
+    ///      would hang its own setup on; removing it would churn every binding to delete
+    ///      one line.
+    function __TransceiverBase_init() internal onlyInitializing {}
 
     /* ============================== authorization ============================== */
 
