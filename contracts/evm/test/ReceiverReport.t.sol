@@ -17,6 +17,36 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+
+/// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
+///      without a provider behind it.
+contract Transmitter is TransmitterBase, OwnableUpgradeable {
+    function initialize(address owner_, address transceiver_, bytes32 salt_)
+        external
+        initializer
+    {
+        __Ownable_init(owner_);
+        __TransmitterBase_init(owner_, transceiver_, salt_);
+    }
+
+    function _owner() internal view override returns (address) {
+        return owner();
+    }
+
+    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
+        OwnableUpgradeable._checkOwner();
+    }
+
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        pure
+        override
+        returns (bytes32)
+    {
+        return bytes32(0);
+    }
+}
 
 contract Receiver is ReceiverBase {
     function _isAuthorizedGateway(address) internal pure override returns (bool) {
@@ -271,9 +301,22 @@ contract ReceiverReportTest is Test {
 /// @dev The home side: a real hub, a real registry, and nothing hand-built. Everything
 ///      below feeds the spoke's ACTUAL wire bytes into it.
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
-    function initialize(address owner_) external initializer {
+    function initialize(address owner_, address transmitterImplementation_)
+        external
+        initializer
+    {
         __Ownable_init(owner_);
         __TransceiverBase_init();
+        __HubTransceiverBase_init(transmitterImplementation_);
+    }
+
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        pure
+        override
+        returns (bytes32)
+    {
+        return bytes32(0);
     }
 
     function _checkAdmin() internal view override {
@@ -297,6 +340,7 @@ contract ReceiverReportRoundTripTest is Test {
     Hub hub;
     ReportingSpoke spoke;
     ChainRegistry registry;
+    Transmitter account;
 
     address msig = address(0x5165);
     address owner = address(0xA11CE);
@@ -304,6 +348,10 @@ contract ReceiverReportRoundTripTest is Test {
     bytes32 provider;
     bytes32 spokeKey;
 
+    /// @dev A chain the hub CANNOT derive addresses on, because that is the only kind that
+    ///      may report. It is `eip155` and capped below `Derived`, which is exactly the
+    ///      zkSync and Tron shape: nothing about the chain type separates it from Base, and
+    ///      the cap is what records that its CREATE2 formula differs.
     uint256 constant SPOKE_CHAIN = 8453;
     uint32 constant SPOKE_EID = 30184;
 
@@ -318,7 +366,7 @@ contract ReceiverReportRoundTripTest is Test {
         );
 
         hub = new Hub();
-        hub.initialize(msig);
+        hub.initialize(msig, address(new Transmitter()));
         spoke = new ReportingSpoke();
         spoke.initialize(msig, address(new Receiver()), true);
 
@@ -329,6 +377,7 @@ contract ReceiverReportRoundTripTest is Test {
             IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         spokeKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN));
+        registry.setMaxProvenance(spokeKey, Provenance.Committed);
         registry.setTransceiverId(spokeKey, provider, keccak256("spoke.ref"));
         vm.stopPrank();
 
@@ -338,89 +387,140 @@ contract ReceiverReportRoundTripTest is Test {
             keccak256("spoke.ref"), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), ""
         );
         vm.prank(msig);
-        hub.setRoute(spokeKey, abi.encode(SPOKE_EID));
+        hub.setRoute(spokeKey, Erc7930.encodeEvmChain(SPOKE_CHAIN));
+
+        // The account the report is ABOUT. It has to exist and to have been stood up on the
+        // spoke, because that is what gives it a counterpart slot for that chain.
+        vm.startPrank(owner);
+        account = Transmitter(payable(hub.createTransmitter(SALT)));
+        account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
+        vm.stopPrank();
+    }
+
+    function _report() internal returns (bytes memory produced) {
+        vm.chainId(SPOKE_CHAIN);
+        spoke.inbound(owner, SALT, new Call[](0));
+        produced = spoke.sentPayload();
+        vm.chainId(1);
     }
 
     /// @dev THE WHOLE POINT OF THE FILE. The spoke creates an account and puts a report on
-    ///      the wire; those exact bytes go into the hub; the hub answers with the address
-    ///      the spoke actually created. No `Envelope.encode*` anywhere in the assertion.
+    ///      the wire; those exact bytes go into the hub; the account answers with the
+    ///      address the spoke actually created. No `Envelope.encode*` in the assertion.
     function test_theSpokesBytesDecodeOnTheHub() public {
-        vm.chainId(SPOKE_CHAIN);
-        spoke.inbound(owner, SALT, new Call[](0));
-        bytes memory produced = spoke.sentPayload();
+        bytes memory produced = _report();
         address created = spoke.predictCrossAccount(owner, SALT);
 
-        vm.chainId(1);
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), produced);
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
         assertEq(
-            hub.destinationReceiverOn(spokeKey, owner, SALT),
+            account.counterpartOn(spokeKey),
             abi.encodePacked(created),
-            "the hub recorded the address the spoke actually created"
+            "the account recorded the address the spoke actually created"
         );
+        assertEq(hub.destinationReceiverOn(spokeKey, owner, SALT), abi.encodePacked(created));
     }
 
-    /// @dev The slot is derived from the AUTHENTICATED origin plus the stated pair, so the
-    ///      ref the hub stores agrees with the chain it came from.
-    function test_theStoredRefAgreesWithTheOriginChain() public {
-        vm.chainId(SPOKE_CHAIN);
-        spoke.inbound(owner, SALT, new Call[](0));
-        bytes memory produced = spoke.sentPayload();
+    /// @dev AND IT REACHES THE SEND PATH, which is the reason the report moved off the
+    ///      registry. The recorded address is the one `sendMessage` will accept, so a chain
+    ///      whose receiver cannot be derived is addressable once its report lands, and was
+    ///      not before.
+    function test_theReportedAddressIsWhatTheSendPathAccepts() public {
+        bytes memory produced = _report();
+        address created = spoke.predictCrossAccount(owner, SALT);
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
-        vm.chainId(1);
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), produced);
+        bytes memory recipient = Erc7930.encodeEvm(SPOKE_CHAIN, created);
+        bytes memory payload = account.payloadForCalls(new Call[](0));
 
-        bytes32 slot = registry.receiverSlot(spokeKey, owner, SALT);
-        assertEq(registry.get(slot).chainKey, spokeKey, "ref chain == slot chain");
-        assertEq(uint8(registry.get(slot).provenance), uint8(Provenance.Attested));
+        vm.prank(owner);
+        account.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev A replayed report is a no-op rather than a repoint: the slot is write-once.
+    /// @dev A replayed report is refused by the ACCOUNT now, not by the registry slot.
     function test_aReplayedReportIsRefused() public {
-        vm.chainId(SPOKE_CHAIN);
-        spoke.inbound(owner, SALT, new Call[](0));
-        bytes memory produced = spoke.sentPayload();
+        bytes memory produced = _report();
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
-        vm.chainId(1);
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), produced);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.ReceiverAlreadyReported.selector, spokeKey
+            )
+        );
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+    }
 
-        vm.expectRevert(ChainRegistry.AlreadyResolved.selector);
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), produced);
+    /// @dev THE OWNER OUTRANKS THE REPORT, which is the recovery for a hostile or wrong one.
+    ///      An owner can already `execute` anything, so saying where their own receiver
+    ///      lives is not an escalation, and a report that reached the send path needs an
+    ///      answer that does too.
+    function test_theOwnerCanCorrectAReportedAddress() public {
+        bytes memory produced = _report();
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+
+        bytes memory corrected = abi.encodePacked(address(0xC0FFEE));
+        vm.prank(owner);
+        account.setDestinationReceiver(spokeKey, corrected);
+        assertEq(account.counterpartOn(spokeKey), corrected);
+    }
+
+    /// @dev A CHAIN THE HUB CAN DERIVE MAY NOT REPORT. Its own derivation is `Derived` and a
+    ///      claim over a bridge is weaker, so accepting one would let a remote chain replace
+    ///      a stronger fact with a poorer one. The registry answers which chains may.
+    function test_aDerivableChainMayNotReport() public {
+        vm.prank(msig);
+        registry.setMaxProvenance(spokeKey, Provenance.Derived);
+        assertFalse(registry.requiresReceiverCallback(spokeKey));
+
+        bytes memory produced = _report();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.ChainDoesNotReport.selector, spokeKey
+            )
+        );
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
     /// @dev A CHAIN MAY ONLY REPORT ADDRESSES ON ITSELF. An ERC-7930 envelope names its own
-    ///      chain, and the slot is keyed by the origin the hub authenticated; without this
-    ///      check the registry stored a ref whose recorded chain contradicted the slot it
-    ///      sat in, readable as an account on one chain and filed under another.
+    ///      chain, and the account is keyed by the origin the hub authenticated; without
+    ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
-        vm.startPrank(msig);
+        vm.prank(msig);
         bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
-        vm.stopPrank();
 
-        bytes memory elsewhere = abi.encode(
-            owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD))
-        );
+        bytes memory elsewhere =
+            abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 HubTransceiverBase.ReportedChainMismatch.selector, spokeKey, otherKey
             )
         );
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), elsewhere);
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
     }
 
-    /// @dev And the slot it would have written stays empty, so nothing was half-recorded.
-    function test_aRejectedReportLeavesTheSlotUnresolved() public {
+    /// @dev And the account keeps the bootstrap presumption, so nothing was half-recorded.
+    function test_aRejectedReportLeavesTheAccountUntouched() public {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        bytes memory elsewhere = abi.encode(
-            owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD))
-        );
+        bytes memory elsewhere =
+            abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
-        hub.arrive(abi.encode(SPOKE_EID), abi.encodePacked(address(spoke)), elsewhere);
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
 
-        vm.expectRevert(ChainRegistry.NotResolved.selector);
-        hub.destinationReceiverOn(spokeKey, owner, SALT);
+        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(address(account)));
+        assertFalse(account.isReceiverPinned(spokeKey));
+    }
+
+    /// @dev ONLY THE ACCOUNT'S OWN TRANSCEIVER MAY REPORT TO IT. The hub is trusted for this
+    ///      one call because it authenticated the origin; anyone else calling directly is
+    ///      not, and the account says so itself rather than relying on the hub being the
+    ///      only party that knows the function exists.
+    function test_nobodyElseCanReportToTheAccount() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this))
+        );
+        account.onDestinationReceiverReported(spokeKey, abi.encodePacked(address(0xBAD)));
     }
 }

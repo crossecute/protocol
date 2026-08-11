@@ -27,13 +27,6 @@ contract RoutingTransceiver is HubTransceiverBase, OwnableUpgradeable {
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
-    function inboundReceiverReport(
-        bytes32 chainKey,
-        address owner,
-        bytes calldata interop
-    ) external {
-        this.onDestinationReceiver(chainKey, owner, bytes32(0), interop);
-    }
 }
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
@@ -166,61 +159,41 @@ contract CounterpartRoutingTest is Test {
         bare.counterpartOn(keccak256("anything"));
     }
 
-    /// @dev Starknet's address derivation is Pedersen and cannot run on the EVM at any
-    ///      price. So the destination creates the receiver, reports the address back, and
-    ///      the registry grades it `Attested`: an honest description of what we know.
-    function test_starknetReceiverLearnedFromCallback() public {
+    /// @dev THE REGISTRY SAYS WHICH CHAINS REPORT, AND HOLDS NO RECEIVER DATA. Starknet's
+    ///      address derivation is Pedersen and cannot run on the EVM at any price, so the
+    ///      destination has to create the receiver and report it back. WHICH chains are like
+    ///      that is a property of the chain and belongs in this directory; WHERE a given
+    ///      account's receiver landed is a property of that account and lives on its
+    ///      transmitter, which is also the only contract that reads it. The round trip is
+    ///      covered in `ReceiverReport.t.sol`.
+    function test_theRegistrySaysWhichChainsReport() public {
         bytes memory snChain = Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"));
-        // A felt below L2_ADDRESS_UPPER_BOUND, zero-padded to the required 32 bytes.
-        bytes memory snAddr = abi.encodePacked(bytes32(uint256(1) << 200));
-        bytes memory snReceiver = Erc7930.encode(ChainType.STARKNET, bytes("SN_MAIN"), snAddr);
-
-        address transmitter = address(0x7A11);
 
         vm.startPrank(msig);
         bytes32 snKey = registry.addChainKey(snChain);
-        // Starknet can never honestly reach Derived; make that unrepresentable.
-        registry.setMaxProvenance(snKey, Provenance.Committed);
-        registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
         vm.stopPrank();
 
-        // Nothing known yet.
-        vm.expectRevert(ChainRegistry.NotResolved.selector);
-        transceiver.destinationReceiverOn(snKey, transmitter, bytes32(0));
-
-        transceiver.inboundReceiverReport(snKey, transmitter, snReceiver);
-
-        assertEq(transceiver.destinationReceiverOn(snKey, transmitter, bytes32(0)), snAddr);
-
-        // Graded Attested: worth exactly the bridge's security, and no more.
-        bytes32 slot = registry.receiverSlot(snKey, transmitter, bytes32(0));
-        assertEq(
-            uint8(registry.get(slot).provenance), uint8(Provenance.Attested)
+        assertTrue(
+            registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here"
         );
-        // A caller demanding a stronger grade is refused.
-        vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
-        registry.destinationReceiverOf(snKey, transmitter, bytes32(0), Provenance.Committed);
+        assertFalse(
+            registry.requiresReceiverCallback(baseKey), "parity: derived locally"
+        );
     }
 
-    /// @dev A receiver must not land in the transceiver route table.
-    function test_receiverReportDoesNotTouchRouteTable() public {
-        bytes memory snChain = Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"));
-        bytes memory snReceiver = Erc7930.encode(
-            ChainType.STARKNET, bytes("SN_MAIN"), abi.encodePacked(bytes32(uint256(1) << 200))
-        );
-        address transmitter = address(0x7A11);
-
+    /// @dev IT IS DERIVED FROM THE CAPS RATHER THAN DECLARED, so it cannot disagree with
+    ///      them. zkSync and Tron are the case that needs this: they ARE `eip155`, so chain
+    ///      type alone says they are derivable, and the cap is what records that their
+    ///      CREATE2 formula differs. One fact, read two ways, rather than two flags.
+    function test_theReportingFlagFollowsTheProvenanceCap() public {
         vm.startPrank(msig);
-        bytes32 snKey = registry.addChainKey(snChain);
-        registry.setMaxProvenance(snKey, Provenance.Committed);
-        registry.setLocalTransceiver(provider, address(transceiver));
-        vm.stopPrank();
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324));
+        assertFalse(registry.requiresReceiverCallback(zkKey), "eip155, uncapped");
 
-        transceiver.inboundReceiverReport(snKey, transmitter, snReceiver);
-        assertEq(registry.transceiverIdOf(snKey, provider), bytes32(0));
+        registry.setMaxProvenance(zkKey, Provenance.Committed);
+        assertTrue(registry.requiresReceiverCallback(zkKey), "capped below Derived");
+        vm.stopPrank();
     }
 
     function test_receiverCallbackIsSelfCallOnly() public {

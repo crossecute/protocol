@@ -310,8 +310,9 @@ mainnet.
   answer is no protocol-level id. The two halves of the question have different answers.
 
   **Correlation never needed one, and that argument stands.** The receiver report's slot is
-  `receiverSlot(chainKey, owner, salt)`, the chainKey comes from `_authenticateOrigin`, the
-  pair is stated, and the slot is write-once. An id would restate what the fields imply.
+  the account `predictCrossAccount(owner, salt)` resolves to, the chainKey comes from
+  `_authenticateOrigin`, the pair is stated, and the account refuses a second report. An id
+  would restate what the fields imply.
 
   **Idempotency does need one, and the transport already has it.** Bootstrap and the report
   are structurally single-shot, but an execute-on-arrival payload carries no commitment and

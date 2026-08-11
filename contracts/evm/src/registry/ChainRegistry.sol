@@ -453,15 +453,34 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      zkSync and Tron are `eip155` with different formulas, and their provenance cap
     ///      is what excludes them.
     function _requireEvmDerivable(bytes32 chainKey) private view {
+        if (!_isEvmDerivable(chainKey)) revert NoCounterpart();
+    }
+
+    function _isEvmDerivable(bytes32 chainKey) private view returns (bool) {
         bytes memory identifier = _chainIdentifier[chainKey];
         if (identifier.length == 0) revert UnknownChainKey();
-        if (Erc7930.parseStrict(identifier).chainType != Erc7930.CT_EIP155) {
-            revert NoCounterpart();
-        }
+        if (Erc7930.parseStrict(identifier).chainType != Erc7930.CT_EIP155) return false;
         Provenance cap = maxProvenanceOf[chainKey];
-        if (cap != Provenance.Unresolved && uint8(cap) < uint8(Provenance.Derived)) {
-            revert NoCounterpart();
-        }
+        return cap == Provenance.Unresolved || uint8(cap) >= uint8(Provenance.Derived);
+    }
+
+    /// @notice Whether accounts on `chainKey` must report their own address home.
+    ///
+    /// @dev THE DIRECTION, NOT THE DATA, AND THAT IS THE WHOLE OF THIS REGISTRY'S PART IN
+    ///      THE RECEIVER STORY. Where an account's receiver actually landed is a fact about
+    ///      that account, so it is held by the transmitter it answers to, which is also the
+    ///      only contract that reads it. What belongs here is which chains cannot be
+    ///      answered locally, because that is a property of the CHAIN and it is what this
+    ///      directory is for.
+    ///
+    /// @dev IT IS DERIVED, NOT DECLARED, so it cannot disagree with the caps. A chain needs
+    ///      a callback exactly when this contract cannot recompute its addresses: it is not
+    ///      `eip155`, or it is capped below `Derived` because its CREATE2 formula differs.
+    ///      Those are the same two conditions `defaultCounterpart` withdraws on, read the
+    ///      other way round, and a separate flag would be a second source of truth for one
+    ///      fact. It is the hub's side of `SpokeTransceiverBase.addressesDiverge`.
+    function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
+        return !_isEvmDerivable(chainKey);
     }
 
     /// @notice Attach a value-range validator to a chain.
@@ -664,59 +683,26 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         return _deriveParams[chainKey];
     }
 
-    /* ========================= destination receivers ========================== */
-
-    /// @notice Slot holding an account's receiver on one destination chain.
-    /// @dev DERIVED, NEVER CHOSEN, and namespaced by a tag: two slot kinds share `_refs`, so
-    ///      without it a receiver could be written into a transceiver's slot and read back as
-    ///      one.
-    ///
-    /// @dev KEYED BY `(owner, salt)`, WHICH IS WHAT AN ACCOUNT IS. Keying by the transmitter's
-    ///      address gives the same answer wherever the two share one, but states a
-    ///      relationship that does not hold everywhere, and where they diverge the slot would
-    ///      silently point elsewhere. The pair is the identity; the address derives from it.
-    ///
-    /// @dev It exists because some chains cannot be derived at all: Starknet's address is a
-    ///      Pedersen hash chain the EVM cannot recompute at any price, so the receiver
-    ///      reports its address back and it is graded `Attested`.
-    function receiverSlot(bytes32 chainKey, address owner, bytes32 salt)
-        public
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode("crossecute.receiver", chainKey, owner, salt));
-    }
-
-    /// @notice Where an account's receiver lives on `chainKey`, refusing anything below
-    ///         `minProvenance`.
-    /// @dev A payload that moves funds should demand more than `Attested`; one that only
-    ///      emits an event can live with it. Making the caller state its bar is the point.
-    function destinationReceiverOf(
-        bytes32 chainKey,
-        address owner,
-        bytes32 salt,
-        Provenance minProvenance
-    ) external view returns (bytes memory) {
-        ForeignRef memory r = _refs[receiverSlot(chainKey, owner, salt)];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        if (uint8(r.provenance) < uint8(minProvenance)) revert InsufficientProvenance();
-        return Erc7930.parseStrict(r.interop).addr;
-    }
-
     /* =============== PATH 2/3: destination callback with grading =============== */
 
     /// @notice Invoked by a local hub transceiver on the return message: the destination
-    ///         reports where it created something this chain could not compute.
+    ///         reports where its TRANSCEIVER lives, on a chain this one cannot compute.
+    ///
+    /// @dev IT NO LONGER CARRIES RECEIVERS. An account's receiver address is a fact about
+    ///      that account and is read only by the transmitter that sends to it, so it is
+    ///      stored there and the hub writes it directly; see
+    ///      `HubTransceiverBase.onDestinationReceiver`. What is left here is the counterpart
+    ///      directory, which is chain-scoped and is what a registry is for.
     ///
     /// @dev THE CALLER IS THE AUTHORITY, AND IT NAMES THE PROVIDER. `msg.sender` must be a
     ///      registered `localTransceiver`, and the provider is read back from it rather than
     ///      passed in: a hub serves exactly one provider, so accepting it as an argument
     ///      would let an authenticated caller speak for a provider it does not serve.
     ///
-    /// @dev THE SLOT IS WRITE-ONCE. A receiver's address is a fact established once, at
-    ///      bootstrap, so there is no legitimate second report for the same slot. Refusing
-    ///      one makes a replayed message a no-op and leaves a compromised bridge unable to
-    ///      repoint a live receiver.
+    /// @dev THE SLOT IS WRITE-ONCE. A transceiver's location is a fact established once, so
+    ///      there is no legitimate second report for the same slot. Refusing one makes a
+    ///      replayed message a no-op and leaves a compromised bridge unable to repoint a
+    ///      live counterpart.
     ///
     /// @dev GRADING HAPPENS HERE, NOT AT THE CALLER: a remote party does not mark its own
     ///      homework, so no provenance field is accepted over the wire. With nothing

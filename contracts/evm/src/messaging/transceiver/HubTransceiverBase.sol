@@ -8,10 +8,21 @@ import {Provenance} from "src/registry/ForeignRef.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Call} from "src/messaging/Call.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 
 /// @notice What a hub needs from the transmitter logic it arms an account with.
 interface ITransmitterInit {
     function initialize(address owner, address transceiver, bytes32 salt) external;
+}
+
+/// @notice The one thing a hub tells an account after creating it.
+/// @dev DELIBERATELY ONE FUNCTION WIDE. A transceiver holds no standing authority over an
+///      account, and this is the single exception: the account cannot learn its own receiver
+///      address on a chain whose derivation this one cannot run, and the hub is the only
+///      contract that authenticates the message carrying it.
+interface IAccountReceiverReport {
+    function onDestinationReceiverReported(bytes32 chainKey, bytes calldata receiver)
+        external;
 }
 
 /// @title HubTransceiverBase
@@ -50,7 +61,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     Provenance public minCounterpartProvenance;
 
     event DestinationReceiverReported(
-        bytes32 indexed chainKey, address indexed owner, bytes32 salt, bytes32 slot
+        bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account
     );
     event RoutingSet(
         address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance
@@ -62,6 +73,10 @@ abstract contract HubTransceiverBase is TransceiverBase {
     error NotCounterpart(bytes32 chainKey);
     /// @dev A chain reported an address that says it lives somewhere else.
     error ReportedChainMismatch(bytes32 authenticated, bytes32 reported);
+    /// @dev A chain whose addresses this contract can recompute tried to report one. The
+    ///      derivation is stronger than the claim, so the claim is refused rather than
+    ///      allowed to replace it.
+    error ChainDoesNotReport(bytes32 chainKey);
 
     function __HubTransceiverBase_init(address transmitterImplementation_)
         internal
@@ -193,26 +208,36 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev THE ESCAPE HATCH FOR UNDERIVABLE CHAINS. Most destinations need nothing like it,
     ///      because the hub can compute a parity chain's receiver address before the first
     ///      message. Starknet cannot: its derivation is a Pedersen hash chain the EVM cannot
-    ///      run at any price. So the destination creates the receiver, learns the address,
-    ///      and sends it back. Hub-only, which is the whole architecture in one function: the
-    ///      spoke sends, the hub records, and a spoke has nowhere to record anything to.
-    ///      Self-call only, so it is reachable from `_onInbound` and nowhere else.
+    ///      run at any price, and zkSync and Tron simply use different CREATE2 formulas. So
+    ///      the destination creates the receiver, learns the address, and sends it back.
+    ///      Hub-only, which is the whole architecture in one function: the spoke sends, the
+    ///      hub records, and a spoke has nowhere to record anything to. Self-call only, so
+    ///      it is reachable from `_onInbound` and nowhere else.
     ///
-    /// @dev THE SLOT IS DERIVED FROM THE AUTHENTICATED PAIR, WHICH IS WHY NO REQUEST ID IS
-    ///      NEEDED. `chainKey` came from `_authenticateOrigin` and `(owner, salt)` is stated
-    ///      in the report, so the destination cannot choose which slot it writes, and the
-    ///      registry refuses a second write to it. The pair is keyed rather than the address
-    ///      because the pair is what an account IS; the address is a derivation of it. The
-    ///      registry also does the grading, at `Attested`: a remote party does not mark its
-    ///      own homework.
+    /// @dev IT WRITES TO THE ACCOUNT, NOT TO THE REGISTRY, and that is what makes the report
+    ///      worth sending. The address used to be filed under a registry slot that nothing
+    ///      on the send path reads, because the registry is deliberately out of that path:
+    ///      a chain whose receiver could not be derived stayed unreachable no matter how
+    ///      faithfully its address was recorded. The transmitter is the contract that
+    ///      addresses that receiver, so it is the contract that is told.
     ///
-    /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT. The registry keys the
-    ///      ref by whatever the envelope claims while the SLOT is keyed by where the message
-    ///      came from, so without this a stored reference could contradict its own address.
-    ///      It buys an attacker nothing on its own, which is why it is a check rather than a
-    ///      fix: an authenticated spoke can already report a wrong address on its own chain,
-    ///      and payloads route by chainKey regardless. What it buys is a ref that cannot
-    ///      disagree with itself.
+    /// @dev THE REGISTRY STILL SAYS WHICH CHAINS MAY REPORT, which is the part that IS
+    ///      directory data. `requiresReceiverCallback` is true exactly where this contract
+    ///      cannot recompute an address, so a report from a chain the hub can derive itself
+    ///      is refused: it would either restate a `Derived` fact or replace it with a
+    ///      weaker one, and neither is something a remote chain gets to do.
+    ///
+    /// @dev THE DESTINATION CANNOT CHOOSE WHICH ACCOUNT IT WRITES, WHICH IS WHY NO REQUEST
+    ///      ID IS NEEDED. `chainKey` came from `_authenticateOrigin` and `(owner, salt)` is
+    ///      stated in the report, so the account is `predictCrossAccount` of the stated
+    ///      pair: the same derivation `bootstrap` proved the caller against. The account
+    ///      then refuses a second report itself.
+    ///
+    /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT, so a stored
+    ///      counterpart cannot contradict its own envelope. It buys an attacker nothing on
+    ///      its own, since an authenticated spoke can already report a wrong address on its
+    ///      own chain, and that remains the residual risk: the owner's
+    ///      `setDestinationReceiver` is the recovery.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(
         bytes32 chainKey,
@@ -223,25 +248,32 @@ abstract contract HubTransceiverBase is TransceiverBase {
         require(msg.sender == address(this));
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (owner == address(0)) revert ZeroOwner();
+        if (!chainRegistry.requiresReceiverCallback(chainKey)) {
+            revert ChainDoesNotReport(chainKey);
+        }
 
         bytes32 reported = Erc7930.chainKey(interop);
         if (reported != chainKey) revert ReportedChainMismatch(chainKey, reported);
 
-        bytes32 slot = chainRegistry.receiverSlot(chainKey, owner, salt);
-        chainRegistry.onForeignRefResolved(slot, interop, "");
-        emit DestinationReceiverReported(chainKey, owner, salt, slot);
+        address account = predictCrossAccount(owner, salt);
+        IAccountReceiverReport(account).onDestinationReceiverReported(
+            chainKey, Erc7930.parseStrict(interop).addr
+        );
+        emit DestinationReceiverReported(chainKey, owner, salt, account);
     }
 
-    /// @notice Where an account's receiver lives on `chainKey`, at this transceiver's
-    ///         provenance bar.
+    /// @notice Where an account's receiver lives on `chainKey`, as that account records it.
+    /// @dev A passthrough, kept because an operator reading the hub should not have to know
+    ///      that the answer moved. It is the account's own counterpart table, which is also
+    ///      what its `sendMessage` checks against, so there is one answer rather than a
+    ///      directory copy that could disagree with the send path.
     function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt)
         external
         view
         returns (bytes memory)
     {
-        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        return chainRegistry.destinationReceiverOf(
-            chainKey, owner, salt, minCounterpartProvenance
+        return TransmitterBase(payable(predictCrossAccount(owner, salt))).counterpartOn(
+            chainKey
         );
     }
 }

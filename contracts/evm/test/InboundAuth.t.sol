@@ -19,6 +19,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 
 contract MockReceiver is ReceiverBase {
     function _isAuthorizedGateway(address) internal pure override returns (bool) {
@@ -38,10 +39,49 @@ contract MockReceiver is ReceiverBase {
 
 /// @dev Stands in for a protocol adapter: translates an SDK callback into the three
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
+/// @dev A transmitter with an inert send, so an account can be stood up on a destination
+///      without a provider behind it. A report has to land on a real account now.
+contract Transmitter is TransmitterBase, OwnableUpgradeable {
+    function initialize(address owner_, address transceiver_, bytes32 salt_)
+        external
+        initializer
+    {
+        __Ownable_init(owner_);
+        __TransmitterBase_init(owner_, transceiver_, salt_);
+    }
+
+    function _owner() internal view override returns (address) {
+        return owner();
+    }
+
+    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
+        OwnableUpgradeable._checkOwner();
+    }
+
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        pure
+        override
+        returns (bytes32)
+    {
+        return bytes32(0);
+    }
+}
+
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
         __TransceiverBase_init();
+        __HubTransceiverBase_init(impl);
+    }
+
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        pure
+        override
+        returns (bytes32)
+    {
+        return bytes32(0);
     }
 
     function _checkAdmin() internal view override {
@@ -102,7 +142,7 @@ contract InboundAuthTest is Test {
         );
         address impl = address(new MockReceiver());
         hub = new Hub();
-        hub.initialize(msig, impl);
+        hub.initialize(msig, address(new Transmitter()));
         spoke = new Spoke();
         spoke.initialize(msig, impl, HOME_SENDER);
 
@@ -165,6 +205,10 @@ contract InboundAuthTest is Test {
         bytes32 id = keccak256(abi.encode("t", chainId));
         registry.resolveDerived(id, Erc7930.encodeEvm(chainId, counterpart));
         registry.setTransceiverId(chainKey, provider, id);
+        // Capped AFTER the counterpart is resolved, since the cap bounds what may be
+        // STORED. A chain that reports is one this contract cannot derive an account on:
+        // `eip155` capped below `Derived` is the zkSync and Tron shape.
+        registry.setMaxProvenance(chainKey, Provenance.Committed);
         vm.stopPrank();
         vm.prank(msig);
         // The route IS the chain identifier now, so `keccak256(route) == chainKey`.
@@ -179,6 +223,7 @@ contract InboundAuthTest is Test {
     function test_hubResolvesTheOriginAndRecordsTheReport() public {
         address counterpart = address(0xC0DE);
         bytes32 baseKey = _wireSpokeChain(30184, 8453, counterpart);
+        Transmitter acct = _standUpAccount(8453);
 
         bytes memory interop = Erc7930.encodeEvm(8453, address(0xBEEF));
         hub.arrive(
@@ -188,10 +233,19 @@ contract InboundAuthTest is Test {
         );
 
         assertEq(
-            hub.destinationReceiverOn(baseKey, transmitter, bytes32(0)),
+            acct.counterpartOn(baseKey),
             abi.encodePacked(address(0xBEEF)),
             "recorded against the chain the ROUTE resolved to"
         );
+    }
+
+    /// @dev The account is what the report writes to now, so it has to exist and to have
+    ///      been stood up on that destination.
+    function _standUpAccount(uint256 chainId) internal returns (Transmitter acct) {
+        vm.startPrank(transmitter);
+        acct = Transmitter(payable(hub.createTransmitter(bytes32(0))));
+        acct.bootstrap(chainId, new Call[](0), new bytes[](0));
+        vm.stopPrank();
     }
 
     function test_hubRejectsAnUnknownRoute() public {
@@ -230,8 +284,12 @@ contract InboundAuthTest is Test {
         registry.onForeignRefResolved(
             keccak256("lz.base"), Erc7930.encodeEvm(8453, counterpart), ""
         );
-        vm.prank(msig);
+        vm.startPrank(msig);
         registry.setTransceiverId(chainKey, provider, keccak256("lz.base"));
+        // Only a chain this contract cannot derive an account on may report one.
+        registry.setMaxProvenance(chainKey, Provenance.Committed);
+        vm.stopPrank();
+        _standUpAccount(8453);
 
         // At the weakest bar the message is accepted.
         bytes memory report = Envelope.encodeReceiverReport(

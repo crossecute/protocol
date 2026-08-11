@@ -128,6 +128,13 @@ abstract contract TransmitterBase is
     ///      exactly once and the receiver's `initialize` is single-shot, so it would burn a
     ///      fee to revert on arrival.
     error AlreadyBootstrapped(bytes32 destinationChainKey);
+    /// @dev Something that is not this account's transceiver tried to report a receiver.
+    error NotTransceiver(address caller);
+    /// @dev A receiver's address on a chain is established once, at bootstrap, so there is
+    ///      no legitimate second report. The OWNER may still correct it; this refuses only
+    ///      the remote path, so a replayed or hostile second report is a no-op rather than a
+    ///      repoint.
+    error ReceiverAlreadyReported(bytes32 destinationChainKey);
     /// @dev `Call[]` is what an EVM receiver executes and nothing else decodes it.
     error TypedPayloadToNonEvmDestination();
     /// @dev The mirror: an EVM receiver decodes `Call[]` and only `Call[]`, so opaque
@@ -171,6 +178,54 @@ abstract contract TransmitterBase is
         return counterpartOn(destinationChainKey);
     }
 
+    /// Destinations whose receiver address is no longer the bootstrap presumption.
+    ///
+    /// @dev IT EXISTS TO MAKE THE REMOTE PATH SINGLE-SHOT WITHOUT MAKING THE OWNER'S ONE.
+    ///      A report may land once, replacing what `bootstrap` presumed; an owner may write
+    ///      whenever, because they can already `execute` anything and being able to say
+    ///      where their own receiver lives is not an escalation. Without the flag a replayed
+    ///      report would silently undo an owner's correction.
+    mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
+
+    /// @notice The transceiver reports where the destination actually created this account's
+    ///         receiver.
+    ///
+    /// @dev THE REPORT LANDS ON THE ACCOUNT IT IS ABOUT, which is the only contract that
+    ///      reads it. It used to be filed in `ChainRegistry` under a slot keyed by
+    ///      `(chainKey, owner, salt)`, where nothing on the send path could see it: the
+    ///      registry is deliberately out of that path, so an address parked there could not
+    ///      make a diverging chain reachable however faithfully it was recorded. Here it is
+    ///      the counterpart `sendMessage` checks against.
+    ///
+    /// @dev THE TRANSCEIVER IS TRUSTED FOR THIS AND NOTHING ELSE, and the bar it has already
+    ///      cleared is what makes that acceptable. It authenticated the origin chain, and it
+    ///      derived this account's address from the `(owner, salt)` the report stated, so it
+    ///      cannot direct a report at an account the reporting chain did not name. What it
+    ///      CAN do is report a wrong address for a real account on its own chain, which it
+    ///      could do before too; the difference is that this reaches the send path, so the
+    ///      owner's correction below is the recovery rather than a convenience.
+    function onDestinationReceiverReported(
+        bytes32 destinationChainKey,
+        bytes calldata receiver
+    ) external {
+        if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
+        if (!hasCounterpart(destinationChainKey)) {
+            revert NotBootstrapped(destinationChainKey);
+        }
+        if (_receiverPinned[destinationChainKey]) {
+            revert ReceiverAlreadyReported(destinationChainKey);
+        }
+
+        _receiverPinned[destinationChainKey] = true;
+        _setCounterpart(destinationChainKey, receiver);
+        emit DestinationReceiverCorrected(destinationChainKey, receiver);
+    }
+
+    /// @notice Whether this destination's receiver is still the bootstrap presumption.
+    function isReceiverPinned(bytes32 destinationChainKey) external view returns (bool) {
+        return _receiverPinned[destinationChainKey];
+    }
+
     /// @notice Correct the receiver recorded for a destination whose address this chain
     ///         cannot derive.
     ///
@@ -178,9 +233,10 @@ abstract contract TransmitterBase is
     ///      `address(this)`, which is right wherever Ethereum's CREATE2 formula holds and
     ///      wrong on zkSync and Tron, whose formulas differ, and meaningless on a non-EVM
     ///      chain where the account is not a 20-byte address. Those are exactly the cases
-    ///      `SpokeTransceiverBase.addressesDiverge` exists to report home, and this is where
-    ///      the reported value lands: read `ChainRegistry`'s
-    ///      `receiverSlot(chainKey, owner, salt)` and write what the hub recorded.
+    ///      `SpokeTransceiverBase.addressesDiverge` exists to report home. Where a chain
+    ///      reports, the transceiver writes it through `onDestinationReceiverReported` and
+    ///      this is the recovery if that value is wrong; where one does not, this is the
+    ///      only way in.
     ///
     /// @dev IT IS REBINDABLE, AND THAT GRANTS THE OWNER NOTHING THEY LACK. An owner can
     ///      already `execute` anything and approve any payload, so being able to say where
@@ -193,6 +249,7 @@ abstract contract TransmitterBase is
         if (!hasCounterpart(destinationChainKey)) {
             revert NotBootstrapped(destinationChainKey);
         }
+        _receiverPinned[destinationChainKey] = true;
         _setCounterpart(destinationChainKey, receiver);
         emit DestinationReceiverCorrected(destinationChainKey, receiver);
     }

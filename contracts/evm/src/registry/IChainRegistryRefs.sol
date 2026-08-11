@@ -23,21 +23,14 @@ interface IChainRegistryRefs {
         Provenance minProvenance
     ) external view returns (bytes32 transceiverId, bytes memory location);
 
-    function receiverSlot(bytes32 chainKey, address owner, bytes32 salt)
-        external
-        pure
-        returns (bytes32);
+    /// @notice Whether accounts on `chainKey` must report their own address home, which is
+    ///         the only thing this directory says about receivers. Where one actually landed
+    ///         is held by the transmitter that sends to it.
+    function requiresReceiverCallback(bytes32 chainKey) external view returns (bool);
 
     function onForeignRefResolved(
         bytes32 slot,
         bytes calldata interop,
         bytes calldata qualifierData
     ) external;
-
-    function destinationReceiverOf(
-        bytes32 chainKey,
-        address owner,
-        bytes32 salt,
-        Provenance minProvenance
-    ) external view returns (bytes memory);
 }

@@ -39,16 +39,17 @@ struct ForeignRef {
 
 /// @notice Source-side callback for identifiers this chain cannot compute.
 ///
-/// @dev NO REQUEST ID, AND NOTHING TO REGISTER IN ADVANCE. The slot is derived from the
-///      chain (established by `_authenticateOrigin`) plus `(owner, salt)` (stated in the
-///      message), so a destination cannot choose which slot it writes. The guarantees are
-///      structural instead: the slot is WRITE-ONCE, so a report cannot repoint a receiver
-///      already on record, and the caller is authenticated as a registered local
-///      transceiver, which is what names the message provider.
+/// @dev TRANSCEIVER LOCATIONS ONLY. An account's receiver address used to come through here
+///      too; it is a fact about that account rather than about a chain, and only the
+///      transmitter that addresses it ever reads it, so the hub now writes it straight there
+///      (`TransmitterBase.onDestinationReceiverReported`). What is left is the counterpart
+///      directory, which is chain-scoped and is what a registry is for.
+///
+/// @dev NO REQUEST ID, AND NOTHING TO REGISTER IN ADVANCE. The caller is authenticated as a
+///      registered local transceiver, which is what names the message provider, and the slot
+///      is WRITE-ONCE, so a replayed report cannot repoint a counterpart already on record.
 interface IForeignRefReceiver {
-    /// @param slot          Storage key for this reference. For a transceiver location this
-    ///                      is the transceiver id; for a receiver it is
-    ///                      `receiverSlot(chainKey, owner, salt)`.
+    /// @param slot          Storage key for this reference: the transceiver id.
     /// @param interop       Canonical ERC-7930 bytes reported by the destination.
     /// @param qualifierData abi-encoded `Move.MoveQualifier` as reported by the
     ///                      destination, or empty for chains that have no qualified

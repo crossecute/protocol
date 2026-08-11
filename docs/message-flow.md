@@ -400,12 +400,20 @@ The home side: one transceiver, N counterparts, one registry to tell them apart.
   reverts in `chainKeyOfRoute`; a known route with the wrong sender reverts `NotCounterpart`.
 - `_handleInbound`: a hub receives receiver reports and nothing else, decoded by
   `Envelope.decodeReceiverReport` and passed to `onDestinationReceiver`, which is self-call
-  only and therefore reachable from `_onInbound` and nowhere else. It derives
-  `receiverSlot(chainKey, owner, salt)` from the authenticated pair, so the destination
-  cannot choose which slot it writes, and the registry refuses a second write to it. The
-  registry grades the result `Attested`, not this contract: a remote party does not mark its
-  own homework.
-- `destinationReceiverOn(chainKey, owner, salt)`: the read, at this transceiver's bar.
+  only and therefore reachable from `_onInbound` and nowhere else. **It writes to the
+  account, not to the registry.** The address used to be filed under a registry slot that
+  nothing on the send path reads, so a chain whose receiver could not be derived stayed
+  unreachable however faithfully its address was recorded; the transmitter is the contract
+  that addresses that receiver, so it is the contract that is told. The account is
+  `predictCrossAccount` of the authenticated `(owner, salt)`, so a destination cannot choose
+  which account it writes, and the account itself refuses a second report.
+- The registry still says **which** chains may report: `requiresReceiverCallback(chainKey)`
+  is true exactly where the hub cannot recompute an address, so a report from a derivable
+  chain is refused rather than allowed to replace a `Derived` fact with a weaker one. That
+  is the direction, which is chain-scoped and belongs in a directory; the data is not.
+- `destinationReceiverOn(chainKey, owner, salt)`: a passthrough to the account's own
+  counterpart table, so there is one answer rather than a directory copy that could disagree
+  with the send path.
 - **A hub has no receiver machinery at all**, not gated, absent. An address holds one
   contract, so a receiver on the home chain would collide with the transmitter that belongs
   there. Absence beats a revert, because there is no entry point for a later change to
@@ -624,9 +632,10 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   frozen keccak fold, and advisory-here / enforced-there is what makes a mutable preview
   safe. See [`encoding.md`](encoding.md) and `registry/ICommitmentScheme.sol`.
 - **A destination report carries no `requestId`, and nothing is registered in advance.**
-  The correlation an id would provide is already implied: the slot is
-  `receiverSlot(chainKey, owner, salt)`, the chainKey comes from `_authenticateOrigin`, and
-  the pair is stated in the report, so a destination cannot choose which slot it writes.
+  The correlation an id would provide is already implied: the target is the account
+  `predictCrossAccount(owner, salt)` resolves to, the chainKey comes from
+  `_authenticateOrigin`, and the pair is stated in the report, so a destination cannot
+  choose which account it writes.
   It is keyed by `(owner, salt)` rather than by the transmitter's address because that pair
   is what an account IS; the address is a derivation of it. That argument is about
   CORRELATION. IDEMPOTENCY is a separate question and it is settled the same way: an
