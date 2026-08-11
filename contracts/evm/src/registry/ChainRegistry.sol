@@ -95,9 +95,10 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// messageProvider => the local hub transceiver that serves it. This is both the
     /// callback authority and the address the default counterpart is derived from.
     ///
-    /// @dev PER PROVIDER, NOT ONE ADDRESS. A single `sourceTransceiver` meant a second
-    ///      provider's hub could never deliver a report: the directory was keyed per
-    ///      provider while the permission was not.
+    /// @dev PER PROVIDER, NOT ONE ADDRESS, so the permission is keyed the way the directory
+    ///      already is. A single authorized transceiver would let only one provider's hub
+    ///      deliver a report, and a second provider could never be added without displacing
+    ///      the first.
     mapping(bytes32 => address) public localTransceiver;
     /// The reverse: which provider a calling transceiver speaks for.
     ///
@@ -712,11 +713,10 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      passed in: a hub serves exactly one provider, so accepting it as an argument
     ///      would let an authenticated caller speak for a provider it does not serve.
     ///
-    /// @dev THE SLOT IS WRITE-ONCE, AND THAT IS WHAT REPLACED THE EXPECTATION MACHINERY. A
-    ///      receiver's address is a fact established once, at bootstrap, so there is no
-    ///      legitimate second report for the same slot. Refusing one makes a replayed message
-    ///      a no-op and a compromised bridge unable to repoint a live receiver, which is
-    ///      strictly more than the `Committed` grade bought.
+    /// @dev THE SLOT IS WRITE-ONCE. A receiver's address is a fact established once, at
+    ///      bootstrap, so there is no legitimate second report for the same slot. Refusing
+    ///      one makes a replayed message a no-op and leaves a compromised bridge unable to
+    ///      repoint a live receiver.
     ///
     /// @dev GRADING HAPPENS HERE, NOT AT THE CALLER: a remote party does not mark its own
     ///      homework, so no provenance field is accepted over the wire. With nothing

@@ -89,10 +89,9 @@ shared contract is in the path of a normal message.
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
 binary interoperable address (ERC-7930) that carries its own chain and `payload` is opaque
-`bytes`. That collapsed six `send`/`sendTo` overloads into one `sendMessage`, and it is why
-the transceiver's route slot holds a chain identifier rather than a provider's private id
-for a chain. The standard defines no quote, so `quoteMessage` is the protocol's own
-addition alongside it.
+`bytes`. One signature therefore covers every destination, and the transceiver's route slot
+holds a chain identifier rather than a provider's private id for a chain. The standard
+defines no quote, so `quoteMessage` is the protocol's own addition alongside it.
 
 **Committing is a call, not a message kind.** To approve a payload now and run it later,
 send one whose single element calls the receiver's own `commit`. Nothing on the wire

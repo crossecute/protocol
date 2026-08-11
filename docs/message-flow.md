@@ -206,10 +206,9 @@ The shared execution loop, inherited by `TransmitterBase` and `ReceiverBase` ali
 The sending half, with no opinion about who is allowed to send, and no storage at all. That
 is what makes it free to mix into a contract that already has a layout.
 
-- **There is no `_dispatch` wrapper.** Entry points call `_sendMessage` directly. The
-  wrapper used to validate, emit, and forward; the validation moved to the entry point where
-  the untrusted argument arrives, and the event went, because a gateway source must emit
-  `MessageSent` and that carries strictly more than the two hashes `Dispatched` did.
+- **Entry points call `_sendMessage` directly**, with nothing in between to drift out of
+  step with either. Validation sits at the entry point, where the untrusted argument arrives,
+  and the send event is the standard's, since a gateway source must emit `MessageSent`.
 - `_sendMessage(bytes recipient, bytes payload, bytes[] attributes) returns (bytes32
   sendId)`: `internal virtual`, reverting `SendNotImplemented` until a protocol binding
   overrides it. **One primitive for every channel**, and now ERC-7786's own: a payload to
@@ -254,9 +253,9 @@ per-destination bootstrap record below, and nothing else.
   back, so there is no confirmation to wait for. Delivery is retryable at the provider, so
   a bootstrap that reverts on arrival is pending rather than lost.
 - `sendMessage(bytes recipient, bytes payload, bytes[] attributes)`: path A, and the ONLY
-  send. It is `IERC7786GatewaySource`'s signature, which is why the six `send` and `sendTo`
-  overloads are gone: a recipient carries its own chain, so the chain id, the ERC-7930
-  envelope, and the typed and opaque variants collapse into one argument.
+  send. It is `IERC7786GatewaySource`'s signature, and one signature covers every
+  destination: a recipient carries its own chain, so the chain id, the ERC-7930 envelope, and
+  the choice between typed and opaque payloads all fold into two arguments.
 - **The recipient is checked, not trusted.** An account's peer is its own address on every
   parity chain, which used to be structural and became an argument, so a recipient naming
   anything else on an `eip155` chain is refused. The check is skipped where the address is

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Call, Calls} from "src/messaging/Call.sol";
+import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @title Payload

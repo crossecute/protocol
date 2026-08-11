@@ -16,10 +16,9 @@ import {IERC7786GatewaySource} from
 /// @title IAccountTransceiver
 /// @notice Everything an account needs from the transceiver whose address it already stores.
 ///
-/// @dev NAMED FOR THE RELATIONSHIP RATHER THAN FOR ONE OF ITS FUNCTIONS. It was
-///      `ITransceiverBootstrap` when bootstrap was all it carried; the quotes strained that
-///      and `routeTo` breaks it outright. An account holds exactly one transceiver address,
-///      so one interface over it is the shape that cannot drift.
+/// @dev NAMED FOR THE RELATIONSHIP RATHER THAN FOR ONE OF ITS FUNCTIONS, because an account
+///      holds exactly one transceiver address and one interface over it is the shape that
+///      cannot drift as the things it needs from that address change.
 interface IAccountTransceiver {
     function bootstrap(
         bytes32 destinationChainKey,
@@ -183,17 +182,17 @@ abstract contract TransmitterBase is
 
     /// @notice Put a payload on the wire for this account's receiver on another chain.
     ///
-    /// @dev THE ERC-7786 SOURCE ENTRY POINT, AND THE ONLY SEND. Six `send` / `sendTo`
-    ///      overloads collapsed into this: a recipient is a binary interoperable address
-    ///      carrying its own chain, so the chain id, the ERC-7930 envelope, and the typed and
-    ///      opaque variants are all one argument now.
+    /// @dev THE ERC-7786 SOURCE ENTRY POINT, AND THE ONLY SEND. One signature covers every
+    ///      destination, because a recipient is a binary interoperable address carrying its
+    ///      own chain: the chain id, the ERC-7930 envelope, and the choice between typed and
+    ///      opaque payloads are all folded into two arguments.
     ///
-    /// @dev THE PAYLOAD ARRIVES BUILT, WHICH MOVED ONE CHECK OFF THIS CONTRACT. The old
-    ///      overloads took `Call[]` or `bytes[]` and could therefore refuse a typed payload
-    ///      bound for a non-EVM chain and an opaque one bound for an EVM chain. `bytes`
-    ///      cannot be asked which it is, so that pairing is the caller's to get right, and
-    ///      `payloadForCalls` / `payloadForElements` exist so it is at least spelled here the
-    ///      way it is decoded there. Path B still enforces it: see `_typedKey`.
+    /// @dev THE PAYLOAD ARRIVES BUILT, AND THAT COSTS ONE CHECK. A `bytes` payload cannot be
+    ///      asked whether it holds `Call[]` or opaque elements, so this contract cannot
+    ///      refuse a typed payload bound for a non-EVM chain or an opaque one bound for an
+    ///      EVM chain. The pairing is the caller's to get right, and `payloadForCalls` /
+    ///      `payloadForElements` exist so it is at least spelled here the way it is decoded
+    ///      there. Path B still holds the envelope and does enforce it: see `_typedKey`.
     ///
     /// @dev THE RECIPIENT IS CHECKED, NOT TRUSTED. An account's peer is itself on every
     ///      chain, which is what lets it be its own endpoint, and it is derived precisely so
@@ -509,8 +508,9 @@ abstract contract TransmitterBase is
     ///
     /// @dev IT RUNS THEM ITSELF RATHER THAN THROUGH A LOCAL RECEIVER. There is none to run
     ///      them in: a transmitter and its receivers share one address, and an address holds
-    ///      one contract, so at home that address is the transmitter. `HubTransceiverBase`
-    ///      has no `createReceiver`, which makes that structural rather than a convention.
+    ///      one contract, so at home that address is the transmitter. A hub has no
+    ///      receiver-manufacturing surface at all, which makes that structural rather than a
+    ///      convention.
     ///      The two ends therefore share `Executor`: one loop, one policy check, one
     ///      all-or-nothing rule, whether the payload was authorized by the owner here or by a
     ///      commitment there.
@@ -584,11 +584,11 @@ abstract contract TransmitterBase is
     ///      better than a registry lookup: it holds without trusting whoever administers a
     ///      plugin table.
     ///
-    ///      The overload that took a `Scheme` was removed for the mirror-image reason. A
-    ///      preview is frozen with the account, so it could only ever answer for primitives
+    ///      A scheme-parameterized preview belongs here for the mirror-image reason: it
+    ///      would be frozen with the account, so it could only ever answer for primitives
     ///      that existed when the account was created. Non-EVM destinations are previewed
-    ///      through `ChainRegistry.commitmentFor`, where the primitive is a per-chainKey
-    ///      plugin and the set can grow. See `registry/ICommitmentScheme.sol`.
+    ///      through `ChainRegistry.commitmentFor` instead, where the primitive is a
+    ///      per-chainKey plugin and the set can grow. See `registry/ICommitmentScheme.sol`.
     ///
     /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed. It is
     ///      what `commitmentCall` feeds, so a deferred payload's hash is checkable before

@@ -8,12 +8,11 @@ import {OwnableUpgradeable} from
 /// @notice The transceiver on the home chain. One instance, owned by the crossecute msig,
 ///         shared by every user's transmitter.
 ///
-/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL, AND THAT IS WHAT ERC-7786 BOUGHT. The
-///      route table used to hold a LayerZero endpoint id behind a typed `setEid`, because
-///      every provider names chains its own way and the base had no business knowing which.
-///      A gateway takes a recipient that NAMES ITS OWN CHAIN, so there is nothing left to
-///      translate and `LzCodec` is gone. A native SDK binding would bring one back, since
-///      `_lzSend` still takes a `uint32`.
+/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL, AND THAT IS WHAT ERC-7786 BOUGHT. A
+///      gateway takes a recipient that NAMES ITS OWN CHAIN, so there is nothing to translate
+///      and the route slot holds that chain's ERC-7930 identifier, which `setRoute` is
+///      already typed for. A native SDK binding would need a codec and a chainKey table of
+///      its own, since `_lzSend` still takes a `uint32`.
 ///
 /// @dev Does NOT inherit a transmitter. A transceiver is shared, msig-owned infrastructure
 ///      and a transmitter is per-user; merging them would give one contract two owners,

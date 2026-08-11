@@ -2,13 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
-import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from
     "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
@@ -66,7 +64,6 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         address indexed owner, address indexed account, bytes32 salt
     );
 
-    error ZeroTransmitterCommit();
     error UpgradesAreLocked();
     error ZeroOwner();
     error ZeroRoute();
@@ -102,9 +99,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     mapping(bytes32 => bytes32) private _chainKeyOfRoute;
 
     event RouteSet(bytes32 indexed chainKey, bytes route);
-    /// @dev Path B's own record, replacing the generic `Dispatched` it used to share with
-    ///      path A. A transceiver is not an ERC-7786 gateway source, so nothing here emits
-    ///      `MessageSent`, and naming the pair is more use to an operator than hashing it:
+    /// @dev PATH B'S OWN RECORD, because a transceiver is not an ERC-7786 gateway source and
+    ///      so emits no `MessageSent`. It names the pair rather than hashing it:
     ///      `(chainKey, owner, salt)` is what an account IS, and it is what the registry slot
     ///      on the return leg is keyed by.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);

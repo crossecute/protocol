@@ -328,9 +328,8 @@ own token (LayerZero's `lzTokenFee`), the binding MUST quote the native-only pat
 the protocol's funding model is native currency at home. A binding MAY expose a second,
 clearly-named function for the token path; the compliance surface below is native.
 
-**The public read surface is one function now.** ERC-7786 gave the send a single shape, so
-the quote has a single shape too, and the seven-function `IMessageQuote` that used to mirror
-six send overloads is gone with them:
+**The public read surface is one function.** ERC-7786 gives the send a single shape, so the
+quote has one too:
 
 ```solidity
 /// @notice What `sendMessage` would cost, in this chain's native currency.
@@ -818,18 +817,18 @@ The rejected alternatives are worth recording, because each looks reasonable fir
 - **A fourth argument on `_sendMessage`.** Explicit and hard to get wrong, but
   it widens the one primitive every binding implements, to carry a value both call sites
   can already read off the stack.
-- **A refund address inside `providerData`.** No base change, but an empty blob on a
+- **A refund address inside the attributes.** No base change, but an empty blob on a
   bootstrap leaves `_sendMessage` with no correct default in scope: the owner is inside the
   encoded envelope, so the binding would have to decode `Envelope` to find it.
-- **Transient-storage context set by `bootstrap`.** Keeps the primitive narrow, but this
-  codebase already removed a contract for being exactly that (`Dissolve MessagingContext`).
+- **Transient-storage context set by `bootstrap`.** Keeps the primitive narrow, at the cost
+  of a second contract holding per-message state that only one call frame ever reads.
 
 ### 9.5 A route read for accounts. LANDED
 
-`ITransceiverBootstrap` is now `IAccountTransceiver` and carries `routeTo` alongside
-bootstrap and the two quotes. An account holds exactly one transceiver address, so one
-interface over it is the shape that cannot drift; the old name was already strained by the
-quotes and `routeTo` broke it outright.
+`IAccountTransceiver` carries `routeTo` alongside `bootstrap`, `bootstrapElements`, and the
+two quotes that price them. An account holds exactly one transceiver address, so one
+interface named for that relationship is the shape that cannot drift as the things an account
+needs from it change.
 
 ---
 
@@ -1009,9 +1008,8 @@ Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZer
 
 OpenZeppelin ships `interfaces/draft-IERC7786.sol` and `crosschain/ERC7786Recipient.sol`,
 and this protocol arrived at nearly the same shape independently: an opaque `bytes` payload
-to a recipient named by an interoperable address, with an opaque per-send options blob
-(`attributes` here, `providerData` there). So the question is worth answering once rather
-than rediscovering per provider.
+to a recipient named by an interoperable address, with an opaque per-send options blob. So
+the question is worth answering once rather than rediscovering per provider.
 
 **MOSTLY LANDED.** The core contracts now implement `IERC7786GatewaySource` and
 `IERC7786Recipient` directly, the route slot holds a chain identifier, and

@@ -11,10 +11,11 @@ pragma solidity ^0.8.0;
 /// @dev IT DECLARES NO STORAGE, so it mixes into a contract that already has a layout with
 ///      no slot to collide and no gap to reserve.
 ///
-/// @dev THERE IS NO `_dispatch` WRAPPER. Validation belongs at the entry point where the
-///      untrusted argument arrives, and the event it used to emit is now the standard's:
-///      a gateway source MUST emit `MessageSent`, which carries strictly more than the two
-///      hashes `Dispatched` did. Path B is not a gateway source and emits `BootstrapSent`.
+/// @dev ENTRY POINTS CALL `_sendMessage` DIRECTLY, with nothing in between to drift out of
+///      step with either. Validation belongs at the entry point, where the untrusted
+///      argument arrives, and the send event belongs to the standard: a gateway source MUST
+///      emit `MessageSent`. Path B is not a gateway source, so `TransceiverBase` emits
+///      `BootstrapSent` instead.
 abstract contract OutboundBase {
     /// @dev Raised at the entry point, not in a shared internal. See the note above.
     error NoDestination();
@@ -54,11 +55,10 @@ abstract contract OutboundBase {
     ///      `payable`; the binding reads `msg.value` and refunds the excess, since only it
     ///      knows the provider's convention.
     ///
-    /// @param attributes Per send, the standard's shape for what was an opaque
-    ///        `providerData` blob: selector-prefixed values the gateway understands, and a
-    ///        gateway MUST refuse one it does not (see `supportsAttribute`). Per send rather
-    ///        than configuration because destination gas is a property of the payload, so a
-    ///        stored default would strand the first message that needed more.
+    /// @param attributes Selector-prefixed values the gateway understands, and a gateway MUST
+    ///        refuse one it does not (see `supportsAttribute`). Per send rather than
+    ///        configuration because destination gas is a property of the payload, so a stored
+    ///        default would strand the first message that needed more.
     /// @return sendId The gateway's, and NOT always "done". ERC-7786 says a non-zero id means
     ///         further unstandardised action is required, so a binding MUST NOT discard one
     ///         silently: it either handles the second step or refuses such gateways, in

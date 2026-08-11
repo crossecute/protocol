@@ -6,8 +6,6 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
 /// @title SpokeTransceiverBase
@@ -98,12 +96,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     bool public addressesDiverge;
 
     event ReceiverImplementationSet(address implementation);
-    /// @dev Fires on the one message that stands a receiver up. There is no later inbound
-    ///      event, because there is no later inbound message for a transceiver.
-    event ReceiverBootstrapped(
-        address indexed transmitter, address indexed receiver, uint256 callCount
-    );
-    event ReceiverDeployed(address indexed transmitter, address indexed receiver);
     event HomeSet(bytes32 homeChainKey, bytes homeRoute, bytes homeTransceiver);
     event AddressesDivergeSet(bool addressesDiverge);
     /// @dev Fires on the chains that report, which is not most of them.
@@ -119,8 +111,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NoHomeRoute();
     /// @dev The stated route does not hash to the stated home chainKey.
     error HomeRouteMismatch();
-    error ReceiverAlreadyExists(address transmitter, address receiver);
-    error NotTransmitterOwner(address transmitter, address caller);
 
     /// @notice Bind this spoke to its hub, permanently.
     /// @dev All four values are written once and none has a setter, so neither the local msig
@@ -260,10 +250,10 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      says so itself by carrying a self-call to the receiver's `commit`, so there is no
     ///      second entry point for the deferred case.
     ///
-    /// @dev THERE IS NO PERMISSIONLESS `createReceiver`. An account on a spoke exists because
-    ///      a bootstrap message arrived, and nothing else. An open creation path would let
-    ///      anyone deploy an owner's account empty, one transaction ahead of their bootstrap,
-    ///      and permanently deny it: `CrossProxy` arms exactly once.
+    /// @dev THERE IS NO PERMISSIONLESS CREATION PATH. An account on a spoke exists because a
+    ///      bootstrap message arrived, and nothing else. An open one would let anyone deploy
+    ///      an owner's account empty, one transaction ahead of their bootstrap, and
+    ///      permanently deny it: `CrossProxy` arms exactly once.
     ///
     /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO: the account address is
     ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the

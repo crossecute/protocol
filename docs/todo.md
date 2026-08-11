@@ -205,16 +205,15 @@ mainnet.
   makes the second half's staleness visible instead of letting it rot inside a document
   people read as a specification. A table of contents on whatever remains, too.
 
-- ~~**Whether to bind to a 7786 gateway at all.**~~ DONE, in the core rather than as a
-  binding. `TransmitterBase` is an `IERC7786GatewaySource` and `ReceiverBase` an
-  `IERC7786Recipient`; six `send`/`sendTo` overloads and three `quoteSend*` collapsed into
-  one `sendMessage` and one `quoteMessage`; the route slot holds a chain identifier, so
-  `LzCodec` and the eid-typed setters are gone. Two guarantees went with them and are
-  recorded rather than hidden: the typed-versus-opaque payload pairing is no longer
-  checkable locally, since `bytes payload` cannot be asked which it is, and the
-  recipient-is-this-account check binds on `eip155` only, because on a diverging or non-EVM
-  chain the address is not derivable here. `CrosschainLinked(Upgradeable)` is NOT adopted:
-  see [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
+- ~~**Whether to bind to a 7786 gateway at all.**~~ SETTLED, in the core rather than as a
+  binding: `TransmitterBase` is an `IERC7786GatewaySource`, `ReceiverBase` an
+  `IERC7786Recipient`, and the route slot holds a chain identifier. Two guarantees were
+  traded for that and are recorded rather than hidden: the typed-versus-opaque payload
+  pairing is no longer checkable on path A, since `bytes payload` cannot be asked which form
+  it holds, and the recipient-is-this-account check binds on `eip155` only, because on a
+  diverging or non-EVM chain the address is not derivable here.
+  `CrosschainLinked(Upgradeable)` is NOT adopted: see
+  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
 
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
   `draft-InteroperableAddress`.** 5.6.1 brought it: 245 lines against our 248, audited and
