@@ -12,7 +12,9 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      locally and skip the round trip entirely.
 ///
 /// @dev SCOPE. Everything here bottoms out in `keccak256` (native), `sha256` (0x02),
-///      or `ripemd160` (0x03). Sui lives in SuiDerive.sol because BLAKE2b needs the
+///      or `sha256` (0x02). Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
+///      EraVM does not support that precompile and rejects any unit importing it, which a
+///      zkSync spoke needs this file for. Sui lives in SuiDerive.sol because BLAKE2b needs the
 ///      0x09 precompile, which forces `view` rather than `pure`.
 ///      Not derivable on the EVM at any price: Aptos/Movement (SHA3-256, ~1e5 gas for
 ///      a hand-rolled Keccak-f), Starknet (Pedersen/Poseidon over the STARK curve),
@@ -369,28 +371,5 @@ library AddressDerive {
     ) internal pure returns (bytes20) {
         require(uncompressedPubkey64.length == 64, "C2L: bad pubkey len");
         return bytes20(uint160(uint256(keccak256(uncompressedPubkey64))));
-    }
-
-    /* ====================================================================== */
-    /*                                Bitcoin                                  */
-    /* ====================================================================== */
-
-    /// @notice HASH160 = ripemd160(sha256(x)). P2PKH and P2WPKH witness programs.
-    function hash160(bytes memory data) internal pure returns (bytes20) {
-        return ripemd160(abi.encodePacked(sha256(data)));
-    }
-
-    /// @notice P2WSH witness program = sha256(witnessScript).
-    function p2wshProgram(
-        bytes memory witnessScript
-    ) internal pure returns (bytes32) {
-        return sha256(witnessScript);
-    }
-
-    /// @notice P2SH script hash = hash160(redeemScript).
-    function p2shScriptHash(
-        bytes memory redeemScript
-    ) internal pure returns (bytes20) {
-        return hash160(redeemScript);
     }
 }

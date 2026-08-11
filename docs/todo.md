@@ -157,21 +157,50 @@ destination, read from the table rather than computed.
   zkSync keys on an EraVM versioned hash of a zksolc artifact and Tron on TRON-solc's
   initcode. The value comes from the build for that chain.
 
-  **TWO THINGS ARE STILL UNVERIFIED, AND NEITHER CAN BE SETTLED IN THIS REPO.** Forge runs
-  an Ethereum EVM, so the suite pins that each override reproduces `AddressDerive`'s formula,
-  that neither matches Ethereum's, and that both fail closed here via the guard. It cannot
-  pin that the target chain's own deployer agrees.
+  **zkSync compiles, checked rather than assumed.** zksolc 1.5.17 over era-solc
+  0.8.28-1.0.2 builds `CrossProxy` and every contract a spoke needs, under both the `evmla`
+  and `yul` codegens, and emits real EraVM bytecode. Reproduce with:
 
-  1. **Tron's domain byte is still the open 0x41-vs-0xff question**, recorded in §5 and
-     carried as a caveat on `AddressDerive.tronCreate2`. Writing the contract did not resolve
-     it; deploying one account through the spoke on Shasta and comparing does.
-  2. **The zkSync spoke has never been compiled with zksolc.** `CROSS_PROXY_INIT_CODE_HASH`
-     is `keccak256(type(CrossProxy).creationCode)`, and zksolc's handling of `creationCode`
-     is not the same as solc's, so the base may not compile there at all. That is the next
-     thing to find out, and it is a build question rather than a design one.
+  ```
+  zksolc --solc <era-solc-0.8.28-1.0.2> --codegen evmla \
+    --base-path . --include-path lib --allow-paths . \
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/" \
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/" \
+    "src/=src/" src/factories/CrossProxy.sol --bin
+  ```
 
-  Until both are done, treat a zkSync or Tron deployment as unverified rather than merely
-  untested.
+  It did NOT compile before that check, and the reason is worth keeping: EraVM has no
+  `ripemd160`, and zksolc rejects the whole compilation unit rather than the unreachable
+  function. A zkSync spoke imports `AddressDerive` for `zksyncCreate2` and so dragged
+  `hash160` in with it. The three Bitcoin helpers now live in `BitcoinDerive`, whose only
+  caller is `VmDeriver`. **`VmDeriver` and `ChainRegistry` still do not compile under
+  zksolc, and that is correct**: both are home-chain machinery, and the home chain must be a
+  full EVM chain with the EIP-152 precompile anyway.
+
+  The check also confirmed the deployment override rather than leaving it asserted. Building
+  the base's `_deployAccount` under zksolc warns that "EraVM does not use bytecode for
+  contract deployment... please use the `new` operator instead of raw create/create2 in
+  assembly". It is a WARNING, not an error, so a spoke that forgot the override would build
+  and fail on its first account. `type(CrossProxy).creationCode` is accepted without
+  complaint, so `CROSS_PROXY_INIT_CODE_HASH` is a valid constant there, but it hashes an EVM
+  artifact and means nothing on Era, which is why the bytecode hash is an initializer
+  argument.
+
+  **WHAT IS STILL UNVERIFIED IS BOTH FORMULAS AGAINST A REAL CHAIN**, and neither can be
+  settled here, because forge runs an Ethereum EVM. The suite pins that each override
+  reproduces `AddressDerive`'s formula under fuzzing, that neither matches Ethereum's, and
+  that both fail closed here through the guard. It cannot pin that Era's `ContractDeployer`
+  or Tron's deployer land where they predict.
+
+  1. **Tron's domain byte is still the open 0x41-vs-0xff question** (§5). Deploying one
+     account through the spoke on Shasta and comparing settles it.
+  2. **The zkSync bytecode hash and address have never been checked against Era.** Compiling
+     gives the artifact; `AddressDerive.hashL2Bytecode` over it gives the hash the
+     initializer wants; one deployment on a testnet says whether the address follows.
+
+  Both fail closed if wrong (`AccountAddressMismatch` on every account creation), so the
+  cost of being wrong is a redeploy rather than a loss. Until both are done, treat a zkSync
+  or Tron deployment as unverified rather than merely untested.
 - **Funding a diverging spoke.** The report fires from inside the destination's inbound
   callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
   one reverts the bootstrap with it. That revert is deliberate and keeps the operation

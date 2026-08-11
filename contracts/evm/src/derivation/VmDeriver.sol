@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
+import {BitcoinDerive} from "src/derivation/BitcoinDerive.sol";
 import {SuiDerive} from "src/derivation/SuiDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
@@ -318,15 +319,15 @@ contract VmDeriver is IVmDeriver {
         /* -------------------------------- Bitcoin ------------------------------- */
         if (s == Scheme.BitcoinP2wpkh) {
             bytes memory pubkey = abi.decode(p, (bytes));
-            return abi.encodePacked(AddressDerive.hash160(pubkey));
+            return abi.encodePacked(BitcoinDerive.hash160(pubkey));
         }
         if (s == Scheme.BitcoinP2wsh) {
             bytes memory witnessScript = abi.decode(p, (bytes));
-            return abi.encodePacked(AddressDerive.p2wshProgram(witnessScript));
+            return abi.encodePacked(BitcoinDerive.p2wshProgram(witnessScript));
         }
         if (s == Scheme.BitcoinP2sh) {
             bytes memory redeemScript = abi.decode(p, (bytes));
-            return abi.encodePacked(AddressDerive.p2shScriptHash(redeemScript));
+            return abi.encodePacked(BitcoinDerive.p2shScriptHash(redeemScript));
         }
 
         /* ---------------------------------- Sui --------------------------------- */

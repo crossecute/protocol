@@ -21,8 +21,15 @@ import {CrossProxy} from "src/factories/CrossProxy.sol";
 ///      whatever these predict; what the suite CAN pin is that each override reproduces
 ///      `AddressDerive`'s formula exactly, that the bytecode hash is write-once, and that a
 ///      mismatch is refused by `_createCrossAccount`'s guard rather than arming nothing.
-///      The remaining step is empirical and belongs on the target chain: see
+///      What remains is deploying one account on Era and on Shasta and comparing: see
 ///      [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
+///
+/// @dev THE ZKSYNC SIDE COMPILES, CHECKED RATHER THAN ASSUMED. zksolc 1.5.17 over era-solc
+///      0.8.28-1.0.2 builds `CrossProxy` and every contract a spoke needs, under both
+///      codegens, and emits real EraVM bytecode. It did NOT before `BitcoinDerive` was split
+///      out of `AddressDerive`: EraVM has no `ripemd160`, and zksolc rejects the whole
+///      compilation unit rather than the unreachable function, so importing `AddressDerive`
+///      for `zksyncCreate2` dragged `hash160` in and failed the build.
 ///
 /// @dev BOTH TAKE THEIR ACCOUNT BYTECODE HASH AS AN ARGUMENT, because neither can compute
 ///      it. `TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` is `keccak256` of SOLC's initcode,
@@ -66,6 +73,12 @@ abstract contract DivergentSpokeTransceiver is SpokeTransceiverBase {
 ///      published in advance, so `Create2.deploy(0, salt, type(CrossProxy).creationCode)`
 ///      is not a thing that runs there. `new CrossProxy{salt: s}()` is what zksolc lowers
 ///      into that system call, so it is what this emits.
+///
+///      THE COMPILER SAYS SO ITSELF: building the base's `_deployAccount` under zksolc warns
+///      "EraVM does not use bytecode for contract deployment... please use the `new`
+///      operator in Solidity instead of raw create/create2 in assembly". It is a warning
+///      rather than an error, so a spoke that forgot this override would build and then fail
+///      on the first account, which is what makes the override worth stating loudly.
 ///
 /// @dev COMPILED WITH SOLC IT IS SAFE RATHER THAN CORRECT. `new ... {salt:}` lowers to
 ///      ordinary CREATE2 under solc, so in this repo's build the deployment lands at
