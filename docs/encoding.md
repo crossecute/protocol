@@ -21,7 +21,7 @@ transceiver, not the transmitter, not the bridge) inspects either one.
 This is the layer that stays VM-agnostic, and it is what the code already does:
 
 ```solidity
-function hashCalls(bytes32 destinationChainKey, bytes[] calldata elements)
+function hashCalls(bytes32 destinationChainKey, bytes[] memory elements)
     internal pure returns (bytes32)
 {
     bytes32 hashed = keccak256(abi.encode(destinationChainKey));
@@ -36,8 +36,8 @@ An element is bytes. The hash never looks inside one. The destination chainKey i
 first, so a payload approved for one chain cannot be finalized on another, and, usefully
 here, so the element format is namespaced per destination for free.
 
-**The hub's contracts therefore never need to understand a non-EVM call.** `commitTo`
-hashes opaque bytes; Solana and Move payload construction happens entirely in off-chain
+**The hub's contracts therefore never need to understand a non-EVM call.** Every commitment
+path hashes opaque bytes; Solana and Move payload construction happens entirely in off-chain
 tooling. There is no Borsh or BCS anywhere in Solidity, ever.
 
 ## EVM
@@ -78,7 +78,8 @@ Layout for one call carrying 36 bytes of data:
 Per element:
 
 ```solidity
-function hashCall(Call calldata c) internal pure returns (bytes32) {
+// Calls.hash, in messaging/Call.sol
+function hash(Call memory c) internal pure returns (bytes32) {
     return keccak256(abi.encode(c.target, c.value, c.data));
 }
 ```
@@ -88,22 +89,26 @@ because a struct with a dynamic member encodes as a dynamic tuple. `keccak256(ab
 and `keccak256(abi.encode(c.target, c.value, c.data))` are different values. The second is
 the one that matches the opaque form.
 
-That equivalence is the point: `hashCall(c)` equals `keccak256(element)` whenever the
-element is `abi.encode(target, value, data)`. So a typed overload and the canonical opaque
-form produce identical commitments, and the transmitter can offer both: typed calls for
-EVM destinations, where signers get a readable payload, and opaque bytes for everywhere
-else.
+That equivalence is the point: `Calls.hash(c)` equals `keccak256(element)` whenever the
+element is `abi.encode(target, value, data)`, and `Calls.encode(c)` produces exactly that
+element. So a typed overload and the canonical opaque form produce identical commitments,
+and the transmitter can offer both: typed calls for EVM destinations, where signers get a
+readable payload, and opaque bytes for everywhere else.
 
 ```solidity
+hashCalls(Call[] calls)                           // this chain's key, for a receiver, view
 hashCalls(bytes32 chainKey, bytes[] elements)     // canonical, keccak256, pure
-hashCalls(bytes32 chainKey, Call[] calls)         // same hash, typed
+hashCalls(bytes32 chainKey, Call[] calls)         // same hash, typed, pure
 hashCalls(Scheme, bytes32 chainKey, bytes[])      // per-destination, view
 hashCalls(Scheme, bytes32 chainKey, Call[])       // per-destination, view
 ```
 
-One name, four shapes. Every array parameter is `memory`: Solidity will not overload on
+One name, five shapes. Every array parameter is `memory`: Solidity will not overload on
 data location, so a `calldata` twin would need a different name, which is the only reason
 a second one ever existed.
+
+The first is the receiver's, seeded with `ChainKey.local()`, and it is what `isHashedCall`
+calls from `finalize`. It is `view` only because it reads `block.chainid`.
 
 The unparameterized pair is the **EVM scheme** (keccak256), and is what a receiver on an
 EVM chain calls. The `Scheme` overloads are for the source side, where the hub builds a
@@ -123,10 +128,16 @@ EVM destination       wire = abi.encode(Call[] calls)
 everything else       wire = abi.encode(bytes[] elements)
 ```
 
-The sender picks by destination chain type: `send(uint256)` is `eip155` by construction,
-and `sendTo(bytes)` reads it off the envelope it was handed. The receiver decodes the
-single shape its own VM implies. Both sides know which before a byte is written, so a field
-saying so would carry a value each already holds. That is the same reason `Envelope` has no
+The sender picks by destination chain type. On path B that is still enforced on-chain:
+`bootstrap(uint256, ...)` is `eip155` by construction, and `bootstrapTo(bytes, ...)` reads
+the type off the ERC-7930 envelope it was handed, refusing typed calls to a non-EVM chain
+(`TypedPayloadToNonEvmDestination`) and opaque elements to an EVM one
+(`OpaquePayloadToEvmDestination`). On path A it is not: `sendMessage` takes the payload
+already built, and `bytes` cannot be asked which form it holds, so the pairing is the
+caller's to get right and `payloadForCalls` / `payloadForElements` exist so it is at least
+spelled the same way here as it is decoded there. The receiver still decodes the single
+shape its own VM implies. Both sides know which before a byte is written, so a field saying
+so would carry a value each already holds. That is the same reason `Envelope` has no
 message-type tag, and it now holds here too: **every channel carries exactly one shape.**
 
 **This is a structural guarantee, not a decoder guarantee**, and the distinction is worth
@@ -140,11 +151,11 @@ tripwire in a comment.
 
 ### The receiver's entry point is `Call[]` only
 
-`ReceiverBase` exposes `finalize(Call[])` and `execute(Call[])`, and no opaque twin. An EVM
-receiver executes EVM calls; there is no payload it can run that is not
-`(target, value, data)`, so an opaque overload would accept elements it could only decode
-into this shape anyway or revert on. One entry shape means one place the caller gate lives
-and one place the policy check lives.
+`ReceiverBase` exposes `finalize(Call[])`, `finalize(Call[][])`, and `execute(Call[])`, and
+no opaque twin. An EVM receiver executes EVM calls; there is no payload it can run that is
+not `(target, value, data)`, so an opaque overload would accept elements it could only
+decode into this shape anyway or revert on. One entry shape means one place the caller gate
+lives and one place the policy check lives.
 
 The **commitment** it discharges may still have been built in either form: that layer is
 VM-agnostic and off-chain tooling naturally produces the canonical opaque elements. The
@@ -153,8 +164,14 @@ the typed array supplied here.
 
 The same applies on the source side. `TransmitterBase.execute` is `Call[]` only, because it
 is a direct local call with no bridge in between and therefore always targets an EVM chain.
-`commit` and `commitTo` keep both overloads, because they approve payloads for destinations
-this chain cannot execute on.
+
+**A transmitter no longer has a `commit` of its own.** It never did hold a queue, and the
+overloads that used to approve a payload for a remote destination are gone with the send
+overloads. What remains is `commitmentCall(receiver, commitment)`, a `pure` builder for the
+one element that pins a hash on the receiver's own chain, and `cancellationCall(receiver,
+index, expected)` for the element that withdraws one. Committing is a call, not a message
+kind, so a payload for a destination this chain cannot execute on is approved by carrying
+that element rather than by a second entry point here.
 
 ### Note on the empty array
 
@@ -233,10 +250,11 @@ else and the source has to build the commitment the same way.
 | `STARKNET` | library code, not a builtin; `starknet_keccak` is a *different* hash | `Poseidon` |
 | `BIP122` | no opcode exists | n/a: no executor |
 
-Out of scope but referenced elsewhere in the README: **Cardano** would use `Blake2b256`
-(its `keccak_256` builtin arrived later than its other hashes, so the Plutus version needs
-checking), and **TON** would use `Sha256`: TVM has SHA256 natively and no keccak
-primitive. Neither has a `ChainType` allocated today.
+Out of scope, but each has an enum arm in `Commitment.Scheme` already: **Cardano** would use
+`Blake2b256Scheme` (its `keccak_256` builtin arrived later than its other hashes, so the
+Plutus version needs checking), and **TON** would use `Sha256`: TVM has SHA256 natively and
+no keccak primitive. Neither has a `ChainType` allocated in `addressing/ChainType.sol`
+today.
 
 **So Starknet is the only in-scope chain where keccak is the deciding obstacle.**
 CosmWasm's is a cost difference rather than a capability one: the hash is wasm rather than
@@ -275,9 +293,11 @@ precompile, for the same reason.
 exact round constants and MDS matrix, and one wrong constant produces a silently wrong
 digest, so it is not written from memory. It reverts with `SchemeNotComputable` rather
 than falling back to keccak, because a silent fallback would hand back a well-formed
-commitment that a Starknet receiver can never match, failing only on a live message. Until
-it is ported and checked against `test/vectors/starknet.json`, a Starknet commitment is
-computed off-chain and approved through the digest-only `commitTo(bytes,bytes32)`.
+commitment that a Starknet receiver can never match, failing only on a live message.
+`Commitment.isComputable(scheme)` is the ask-before-you-build read, and it is false only for
+`Poseidon`. Until it is ported and checked against `test/vectors/starknet.json`, a Starknet
+commitment is computed off-chain and carried in an opaque element that calls that receiver's
+own `commit`, which is the same mechanism every deferred payload uses.
 
 **Where the scheme is a parameter, and where it stopped being one.** The enum is still how
 `Commitment` dispatches internally, and it is compiled into every account. But no entry
@@ -327,10 +347,13 @@ commitment binds to a chain for free there. Off the EVM that does not hold:
 | Sui | **no** |
 
 So on the chains where the receiver address is least predictable, the chainKey also has to
-be baked in, the same way `SpokeTransceiverBase.HOME_CHAIN_KEY` is a literal rather than a
-constructor argument. A mainnet/devnet mixup then produces a receiver that verifies nothing
-successfully and fails only on a live message. The mitigation is the one already used on
-the spoke: assert the constant against a derived value in that chain's own test suite.
+be baked in. A mainnet/devnet mixup then produces a receiver that verifies nothing
+successfully and fails only on a live message. The mitigation is the one the spoke already
+uses for the mirror-image value: `SpokeTransceiverBase.homeChainKey` is a write-once
+initializer argument checked against the identifier passed beside it
+(`ChainKey.fromIdentifier(homeRoute_) != homeChainKey_` reverts `HomeRouteMismatch`), so the
+two halves cannot name different chains. A baked-in chainKey off the EVM wants the same
+treatment: assert it against a derived value in that chain's own test suite.
 
 ### Executing is where the chains diverge
 
@@ -381,23 +404,25 @@ wrong layer.
 
 ### What this changes elsewhere
 
-Three claims in the README are EVM properties presented as protocol properties, and the
-Move case is where each of them breaks.
+Three claims argued in the contracts are EVM properties presented as protocol properties,
+and the Move case is where each of them breaks.
 
-**"A receiver is a full-power account answering to one owner, the same way a Safe on
-Ethereum is."** That is the justification for `isAllowed` defaulting to `true` and for
+**"These accounts are full-power and answer to one owner, the same way a Safe on Ethereum
+does"** (`messaging/Executor.sol`). That is the justification for `isAllowed` defaulting to
+`true` and for
 treating the call policy as a self-imposed restriction rather than a defence. On a Move
 chain the receiver is vocabulary-limited whether anyone wants it to be or not, so the
 premise is false there, and the merkle-policy work is moot, because **the vocabulary is
 the policy**. Non-EVM receivers are constrained accounts by construction.
 
-**"Deployed as a proxy at a CREATE2 address derived from the owner alone."** Move modules
+**"Deployed as an argument-free `CrossProxy` at a CREATE2 address derived from
+`(owner, salt)`"** (`factories/CrossProxy.sol`, `TransceiverBase.accountSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
 Move deployment is one module holding a table keyed by owner. The one-account-per-owner
 model, and the single address that goes with it, does not survive the trip.
 
-**"Nothing to wedge: a payload that can never execute fails at its own transmitter's
-receiver and blocks nobody. Isolation is structural rather than bookkeeping."** That rests
+**"A payload that can never execute strands itself at its own transmitter's receiver, which
+is one-per-transmitter by construction, and blocks nobody"** (`TransceiverBase`). That rests
 on one contract per owner. Under a shared Move module it becomes bookkeeping again,
 which is the thing that section says it was avoiding. Whatever a Move receiver does about
 isolation has to be argued separately rather than inherited.

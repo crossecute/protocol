@@ -36,7 +36,7 @@ reporting back where it landed.
 
 ```
 owner
- │  transmitter.sendMessage{value: fee}(recipient, payload, attributes)  onlyOwner
+ │  transmitter.sendMessage{value: fee}(recipient, payload, attributes)  onlyAccountOwner
  │    recipient = <erc7930: chain 8453, address(this)>                  checked, not trusted
  │    payload   = abi.encode(calls)                                     built by the caller
  │    _sendMessage(recipient, payload, attributes)
@@ -78,7 +78,7 @@ on that chain.
 
 ```
 owner
- │  transmitter.bootstrap{value: fee}(chainId, calls)                  onlyOwner
+ │  transmitter.bootstrap{value: fee}(chainId, calls)          onlyAccountOwner
  ▼
 hub transceiver .bootstrap(chainKey, owner, salt, calls, attributes)   msg.sender must BE the account
  │    _requireRoutable(chainKey)                                       ← provenance bar applies here
@@ -174,8 +174,11 @@ every other VM moves native currency as an explicit asset.
 
 ## By contract
 
-One subsection per contract in the tree, in the order a message meets them. Signatures are
-the real ones; where a base declares something without implementing it, that is said.
+One subsection per contract on the message path, in the order a message meets them.
+Signatures are the real ones; where a base declares something without implementing it, that
+is said. The addressing, derivation, and registry trees are not covered here: see
+[`encoding.md`](encoding.md) for the commitment layer and `registry/ChainRegistry.sol` for
+the directory.
 
 ### Executor
 
@@ -223,7 +226,7 @@ is what makes it free to mix into a contract that already has a layout.
   refuse. Nothing on the send path consults it: the quote is advisory, and a price that
   moved in between is the provider's refund to make rather than a revert.
 - `_refundTo()`: `msg.sender`. A fee is overpaid by whoever paid it. On path A that is the
-  owner, because `send` is owner-gated; on path B it is the account, because `bootstrap`
+  owner, because `sendMessage` is owner-gated; on path B it is the account, because `bootstrap`
   refuses any caller that is not `predictCrossAccount(owner, salt)`. The shared transceiver
   is structurally incapable of being its own refund target, since it is never the caller of
   its own `bootstrap`.
@@ -239,12 +242,14 @@ is what makes it free to mix into a contract that already has a layout.
 
 ### TransmitterBase
 
-`OutboundBase` + `Executor` + `Initializable`. The per-user account on the home chain. Its
-storage is `transceiver` and `accountSalt`, and nothing else.
+`OutboundBase` + `Executor` + `Initializable` + `IERC7786GatewaySource`. The per-user
+account on the home chain. Its storage is `transceiver`, `accountSalt`, and the
+per-destination bootstrap record below, and nothing else.
 
 - **The destination is a parameter, not state.** One transmitter fans out to every chain,
   which is also what keeps one receiver per (transmitter, destination).
-- **A per-destination bootstrap record**, `isBootstrapped(chainKey)`. `send` requires the
+- **A per-destination bootstrap record**, `isBootstrapped(chainKey)` (and
+  `isBootstrappedOn(chainId)` for the plain-chain-id spelling). `sendMessage` requires the
   destination present in it and `bootstrap` requires it absent, so a payload cannot be paid
   for and sent to a chain where this account has no receiver, and a second bootstrap cannot
   be paid for to revert on arrival. It records that a bootstrap was DISPATCHED rather than
@@ -271,11 +276,14 @@ storage is `transceiver` and `accountSalt`, and nothing else.
 - `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: `sendMessage`'s
   arguments minus the value. ERC-7786 defines no quote, so this is the protocol's own, and
   it carries the same gates the send does.
-- `bootstrap` and `bootstrapTo`, four shapes: path B, forwarded to the transceiver with the
-  whole `msg.value`. They pass `_owner()` and `accountSalt` rather than this contract's own
-  address, because a CREATE2 address cannot be derived from itself. They keep `Call[]` and
-  `bytes[]` arguments, and therefore keep the pairing check, because the transceiver
-  encodes the envelope rather than taking one prebuilt.
+- `bootstrap` and `bootstrapTo`, six overloads (a `uint256` chain id or an ERC-7930
+  identifier, `Call[]` or `bytes[]`, with or without `attributes`): path B, forwarded to the
+  transceiver with the whole `msg.value`. They pass `_owner()` and `accountSalt` rather than
+  this contract's own address, because a CREATE2 address cannot be derived from itself. They
+  keep `Call[]` and `bytes[]` arguments, and therefore keep the pairing check that
+  `sendMessage` had to give up, because the transceiver encodes the envelope rather than
+  taking one prebuilt: `_typedKey` refuses a non-EVM destination and `_opaqueKey` refuses an
+  EVM one.
 - `execute(Call[] calls) payable onlyAccountOwner`: local, no bridge and no commitment. It
   takes no destination because it cannot have one.
 - `commitmentCall(receiver, commitment)` and `cancellationCall(receiver, index, expected)`:
@@ -294,9 +302,12 @@ storage is `transceiver` and `accountSalt`, and nothing else.
 - `receive()`: a refunded fee comes back here on path B, and a provider's refund is a plain
   value transfer, so without it the refund would revert the bootstrap.
 - **It holds no registry pointer and knows no routes.** The chainKey derivation is pure, and
-  the provider's name for a chain is read from the transceiver at send time, through
-  `IAccountTransceiver`: one interface over the single transceiver address an account
-  stores, carrying bootstrap, the quotes that price it, and `routeTo`.
+  the send path needs no route lookup at all now, because an ERC-7786 recipient names its own
+  chain. What an account does hold is one address: `IAccountTransceiver`, over the single
+  transceiver it stores, carrying `bootstrap`, `bootstrapElements`, the two quotes that price
+  them, and `routeTo` for a caller that wants to read the chain identifier a destination is
+  configured under. Only the bootstrap and quote members are called from this contract;
+  `routeTo` is there so an account never needs a route table of its own.
 
 ### TransceiverBase
 
@@ -317,15 +328,16 @@ colliding with one declared here.
   ERC-7786 recipient names its own chain, so there is nothing left to translate. That also
   makes the reverse index correct by construction, since `keccak256(identifier)` IS the
   chainKey.
+  Re-writing the same route is a no-op; a different one reverts `RouteAlreadySet`, and a
+  route already held by another chain reverts `RouteInUse`, since two chains sharing one
+  identifier would let an inbound message be attributed to the wrong source. Reads are
+  `routeFor`, `chainKeyOfRoute`, `hasRoute`, and the public `routeTo`. The table lives here
+  rather than in the registry because this is the contract that sends.
 - `_recipientOn(chainKey)`: the two halves of `_requireRoutable` joined into the
-  interoperable address a gateway takes. Building it here means both lookups happen on the
-  send path, so the provenance bar and the route requirement are enforced by construction
-  rather than by a separate call somebody could drop.
-  Re-writing the same route is a no-op; a different one reverts, and so does a route already
-  held by another chain, since two chains sharing one provider id is a forgery primitive.
-  Reads are `routeFor`, `chainKeyOfRoute`, `hasRoute`, and the public `routeTo` an account
-  calls at send time. The table lives here rather than in the registry because this is the
-  contract that sends.
+  interoperable address a gateway takes, by parsing the stored identifier for its chain type
+  and reference and re-encoding it around `_counterpartOn(chainKey)`. Building it here means
+  both lookups happen on the send path, so the provenance bar and the route requirement are
+  enforced by construction rather than by a separate call somebody could drop.
 - `accountSalt(owner, salt)` is `keccak256(abi.encode(owner, salt))`, hashed rather than
   concatenated so no pair can collide with another by sliding bytes across the boundary.
   `predictCrossAccount(owner, salt)` gives the address before it exists.
@@ -610,9 +622,11 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   the pair is stated in the report, so a destination cannot choose which slot it writes.
   It is keyed by `(owner, salt)` rather than by the transmitter's address because that pair
   is what an account IS; the address is a derivation of it. That argument is about
-  CORRELATION only: whether any channel needs a message id for IDEMPOTENCY is open, and an
-  execute-on-arrival payload is the case with no structural protection of its own. See
-  [`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look).
+  CORRELATION. IDEMPOTENCY is a separate question and it is settled the same way: an
+  execute-on-arrival payload has no structural protection of its own, so replay protection
+  is the transport's, stated as a provider prerequisite and tested per binding rather than
+  bought with a protocol-level id. See
+  [`provider-spec.md`](provider-spec.md#12-appendix-transport-replay-guarantees).
 - **A reported address must be on the chain that reported it.** An ERC-7930 envelope names
   its own chain, and `onDestinationReceiver` compares that against the origin it
   authenticated. Without the check the registry keyed the ref by whatever the envelope

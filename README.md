@@ -70,7 +70,7 @@ EIP-152 precompile, because the registry recomputes addresses and commitments lo
 Two paths, and only the second involves a transceiver:
 
 ```
-A · normal send    owner → account.send(8453, calls)
+A · normal send    owner → account.sendMessage(recipient, payload)
                         ══ bridge ══
                    → its own account on Base: decode, execute        nonReentrant
 
@@ -86,6 +86,14 @@ B · bootstrap      owner → account.bootstrap(8453, calls)
 Path B runs once per chain. After it, the account talks to its counterpart directly and no
 shared contract is in the path of a normal message.
 
+**The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
+`IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
+binary interoperable address (ERC-7930) that carries its own chain and `payload` is opaque
+`bytes`. That collapsed six `send`/`sendTo` overloads into one `sendMessage`, and it is why
+the transceiver's route slot holds a chain identifier rather than a provider's private id
+for a chain. The standard defines no quote, so `quoteMessage` is the protocol's own
+addition alongside it.
+
 **Committing is a call, not a message kind.** To approve a payload now and run it later,
 send one whose single element calls the receiver's own `commit`. Nothing on the wire
 distinguishes it from any other payload, which is why there is no message-type tag anywhere
@@ -98,7 +106,7 @@ src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
   registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRefs
-                  ICommitmentScheme
+                  ICommitmentScheme, Bytes32Set
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
   schemes/        Keccak, Sha256, Blake2b                   pluggable, per chainKey
   messaging/      Commitment, Call, Payload, Envelope, Executor
@@ -140,6 +148,8 @@ summary: the file is always the newer statement.
 | Why neither base inherits an ownership system | `TransmitterBase`, `TransceiverBase` |
 | Why a chain type needs more than a `ChainType` constant | `addressing/Erc7930.sol` |
 | Why the commitment *preview* is swappable when the commitment is not | `registry/ICommitmentScheme.sol` |
+| Why the route slot holds a chain identifier, not a provider's id | `TransceiverBase._recipientOn` |
+| Why the recipient is checked rather than trusted, and only on `eip155` | `TransmitterBase.sendMessage` |
 
 ## Assumptions
 
@@ -175,10 +185,11 @@ The EVM side is built and tested: account creation, the approval queue, cancella
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```
-cd contracts/evm && forge test        # 247 passing
+cd contracts/evm && forge test        # 298 passing
 ```
 
-**Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` until a
-protocol binding overrides it, and no provider is bound: `LzTransmitter` and friends are
-structure without an SDK behind them. That is the next thing to build, and every remaining
-path waits on it.
+**Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` and
+`_quoteMessage` reverts `QuoteNotImplemented` until a protocol binding overrides them, and
+`LzReceiver._isAuthorizedGateway` returns false, so a receiver accepts nothing. No provider
+is bound: `LzTransmitter` and friends are structure without an SDK behind them. That is the
+next thing to build, and every remaining path waits on it.

@@ -12,15 +12,20 @@ this file is the gap between that design and the tree.
 ## 1. No message provider is integrated
 
 **This is the headline.** Both paths are built end to end in-process (`_sendMessage`,
-`send` / `sendTo` / `bootstrap`, the inbound funnel, the reentrancy guard), and nothing
-crosses a real bridge, because `_sendMessage` reverts `SendNotImplemented` until a protocol
-binding overrides it.
+`sendMessage` / `bootstrap` / `bootstrapTo`, the inbound funnel, the reentrancy guard), and
+nothing crosses a real bridge, because every seam that would touch a provider is still at
+its default.
 
 Still missing on the transport itself:
 
-| Missing | Where |
-| --- | --- |
-| Provider setup in `_accountInitializer` | The seam exists and is `virtual` throughout; no binding fills it yet |
+| Missing | Where | Default today |
+| --- | --- | --- |
+| The send | `OutboundBase._sendMessage` | reverts `SendNotImplemented` |
+| The quote | `OutboundBase._quoteMessage` | reverts `QuoteNotImplemented` |
+| Which gateway may deliver to a receiver | `ReceiverBase._isAuthorizedGateway` | `LzReceiver` returns false, so a receiver accepts nothing |
+| The transceiver's inbound callback | the binding's own, feeding `TransceiverBase._onInbound` | does not exist; `_onInbound` has no caller |
+| Provider setup in `_accountInitializer` | `Hub`/`SpokeTransceiverBase` | `virtual` throughout, and no binding fills it |
+| `supportsAttribute` | `TransmitterBase` | returns false for everything |
 
 The spoke → hub report is no longer on this list: `SpokeTransceiverBase` sends it from
 `bootstrapInbound`, gated on a write-once `addressesDiverge` flag, so it fires only where
@@ -84,13 +89,24 @@ unaffected either way.
 
 ### Where each seam attaches
 
+The hooks are ERC-7786-shaped now, so a NATIVE LayerZero binding has one translation the
+old table did not: the recipient arrives as an ERC-7930 envelope and the eid has to come
+back out of it, rather than out of a route lookup.
+
 | Our hook | LayerZero |
 | --- | --- |
-| `_sendMessage(chainKey, payload, providerData)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `options` decoded from `providerData`, `refund` from `_refundTo()`, `eid` from `routeFor(chainKey)` |
-| `_quoteMessage(chainKey, payload, providerData)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
-| `_onMessage(bytes payload)` | called from `_lzReceive(...)`, the override point |
+| `_sendMessage(recipient, payload, attributes)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
+| `_quoteMessage(recipient, payload, attributes)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
+| `_isAuthorizedGateway(address)` | `instance == address(endpoint)`, or however the binding routes `lzReceive` into `receiveMessage` |
+| `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
+| `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | `_checkAdmin` / `_checkOwner` | answered from OApp's own `Ownable` |
+
+**A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
+protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
+native LayerZero binding keeps its own chainKey→eid mapping under R5, where a gateway
+binding keeps none.
 
 **The peer value is always the account's own address**, since a transmitter and its
 receivers share one. One entry per destination, and the value never varies.
@@ -200,21 +216,22 @@ mainnet.
   chain the address is not derivable here. `CrosschainLinked(Upgradeable)` is NOT adopted:
   see [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
 
-- **ERC-7786, and OpenZeppelin's ERC-7930.** 5.6.1 brought `draft-IERC7786` and
-  `draft-InteroperableAddress`, and the analysis is in
-  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport). Two decisions
-  fall out of it, neither taken.
+- **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
+  `draft-InteroperableAddress`.** 5.6.1 brought it: 245 lines against our 248, audited and
+  maintained, covering the same ground with `formatEvmV1`, `parseEvmV1`, and `try` and
+  calldata variants. The one decision left over from the ERC-7786 work, and it is not taken.
+  Blocked on two checks: it is a `draft-`, which OZ excludes from API stability and may
+  change in a MINOR release, and this codebase freezes accounts against exact bytes; and our
+  `parseStrict` enforces strictness the registry depends on (non-minimal `eip155` references
+  and trailing bytes both rejected) that `parseV1` may not match. Neither is a reason not to
+  do it; both are reasons it is its own task with its own vectors. See
+  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
 
-  **Whether to bind to a 7786 gateway at all.** It is a binding rather than a refactor, and
-  the base contracts need nothing: storing the chain IDENTIFIER in the route slot makes the
-  reverse index correct by construction, since `keccak256(identifier)` IS the chainKey. But
-  ERC-7786 defines no quote, so a gateway binding loses the whole quote surface. Prefer a
-  native SDK where a provider offers both.
-
-  **Whether to replace `src/addressing/Erc7930.sol` with OZ's library.** 245 lines against
-  our 248, audited and maintained. Blocked on two checks: it is a `draft-`, which OZ excludes
-  from API stability and may change in a minor release, and our `parseStrict` enforces
-  strictness the registry depends on that `parseV1` may not match.
+  **Which provider to bind is still open, and the 7786 answer is "only if it has to be".**
+  A gateway binding is thin (see the skeleton in
+  [`provider-spec.md`](provider-spec.md#10-worked-skeleton-an-erc-7786-gateway-binding)) but
+  ERC-7786 defines no quote, so it fails P9 and the whole quote surface goes dead for that
+  binding. Prefer a native SDK where a provider offers both.
 
 - ~~**RESEARCH: a requestId, or any unique identifier, for messages.**~~ RESEARCHED, and the
   answer is no protocol-level id. The two halves of the question have different answers.
@@ -246,13 +263,30 @@ mainnet.
   **The one thing to keep in view**: a binding must never wrap the delivery call in
   `try/catch`. That consumes the message and drops the payload, turning a retry into a loss,
   and it looks like defensive coding.
-- **Who authenticates the receiver's inbound message.** A provider's own peer check runs
-  before any of our code, which contradicts the rule stated for the transceiver. For a 1:1
-  pairing there is nothing extra to verify, so accepting it is defensible, but it should be
-  a written exception rather than an omission.
+- **Who authenticates the receiver's inbound message.** Half-settled. `ReceiverBase`
+  now carries its own gate: `receiveMessage` checks `_isAuthorizedGateway(msg.sender)` and
+  that the ERC-7930 sender's address is `address(this)`, so an account is not relying on the
+  transport to keep another account's payload out of its receiver. What remains open is the
+  TRANSCEIVER path, where a provider's own peer check runs before any of our code and
+  contradicts the rule stated on `TransceiverBase._onInbound`. For a 1:1 pairing there is
+  nothing extra to verify, so accepting it is defensible, but it should be a written
+  exception in the binding's NatSpec (provider-spec R3.3) rather than an omission.
 
 ## 5. Smaller open questions
 
+- **NatSpec left behind by the ERC-7786 collapse.** The markdown is now aligned to the code;
+  several contract comments are not, and they are the newer statement by the README's own
+  rule, so they mislead first. Known: `TransmitterBase`'s contract-level `@dev` blocks
+  describe `submit` / `submitTo` / `_submit`, which have never existed under those names and
+  are now `sendMessage`; its `execute` note says "the opaque overloads on `commit`/`commitTo`
+  remain" when neither function is on the contract at all; `Payload.isTypedDestination`
+  cites `send(uint256)` and `sendTo(bytes)`, which are now `bootstrap` and `bootstrapTo`;
+  `ChainKey` opens its rationale with "`submit` has to name a destination"; `LzTransmitter`
+  says it is cloned by a `TransmitterFactory` that does not exist (it is
+  `HubTransceiverBase.createTransmitter`) and that it "knows no eids" in a codebase that no
+  longer has any. Separately, `ChainType.sol` ends with "The README carries the full
+  onboarding checklist" and the README carries no such checklist: either write it or drop
+  the pointer.
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
   until a non-EVM receiver exists, because the commitment never sees the container.
 - **The Solana account list belongs inside the committed element.** Argued in
@@ -267,7 +301,7 @@ mainnet.
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
 - ~~**Refund plumbing.**~~ SETTLED, and it needed no parameter. `OutboundBase._refundTo()`
-  is `msg.sender`, which is already the right answer on both paths: `send` is owner-gated
+  is `msg.sender`, which is already the right answer on both paths: `sendMessage` is owner-gated
   so it is the owner, and `bootstrap` refuses any caller that is not the account so it is
   the account. The shared transceiver cannot be its own refund target because it is never
   the caller of its own `bootstrap`. `TransmitterBase` gained a `receive` to accept one.
