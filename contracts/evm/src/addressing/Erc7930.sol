@@ -33,8 +33,8 @@ import {ChainType} from "src/addressing/ChainType.sol";
 ///      for the same chain and hash to two different keys.
 ///
 ///      **Adding a `ChainType` constant does not close that.** The rule has to be written
-///      into `parseStrict` below, beside the eip155 and starknet cases. It is the one step
-///      of onboarding a chain that nothing here will remind you about: see the checklist
+///      into `parseStrict` below, beside the eip155 and starknet cases. It is the one step of
+///      onboarding a chain that nothing here will remind you about: see "Adding a chain type"
 ///      in the README. `test/UnknownChainType.t.sol` pins the current behaviour.
 library Erc7930 {
     uint16 internal constant VERSION_1 = 0x0001;

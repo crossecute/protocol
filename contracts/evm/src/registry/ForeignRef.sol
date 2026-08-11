@@ -39,19 +39,16 @@ struct ForeignRef {
 
 /// @notice Source-side callback for identifiers this chain cannot compute.
 ///
-/// @dev NO REQUEST ID, AND NOTHING TO REGISTER IN ADVANCE. Correlation needs no
-///      identifier: the slot is derived from `(chainKey, transmitter)`, and the
-///      authenticated message establishes both: the chain through `_authenticateOrigin`,
-///      the transmitter by stating it. A destination therefore cannot choose which slot
-///      it writes.
-///
-///      The guarantees are structural instead. The slot is WRITE-ONCE, so a report cannot
-///      repoint a receiver already on record, and the caller is authenticated as a
-///      registered local transceiver, which is what names the message provider.
+/// @dev NO REQUEST ID, AND NOTHING TO REGISTER IN ADVANCE. The slot is derived from the
+///      chain (established by `_authenticateOrigin`) plus `(owner, salt)` (stated in the
+///      message), so a destination cannot choose which slot it writes. The guarantees are
+///      structural instead: the slot is WRITE-ONCE, so a report cannot repoint a receiver
+///      already on record, and the caller is authenticated as a registered local
+///      transceiver, which is what names the message provider.
 interface IForeignRefReceiver {
-    /// @param slot          Storage key for this reference. For a transceiver location
-    ///                      this is the transceiver id; for a receiver it is
-    ///                      `receiverSlot(chainKey, transmitter)`.
+    /// @param slot          Storage key for this reference. For a transceiver location this
+    ///                      is the transceiver id; for a receiver it is
+    ///                      `receiverSlot(chainKey, owner, salt)`.
     /// @param interop       Canonical ERC-7930 bytes reported by the destination.
     /// @param qualifierData abi-encoded `Move.MoveQualifier` as reported by the
     ///                      destination, or empty for chains that have no qualified

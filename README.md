@@ -151,6 +151,28 @@ summary: the file is always the newer statement.
 | Why the route slot holds a chain identifier, not a provider's id | `TransceiverBase._recipientOn` |
 | Why the recipient is checked rather than trusted, and only on `eip155` | `TransmitterBase.sendMessage` |
 
+## Adding a chain type
+
+Two steps, and the second is the one nothing will remind you about.
+
+1. **Allocate the `ChainType` constant** in `addressing/ChainType.sol`, and nowhere else.
+   Every value used in the repo is allocated in that one file, because a ChainType is baked
+   into every envelope and registry keys are `keccak256(envelope)`: two files each picking a
+   provisional value is a silent collision that surfaces as two chains sharing a key. Use the
+   CASA CAIP-350 value where one exists; otherwise take the next free slot at or above
+   `PROVISIONAL_FLOOR` and accept that a published profile later means a re-keying migration.
+
+2. **Write the profile's canonicity rule into `Erc7930.parseStrict`**, beside the eip155 and
+   starknet cases. `chainType` is read as an opaque `uint16` and never checked against the
+   allocation table, so an unallocated value already parses and registers — it simply arrives
+   with no canonicity condition attached, and both `0x00cafe` and `0xcafe` pass as references
+   for the same chain and hash to two different keys. Allocating the constant does not close
+   that; only the rule does. `test/UnknownChainType.t.sol` pins the current behaviour.
+
+Then, per destination: a `Scheme` or `ICommitmentScheme` plugin if the chain does not hash
+with keccak256, an `IVmDeriver` if its addresses can be recomputed here, an `IRefValidator`
+if the envelope cannot express its value ranges, and a `setMaxProvenance` cap if they cannot.
+
 ## Assumptions
 
 - All contracts are created through Arachnid's CREATE2 factory with a salt: `0x4e59..`

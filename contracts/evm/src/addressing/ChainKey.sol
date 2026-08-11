@@ -14,18 +14,16 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      recognizes, and the destination derives its own from `block.chainid`. Neither end
 ///      reads storage, and no developer ever passes a hash around.
 ///
-/// @dev WHY THIS AND NOT THE RAW CHAIN ID. `submit` has to name a destination for two
-///      different consumers, and they want different things:
+/// @dev WHY THIS AND NOT THE RAW CHAIN ID. Naming a destination has to serve two consumers
+///      that want different things:
 ///
 ///        1. The COMMITMENT DOMAIN, folded into `Commitment.hashCalls` and recomputed by the
-///           receiver on the far side. It must be derivable there with zero configuration,
-///           which rules out anything provider-specific.
-///        2. The PROVIDER ROUTING ID: a LayerZero uint32 eid, a Hyperlane uint32 domain,
-///           a Wormhole uint16, a CCIP uint64 selector. Per-protocol, and pure config.
+///           receiver on the far side. It must be derivable there with zero configuration.
+///        2. The ROUTING KEY every table in the protocol is indexed by: routes on a
+///           transceiver, counterparts and receiver slots in the registry.
 ///
-///      A raw `uint256` chain id serves (1) only on EVM destinations and never serves (2).
-///      A chainKey serves (1) on every VM and is what the registry already keys the
-///      routing table by, so (2) is a lookup rather than a second argument.
+///      A raw `uint256` chain id serves (1) only on EVM destinations. A chainKey serves both
+///      on every VM, and reduces to a `uint256` for the eip155 case a signer recognizes.
 library ChainKey {
     /// @notice The key for an eip155 chain. Pure: no storage, no registry, no round trip.
     function forEvm(uint256 chainId) internal pure returns (bytes32) {

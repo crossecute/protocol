@@ -20,20 +20,17 @@ struct Call {
 /// @notice Conversion between the typed `Call` and the canonical opaque element.
 ///
 /// @dev THE TWO FORMS MUST HASH IDENTICALLY, and that is this library's whole job. A
-///      commitment is defined over opaque `bytes` elements so the layer stays VM-agnostic
-///      (see `Commitment`), while an EVM caller wants to hand over typed calls. Both are
-///      accepted, and `encode` is exactly the byte string whose keccak256 the opaque path
-///      would produce, so the same logical payload commits to the same hash either way,
-///      and a payload approved in one form can be delivered in the other.
+///      commitment is defined over opaque `bytes` so the layer stays VM-agnostic, while an
+///      EVM caller wants typed calls. `encode` is exactly the byte string whose keccak256 the
+///      opaque path would produce, so one payload commits to one hash either way and an
+///      approval made in one form can be discharged in the other.
 library Calls {
     /// @notice The canonical opaque element for a typed call.
     ///
-    /// @dev IT ENCODES THE FIELDS, NOT THE STRUCT, and the difference is not cosmetic.
-    ///      `abi.encode(someStruct)` prepends an offset word, because a struct with a
-    ///      dynamic member encodes as a dynamic tuple, so `abi.encode(c)` and
-    ///      `abi.encode(c.target, c.value, c.data)` are different byte strings and hash to
-    ///      different values. The second is the one that matches the opaque form, and
-    ///      therefore the only one that can be used here.
+    /// @dev IT ENCODES THE FIELDS, NOT THE STRUCT. `abi.encode(someStruct)` prepends an
+    ///      offset word, because a struct with a dynamic member encodes as a dynamic tuple,
+    ///      so `abi.encode(c)` and `abi.encode(c.target, c.value, c.data)` hash differently.
+    ///      The second is the one that matches the opaque form.
     function encode(Call memory c) internal pure returns (bytes memory) {
         return abi.encode(c.target, c.value, c.data);
     }

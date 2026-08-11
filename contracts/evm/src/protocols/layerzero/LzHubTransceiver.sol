@@ -8,17 +8,16 @@ import {OwnableUpgradeable} from
 /// @notice The transceiver on the home chain. One instance, owned by the crossecute msig,
 ///         shared by every user's transmitter.
 ///
-/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL NOW, and that is what ERC-7786 bought.
-///      The route table used to hold a LayerZero endpoint id, wrapped in a typed `setEid`
-///      over the base's untyped `setRoute`, because every provider names chains its own
-///      way and the base had no business knowing which. A gateway takes a recipient that
-///      NAMES ITS OWN CHAIN, so there is nothing left to translate: the route slot holds
-///      the chain's ERC-7930 identifier, `setRoute` is already typed for that, and
-///      `LzCodec` is gone.
+/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL, AND THAT IS WHAT ERC-7786 BOUGHT. The
+///      route table used to hold a LayerZero endpoint id behind a typed `setEid`, because
+///      every provider names chains its own way and the base had no business knowing which.
+///      A gateway takes a recipient that NAMES ITS OWN CHAIN, so there is nothing left to
+///      translate and `LzCodec` is gone. A native SDK binding would bring one back, since
+///      `_lzSend` still takes a `uint32`.
 ///
-/// @dev Does NOT inherit a transmitter. A transceiver is shared, msig-owned
-///      infrastructure; a transmitter is per-user. Merging them would give one contract
-///      two different owners, which is why `owner` and `onlyOwner` collide when you try.
+/// @dev Does NOT inherit a transmitter. A transceiver is shared, msig-owned infrastructure
+///      and a transmitter is per-user; merging them would give one contract two owners,
+///      which is why `owner` and `onlyOwner` collide when you try.
 contract LzHubTransceiver is HubTransceiverBase, OwnableUpgradeable {
     /// @dev NO RECEIVER IMPLEMENTATION, because a hub never makes a receiver. The
     ///      manufacturing half lives on the spoke; see `TransceiverBase`.

@@ -25,19 +25,15 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///        where PREFIX is the felt encoding of the ASCII "STARKNET_CONTRACT_ADDRESS"
 ///        and H is Pedersen over the STARK curve.
 ///
-///        Pedersen is not merely expensive on the EVM, it is structurally awkward:
-///        it needs roughly 500 precomputed curve points (~32KB of constants), which
-///        exceeds the EIP-170 contract size limit outright. A real implementation
-///        means SSTORE2-chunked tables plus projective-coordinate EC arithmetic over
-///        a 252-bit prime, landing somewhere in the 1e5-1e6 gas range with a large
-///        verification burden and a silent-failure mode.
+///        Pedersen is not merely expensive here, it is structurally awkward: it needs
+///        roughly 500 precomputed curve points (~32KB), which exceeds EIP-170 outright,
+///        so a real implementation means SSTORE2-chunked tables plus projective EC
+///        arithmetic over a 252-bit prime, at 1e5-1e6 gas with a silent-failure mode.
 ///
-///        The payoff would be upgrading Starknet from Committed to Derived. Since
-///        registering an expectation already puts the predicted address inside the
-///        signed payload, that upgrade buys little. RECOMMENDATION: do not build it.
-///        Compute the address off-chain, register it as an expectation, and let the
-///        registry's provenance cap make the weaker guarantee explicit rather than
-///        implicit.
+///        RECOMMENDATION: do not build it. The payoff is upgrading Starknet from
+///        Committed to Derived, and registering the off-chain address already puts it
+///        inside the signed payload, so the provenance cap makes the weaker guarantee
+///        explicit rather than implicit.
 library StarknetDerive {
     /// @dev FIELD_PRIME = 2^251 + 17 * 2^192 + 1
     uint256 internal constant FIELD_PRIME =

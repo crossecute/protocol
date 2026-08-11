@@ -13,21 +13,15 @@ pragma solidity ^0.8.0;
 ///      identical initcode everywhere is what the whole CREATE2 address story rests on: see
 ///      `foundry.toml`. So the dependency goes rather than the pin.
 ///
-/// @dev THE ALGORITHM BELOW IS OPENZEPPELIN'S, LINE FOR LINE. It is reproduced rather than
-///      reinvented on purpose: it is the swap-and-pop set that has been stable since 4.x,
-///      and a fork whose only difference is an absent overload can be diffed against the
-///      original in one pass. Do not improve it. If it ever diverges from OZ's by anything
-///      other than that overload, the reason belongs in this comment.
+/// @dev THE ALGORITHM AND THE LAYOUT ARE OPENZEPPELIN'S, LINE FOR LINE. Reproduced rather
+///      than reinvented, so a fork whose only difference is an absent overload can be diffed
+///      against the original in one pass. DO NOT IMPROVE IT: if it ever diverges by anything
+///      other than that overload, the reason belongs in this comment. The identical layout
+///      also matters because `ChainRegistry` is a UUPS proxy whose storage outlives its
+///      bytecode, so returning to `EnumerableSet` later is a source change with no migration.
 ///
-/// @dev THE LAYOUT IS OZ'S EXACTLY: the array first, then the position mapping, with
-///      positions one-based so zero means absent. That matters beyond tidiness here.
-///      `ChainRegistry` is a UUPS proxy, so its storage outlives its bytecode, and keeping
-///      the layout identical makes a future return to `EnumerableSet` (when the pin moves,
-///      or when OZ stops reaching for `mcopy`) a source change with no storage migration.
-///
-/// @dev PLAIN `values()` NEVER NEEDED `Arrays`. It is a storage-to-memory copy of the whole
-///      array, which the compiler performs on the `return`. Only the paginated form needed
-///      slicing, which is the form this library does not have.
+/// @dev PLAIN `values()` NEVER NEEDED `Arrays`: it is a storage-to-memory copy the compiler
+///      performs on the `return`. Only the paginated form needed slicing.
 library Bytes32Set {
     struct Set {
         bytes32[] _values;

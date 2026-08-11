@@ -7,15 +7,13 @@ import {OwnableUpgradeable} from
 
 /// @notice The transceiver on every chain that is not the home chain.
 ///
-/// @dev THE ENTIRE ROUTING LAYER IS THREE WRITE-ONCE VALUES. `homeChainKey` names the home
-///      chain, `homeRoute()` holds its ERC-7930 chain identifier, and `homeTransceiver()`
-///      holds the hub's address. There is no registry to read, no table to maintain, and
-///      no destination to choose.
+/// @dev THE ENTIRE ROUTING LAYER IS THREE WRITE-ONCE VALUES: `homeChainKey`, `homeRoute()`
+///      holding that chain's ERC-7930 identifier, and `homeTransceiver()` holding the hub's
+///      address. No registry to read, no table to maintain, no destination to choose.
 ///
-/// @dev THE ROUTE IS THE CHAIN IDENTIFIER, NOT A PROVIDER'S ID FOR IT. That is what makes
+/// @dev THE ROUTE IS THE CHAIN IDENTIFIER, NOT A PROVIDER'S ID FOR IT, which makes
 ///      `keccak256(homeRoute()) == homeChainKey` true by construction rather than by
-///      configuration, and it is what an ERC-7786 recipient is built from. The `uint32`
-///      endpoint id this used to take is gone with `LzCodec`.
+///      configuration, and is what an ERC-7786 recipient is built from.
 contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier.
     /// @param homeChainIdentifier_ That identifier itself. It is passed rather than derived

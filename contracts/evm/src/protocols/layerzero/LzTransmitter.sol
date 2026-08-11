@@ -5,13 +5,12 @@ import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-/// @notice The per-user LayerZero transmitter on the home chain, cloned by
-///         `TransmitterFactory`.
+/// @notice The per-user transmitter on the home chain, created by
+///         `HubTransceiverBase.createTransmitter`.
 ///
-/// @dev It holds no registry pointer and knows no eids. `send(8453, calls)` derives the
-///      destination chainKey purely and hands it to `_sendMessage`; the provider binding is
-///      what turns that into an endpoint id. A user adding a destination changes nothing
-///      here.
+/// @dev IT IS STRUCTURE WITHOUT AN SDK BEHIND IT. No LayerZero code is inherited and
+///      `_sendMessage` still reverts `SendNotImplemented`; what exists is the ownership seam
+///      answered and nothing else. See `docs/provider-spec.md` for what a real binding owes.
 contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
     function initialize(address owner_, address transceiver_, bytes32 salt_)
         external
@@ -24,12 +23,10 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
 
     /// @notice Where `TransmitterBase`'s ownership requirement is satisfied.
     ///
-    /// @dev THIS IS THE SEAM, and it is the same one `LzHubTransceiver` uses for
-    ///      `_checkAdmin`. Today the authority is `OwnableUpgradeable`, declared right
-    ///      here rather than in the base. When this contract becomes an actual OApp the
-    ///      inheritance list gains `OAppUpgradeable` and these two bodies answer from
-    ///      OApp's own `Ownable` instead, one line each, and nothing in `TransmitterBase`
-    ///      changes, because it never had an opinion about ownership to begin with.
+    /// @dev THE SEAM, and the same one `LzHubTransceiver` uses for `_checkAdmin`. When this
+    ///      becomes an actual OApp the inheritance list gains `OAppUpgradeable` and these two
+    ///      bodies answer from OApp's own `Ownable` instead, one line each; nothing in
+    ///      `TransmitterBase` changes, because it never had an opinion about ownership.
     function _owner() internal view override returns (address) {
         return owner();
     }

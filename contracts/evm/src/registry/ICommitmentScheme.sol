@@ -34,22 +34,20 @@ interface ICommitmentScheme {
 /// @title SchemeFold
 /// @notice The commitment fold, over a plugin's primitive.
 ///
-/// @dev THIS IS THE SECOND DEFINITION OF ONE FOLD, AND IT IS DELIBERATE RATHER THAN AN
-///      OVERSIGHT. `Commitment.hashCalls` is the first, and the two must agree byte for
-///      byte. They cannot be merged: `Commitment` lives in `messaging`, which imports
-///      `registry`, so a registry contract importing `Commitment` would close a cycle in
-///      a dependency graph the README states runs one way. Solidity offers no third
-///      option either, because the only difference between the two bodies is whether the
-///      primitive is an enum arm or an external call, and an internal function pointer
-///      cannot close over the value that decides.
+/// @dev THIS IS THE SECOND DEFINITION OF ONE FOLD, AND IT IS DELIBERATE. `Commitment.hashCalls`
+///      is the first and the two must agree byte for byte, but they cannot be merged:
+///      `Commitment` lives in `messaging`, which imports `registry`, so importing it back
+///      would close a cycle in a dependency graph that runs one way. Solidity offers no third
+///      option, because the only difference between the two bodies is whether the primitive
+///      is an enum arm or an external call, and an internal function pointer cannot close
+///      over the value that decides.
 ///
-///      So it is written out once here, kept adjacent to the interface it folds with, and
-///      pinned equal to the library by `test/CommitmentSchemePlugin.t.sol` for every
+///      TRIPWIRE: the two are pinned equal by `test/CommitmentSchemePlugin.t.sol` for every
 ///      primitive the enum carries. If that test ever goes, this comment is the warning.
 ///
-/// @dev IT LIVES HERE RATHER THAN IN `ChainRegistry` because a registry stores bindings.
-///      Defining a hash is not that, and a thousand-line contract is the wrong place to
-///      hide four lines everything else in the protocol has to match.
+/// @dev IT LIVES HERE RATHER THAN IN `ChainRegistry` because a registry stores bindings, and
+///      a thousand-line contract is the wrong place to hide four lines everything else in the
+///      protocol has to match.
 library SchemeFold {
     /// @notice The commitment `scheme`'s chain will require over `elements`.
     ///

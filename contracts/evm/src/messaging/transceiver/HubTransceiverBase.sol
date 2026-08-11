@@ -14,29 +14,25 @@ interface ITransmitterInit {
 }
 
 /// @title HubTransceiverBase
-/// @notice The home side. One transceiver, N counterparts, one registry to tell them
-///         apart.
+/// @notice The home side. One transceiver, N counterparts, one registry to tell them apart.
 ///
-/// @dev WHY THE REGISTRY IS ONLY EVER HERE. The fan-out is entirely one-directional: the
-///      hub talks to every destination, and every destination talks only back to the hub.
-///      A directory is what you need to hold N claims about where remote code lives and
-///      how much each claim is worth; a spoke holds one, knows it at compile time, and
-///      would gain nothing from the machinery but a mutable pointer to be compromised.
-///      So `chainRegistry`, `messageProvider`, and the provenance dial live in this
-///      contract and are absent from `SpokeTransceiverBase` entirely.
+/// @dev WHY THE REGISTRY IS ONLY EVER HERE. The fan-out is one-directional: the hub talks to
+///      every destination, and every destination talks only back to the hub. A directory is
+///      what you need to hold N claims about where remote code lives and how much each claim
+///      is worth; a spoke holds one, is told it at initialization, and would gain nothing
+///      from the machinery but a mutable pointer to be compromised. So `chainRegistry`,
+///      `messageProvider`, and the provenance dial are absent from the spoke entirely.
 ///
 /// @dev THE HUB IS THE ONLY THING THAT GRADES. `minCounterpartProvenance` is a statement
 ///      about how much trust to place in a claim about a remote address: a question that
-///      only arises when the address was learned rather than known. See
-///      `SpokeTransceiverBase` for why the far side has no equivalent and needs none.
+///      only arises when the address was learned rather than known.
 abstract contract HubTransceiverBase is TransceiverBase {
     /// The transmitter logic every account on this chain is armed with.
     ///
-    /// @dev WRITE-ONCE, BECAUSE CHANGING IT FORKS THE POPULATION. An account's proxy is
-    ///      locked the moment it is armed, so a change moves nobody who already has one:
-    ///      it only affects owners who have not created theirs yet, splitting users into
-    ///      two logic versions distinguishable only by when each arrived. That is a
-    ///      redeploy, not a config edit.
+    /// @dev WRITE-ONCE, BECAUSE CHANGING IT FORKS THE POPULATION. An account's proxy locks
+    ///      the moment it is armed, so a change moves nobody who already has one: it only
+    ///      affects owners who have not created theirs yet, splitting users into two logic
+    ///      versions distinguishable only by when each arrived.
     address public transmitterImplementation;
 
     event TransmitterImplementationSet(address implementation);
@@ -46,11 +42,10 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// keccak256 of this transceiver's message provider name, e.g. "layerzero".
     bytes32 public messageProvider;
     /// The weakest counterpart provenance this transceiver will send to.
-    /// @dev Every EVM counterpart is `Derived`, same CREATE2 address, recomputed here,
-    ///      no bridge trust. Chains where that breaks (Solana, Sui, Aptos,
-    ///      Starknet, and also zkSync and Tron, whose CREATE2 formulas differ) can only
-    ///      reach `Committed` or `Attested`, so this is the dial that decides whether
-    ///      this transceiver is willing to talk to them at all.
+    /// @dev A parity-chain counterpart is `Derived`: same CREATE2 address, recomputed here,
+    ///      no bridge trust. Chains where that breaks (Solana, Sui, Aptos, Starknet, and
+    ///      zkSync and Tron, whose CREATE2 formulas differ) can only reach `Committed` or
+    ///      `Attested`, so this dial decides whether this transceiver talks to them at all.
     Provenance public minCounterpartProvenance;
 
     event DestinationReceiverReported(
@@ -79,21 +74,18 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /* =========================== transmitter manufacture ======================= */
 
     /// @inheritdoc TransceiverBase
-    /// @dev A HUB INSTALLS A TRANSMITTER. The only difference from the spoke, and
-    ///      deliberately so: the proxy, the salt, and the deployer address are identical
-    ///      on both sides, which is what puts an owner's transmitter and their receivers
-    ///      on one address.
+    /// @dev A HUB INSTALLS A TRANSMITTER: the only difference from the spoke, and
+    ///      deliberately the only one.
     function _accountImplementation() internal view virtual override returns (address) {
         return transmitterImplementation;
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev A transmitter takes no payload at creation. Its owner drives it directly and
-    ///      can `execute` whenever it likes, so there is nothing a bootstrap payload would
-    ///      be for on this side.
-    /// @dev THE SALT IS PASSED BACK IN. An account cannot recover its own salt from its
-    ///      address, and `bootstrap` has to state it, so the value is handed to the
-    ///      transmitter at the moment it is armed, by the one contract that knows it.
+    /// @dev A transmitter takes no payload at creation: its owner drives it directly and can
+    ///      `execute` whenever it likes, so there is nothing a bootstrap payload would be for
+    ///      on this side.
+    /// @dev THE SALT IS PASSED BACK IN, because an account cannot recover its own salt from
+    ///      its address and `bootstrap` has to state it.
     function _accountInitializer(address owner, bytes32 salt, Call[] memory)
         internal
         view
@@ -107,17 +99,9 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @notice Create the caller's transmitter.
     ///
     /// @dev THE OWNER IS `msg.sender` BY CONSTRUCTION, NOT BY ARGUMENT. An owner passed in
-    ///      could be anyone, and the derivation only means something if the party it names
-    ///      is the party that asked for it. That binding is also what stops one party
-    ///      squatting the address another intends to use, and here the address is not
-    ///      merely theirs on this chain, it is theirs on every chain.
-    /// @dev THE SALT IS THE CALLER'S, AND IT BUYS MORE THAN ONE ACCOUNT. An owner is not
-    ///      limited to a single transmitter: one per purpose, per counterparty, per
-    ///      mandate. Each `(msg.sender, salt)` pair is a distinct account with its own
-    ///      address, and that address is theirs on every parity chain, not just this one.
-    ///
-    ///      It is hashed together with `msg.sender` rather than used raw, so one owner's
-    ///      choice of salt can never land on another owner's account however it is chosen.
+    ///      could be anyone, and the derivation only means something if the party it names is
+    ///      the party that asked for it. That binding is what stops one party squatting the
+    ///      address another intends to use, on every chain at once rather than just here.
     ///
     /// @param salt Chosen by the caller. `bytes32(0)` is a perfectly good default for an
     ///        owner who wants exactly one account.
@@ -129,10 +113,9 @@ abstract contract HubTransceiverBase is TransceiverBase {
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.
     ///
-    /// @dev THE POINT OF EXPOSING IT. An owner can compute the address they are about to
-    ///      claim (on this chain and, because all three CREATE2 inputs are shared, on
-    ///      every other one), before spending anything. It is also what lets an address be
-    ///      pinned inside a payload approved before the account has been created.
+    /// @dev An owner can compute the address they are about to claim, here and on every
+    ///      parity chain, before spending anything. It is also what lets an address be pinned
+    ///      inside a payload approved before the account exists.
     function predictTransmitter(address owner, bytes32 salt)
         external
         view
@@ -171,13 +154,11 @@ abstract contract HubTransceiverBase is TransceiverBase {
     }
 
     /// @inheritdoc TransceiverBase
-    ///
     /// @dev N ORIGINS, SO IT IS A LOOKUP. The route names the chain and the registry names
-    ///      that chain's counterpart, at this transceiver's provenance bar, so a hub
-    ///      whose bar is `Derived` will not accept a message from a chain whose counterpart
-    ///      is only `Attested`, however well-formed the message is. Both halves must agree:
-    ///      an unknown route reverts in `chainKeyOfRoute`, and a known route with the wrong
-    ///      sender reverts here.
+    ///      that chain's counterpart at this transceiver's provenance bar, so a hub whose bar
+    ///      is `Derived` will not accept a message from a chain whose counterpart is only
+    ///      `Attested`, however well-formed the message is. Both halves must agree: an
+    ///      unknown route reverts in `chainKeyOfRoute`, a wrong sender reverts here.
     function _authenticateOrigin(bytes memory route, bytes memory sender)
         internal
         view
@@ -199,52 +180,38 @@ abstract contract HubTransceiverBase is TransceiverBase {
         this.onDestinationReceiver(chainKey, owner, salt, interop);
     }
 
-    /// @notice Turn a provider's native source id back into a chain, on the inbound path.
-    /// @dev The reverse of `_routeTo`, answered from the same write-once table that serves
-    ///      the outbound direction, one setter for both, because two would drift.
+    /// @notice Turn an inbound source id back into a chain.
+    /// @dev The reverse of `_routeTo`, answered from the same write-once table, because two
+    ///      tables would drift.
     function _chainKeyOf(bytes memory route) internal view returns (bytes32) {
         return chainKeyOfRoute(route);
     }
 
     /// @notice Inbound callback: the destination reports where it created the receiver.
-    /// @dev THE ESCAPE HATCH FOR UNDERIVABLE CHAINS. Most destinations need nothing like
-    ///      this: an EVM receiver is a CREATE2 clone whose address the hub can compute
-    ///      before the first message. Starknet cannot: its address derivation is a
-    ///      Pedersen hash chain that the EVM cannot run at any price. So the destination
-    ///      creates the receiver, learns the address, and sends it back here.
     ///
-    ///      The registry grades it, not this contract. The result is `Attested` (worth
-    ///      exactly the security of the bridge that carried it), and readers have to ask
-    ///      for that grade explicitly.
-    ///
-    ///      Hub-only, and that is the whole architecture in one function: the spoke sends
-    ///      this message, the hub records it. A spoke has nowhere to record anything to.
-    ///
+    /// @dev THE ESCAPE HATCH FOR UNDERIVABLE CHAINS. Most destinations need nothing like it,
+    ///      because the hub can compute a parity chain's receiver address before the first
+    ///      message. Starknet cannot: its derivation is a Pedersen hash chain the EVM cannot
+    ///      run at any price. So the destination creates the receiver, learns the address,
+    ///      and sends it back. Hub-only, which is the whole architecture in one function: the
+    ///      spoke sends, the hub records, and a spoke has nowhere to record anything to.
     ///      Self-call only, so it is reachable from `_onInbound` and nowhere else.
     ///
     /// @dev THE SLOT IS DERIVED FROM THE AUTHENTICATED PAIR, WHICH IS WHY NO REQUEST ID IS
-    ///      NEEDED. `chainKey` came from `_authenticateOrigin` and `transmitter` is stated
-    ///      in the report, so the destination cannot choose which slot it writes. The
-    ///      registry then refuses a second write to that slot, so a replayed report is a
-    ///      no-op rather than a repoint.
+    ///      NEEDED. `chainKey` came from `_authenticateOrigin` and `(owner, salt)` is stated
+    ///      in the report, so the destination cannot choose which slot it writes, and the
+    ///      registry refuses a second write to it. The pair is keyed rather than the address
+    ///      because the pair is what an account IS; the address is a derivation of it. The
+    ///      registry also does the grading, at `Attested`: a remote party does not mark its
+    ///      own homework.
     ///
-    /// @dev THE SLOT IS KEYED BY `(chainKey, owner, salt)`, which is what an account is.
-    ///      The account's address is a derivation of that pair, so the pair is the
-    ///      identity and the address is not.
-    ///
-    /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT. An ERC-7930
-    ///      envelope names its own chain, and nothing else compared that name against the
-    ///      origin this contract just authenticated: the registry keys the ref by whatever
-    ///      the envelope claims, while the SLOT is keyed by where the message came from. A
-    ///      mismatch therefore stored a reference that contradicted its own address,
-    ///      readable as an account on one chain and recorded under another.
-    ///
-    ///      It buys an attacker nothing on its own, which is why it is a check rather than
-    ///      a fix: an authenticated spoke can already report a wrong address on its own
-    ///      chain, and payloads route by chainKey regardless, so naming a different chain
-    ///      adds no reach. What it buys is a stored ref that cannot disagree with itself,
-    ///      and it is the check that gives the registry's own `UnknownChainKey` guard its
-    ///      intended meaning here.
+    /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT. The registry keys the
+    ///      ref by whatever the envelope claims while the SLOT is keyed by where the message
+    ///      came from, so without this a stored reference could contradict its own address.
+    ///      It buys an attacker nothing on its own, which is why it is a check rather than a
+    ///      fix: an authenticated spoke can already report a wrong address on its own chain,
+    ///      and payloads route by chainKey regardless. What it buys is a ref that cannot
+    ///      disagree with itself.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(
         bytes32 chainKey,

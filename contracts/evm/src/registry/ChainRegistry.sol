@@ -15,18 +15,16 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
 ///
-/// @dev THE SALT IS PER PROVIDER, NOT PER CHAIN, AND THAT IS THE WHOLE POINT. One salt used
-///      on every chain is what makes a provider's transceiver land on ONE address
-///      everywhere: the same property `defaultCounterpart` relies on, but stated as
-///      inputs rather than assumed from a local deployment.
+/// @dev THE SALT IS PER PROVIDER, NOT PER CHAIN. One salt used everywhere is what makes a
+///      provider's transceiver land on ONE address on every chain: the property
+///      `defaultCounterpart` relies on, stated as inputs rather than assumed from a local
+///      deployment.
 ///
-/// @dev IT EXISTS TO BE MINED. A transceiver is deployed as a proxy and then frozen, so its
-///      address is fixed for the life of the protocol and appears in calldata forever
-///      after: in peer tables, in payload targets, in every receiver address derived from
-///      it. Zero bytes in calldata cost 4 gas against 16 for non-zero, so a salt ground for
-///      leading zeros is a permanent discount on every message that names the address. The
-///      salt has to be recorded somewhere for that address to be reproducible on the hub;
-///      this is that somewhere.
+/// @dev IT EXISTS TO BE MINED. A transceiver is a proxy that is then frozen, so its address
+///      is fixed for the life of the protocol and appears in calldata forever after. Zero
+///      bytes cost 4 gas against 16, so a salt ground for leading zeros is a permanent
+///      discount on every message that names the address; recording it here is what makes
+///      the resulting address reproducible on the hub.
 struct ProviderDeployment {
     /// The mined salt, identical on every chain.
     bytes32 salt;
@@ -43,31 +41,25 @@ struct ProviderDeployment {
 /// @notice The home-chain directory of every chain crossecute talks to, the transceiver
 ///         that reaches each one, and where that transceiver actually lives.
 ///
-/// @dev Two halves that only make sense together:
+/// @dev TWO HALVES THAT ONLY MAKE SENSE TOGETHER.
 ///
-///      DIRECTORY: an enumerable set of `chainKey`, an enumerable set of
-///      `messageProvider`, and `chainKey => messageProvider => transceiverId`. All
-///      owner-controlled declarations. This half answers "who do I send through".
+///      DIRECTORY: enumerable sets of `chainKey` and `messageProvider`, plus
+///      `chainKey => messageProvider => transceiverId`. Owner-controlled declarations,
+///      answering "who do I send through".
 ///
-///      IT HOLDS NO PROVIDER ROUTES. A message provider's own name for a chain (a
-///      LayerZero eid, a Hyperlane domain) lives on the TRANSCEIVER, because that is the
-///      contract that sends and receives. Keeping it here would put a second shared
-///      contract in the path of every send and let a compromised one misroute a payload;
-///      on the execute-on-arrival path there is no commitment binding the destination, so
-///      a wrong id means the payload runs on the wrong chain.
+///      RESOLUTION: `transceiverId => ForeignRef`, holding that transceiver's location on
+///      its own chain. A location is not a declaration; it is a claim with a trust grade,
+///      and the grade is the point: `resolveEvmCreate2`/`resolveEvmCreate3` and
+///      `predictTransceiver` are recomputed here, with no message and no bridge trust,
+///      while a callback is the destination's own assertion. Collapsing these into one
+///      `address` field is how a bridge-security assumption gets laundered into something
+///      that looks like a derivation. Read through `requireRef` and state the bar you need.
 ///
-///      RESOLUTION: `transceiverId => ForeignRef`, holding the transceiver's location
-///      on its own chain. A location is not a declaration; it is a claim with a trust
-///      grade, and the grade is the point:
-///        1. `resolveEvmCreate2` / `resolveEvmCreate3`: recomputed here. No message,
-///           no latency, no bridge trust. The DEFAULT for EVM destinations.
-///        2. `predictTransceiver`: CREATE2 from a recorded salt, for EVM destinations
-///           that share Ethereum's formula. Also no message and no bridge trust.
-///        3. callback alone: the destination asserted it and nothing here checks.
-///
-///      Collapsing these into one `address` field is how a bridge-security assumption
-///      gets laundered into something that looks like a derivation. Read locations
-///      through `requireRef` and state the bar you need.
+/// @dev IT HOLDS NO ROUTES. How a chain is named for sending lives on the TRANSCEIVER,
+///      because that is the contract that sends: keeping it here would put a second shared
+///      contract in the path of every send, and on the execute-on-arrival path there is no
+///      commitment binding the destination, so a misroute runs the payload on the wrong
+///      chain.
 contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     using Bytes32Set for Bytes32Set.Set;
 
@@ -104,9 +96,8 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// callback authority and the address the default counterpart is derived from.
     ///
     /// @dev PER PROVIDER, NOT ONE ADDRESS. A single `sourceTransceiver` meant a second
-    ///      provider's hub could never deliver a report, because only one address could
-    ///      hold the authority at a time: the directory was keyed per provider while the
-    ///      permission was not.
+    ///      provider's hub could never deliver a report: the directory was keyed per
+    ///      provider while the permission was not.
     mapping(bytes32 => address) public localTransceiver;
     /// The reverse: which provider a calling transceiver speaks for.
     ///
@@ -140,17 +131,14 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// chainKey => the primitive that chain's receiver hashes commitments with.
     ///
     /// @dev THE ENUM COULD NOT GROW AND THIS CAN. `Scheme` is compiled into every
-    ///      transmitter, and a transmitter is a `CrossProxy` that locks in the call that
-    ///      arms it, so the set of primitives an account can name is fixed at its
-    ///      creation, forever. A chain onboarded later with a hash nobody had written
-    ///      yet would be unpreviewable on every account already live. Behind a mapping
-    ///      the set grows with a `setCommitmentScheme` transaction instead.
+    ///      transmitter, and a transmitter locks in the call that arms it, so the set of
+    ///      primitives an account can name is fixed at its creation, forever: a chain
+    ///      onboarded later would be unpreviewable on every account already live. Behind a
+    ///      mapping the set grows with one owner transaction.
     ///
-    /// @dev SAFE TO MAKE MUTABLE ONLY BECAUSE NOTHING ENFORCES WITH IT. This registry is
-    ///      deliberately out of the send path (the same argument `TransceiverBase`
-    ///      makes for holding routes itself), and a commitment is enforced by the
-    ///      destination's own receiver, never by a read from here. Advisory here,
-    ///      enforced there.
+    /// @dev SAFE TO MAKE MUTABLE ONLY BECAUSE NOTHING ENFORCES WITH IT. A commitment is
+    ///      enforced by the destination's own receiver, never by a read from here. Advisory
+    ///      here, enforced there.
     mapping(bytes32 => ICommitmentScheme) public commitmentSchemeOf;
 
     /* ================================== events ================================= */
@@ -293,21 +281,16 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /// @notice Point (chain, provider) at a transceiver. Owner-only, and WRITE-ONCE.
     ///
-    /// @dev SET ONCE, BY THE OWNER, OR NOT AT ALL. A transceiver id names the contract
-    ///      that every message to that chain authenticates against, so a mutable pointer
-    ///      is a standing ability to redirect the whole route: the same argument that
-    ///      made `SpokeTransceiverBase._homeTransceiver` an initializer argument rather
-    ///      than a setter plus a lock. Writing it once closes the window instead of
-    ///      documenting it: there is no reachable state where the value is set and still
-    ///      changeable. Moving a route is a new transceiver id.
-    ///
-    ///      Re-writing the SAME id is a no-op rather than a revert, so a replayed or
-    ///      duplicated configuration transaction is not a failure.
+    /// @dev SET ONCE, BY THE OWNER, OR NOT AT ALL. A transceiver id names the contract every
+    ///      message to that chain authenticates against, so a mutable pointer is a standing
+    ///      ability to redirect the whole route: the same argument that made
+    ///      `SpokeTransceiverBase`'s home values initializer arguments rather than a setter
+    ///      plus a lock. Moving a route is a new transceiver id. Re-writing the SAME id is a
+    ///      no-op, so a replayed configuration transaction is not a failure.
     ///
     /// @dev LEAVING IT UNSET IS A CHOICE, NOT AN OMISSION. An unset route falls back to
-    ///      the local transceiver's own address on that chain: see `defaultCounterpart`.
-    ///      That is the correct default for every EVM chain sharing Ethereum's CREATE2
-    ///      formula, which is most of them, so this setter is for the exceptions.
+    ///      `defaultCounterpart`, which is correct for every EVM chain sharing Ethereum's
+    ///      CREATE2 formula, so this setter is for the exceptions.
     function setTransceiverId(bytes32 chainKey, bytes32 messageProvider, bytes32 transceiverId)
         external
         onlyOwner
@@ -331,14 +314,11 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @notice Register the local hub transceiver that serves one message provider.
     ///
     /// @dev IT DOES TWO JOBS, AND THEY ARE THE SAME FACT. This address is the only caller
-    ///      permitted to deliver a resolution callback for `messageProvider`, and it is
-    ///      also the address the default counterpart on every EVM chain is derived from,
-    ///      because a transceiver is deployed as a proxy through Nick's factory, so hub
-    ///      and spoke share initcode and salt and land on the same address wherever
-    ///      Ethereum's CREATE2 formula holds.
-    ///
-    ///      Pass the zero address to retire a provider's transceiver, which also removes
-    ///      the default counterpart it backed.
+    ///      permitted to deliver a resolution callback for `messageProvider`, and it is the
+    ///      address the default counterpart is derived from, because hub and spoke share
+    ///      proxy initcode and salt and so land together wherever Ethereum's CREATE2 formula
+    ///      holds. Pass the zero address to retire a provider, which also removes the
+    ///      default counterpart it backed.
     function setLocalTransceiver(bytes32 messageProvider, address transceiver_)
         external
         onlyOwner
@@ -357,16 +337,14 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @notice Record the CREATE2 inputs a provider's contracts deploy from.
     ///
     /// @dev WRITE-ONCE, because changing it moves every address derived from it: the
-    ///      transceiver on every chain, and every receiver under every one of those. That
-    ///      is a redeploy of the provider's entire footprint, not a config edit. Re-writing
-    ///      the identical record is a no-op, so a replayed configuration transaction is not
-    ///      a failure.
+    ///      transceiver on every chain and every account under each of those. That is a
+    ///      redeploy of the provider's whole footprint. Re-writing the identical record is a
+    ///      no-op.
     ///
     /// @dev IT DOES NOT DEPLOY ANYTHING. The salt is mined and used off-chain by whoever
-    ///      calls the factory; this records it so the hub can reproduce the resulting
-    ///      addresses. A record that does not match what was actually deployed yields
-    ///      predictions that match nothing, which surfaces the first time a counterpart is
-    ///      read rather than silently.
+    ///      calls the factory; this records it so the hub can reproduce the addresses. A
+    ///      record that does not match what was deployed yields predictions that match
+    ///      nothing, which surfaces the first time a counterpart is read.
     function setProviderDeployment(
         bytes32 messageProvider,
         bytes32 salt,
@@ -428,9 +406,9 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @notice Where a provider's transceiver lands on `chainKey`.
     ///
     /// @dev RECOMPUTED FROM THE RECORDED INPUTS, so the answer is `Derived` in the strong
-    ///      sense: the factory, salt, and initcode hash are all in the signed calldata of
-    ///      the transaction that recorded them, and this is arithmetic over them. It does
-    ///      not read a local address and assume the remote one matches.
+    ///      sense: the factory, salt, and initcode hash were all in the signed calldata that
+    ///      recorded them, and this is arithmetic over them rather than a local address
+    ///      assumed to match the remote one.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider)
         public
         view
@@ -446,17 +424,14 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /// @notice Where an owner's account lands on `chainKey`, before it exists.
     ///
-    /// @dev TWO CREATE2 STEPS, AND BOTH INPUTS ARE KNOWN. The transceiver is derived from
-    ///      the provider's salt; the account is derived from the transceiver, with the
-    ///      `(owner, salt)` pair as its salt. So an account address is computable on
-    ///      here for any owner on any parity chain before a single message has crossed,
-    ///      and it is the same address their transmitter occupies here, because both deploy the
-    ///      same argument-free proxy from the same address at the same salt.
+    /// @dev TWO CREATE2 STEPS, AND BOTH INPUTS ARE KNOWN: the transceiver from the
+    ///      provider's salt, then the account from the transceiver with `(owner, salt)` as
+    ///      its salt. So an account address is computable here for any owner on any parity
+    ///      chain before a single message has crossed.
     ///
-    ///      The salt must match `TransceiverBase.accountSalt`, which is
-    ///      `keccak256(abi.encode(owner, salt))`. It is written out here rather than imported
-    ///      because this contract is on the home chain and that one is on the destination;
-    ///      `test/SaltedDeployment.t.sol` asserts the two agree.
+    ///      TRIPWIRE: the salt must match `TransceiverBase.accountSalt`. It is written out
+    ///      rather than imported because this contract is on the home chain and that one is
+    ///      on the destination; `test/SaltedDeployment.t.sol` asserts the two agree.
     function predictCrossAccount(
         bytes32 chainKey,
         bytes32 messageProvider,
@@ -499,14 +474,11 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /// @notice Teach this registry the primitive `chainKey`'s receiver hashes with.
     ///
-    /// @dev REBINDABLE, LIKE `setDeriver` AND `setValidator` AND UNLIKE `setRoute`. A
-    ///      route is write-once because re-pointing one redirects live messages; this
-    ///      points at nothing and redirects nothing, so a wrong primitive has to be
-    ///      fixable. It is the only part of the commitment story that ever can be.
-    ///
-    /// @dev Passing the zero address unregisters, which makes `commitmentFor` revert
-    ///      rather than answer. That is the correct response to "we no longer trust this
-    ///      plugin": a signer who cannot get an answer goes and computes one, where a
+    /// @dev REBINDABLE, UNLIKE `setRoute`. A route is write-once because re-pointing one
+    ///      redirects live messages; this points at nothing and redirects nothing, so a wrong
+    ///      primitive has to be fixable. It is the only part of the commitment story that can
+    ///      be. Passing the zero address unregisters, which makes `commitmentFor` revert
+    ///      rather than answer: a signer who cannot get an answer computes one, where a
     ///      signer given a wrong answer approves it.
     function setCommitmentScheme(bytes32 chainKey, ICommitmentScheme scheme)
         external
@@ -520,14 +492,12 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// @notice PREVIEW. The commitment `chainKey`'s receiver will require over `elements`.
     ///
     /// @dev THIS CONTRACT RESOLVES THE PLUGIN AND NOTHING ELSE. The fold is `SchemeFold`,
-    ///      beside the interface, which also carries the argument for why it is a second
-    ///      copy of `Commitment.hashCalls` rather than a call into it. A registry stores
-    ///      bindings; defining the hash every other chain has to match is not that.
+    ///      beside the interface, which carries the argument for why it is a second copy of
+    ///      `Commitment.hashCalls` rather than a call into it.
     ///
-    /// @dev `view`, and read through `eth_call` by a signer checking a payload. Nothing
-    ///      on-chain calls this, and nothing on-chain may: a commitment is enforced by
-    ///      the destination's receiver against its own frozen fold, never against a
-    ///      mutable lookup on the home chain.
+    /// @dev NOTHING ON-CHAIN CALLS THIS, AND NOTHING MAY. A commitment is enforced by the
+    ///      destination's receiver against its own frozen fold, never against a mutable
+    ///      lookup here. This is read through `eth_call` by a signer checking a payload.
     function commitmentFor(bytes32 chainKey, bytes[] calldata elements)
         external
         view
@@ -539,11 +509,11 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     }
 
     /// @notice Cap the strongest provenance a chain may be recorded at.
-    /// @dev This closes the laundering hole in `resolveDerived`: without a cap, an owner
-    ///      could compute a Starknet address off-chain, pass the bytes in, and have it
-    ///      stored as `Derived`: a claim that nothing on this chain can support. Set
-    ///      Starknet (and Aptos, Cardano, TON, NEAR named accounts) to `Committed` so
-    ///      the stronger claim is unrepresentable rather than merely discouraged.
+    /// @dev This closes the laundering hole in `resolveDerived`: without a cap an owner could
+    ///      compute a Starknet address off-chain, pass the bytes in, and have it stored as
+    ///      `Derived`, a claim nothing on this chain can support. Cap Starknet (and Aptos,
+    ///      Cardano, TON, NEAR named accounts) at `Committed` so the stronger claim is
+    ///      unrepresentable rather than merely discouraged.
     function setMaxProvenance(bytes32 chainKey, Provenance cap) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         maxProvenanceOf[chainKey] = cap;
@@ -696,20 +666,18 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /* ========================= destination receivers ========================== */
 
     /// @notice Slot holding an account's receiver on one destination chain.
-    /// @dev DERIVED, never chosen. Two slot kinds now share `_refs` (transceivers and
-    ///      receivers), so each is namespaced by a distinct tag. Without the tag a
-    ///      receiver could be written into a transceiver's slot and read back as one.
+    /// @dev DERIVED, NEVER CHOSEN, and namespaced by a tag: two slot kinds share `_refs`, so
+    ///      without it a receiver could be written into a transceiver's slot and read back as
+    ///      one.
     ///
-    ///      This exists because some chains cannot be derived at all. On Starknet the
-    ///      address is a Pedersen hash chain that the EVM cannot recompute at any price,
-    ///      so the receiver's address is not predictable here: it is reported back by
-    ///      the destination and graded `Attested`, which is an honest description of
-    ///      what we actually know.
-    /// @dev KEYED BY `(owner, salt)`, WHICH IS WHAT AN ACCOUNT IS. Keying by the
-    ///      transmitter's address happens to give the same answer today, since an account
-    ///      and its receivers share one address, but it states a relationship that no
-    ///      longer holds, and if the two ever diverged the slot would silently point
-    ///      somewhere else. The pair is the identity; the address is a derivation of it.
+    /// @dev KEYED BY `(owner, salt)`, WHICH IS WHAT AN ACCOUNT IS. Keying by the transmitter's
+    ///      address gives the same answer wherever the two share one, but states a
+    ///      relationship that does not hold everywhere, and where they diverge the slot would
+    ///      silently point elsewhere. The pair is the identity; the address derives from it.
+    ///
+    /// @dev It exists because some chains cannot be derived at all: Starknet's address is a
+    ///      Pedersen hash chain the EVM cannot recompute at any price, so the receiver
+    ///      reports its address back and it is graded `Attested`.
     function receiverSlot(bytes32 chainKey, address owner, bytes32 salt)
         public
         pure
@@ -740,28 +708,22 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///         reports where it created something this chain could not compute.
     ///
     /// @dev THE CALLER IS THE AUTHORITY, AND IT NAMES THE PROVIDER. `msg.sender` must be a
-    ///      registered `localTransceiver`, and the provider is read back from it rather
-    ///      than passed in: a hub serves exactly one provider, so accepting it as an
-    ///      argument would let an authenticated caller speak for a provider it does not
-    ///      serve.
+    ///      registered `localTransceiver`, and the provider is read back from it rather than
+    ///      passed in: a hub serves exactly one provider, so accepting it as an argument
+    ///      would let an authenticated caller speak for a provider it does not serve.
     ///
-    /// @dev THE SLOT IS WRITE-ONCE, AND THAT IS WHAT REPLACED THE EXPECTATION MACHINERY.
-    ///      A receiver's address on a given chain is a fact established once, at
-    ///      bootstrap; there is no legitimate second report for the same
-    ///      `(chainKey, transmitter)`. Refusing one makes a replayed message a no-op and
-    ///      makes a compromised bridge unable to repoint a live receiver, which is
-    ///      strictly more than the `Committed` grade bought, since that only ever
-    ///      confirmed an address the owner had already computed off-chain.
+    /// @dev THE SLOT IS WRITE-ONCE, AND THAT IS WHAT REPLACED THE EXPECTATION MACHINERY. A
+    ///      receiver's address is a fact established once, at bootstrap, so there is no
+    ///      legitimate second report for the same slot. Refusing one makes a replayed message
+    ///      a no-op and a compromised bridge unable to repoint a live receiver, which is
+    ///      strictly more than the `Committed` grade bought.
     ///
-    /// @dev Grading still happens HERE, not at the caller: a remote party does not get to
-    ///      mark its own homework, so no provenance field is accepted over the wire. With
-    ///      nothing registered in advance the honest grade is `Attested`: worth exactly
-    ///      the security of the bridge that carried it. A reader wanting better than that
-    ///      must use a locally derived path.
-    ///
-    ///      The qualifier arrives WITH the address rather than being read from storage,
-    ///      because a Move call target is `address::module::function` and the address
-    ///      alone does not identify it.
+    /// @dev GRADING HAPPENS HERE, NOT AT THE CALLER: a remote party does not mark its own
+    ///      homework, so no provenance field is accepted over the wire. With nothing
+    ///      registered in advance the honest grade is `Attested`, worth exactly the security
+    ///      of the bridge that carried it. The qualifier arrives WITH the address rather than
+    ///      from storage, because a Move call target is `address::module::function` and the
+    ///      address alone does not identify it.
     function onForeignRefResolved(
         bytes32 slot,
         bytes calldata interop,
@@ -960,34 +922,21 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
 
     /// @notice The counterpart a chain gets when the owner has declared nothing.
     ///
-    /// @dev TWO WAYS TO KNOW, AND THE STRONGER ONE WINS. If the provider has a recorded
-    ///      `ProviderDeployment`, the answer is CREATE2 over the factory, salt, and
-    ///      initcode hash: arithmetic over inputs that sit in the signed calldata of the
-    ///      transaction that recorded them. Otherwise it falls back to the local
-    ///      transceiver's own address, which is the same answer reached by assumption
-    ///      rather than by statement: a transceiver is deployed as a PROXY through the
-    ///      factory, so hub and spoke share initcode and salt and land together wherever
-    ///      Ethereum's CREATE2 formula holds.
+    /// @dev TWO WAYS TO KNOW, AND THE STRONGER ONE WINS. With a recorded
+    ///      `ProviderDeployment` the answer is CREATE2 over the factory, salt, and initcode
+    ///      hash, all of which sat in the signed calldata that recorded them. Otherwise it
+    ///      falls back to the local transceiver's own address, which is the same answer
+    ///      reached by assumption rather than statement, since hub and spoke share proxy
+    ///      initcode and salt. Both are `Derived`; the recorded path is preferable because it
+    ///      says WHY, and because it does not require the hub to exist first.
     ///
-    ///      Both are `Derived`. The recorded path is preferable because it says WHY, and
-    ///      because it does not require the hub to exist before a destination can be
-    ///      addressed.
-    ///
-    /// @dev IT IS REFUSED EXACTLY WHERE IT WOULD BE A LIE. Two guards, and each maps to a
-    ///      real failure of the parity argument:
-    ///
-    ///      1. NON-EVM CHAINS. A 20-byte EVM address means nothing on Solana, Sui, or
-    ///         Starknet, so anything that is not `eip155` has no default at all.
-    ///      2. CHAINS CAPPED BELOW `Derived`. zkSync and Tron are `eip155` with different
-    ///         CREATE2 formulas, so parity does NOT hold there even though the chain type
-    ///         says it might. `setMaxProvenance` is already the dial that records "this
-    ///         chain's addresses cannot be recomputed here", so a cap below `Derived` is
-    ///         read as exactly that and the default withdraws. This reuses the existing
-    ///         honesty mechanism rather than adding a second flag that could disagree
-    ///         with it.
-    ///
-    ///      Both are opt-out by `setTransceiverId`: a chain with an explicit route never
-    ///      consults this.
+    /// @dev IT IS REFUSED EXACTLY WHERE IT WOULD BE A LIE, by two guards that each map to a
+    ///      real failure of the parity argument. A 20-byte EVM address means nothing on
+    ///      Solana, Sui, or Starknet, so anything not `eip155` has no default. And zkSync and
+    ///      Tron ARE `eip155` with different CREATE2 formulas, so a cap below `Derived` is
+    ///      read as "this chain's addresses cannot be recomputed here" and the default
+    ///      withdraws: reusing the existing honesty dial rather than adding a second flag
+    ///      that could disagree with it. Both are opt-out by `setTransceiverId`.
     function defaultCounterpart(bytes32 chainKey, bytes32 messageProvider)
         public
         view
@@ -1007,12 +956,10 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///         directory and the resolution table live in the same contract.
     ///
     /// @dev AN UNSET ROUTE FALLS BACK TO `defaultCounterpart` RATHER THAN REVERTING. The
-    ///      common case (an EVM destination where hub and spoke share an address) needs
-    ///      no configuration at all, so requiring it produced a table whose every row said
-    ///      the same thing and whose absence was indistinguishable from a real gap.
-    ///      The default is graded `Derived`, which is honest: it is recomputed here from
-    ///      the local address, with no message and no bridge trust. `defaultCounterpart`
-    ///      is where that grade is justified and where it withdraws.
+    ///      common case needs no configuration at all, so requiring it produced a table whose
+    ///      every row said the same thing and whose absence was indistinguishable from a real
+    ///      gap. The default is graded `Derived`, which is honest: recomputed here, with no
+    ///      message and no bridge trust.
     /// @return transceiverId Zero when the answer came from the default, since no
     ///         `ForeignRef` backs it: a caller that needs a stored ref should check.
     function transceiverFor(

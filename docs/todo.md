@@ -274,19 +274,6 @@ mainnet.
 
 ## 5. Smaller open questions
 
-- **NatSpec left behind by the ERC-7786 collapse.** The markdown is now aligned to the code;
-  several contract comments are not, and they are the newer statement by the README's own
-  rule, so they mislead first. Known: `TransmitterBase`'s contract-level `@dev` blocks
-  describe `submit` / `submitTo` / `_submit`, which have never existed under those names and
-  are now `sendMessage`; its `execute` note says "the opaque overloads on `commit`/`commitTo`
-  remain" when neither function is on the contract at all; `Payload.isTypedDestination`
-  cites `send(uint256)` and `sendTo(bytes)`, which are now `bootstrap` and `bootstrapTo`;
-  `ChainKey` opens its rationale with "`submit` has to name a destination"; `LzTransmitter`
-  says it is cloned by a `TransmitterFactory` that does not exist (it is
-  `HubTransceiverBase.createTransmitter`) and that it "knows no eids" in a codebase that no
-  longer has any. Separately, `ChainType.sol` ends with "The README carries the full
-  onboarding checklist" and the README carries no such checklist: either write it or drop
-  the pointer.
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
   until a non-EVM receiver exists, because the commitment never sees the container.
 - **The Solana account list belongs inside the committed element.** Argued in

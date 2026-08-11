@@ -99,17 +99,17 @@ hub transceiver .bootstrap(chainKey, owner, salt, calls, attributes)   msg.sende
  ▼  hub transceiver ._handleInbound  → onDestinationReceiver → registry
 ```
 
-**The message carries the OWNER AND THEIR SALT, not the transmitter.** The account address
-derives from the pair, which is what puts an owner's transmitter and their receivers on one address. The
-transmitter's own address could not serve: a CREATE2 address cannot be derived from itself.
-The receiver's peer is therefore its own address, since that is where the transmitter sits
-on the home chain.
+**The message carries the OWNER AND THEIR SALT, not the transmitter**, because the account
+address derives from that pair and a CREATE2 address cannot be derived from itself. The
+receiver's peer is therefore its own address, since that is where the transmitter sits at
+home. The wire-format section below says the same thing about the same field; it is stated
+twice because getting it wrong produces an account at an address nobody can reach.
 
 **The return leg is sent by the spoke transceiver, and only where it buys something.** The
-receiver cannot be its sender: it is not an `OutboundBase`, has no `_sendMessage`, and holds
-neither the home route nor the hub's address. The spoke transceiver holds all four things
-the report needs at once, which is the home route, the hub's address, the authenticated
-`(owner, salt)` pair, and the address of the receiver it has just created.
+receiver cannot be its own sender: it is not an `OutboundBase`, has no `_sendMessage`, and
+holds neither the home route nor the hub's address. The spoke transceiver holds all four
+things the report needs at once: the home route, the hub's address, the authenticated
+`(owner, salt)` pair, and the receiver it has just created.
 
 **`addressesDiverge` decides whether it fires.** On a chain sharing Ethereum's CREATE2
 formula the hub computed the receiver's address before the first message ever left, so a
@@ -148,13 +148,10 @@ channel names a destination separately from its message.
 | hub → spoke transceiver | `abi.encode(address owner, bytes32 salt, Call[] calls)` on EVM, `abi.encode(address owner, bytes32 salt, bytes[] elements)` elsewhere |
 | spoke → hub transceiver | `abi.encode(address owner, bytes32 salt, bytes interop)` |
 
-**The bootstrap message names the OWNER AND SALT, not the transmitter.** The destination
-derives the account's address from that pair, which is what puts an owner's transmitter and
-their receivers on one address; the transmitter's own address could not serve, because a
-CREATE2 address cannot be derived from itself. Nothing the bridge reports says who on the
-home chain authorized the message, since the hub is shared by every owner, so the pair is
-stated. The report back names the same pair for the same reason, which is what lets the hub
-key the receiver slot without a request id.
+**Both transceiver channels name the OWNER AND SALT rather than an address.** The pair has
+to be stated because the hub is shared by every owner, so nothing the bridge reports says who
+authorized the message; and it is the pair rather than the address because the address is a
+derivation of it. That is also what lets the hub key the receiver slot without a request id.
 
 A call is `(address target, uint256 value, bytes data)`: the tuple ERC-7579 and ERC-7821
 use, so payload-building tooling that already speaks those formats works without custom

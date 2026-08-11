@@ -67,10 +67,11 @@ library Payload {
     /// @notice Whether a destination takes the typed form.
     ///
     /// @dev IT TAKES THE IDENTIFIER, NOT THE CHAINKEY, because a chainKey is
-    ///      `keccak256(identifier)` and a hash cannot be asked what chain type it came
-    ///      from. Anywhere the form has to be chosen, the envelope is still in hand: the
-    ///      transmitter's `send(uint256)` is `eip155` by construction, and `sendTo(bytes)`
-    ///      has the envelope as its argument.
+    ///      `keccak256(identifier)` and a hash cannot be asked what chain type it came from.
+    ///      Anywhere the form still has to be chosen, the envelope is in hand:
+    ///      `TransmitterBase.bootstrap(uint256, ...)` is `eip155` by construction and
+    ///      `bootstrapTo(bytes, ...)` has the envelope as its argument. `sendMessage` does
+    ///      not choose, because its payload arrives already built.
     function isTypedDestination(bytes memory chainIdentifier)
         internal
         pure

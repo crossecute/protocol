@@ -17,32 +17,24 @@ interface ICrossProxy {
 /// @notice The proxy every crossecute account is deployed as: transmitter and receiver alike.
 ///
 /// @dev IT TAKES NO CONSTRUCTOR ARGUMENTS, AND THAT IS THE ENTIRE POINT. CREATE2 hashes the
-///      initcode, so anything baked into it changes the address. A minimal clone cannot be
-///      used here for exactly that reason: EIP-1167 embeds the implementation address in
-///      its initcode, so a transmitter clone and a receiver clone can never share an
-///      address however their deployer and salt are chosen.
-///
-///      With no arguments the initcode is one constant byte string, identical everywhere.
-///      A transmitter deployed by the hub and a receiver deployed by a spoke (same
-///      deployer address, same salt, same initcode) therefore land on ONE address, and
-///      diverge only in what they are upgraded to afterwards, which the derivation never
-///      sees. That is the argument that lets a hub and a spoke share an address, applied
-///      one level down.
+///      initcode, so anything baked into it changes the address. With no arguments the
+///      initcode is one constant byte string, so a transmitter deployed by the hub and a
+///      receiver deployed by a spoke (same deployer, same salt, same initcode) land on ONE
+///      address and diverge only in what they are upgraded to, which the derivation never
+///      sees. A minimal clone could not do this: EIP-1167 embeds the implementation address
+///      in its initcode, so the two could never share an address however they were salted.
 ///
 /// @dev THERE IS NO WAY TO UPGRADE WITHOUT LOCKING. The single admin operation upgrades,
-///      runs the initializer, and zeroes the admin, in that order and in one call. Not
-///      "the deployer is expected to lock afterwards": there is no reachable state in
-///      which an account has a live upgrade key and a real implementation at the same
-///      time. That is what makes an upgradeable full-power account acceptable: the key
-///      exists for part of one transaction, held by the contract that created the account,
-///      and cannot outlive it.
+///      runs the initializer, and zeroes the admin, in that order and in one call. Not "the
+///      deployer is expected to lock afterwards": there is no reachable state in which an
+///      account has a live upgrade key and a real implementation at once. That is what makes
+///      an upgradeable full-power account acceptable.
 ///
-/// @dev DISPATCH IS TRANSPARENT-STYLE, WHICH MATTERS AFTER THE LOCK. The admin operation
-///      is routed inside `fallback` rather than declared as an external function, because
-///      a declared one would shadow that selector on the implementation forever. Once the
-///      admin is zeroed no caller can match it (`msg.sender` is never the zero address),
-///      so every selector delegates from then on and this is indistinguishable from a
-///      plain ERC-1967 proxy.
+/// @dev DISPATCH IS TRANSPARENT-STYLE, WHICH MATTERS AFTER THE LOCK. The admin operation is
+///      routed inside `fallback` rather than declared, because a declared function would
+///      shadow that selector on the implementation forever. Once the admin is zeroed no
+///      caller can match it, so every selector delegates and this is indistinguishable from
+///      a plain ERC-1967 proxy.
 contract CrossProxy is Proxy {
     error UnknownAdminCall(bytes4 selector);
 

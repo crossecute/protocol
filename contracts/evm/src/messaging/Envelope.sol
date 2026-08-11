@@ -6,16 +6,14 @@ import {Call} from "src/messaging/Call.sol";
 /// @title Envelope
 /// @notice The two message bodies that cross between transceivers.
 ///
-/// @dev THERE IS NO MESSAGE-TYPE TAG, AND THAT IS A PROPERTY OF THE TOPOLOGY. Bootstrap
-///      messages travel hub -> spoke and receiver reports travel spoke -> hub, so each
-///      side decodes exactly one shape and the direction is the discriminant. A tag would
-///      be a field whose only correct value each contract already knows.
+/// @dev THERE IS NO MESSAGE-TYPE TAG, AND THAT IS A PROPERTY OF THE TOPOLOGY. Bootstraps
+///      travel hub -> spoke and reports travel spoke -> hub, so each side decodes exactly one
+///      shape and the direction is the discriminant.
 ///
-///      That holds because transmitters live on the home chain only. If one ever runs on a
-///      spoke, the hub starts receiving commitments as well as reports, the direction
-///      stops determining the shape, and a tag becomes mandatory: decoding the wrong
-///      shape off a `bytes` blob is not a revert, it is a silent misread. This comment is
-///      the tripwire for that change.
+///      TRIPWIRE: that holds only because transmitters live on the home chain. If one ever
+///      runs on a spoke, the hub starts receiving commitments as well as reports, direction
+///      stops determining shape, and a tag becomes mandatory, because decoding the wrong
+///      shape off a `bytes` blob is a silent misread rather than a revert.
 ///
 /// @dev The bodies are `abi.encode`, not `encodePacked`. Both carry a variable-length or
 ///      address-typed field, and packed encoding is how two different messages come to
@@ -26,19 +24,15 @@ library Envelope {
     /// @notice The payload that stands a receiver up, credited to the transmitter it
     ///         will answer to.
     ///
-    /// @dev IT CARRIES CALLS, NOT A COMMITMENT. A transceiver does not relay approvals; it
-    ///      creates a receiver and initializes it with the payload that justified doing so,
-    ///      in one transaction, and is never in the path again. A payload that should wait
-    ///      rather than run carries a self-call to the receiver's own `commit`, so this
-    ///      envelope needs no second shape for the deferred case.
+    /// @dev IT CARRIES CALLS, NOT A COMMITMENT. A transceiver does not relay approvals: it
+    ///      creates a receiver, initializes it with the payload that justified doing so, and
+    ///      is never in the path again. A payload that should wait carries a self-call to the
+    ///      receiver's own `commit`, so this needs no second shape for the deferred case.
     ///
-    /// @dev THE OWNER AND THE SALT ARE IN THE MESSAGE, AND IT IS THE OWNER RATHER THAN THE
-    ///      TRANSMITTER. The destination derives the account address from the pair,
-    ///      `accountSalt(owner, salt)`, which is what puts an owner's transmitter and
-    ///      their receivers on one address.
-    ///      The transmitter's own address could not serve: a CREATE2 address cannot be
-    ///      derived from itself. Nothing the bridge reports says who on the home chain authorized
-    ///      the message, since the hub is shared by every owner, so it is stated.
+    /// @dev IT NAMES THE OWNER AND SALT RATHER THAN THE TRANSMITTER, because the destination
+    ///      derives the account address from that pair and a CREATE2 address cannot be
+    ///      derived from itself. It has to be stated because the hub is shared by every
+    ///      owner, so nothing the bridge reports says who authorized the message.
     function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls)
         internal
         pure
@@ -84,14 +78,10 @@ library Envelope {
     ///      creates it, learns the address, and says so.
     ///
     /// @dev IT CARRIES NO REQUEST ID, because the fields it does carry already imply the
-    ///      correlation one would provide: the destination is established by the
-    ///      authenticated origin, and `(owner, salt)` is stated here: exactly the triple
-    ///      the receiver slot is derived from. The registry refuses a second write to that
-    ///      slot outright, which is a stronger guarantee than matching an id.
-    ///
-    ///      It states the OWNER AND SALT rather than the account's address, matching the
-    ///      bootstrap message it answers. The address is a derivation of that pair, so the
-    ///      pair is what identifies the account.
+    ///      correlation one would provide: the chain comes from the authenticated origin and
+    ///      `(owner, salt)` is stated here, which is exactly the triple the receiver slot is
+    ///      derived from. The registry refuses a second write to that slot outright, which is
+    ///      stronger than matching an id.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the reporting chain.
     function encodeReceiverReport(address owner, bytes32 salt, bytes memory interop)
         internal

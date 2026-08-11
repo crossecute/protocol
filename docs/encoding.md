@@ -107,12 +107,10 @@ One name, five shapes. Every array parameter is `memory`: Solidity will not over
 data location, so a `calldata` twin would need a different name, which is the only reason
 a second one ever existed.
 
-The first is the receiver's, seeded with `ChainKey.local()`, and it is what `isHashedCall`
-calls from `finalize`. It is `view` only because it reads `block.chainid`.
-
-The unparameterized pair is the **EVM scheme** (keccak256), and is what a receiver on an
-EVM chain calls. The `Scheme` overloads are for the source side, where the hub builds a
-commitment a *different* VM will recompute. See below.
+The three unparameterized forms are the **EVM scheme** (keccak256). The first seeds with
+`ChainKey.local()` and is what `isHashedCall` reaches from `finalize`, which is why it is
+`view` rather than `pure`: it reads `block.chainid`. The `Scheme` overloads are for the
+source side, where the hub builds a commitment a *different* VM will recompute. See below.
 
 This is asserted directly, not assumed: `test/PayloadEncoding.t.sol` includes a fuzz case
 over `(target, value, data, chainKey)`. If the two ever diverge, a payload approved in one
@@ -300,39 +298,30 @@ commitment is computed off-chain and carried in an opaque element that calls tha
 own `commit`, which is the same mechanism every deferred payload uses.
 
 **Where the scheme is a parameter, and where it stopped being one.** The enum is still how
-`Commitment` dispatches internally, and it is compiled into every account. But no entry
-point on a transmitter takes one any more.
+`Commitment` dispatches internally and is compiled into every account, but no transmitter
+entry point takes one.
 
-`commitmentFor`/`commitmentForChain` name an EVM destination (by `uint256` chain id or by
-ERC-7930 envelope), and every chain that executes `Call[]` hashes with keccak256, so both
-stay keccak-only and `pure`. There is exactly one primitive they can ever need, which is
-what makes it safe for them to be frozen with the account.
-
-The overload that took a `Scheme` is **gone**. It was the one that could go stale, and it
-was frozen in the worst possible place: a transmitter is a `CrossProxy` that locks in the
-call that arms it, so the set of primitives it could name was fixed at its creation and a
-chain onboarded later with a new hash would be unpreviewable on every account already
-live. Non-EVM destinations are previewed through `ChainRegistry.commitmentFor` instead,
-where the primitive is an `ICommitmentScheme` plugin bound per chainKey and the set can
-grow with an owner transaction.
+`commitmentFor`/`commitmentForChain` name an EVM destination, and every chain that executes
+`Call[]` hashes with keccak256, so both stay keccak-only and `pure`: exactly one primitive
+they can ever need, which is what makes it safe for them to be frozen with the account. The
+overload that took a `Scheme` is **gone**, because it was frozen in the worst possible place:
+the set of primitives it could name was fixed at the account's creation, so a chain onboarded
+later would be unpreviewable on every account already live. Non-EVM destinations are
+previewed through `ChainRegistry.commitmentFor`, where the primitive is an
+`ICommitmentScheme` bound per chainKey and the set grows with one owner transaction.
 
 **The plugin supplies the primitive, never the fold.** `ICommitmentScheme.hash(bytes)` is
-one function wide; the registry seeds with the chainKey and folds per element itself. So
-"the fold is fixed, the primitive varies" is structural rather than conventional, and a
-wrong or hostile plugin can only produce a digest the destination refuses: never a
-differently-shaped one it accepts. That bound is what makes a *mutable* preview acceptable
-at all.
+one function wide; the registry seeds with the chainKey and folds per element itself. So "the
+fold is fixed, the primitive varies" is structural rather than conventional, and a wrong or
+hostile plugin can only produce a digest the destination refuses, never a differently-shaped
+one it accepts. Combined with **advisory on the hub, enforced on the destination** (a
+receiver enforces with the keccak fold frozen into `ReceiverBase` and can never consult a
+lookup), that is the whole safety argument for letting the preview be swappable.
 
-Nothing on the execution path reads any of this. A receiver enforces with the keccak fold
-compiled into `ReceiverBase`, which is frozen with the account and can never consult a
-lookup. **Advisory on the hub, enforced on the destination**: that split is the whole
-safety argument for letting the preview be swappable.
-
-Getting the primitive wrong fails closed: the destination recomputes with its own scheme
-and simply does not match, the same failure mode as building a commitment with the local
-chainKey instead of the destination's. It is not free, though: an unmatched commitment
-sits in a strict-FIFO queue and blocks everything behind it until a `cancel` crosses,
-which is why a plugin is checked against `test/vectors/` rather than trusted.
+Getting the primitive wrong therefore fails closed, the same way building a commitment with
+the local chainKey does. It is not free: an unmatched commitment sits in a strict-FIFO queue
+and blocks everything behind it until a `cancel` crosses, which is why a plugin is checked
+against `test/vectors/` rather than trusted.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured, which is exactly why the
