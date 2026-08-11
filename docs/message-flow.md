@@ -265,8 +265,15 @@ per-destination bootstrap record below, and nothing else.
   whether they held `Call[]` or `bytes[]`, so a typed payload bound for a non-EVM chain and
   an opaque one bound for an EVM chain were both refused before they cost a fee. `bytes
   payload` cannot be asked which it is. `payloadForCalls` and `payloadForElements` are pure
-  builders so the pairing is at least spelled the same way here as it is decoded there, and
-  `recipientOn` builds the address so a caller never assembles one by hand.
+  builders so the pairing is at least spelled the same way here as it is decoded there.
+- **Every `bytes` argument has a builder that produces it**, because `Erc7930` is a library of
+  `internal` functions and so is not callable off-chain at all: without these an integrator
+  would have to reimplement ERC-7930 encoding, and an interoperable address got wrong is a
+  message addressed into the void. `recipientOn(chainId)` builds `sendMessage`'s recipient
+  (this account, on that chain) and `chainIdentifierFor(chainId)` builds `bootstrapTo`'s
+  identifier (the chain alone, since path B addresses a chain that has no account yet). The
+  two agree on the chain half, which is what lets a caller choose an entry point on
+  ergonomics rather than on reach.
 - `supportsAttribute(bytes4)`: required by ERC-7786, answered by the binding. The base
   understands none, which is the honest answer for a base with no gateway behind it.
 - `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: `sendMessage`'s

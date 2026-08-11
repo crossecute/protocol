@@ -580,17 +580,21 @@ contract TransportTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
 
+        bytes memory identifier = acct.chainIdentifierFor(DEST);
+
         vm.prank(owner);
         vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
-        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), elements, new bytes[](0));
+        acct.bootstrapTo(identifier, elements, new bytes[](0));
     }
 
     /// @dev The envelope-taking typed form reaches an EVM chain, same as the chain-id one.
     function test_bootstrapToReachesAnEvmChainWithTypedCalls() public {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
+        bytes memory identifier = acct.chainIdentifierFor(DEST);
+
         vm.prank(owner);
-        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls(), new bytes[](0));
+        acct.bootstrapTo(identifier, _calls(), new bytes[](0));
         assertEq(t.bootCount(), 1);
     }
 
@@ -924,13 +928,38 @@ contract TransportTest is Test {
 
     /// @dev Including through the envelope-taking form, which names the same chain.
     function test_rebootstrappingThroughTheOtherFormIsAlsoRefused() public {
+        bytes memory identifier = transmitter.chainIdentifierFor(DEST);
+
         vm.prank(owner);
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
             )
         );
-        transmitter.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls(), NONE);
+        transmitter.bootstrapTo(identifier, _calls(), NONE);
+    }
+
+    /// @dev THE TWO BUILDERS NAME ONE CHAIN, which is what lets a caller pick an entry point
+    ///      on ergonomics rather than on reach. `chainIdentifierFor` is `bootstrapTo`'s
+    ///      argument and `recipientOn` is `sendMessage`'s, and the second is the first with
+    ///      this account's address appended, so a destination reached by either spelling
+    ///      resolves to the same chainKey.
+    ///
+    ///      It is a real check rather than a tautology because `Erc7930` is a library of
+    ///      `internal` functions: off-chain callers cannot reach it, so these two are the
+    ///      only way to build either value, and nothing else pins them to each other.
+    function testFuzz_theTwoDestinationBuildersAgree(uint256 chainId) public view {
+        vm.assume(chainId != 0);
+
+        bytes memory identifier = transmitter.chainIdentifierFor(chainId);
+        bytes memory recipient = transmitter.recipientOn(chainId);
+
+        assertEq(ChainKey.fromIdentifier(identifier), ChainKey.forEvm(chainId));
+        assertEq(ChainKey.fromIdentifier(recipient), ChainKey.fromIdentifier(identifier));
+
+        Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
+        assertEq(io.addr, abi.encodePacked(address(transmitter)));
+        assertEq(Erc7930.parseStrict(identifier).addr.length, 0);
     }
 
     /// @dev THE QUOTES CARRY THE SAME GATE, both ways round. A quote that succeeded where

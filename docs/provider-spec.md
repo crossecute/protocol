@@ -189,6 +189,13 @@ each chain's ERC-7930 IDENTIFIER now rather than a provider's private id, and it
 a msig configuration change, not a per-account migration. `IAccountTransceiver.routeTo` is
 the read, on the transceiver an account already stores.
 
+**R1.2.1** Every `bytes` argument on the account's own surface MUST have a public builder
+that produces it, and a binding MUST NOT remove one. `Erc7930` is a library of `internal`
+functions, so an integrator cannot reach it: `recipientOn`, `chainIdentifierFor`,
+`payloadForCalls`, and `payloadForElements` are the only way to construct these values
+without reimplementing the encoding, and a wrong interoperable address is a message
+addressed into the void rather than a revert.
+
 **R1.3** The destination on path A is this account's own address, and `TransmitterBase`
 already enforces it on `eip155` recipients. A binding MUST NOT store a peer to reach that
 answer when the SDK allows it to be derived; where the SDK insists on a peer table, the
@@ -270,7 +277,7 @@ vm.deal(owner, 100 ether);
 uint256 before = owner.balance;
 
 bytes memory recipient = transmitter.recipientOn(destinationChainId);
-bytes memory payload = transmitter.payloadForCalls(calls);
+bytes memory payload = transmitter.payloadForCalls(calls);   // or payloadForElements
 
 vm.prank(owner);
 transmitter.sendMessage{value: 100 ether}(recipient, payload, attributes);

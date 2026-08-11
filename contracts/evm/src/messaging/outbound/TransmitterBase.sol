@@ -237,6 +237,30 @@ abstract contract TransmitterBase is
         return Erc7930.encodeEvm(destinationChainId, address(this));
     }
 
+    /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapTo`'s first
+    ///         argument, and the value a route is configured under.
+    ///
+    /// @dev THE TWIN OF `recipientOn`, AND IT EXISTS FOR THE SAME REASON. Every entry point
+    ///      here that takes `bytes` has a builder that produces it, because `Erc7930` is a
+    ///      library of `internal` functions and is therefore not callable off-chain at all: a
+    ///      caller without this would have to reimplement the encoding to reach `bootstrapTo`,
+    ///      and an interoperable address got wrong is a message addressed into the void.
+    ///
+    /// @dev IT NAMES A CHAIN, WHERE `recipientOn` NAMES AN ACCOUNT ON ONE, which is the whole
+    ///      difference between the two entry points they serve. Path A addresses this
+    ///      account's receiver; path B addresses a chain that has no account yet.
+    ///
+    /// @dev `bootstrap(uint256, ...)` MAKES THIS OPTIONAL FOR EVM DESTINATIONS, deliberately.
+    ///      This is for a caller that wants one spelling for every destination, and it is the
+    ///      only spelling available for a chain with no `uint256` id at all.
+    function chainIdentifierFor(uint256 destinationChainId)
+        public
+        pure
+        returns (bytes memory)
+    {
+        return Erc7930.encodeEvmChain(destinationChainId);
+    }
+
     /// @notice The wire bytes for an EVM destination, which decodes `Call[]`.
     function payloadForCalls(Call[] calldata calls) public pure returns (bytes memory) {
         return Payload.encodeCalls(calls);
