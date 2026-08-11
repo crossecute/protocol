@@ -135,7 +135,7 @@ destination, read from the table rather than computed.
   and refused the receiver that actually existed, while the receiver compared its sender
   against `address(this)` and refused the transmitter that actually sent. Both now compare
   against a stored fact: `TransmitterBase` against the counterpart `bootstrap` records and
-  `setDestinationReceiver` corrects, `ReceiverBase` against the `sourceTransmitter` it was
+  a report from that chain replaces it with, `ReceiverBase` against the `sourceTransmitter` it was
   already given at creation and simply was not using. `test/Transport.t.sol`'s
   `DivergingDestinationTest` covers both directions.
 
@@ -239,7 +239,7 @@ destination, read from the table rather than computed.
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
 mainnet.
 
-- **Write-once has no recovery path.** `setTransceiverId`, `setProviderDeployment`, and a
+- **Write-once has no recovery path.** `setCounterpart`, `setProviderDeployment`, and a
   reported ref slot all refuse a second write. A route declared wrong is permanent; a
   receiver slot written wrong has no fix at all. The alternative is a timelocked repoint
   rather than an outright refusal.

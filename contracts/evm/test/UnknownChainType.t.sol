@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
@@ -74,34 +74,31 @@ contract UnknownChainTypeTest is Test {
         assertEq(chainKey, keccak256(chainId), "the key is just the envelope hash");
     }
 
-    /// @dev The directory is chain-type-agnostic: a transceiver id can be declared for a
-    ///      chain nothing here has ever heard of.
+    /// @dev The directory is chain-type-agnostic: a chain nothing here has ever heard of
+    ///      can be registered and graded, because grading is about how well an address can
+    ///      be KNOWN rather than about what the address means.
     function test_theDirectoryWorksForAnUndefinedChainType() public {
         vm.startPrank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);
-        registry.setTransceiverId(chainKey, provider, keccak256("tx.unknown"));
+        registry.setProvenance(chainKey, Provenance.Attested);
         vm.stopPrank();
 
-        assertEq(registry.transceiverIdOf(chainKey, provider), keccak256("tx.unknown"));
+        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Attested));
+        assertTrue(
+            registry.requiresReceiverCallback(chainKey),
+            "nothing here can derive an address on a chain type it does not know"
+        );
     }
 
-    /// @dev A destination on an unknown chain can report its receiver and be graded, which
-    ///      is the whole attested path: no chain-type knowledge required to store bytes.
-    function test_refsResolveAndGradeForAnUndefinedChainType() public {
+    /// @dev AN UNKNOWN CHAIN TYPE HAS NO DEFAULT GRADE, and that is the safe direction. An
+    ///      undeclared `eip155` chain reads as `Derived`, because every EVM chain but zkSync
+    ///      and Tron shares Ethereum's formula; anything else reads as `Unresolved`, which
+    ///      no bar accepts, so it must be stated rather than guessed.
+    function test_anUndeclaredUnknownChainTypeHasNoGrade() public {
         vm.prank(owner);
-        registry.addChainKey(chainId);
+        bytes32 chainKey = registry.addChainKey(chainId);
 
-        vm.prank(hub);
-        registry.onForeignRefResolved(keccak256("tx.unknown"), account, "");
-
-        assertEq(
-            uint8(registry.get(keccak256("tx.unknown")).provenance),
-            uint8(Provenance.Attested)
-        );
-        assertEq(
-            registry.transceiverLocation(keccak256("tx.unknown"), Provenance.Attested),
-            hex"0011223344556677"
-        );
+        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unresolved));
     }
 
     /// @dev The two per-chain extension points are wired by `chainKey`, not by chain type,
@@ -110,31 +107,30 @@ contract UnknownChainTypeTest is Test {
         vm.startPrank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);
         registry.setValidator(chainKey, new WidthValidator());
-        registry.setMaxProvenance(chainKey, Provenance.Attested);
+        registry.setProvenance(chainKey, Provenance.Attested);
         vm.stopPrank();
 
-        // The validator is enforced on store.
+        // The validator is enforced wherever a location is checked, which is now the
+        // hub's setter calling back into `validateLocation`.
         bytes memory wrongWidth = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"00112233");
-        vm.prank(hub);
         vm.expectRevert(abi.encodeWithSelector(WidthValidator.BadWidth.selector, 4));
-        registry.onForeignRefResolved(keccak256("tx.bad"), wrongWidth, "");
+        registry.validateLocation(chainKey, wrongWidth);
 
-        // And the cap is too: `resolveDerived` stores at `Derived`, above the cap.
-        vm.prank(owner);
-        vm.expectRevert(ChainRegistry.ProvenanceExceedsChainCap.selector);
-        registry.resolveDerived(keccak256("tx.capped"), account);
+        // And a well-formed one passes.
+        registry.validateLocation(chainKey, account);
     }
 
     /* =============================== what does not ============================= */
 
-    /// @dev Address parity is an `eip155` argument, so there is no default counterpart,
-    ///      and correctly so, since a 20-byte EVM address means nothing here.
-    function test_thereIsNoDefaultCounterpartForAnUndefinedChainType() public {
+    /// @dev Address parity is an `eip155` argument, so an unknown chain type gets no
+    ///      default grade and therefore no default counterpart: a 20-byte EVM address means
+    ///      nothing here, and a hub that assumed one would address the void.
+    function test_thereIsNoDefaultGradeForAnUndefinedChainType() public {
         vm.prank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);
 
-        vm.expectRevert(ChainRegistry.NoCounterpart.selector);
-        registry.defaultCounterpart(chainKey, provider);
+        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unresolved));
+        assertTrue(registry.requiresReceiverCallback(chainKey));
     }
 
     /// @dev THE UNIFORM DERIVATION IS CLOSED, and this is the one place a new chain type

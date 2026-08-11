@@ -8,7 +8,7 @@ import {OwnableUpgradeable} from
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -377,17 +377,12 @@ contract ReceiverReportRoundTripTest is Test {
             IChainRegistryRefs(address(registry)), provider, Provenance.Attested
         );
         spokeKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN));
-        registry.setMaxProvenance(spokeKey, Provenance.Committed);
-        registry.setTransceiverId(spokeKey, provider, keccak256("spoke.ref"));
-        vm.stopPrank();
-
-        // The spoke's own location, learned rather than derived, so `Attested`.
-        vm.prank(address(hub));
-        registry.onForeignRefResolved(
-            keccak256("spoke.ref"), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), ""
-        );
-        vm.prank(msig);
+        // Graded `Attested`: the hub cannot recompute an address there, which is both why
+        // a report is needed and why the report is worth only the bridge that carried it.
+        registry.setProvenance(spokeKey, Provenance.Attested);
+        hub.setCounterpart(spokeKey, Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)));
         hub.setRoute(spokeKey, Erc7930.encodeEvmChain(SPOKE_CHAIN));
+        vm.stopPrank();
 
         // The account the report is ABOUT. It has to exist and to have been stood up on the
         // spoke, because that is what gives it a counterpart slot for that chain.
@@ -477,7 +472,7 @@ contract ReceiverReportRoundTripTest is Test {
     ///      a stronger fact with a poorer one. The registry answers which chains may.
     function test_aDerivableChainMayNotReport() public {
         vm.prank(msig);
-        registry.setMaxProvenance(spokeKey, Provenance.Derived);
+        registry.setProvenance(spokeKey, Provenance.Derived);
         assertFalse(registry.requiresReceiverCallback(spokeKey));
 
         bytes memory produced = _report();

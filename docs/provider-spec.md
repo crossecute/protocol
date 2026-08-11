@@ -460,9 +460,9 @@ difference is an `UnknownRoute` revert. The binding MUST produce both directions
 same codec function. Never hand-encode at one end.
 
 **R4.2** The `sender` bytes MUST be byte-identical to what the counterpart lookup returns.
-For an EVM counterpart that is 20 raw bytes: `ChainRegistry.defaultCounterpart` returns
-`abi.encodePacked(address)` and `transceiverFor` returns
-`Erc7930.parseStrict(r.interop).addr`, both 20 bytes. A provider reporting a 32-byte
+For an EVM counterpart that is 20 raw bytes: `HubTransceiverBase.counterpartOn` returns
+what `setCounterpart` stored, which is `Erc7930.parseStrict(interop).addr`, and the fallback
+returns `abi.encodePacked(address(this))`. Both are 20 bytes. A provider reporting a 32-byte
 left-padded sender MUST be narrowed by the binding.
 
 ```solidity
@@ -579,7 +579,7 @@ rather than transcribe it.
 ### R9. Write-once discipline
 
 **R9.1** The binding MUST NOT add a setter for any value the base makes write-once:
-`setRoute`, `setTransceiverId`, `setProviderDeployment`, `receiverImplementation`,
+`setRoute`, `setCounterpart`, `setProviderDeployment`, `receiverImplementation`,
 `transmitterImplementation`, `homeChainKey`, `homeRoute`, `homeTransceiver`, a resolved ref
 slot.
 
@@ -602,12 +602,12 @@ chain unless noted:
 | 2 | `ChainRegistry.addMessageProvider(name)` | The `bytes32` is `keccak256(name)`. |
 | 3 | Deploy the hub transceiver proxy through the CREATE2 factory, upgrade, `initialize` | Proxy initcode must be identical on every chain. |
 | 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
-| 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Also authorizes the hub as the only caller of `onForeignRefResolved` for that provider. |
+| 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Names the hub that speaks for a provider. |
 | 6 | `ChainRegistry.setProviderDeployment(provider, salt, transceiverInitCodeHash, accountInitCodeHash)` | Write-once. `accountInitCodeHash` per [R8.4](#r8-storage-and-address-parity). |
 | 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must hash to the chainKey. |
 | 8 | `ChainRegistry.setCreate2Factory(chainKey, factory)` for zk-chains | Defaults to Arachnid's. |
-| 9 | `ChainRegistry.setMaxProvenance(chainKey, cap)` for chains whose addresses cannot be recomputed here | zkSync and Tron are `eip155` with different CREATE2 formulas; capping below `Derived` is what withdraws the default counterpart. |
-| 10 | `ChainRegistry.setTransceiverId` plus a resolution for any chain with no derivable counterpart | The exception path. Most EVM chains need neither. |
+| 9 | `ChainRegistry.setProvenance(chainKey, Attested)` for chains whose addresses cannot be recomputed here | zkSync and Tron are `eip155` with different CREATE2 formulas, so the `Derived` default would be wrong. This is also what turns `requiresReceiverCallback` on. |
+| 10 | `<P>HubTransceiver.setCounterpart(chainKey, interop)`, or `resolveCounterpart(chainKey, paramsCommitment)` where a deriver is configured | Write-once, on the hub. Most EVM chains need neither: the hub falls back to its own address. |
 | 11 | `<P>HubTransceiver.setRouting(registry, provider, minCounterpartProvenance)` | The provenance dial. |
 | 12 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
 | 13 | `lockUpgrades()` on every transceiver | Irreversible, and the point of the whole proxy dance. |

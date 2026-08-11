@@ -262,8 +262,9 @@ per-destination bootstrap record below, and nothing else.
   an account and its receiver share an address wherever Ethereum's CREATE2 formula holds, but
   it could only be checked where it was derivable (so non-EVM recipients went unchecked) and
   it was wrong on zkSync and Tron, which are `eip155` and so kept a check that could never
-  pass. `setDestinationReceiver` is where the owner writes what the spoke reported home for
-  a chain whose address this one cannot compute.
+  pass. On a chain that reports, the transceiver writes the real address through
+  `onDestinationReceiverReported`, once: there is no override, not even the owner's, because
+  an account's peer decides where a payload lands.
 - **The payload arrives built, and one guarantee went with that.** The old overloads knew
   whether they held `Call[]` or `bytes[]`, so a typed payload bound for a non-EVM chain and
   an opaque one bound for an EVM chain were both refused before they cost a fee. `bytes
@@ -393,8 +394,14 @@ The home side: one transceiver, N counterparts, one registry to tell them apart.
 - `createTransmitter(bytes32 salt)`: the owner is `msg.sender` by construction rather than
   by argument, which is what stops one party squatting the address another intends to use.
   `predictTransmitter(owner, salt)` gives it beforehand.
-- `_counterpartOn`: `chainRegistry.transceiverFor(chainKey, messageProvider,
-  minCounterpartProvenance)`, with the bar applied inside the read.
+- **The hub holds the counterpart directory**, `chainKey => location`, written by
+  `setCounterpart` (declared) or `resolveCounterpart` (recomputed from the registry's deriver,
+  naming the inputs so signers approve them rather than a pointer). Both are write-once. The
+  registry holds `provenanceFor(chainKey)`, what a claim about that chain is worth, and
+  `_counterpartOn` refuses anything below `minCounterpartProvenance`. Where a counterpart is
+  differs per provider; how well it can be known does not, so the two live apart and two
+  hubs cannot disagree about a chain. An unset counterpart on a `Derived` chain falls back
+  to the hub's own address, since hub and spoke share one wherever parity holds.
 - `_authenticateOrigin`: N origins, so it is a lookup. The route names the chain and the
   registry names that chain's counterpart at this transceiver's bar. An unknown route
   reverts in `chainKeyOfRoute`; a known route with the wrong sender reverts `NotCounterpart`.
@@ -657,11 +664,10 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   so a second provider's hub can report without displacing the first. The callback takes no `messageProvider` argument: the provider
   is a property of `msg.sender`, not a claim the message gets to make about itself.
 - **Routes are declared by the owner, write-once, and default to address parity.**
-  `setTransceiverId` refuses a repoint, and the callback does not learn routes: a report
-  is evidence, not a routing decision. An unset route falls back to the local
-  transceiver's own address on that chain, which is correct wherever Ethereum's CREATE2
-  formula holds, and withdraws on non-EVM chains and on any chain capped below `Derived`
-  (which is how zkSync and Tron are excluded).
+  `setCounterpart` and `setRoute` both refuse a repoint. An unset counterpart falls back to
+  the hub's own address, which is correct wherever Ethereum's CREATE2 formula holds, and
+  withdraws on non-EVM chains and on any chain graded below `Derived` (which is how zkSync
+  and Tron are excluded).
 
 - **One owner, one address, every EVM chain.** An owner's transmitter on the home chain and
   their receiver on Base are the same address. Both are deployed as `CrossProxy` (an
@@ -697,10 +703,9 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   delivery, now made deliberately at the approval layer rather than inherited from a lane.
 
 **`Provenance.Committed` has no producer.** Nothing grades a reference at it; it exists
-only as a cap, because several chains are configured at it through `setMaxProvenance` and
-removing it would renumber `Derived` and silently loosen every one of those caps. A
-reported reference lands at `Attested`, and anything wanting better must use a locally
-derived path.
+only as a value chains may be configured at through `setProvenance`, and removing it would
+renumber `Derived` and silently loosen every chain set to it. A chain whose addresses cannot
+be recomputed here is `Attested`, and anything wanting better must be derivable.
 
 ## TODO
 

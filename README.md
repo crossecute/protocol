@@ -104,7 +104,7 @@ in the protocol.
 src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
-  registry/       ChainRegistry, ForeignRef, IRefValidator, IChainRegistryRefs
+  registry/       ChainRegistry, Provenance, IRefValidator, IChainRegistryRefs
                   ICommitmentScheme, Bytes32Set
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
   schemes/        Keccak, Sha256, Blake2b                   pluggable, per chainKey
@@ -142,7 +142,8 @@ summary: the file is always the newer statement.
 | Why the wire carries a payload rather than a digest | `outbound/OutboundBase.sol` |
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else | `messaging/Payload.sol` |
 | Why a commitment is defined over elements nothing here parses | `messaging/Commitment.sol` |
-| Why a stored location is graded, and what each grade is worth | `registry/ForeignRef.sol` |
+| Why a chain is graded, and what each grade is worth | `registry/Provenance.sol` |
+| Why the hub holds counterparts and the registry holds their grade | `HubTransceiverBase.setCounterpart` |
 | Why routes live on the transceiver rather than in the registry | `TransceiverBase.setRoute` |
 | Why neither base inherits an ownership system | `TransmitterBase`, `TransceiverBase` |
 | Why a chain type needs more than a `ChainType` constant | `addressing/Erc7930.sol` |
@@ -170,7 +171,8 @@ Two steps, and the second is the one nothing will remind you about.
 
 Then, per destination: a `Scheme` or `ICommitmentScheme` plugin if the chain does not hash
 with keccak256, an `IVmDeriver` if its addresses can be recomputed here, an `IRefValidator`
-if the envelope cannot express its value ranges, and a `setMaxProvenance` cap if they cannot.
+if the envelope cannot express its value ranges, and a `setProvenance` grade below `Derived`
+if its addresses cannot be recomputed here at all.
 
 ## Assumptions
 

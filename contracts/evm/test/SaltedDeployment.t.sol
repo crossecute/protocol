@@ -8,7 +8,7 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ChainRegistry, ProviderDeployment} from "src/registry/ChainRegistry.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
@@ -382,7 +382,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.startPrank(owner);
         bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324));
-        registry.setMaxProvenance(zk, Provenance.Committed);
+        registry.setProvenance(zk, Provenance.Attested);
         vm.stopPrank();
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
@@ -427,25 +427,25 @@ contract SaltedDeploymentTest is Test {
         vm.stopPrank();
     }
 
-    /* ============================ the default counterpart ====================== */
+    /* ========================= the recorded derivation ========================= */
 
-    /// @dev A recorded deployment is preferred over address parity: both answer `Derived`,
-    ///      but this one states its inputs instead of assuming the remote deployment
-    ///      matches the local one, and it works before a hub exists at all.
-    function test_theRecordedDerivationOutranksAddressParity() public {
-        vm.prank(owner);
-        registry.setLocalTransceiver(provider, address(0xBEEF));
-        assertEq(
-            registry.defaultCounterpart(chainKey, provider),
-            abi.encodePacked(address(0xBEEF)),
-            "parity is the fallback"
-        );
-
+    /// @dev A RECORDED DEPLOYMENT STATES ITS INPUTS RATHER THAN ASSUMING PARITY. The hub's
+    ///      own fallback (its own address, on a chain graded `Derived`) reaches the same
+    ///      answer by assuming the remote deployment matches the local one; this reaches it
+    ///      by arithmetic over a factory, salt, and initcode hash that sat in the signed
+    ///      calldata that recorded them, and it works before a hub exists at all. A deploy
+    ///      script computes it here and writes it with `HubTransceiverBase.setCounterpart`.
+    function test_theRecordedDerivationStatesItsInputs() public {
         _record(keccak256(type(SaltedTransceiver).creationCode), keccak256("receiver"));
+
         assertEq(
-            registry.defaultCounterpart(chainKey, provider),
-            abi.encodePacked(registry.predictTransceiver(chainKey, provider)),
-            "the record wins once it exists"
+            registry.predictTransceiver(chainKey, provider),
+            AddressDerive.create2(
+                registry.create2Factory(chainKey),
+                SALT,
+                keccak256(type(SaltedTransceiver).creationCode)
+            ),
+            "arithmetic over the recorded inputs, not a local address"
         );
     }
 

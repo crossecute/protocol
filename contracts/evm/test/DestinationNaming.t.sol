@@ -8,7 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
@@ -173,9 +173,7 @@ contract DestinationNamingTest is Test {
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
         baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        bytes32 id = keccak256("lz.base");
-        registry.resolveEvmCreate2(id, 8453, address(0x4e59), bytes32(0), bytes32(0));
-        registry.setTransceiverId(baseKey, provider, id);
+        hub.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xC0DE)));
         hub.setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
     }
@@ -224,19 +222,22 @@ contract DestinationNamingTest is Test {
         hub.routeTo(key);
     }
 
-    /// @dev A live transceiver id is a claim on the chain, so the directory refuses to
-    ///      drop it out from under one. Routes are no longer the registry's business, so
-    ///      they are not part of this check: they live on the transceiver.
-    function test_chainKeyWithALiveTransceiverCannotBeRemoved() public {
+    /// @dev REMOVING A CHAIN FAILS ITS HUB CLOSED RATHER THAN ORPHANING IT. The registry no
+    ///      longer holds counterparts, so it cannot refuse on their behalf; what it can do is
+    ///      stop grading the chain, and `provenanceFor` then reverts `UnknownChainKey`, which
+    ///      no bar accepts. The hub keeps its stored address and simply will not send.
+    function test_removingAChainFailsItsHubClosed() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        registry.setTransceiverId(key, provider, keccak256("lz.op"));
+        hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+        assertEq(hub.counterpartOn(key), abi.encodePacked(address(0xC0DE)));
 
-        vm.expectRevert(ChainRegistry.ChainKeyInUse.selector);
         registry.removeChainKey(key);
         vm.stopPrank();
 
-        assertTrue(registry.hasChainKey(key));
+        assertFalse(registry.hasChainKey(key));
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        hub.counterpartOn(key);
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable
@@ -244,9 +245,7 @@ contract DestinationNamingTest is Test {
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        bytes32 id = keccak256("lz.op");
-        registry.resolveEvmCreate2(id, 10, address(0x4e59), bytes32(0), bytes32(0));
-        registry.setTransceiverId(key, provider, id);
+        hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
         vm.stopPrank();
 
         assertEq(hub.counterpartOn(key).length, 20, "counterpart resolves");

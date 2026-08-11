@@ -16,7 +16,7 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBa
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
@@ -202,13 +202,10 @@ contract InboundAuthTest is Test {
     {
         vm.startPrank(msig);
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId));
-        bytes32 id = keccak256(abi.encode("t", chainId));
-        registry.resolveDerived(id, Erc7930.encodeEvm(chainId, counterpart));
-        registry.setTransceiverId(chainKey, provider, id);
-        // Capped AFTER the counterpart is resolved, since the cap bounds what may be
-        // STORED. A chain that reports is one this contract cannot derive an account on:
-        // `eip155` capped below `Derived` is the zkSync and Tron shape.
-        registry.setMaxProvenance(chainKey, Provenance.Committed);
+        // A chain that reports is one this contract cannot derive an account on: `eip155`
+        // graded below `Derived` is the zkSync and Tron shape.
+        registry.setProvenance(chainKey, Provenance.Attested);
+        hub.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
         vm.stopPrank();
         vm.prank(msig);
         // The route IS the chain identifier now, so `keccak256(route) == chainKey`.
@@ -279,15 +276,11 @@ contract InboundAuthTest is Test {
         vm.prank(msig);
         hub.setRoute(chainKey, Erc7930.encodeEvmChain(8453));
 
-        // Learned from the destination, so `Attested`: the weakest grade there is.
-        vm.prank(address(hub));
-        registry.onForeignRefResolved(
-            keccak256("lz.base"), Erc7930.encodeEvm(8453, counterpart), ""
-        );
+        // Graded `Attested`: the chain's addresses cannot be recomputed here, so any
+        // claim about them is worth exactly the bridge that carried it.
         vm.startPrank(msig);
-        registry.setTransceiverId(chainKey, provider, keccak256("lz.base"));
-        // Only a chain this contract cannot derive an account on may report one.
-        registry.setMaxProvenance(chainKey, Provenance.Committed);
+        registry.setProvenance(chainKey, Provenance.Attested);
+        hub.setCounterpart(chainKey, Erc7930.encodeEvm(8453, counterpart));
         vm.stopPrank();
         _standUpAccount(8453);
 
@@ -305,7 +298,13 @@ contract InboundAuthTest is Test {
         bytes memory report2 = Envelope.encodeReceiverReport(
             transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
         );
-        vm.expectRevert(ChainRegistry.InsufficientProvenance.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector,
+                chainKey,
+                Provenance.Attested
+            )
+        );
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
     }
 

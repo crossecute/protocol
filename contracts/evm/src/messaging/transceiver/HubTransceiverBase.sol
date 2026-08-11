@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {Move} from "src/addressing/Move.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Call} from "src/messaging/Call.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
@@ -71,6 +72,14 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev The route resolved to a known chain, but the sender is not that chain's
     ///      counterpart, so either the wrong contract spoke, or the registry is stale.
     error NotCounterpart(bytes32 chainKey);
+    /// @dev The chain's grade is below this transceiver's bar, so it will not send there.
+    error InsufficientCounterpartProvenance(bytes32 chainKey, Provenance grade);
+    /// @dev A counterpart names the contract every message to that chain authenticates
+    ///      against, so re-pointing one redirects the destination. It is a redeploy.
+    error CounterpartAlreadySet(bytes32 chainKey);
+    /// @dev The derivation inputs are not the ones this transaction approved. See
+    ///      `resolveCounterpart`.
+    error ParamsCommitmentMismatch(bytes32 chainKey);
     /// @dev A chain reported an address that says it lives somewhere else.
     error ReportedChainMismatch(bytes32 authenticated, bytes32 reported);
     /// @dev A chain whose addresses this contract can recompute tried to report one. The
@@ -154,19 +163,137 @@ abstract contract HubTransceiverBase is TransceiverBase {
         );
     }
 
+    /* ========================= the counterpart directory ======================= */
+
+    /// @notice Record where this provider's transceiver sits on a destination chain.
+    ///
+    /// @dev THE HUB HOLDS THIS, NOT THE REGISTRY, BECAUSE IT IS PER PROVIDER. Two providers
+    ///      deploy two transceivers to the same chain, so a location is a fact about a
+    ///      (chain, provider) pair and the hub IS that pair. What stays in the registry is
+    ///      the part that is the same for everyone: `provenanceFor(chainKey)`, how much any
+    ///      address claim about that chain is worth.
+    ///
+    /// @dev WRITE-ONCE, LIKE A ROUTE. A counterpart names the contract every message to that
+    ///      chain authenticates against, so re-pointing one redirects the whole destination
+    ///      at once. Moving it is a redeploy.
+    /// @param interop Canonical ERC-7930 bytes for the counterpart, so the registry can
+    ///        check it is well-formed AND on the chain it is being filed under. The address
+    ///        half is what gets stored, since that is what an inbound sender is compared to.
+    function setCounterpart(bytes32 chainKey, bytes calldata interop) external onlyAdmin {
+        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
+        if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
+
+        chainRegistry.validateLocation(chainKey, interop);
+        _setCounterpart(chainKey, Erc7930.parseStrict(interop).addr);
+    }
+
+    /// @notice Record it by recomputing it, rather than by being told.
+    ///
+    /// @dev THIS IS WHAT `Derived` MEANS, AND IT IS THE REASON TO PREFER IT. The registry
+    ///      holds the deriver and the inputs for that chain, and `expectedTransceiver`
+    ///      recomputes the address from them right now; nothing is taken on faith and no
+    ///      message is involved. The alternative above is a declaration, and on a chain the
+    ///      registry grades below `Derived` it is the only option there is.
+    ///
+    /// @dev `paramsCommitment` IS NOT CEREMONY. The derivation inputs were written to the
+    ///      registry in an EARLIER transaction, so without it the signers approving THIS one
+    ///      would be approving a POINTER rather than the inputs, and `Derived` claims
+    ///      precisely that the inputs were approved. Passing the hash puts the exact bytes
+    ///      in the signed calldata and keeps the grade honest.
+    /// @param paramsCommitment `keccak256(chainRegistry.deriveParams(chainKey))`.
+    function resolveCounterpart(bytes32 chainKey, bytes32 paramsCommitment)
+        external
+        onlyAdmin
+    {
+        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
+        if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
+        if (keccak256(chainRegistry.deriveParams(chainKey)) != paramsCommitment) {
+            revert ParamsCommitmentMismatch(chainKey);
+        }
+
+        bytes memory interop = chainRegistry.expectedTransceiver(chainKey);
+        chainRegistry.validateLocation(chainKey, interop);
+        _setCounterpart(chainKey, Erc7930.parseStrict(interop).addr);
+    }
+
+    /// chainKey => abi-encoded `Move.MoveQualifier` for the counterpart there.
+    ///
+    /// @dev IT FOLLOWS THE COUNTERPART, because it qualifies one: a Move call target is
+    ///      `address::module::function`, and the address alone does not identify it. It is a
+    ///      DECLARATION rather than a derived value, since nothing here could recompute
+    ///      `transceiver::receive_message` from an address, so it carries no grade of its own
+    ///      and inherits the chain's.
+    mapping(bytes32 => bytes) private _qualifiers;
+
+    event QualifierSet(bytes32 indexed chainKey, bytes32 qualifierHash);
+
+    error NoQualifier(bytes32 chainKey);
+    error QualifierMismatch(bytes32 chainKey);
+
+    /// @notice Attach a qualified name to a counterpart on a Move chain.
+    /// @dev Re-setting the SAME qualifier is a no-op; a DIFFERENT one reverts, because
+    ///      re-pointing a live call target is the same operation as re-pointing the address
+    ///      it lives at, and that is a redeploy.
+    function setQualifier(bytes32 chainKey, Move.MoveQualifier calldata q)
+        external
+        onlyAdmin
+    {
+        if (!hasCounterpart(chainKey)) revert NoCounterpartFor(chainKey);
+        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
+        Move.validate(q, Erc7930.parseStrict(chainRegistry.chainIdentifier(chainKey)).chainType);
+
+        bytes32 qh = Move.hash(q);
+        bytes memory existing = _qualifiers[chainKey];
+        if (existing.length != 0 && Move.hash(abi.decode(existing, (Move.MoveQualifier))) != qh)
+        {
+            revert QualifierMismatch(chainKey);
+        }
+
+        _qualifiers[chainKey] = abi.encode(q);
+        emit QualifierSet(chainKey, qh);
+    }
+
+    /// @notice The qualified name a destination executor needs to build the call.
+    function qualifier(bytes32 chainKey)
+        external
+        view
+        returns (Move.MoveQualifier memory q)
+    {
+        bytes memory raw = _qualifiers[chainKey];
+        if (raw.length == 0) revert NoQualifier(chainKey);
+        q = abi.decode(raw, (Move.MoveQualifier));
+    }
+
     /// @inheritdoc OutboundBase
-    /// @dev The provenance bar is applied here, inside the registry read, rather than by
-    ///      the caller: `transceiverFor` refuses anything below it.
+    ///
+    /// @dev THE BAR IS APPLIED HERE, AGAINST THE REGISTRY'S PER-CHAIN GRADE. The address is
+    ///      this contract's; how much it is worth is the chain's, and every provider's hub
+    ///      reads the same answer, so two of them cannot disagree about the same chain.
+    ///
+    /// @dev AN UNSET COUNTERPART FALLS BACK TO THIS CONTRACT'S OWN ADDRESS on a chain the
+    ///      registry grades `Derived`. A transceiver is deployed as a proxy through the same
+    ///      factory at the same salt, so hub and spoke land together wherever Ethereum's
+    ///      CREATE2 formula holds, which is exactly what `Derived` records. That is the
+    ///      common case, and requiring a table whose every row said the same thing would
+    ///      make a real gap indistinguishable from the default.
     function _counterpartOn(bytes32 chainKey)
         internal
         view
         override
-        returns (bytes memory counterpart)
+        returns (bytes memory)
     {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        (, counterpart) = chainRegistry.transceiverFor(
-            chainKey, messageProvider, minCounterpartProvenance
-        );
+
+        Provenance grade = chainRegistry.provenanceFor(chainKey);
+        if (uint8(grade) < uint8(minCounterpartProvenance)) {
+            revert InsufficientCounterpartProvenance(chainKey, grade);
+        }
+
+        if (!hasCounterpart(chainKey)) {
+            if (grade != Provenance.Derived) revert NoCounterpartFor(chainKey);
+            return abi.encodePacked(address(this));
+        }
+        return OutboundBase._counterpartOn(chainKey);
     }
 
     /// @inheritdoc TransceiverBase

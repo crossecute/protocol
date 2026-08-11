@@ -7,12 +7,26 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
+contract Hub is HubTransceiverBase, OwnableUpgradeable {
+    function initialize(address owner_) external initializer {
+        __Ownable_init(owner_);
+        __TransceiverBase_init();
+    }
+
+    function _checkAdmin() internal view override {
+        _checkOwner();
+    }
+}
+
 contract UniformDerivationTest is Test {
     ChainRegistry registry;
     VmDeriver deriver;
@@ -35,10 +49,26 @@ contract UniformDerivationTest is Test {
         vm.startPrank(owner);
         registry.addMessageProvider("layerzero");
         vm.stopPrank();
+
+        hub = Hub(
+            address(
+                new ERC1967Proxy(
+                    address(new Hub()), abi.encodeCall(Hub.initialize, (owner))
+                )
+            )
+        );
+        vm.prank(owner);
+        hub.setRouting(
+            IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived
+        );
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
-    function _wire(bytes memory chainIdentifier, bytes memory params, bytes32 transceiverId)
+    /// @dev The hub is what records a counterpart now; the registry recomputes it and says
+    ///      what it is worth. Both halves are exercised together.
+    Hub hub;
+
+    function _wire(bytes memory chainIdentifier, bytes memory params, bytes32)
         internal
         returns (bytes32 chainKey)
     {
@@ -46,7 +76,6 @@ contract UniformDerivationTest is Test {
         chainKey = registry.addChainKey(chainIdentifier);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
         registry.setDeriveParams(chainKey, params);
-        registry.setTransceiverId(chainKey, PROVIDER, transceiverId);
         vm.stopPrank();
     }
 
@@ -66,15 +95,15 @@ contract UniformDerivationTest is Test {
         bytes memory interop = registry.expectedTransceiver(chainKey);
         assertEq(Erc7930.toAddress(Erc7930.parseStrict(interop)), want);
 
+        // The hub records the recomputed value; the registry says what it is worth.
         vm.prank(owner);
-        (bytes32 id,) =
-            registry.resolveTransceiver(chainKey, PROVIDER, keccak256(params));
-        assertEq(id, keccak256("base.transceiver"));
+        hub.resolveCounterpart(chainKey, keccak256(params));
 
-        assertEq(registry.evmAddress(id), want);
+        assertEq(hub.counterpartOn(chainKey), abi.encodePacked(want));
         assertEq(
-            uint8(registry.requireRef(id, Provenance.Derived).provenance),
-            uint8(Provenance.Derived)
+            uint8(registry.provenanceFor(chainKey)),
+            uint8(Provenance.Derived),
+            "an eip155 chain, recomputed here"
         );
     }
 
@@ -99,20 +128,31 @@ contract UniformDerivationTest is Test {
             AddressDerive.solanaCreateProgramAddress(seeds, 255, programId)
         );
 
-        vm.prank(owner);
-        registry.resolveTransceiver(chainKey, PROVIDER, keccak256(params));
-        assertEq(registry.get(keccak256("solana.transceiver")).chainKey, chainKey);
+        vm.startPrank(owner);
+        registry.setProvenance(chainKey, Provenance.Attested);
+        hub.setRouting(
+            IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested
+        );
+        hub.resolveCounterpart(chainKey, keccak256(params));
+        vm.stopPrank();
+        assertEq(hub.counterpartOn(chainKey).length, 32);
     }
 
-    function test_resolveTransceiver_revertsOnStaleParamsCommitment() public {
+    /// @dev The inputs were written in an earlier transaction, so the signers approving
+    ///      THIS one must name them or they are approving a pointer.
+    function test_resolveCounterpart_revertsOnStaleParamsCommitment() public {
         bytes memory params = abi.encode(
             VmDeriver.Scheme.EvmCreate3, abi.encode(address(0xBEEF), bytes32(uint256(1)))
         );
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(1), params, keccak256("eth.tx"));
 
         vm.prank(owner);
-        vm.expectRevert(ChainRegistry.ParamsCommitmentMismatch.selector);
-        registry.resolveTransceiver(chainKey, PROVIDER, keccak256("something else"));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.ParamsCommitmentMismatch.selector, chainKey
+            )
+        );
+        hub.resolveCounterpart(chainKey, keccak256("something else"));
     }
 
     /// @dev Ethereum, zkSync, and Tron are all eip155 with different CREATE2 formulas,
@@ -147,8 +187,8 @@ contract UniformDerivationTest is Test {
         vm.prank(owner);
         registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        (bytes32[] memory keys,, bytes[] memory interops) =
-            registry.expectedTransceivers(PROVIDER);
+        (bytes32[] memory keys, bytes[] memory interops) =
+            registry.expectedTransceivers();
         assertEq(keys.length, 2);
 
         uint256 populated;

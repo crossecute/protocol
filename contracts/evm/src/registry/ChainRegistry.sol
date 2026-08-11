@@ -7,7 +7,7 @@ import {Bytes32Set} from "src/registry/Bytes32Set.sol";
 
 import {IVmDeriver} from "src/derivation/VmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {ForeignRef, IForeignRefReceiver, Provenance} from "src/registry/ForeignRef.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {Move} from "src/addressing/Move.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
@@ -38,29 +38,38 @@ struct ProviderDeployment {
 }
 
 /// @title ChainRegistry
-/// @notice The home-chain directory of every chain crossecute talks to, the transceiver
-///         that reaches each one, and where that transceiver actually lives.
+/// @notice The home-chain directory of every chain crossecute talks to, and of what can be
+///         known about addresses on each.
 ///
-/// @dev TWO HALVES THAT ONLY MAKE SENSE TOGETHER.
+/// @dev IT ANSWERS QUESTIONS ABOUT A CHAIN, AND NOTHING ABOUT A COUNTERPART. That is the
+///      whole line, and it decides every field below. Where a provider's transceiver sits
+///      on a chain is per provider, since two providers put two transceivers there, so it
+///      lives on the hub that sends to it. How well an address on that chain can be known
+///      is the same question for every provider, so it is answered once, here, and every
+///      hub references it. Two hubs cannot disagree about a chain.
 ///
-///      DIRECTORY: enumerable sets of `chainKey` and `messageProvider`, plus
-///      `chainKey => messageProvider => transceiverId`. Owner-controlled declarations,
-///      answering "who do I send through".
+///      What that leaves is a DIRECTORY: enumerable sets of `chainKey` and
+///      `messageProvider`, the canonical identifier each key hashes from, and the local hub
+///      that speaks for each provider.
 ///
-///      RESOLUTION: `transceiverId => ForeignRef`, holding that transceiver's location on
-///      its own chain. A location is not a declaration; it is a claim with a trust grade,
-///      and the grade is the point: `resolveEvmCreate2`/`resolveEvmCreate3` and
-///      `predictTransceiver` are recomputed here, with no message and no bridge trust,
-///      while a callback is the destination's own assertion. Collapsing these into one
-///      `address` field is how a bridge-security assumption gets laundered into something
-///      that looks like a derivation. Read through `requireRef` and state the bar you need.
+///      Plus the PER-CHAIN POLICY a hub consults before it records anything:
+///      `provenanceFor` (what a claim about this chain is worth), `validateLocation` (the
+///      value ranges an ERC-7930 envelope cannot express), `expectedTransceiver` (recompute
+///      an address from the deriver and inputs recorded for this chain), and
+///      `commitmentFor` (the primitive its receiver hashes with).
 ///
-/// @dev IT HOLDS NO ROUTES. How a chain is named for sending lives on the TRANSCEIVER,
-///      because that is the contract that sends: keeping it here would put a second shared
-///      contract in the path of every send, and on the execute-on-arrival path there is no
-///      commitment binding the destination, so a misroute runs the payload on the wrong
-///      chain.
-contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
+/// @dev IT HOLDS NO ROUTES AND NO COUNTERPARTS, for one reason stated twice: the contract
+///      that sends should hold what it needs to send. A registry read on the send path
+///      would put a second shared contract there and let a compromised one misroute a
+///      payload, and on the execute-on-arrival path there is no commitment binding the
+///      destination, so a misroute runs the payload on the wrong chain.
+///
+/// @dev THE GRADING IS STILL THE POINT, IT JUST MOVED UP A LEVEL. Collapsing a location and
+///      how it was learned into one `address` field is how a bridge-security assumption
+///      gets laundered into something that looks like a derivation. A hub stores the
+///      address; this contract says whether that chain's addresses can be recomputed at all,
+///      and a hub below its own bar refuses to send.
+contract ChainRegistry is OwnableUpgradeable {
     using Bytes32Set for Bytes32Set.Set;
 
     /// @notice Arachnid's deterministic deployment proxy, at the same address on every
@@ -85,13 +94,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// chainKey => the CREATE2 factory to derive against. Zero means `ARACHNID_FACTORY`.
     mapping(bytes32 => address) private _create2Factory;
 
-    /// chainKey => messageProvider => transceiver id
-    mapping(bytes32 => mapping(bytes32 => bytes32)) public transceiverIdOf;
-
-
-    /// transceiverId => its location on its own chain, with provenance.
-    mapping(bytes32 => ForeignRef) private _refs;
-
     /// messageProvider => the local hub transceiver that serves it. This is both the
     /// callback authority and the address the default counterpart is derived from.
     ///
@@ -108,11 +110,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      the message gets to make about itself.
     mapping(address => bytes32) public providerOfTransceiver;
 
-    /// transceiverId => abi-encoded Move.MoveQualifier. The destination executor
-    /// needs the module and function names verbatim; a 32-byte commitment cannot be
-    /// reversed into `transceiver::receive_message`.
-    mapping(bytes32 => bytes) private _qualifiers;
-
     /// chainKey => the contract that knows how to compute an address on that chain.
     /// This is what makes resolution uniform: one mapping turns "which destination" into
     /// "which formula", so callers never branch on VM.
@@ -124,10 +121,20 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     /// chainKey => optional value-range validator (structure is handled by Erc7930;
     /// this catches constraints the envelope cannot express, e.g. Starknet felts).
     mapping(bytes32 => IRefValidator) public validatorOf;
-    /// chainKey => strongest provenance this chain can honestly reach.
-    /// Unset (Unresolved) means no cap. Starknet must be capped at Committed, because
-    /// its address derivation is Pedersen and cannot be recomputed on the EVM at all.
-    mapping(bytes32 => Provenance) public maxProvenanceOf;
+    /// chainKey => what an address claim about this chain is worth.
+    ///
+    /// @dev IT IS A PROPERTY OF THE CHAIN, WHICH IS WHY IT IS HERE AND THE ADDRESS IS NOT.
+    ///      Where a provider's transceiver sits on a chain is per-provider and lives on the
+    ///      hub that sends there; how much ANY address claim about that chain is worth is
+    ///      the same question for every provider, so it is answered once, here, and every
+    ///      hub references it. Two hubs on one chain cannot disagree about it.
+    ///
+    /// @dev `Derived` means this contract can recompute an address on that chain from
+    ///      inputs in a signed transaction. `Attested` means it cannot, so the value was
+    ///      learned over a bridge and is worth exactly that bridge's security: Starknet,
+    ///      whose derivation is Pedersen, and zkSync and Tron, whose CREATE2 formulas
+    ///      differ. Unset reads as `Unresolved`, which no bar accepts.
+    mapping(bytes32 => Provenance) public provenanceOf;
 
     /// chainKey => the primitive that chain's receiver hashes commitments with.
     ///
@@ -148,9 +155,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     event ChainKeyRemoved(bytes32 indexed chainKey);
     event MessageProviderAdded(bytes32 indexed messageProvider, string name);
     event MessageProviderRemoved(bytes32 indexed messageProvider);
-    event TransceiverIdSet(
-        bytes32 indexed chainKey, bytes32 indexed messageProvider, bytes32 transceiverId
-    );
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
     event ProviderDeploymentSet(
         bytes32 indexed messageProvider,
@@ -163,40 +167,22 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     event DeriverSet(bytes32 indexed chainKey, address deriver);
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
-    event MaxProvenanceSet(bytes32 indexed chainKey, Provenance maxProvenance);
+    event ProvenanceSet(bytes32 indexed chainKey, Provenance provenance);
     event CommitmentSchemeSet(bytes32 indexed chainKey, address scheme);
-    event RefResolved(
-        bytes32 indexed slot,
-        bytes32 indexed chainKey,
-        bytes32 id,
-        Provenance provenance,
-        bytes interop
-    );
 
     /* ================================== errors ================================= */
 
     error NotTransceiver();
-    /// @dev A reported slot may be written exactly once. A second report for the same
-    ///      `(chainKey, transmitter)` is either a replay or a repoint, and neither is
-    ///      something a destination gets to do on its own say-so.
-    error AlreadyResolved();
     /// @dev A route, once declared, is fixed. Re-pointing it is a redeploy.
     error AlreadySet();
-    error NoLocalTransceiver();
     error NoCounterpart();
     /// @dev No salt recorded for this provider, so nothing here can say where its
     ///      transceiver lands.
     error NoProviderDeployment();
     error ZeroSalt();
     error ZeroInitCodeHash();
-    error ProvenanceDowngrade();
-    error NotResolved();
-    error InsufficientProvenance();
-    error ProvenanceExceedsChainCap();
     error UnknownChainKey();
     error UnknownMessageProvider();
-    error ChainKeyInUse();
-    error ZeroTransceiverId();
     error EmptyName();
     error QualifierMismatch();
     error NoQualifier();
@@ -205,7 +191,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     error DeriverChainMismatch();
     error ParamsCommitmentMismatch();
     error SchemeNotSupported();
-    error NoRoute();
     /// @dev No primitive registered for this chain, so nothing here can say what its
     ///      receiver will require. Reverting beats returning a keccak digest the
     ///      destination could never match: the same reason `Commitment._hash` refuses
@@ -244,16 +229,13 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         }
     }
 
-    /// @notice Drop a chain. Refuses while any transceiver location still sits under it,
-    ///         so a live route cannot be orphaned by a directory edit.
+    /// @notice Drop a chain.
+    /// @dev IT NO LONGER CHECKS FOR A LIVE ROUTE, because this contract no longer holds one.
+    ///      Counterparts live on the hub that sends to them, and removing a chain here fails
+    ///      that hub CLOSED rather than orphaning it: `provenanceFor` returns `Unresolved`,
+    ///      which no bar accepts, so every send to that chain reverts until it is re-added.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-
-        uint256 n = _messageProviders.length();
-        for (uint256 i; i < n; ++i) {
-            bytes32 mp = _messageProviders.at(i);
-            if (transceiverIdOf[chainKey][mp] != bytes32(0)) revert ChainKeyInUse();
-        }
 
         _chainKeys.remove(chainKey);
         delete _chainIdentifier[chainKey];
@@ -278,36 +260,6 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         if (!_messageProviders.remove(messageProvider)) revert UnknownMessageProvider();
         delete _messageProviderName[messageProvider];
         emit MessageProviderRemoved(messageProvider);
-    }
-
-    /// @notice Point (chain, provider) at a transceiver. Owner-only, and WRITE-ONCE.
-    ///
-    /// @dev SET ONCE, BY THE OWNER, OR NOT AT ALL. A transceiver id names the contract every
-    ///      message to that chain authenticates against, so a mutable pointer is a standing
-    ///      ability to redirect the whole route: the same argument that made
-    ///      `SpokeTransceiverBase`'s home values initializer arguments rather than a setter
-    ///      plus a lock. Moving a route is a new transceiver id. Re-writing the SAME id is a
-    ///      no-op, so a replayed configuration transaction is not a failure.
-    ///
-    /// @dev LEAVING IT UNSET IS A CHOICE, NOT AN OMISSION. An unset route falls back to
-    ///      `defaultCounterpart`, which is correct for every EVM chain sharing Ethereum's
-    ///      CREATE2 formula, so this setter is for the exceptions.
-    function setTransceiverId(bytes32 chainKey, bytes32 messageProvider, bytes32 transceiverId)
-        external
-        onlyOwner
-    {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
-        if (transceiverId == bytes32(0)) revert ZeroTransceiverId();
-
-        bytes32 existing = transceiverIdOf[chainKey][messageProvider];
-        if (existing != bytes32(0)) {
-            if (existing != transceiverId) revert AlreadySet();
-            return;
-        }
-
-        transceiverIdOf[chainKey][messageProvider] = transceiverId;
-        emit TransceiverIdSet(chainKey, messageProvider, transceiverId);
     }
 
     /* ============================== configuration ============================== */
@@ -457,11 +409,26 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     }
 
     function _isEvmDerivable(bytes32 chainKey) private view returns (bool) {
+        return uint8(provenanceFor(chainKey)) >= uint8(Provenance.Derived);
+    }
+
+    /// @notice What an address claim about `chainKey` is worth, with the default applied.
+    ///
+    /// @dev AN UNDECLARED `eip155` CHAIN READS AS `Derived`, WHICH IS THE COMMON CASE NEEDING
+    ///      NO CONFIGURATION. Every EVM chain but zkSync and Tron shares Ethereum's CREATE2
+    ///      formula, so the default is right for almost all of them and the two exceptions
+    ///      are declared. An undeclared chain of any other type reads as `Unresolved`, which
+    ///      no bar accepts: nothing here can derive a Solana or Starknet address, so a
+    ///      default would be a guess rather than a shortcut, and it must be stated.
+    function provenanceFor(bytes32 chainKey) public view returns (Provenance) {
+        Provenance declared = provenanceOf[chainKey];
+        if (declared != Provenance.Unresolved) return declared;
+
         bytes memory identifier = _chainIdentifier[chainKey];
         if (identifier.length == 0) revert UnknownChainKey();
-        if (Erc7930.parseStrict(identifier).chainType != Erc7930.CT_EIP155) return false;
-        Provenance cap = maxProvenanceOf[chainKey];
-        return cap == Provenance.Unresolved || uint8(cap) >= uint8(Provenance.Derived);
+        return Erc7930.parseStrict(identifier).chainType == Erc7930.CT_EIP155
+            ? Provenance.Derived
+            : Provenance.Unresolved;
     }
 
     /// @notice Whether accounts on `chainKey` must report their own address home.
@@ -481,6 +448,26 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     ///      fact. It is the hub's side of `SpokeTransceiverBase.addressesDiverge`.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
+    }
+
+    /// @notice Check a location against everything this chain says about its addresses.
+    ///
+    /// @dev THE VALIDATION STAYED HERE WHEN THE STORAGE LEFT, because what makes an address
+    ///      well-formed is a property of the CHAIN: the ERC-7930 canonicity rules, and the
+    ///      value ranges the envelope cannot express (Starknet's felt bound, Move's AIP-40
+    ///      width). A hub calls this before recording a counterpart, so one validator per
+    ///      chain serves every provider rather than each hub carrying its own.
+    ///
+    /// @dev IT ALSO CHECKS THE LOCATION IS ON THE CHAIN IT IS BEING FILED UNDER, which is
+    ///      what stops a stored counterpart contradicting its own envelope.
+    function validateLocation(bytes32 chainKey, bytes calldata interop) external view {
+        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        // `parseStrict` runs inside: rejects bad versions, length mismatches, trailing
+        // bytes, and non-minimal eip155 chain references.
+        if (Erc7930.chainKey(interop) != chainKey) revert UnknownChainKey();
+
+        IRefValidator v = validatorOf[chainKey];
+        if (address(v) != address(0)) v.validateRef(interop);
     }
 
     /// @notice Attach a value-range validator to a chain.
@@ -528,55 +515,17 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         return SchemeFold.hashCalls(scheme, chainKey, elements);
     }
 
-    /// @notice Cap the strongest provenance a chain may be recorded at.
-    /// @dev This closes the laundering hole in `resolveDerived`: without a cap an owner could
-    ///      compute a Starknet address off-chain, pass the bytes in, and have it stored as
-    ///      `Derived`, a claim nothing on this chain can support. Cap Starknet (and Aptos,
-    ///      Cardano, TON, NEAR named accounts) at `Committed` so the stronger claim is
-    ///      unrepresentable rather than merely discouraged.
-    function setMaxProvenance(bytes32 chainKey, Provenance cap) external onlyOwner {
+    /// @notice State what an address claim about `chainKey` is worth.
+    ///
+    /// @dev DECLARE IT BELOW `Derived` FOR EVERY CHAIN THIS ONE CANNOT RECOMPUTE. Starknet's
+    ///      derivation is Pedersen, and zkSync and Tron use different CREATE2 formulas while
+    ///      still being `eip155`, so the default would read them as `Derived` and be wrong.
+    ///      Declaring `Attested` makes the stronger claim unrepresentable rather than merely
+    ///      discouraged, and it is what turns `requiresReceiverCallback` on for them.
+    function setProvenance(bytes32 chainKey, Provenance provenance) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        maxProvenanceOf[chainKey] = cap;
-        emit MaxProvenanceSet(chainKey, cap);
-    }
-
-    /* ====================== PATH 1: local EVM resolution ======================= */
-
-    /// @notice Default path. Derive an EVM CREATE2 address locally and store it.
-    /// @dev No message is sent. Because the derivation inputs sit in this transaction's
-    ///      calldata, the signers who approved the transaction approved the inputs,
-    ///      which is exactly the property the callback paths lack.
-    function resolveEvmCreate2(
-        bytes32 slot,
-        uint256 chainId,
-        address deployer,
-        bytes32 salt,
-        bytes32 initCodeHash
-    ) external onlyOwner returns (address predicted) {
-        predicted = AddressDerive.create2(deployer, salt, initCodeHash);
-        _store(slot, Erc7930.encodeEvm(chainId, predicted), Provenance.Derived);
-    }
-
-    /// @notice CREATE3 variant: address depends only on (factory, salt), so the same
-    ///         salt lands identically on every chain sharing Ethereum's derivation.
-    /// @dev Does NOT hold for zkSync or Tron: resolve those with their own formulas
-    ///      or through the callback paths.
-    function resolveEvmCreate3(bytes32 slot, uint256 chainId, address factory, bytes32 salt)
-        external
-        onlyOwner
-        returns (address predicted)
-    {
-        predicted = AddressDerive.create3(factory, salt);
-        _store(slot, Erc7930.encodeEvm(chainId, predicted), Provenance.Derived);
-    }
-
-    /// @notice Escape hatch for non-EVM values computed off this contract but still
-    ///         inside this transaction (a Cosmos or Solana derivation performed by a
-    ///         caller library, or a Sui address, which is `view` and cannot be `pure`).
-    /// @dev Still `Derived`: the caller is the owner and the bytes are transaction
-    ///      calldata. `maxProvenanceOf` is what keeps that honest per chain.
-    function resolveDerived(bytes32 slot, bytes calldata interop) external onlyOwner {
-        _store(slot, interop, Provenance.Derived);
+        provenanceOf[chainKey] = provenance;
+        emit ProvenanceSet(chainKey, provenance);
     }
 
     /* ================= PATH 1 (uniform): per-chain derivation ================== */
@@ -628,23 +577,19 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         if (Erc7930.chainKey(interop) != chainKey) revert DeriverChainMismatch();
     }
 
-    /// @notice Every destination at once: the expected transceiver on each registered
-    ///         chain for one message provider.
-    /// @dev Chains with no deriver, no params, or no route yield empty `interops[i]`
-    ///      rather than reverting, one unconfigured chain must not blind the view of
-    ///      all the others.
-    function expectedTransceivers(bytes32 messageProvider)
+    /// @notice Every destination at once: the expected transceiver on each registered chain.
+    /// @dev Chains with no deriver or no params yield empty `interops[i]` rather than
+    ///      reverting, since one unconfigured chain must not blind the view of the others.
+    function expectedTransceivers()
         external
         view
-        returns (bytes32[] memory keys, bytes32[] memory transceiverIds, bytes[] memory interops)
+        returns (bytes32[] memory keys, bytes[] memory interops)
     {
         keys = _chainKeys.values();
         uint256 n = keys.length;
-        transceiverIds = new bytes32[](n);
         interops = new bytes[](n);
 
         for (uint256 i; i < n; ++i) {
-            transceiverIds[i] = transceiverIdOf[keys[i]][messageProvider];
             if (address(deriverOf[keys[i]]) == address(0)) continue;
             if (_deriveParams[keys[i]].length == 0) continue;
             try this.expectedTransceiver(keys[i]) returns (bytes memory io) {
@@ -655,171 +600,9 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
         }
     }
 
-    /// @notice Derive and commit the transceiver location for one route.
-    /// @dev `paramsCommitment` is not ceremony. `_deriveParams` was written in an EARLIER
-    ///      transaction, so without it the signers approving THIS transaction would be
-    ///      approving a pointer, not the inputs, and `Derived` specifically claims the
-    ///      inputs were approved. Passing the hash puts the exact bytes in the signed
-    ///      calldata and keeps the grade honest.
-    function resolveTransceiver(
-        bytes32 chainKey,
-        bytes32 messageProvider,
-        bytes32 paramsCommitment
-    ) external onlyOwner returns (bytes32 transceiverId, bytes memory interop) {
-        transceiverId = transceiverIdOf[chainKey][messageProvider];
-        if (transceiverId == bytes32(0)) revert NoRoute();
-
-        bytes memory params = _deriveParams[chainKey];
-        if (params.length == 0) revert NoDeriveParams();
-        if (keccak256(params) != paramsCommitment) revert ParamsCommitmentMismatch();
-
-        interop = expectedTransceiver(chainKey);
-        _store(transceiverId, interop, Provenance.Derived);
-    }
-
-    /// @notice The stored derivation inputs for a chain. Hash this to build the
-    ///         `paramsCommitment` a `resolveTransceiver` payload must carry.
+    /// @notice The stored derivation inputs for a chain.
     function deriveParams(bytes32 chainKey) external view returns (bytes memory) {
         return _deriveParams[chainKey];
-    }
-
-    /* =============== PATH 2/3: destination callback with grading =============== */
-
-    /// @notice Invoked by a local hub transceiver on the return message: the destination
-    ///         reports where its TRANSCEIVER lives, on a chain this one cannot compute.
-    ///
-    /// @dev IT NO LONGER CARRIES RECEIVERS. An account's receiver address is a fact about
-    ///      that account and is read only by the transmitter that sends to it, so it is
-    ///      stored there and the hub writes it directly; see
-    ///      `HubTransceiverBase.onDestinationReceiver`. What is left here is the counterpart
-    ///      directory, which is chain-scoped and is what a registry is for.
-    ///
-    /// @dev THE CALLER IS THE AUTHORITY, AND IT NAMES THE PROVIDER. `msg.sender` must be a
-    ///      registered `localTransceiver`, and the provider is read back from it rather than
-    ///      passed in: a hub serves exactly one provider, so accepting it as an argument
-    ///      would let an authenticated caller speak for a provider it does not serve.
-    ///
-    /// @dev THE SLOT IS WRITE-ONCE. A transceiver's location is a fact established once, so
-    ///      there is no legitimate second report for the same slot. Refusing one makes a
-    ///      replayed message a no-op and leaves a compromised bridge unable to repoint a
-    ///      live counterpart.
-    ///
-    /// @dev GRADING HAPPENS HERE, NOT AT THE CALLER: a remote party does not mark its own
-    ///      homework, so no provenance field is accepted over the wire. With nothing
-    ///      registered in advance the honest grade is `Attested`, worth exactly the security
-    ///      of the bridge that carried it. The qualifier arrives WITH the address rather than
-    ///      from storage, because a Move call target is `address::module::function` and the
-    ///      address alone does not identify it.
-    function onForeignRefResolved(
-        bytes32 slot,
-        bytes calldata interop,
-        bytes calldata qualifierData
-    ) external override {
-        bytes32 messageProvider = providerOfTransceiver[msg.sender];
-        if (messageProvider == bytes32(0)) revert NotTransceiver();
-        if (_refs[slot].provenance != Provenance.Unresolved) revert AlreadyResolved();
-
-        _store(slot, interop, Provenance.Attested);
-
-        // What the destination actually reported, validated against its chain.
-        if (qualifierData.length != 0) {
-            Move.MoveQualifier memory q = abi.decode(qualifierData, (Move.MoveQualifier));
-            Move.validate(q, Erc7930.parseStrict(interop).chainType);
-            bytes32 reported = Move.hash(q);
-
-            _refs[slot].qualifierHash = reported;
-            _qualifiers[slot] = qualifierData;
-            emit QualifierSet(slot, reported);
-        }
-    }
-
-    /* ================================ Move refs ================================ */
-
-    /// @notice Attach a qualified name to an already-resolved Move transceiver.
-    /// @dev A qualifier is a DECLARATION about a deployment convention, not a derived
-    ///      value: there is nothing on this chain that could recompute
-    ///      `transceiver::receive_message` from an address. It therefore carries no
-    ///      provenance of its own and inherits the trust grade of the ref it attaches to.
-    function setQualifier(bytes32 transceiverId, Move.MoveQualifier calldata q)
-        external
-        onlyOwner
-    {
-        ForeignRef storage r = _refs[transceiverId];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        uint16 ct = Erc7930.parseStrict(r.interop).chainType;
-        Move.validate(q, ct);
-
-        bytes32 qh = Move.hash(q);
-        if (r.qualifierHash != bytes32(0) && r.qualifierHash != qh) {
-            // Repointing a live call target is a distinct, louder operation than
-            // setting one for the first time; force a new transceiver id instead.
-            revert QualifierMismatch();
-        }
-        r.qualifierHash = qh;
-        _qualifiers[transceiverId] = abi.encode(q);
-        emit QualifierSet(transceiverId, qh);
-    }
-
-    /// @notice The qualified name a destination executor needs to build the call.
-    function qualifier(bytes32 transceiverId)
-        external
-        view
-        returns (Move.MoveQualifier memory q)
-    {
-        bytes memory raw = _qualifiers[transceiverId];
-        if (raw.length == 0) revert NoQualifier();
-        q = abi.decode(raw, (Move.MoveQualifier));
-    }
-
-    /// @notice True when this slot's chain type is locally assigned and will need
-    ///         re-keying if CASA publishes a different CAIP-350 profile.
-    function isProvisional(bytes32 slot) external view returns (bool) {
-        ForeignRef memory r = _refs[slot];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        return Move.isProvisional(Erc7930.parseStrict(r.interop).chainType);
-    }
-
-    /* ================================= storage ================================= */
-
-    function _store(bytes32 slot, bytes memory interop, Provenance grade) private {
-        if (slot == bytes32(0)) revert ZeroTransceiverId();
-
-        // parseStrict runs inside id()/chainKey(): rejects bad versions, length
-        // mismatches, trailing bytes, and non-minimal eip155 chain references.
-        bytes32 canonicalId = Erc7930.id(interop);
-        bytes32 ck = Erc7930.chainKey(interop);
-
-        // A location on a chain nobody registered is a route to nowhere.
-        if (!_chainKeys.contains(ck)) revert UnknownChainKey();
-
-        // Value-range constraints the envelope cannot express.
-        IRefValidator v = validatorOf[ck];
-        if (address(v) != address(0)) v.validateRef(interop);
-
-        // A chain may not be recorded at a strength it cannot actually reach.
-        Provenance cap = maxProvenanceOf[ck];
-        if (cap != Provenance.Unresolved && uint8(grade) > uint8(cap)) {
-            revert ProvenanceExceedsChainCap();
-        }
-
-        ForeignRef storage prev = _refs[slot];
-        if (prev.provenance != Provenance.Unresolved) {
-            if (uint8(grade) < uint8(prev.provenance)) revert ProvenanceDowngrade();
-        }
-
-        // A re-resolution keeps any qualifier already attached: the module and function
-        // names are a deployment convention that outlives an address change.
-        bytes32 keptQualifier = prev.qualifierHash;
-        bytes memory canonicalBytes = Erc7930.parseStrictAndReencode(interop);
-        _refs[slot] = ForeignRef({
-            id: canonicalId,
-            chainKey: ck,
-            provenance: grade,
-            qualifierHash: keptQualifier,
-            interop: canonicalBytes
-        });
-
-        emit RefResolved(slot, ck, canonicalId, grade, canonicalBytes);
     }
 
     /* ============================== directory reads ============================ */
@@ -869,106 +652,5 @@ contract ChainRegistry is OwnableUpgradeable, IForeignRefReceiver {
     {
         if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
         return _messageProviderName[messageProvider];
-    }
-
-    /* ============================= resolution reads ============================ */
-
-    function get(bytes32 slot) external view returns (ForeignRef memory r) {
-        r = _refs[slot];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-    }
-
-    /// @notice Read, refusing anything below `minProvenance`.
-    /// @dev Use this at the point of execution and make the caller state its bar.
-    ///      A payload that moves funds should demand `Committed` or `Derived`; one that
-    ///      only emits an event can tolerate `Attested`.
-    function requireRef(bytes32 slot, Provenance minProvenance)
-        external
-        view
-        returns (ForeignRef memory r)
-    {
-        r = _refs[slot];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        if (uint8(r.provenance) < uint8(minProvenance)) revert InsufficientProvenance();
-    }
-
-    /// @notice The transceiver's raw address bytes on its own chain: what a destination
-    ///         executor needs, since a 32-byte key cannot be turned back into
-    ///         `alice.near` or a Move type tag.
-    function transceiverLocation(bytes32 transceiverId, Provenance minProvenance)
-        external
-        view
-        returns (bytes memory)
-    {
-        ForeignRef memory r = _refs[transceiverId];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        if (uint8(r.provenance) < uint8(minProvenance)) revert InsufficientProvenance();
-        return Erc7930.parseStrict(r.interop).addr;
-    }
-
-    /// @notice The counterpart a chain gets when the owner has declared nothing.
-    ///
-    /// @dev TWO WAYS TO KNOW, AND THE STRONGER ONE WINS. With a recorded
-    ///      `ProviderDeployment` the answer is CREATE2 over the factory, salt, and initcode
-    ///      hash, all of which sat in the signed calldata that recorded them. Otherwise it
-    ///      falls back to the local transceiver's own address, which is the same answer
-    ///      reached by assumption rather than statement, since hub and spoke share proxy
-    ///      initcode and salt. Both are `Derived`; the recorded path is preferable because it
-    ///      says WHY, and because it does not require the hub to exist first.
-    ///
-    /// @dev IT IS REFUSED EXACTLY WHERE IT WOULD BE A LIE, by two guards that each map to a
-    ///      real failure of the parity argument. A 20-byte EVM address means nothing on
-    ///      Solana, Sui, or Starknet, so anything not `eip155` has no default. And zkSync and
-    ///      Tron ARE `eip155` with different CREATE2 formulas, so a cap below `Derived` is
-    ///      read as "this chain's addresses cannot be recomputed here" and the default
-    ///      withdraws: reusing the existing honesty dial rather than adding a second flag
-    ///      that could disagree with it. Both are opt-out by `setTransceiverId`.
-    function defaultCounterpart(bytes32 chainKey, bytes32 messageProvider)
-        public
-        view
-        returns (bytes memory location)
-    {
-        if (_deployment[messageProvider].salt != bytes32(0)) {
-            return abi.encodePacked(predictTransceiver(chainKey, messageProvider));
-        }
-
-        address local = localTransceiver[messageProvider];
-        if (local == address(0)) revert NoLocalTransceiver();
-        _requireEvmDerivable(chainKey);
-        return abi.encodePacked(local);
-    }
-
-    /// @notice Route lookup and location read in one call: the whole reason the
-    ///         directory and the resolution table live in the same contract.
-    ///
-    /// @dev AN UNSET ROUTE FALLS BACK TO `defaultCounterpart` RATHER THAN REVERTING. The
-    ///      common case needs no configuration at all, so requiring it produced a table whose
-    ///      every row said the same thing and whose absence was indistinguishable from a real
-    ///      gap. The default is graded `Derived`, which is honest: recomputed here, with no
-    ///      message and no bridge trust.
-    /// @return transceiverId Zero when the answer came from the default, since no
-    ///         `ForeignRef` backs it: a caller that needs a stored ref should check.
-    function transceiverFor(
-        bytes32 chainKey,
-        bytes32 messageProvider,
-        Provenance minProvenance
-    ) external view returns (bytes32 transceiverId, bytes memory location) {
-        transceiverId = transceiverIdOf[chainKey][messageProvider];
-        if (transceiverId == bytes32(0)) {
-            return (bytes32(0), defaultCounterpart(chainKey, messageProvider));
-        }
-
-        ForeignRef memory r = _refs[transceiverId];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        if (uint8(r.provenance) < uint8(minProvenance)) revert InsufficientProvenance();
-        location = Erc7930.parseStrict(r.interop).addr;
-    }
-
-    /// @notice Convenience for the common EVM case. Reverts if the slot is not an
-    ///         eip155 account with a 20-byte address.
-    function evmAddress(bytes32 slot) external view returns (address) {
-        ForeignRef memory r = _refs[slot];
-        if (r.provenance == Provenance.Unresolved) revert NotResolved();
-        return Erc7930.toAddress(Erc7930.parseStrict(r.interop));
     }
 }
