@@ -49,10 +49,14 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
-    /// @notice The initcode hash every crossecute account deploys from: one constant, on
-    ///         every chain, for transmitters and receivers alike.
+    /// @notice The initcode hash every crossecute account deploys from: one constant, for
+    ///         transmitters and receivers alike.
     /// @dev Exposed so the hub can record it and reproduce these addresses without deploying
     ///      anything. See `CrossProxy` for why it has no constructor arguments.
+    /// @dev IT IS AN INPUT TO ETHEREUM'S CREATE2 FORMULA, AND ONLY THAT. A chain that
+    ///      derives addresses differently does not consume this value at all, and one that
+    ///      also compiles differently (zkSync, whose deploy input is a zksolc artifact hash
+    ///      rather than EVM initcode) has no relationship to it. See `predictCrossAccount`.
     bytes32 public constant CROSS_PROXY_INIT_CODE_HASH =
         keccak256(type(CrossProxy).creationCode);
 
@@ -70,6 +74,10 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      protocol to stand up somebody else's account somewhere else.
     error NotTheAccount(address owner, bytes32 salt, address caller);
     error CrossAccountExists(address owner, bytes32 salt, address account);
+    /// @dev `predictCrossAccount` and `_deployAccount` disagree, so this chain's derivation
+    ///      is not the one its deployer uses. Both are `virtual` and a spoke on a diverging
+    ///      chain must override BOTH; this is what catches overriding one.
+    error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
 
     /* ================================== routing ================================ */
@@ -106,17 +114,37 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     }
 
     /// @notice Where an owner's account lives on this chain, before it exists.
-    /// @dev Identical on every chain sharing Ethereum's CREATE2 formula, because all three
-    ///      inputs are: this contract's address (hub and spoke share one), the `(owner, salt)`
-    ///      pair, and a constant initcode.
+    ///
+    /// @dev THE DEFAULT IS ETHEREUM'S CREATE2, which is identical on every chain that shares
+    ///      it because all three inputs are: this contract's address (hub and spoke share
+    ///      one), the `(owner, salt)` pair, and a constant initcode.
+    ///
+    /// @dev `virtual` BECAUSE THE FORMULA IS A PROPERTY OF THE CHAIN, NOT OF THIS PROTOCOL.
+    ///      zkSync and Tron are `eip155` and derive addresses differently, so a spoke there
+    ///      MUST override this and `_deployAccount` together. Overriding one alone is caught
+    ///      rather than trusted: `_createCrossAccount` compares what it deployed against what
+    ///      this returned. See that function for what a chain-specific spoke owes.
     function predictCrossAccount(address owner, bytes32 salt)
         public
         view
+        virtual
         returns (address)
     {
         return Create2.computeAddress(
             accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(this)
         );
+    }
+
+    /// @notice Deploy the proxy at `salt`, and return where it actually landed.
+    ///
+    /// @dev SEPARATE FROM THE PREDICTION BECAUSE A CHAIN CAN DIVERGE IN EITHER, AND ZKSYNC
+    ///      DIVERGES IN BOTH. Its addresses use a different formula AND it cannot deploy raw
+    ///      initcode at all: deployment goes through a system contract against a bytecode
+    ///      hash published in advance, so `type(CrossProxy).creationCode` is not a deploy
+    ///      input there and `new CrossProxy{salt: s}()` is what a spoke must emit instead.
+    ///      Tron diverges only in the formula.
+    function _deployAccount(bytes32 salt) internal virtual returns (address deployed) {
+        return Create2.deploy(0, salt, type(CrossProxy).creationCode);
     }
 
     /// @notice Deploy an owner's account and arm it with the logic this side installs.
@@ -129,6 +157,19 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     /// @dev DEPLOY, ARM, AND LOCK IN ONE CALL. `CrossProxy` offers no way to install logic
     ///      without surrendering the upgrade key in the same call, so there is no reachable
     ///      state in which an account has real logic and a live key.
+    ///
+    /// @dev IT ASSERTS THAT THE DEPLOYMENT LANDED WHERE THE PREDICTION SAID, and that check
+    ///      is what makes the two seams above safe to override independently. Every address
+    ///      this protocol publishes comes from `predictCrossAccount`: the peer a transmitter
+    ///      records, the `sourceTransmitter` a receiver authenticates, the slot the registry
+    ///      keys. A spoke whose formula disagreed with its deployer would arm nothing and
+    ///      hand every one of those a phantom address.
+    ///
+    ///      Without it the failure is still closed, but only by accident: arming the
+    ///      predicted address calls a function returning nothing, so Solidity's `extcodesize`
+    ///      check reverts with no reason data. `AccountAddressMismatch` names which half is
+    ///      wrong, which is the difference between a diagnosable spoke and an inexplicable
+    ///      one.
     function _createCrossAccount(address owner, bytes32 salt, Call[] memory calls)
         internal
         returns (address account)
@@ -141,7 +182,9 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         account = predictCrossAccount(owner, salt);
         if (account.code.length != 0) revert CrossAccountExists(owner, salt, account);
 
-        Create2.deploy(0, accountSalt(owner, salt), type(CrossProxy).creationCode);
+        address deployed = _deployAccount(accountSalt(owner, salt));
+        if (deployed != account) revert AccountAddressMismatch(account, deployed);
+
         ICrossProxy(account).upgradeInitializeAndLock(
             implementation, _accountInitializer(owner, salt, calls)
         );

@@ -143,11 +143,35 @@ destination, read from the table rather than computed.
   it was derivable, so every non-EVM recipient went unchecked; a stored one binds on every
   chain, and it compares the whole ERC-7930 recipient, so the chain half is checked too.
 
-  **What remains on those chains is the derivation itself**, which this does not touch:
-  `SpokeTransceiverBase` computes account addresses with `Create2.computeAddress`, and a
-  zkSync spoke IS that contract, so `_createCrossAccount` would deploy at one address and
-  arm another. A zkSync spoke needs its own address arithmetic before it can be deployed at
-  all. The messaging layer no longer assumes parity; the manufacturing layer still does.
+  **The derivation is wired too, and the seams are what made it possible.**
+  `predictCrossAccount` and `_deployAccount` are `virtual`, and `_createCrossAccount`
+  compares what it deployed against what was predicted, so a chain-specific spoke can
+  override the formula without being trusted to get it right.
+  `ZkSyncSpokeTransceiver` and `TronSpokeTransceiver` use `AddressDerive`'s existing
+  `zksyncCreate2` and `tronCreate2`. zkSync overrides both seams, because it cannot deploy
+  raw initcode at all: deployment goes through a system contract, so `new CrossProxy{salt:}`
+  is what zksolc lowers into it. Tron overrides only the prediction.
+
+  **Both take their account bytecode hash as a write-once initializer argument**, because
+  neither can compute it: `CROSS_PROXY_INIT_CODE_HASH` is keccak of SOLC's initcode, while
+  zkSync keys on an EraVM versioned hash of a zksolc artifact and Tron on TRON-solc's
+  initcode. The value comes from the build for that chain.
+
+  **TWO THINGS ARE STILL UNVERIFIED, AND NEITHER CAN BE SETTLED IN THIS REPO.** Forge runs
+  an Ethereum EVM, so the suite pins that each override reproduces `AddressDerive`'s formula,
+  that neither matches Ethereum's, and that both fail closed here via the guard. It cannot
+  pin that the target chain's own deployer agrees.
+
+  1. **Tron's domain byte is still the open 0x41-vs-0xff question**, recorded in §5 and
+     carried as a caveat on `AddressDerive.tronCreate2`. Writing the contract did not resolve
+     it; deploying one account through the spoke on Shasta and comparing does.
+  2. **The zkSync spoke has never been compiled with zksolc.** `CROSS_PROXY_INIT_CODE_HASH`
+     is `keccak256(type(CrossProxy).creationCode)`, and zksolc's handling of `creationCode`
+     is not the same as solc's, so the base may not compile there at all. That is the next
+     thing to find out, and it is a build question rather than a design one.
+
+  Until both are done, treat a zkSync or Tron deployment as unverified rather than merely
+  untested.
 - **Funding a diverging spoke.** The report fires from inside the destination's inbound
   callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
   one reverts the bootstrap with it. That revert is deliberate and keeps the operation
@@ -316,7 +340,11 @@ mainnet.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs
-  contradiction. A one-afternoon empirical check that de-risks a whole chain family.
+  contradiction. A one-afternoon empirical check that de-risks a whole chain family. Now
+  load-bearing rather than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
+  `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
+  fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
+  being wrong is a redeploy rather than a loss. See §3.
 - **The home chain is now a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
   takes its home chainKey, the provider's route to it, and the hub's address as
   write-once initializer arguments. Two things follow that are worth deciding rather than
