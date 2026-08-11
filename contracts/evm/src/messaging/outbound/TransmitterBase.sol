@@ -116,7 +116,7 @@ abstract contract TransmitterBase is
     ///
     ///      That is sound because delivery is retryable at the provider: a bootstrap that
     ///      reverts on arrival can be re-executed by anyone, so it is pending rather than
-    ///      lost. See [Failure handling](../../../../docs/message-flow.md#failure-handling).
+    ///      lost. See [Failure handling](../../../../../docs/message-flow.md#failure-handling).
     ///
     /// @dev THE ONE CASE IT CANNOT SURVIVE is a permanently undeliverable bootstrap: a route
     ///      configured to the wrong chain, or a destination that will never accept it. This
@@ -278,15 +278,20 @@ abstract contract TransmitterBase is
     /// @notice The recipient must name this account, and the chain must be one this account
     ///         has been stood up on. Returns the chainKey so nothing parses twice.
     ///
-    /// @dev THE ADDRESS CHECK BINDS ONLY WHERE THE ADDRESS IS DERIVABLE, WHICH IS EVM PARITY.
-    ///      There `address(this)` is the answer and anything else is worth refusing locally.
-    ///      It is NOT the answer on zkSync or Tron, whose CREATE2 formulas differ, nor on any
-    ///      non-EVM chain, where the account is not a 20-byte address at all. So the check is
-    ///      applied where it holds and skipped where it cannot, rather than weakened into
-    ///      something that holds everywhere and means nothing. This is
-    ///      `SpokeTransceiverBase.addressesDiverge` seen from the sending end; on those
-    ///      chains the recipient is the caller's to get right, and the address the hub
-    ///      recorded is in the registry under `receiverSlot(chainKey, owner, salt)`.
+    /// @dev THE ADDRESS CHECK BINDS ON `eip155` AND NOTHING ELSE. On a non-EVM destination
+    ///      the account is not a 20-byte address at all, so there is nothing to compare and
+    ///      the recipient is the caller's to get right; the address the hub recorded is in the
+    ///      registry under `receiverSlot(chainKey, owner, salt)`.
+    ///
+    /// @dev KNOWN GAP: IT BRANCHES ON CHAIN TYPE, AND THE DIVERGING SET IS NOT A CHAIN TYPE.
+    ///      zkSync and Tron ARE `eip155`; what makes them diverge is a different CREATE2
+    ///      formula, which the chain type cannot express. So the check fires there and
+    ///      enforces `address(this)`, which is NOT this account's address on those chains:
+    ///      the real receiver is unaddressable and the only accepted recipient holds no code.
+    ///      `ReceiverBase.receiveMessage` carries the mirror of this. The registry separates
+    ///      the two sets with a second condition an account cannot ask for, the provenance cap
+    ///      in `_requireEvmDerivable`. Until it is closed, path A is parity-chain and non-EVM
+    ///      only; see [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
     function _requireOwnRecipient(bytes calldata recipient)
         private
         view

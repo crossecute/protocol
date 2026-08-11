@@ -127,6 +127,47 @@ receivers share one. One entry per destination, and the value never varies.
 
 ## 3. Blockers on specific paths
 
+- **Path A does not work on a diverging chain, at either end, and the flag that exists to
+  handle divergence does not reach it.** Verified against the tree rather than reasoned
+  about; both halves fail closed, so nothing is at risk, but an account on zkSync or Tron is
+  currently unreachable after bootstrap.
+
+  **Both checks branch on chain TYPE, and the diverging set is not a chain-type
+  distinction.** `TransmitterBase._requireOwnRecipient` applies its address check when
+  `chainType == CT_EIP155`, and `ReceiverBase.receiveMessage` compares the sender against
+  `address(this)` unconditionally. zkSync and Tron ARE `eip155`; what makes them diverge is a
+  different CREATE2 formula, which the chain type cannot express. So the transmitter refuses
+  to address the receiver that actually exists (`RecipientIsNotThisAccount`) and accepts only
+  its own home address, where no receiver lives; and the receiver would refuse a message from
+  the transmitter that actually sent it (`SenderIsNotThisAccount`) and accept only one
+  claiming to come from its own spoke-side address. Non-EVM destinations are unaffected
+  because the transmitter's check is skipped entirely there, which is the documented intent.
+
+  **The registry gets this right and shows what the accounts are missing.**
+  `_requireEvmDerivable` requires TWO conditions, `chainType == eip155` AND
+  `maxProvenanceOf[chainKey] >= Derived`, and the cap is the mechanism that separates zkSync
+  and Tron from Base. An account has no cap table and no registry pointer, deliberately, so
+  it cannot ask the same question.
+
+  **So `addressesDiverge` currently has no payoff.** Bootstrap succeeds (path B has no
+  recipient check), the spoke creates the receiver, the report carries its address home, and
+  the registry stores it under `receiverSlot` — and then nothing can address it. The machinery
+  learns a value that no send path will accept.
+
+  **It is deeper than the two checks.** `SpokeTransceiverBase` computes account addresses with
+  `Create2.computeAddress`, i.e. Ethereum's formula, in `predictCrossAccount`, and
+  `_createCrossAccount` both deploys and collision-checks against it. A zkSync spoke is this
+  contract, so its own arithmetic is wrong there too, and `_accountInitializer` hands the
+  receiver a `sourceTransmitter` derived the same way. Fixing the two comparisons without
+  fixing the derivation would move the failure rather than remove it.
+
+  Cheapest coherent fix is probably to cache derivability on the account at bootstrap, since
+  the hub already reads the registry there through `_requireRoutable`: one flag per
+  destination beside `_bootstrapped`, keeping the registry off the send path. The receiver's
+  half may be cheaper still, since it already stores `sourceTransmitter` and could compare
+  against that rather than `address(this)` — but only once the spoke derives that value
+  correctly. **Until this is settled, a deployment should treat zkSync and Tron as out of
+  scope rather than merely degraded.**
 - **Funding a diverging spoke.** The report fires from inside the destination's inbound
   callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
   one reverts the bootstrap with it. That revert is deliberate and keeps the operation

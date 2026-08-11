@@ -429,9 +429,18 @@ abstract contract ReceiverBase is
     ///      receiver.
     ///
     /// @dev THE SENDER CHECK NEEDS NO CONFIGURATION, which is why it is here rather than in a
-    ///      binding: an account's peer is its own address on every chain, so the expected
+    ///      binding: on a parity chain an account's peer is its own address, so the expected
     ///      sender is `address(this)` and is derived rather than stored. There is no state an
     ///      operator could set wrongly.
+    ///
+    /// @dev KNOWN GAP: THAT PREMISE FAILS WHERE ADDRESSES DIVERGE. On zkSync and Tron this
+    ///      receiver does not share an address with its transmitter, so a message from the
+    ///      real one is refused and only a sender claiming this receiver's own spoke-side
+    ///      address is accepted. `sourceTransmitter` is the value this should compare against
+    ///      and it is already stored here, but the spoke derives it with Ethereum's CREATE2
+    ///      formula and so gets it wrong on exactly those chains.
+    ///      `TransmitterBase._requireOwnRecipient` carries the mirror; see
+    ///      [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
     ///
     /// @dev THE `receiveId` IS DELIBERATELY IGNORED. ERC-7786 offers it for correlation, and
     ///      this protocol needs none: a payload either matches a queued commitment or
