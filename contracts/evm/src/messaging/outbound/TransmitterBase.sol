@@ -293,19 +293,20 @@ abstract contract TransmitterBase is
     ///      address cannot be derived from itself. The transceiver checks the pair resolves
     ///      back to `msg.sender` before it sends anything.
     ///
-    /// @dev THE PAIRING CHECK LIVES HERE, unlike on path A, because these overloads still
-    ///      hold typed calls and the ERC-7930 envelope: `_evmKey` is `eip155` by
-    ///      construction, `_typedKey` refuses a non-EVM destination, and `_opaqueKey` refuses
-    ///      an EVM one. This is the last point that holds the envelope; downstream everything
-    ///      speaks chainKeys, which are hashes and cannot be asked what they came from.
-    function bootstrap(uint256 destinationChainId, Call[] calldata calls)
-        external
-        payable
-        onlyAccountOwner
-    {
-        _bootstrapCalls(_evmKey(destinationChainId), calls, new bytes[](0));
-    }
-
+    /// @dev THE PAIRING CHECK LIVES HERE, unlike on path A, because these three still hold
+    ///      typed calls and the ERC-7930 envelope: `_evmKey` is `eip155` by construction,
+    ///      `_typedKey` refuses a non-EVM destination, and `_opaqueKey` refuses an EVM one.
+    ///      This is the last point that holds the envelope; downstream everything speaks
+    ///      chainKeys, which are hashes and cannot be asked what they came from.
+    ///
+    /// @dev THERE ARE THREE OF THESE AND EXACTLY THREE QUOTES, WHICH IS NOT A COINCIDENCE.
+    ///      Only two things about a bootstrap can vary: how the destination is spelled, and
+    ///      whether its calls are typed or opaque. `attributes` is not a third: it carries
+    ///      destination gas, which changes the price, and the rule every quote here states is
+    ///      that its arguments are its send's minus the value. A no-attributes overload would
+    ///      be a send with no quote of matching arity, to save a caller writing
+    ///      `new bytes[](0)`. Pass an empty array to mean "the gateway's default"; that is a
+    ///      choice worth making visibly.
     function bootstrap(
         uint256 destinationChainId,
         Call[] calldata calls,
@@ -315,14 +316,6 @@ abstract contract TransmitterBase is
     }
 
     /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
-    function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls)
-        external
-        payable
-        onlyAccountOwner
-    {
-        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, new bytes[](0));
-    }
-
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         Call[] calldata calls,
@@ -333,13 +326,6 @@ abstract contract TransmitterBase is
 
     /// @notice `bootstrap`, in the portable form: for standing this account up on Solana,
     ///         Sui, Starknet, or anything else with no `Call`.
-    function bootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements
-    ) external payable onlyAccountOwner {
-        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, new bytes[](0));
-    }
-
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
@@ -469,7 +455,7 @@ abstract contract TransmitterBase is
     function _bootstrapCalls(
         bytes32 chainKey,
         Call[] calldata calls,
-        bytes[] memory attributes
+        bytes[] calldata attributes
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         _requireNotBootstrapped(chainKey);
@@ -483,7 +469,7 @@ abstract contract TransmitterBase is
     function _bootstrapElements(
         bytes32 chainKey,
         bytes[] calldata elements,
-        bytes[] memory attributes
+        bytes[] calldata attributes
     ) private {
         if (transceiver == address(0)) revert NoTransceiver();
         _requireNotBootstrapped(chainKey);

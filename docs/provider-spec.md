@@ -737,6 +737,12 @@ to call. `TransmitterBase` carries four public quotes (`quoteMessage`, `quoteBoo
 `quoteBootstrap` and `quoteBootstrapElements`, which is what the transmitter's three
 bootstrap quotes forward to through `IAccountTransceiver`.
 
+**The send and quote surfaces are 1:1, deliberately.** `sendMessage`/`quoteMessage`, and each
+of the three bootstraps against its own quote, all with identical arity. That is R2.3 made
+structural rather than promised: `attributes` carries destination gas, which changes the
+price, so there is no no-attributes send that would have no quote to price it. A binding
+inherits the property and MUST NOT add a convenience overload that breaks it.
+
 **A receiver has no quote and cannot acquire one.** `ReceiverBase` does not inherit
 `OutboundBase`, so the absence is structural rather than a gate someone could widen: a
 receiver never sends, and pricing a message that has no path is not a thing to expose.

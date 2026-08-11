@@ -210,7 +210,7 @@ contract TransportTest is Test {
         transmitter.initialize(owner, address(hub), SALT);
 
         vm.prank(owner);
-        transmitter.bootstrap(DEST, new Call[](0));
+        transmitter.bootstrap(DEST, new Call[](0), NONE);
 
         sink = new Sink();
     }
@@ -220,7 +220,7 @@ contract TransportTest is Test {
     function _bootstrapTo(bytes memory identifier) internal {
         bytes[] memory none = new bytes[](0);
         vm.prank(owner);
-        transmitter.bootstrapTo(identifier, none);
+        transmitter.bootstrapTo(identifier, none, none);
     }
 
     bytes[] internal NONE;
@@ -318,7 +318,7 @@ contract TransportTest is Test {
         vm.expectEmit(true, true, false, true, address(t));
         emit TransceiverBase.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
         vm.prank(owner);
-        acct.bootstrap(DEST, _calls());
+        acct.bootstrap(DEST, _calls(), new bytes[](0));
     }
 
     function test_providerDataTravelsPerSend() public {
@@ -500,7 +500,7 @@ contract TransportTest is Test {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
         vm.prank(owner);
-        acct.bootstrap(DEST, _calls());
+        acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         (address gotOwner, bytes32 gotSalt,) = _decodeTyped(t.sentPayload());
         assertEq(t.bootCount(), 1);
@@ -553,7 +553,7 @@ contract TransportTest is Test {
         elements[0] = hex"0102030405";
 
         vm.prank(owner);
-        acct.bootstrapTo(sol, elements);
+        acct.bootstrapTo(sol, elements, new bytes[](0));
 
         (address gotOwner, bytes32 gotSalt, bytes[] memory got) =
             abi.decode(t.sentPayload(), (address, bytes32, bytes[]));
@@ -572,7 +572,7 @@ contract TransportTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
-        acct.bootstrapTo(sol, _calls());
+        acct.bootstrapTo(sol, _calls(), new bytes[](0));
     }
 
     function test_opaqueBootstrapIsRefusedForAnEvmChain() public {
@@ -582,7 +582,7 @@ contract TransportTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(TransmitterBase.OpaquePayloadToEvmDestination.selector);
-        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), elements);
+        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), elements, new bytes[](0));
     }
 
     /// @dev The envelope-taking typed form reaches an EVM chain, same as the chain-id one.
@@ -590,7 +590,7 @@ contract TransportTest is Test {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
         vm.prank(owner);
-        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls());
+        acct.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls(), new bytes[](0));
         assertEq(t.bootCount(), 1);
     }
 
@@ -631,7 +631,7 @@ contract TransportTest is Test {
         vm.expectRevert();
         transmitter.execute(_calls());
         vm.expectRevert();
-        transmitter.bootstrap(DEST, _calls());
+        transmitter.bootstrap(DEST, _calls(), NONE);
         vm.stopPrank();
     }
 
@@ -706,7 +706,7 @@ contract TransportTest is Test {
         bare.initialize(owner, address(t), bytes32(0));
 
         vm.prank(owner);
-        bare.bootstrap(DEST, new Call[](0));
+        bare.bootstrap(DEST, new Call[](0), new bytes[](0));
     }
 
     /* ================================== quote ================================== */
@@ -848,7 +848,7 @@ contract TransportTest is Test {
 
         vm.deal(owner, 1 ether);
         vm.prank(owner);
-        acct.bootstrap{value: 0.2 ether}(DEST, _calls());
+        acct.bootstrap{value: 0.2 ether}(DEST, _calls(), new bytes[](0));
 
         assertEq(t.bootRefund(), address(acct), "the account that asked for the message");
         assertTrue(t.bootRefund() != address(t), "never the shared transceiver");
@@ -890,7 +890,7 @@ contract TransportTest is Test {
         assertFalse(transmitter.isBootstrappedOn(other));
 
         vm.prank(owner);
-        transmitter.bootstrap(other, new Call[](0));
+        transmitter.bootstrap(other, new Call[](0), NONE);
 
         assertTrue(transmitter.isBootstrappedOn(other));
         vm.prank(owner);
@@ -919,7 +919,7 @@ contract TransportTest is Test {
                 TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
             )
         );
-        transmitter.bootstrap(DEST, _calls());
+        transmitter.bootstrap(DEST, _calls(), NONE);
     }
 
     /// @dev Including through the envelope-taking form, which names the same chain.
@@ -930,7 +930,7 @@ contract TransportTest is Test {
                 TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
             )
         );
-        transmitter.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls());
+        transmitter.bootstrapTo(Erc7930.encodeEvmChain(DEST), _calls(), NONE);
     }
 
     /// @dev THE QUOTES CARRY THE SAME GATE, both ways round. A quote that succeeded where
@@ -977,7 +977,7 @@ contract TransportTest is Test {
         // The transceiver has no code path that reverts, so revert the whole call from
         // outside it: an unowned caller cannot bootstrap.
         vm.expectRevert();
-        acct.bootstrap(DEST, new Call[](0));
+        acct.bootstrap(DEST, new Call[](0), new bytes[](0));
 
         assertFalse(acct.isBootstrappedOn(DEST), "nothing recorded");
     }

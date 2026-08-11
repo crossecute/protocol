@@ -74,7 +74,7 @@ A · normal send    owner → account.sendMessage(recipient, payload)
                         ══ bridge ══
                    → its own account on Base: decode, execute        nonReentrant
 
-B · bootstrap      owner → account.bootstrap(8453, calls)
+B · bootstrap      owner → account.bootstrap(8453, calls, attributes)
                    → hub transceiver: (owner, salt, calls)           ← provenance bar
                         ══ bridge ══
                    → spoke transceiver: deploy the account, arm it,

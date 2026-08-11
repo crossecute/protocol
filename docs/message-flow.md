@@ -272,14 +272,15 @@ per-destination bootstrap record below, and nothing else.
 - `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: `sendMessage`'s
   arguments minus the value. ERC-7786 defines no quote, so this is the protocol's own, and
   it carries the same gates the send does.
-- `bootstrap` and `bootstrapTo`, six overloads (a `uint256` chain id or an ERC-7930
-  identifier, `Call[]` or `bytes[]`, with or without `attributes`): path B, forwarded to the
-  transceiver with the whole `msg.value`. They pass `_owner()` and `accountSalt` rather than
-  this contract's own address, because a CREATE2 address cannot be derived from itself. They
-  keep `Call[]` and `bytes[]` arguments, and therefore keep the pairing check that
-  `sendMessage` had to give up, because the transceiver encodes the envelope rather than
-  taking one prebuilt: `_typedKey` refuses a non-EVM destination and `_opaqueKey` refuses an
-  EVM one.
+- `bootstrap` and `bootstrapTo`, **three** overloads: path B, forwarded to the transceiver
+  with the whole `msg.value`. Only two things about a bootstrap vary, so only two things are
+  overloaded on: how the destination is spelled (a `uint256` chain id, or an ERC-7930
+  identifier) and whether its calls are typed or opaque. `attributes` is mandatory on all
+  three rather than a third axis, so each has a quote of matching arity; see below.
+  They pass `_owner()` and `accountSalt` rather than this contract's own address, because a
+  CREATE2 address cannot be derived from itself. Holding `Call[]` and `bytes[]` rather than a
+  prebuilt payload is what keeps the pairing check `sendMessage` had to give up: `_typedKey`
+  refuses a non-EVM destination and `_opaqueKey` refuses an EVM one.
 - `execute(Call[] calls) payable onlyAccountOwner`: local, no bridge and no commitment. It
   takes no destination because it cannot have one.
 - `commitmentCall(receiver, commitment)` and `cancellationCall(receiver, index, expected)`:
