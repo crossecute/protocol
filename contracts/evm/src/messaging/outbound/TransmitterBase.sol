@@ -109,9 +109,9 @@ abstract contract TransmitterBase is
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
     event DestinationBootstrapped(bytes32 indexed destinationChainKey);
     /// @dev Distinct from `CounterpartSet`, which fires on every write including the
-    ///      presumed one at bootstrap. This says an owner corrected a receiver the account
-    ///      could not derive, which is the event an operator actually watches for.
-    event DestinationReceiverCorrected(bytes32 indexed destinationChainKey, bytes receiver);
+    ///      presumed one at bootstrap. This says a destination reported an address the
+    ///      account could not derive, which is the event an operator watches for.
+    event DestinationReceiverReported(bytes32 indexed destinationChainKey, bytes receiver);
     /// @dev Distinct from a bridged delivery: an execution the owner drove directly must be
     ///      distinguishable on-chain from one a commitment discharged.
     event Executed(address indexed caller, uint256 callCount);
@@ -178,13 +178,18 @@ abstract contract TransmitterBase is
         return counterpartOn(destinationChainKey);
     }
 
-    /// Destinations whose receiver address is no longer the bootstrap presumption.
+    /// Destinations whose receiver address has been reported and is now fixed.
     ///
-    /// @dev IT EXISTS TO MAKE THE REMOTE PATH SINGLE-SHOT WITHOUT MAKING THE OWNER'S ONE.
-    ///      A report may land once, replacing what `bootstrap` presumed; an owner may write
-    ///      whenever, because they can already `execute` anything and being able to say
-    ///      where their own receiver lives is not an escalation. Without the flag a replayed
-    ///      report would silently undo an owner's correction.
+    /// @dev THE REPORT IS SINGLE-SHOT, AND THERE IS NO SECOND WAY IN. A receiver's address
+    ///      is established once, when the spoke creates it, so a second report is a replay
+    ///      or a repoint and neither is something a remote chain gets to do. There is no
+    ///      owner override either: an account's peer decides where a payload LANDS, so it is
+    ///      the one value the protocol will not let anyone choose after the fact.
+    ///
+    ///      The cost is that a wrong report is permanent for that destination, which is the
+    ///      trade every other write-once value here makes. It is bounded by what has to go
+    ///      wrong first: the spoke transceiver on that chain must be compromised or
+    ///      misbuilt, and that chain is lost either way.
     mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
 
     /// @notice The transceiver reports where the destination actually created this account's
@@ -201,9 +206,8 @@ abstract contract TransmitterBase is
     ///      cleared is what makes that acceptable. It authenticated the origin chain, and it
     ///      derived this account's address from the `(owner, salt)` the report stated, so it
     ///      cannot direct a report at an account the reporting chain did not name. What it
-    ///      CAN do is report a wrong address for a real account on its own chain, which it
-    ///      could do before too; the difference is that this reaches the send path, so the
-    ///      owner's correction below is the recovery rather than a convenience.
+    ///      CAN do is report a wrong address for a real account on its own chain, and that
+    ///      is permanent: see `_receiverPinned` for why there is no override.
     function onDestinationReceiverReported(
         bytes32 destinationChainKey,
         bytes calldata receiver
@@ -218,40 +222,12 @@ abstract contract TransmitterBase is
 
         _receiverPinned[destinationChainKey] = true;
         _setCounterpart(destinationChainKey, receiver);
-        emit DestinationReceiverCorrected(destinationChainKey, receiver);
+        emit DestinationReceiverReported(destinationChainKey, receiver);
     }
 
     /// @notice Whether this destination's receiver is still the bootstrap presumption.
     function isReceiverPinned(bytes32 destinationChainKey) external view returns (bool) {
         return _receiverPinned[destinationChainKey];
-    }
-
-    /// @notice Correct the receiver recorded for a destination whose address this chain
-    ///         cannot derive.
-    ///
-    /// @dev THIS IS WHAT MAKES A DIVERGING CHAIN REACHABLE AT ALL. Bootstrap records
-    ///      `address(this)`, which is right wherever Ethereum's CREATE2 formula holds and
-    ///      wrong on zkSync and Tron, whose formulas differ, and meaningless on a non-EVM
-    ///      chain where the account is not a 20-byte address. Those are exactly the cases
-    ///      `SpokeTransceiverBase.addressesDiverge` exists to report home. Where a chain
-    ///      reports, the transceiver writes it through `onDestinationReceiverReported` and
-    ///      this is the recovery if that value is wrong; where one does not, this is the
-    ///      only way in.
-    ///
-    /// @dev IT IS REBINDABLE, AND THAT GRANTS THE OWNER NOTHING THEY LACK. An owner can
-    ///      already `execute` anything and approve any payload, so being able to say where
-    ///      their own account's receiver lives is not an escalation. It is refused before
-    ///      bootstrap, because a receiver that has not been asked for cannot have an address.
-    function setDestinationReceiver(bytes32 destinationChainKey, bytes calldata receiver)
-        external
-        onlyAccountOwner
-    {
-        if (!hasCounterpart(destinationChainKey)) {
-            revert NotBootstrapped(destinationChainKey);
-        }
-        _receiverPinned[destinationChainKey] = true;
-        _setCounterpart(destinationChainKey, receiver);
-        emit DestinationReceiverCorrected(destinationChainKey, receiver);
     }
 
     function _requireBootstrapped(bytes32 chainKey) private view {
@@ -379,8 +355,8 @@ abstract contract TransmitterBase is
     ///      non-EVM chain, where the account is not a 20-byte address at all. A derived check
     ///      therefore had to be skipped off `eip155` (leaving the recipient unchecked) and
     ///      was actively WRONG on the diverging EVM chains, which are `eip155` and so kept a
-    ///      check that could never pass. Comparing against what `bootstrap` recorded and
-    ///      `setDestinationReceiver` corrects holds on every chain and needs no exception.
+    ///      check that could never pass. Comparing against what `bootstrap` recorded, and
+    ///      what a report from that chain replaces it with, holds everywhere.
     ///
     /// @dev IT COMPARES THE WHOLE RECIPIENT, so the chain half is checked too: a payload
     ///      addressed to the right account on the wrong chain is refused here rather than
@@ -626,8 +602,8 @@ abstract contract TransmitterBase is
     /// @dev THE RECEIVER IT RECORDS IS A PRESUMPTION, AND ON MOST CHAINS A CORRECT ONE. An
     ///      account and its receiver share an address wherever Ethereum's CREATE2 formula
     ///      holds, which is every destination but zkSync, Tron, and the non-EVM chains. There
-    ///      the value is wrong until `setDestinationReceiver` replaces it with what the spoke
-    ///      reported home, and until then a send is refused rather than misdelivered.
+    ///      the value is wrong until the spoke's own report replaces it, and until then a
+    ///      send is refused rather than misdelivered.
     function _markBootstrapped(bytes memory identifier)
         private
         returns (bytes32 chainKey)

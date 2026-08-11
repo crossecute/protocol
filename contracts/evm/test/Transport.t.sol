@@ -221,12 +221,13 @@ contract TransportTest is Test {
     ///      account has no reachable receiver there, which is the point of the correction.
     function _bootstrapTo(bytes memory identifier) internal {
         bytes[] memory none = new bytes[](0);
-        vm.startPrank(owner);
+        vm.prank(owner);
         transmitter.bootstrapTo(identifier, none, none);
-        transmitter.setDestinationReceiver(
+        // The address the spoke reported home. Only the account's transceiver may write it.
+        vm.prank(address(hub));
+        transmitter.onDestinationReceiverReported(
             ChainKey.fromIdentifier(identifier), SOL_RECEIVER
         );
-        vm.stopPrank();
     }
 
     /// @dev The account's address on the non-EVM destination, which is not derivable here.
@@ -1166,10 +1167,10 @@ contract DivergingDestinationTest is Test {
         bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
-        vm.startPrank(owner);
-        transmitter.setDestinationReceiver(key, DIVERGED);
+        vm.prank(address(hub));
+        transmitter.onDestinationReceiverReported(key, DIVERGED);
+        vm.prank(owner);
         transmitter.sendMessage(recipient, payload, new bytes[](0));
-        vm.stopPrank();
 
         assertEq(transmitter.sentRecipient(), recipient, "addressed to the real receiver");
         assertEq(transmitter.destinationReceiverOn(key), DIVERGED);
@@ -1182,15 +1183,16 @@ contract DivergingDestinationTest is Test {
         bytes memory stale = transmitter.recipientOn(ZKSYNC);
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
-        vm.startPrank(owner);
-        transmitter.setDestinationReceiver(key, DIVERGED);
+        vm.prank(address(hub));
+        transmitter.onDestinationReceiverReported(key, DIVERGED);
+
+        vm.prank(owner);
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransmitterBase.RecipientIsNotThisAccount.selector, stale
             )
         );
         transmitter.sendMessage(stale, payload, new bytes[](0));
-        vm.stopPrank();
     }
 
     /// @dev A receiver that does not share its transmitter's address still authenticates it,

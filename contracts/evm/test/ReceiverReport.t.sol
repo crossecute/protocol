@@ -450,18 +450,26 @@ contract ReceiverReportRoundTripTest is Test {
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
-    /// @dev THE OWNER OUTRANKS THE REPORT, which is the recovery for a hostile or wrong one.
-    ///      An owner can already `execute` anything, so saying where their own receiver
-    ///      lives is not an escalation, and a report that reached the send path needs an
-    ///      answer that does too.
-    function test_theOwnerCanCorrectAReportedAddress() public {
+    /// @dev AND THERE IS NO OVERRIDE, NOT EVEN THE OWNER'S. An account's peer decides where
+    ///      a payload lands, so it is the one value the protocol will not let anyone choose
+    ///      after the fact. A wrong report is permanent for that destination, which costs
+    ///      only the chain whose spoke was already compromised to produce it.
+    function test_notEvenTheOwnerCanRepointAReportedReceiver() public {
         bytes memory produced = _report();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
-        bytes memory corrected = abi.encodePacked(address(0xC0FFEE));
-        vm.prank(owner);
-        account.setDestinationReceiver(spokeKey, corrected);
-        assertEq(account.counterpartOn(spokeKey), corrected);
+        address created = spoke.predictCrossAccount(owner, SALT);
+        assertTrue(account.isReceiverPinned(spokeKey));
+
+        (bool ok,) = address(account).call(
+            abi.encodeWithSignature(
+                "setDestinationReceiver(bytes32,bytes)",
+                spokeKey,
+                abi.encodePacked(address(0xC0FFEE))
+            )
+        );
+        assertFalse(ok, "no owner override exists");
+        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
     }
 
     /// @dev A CHAIN THE HUB CAN DERIVE MAY NOT REPORT. Its own derivation is `Derived` and a

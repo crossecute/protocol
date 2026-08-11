@@ -236,8 +236,8 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT, so a stored
     ///      counterpart cannot contradict its own envelope. It buys an attacker nothing on
     ///      its own, since an authenticated spoke can already report a wrong address on its
-    ///      own chain, and that remains the residual risk: the owner's
-    ///      `setDestinationReceiver` is the recovery.
+    ///      own chain. That is the residual risk and it has no recovery: the account pins
+    ///      the first report it accepts, so a compromised spoke costs its own chain.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(
         bytes32 chainKey,
