@@ -196,12 +196,12 @@ functions, so an integrator cannot reach it: `recipientOn`, `chainIdentifierFor`
 without reimplementing the encoding, and a wrong interoperable address is a message
 addressed into the void rather than a revert.
 
-**R1.3** The destination on path A is this account's own address, and `TransmitterBase`
-already enforces it on `eip155` recipients. A binding MUST NOT store a peer to reach that
-answer when the SDK allows it to be derived; where the SDK insists on a peer table, the
-binding SHOULD override the lookup to return `address(this)` unconditionally. A value with
-exactly one correct answer is not configuration, and storing it creates a state in which it
-can be wrong.
+**R1.3** The destination on path A is the counterpart the account recorded for that chain,
+which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
+own notion of a peer. Where the SDK insists on a peer table, the binding SHOULD populate it
+from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree wherever
+Ethereum's CREATE2 formula holds and differ on zkSync and Tron, where deriving the peer names
+an address that holds no receiver.
 
 **R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking
@@ -674,7 +674,7 @@ Everything below is written once, against those hooks.
 | --- | --- | --- |
 | C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. |
 | C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. |
-| C3 | `send_addressesTheAccountsOwnAddress` | Path A's destination is `address(this)`. |
+| C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. |
 | C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. |
 | C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`. |
 | C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a hub, `NotHomeOrigin` on a spoke. |

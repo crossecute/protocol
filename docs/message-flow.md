@@ -256,11 +256,14 @@ per-destination bootstrap record below, and nothing else.
   send. It is `IERC7786GatewaySource`'s signature, and one signature covers every
   destination: a recipient carries its own chain, so the chain id, the ERC-7930 envelope, and
   the choice between typed and opaque payloads all fold into two arguments.
-- **The recipient is checked, not trusted.** An account's peer is its own address on every
-  parity chain, which used to be structural and became an argument, so a recipient naming
-  anything else on an `eip155` chain is refused. The check is skipped where the address is
-  not derivable here (zkSync, Tron, every non-EVM chain), because there is nothing to
-  compare against; that is `addressesDiverge` seen from the sending end.
+- **The recipient is checked against the stored counterpart, not against `address(this)`.**
+  `bootstrap` records the receiver it is standing up, and `sendMessage` refuses any recipient
+  that is not it, whole: chain half included. Deriving the peer instead looked free, because
+  an account and its receiver share an address wherever Ethereum's CREATE2 formula holds, but
+  it could only be checked where it was derivable (so non-EVM recipients went unchecked) and
+  it was wrong on zkSync and Tron, which are `eip155` and so kept a check that could never
+  pass. `setDestinationReceiver` is where the owner writes what the spoke reported home for
+  a chain whose address this one cannot compute.
 - **The payload arrives built, and one guarantee went with that.** The old overloads knew
   whether they held `Call[]` or `bytes[]`, so a typed payload bound for a non-EVM chain and
   an opaque one bound for an EVM chain were both refused before they cost a fee. `bytes

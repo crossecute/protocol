@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -195,7 +196,7 @@ contract DestinationNamingTest is Test {
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.RouteInUse.selector, keccak256(BASE_ROUTE)
+                OutboundBase.RouteInUse.selector, keccak256(BASE_ROUTE)
             )
         );
         hub.setRoute(arbKey, BASE_ROUTE);
@@ -218,7 +219,7 @@ contract DestinationNamingTest is Test {
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         vm.stopPrank();
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.NoRouteFor.selector, key)
+            abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key)
         );
         hub.routeTo(key);
     }
@@ -250,7 +251,7 @@ contract DestinationNamingTest is Test {
 
         assertEq(hub.counterpartOn(key).length, 20, "counterpart resolves");
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.NoRouteFor.selector, key)
+            abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key)
         );
         hub.routeTo(key);
     }
@@ -268,7 +269,7 @@ contract DestinationNamingTest is Test {
 
         vm.prank(msig);
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.RouteAlreadySet.selector, baseKey)
+            abi.encodeWithSelector(OutboundBase.RouteAlreadySet.selector, baseKey)
         );
         hub.setRoute(baseKey, ARB_ROUTE);
 

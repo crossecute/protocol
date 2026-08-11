@@ -119,8 +119,8 @@ abstract contract ReceiverBase is
     error ZeroTransmitter();
     /// @dev Something that is not a gateway this receiver trusts tried to deliver a message.
     error NotAuthorizedGateway(address gateway);
-    /// @dev The message claims to come from an address that is not this account, so it is
-    ///      another account's payload arriving at the wrong receiver.
+    /// @dev The message claims to come from an address that is not this receiver's
+    ///      transmitter, so it is another account's payload arriving at the wrong receiver.
     error SenderIsNotThisAccount(bytes sender);
     error IndexOutOfRange(uint256 index);
     /// @dev Already executed. Cancelling would suggest the payload can still be stopped.
@@ -428,19 +428,18 @@ abstract contract ReceiverBase is
     ///      shared gateway would otherwise let one account's payload land in another's
     ///      receiver.
     ///
-    /// @dev THE SENDER CHECK NEEDS NO CONFIGURATION, which is why it is here rather than in a
-    ///      binding: on a parity chain an account's peer is its own address, so the expected
-    ///      sender is `address(this)` and is derived rather than stored. There is no state an
-    ///      operator could set wrongly.
+    /// @dev THE SENDER CHECK COMPARES AGAINST `sourceTransmitter`, NOT `address(this)`, and
+    ///      that is the mirror of what `TransmitterBase._requireOwnRecipient` does with its
+    ///      recorded counterpart. The two happen to be equal wherever Ethereum's CREATE2
+    ///      formula holds, which is what made `address(this)` look free; they are NOT equal
+    ///      on zkSync or Tron, where the receiver and its transmitter part company, and
+    ///      comparing against the derived value there refused the only transmitter that
+    ///      could legitimately send. The stored fact holds on every chain.
     ///
-    /// @dev KNOWN GAP: THAT PREMISE FAILS WHERE ADDRESSES DIVERGE. On zkSync and Tron this
-    ///      receiver does not share an address with its transmitter, so a message from the
-    ///      real one is refused and only a sender claiming this receiver's own spoke-side
-    ///      address is accepted. `sourceTransmitter` is the value this should compare against
-    ///      and it is already stored here, but the spoke derives it with Ethereum's CREATE2
-    ///      formula and so gets it wrong on exactly those chains.
-    ///      `TransmitterBase._requireOwnRecipient` carries the mirror; see
-    ///      [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
+    /// @dev IT STILL NEEDS NO CONFIGURATION. `sourceTransmitter` is written once by the
+    ///      transceiver at creation, from the `(owner, salt)` pair the bootstrap message
+    ///      carried, and there is no setter: there is no state an operator could set wrongly
+    ///      after the fact.
     ///
     /// @dev THE `receiveId` IS DELIBERATELY IGNORED. ERC-7786 offers it for correlation, and
     ///      this protocol needs none: a payload either matches a queued commitment or
@@ -456,7 +455,7 @@ abstract contract ReceiverBase is
         if (!_isAuthorizedGateway(msg.sender)) revert NotAuthorizedGateway(msg.sender);
 
         Erc7930.Interop memory io = Erc7930.parseStrict(sender);
-        if (io.addr.length != 20 || address(bytes20(io.addr)) != address(this)) {
+        if (io.addr.length != 20 || address(bytes20(io.addr)) != sourceTransmitter) {
             revert SenderIsNotThisAccount(sender);
         }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -42,27 +43,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      version 1, chainType eip155, a one-byte chain reference `0x01`, and a zero-length
     ///      address. `ChainKey.forEvm(1)` computes it.
     bytes32 public homeChainKey;
-
-    /// The home chain's ERC-7930 chain identifier, which `homeChainKey` hashes from.
-    bytes private _homeRoute;
-
-    /// The hub transceiver, in THIS chain's address format.
-    ///
-    /// @dev SET ONCE, WITH NO SETTER AND NO LOCK. A setter plus a lock would leave a window in
-    ///      which the admin could repoint the one address this contract authenticates every
-    ///      inbound message against. Writing it in the initializer closes that window rather
-    ///      than documenting it. It costs nothing in practice: hub and spoke proxies share
-    ///      initcode and salt, so on every parity chain they land on the same address and the
-    ///      value is a prediction rather than a deployment ordering constraint.
-    ///
-    /// @dev SO WHY IS IT SET RATHER THAN DERIVED? Because the chains where a spoke most needs
-    ///      to be sure (zkSync and Tron, and every non-EVM VM) are exactly the ones where the
-    ///      derivation does not hold, and a spoke has no registry to ask. One write at
-    ///      initialization is both simpler and stronger than a derivation with three
-    ///      exceptions baked into it.
-    ///
-    /// @dev Raw bytes rather than `address` because a spoke may not be an EVM chain.
-    bytes private _homeTransceiver;
 
     /// The receiver logic every account here is armed with.
     ///
@@ -139,32 +119,47 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         emit ReceiverImplementationSet(receiverImplementation_);
 
         homeChainKey = homeChainKey_;
-        _homeRoute = homeRoute_;
-        _homeTransceiver = homeTransceiver_;
+        _setRoute(homeChainKey_, homeRoute_);
+        _setCounterpart(homeChainKey_, homeTransceiver_);
         emit HomeSet(homeChainKey_, homeRoute_, homeTransceiver_);
 
         addressesDiverge = addressesDiverge_;
         emit AddressesDivergeSet(addressesDiverge_);
     }
 
-    function homeTransceiver() public view returns (bytes memory h) {
-        h = _homeTransceiver;
-        if (h.length == 0) revert NoHomeTransceiver();
+    /// @notice The hub transceiver, in THIS chain's address format.
+    ///
+    /// @dev IT IS `OutboundBase`'s COUNTERPART SLOT, written once in the initializer. Raw
+    ///      bytes rather than `address` because a spoke may not be an EVM chain, and stored
+    ///      rather than derived because the chains where a spoke most needs to be sure
+    ///      (zkSync and Tron, and every non-EVM VM) are exactly the ones where a derivation
+    ///      does not hold, and a spoke has no registry to ask.
+    ///
+    /// @dev WRITE-ONCE WITH NO SETTER AND NO LOCK. `OutboundBase._setCounterpart` is
+    ///      rebindable and this contract simply never exposes it: a setter plus a lock would
+    ///      leave a window in which the admin could repoint the one address this contract
+    ///      authenticates every inbound message against, and writing it in the initializer
+    ///      closes that window rather than documenting it. It costs nothing in practice,
+    ///      since hub and spoke proxies share initcode and salt and so land on one address
+    ///      wherever Ethereum's CREATE2 formula holds.
+    function homeTransceiver() public view returns (bytes memory) {
+        return OutboundBase._counterpartOn(homeChainKey);
     }
 
     /// @notice The home chain's ERC-7930 chain identifier.
-    /// @dev Approved by whoever signs the initialization rather than read out of a deploy
+    /// @dev Also `OutboundBase`'s, and write-once there by construction. The value is
+    ///      approved by whoever signs the initialization rather than read out of a deploy
     ///      script afterwards, which is the same guarantee a source literal gave and the only
     ///      one available once the home chain is a choice rather than a constant.
-    function homeRoute() public view returns (bytes memory r) {
-        r = _homeRoute;
-        if (r.length == 0) revert NoHomeRoute();
+    function homeRoute() public view returns (bytes memory) {
+        return routeFor(homeChainKey);
     }
 
-    /// @inheritdoc TransceiverBase
-    /// @dev No lookup, no registry, no provenance. A spoke asked to route anywhere but home
-    ///      reverts, which is what makes spoke-to-spoke traffic structurally impossible
-    ///      rather than merely unconfigured.
+    /// @inheritdoc OutboundBase
+    /// @dev THE TABLE HOLDS EXACTLY ONE ROW, AND THIS IS WHAT ENFORCES THAT. The base would
+    ///      happily answer for any key that had been written; a spoke asked to route anywhere
+    ///      but home reverts instead, which is what makes spoke-to-spoke traffic structurally
+    ///      impossible rather than merely unconfigured.
     function _counterpartOn(bytes32 chainKey)
         internal
         view
@@ -172,13 +167,13 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         returns (bytes memory)
     {
         if (chainKey != homeChainKey) revert NotHome(chainKey);
-        return homeTransceiver();
+        return OutboundBase._counterpartOn(chainKey);
     }
 
-    /// @inheritdoc TransceiverBase
+    /// @inheritdoc OutboundBase
     function _routeTo(bytes32 chainKey) internal view override returns (bytes memory) {
         if (chainKey != homeChainKey) revert NotHome(chainKey);
-        return homeRoute();
+        return OutboundBase._routeTo(chainKey);
     }
 
     /// @inheritdoc TransceiverBase
@@ -207,7 +202,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @notice Whether an inbound message's origin is the hub, in one comparison.
     function _isHome(bytes memory route, bytes memory sender) internal view returns (bool) {
         return keccak256(route) == keccak256(homeRoute())
-            && keccak256(sender) == keccak256(_homeTransceiver);
+            && keccak256(sender) == keccak256(homeTransceiver());
     }
 
     /* ============================ receiver manufacture ========================= */

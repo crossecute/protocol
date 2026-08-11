@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Provenance} from "src/registry/ForeignRef.sol";
@@ -138,7 +139,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
         );
     }
 
-    /// @inheritdoc TransceiverBase
+    /// @inheritdoc OutboundBase
     /// @dev The provenance bar is applied here, inside the registry read, rather than by
     ///      the caller: `transceiverFor` refuses anything below it.
     function _counterpartOn(bytes32 chainKey)

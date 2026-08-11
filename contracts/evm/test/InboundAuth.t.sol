@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
@@ -196,7 +197,7 @@ contract InboundAuthTest is Test {
     function test_hubRejectsAnUnknownRoute() public {
         bytes memory m =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
-        vm.expectRevert(TransceiverBase.UnknownRoute.selector);
+        vm.expectRevert(OutboundBase.UnknownRoute.selector);
         hub.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
     }
 

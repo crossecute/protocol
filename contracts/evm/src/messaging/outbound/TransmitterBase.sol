@@ -54,13 +54,13 @@ interface IAccountTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
-    /// @notice The chain identifier a destination is configured under, opaque here.
+    /// @notice The chain identifier the MSIG has configured a destination under.
     ///
-    /// @dev THIS IS WHY AN ACCOUNT HOLDS NO ROUTE TABLE. Reading it through the transceiver
-    ///      rather than storing a copy means a msig adding a destination is one configuration
-    ///      change, not a migration across every account that might want to reach it. The
-    ///      send path does not need it (an ERC-7786 recipient names its own chain); it is
-    ///      here so a caller never has to keep its own table.
+    /// @dev IT ANSWERS FOR DESTINATIONS AN ACCOUNT HAS NOT REACHED YET, which is the one
+    ///      thing the account's own table cannot do: that table is written by `bootstrap`,
+    ///      so before the first message to a chain it holds nothing. A caller asking "can
+    ///      this account be stood up there" reads it here. Afterwards the two necessarily
+    ///      agree, because a chainKey IS `keccak256(identifier)` and one key cannot have two.
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
 }
 
@@ -106,33 +106,20 @@ abstract contract TransmitterBase is
     ///      without a lookup.
     bytes32 public accountSalt;
 
-    /// Destinations this account has already been stood up on.
-    ///
-    /// @dev IT RECORDS THAT A BOOTSTRAP WAS DISPATCHED, NOT THAT ONE LANDED, and nothing on
-    ///      this chain can close that gap: the message is asynchronous, and on a parity chain
-    ///      no report ever comes back, because the hub derives the receiver's address rather
-    ///      than being told it (see `SpokeTransceiverBase.addressesDiverge`). A flag that
-    ///      waited for confirmation would never be set on most chains.
-    ///
-    ///      That is sound because delivery is retryable at the provider: a bootstrap that
-    ///      reverts on arrival can be re-executed by anyone, so it is pending rather than
-    ///      lost. See [Failure handling](../../../../../docs/message-flow.md#failure-handling).
-    ///
-    /// @dev THE ONE CASE IT CANNOT SURVIVE is a permanently undeliverable bootstrap: a route
-    ///      configured to the wrong chain, or a destination that will never accept it. This
-    ///      flag then blocks the retry. Both causes are transceiver misconfiguration, which
-    ///      is write-once and a redeploy to correct, so the account was stranded either way.
-    mapping(bytes32 destinationChainKey => bool) private _bootstrapped;
-
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
     event DestinationBootstrapped(bytes32 indexed destinationChainKey);
+    /// @dev Distinct from `CounterpartSet`, which fires on every write including the
+    ///      presumed one at bootstrap. This says an owner corrected a receiver the account
+    ///      could not derive, which is the event an operator actually watches for.
+    event DestinationReceiverCorrected(bytes32 indexed destinationChainKey, bytes receiver);
     /// @dev Distinct from a bridged delivery: an execution the owner drove directly must be
     ///      distinguishable on-chain from one a commitment discharged.
     event Executed(address indexed caller, uint256 callCount);
 
     error NoTransceiver();
-    /// @dev An account's peer is itself on every chain, so any other recipient is either a
-    ///      typo or an attempt to route this account's payload somewhere it has no receiver.
+    /// @dev The recipient is not the receiver this account recorded for that chain, so it is
+    ///      either a typo or an attempt to route this account's payload somewhere it has no
+    ///      receiver.
     error RecipientIsNotThisAccount(bytes recipient);
     /// @dev The peer address on an un-bootstrapped chain holds no code, so the payload fails
     ///      on delivery after the fee is spent. Refusing here makes that a local revert.
@@ -148,23 +135,74 @@ abstract contract TransmitterBase is
     error OpaquePayloadToEvmDestination();
 
     /// @notice Whether this account has been stood up on `destinationChainKey`.
-    /// @dev Exposed so a caller can check before spending anything, and so an interface can
-    ///      show which destinations are reachable without simulating a send.
+    ///
+    /// @dev IT IS THE COUNTERPART TABLE, NOT A SEPARATE FLAG. Bootstrap records the receiver
+    ///      it is standing up, so "has a receiver recorded there" and "has been bootstrapped
+    ///      there" are one fact and cannot disagree.
+    ///
+    /// @dev IT RECORDS THAT A BOOTSTRAP WAS DISPATCHED, NOT THAT ONE LANDED, and nothing on
+    ///      this chain can close that gap: the message is asynchronous, and on a parity chain
+    ///      no report ever comes back, because the hub derives the receiver's address rather
+    ///      than being told it. A flag that waited for confirmation would never be set on
+    ///      most chains. That is sound because delivery is retryable at the provider, so a
+    ///      bootstrap that reverts on arrival is pending rather than lost. See
+    ///      [Failure handling](../../../../../docs/message-flow.md#failure-handling).
+    ///
+    /// @dev THE ONE CASE IT CANNOT SURVIVE is a permanently undeliverable bootstrap: a route
+    ///      configured to the wrong chain, or a destination that will never accept it. This
+    ///      then blocks the retry. Both causes are transceiver misconfiguration, which is
+    ///      write-once and a redeploy to correct, so the account was stranded either way.
     function isBootstrapped(bytes32 destinationChainKey) public view returns (bool) {
-        return _bootstrapped[destinationChainKey];
+        return hasCounterpart(destinationChainKey);
     }
 
     /// @notice Whether this account has been stood up on an EVM chain, by plain chain id.
     function isBootstrappedOn(uint256 destinationChainId) external view returns (bool) {
-        return _bootstrapped[ChainKey.forEvm(destinationChainId)];
+        return hasCounterpart(ChainKey.forEvm(destinationChainId));
+    }
+
+    /// @notice This account's receiver on `destinationChainKey`, in that chain's own format.
+    /// @dev `counterpartOn` names the same value; this is the name that says what it IS here.
+    function destinationReceiverOn(bytes32 destinationChainKey)
+        external
+        view
+        returns (bytes memory)
+    {
+        return counterpartOn(destinationChainKey);
+    }
+
+    /// @notice Correct the receiver recorded for a destination whose address this chain
+    ///         cannot derive.
+    ///
+    /// @dev THIS IS WHAT MAKES A DIVERGING CHAIN REACHABLE AT ALL. Bootstrap records
+    ///      `address(this)`, which is right wherever Ethereum's CREATE2 formula holds and
+    ///      wrong on zkSync and Tron, whose formulas differ, and meaningless on a non-EVM
+    ///      chain where the account is not a 20-byte address. Those are exactly the cases
+    ///      `SpokeTransceiverBase.addressesDiverge` exists to report home, and this is where
+    ///      the reported value lands: read `ChainRegistry`'s
+    ///      `receiverSlot(chainKey, owner, salt)` and write what the hub recorded.
+    ///
+    /// @dev IT IS REBINDABLE, AND THAT GRANTS THE OWNER NOTHING THEY LACK. An owner can
+    ///      already `execute` anything and approve any payload, so being able to say where
+    ///      their own account's receiver lives is not an escalation. It is refused before
+    ///      bootstrap, because a receiver that has not been asked for cannot have an address.
+    function setDestinationReceiver(bytes32 destinationChainKey, bytes calldata receiver)
+        external
+        onlyAccountOwner
+    {
+        if (!hasCounterpart(destinationChainKey)) {
+            revert NotBootstrapped(destinationChainKey);
+        }
+        _setCounterpart(destinationChainKey, receiver);
+        emit DestinationReceiverCorrected(destinationChainKey, receiver);
     }
 
     function _requireBootstrapped(bytes32 chainKey) private view {
-        if (!_bootstrapped[chainKey]) revert NotBootstrapped(chainKey);
+        if (!hasCounterpart(chainKey)) revert NotBootstrapped(chainKey);
     }
 
     function _requireNotBootstrapped(bytes32 chainKey) private view {
-        if (_bootstrapped[chainKey]) revert AlreadyBootstrapped(chainKey);
+        if (hasCounterpart(chainKey)) revert AlreadyBootstrapped(chainKey);
     }
 
     /// @notice The account's owner. Declared, not implemented: see the contract note.
@@ -192,7 +230,7 @@ abstract contract TransmitterBase is
     ///      refuse a typed payload bound for a non-EVM chain or an opaque one bound for an
     ///      EVM chain. The pairing is the caller's to get right, and `payloadForCalls` /
     ///      `payloadForElements` exist so it is at least spelled here the way it is decoded
-    ///      there. Path B still holds the envelope and does enforce it: see `_typedKey`.
+    ///      there. Path B still holds the envelope and does enforce it: see `_typedIdentifier`.
     ///
     /// @dev THE RECIPIENT IS CHECKED, NOT TRUSTED. An account's peer is itself on every
     ///      chain, which is what lets it be its own endpoint, and it is derived precisely so
@@ -208,8 +246,7 @@ abstract contract TransmitterBase is
         bytes calldata payload,
         bytes[] calldata attributes
     ) external payable onlyAccountOwner returns (bytes32 sendId) {
-        bytes32 chainKey = _requireOwnRecipient(recipient);
-        _requireBootstrapped(chainKey);
+        _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 
         emit MessageSent(
@@ -258,7 +295,7 @@ abstract contract TransmitterBase is
         pure
         returns (bytes memory)
     {
-        return Erc7930.encodeEvmChain(destinationChainId);
+        return _evmIdentifier(destinationChainId);
     }
 
     /// @notice The wire bytes for an EVM destination, which decodes `Call[]`.
@@ -275,23 +312,26 @@ abstract contract TransmitterBase is
         return Payload.encodeElements(elements);
     }
 
-    /// @notice The recipient must name this account, and the chain must be one this account
-    ///         has been stood up on. Returns the chainKey so nothing parses twice.
+    /// @notice The recipient must be the receiver this account recorded for that chain.
+    ///         Returns the chainKey so nothing parses twice.
     ///
-    /// @dev THE ADDRESS CHECK BINDS ON `eip155` AND NOTHING ELSE. On a non-EVM destination
-    ///      the account is not a 20-byte address at all, so there is nothing to compare and
-    ///      the recipient is the caller's to get right; the address the hub recorded is in the
-    ///      registry under `receiverSlot(chainKey, owner, salt)`.
+    /// @dev IT COMPARES AGAINST THE STORED COUNTERPART, NOT AGAINST `address(this)`, and that
+    ///      is what makes the check both correct and universal. An account's receiver shares
+    ///      its address wherever Ethereum's CREATE2 formula holds, so deriving it looked
+    ///      free; it is NOT its address on zkSync or Tron, whose formulas differ, nor on any
+    ///      non-EVM chain, where the account is not a 20-byte address at all. A derived check
+    ///      therefore had to be skipped off `eip155` (leaving the recipient unchecked) and
+    ///      was actively WRONG on the diverging EVM chains, which are `eip155` and so kept a
+    ///      check that could never pass. Comparing against what `bootstrap` recorded and
+    ///      `setDestinationReceiver` corrects holds on every chain and needs no exception.
     ///
-    /// @dev KNOWN GAP: IT BRANCHES ON CHAIN TYPE, AND THE DIVERGING SET IS NOT A CHAIN TYPE.
-    ///      zkSync and Tron ARE `eip155`; what makes them diverge is a different CREATE2
-    ///      formula, which the chain type cannot express. So the check fires there and
-    ///      enforces `address(this)`, which is NOT this account's address on those chains:
-    ///      the real receiver is unaddressable and the only accepted recipient holds no code.
-    ///      `ReceiverBase.receiveMessage` carries the mirror of this. The registry separates
-    ///      the two sets with a second condition an account cannot ask for, the provenance cap
-    ///      in `_requireEvmDerivable`. Until it is closed, path A is parity-chain and non-EVM
-    ///      only; see [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
+    /// @dev IT COMPARES THE WHOLE RECIPIENT, so the chain half is checked too: a payload
+    ///      addressed to the right account on the wrong chain is refused here rather than
+    ///      arriving somewhere its commitment cannot match.
+    ///
+    /// @dev THE BOOTSTRAP CHECK RUNS INSIDE IT, so both entry points get it in the right
+    ///      order: `_recipientOn` would also revert on an unrecorded destination, but as
+    ///      `NoRouteFor`, which describes the storage rather than the mistake.
     function _requireOwnRecipient(bytes calldata recipient)
         private
         view
@@ -299,13 +339,14 @@ abstract contract TransmitterBase is
     {
         if (recipient.length == 0) revert NoDestination();
 
-        Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
-        if (io.chainType == Erc7930.CT_EIP155) {
-            if (io.addr.length != 20 || address(bytes20(io.addr)) != address(this)) {
-                revert RecipientIsNotThisAccount(recipient);
-            }
+        chainKey = ChainKey.fromIdentifier(recipient);
+        // Before the comparison, so an unreachable destination says so plainly rather than
+        // failing as an empty expectation inside `_recipientOn`.
+        _requireBootstrapped(chainKey);
+
+        if (keccak256(recipient) != keccak256(_recipientOn(chainKey))) {
+            revert RecipientIsNotThisAccount(recipient);
         }
-        return ChainKey.fromIdentifier(recipient);
     }
 
     /* ================================= bootstrap =============================== */
@@ -323,8 +364,9 @@ abstract contract TransmitterBase is
     ///      back to `msg.sender` before it sends anything.
     ///
     /// @dev THE PAIRING CHECK LIVES HERE, unlike on path A, because these three still hold
-    ///      typed calls and the ERC-7930 envelope: `_evmKey` is `eip155` by construction,
-    ///      `_typedKey` refuses a non-EVM destination, and `_opaqueKey` refuses an EVM one.
+    ///      typed calls and the ERC-7930 envelope: `_evmIdentifier` is `eip155` by
+    ///      construction, `_typedIdentifier` refuses a non-EVM destination, and
+    ///      `_opaqueIdentifier` refuses an EVM one.
     ///      This is the last point that holds the envelope; downstream everything speaks
     ///      chainKeys, which are hashes and cannot be asked what they came from.
     ///
@@ -341,7 +383,7 @@ abstract contract TransmitterBase is
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapCalls(_evmKey(destinationChainId), calls, attributes);
+        _bootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
     }
 
     /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
@@ -350,7 +392,7 @@ abstract contract TransmitterBase is
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapCalls(_typedKey(destinationChainIdentifier), calls, attributes);
+        _bootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
     }
 
     /// @notice `bootstrap`, in the portable form: for standing this account up on Solana,
@@ -360,7 +402,7 @@ abstract contract TransmitterBase is
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external payable onlyAccountOwner {
-        _bootstrapElements(_opaqueKey(destinationChainIdentifier), elements, attributes);
+        _bootstrapElements(_opaqueIdentifier(destinationChainIdentifier), elements, attributes);
     }
 
     /* ================================== quote ================================== */
@@ -384,8 +426,7 @@ abstract contract TransmitterBase is
         bytes calldata payload,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        bytes32 chainKey = _requireOwnRecipient(recipient);
-        _requireBootstrapped(chainKey);
+        _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 
         return _quoteMessage(recipient, payload, attributes);
@@ -405,7 +446,7 @@ abstract contract TransmitterBase is
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        return _quoteBootstrapCalls(_evmKey(destinationChainId), calls, attributes);
+        return _quoteBootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
     }
 
     /// @notice `quoteBootstrap`, for a destination named by its ERC-7930 identifier.
@@ -415,7 +456,7 @@ abstract contract TransmitterBase is
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrapCalls(
-            _typedKey(destinationChainIdentifier), calls, attributes
+            _typedIdentifier(destinationChainIdentifier), calls, attributes
         );
     }
 
@@ -426,7 +467,8 @@ abstract contract TransmitterBase is
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         if (transceiver == address(0)) revert NoTransceiver();
-        bytes32 chainKey = _opaqueKey(destinationChainIdentifier);
+        bytes32 chainKey =
+            ChainKey.fromIdentifier(_opaqueIdentifier(destinationChainIdentifier));
         _requireNotBootstrapped(chainKey);
 
         return IAccountTransceiver(transceiver).quoteBootstrapElements(
@@ -435,11 +477,12 @@ abstract contract TransmitterBase is
     }
 
     function _quoteBootstrapCalls(
-        bytes32 chainKey,
+        bytes memory identifier,
         Call[] calldata calls,
         bytes[] calldata attributes
     ) private view returns (uint256) {
         if (transceiver == address(0)) revert NoTransceiver();
+        bytes32 chainKey = ChainKey.fromIdentifier(identifier);
         _requireNotBootstrapped(chainKey);
 
         return IAccountTransceiver(transceiver).quoteBootstrap(
@@ -447,31 +490,43 @@ abstract contract TransmitterBase is
         );
     }
 
-    /* ============================== destination keys =========================== */
+    /* =========================== destination identifiers ======================= */
+
+    /// @dev THEY RETURN THE IDENTIFIER, NOT THE CHAINKEY, because bootstrap records the
+    ///      route as well as the receiver and a chainKey is a hash that cannot be reversed
+    ///      into one. The chainKey is derived from the identifier where it is needed.
 
     /// @dev A `uint256` chain id is an `eip155` reference by construction, so there is no
     ///      chain type to check.
-    function _evmKey(uint256 chainId) private pure returns (bytes32) {
+    function _evmIdentifier(uint256 chainId) private pure returns (bytes memory) {
         if (chainId == 0) revert NoDestination();
-        return ChainKey.forEvm(chainId);
+        return Erc7930.encodeEvmChain(chainId);
     }
 
     /// @dev The typed form only reaches a chain that executes `Call[]`.
-    function _typedKey(bytes calldata identifier) private pure returns (bytes32) {
+    function _typedIdentifier(bytes calldata identifier)
+        private
+        pure
+        returns (bytes calldata)
+    {
         if (identifier.length == 0) revert NoDestination();
         if (!Payload.isTypedDestination(identifier)) {
             revert TypedPayloadToNonEvmDestination();
         }
-        return ChainKey.fromIdentifier(identifier);
+        return identifier;
     }
 
     /// @dev And the portable form only reaches one that does not.
-    function _opaqueKey(bytes calldata identifier) private pure returns (bytes32) {
+    function _opaqueIdentifier(bytes calldata identifier)
+        private
+        pure
+        returns (bytes calldata)
+    {
         if (identifier.length == 0) revert NoDestination();
         if (Payload.isTypedDestination(identifier)) {
             revert OpaquePayloadToEvmDestination();
         }
-        return ChainKey.fromIdentifier(identifier);
+        return identifier;
     }
 
     /* ================================= plumbing ================================ */
@@ -482,13 +537,11 @@ abstract contract TransmitterBase is
     ///      If the dispatch reverts the whole transaction unwinds and the flag goes with it,
     ///      so the ordering costs nothing.
     function _bootstrapCalls(
-        bytes32 chainKey,
+        bytes memory identifier,
         Call[] calldata calls,
         bytes[] calldata attributes
     ) private {
-        if (transceiver == address(0)) revert NoTransceiver();
-        _requireNotBootstrapped(chainKey);
-        _markBootstrapped(chainKey);
+        bytes32 chainKey = _markBootstrapped(identifier);
 
         IAccountTransceiver(transceiver).bootstrap{value: msg.value}(
             chainKey, _owner(), accountSalt, calls, attributes
@@ -496,21 +549,38 @@ abstract contract TransmitterBase is
     }
 
     function _bootstrapElements(
-        bytes32 chainKey,
+        bytes memory identifier,
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) private {
-        if (transceiver == address(0)) revert NoTransceiver();
-        _requireNotBootstrapped(chainKey);
-        _markBootstrapped(chainKey);
+        bytes32 chainKey = _markBootstrapped(identifier);
 
         IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
             chainKey, _owner(), accountSalt, elements, attributes
         );
     }
 
-    function _markBootstrapped(bytes32 chainKey) private {
-        _bootstrapped[chainKey] = true;
+    /// @dev IT RECORDS THE DESTINATION BEFORE THE TRANSCEIVER IS CALLED, not after. That call
+    ///      reaches a provider endpoint and, through it, arbitrary code, so recording first
+    ///      means a re-entrant second bootstrap for the same destination meets the state it
+    ///      would otherwise race. If the dispatch reverts the whole transaction unwinds and
+    ///      the record goes with it, so the ordering costs nothing.
+    ///
+    /// @dev THE RECEIVER IT RECORDS IS A PRESUMPTION, AND ON MOST CHAINS A CORRECT ONE. An
+    ///      account and its receiver share an address wherever Ethereum's CREATE2 formula
+    ///      holds, which is every destination but zkSync, Tron, and the non-EVM chains. There
+    ///      the value is wrong until `setDestinationReceiver` replaces it with what the spoke
+    ///      reported home, and until then a send is refused rather than misdelivered.
+    function _markBootstrapped(bytes memory identifier)
+        private
+        returns (bytes32 chainKey)
+    {
+        if (transceiver == address(0)) revert NoTransceiver();
+        chainKey = ChainKey.fromIdentifier(identifier);
+        _requireNotBootstrapped(chainKey);
+
+        _setRoute(chainKey, identifier);
+        _setCounterpart(chainKey, abi.encodePacked(address(this)));
         emit DestinationBootstrapped(chainKey);
     }
 

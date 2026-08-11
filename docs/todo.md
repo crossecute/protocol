@@ -108,8 +108,10 @@ protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uin
 native LayerZero binding keeps its own chainKey→eid mapping under R5, where a gateway
 binding keeps none.
 
-**The peer value is always the account's own address**, since a transmitter and its
-receivers share one. One entry per destination, and the value never varies.
+**The peer value is `counterpartOn(chainKey)`, not `address(this)`.** The two agree wherever
+Ethereum's CREATE2 formula holds, which made the shortcut tempting; they differ on zkSync and
+Tron, where deriving the peer names an address holding no receiver. One entry per
+destination, read from the table rather than computed.
 
 ### Two consequences to decide on
 
@@ -127,47 +129,25 @@ receivers share one. One entry per destination, and the value never varies.
 
 ## 3. Blockers on specific paths
 
-- **Path A does not work on a diverging chain, at either end, and the flag that exists to
-  handle divergence does not reach it.** Verified against the tree rather than reasoned
-  about; both halves fail closed, so nothing is at risk, but an account on zkSync or Tron is
-  currently unreachable after bootstrap.
+- ~~**Path A does not work on a diverging chain.**~~ FIXED, by storing the counterpart
+  instead of deriving it. Both checks used to branch on chain TYPE, which cannot express
+  divergence: zkSync and Tron ARE `eip155`, so the transmitter enforced `address(this)` there
+  and refused the receiver that actually existed, while the receiver compared its sender
+  against `address(this)` and refused the transmitter that actually sent. Both now compare
+  against a stored fact: `TransmitterBase` against the counterpart `bootstrap` records and
+  `setDestinationReceiver` corrects, `ReceiverBase` against the `sourceTransmitter` it was
+  already given at creation and simply was not using. `test/Transport.t.sol`'s
+  `DivergingDestinationTest` covers both directions.
 
-  **Both checks branch on chain TYPE, and the diverging set is not a chain-type
-  distinction.** `TransmitterBase._requireOwnRecipient` applies its address check when
-  `chainType == CT_EIP155`, and `ReceiverBase.receiveMessage` compares the sender against
-  `address(this)` unconditionally. zkSync and Tron ARE `eip155`; what makes them diverge is a
-  different CREATE2 formula, which the chain type cannot express. So the transmitter refuses
-  to address the receiver that actually exists (`RecipientIsNotThisAccount`) and accepts only
-  its own home address, where no receiver lives; and the receiver would refuse a message from
-  the transmitter that actually sent it (`SenderIsNotThisAccount`) and accept only one
-  claiming to come from its own spoke-side address. Non-EVM destinations are unaffected
-  because the transmitter's check is skipped entirely there, which is the documented intent.
+  **The check got stronger rather than weaker.** A derived peer could only be checked where
+  it was derivable, so every non-EVM recipient went unchecked; a stored one binds on every
+  chain, and it compares the whole ERC-7930 recipient, so the chain half is checked too.
 
-  **The registry gets this right and shows what the accounts are missing.**
-  `_requireEvmDerivable` requires TWO conditions, `chainType == eip155` AND
-  `maxProvenanceOf[chainKey] >= Derived`, and the cap is the mechanism that separates zkSync
-  and Tron from Base. An account has no cap table and no registry pointer, deliberately, so
-  it cannot ask the same question.
-
-  **So `addressesDiverge` currently has no payoff.** Bootstrap succeeds (path B has no
-  recipient check), the spoke creates the receiver, the report carries its address home, and
-  the registry stores it under `receiverSlot` — and then nothing can address it. The machinery
-  learns a value that no send path will accept.
-
-  **It is deeper than the two checks.** `SpokeTransceiverBase` computes account addresses with
-  `Create2.computeAddress`, i.e. Ethereum's formula, in `predictCrossAccount`, and
-  `_createCrossAccount` both deploys and collision-checks against it. A zkSync spoke is this
-  contract, so its own arithmetic is wrong there too, and `_accountInitializer` hands the
-  receiver a `sourceTransmitter` derived the same way. Fixing the two comparisons without
-  fixing the derivation would move the failure rather than remove it.
-
-  Cheapest coherent fix is probably to cache derivability on the account at bootstrap, since
-  the hub already reads the registry there through `_requireRoutable`: one flag per
-  destination beside `_bootstrapped`, keeping the registry off the send path. The receiver's
-  half may be cheaper still, since it already stores `sourceTransmitter` and could compare
-  against that rather than `address(this)` — but only once the spoke derives that value
-  correctly. **Until this is settled, a deployment should treat zkSync and Tron as out of
-  scope rather than merely degraded.**
+  **What remains on those chains is the derivation itself**, which this does not touch:
+  `SpokeTransceiverBase` computes account addresses with `Create2.computeAddress`, and a
+  zkSync spoke IS that contract, so `_createCrossAccount` would deploy at one address and
+  arm another. A zkSync spoke needs its own address arithmetic before it can be deployed at
+  all. The messaging layer no longer assumes parity; the manufacturing layer still does.
 - **Funding a diverging spoke.** The report fires from inside the destination's inbound
   callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
   one reverts the bootstrap with it. That revert is deliberate and keeps the operation

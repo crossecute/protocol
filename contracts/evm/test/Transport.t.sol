@@ -215,13 +215,22 @@ contract TransportTest is Test {
         sink = new Sink();
     }
 
-    /// @dev Stand the account up on a destination named by envelope, for the tests that
-    ///      reach somewhere other than DEST.
+    /// @dev Stand the account up on a non-EVM destination, the way a real deployment does:
+    ///      bootstrap records `address(this)` as a presumption, and the owner then writes
+    ///      the address the spoke actually reported home. Without the second step the
+    ///      account has no reachable receiver there, which is the point of the correction.
     function _bootstrapTo(bytes memory identifier) internal {
         bytes[] memory none = new bytes[](0);
-        vm.prank(owner);
+        vm.startPrank(owner);
         transmitter.bootstrapTo(identifier, none, none);
+        transmitter.setDestinationReceiver(
+            ChainKey.fromIdentifier(identifier), SOL_RECEIVER
+        );
+        vm.stopPrank();
     }
+
+    /// @dev The account's address on the non-EVM destination, which is not derivable here.
+    bytes constant SOL_RECEIVER = hex"0badc0de";
 
     bytes[] internal NONE;
 
@@ -234,7 +243,7 @@ contract TransportTest is Test {
         returns (bytes memory)
     {
         Erc7930.Interop memory io = Erc7930.parseStrict(chainIdentifier);
-        return Erc7930.encode(io.chainType, io.chainRef, hex"0badc0de");
+        return Erc7930.encode(io.chainType, io.chainRef, SOL_RECEIVER);
     }
 
     function _attrs() internal pure returns (bytes[] memory a) {
@@ -406,7 +415,7 @@ contract TransportTest is Test {
     ///      nothing to compare against; the same is true on zkSync and Tron, which is what
     ///      `addressesDiverge` names from the other end. The recipient is the caller's to
     ///      get right there, and this test records that rather than hiding it.
-    function test_aNonEvmRecipientIsNotAddressChecked() public {
+    function test_aNonEvmRecipientIsCheckedAgainstTheRecordedReceiver() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
@@ -419,6 +428,31 @@ contract TransportTest is Test {
             ChainKey.fromIdentifier(transmitter.sentRecipient()),
             ChainKey.fromIdentifier(sol)
         );
+        assertEq(
+            transmitter.sentRecipient(), _solRecipient(sol), "the recorded receiver, exactly"
+        );
+    }
+
+    /// @dev THE CHECK IS UNIVERSAL NOW, WHICH IT COULD NOT BE WHILE IT WAS DERIVED. A
+    ///      derived check had to be skipped wherever the account's address is not
+    ///      `address(this)`, which left every non-EVM recipient unchecked. Comparing against
+    ///      the recorded receiver binds on every chain, so the 32-byte pubkey of somebody
+    ///      else's account is refused here rather than on arrival.
+    function test_aNonEvmRecipientThatIsNotTheRecordedReceiverIsRefused() public {
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        _bootstrapTo(sol);
+
+        Erc7930.Interop memory io = Erc7930.parseStrict(sol);
+        bytes memory impostor = Erc7930.encode(io.chainType, io.chainRef, hex"deadbeef");
+        bytes memory payload = Payload.encodeElements(new bytes[](0));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.RecipientIsNotThisAccount.selector, impostor
+            )
+        );
+        transmitter.sendMessage(impostor, payload, NONE);
     }
 
     /// @dev THE PAIRING CHECK IS GONE, AND THIS IS WHERE THAT IS RECORDED. The six
@@ -1022,9 +1056,10 @@ contract TransportTest is Test {
     /* ============================ the account's view =========================== */
 
     /// @dev AN ACCOUNT HOLDS ONE TRANSCEIVER ADDRESS AND ONE INTERFACE OVER IT. `routeTo`
-    ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on
-    ///      a second type, so a binding cannot hold a reference that can send but not
-    ///      resolve where to.
+    ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on a
+    ///      second type, and it answers for a destination the account has not bootstrapped,
+    ///      which is the one thing its own table cannot: that table is written by
+    ///      `bootstrap`, so before the first message to a chain it holds nothing.
     function test_theAccountInterfaceResolvesARoute() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
@@ -1036,14 +1071,22 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev AND THE ACCOUNT STORES NO COPY OF IT. A msig adding a destination is one
-    ///      configuration change on the transceiver, not a migration across every account
-    ///      that might want to reach it.
-    function test_theAccountHoldsNoRouteTable() public {
-        (bool ok,) = address(transmitter).staticcall(
-            abi.encodeWithSignature("routeTo(bytes32)", ChainKey.forEvm(DEST))
+    /// @dev AN ACCOUNT RECORDS ITS OWN DESTINATIONS RATHER THAN BEING CONFIGURED WITH THEM,
+    ///      which is the property the old "an account holds no route table" test was really
+    ///      protecting. It does hold one now, but every row is written by `bootstrap` from
+    ///      the identifier the caller already supplied: there is no admin surface on the
+    ///      account, nothing a msig has to migrate when a destination is added, and no
+    ///      provider vocabulary in it.
+    function test_theAccountRecordsItsDestinationsRatherThanBeingConfigured() public view {
+        assertEq(
+            transmitter.routeTo(ChainKey.forEvm(DEST)),
+            transmitter.chainIdentifierFor(DEST),
+            "the identifier bootstrap was given, stored verbatim"
         );
-        assertFalse(ok, "an account cannot answer this itself");
+        assertTrue(transmitter.hasRoute(ChainKey.forEvm(DEST)));
+        assertFalse(
+            transmitter.hasRoute(ChainKey.forEvm(42161)), "and nothing it was not asked for"
+        );
     }
 
     function _oneCall() internal view returns (Call[] memory calls) {
@@ -1069,5 +1112,110 @@ contract BareTransmitter is TransmitterBase, OwnableUpgradeable {
 
     function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
         OwnableUpgradeable._checkOwner();
+    }
+}
+
+/// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so an account's
+///      address there is NOT the one it occupies at home. That is the case the whole
+///      counterpart table exists for: a derived peer is wrong on exactly these chains, and
+///      being `eip155` they cannot be excluded by chain type the way a non-EVM chain is.
+contract DivergingDestinationTest is Test {
+    MockTransmitter transmitter;
+    MockTransceiver hub;
+
+    address owner = address(0xA11CE);
+    uint256 constant ZKSYNC = 324;
+    /// Where the spoke actually created the receiver, reported home under
+    /// `addressesDiverge` and readable from the registry's `receiverSlot`.
+    bytes constant DIVERGED = hex"00000000000000000000000000000000deadbeef";
+
+    function setUp() public {
+        hub = new MockTransceiver();
+        hub.initialize(address(this), address(new MockTransmitter()));
+        address at = hub.predictCrossAccount(owner, bytes32(0));
+        vm.etch(at, address(new MockTransmitter()).code);
+        transmitter = MockTransmitter(payable(at));
+        transmitter.initialize(owner, address(hub), bytes32(0));
+
+        vm.prank(owner);
+        transmitter.bootstrap(ZKSYNC, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev BOOTSTRAP RECORDS A PRESUMPTION, and on a diverging chain it is wrong. Refusing
+    ///      the send is correct: the address holds no receiver, so the message would be paid
+    ///      for and fail on arrival.
+    function test_beforeCorrectionTheDivergedReceiverIsUnreachable() public {
+        bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
+        bytes memory payload = transmitter.payloadForCalls(new Call[](0));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.RecipientIsNotThisAccount.selector, recipient
+            )
+        );
+        transmitter.sendMessage(recipient, payload, new bytes[](0));
+    }
+
+    /// @dev AND AFTER IT, THE REAL RECEIVER IS ADDRESSABLE. This is what the old derived
+    ///      check made impossible: it enforced `address(this)` on every `eip155` chain, so
+    ///      the only accepted recipient on zkSync was an address holding no code and the
+    ///      real one could never be named.
+    function test_afterCorrectionTheDivergedReceiverIsReachable() public {
+        bytes32 key = ChainKey.forEvm(ZKSYNC);
+        bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
+        bytes memory payload = transmitter.payloadForCalls(new Call[](0));
+
+        vm.startPrank(owner);
+        transmitter.setDestinationReceiver(key, DIVERGED);
+        transmitter.sendMessage(recipient, payload, new bytes[](0));
+        vm.stopPrank();
+
+        assertEq(transmitter.sentRecipient(), recipient, "addressed to the real receiver");
+        assertEq(transmitter.destinationReceiverOn(key), DIVERGED);
+    }
+
+    /// @dev The home address stops being accepted once the real one is recorded, so the two
+    ///      cannot both be live and a stale caller fails loudly.
+    function test_correctionRevokesTheHomeAddress() public {
+        bytes32 key = ChainKey.forEvm(ZKSYNC);
+        bytes memory stale = transmitter.recipientOn(ZKSYNC);
+        bytes memory payload = transmitter.payloadForCalls(new Call[](0));
+
+        vm.startPrank(owner);
+        transmitter.setDestinationReceiver(key, DIVERGED);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransmitterBase.RecipientIsNotThisAccount.selector, stale
+            )
+        );
+        transmitter.sendMessage(stale, payload, new bytes[](0));
+        vm.stopPrank();
+    }
+
+    /// @dev A receiver that does not share its transmitter's address still authenticates it,
+    ///      because it compares against the stored `sourceTransmitter` rather than its own
+    ///      address. This is the inbound mirror of the three above.
+    function test_aDivergedReceiverAuthenticatesItsOwnTransmitter() public {
+        MockReceiver r = new MockReceiver();
+        r.initialize(address(transmitter), new Call[](0));
+        assertTrue(address(r) != address(transmitter), "addresses diverge, by construction");
+
+        bytes memory sender = Erc7930.encodeEvm(1, address(transmitter));
+        r.receiveMessage(bytes32(0), sender, Payload.encodeCalls(new Call[](0)));
+    }
+
+    /// @dev And still refuses anyone else, including a sender claiming its own address.
+    function test_aDivergedReceiverRefusesAnImpostor() public {
+        MockReceiver r = new MockReceiver();
+        r.initialize(address(transmitter), new Call[](0));
+
+        bytes memory impostor = Erc7930.encodeEvm(1, address(r));
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, impostor)
+        );
+        r.receiveMessage(bytes32(0), impostor, payload);
     }
 }

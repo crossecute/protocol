@@ -66,15 +66,6 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     error UpgradesAreLocked();
     error ZeroOwner();
-    error ZeroRoute();
-    /// @dev Re-pointing a route would redirect every message to that destination at once, so
-    ///      it is a redeploy rather than a config edit.
-    error RouteAlreadySet(bytes32 chainKey);
-    error NoRouteFor(bytes32 chainKey);
-    /// @dev Two chains sharing one identifier would let an inbound message be attributed to
-    ///      the wrong source: a forgery primitive, not a config mistake.
-    error RouteInUse(bytes32 routeKey);
-    error UnknownRoute();
     /// @dev The caller is not the account `(owner, salt)` resolves to, so it is asking the
     ///      protocol to stand up somebody else's account somewhere else.
     error NotTheAccount(address owner, bytes32 salt, address caller);
@@ -83,22 +74,6 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     /* ================================== routing ================================ */
 
-    /// chainKey => that chain's canonical ERC-7930 chain identifier.
-    ///
-    /// @dev IT IS ON THE TRANSCEIVER RATHER THAN THE REGISTRY BECAUSE THIS IS WHO SENDS. A
-    ///      registry read would put a second shared contract in the path of every send and
-    ///      give a compromised one the ability to misroute a payload; on the
-    ///      execute-on-arrival path there is no commitment binding the destination, so a
-    ///      wrong id means the payload runs on the wrong chain.
-    mapping(bytes32 => bytes) private _routes;
-    /// keccak256(route) => chainKey. The inbound direction, which is not optional: a provider
-    /// hands over a source id and this contract has to turn it back into a chain.
-    ///
-    /// @dev MAINTAINED IN THE SAME SETTER, because two setters is how the two directions
-    ///      drift apart. It is injective by construction, and a collision reverts.
-    mapping(bytes32 => bytes32) private _chainKeyOfRoute;
-
-    event RouteSet(bytes32 indexed chainKey, bytes route);
     /// @dev PATH B'S OWN RECORD, because a transceiver is not an ERC-7786 gateway source and
     ///      so emits no `MessageSent`. It names the pair rather than hashing it:
     ///      `(chainKey, owner, salt)` is what an account IS, and it is what the registry slot
@@ -106,50 +81,12 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
 
     /// @notice Teach this transceiver how a destination is named. WRITE-ONCE.
-    ///
-    /// @dev THE ROUTE IS THE CHAIN'S ERC-7930 IDENTIFIER, not a provider's private id for it.
-    ///      That is what ERC-7786 removed the need for: a gateway is told the chain by the
-    ///      recipient. It also makes the reverse index correct by construction, since
-    ///      `keccak256(identifier)` IS the chainKey. A binding wraps this in a typed setter
-    ///      only where it keeps a provider-native value of its own.
-    ///
-    /// @dev Re-writing the SAME route is a no-op, so a replayed configuration transaction is
-    ///      not a failure. A DIFFERENT one reverts.
+    /// @dev The table, the reverse index, and the reads all live on `OutboundBase`, which is
+    ///      what a sender needs to address anything. This is only the authority over it: a
+    ///      binding wraps this in a typed setter where it keeps a provider-native value of
+    ///      its own, and a gateway binding adds nothing.
     function setRoute(bytes32 chainKey, bytes memory route) public onlyAdmin {
-        if (chainKey == bytes32(0)) revert NoDestination();
-        if (route.length == 0) revert ZeroRoute();
-
-        bytes memory existing = _routes[chainKey];
-        if (existing.length != 0) {
-            if (keccak256(existing) != keccak256(route)) revert RouteAlreadySet(chainKey);
-            return;
-        }
-
-        bytes32 routeKey = keccak256(route);
-        bytes32 held = _chainKeyOfRoute[routeKey];
-        if (held != bytes32(0) && held != chainKey) revert RouteInUse(routeKey);
-
-        _routes[chainKey] = route;
-        _chainKeyOfRoute[routeKey] = chainKey;
-        emit RouteSet(chainKey, route);
-    }
-
-    /// @notice The chain a route refers to. The inbound direction, resolved once, at the edge.
-    function chainKeyOfRoute(bytes memory route) public view returns (bytes32 chainKey) {
-        chainKey = _chainKeyOfRoute[keccak256(route)];
-        if (chainKey == bytes32(0)) revert UnknownRoute();
-    }
-
-    /// @notice How a chain is named here. Reverts when unset, because an unconfigured id and
-    ///         an id of zero are different states and a send that confused them would go into
-    ///         the void.
-    function routeFor(bytes32 chainKey) public view returns (bytes memory route) {
-        route = _routes[chainKey];
-        if (route.length == 0) revert NoRouteFor(chainKey);
-    }
-
-    function hasRoute(bytes32 chainKey) external view returns (bool) {
-        return _routes[chainKey].length != 0;
+        _setRoute(chainKey, route);
     }
 
     /* ============================ account manufacture ========================== */
@@ -359,67 +296,12 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _;
     }
 
-    /* ================================= routing ================================= */
-
-    /// @notice THE SEAM BETWEEN HUB AND SPOKE, one half: where the counterpart lives.
-    ///
-    /// @dev A hub answers out of the registry, applying a provenance bar to the counterpart's
-    ///      claimed location; a spoke answers from a write-once value and rejects every key
-    ///      but its home's. Protocol code above calls the same function either way.
-    ///
-    ///      The counterpart is NOT assumed to be at this contract's own address. That holds
-    ///      on most EVM chains and not on zkSync or Tron, whose CREATE2 formulas differ, and
-    ///      obviously not on Solana or the Move chains. So it is raw bytes in that chain's
-    ///      own format: a 32-byte key cannot be turned back into a Solana pubkey.
-    function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory);
-
-    /// @notice THE SEAM, other half: how the chain itself is named.
-    ///
-    /// @dev SEPARATE FROM `_counterpartOn` ON PURPOSE. The two are configured independently
-    ///      and can be missing independently, and folding them into one lookup would make a
-    ///      half-wired destination un-inspectable: you could not read the part that IS
-    ///      configured to find out which part is not.
-    /// @dev The default answers from this contract's own write-once table. A spoke overrides
-    ///      it, because its one destination is fixed at initialization.
-    function _routeTo(bytes32 chainKey) internal view virtual returns (bytes memory) {
-        return routeFor(chainKey);
-    }
-
-    /// @notice Revert unless this transceiver can reach `chainKey`: a counterpart it trusts
-    ///         at its provenance bar, and a route to address it by.
-    ///
-    /// @dev IT IS CALLED FOR THE REVERT, AND THE NAME SAYS SO. Both lookups throw away their
-    ///      values; what matters is that `_counterpartOn` refuses a counterpart below
-    ///      `minCounterpartProvenance` and `_routeTo` refuses an unconfigured destination. A
-    ///      function returning values nobody reads invites someone to remove the "unused"
-    ///      call and take the check with it.
-    function _requireRoutable(bytes32 chainKey) internal view {
-        _counterpartOn(chainKey);
-        _routeTo(chainKey);
-    }
-
-    /// @notice The counterpart on `chainKey`, as a binary interoperable address.
-    ///
-    /// @dev IT IS THE TWO HALVES OF `_requireRoutable`, JOINED. The route holds the chain and
-    ///      `_counterpartOn` holds the address, which is exactly the pair ERC-7930 encodes
-    ///      and exactly what an ERC-7786 gateway takes as a recipient. Building it here means
-    ///      both lookups happen on the send path, so the provenance bar and the route
-    ///      requirement are enforced by construction rather than by a separate call somebody
-    ///      could drop.
-    function _recipientOn(bytes32 chainKey) internal view returns (bytes memory) {
-        Erc7930.Interop memory io = Erc7930.parseStrict(_routeTo(chainKey));
-        return Erc7930.encode(io.chainType, io.chainRef, _counterpartOn(chainKey));
-    }
-
-    /// @notice Where this transceiver's counterpart lives on `chainKey`.
-    function counterpartOn(bytes32 chainKey) public view returns (bytes memory) {
-        return _counterpartOn(chainKey);
-    }
-
-    /// @notice The chain identifier `chainKey` is configured under.
-    function routeTo(bytes32 chainKey) public view returns (bytes memory) {
-        return _routeTo(chainKey);
-    }
+    /// @notice WHERE THE TWO SIDES DIVERGE, and the only thing that does. Both halves of
+    ///         addressing (`_routeTo` and `_counterpartOn`) are `OutboundBase`'s seams, and a
+    ///         transceiver differs from an account only in what it fills them with: a hub
+    ///         overrides `_counterpartOn` to read the registry at a provenance bar, a spoke
+    ///         overrides both to answer from write-once home values and refuse every other
+    ///         key. Nothing here needs restating; see `OutboundBase._recipientOn`.
 
     /* ============================== upgrade lock =============================== */
 
