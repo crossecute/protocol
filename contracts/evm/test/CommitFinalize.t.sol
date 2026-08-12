@@ -11,7 +11,7 @@ import {OwnableUpgradeable} from
 
 import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";

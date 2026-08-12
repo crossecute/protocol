@@ -213,6 +213,30 @@ chain. That is the account-is-its-own-peer rule one layer down, arrived at indep
 and it means an ICM binding inherits a deployment constraint the protocol was going to
 impose anyway.
 
+**Aurora is a parity chain, checked rather than assumed.** NEAR itself runs WASM and has no
+EVM, so Solidity does not run on it; Aurora is an EVM implemented AS a NEAR contract, and it
+presents as `eip155` chain 1313161554. The question that decides whether it needs anything
+of its own is whether its CREATE2 is EIP-1014, and it is: Arachnid's factory is deployed
+there at the usual address, and `eth_call`ing it executes on Aurora's own engine rather than
+on a local simulation, so it answers directly. Three salts over `CrossProxy`'s initcode
+returned exactly the addresses EIP-1014 predicts:
+
+```
+salt 00000000…   0x5a6eee7a8eb1d36ef7336bd24c57b975fb9ebc15
+salt c0ffee01     0xb2e363e52060ca5f20a59fac76cf1960da1e80a1
+salt deadbeef…   0x70e2fc1339425ad82497b92828ac23248b804297
+```
+
+So Aurora is `LzSpokeTransceiver` and nothing else: stock solc, so
+`CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR PROPER is a
+different question and not this one: `ChainType.NEAR` is for a Rust receiver addressed by a
+named or implicit account, and unlike Move it is not blocked on dispatch, since
+`Promise::function_call` takes the method name as a runtime string.
+
+**The same trick does not settle Tron.** Arachnid's factory relies on a pre-signed Ethereum
+transaction and is absent from both Tron mainnet and Shasta, so there is no live CREATE2
+factory to `eth_call`. That check still needs a funded deployment.
+
 **Avalanche is the odd one and the interesting one.** ICM is a real mesh, sub-minute and
 bidirectional, which is a better shape than anything else here; it just cannot reach
 Ethereum. It is the transport to reach for if a deployment ever anchors on the C-Chain, and

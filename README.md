@@ -111,8 +111,9 @@ src/
   messaging/      Commitment, Call, Payload, Envelope, Executor
     outbound/     OutboundBase -> TransmitterBase
     inbound/      ReceiverBase
-    transceiver/  TransceiverBase -> Hub / Spoke
-  factories/      CrossProxy
+    transceiver/  TransceiverBase -> Hub
+      spoke/      SpokeTransceiverBase -> zkSync / Tron
+  account/        CrossProxy                                what both halves ARE
   protocols/      per message provider; the only files naming an SDK
 ```
 
@@ -135,7 +136,7 @@ summary: the file is always the newer statement.
 
 | Question | Answered in |
 | --- | --- |
-| Why one address, and why a proxy rather than a clone | `factories/CrossProxy.sol` |
+| Why one address, and why a proxy rather than a clone | `account/CrossProxy.sol` |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
 | Why a hub makes transmitters and a spoke makes receivers | `TransceiverBase`, `Hub` / `Spoke` |
 | Why approvals are an ordered queue, and why `cancel` is load-bearing | `inbound/ReceiverBase.sol` |

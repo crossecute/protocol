@@ -5,7 +5,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";

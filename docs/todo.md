@@ -228,7 +228,9 @@ mainnet.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs
-  contradiction. A one-afternoon empirical check that de-risks a whole chain family. Now
+  contradiction. It needs a FUNDED deployment: the trick that settled Aurora, `eth_call`ing
+  Arachnid's factory so the chain's own engine answers, does not transfer, because that
+  factory relies on a pre-signed Ethereum transaction and is absent from Tron and Shasta. A one-afternoon empirical check that de-risks a whole chain family. Now
   load-bearing rather than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
   `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
   fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of

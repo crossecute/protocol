@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
-    "src/messaging/transceiver/DivergentSpokeTransceiver.sol";
+    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 

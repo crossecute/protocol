@@ -404,7 +404,7 @@ premise is false there, and the merkle-policy work is moot, because **the vocabu
 the policy**. Non-EVM receivers are constrained accounts by construction.
 
 **"Deployed as an argument-free `CrossProxy` at a CREATE2 address derived from
-`(owner, salt)`"** (`factories/CrossProxy.sol`, `TransceiverBase.accountSalt`). Move modules
+`(owner, salt)`"** (`account/CrossProxy.sol`, `TransceiverBase.accountSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
 Move deployment is one module holding a table keyed by owner. The one-account-per-owner
 model, and the single address that goes with it, does not survive the trip.

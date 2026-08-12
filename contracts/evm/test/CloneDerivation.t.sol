@@ -12,7 +12,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {DivergentSpokeTransceiver} from
-    "src/messaging/transceiver/DivergentSpokeTransceiver.sol";
+    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {LzZkSyncSpokeTransceiver, LzTronSpokeTransceiver} from
     "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";

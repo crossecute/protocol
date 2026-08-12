@@ -6,7 +6,7 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {

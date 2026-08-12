@@ -9,12 +9,12 @@ import {OwnableUpgradeable} from
 
 import {ChainRegistry, ProviderDeployment} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";

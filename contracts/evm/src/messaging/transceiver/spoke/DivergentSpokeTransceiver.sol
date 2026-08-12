@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {SpokeTransceiverBase} from "src/messaging/transceiver/SpokeTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {CrossProxy} from "src/factories/CrossProxy.sol";
+import {CrossProxy} from "src/account/CrossProxy.sol";
 
 /// @title DivergentSpokeTransceiver
 /// @notice The two spokes whose chain derives account addresses differently from Ethereum:
@@ -22,7 +22,7 @@ import {CrossProxy} from "src/factories/CrossProxy.sol";
 ///      `AddressDerive`'s formula exactly, that the bytecode hash is write-once, and that a
 ///      mismatch is refused by `_createCrossAccount`'s guard rather than arming nothing.
 ///      What remains is deploying one account on Era and on Shasta and comparing: see
-///      [todo](../../../../../docs/todo.md#3-blockers-on-specific-paths).
+///      [todo](../../../../../../docs/todo.md#3-blockers-on-specific-paths).
 ///
 /// @dev THE ZKSYNC SIDE COMPILES, CHECKED RATHER THAN ASSUMED. zksolc 1.5.17 over era-solc
 ///      0.8.28-1.0.2 builds `CrossProxy` and every contract a spoke needs, under both

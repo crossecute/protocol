@@ -6,7 +6,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {CrossProxy, ICrossProxy} from "src/factories/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from
     "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
