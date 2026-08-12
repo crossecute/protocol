@@ -372,3 +372,74 @@ contract DivergentSpokeTest is Test {
         ok.initialize(address(this), impl, keccak256("other"), homeKey, homeId, hub);
     }
 }
+
+/// @notice L1 -> L2 sender aliasing, which Arbitrum, zkSync Era and the OP Stack's
+///         `OptimismPortal` all apply with the same constant.
+///
+/// @dev THE ROUND TRIP IS THE EASY HALF. What these pin is the two properties that make the
+///      undo direction dangerous to use: it wraps, so it cannot tell whether it was needed,
+///      and it is not an involution, so applying it in the wrong direction is silent.
+contract AddressAliasTest is Test {
+    /// Arbitrum's `AddressAliasHelper.OFFSET`, verbatim.
+    uint160 constant ARBITRUM_OFFSET = uint160(0x1111000000000000000000000000000000001111);
+
+    function test_theOffsetIsArbitrums() public pure {
+        assertEq(
+            AddressDerive.applyL1ToL2Alias(address(0)),
+            address(ARBITRUM_OFFSET),
+            "same constant as AddressAliasHelper"
+        );
+    }
+
+    function testFuzz_theTwoDirectionsRoundTrip(address l1) public pure {
+        assertEq(AddressDerive.undoL1ToL2Alias(AddressDerive.applyL1ToL2Alias(l1)), l1);
+        assertEq(AddressDerive.applyL1ToL2Alias(AddressDerive.undoL1ToL2Alias(l1)), l1);
+    }
+
+    /// @dev IT WRAPS, WHICH IS WHY THERE IS NO "WAS THIS ALIASED" PREDICATE. Undoing an
+    ///      alias that was never applied returns a perfectly well-formed address rather than
+    ///      reverting, so a binding that gets the direction wrong authenticates against a
+    ///      value belonging to nobody and simply never matches.
+    function testFuzz_undoingAnUnaliasedAddressIsSilent(address raw) public pure {
+        address wrong = AddressDerive.undoL1ToL2Alias(raw);
+
+        assertTrue(wrong != raw, "it moved");
+        // And it is indistinguishable from a real answer: it round-trips like one.
+        assertEq(AddressDerive.applyL1ToL2Alias(wrong), raw);
+    }
+
+    /// @dev EXACTLY ONE INPUT UNDOES TO ZERO, and it is the offset itself. Found by fuzzing
+    ///      an assertion that no input did. It is worth pinning because it is the whole
+    ///      extent of what a zero check on the result would buy: one address out of 2^160,
+    ///      which is not a defence against getting the direction wrong.
+    function test_onlyTheOffsetItselfUndoesToZero() public pure {
+        assertEq(
+            AddressDerive.undoL1ToL2Alias(address(ARBITRUM_OFFSET)),
+            address(0),
+            "the one case"
+        );
+        assertTrue(AddressDerive.undoL1ToL2Alias(address(1)) != address(0));
+    }
+
+    function testFuzz_nothingElseUndoesToZero(address raw) public pure {
+        vm.assume(raw != address(ARBITRUM_OFFSET));
+        assertTrue(AddressDerive.undoL1ToL2Alias(raw) != address(0));
+    }
+
+    /// @dev AND IT IS NOT AN INVOLUTION, so applying the same direction twice does not
+    ///      cancel. This is what a symmetric binding would do to the L2 -> L1 path, where
+    ///      the sender arrives unaliased.
+    function testFuzz_applyingTwiceIsNotIdentity(address l1) public pure {
+        address twice = AddressDerive.applyL1ToL2Alias(AddressDerive.applyL1ToL2Alias(l1));
+        assertTrue(twice != l1, "double-aliasing is a different address");
+    }
+
+    /// @dev THE CASE A BINDING ACTUALLY FACES. A transmitter at T on the home chain reaches
+    ///      an L2 receiver as T + OFFSET; `ReceiverBase` compares against `sourceTransmitter`,
+    ///      which is T, so the binding must undo before handing the sender over.
+    function testFuzz_itRecoversWhatReceiverBaseCompares(address transmitter) public pure {
+        address asSeenOnL2 = AddressDerive.applyL1ToL2Alias(transmitter);
+        assertTrue(asSeenOnL2 != transmitter, "the raw sender would not match");
+        assertEq(AddressDerive.undoL1ToL2Alias(asSeenOnL2), transmitter);
+    }
+}

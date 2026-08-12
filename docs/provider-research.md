@@ -163,12 +163,17 @@ for you and exposes the original sender through `xDomainMessageSender()`, so a b
 that layer sees the real address; one built directly on `OptimismPortal` does not. Arbitrum
 has no equivalent, so undoing the alias is the binding's job either way.
 
-**Two things about our helper.** `AddressDerive.applyL1ToL2Alias` uses
-`0x1111000000000000000000000000000000001111` and an unchecked add, which is Arbitrum's
-`AddressAliasHelper.OFFSET` and `applyL1ToL2Alias` character for character, so it is
-correct for both stacks. But it sits in the file's zkSync section, which reads as though it
-were zkSync-specific, and there is no inverse: a binding needs the SUBTRACTION, and it is
-the direction nothing here provides.
+**`AddressDerive` carries both directions**, under their own heading rather than zkSync's,
+since the same constant serves all three stacks and it is Arbitrum's
+`AddressAliasHelper.OFFSET` character for character. `undoL1ToL2Alias` is the one a binding
+calls, and its NatSpec carries the two traps: it is L1 -> L2 only, so applying it to a
+withdrawal corrupts a sender that arrived unaliased; and the arithmetic wraps, so undoing an
+alias that was never applied yields a well-formed address belonging to nobody rather than
+reverting. A caller decides from the DIRECTION of the message, never from the value.
+
+Exactly one input undoes to the zero address, the offset itself, which a fuzz case pins.
+That is the whole extent of what a zero check on the result would buy, and it is not a
+defence.
 
 ### Fees and quotes
 

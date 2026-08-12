@@ -150,14 +150,65 @@ library AddressDerive {
     }
 
     /* ====================================================================== */
+    /*                        L1 -> L2 sender aliasing                         */
+    /* ====================================================================== */
+
+    /// @dev SHARED BY THREE STACKS, WHICH IS WHY IT IS NOT UNDER ANY OF THEM. Arbitrum,
+    ///      zkSync Era, and the OP Stack's `OptimismPortal` all rewrite the sender of an
+    ///      L1-originated message by the same constant, and Arbitrum's own
+    ///      `AddressAliasHelper.OFFSET` is this value. Filing it under one of them invites
+    ///      the next binding to write a second copy.
+    uint160 internal constant L1_TO_L2_ALIAS_OFFSET =
+        uint160(0x1111000000000000000000000000000000001111);
+
+    /// @notice The address an L1 CONTRACT appears as when its message arrives on L2.
+    ///
+    /// @dev CONTRACTS ONLY. An EOA is not aliased, because the collision this prevents is a
+    ///      contract at some address on L1 impersonating a different contract that happens
+    ///      to sit at the same address on L2.
+    function applyL1ToL2Alias(address l1) internal pure returns (address) {
+        unchecked {
+            return address(uint160(l1) + L1_TO_L2_ALIAS_OFFSET);
+        }
+    }
+
+    /// @notice Recover the L1 address from the sender an L2 actually observed.
+    ///
+    /// @dev THIS IS THE DIRECTION A BINDING NEEDS, and the one whose absence is a silent bug
+    ///      rather than a revert. `ReceiverBase` compares an inbound sender against
+    ///      `sourceTransmitter`, which holds the transmitter's address on the HOME chain; an
+    ///      L2 receiver sees that address plus the offset, so every inbound message is
+    ///      refused until the binding subtracts it back out.
+    ///
+    /// @dev IT IS L1 -> L2 ONLY, AND APPLYING IT SYMMETRICALLY CORRUPTS THE OTHER DIRECTION.
+    ///      A withdrawal carries the raw L2 sender: Arbitrum's `Outbox` hashes `l2Sender`
+    ///      unaliased into the leaf it proves against. So a binding un-aliases on the
+    ///      inbound-to-L2 path and nowhere else.
+    ///
+    /// @dev IT CANNOT TELL WHETHER IT WAS NEEDED. The arithmetic wraps, so undoing an alias
+    ///      that was never applied returns a perfectly well-formed address belonging to
+    ///      nobody rather than failing. There is no "was this aliased" predicate and there
+    ///      cannot be one: the caller decides from the DIRECTION of the message, never from
+    ///      the value. That is why this is a binding's job and not `ReceiverBase`'s, which
+    ///      cannot know which transport delivered.
+    ///
+    /// @dev NOT EVERY BINDING NEEDS IT. The OP Stack's `CrossDomainMessenger` un-aliases
+    ///      internally and reports the original through `xDomainMessageSender()`, so only a
+    ///      binding built directly on `OptimismPortal` has to. Arbitrum and zkSync have no
+    ///      equivalent.
+    function undoL1ToL2Alias(address l2) internal pure returns (address) {
+        unchecked {
+            return address(uint160(l2) - L1_TO_L2_ALIAS_OFFSET);
+        }
+    }
+
+    /* ====================================================================== */
     /*                             zkSync Era                                  */
     /* ====================================================================== */
 
     bytes32 internal constant ZKSYNC_CREATE2_PREFIX =
         keccak256("zksyncCreate2");
     bytes32 internal constant ZKSYNC_CREATE_PREFIX = keccak256("zksyncCreate");
-    uint160 internal constant L1_TO_L2_ALIAS_OFFSET =
-        uint160(0x1111000000000000000000000000000000001111);
 
     /// @param sender If an L1 *contract* triggers the deploy via Bridgehub/Mailbox, pass
     ///        the ALIASED address. EOAs are not aliased.
@@ -219,12 +270,6 @@ library AddressDerive {
         h = h & bytes32(uint256(type(uint224).max));
         h = h | bytes32(uint256(1) << 248);
         h = h | bytes32(words << 224);
-    }
-
-    function applyL1ToL2Alias(address l1) internal pure returns (address) {
-        unchecked {
-            return address(uint160(l1) + L1_TO_L2_ALIAS_OFFSET);
-        }
     }
 
     /* ====================================================================== */
