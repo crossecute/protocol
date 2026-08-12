@@ -31,9 +31,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///        arithmetic over a 252-bit prime, at 1e5-1e6 gas with a silent-failure mode.
 ///
 ///        RECOMMENDATION: do not build it. The payoff is upgrading Starknet from
-///        Committed to Derived, and registering the off-chain address already puts it
-///        inside the signed payload, so the provenance cap makes the weaker guarantee
-///        explicit rather than implicit.
+///        `Attested` to `Derived`, and the address can be recorded from a signed payload
+///        instead, where the grade states the weaker guarantee rather than hiding it.
 library StarknetDerive {
     /// @dev FIELD_PRIME = 2^251 + 17 * 2^192 + 1
     uint256 internal constant FIELD_PRIME =

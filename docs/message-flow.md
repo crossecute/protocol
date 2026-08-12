@@ -712,10 +712,11 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   way out. This is the same trade the failure-handling section notes for ordered bridge
   delivery, now made deliberately at the approval layer rather than inherited from a lane.
 
-**`Provenance.Committed` has no producer.** Nothing grades a reference at it; it exists
-only as a value chains may be configured at through `setProvenance`, and removing it would
-renumber `Derived` and silently loosen every chain set to it. A chain whose addresses cannot
-be recomputed here is `Attested`, and anything wanting better must be derivable.
+**Provenance is two useful values and a null.** `Derived` means this chain can recompute an
+address on that one; `Attested` means it cannot and was told, so the value is worth exactly
+the bridge that carried it; `Unresolved` means nothing has been declared and no bar accepts
+it. There is no middle grade because the question has no middle, and the order is the
+semantics, so inserting one would renumber the rest.
 
 ## TODO
 

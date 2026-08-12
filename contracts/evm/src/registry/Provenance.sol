@@ -13,15 +13,19 @@ pragma solidity ^0.8.20;
 ///      address from inputs in a signed transaction. `Attested` means it cannot, so the
 ///      value was learned over a bridge and is worth exactly that bridge's security.
 ///
-/// @dev `Committed` HAS NO PRODUCER. Nothing grades a reference at it, and the value
-///      exists only as a CAP: several chains are configured at it through
-///      `setMaxProvenance` (Aptos, Starknet), where its job is to make `Derived`
-///      unrepresentable. Removing it would renumber `Derived` and silently loosen every
-///      one of those caps. A reference reported by a destination lands at `Attested`, and
-///      a reader wanting better must use a locally derived path.
+/// @dev THERE IS NO MIDDLE GRADE, because the question has no middle. Either this chain can
+///      recompute an address on that one, or it cannot and has to be told; a third value
+///      would have to mean something between "arithmetic" and "somebody said so", and
+///      nothing does.
+///
+/// @dev TRIPWIRE: THE ORDER IS THE SEMANTICS. Every check is an ordinal comparison against
+///      a bar, so inserting a grade in the middle renumbers the ones above it. Both the
+///      registry's `provenanceOf` and a hub's `minCounterpartProvenance` are proxy storage,
+///      which outlives the bytecode that wrote it, so after a deployment that is not an
+///      enum edit but a migration that silently restates every configured chain. Append, or
+///      migrate deliberately.
 enum Provenance {
     Unresolved,
     Attested,
-    Committed,
     Derived
 }

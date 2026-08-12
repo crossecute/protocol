@@ -57,8 +57,8 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// The weakest counterpart provenance this transceiver will send to.
     /// @dev A parity-chain counterpart is `Derived`: same CREATE2 address, recomputed here,
     ///      no bridge trust. Chains where that breaks (Solana, Sui, Aptos, Starknet, and
-    ///      zkSync and Tron, whose CREATE2 formulas differ) can only reach `Committed` or
-    ///      `Attested`, so this dial decides whether this transceiver talks to them at all.
+    ///      zkSync and Tron, whose CREATE2 formulas differ) can only reach `Attested`, so
+    ///      this dial decides whether this transceiver talks to them at all.
     Provenance public minCounterpartProvenance;
 
     event DestinationReceiverReported(

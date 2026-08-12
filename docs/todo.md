@@ -171,8 +171,6 @@ mainnet.
   reported ref slot all refuse a second write. A route declared wrong is permanent; a
   receiver slot written wrong has no fix at all. The alternative is a timelocked repoint
   rather than an outright refusal.
-- **`Provenance.Committed` has no producer.** It survives only as a cap value. Chains
-  configured at that cap now effectively mean "`Attested` or nothing".
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.
