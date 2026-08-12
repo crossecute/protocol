@@ -50,30 +50,50 @@ check rather than as the check. Note in particular that Warp and Wormhole's core
 in the same place for the same reason: both are signature-verification primitives with a
 delivery layer built on top, so the guarantee belongs to whatever sits above them.
 
-**The pattern is the same in all four that provide it, and it is worth naming**: write the
-consumed mark FIRST, then make a plain external call to the receiver. The write-first order
-is reentrancy protection; the plain call is what gives retry, because the revert that fails
-the payload also rolls the mark back. One mechanism, both properties. A binding that wraps
-that call in `try/catch` breaks the second while appearing to improve it, which is
-[R3.7](provider-spec.md#r3-receive).
+**Seven of the nine provide it, by two different shapes, and the difference matters to a
+binding author.**
 
-**Wormhole is the outlier and it is a documented one.** Its own guidance says integrators
-must implement replay protection themselves, offering the VAA digest or the
-`(emitterChain, emitterAddress, sequence)` triple as the key, and the same is true of the
-newer Executor framework. A Wormhole binding is therefore not simply more code, it is code
-carrying a guarantee the other four inherit for free, and it is the one place in this
-protocol where a binding holds a security property rather than a translation.
+MARK FIRST, THEN CALL PLAINLY, which is LayerZero, Hyperlane, Axelar and Avalanche ICM.
+The write-first order is reentrancy protection; the plain call is what gives retry, because
+the revert that fails the payload also rolls the mark back. One mechanism, both properties.
+
+CALL, THEN RECORD WHICH WAY IT WENT, which is CCIP and the OP Stack. `relayMessage` makes a
+low-level call and branches: `successfulMessages` on success, `failedMessages` on failure,
+and the failed entry is what a retry replays from. Same two properties, reached the other
+way round.
+
+**The second shape looks like the thing [R3.7](provider-spec.md#r3-receive) forbids, and is
+not.** That rule says a BINDING must never wrap the delivery call in `try/catch`, because a
+binding that swallows a failure consumes the message and drops the payload. A transport that
+catches a failure and RECORDS IT AS REPLAYABLE has done the opposite: it is providing
+[P6](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist), not defeating it.
+The distinction is whether the failure survives the catch, and on both of these it does.
+
+**Two of the nine are outliers, and they are outliers for one reason.** Wormhole's core
+layer and Avalanche's Warp precompile are both signature-verification primitives: they prove
+a message was authorised by a validator set and stop there, with delivery, ordering and
+dedupe left to whatever is built on top. Wormhole's own guidance says integrators must
+implement replay protection themselves, offering the VAA digest or the
+`(emitterChain, emitterAddress, sequence)` triple as the key; Warp's equivalent is the
+Teleporter layer above it, which is why ICM appears separately in the table and does provide
+it.
+
+So a binding on either primitive is not simply more code: it is code carrying a guarantee
+the other seven inherit for free, and it is the one place in this protocol where a binding
+holds a security property rather than a translation. Binding to ICM rather than to raw Warp
+is the way to avoid that on Avalanche.
 
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its
 own. Correlation never needed one: the receiver report's slot is derived from the
 authenticated origin plus the stated `(owner, salt)`, and the slot is write-once.
-Idempotency does need one, but it exists at the transport for every provider currently in
-scope, and adding a protocol-level id would put a field on every channel plus a growing set
-on every receiver to buy something four of five transports already give. The correct shape
-is what is written above: state the requirement, test it per binding, and make the one
-provider that lacks it carry the cost in its own `<P>Endpoint`.
+Idempotency does need one, and it exists at the transport for every candidate here except
+the two raw signature primitives. Adding a protocol-level id would put a field on every
+channel plus a growing set on every receiver to buy something seven of nine already give.
+The correct shape is what is written above: state the requirement, test it per binding, and
+make the two that lack it carry the cost in their own `<P>Endpoint`.
 
-Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZero-v2/blob/main/packages/layerzero-v2/evm/protocol/contracts/EndpointV2.sol),
+Sources, for the five unmarked rows:
+[LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZero-v2/blob/main/packages/layerzero-v2/evm/protocol/contracts/EndpointV2.sol),
 [Hyperlane `Mailbox.sol`](https://github.com/hyperlane-xyz/hyperlane-monorepo/blob/main/solidity/contracts/Mailbox.sol),
 [CCIP manual execution](https://docs.chain.link/ccip/concepts/manual-execution),
 [Axelar Executable](https://docs.axelar.dev/dev/general-message-passing/executable),

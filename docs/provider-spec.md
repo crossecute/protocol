@@ -486,10 +486,11 @@ single-shot and need nothing (`CrossProxy` arms exactly once, `initialize` is si
 and the registry slot is write-once), but path A has no such property, and it is the path
 every message after the first takes.
 
-Four of the five providers in scope already guarantee it at the transport, and the
-binding does nothing. Wormhole's core layer does not, and there a binding MUST dedupe
-inside `<P>Endpoint` before reaching `_onMessage`, keyed on the VAA digest or on
-`(emitterChain, emitterAddress, sequence)`. See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
+Most candidate transports guarantee it, and there the binding does nothing. The exceptions
+are the raw signature primitives, Wormhole's core layer and Avalanche's Warp precompile,
+which prove a message was authorised and stop there; on either, a binding MUST dedupe inside
+`<P>Endpoint` before reaching `_onMessage`, keyed on whatever that transport makes unique
+per message (Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`). See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
 for what each provider actually does.
 
 **R3.6 The dedupe MUST be per receiving account, not global to the binding.** Accounts are
