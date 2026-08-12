@@ -163,13 +163,12 @@ the typed array supplied here.
 The same applies on the source side. `TransmitterBase.execute` is `Call[]` only, because it
 is a direct local call with no bridge in between and therefore always targets an EVM chain.
 
-**A transmitter no longer has a `commit` of its own.** It never did hold a queue, and the
-overloads that used to approve a payload for a remote destination are gone with the send
-overloads. What remains is `commitmentCall(receiver, commitment)`, a `pure` builder for the
-one element that pins a hash on the receiver's own chain, and `cancellationCall(receiver,
-index, expected)` for the element that withdraws one. Committing is a call, not a message
-kind, so a payload for a destination this chain cannot execute on is approved by carrying
-that element rather than by a second entry point here.
+**A transmitter has no `commit` of its own**, because it holds no queue. What it has is
+`commitmentCall(receiver, commitment)`, a `pure` builder for the one element that pins a
+hash on the receiver's own chain, and `cancellationCall(receiver, index, expected)` for the
+element that withdraws one. Committing is a call, not a message kind, so a payload for a
+destination this chain cannot execute on is approved by carrying that element rather than by
+a second entry point here.
 
 ### Note on the empty array
 
@@ -297,9 +296,9 @@ commitment that a Starknet receiver can never match, failing only on a live mess
 commitment is computed off-chain and carried in an opaque element that calls that receiver's
 own `commit`, which is the same mechanism every deferred payload uses.
 
-**Where the scheme is a parameter, and where it stopped being one.** The enum is still how
-`Commitment` dispatches internally and is compiled into every account, but no transmitter
-entry point takes one.
+**Where the scheme is a parameter, and where it is not.** The enum is how `Commitment`
+dispatches internally and is compiled into every account, but no transmitter entry point
+takes one.
 
 `commitmentFor`/`commitmentForChain` name an EVM destination, and every chain that executes
 `Call[]` hashes with keccak256, so both stay keccak-only and `pure`: exactly one primitive

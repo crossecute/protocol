@@ -342,11 +342,10 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      it is reachable from `_onInbound` and nowhere else.
     ///
     /// @dev IT WRITES TO THE ACCOUNT, NOT TO THE REGISTRY, and that is what makes the report
-    ///      worth sending. The address used to be filed under a registry slot that nothing
-    ///      on the send path reads, because the registry is deliberately out of that path:
-    ///      a chain whose receiver could not be derived stayed unreachable no matter how
-    ///      faithfully its address was recorded. The transmitter is the contract that
-    ///      addresses that receiver, so it is the contract that is told.
+    ///      worth sending. The registry is deliberately out of the send path, so an address
+    ///      recorded there could not make a diverging chain reachable however faithfully it
+    ///      was filed. The transmitter is the contract that addresses that receiver, so it is
+    ///      the contract that is told.
     ///
     /// @dev THE REGISTRY STILL SAYS WHICH CHAINS MAY REPORT, which is the part that IS
     ///      directory data. `requiresReceiverCallback` is true exactly where this contract

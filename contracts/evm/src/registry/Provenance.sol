@@ -3,10 +3,11 @@ pragma solidity ^0.8.20;
 
 /// @notice How much this chain can actually know about an address on another one.
 ///
-/// @dev IT GRADES A CHAIN, NOT A STORED VALUE, which is what changed when counterpart
-///      addresses moved onto the hub that sends to them. `ChainRegistry.provenanceFor`
-///      answers it once per chain and every provider's hub reads the same answer, so two
-///      hubs cannot disagree about how well Starknet can be known.
+/// @dev IT GRADES A CHAIN, NOT A STORED VALUE. Where a counterpart sits is per provider and
+///      lives on the hub that sends to it; how well an address on that chain can be known is
+///      the same question for every provider, so `ChainRegistry.provenanceFor` answers it
+///      once and every hub reads the same answer. Two hubs cannot disagree about how well
+///      Starknet can be known.
 ///
 /// @dev Ordered by increasing strength. `Derived` means this chain can recompute the
 ///      address from inputs in a signed transaction. `Attested` means it cannot, so the

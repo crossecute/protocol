@@ -196,11 +196,10 @@ abstract contract TransmitterBase is
     ///         receiver.
     ///
     /// @dev THE REPORT LANDS ON THE ACCOUNT IT IS ABOUT, which is the only contract that
-    ///      reads it. It used to be filed in `ChainRegistry` under a slot keyed by
-    ///      `(chainKey, owner, salt)`, where nothing on the send path could see it: the
-    ///      registry is deliberately out of that path, so an address parked there could not
-    ///      make a diverging chain reachable however faithfully it was recorded. Here it is
-    ///      the counterpart `sendMessage` checks against.
+    ///      reads it, and it lands as the counterpart `sendMessage` checks against. Filing it
+    ///      in the registry instead would put it somewhere nothing on the send path can see,
+    ///      since the registry is deliberately out of that path, and a diverging chain would
+    ///      stay unreachable however faithfully its address was recorded.
     ///
     /// @dev THE TRANSCEIVER IS TRUSTED FOR THIS AND NOTHING ELSE, and the bar it has already
     ///      cleared is what makes that acceptable. It authenticated the origin chain, and it

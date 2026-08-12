@@ -314,11 +314,11 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         returns (bytes memory);
 
     /// @notice The base hook every concrete transceiver calls.
-    /// @dev IT INITIALIZES NOTHING, AND THERE IS NOTHING TO INITIALIZE. OpenZeppelin stopped
-    ///      transpiling `UUPSUpgradeable` in 5.6.0: it holds no state of its own, so
-    ///      `__UUPSUpgradeable_init` was empty and is gone. The hook stays because it is what
-    ///      a later base would hang its own setup on, and removing it would churn every
-    ///      binding to delete one line.
+    /// @dev IT INITIALIZES NOTHING, AND THERE IS NOTHING TO INITIALIZE. `UUPSUpgradeable`
+    ///      holds no state of its own, the implementation address living in the ERC-1967
+    ///      slot the proxy owns, so there is nothing of its to set up. The hook exists
+    ///      because it is what every concrete transceiver calls and what a later base would
+    ///      hang its own setup on.
     function __TransceiverBase_init() internal onlyInitializing {}
 
     /* ============================== authorization ============================== */

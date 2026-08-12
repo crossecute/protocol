@@ -21,7 +21,7 @@ there that produced obligations are cited from the rules here.
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so a binding attaches a
 GATEWAY rather than translating a bespoke send. That narrows what a binding is, and several
 rules below narrowed with it;
-[the research half](provider-research.md#2-erc-7786-as-a-transport) records what the
+[the research half](provider-research.md#3-erc-7786-as-a-transport) records what the
 standard gives up in exchange.
 
 Nothing here is LayerZero-specific. LayerZero is used for worked examples because it is the
@@ -41,9 +41,8 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
 | [7. Prohibitions](#7-prohibitions) | the thirteen individually tempting mistakes |
 | [8. The compliance suite](#8-the-compliance-suite) | C1-C31, and which four would otherwise be found in production |
-| [9. Base changes](#9-base-changes-the-first-binding-needed-all-landed) | what this repo had to grow first, and why each is shaped as it is |
-| [10. Worked skeleton](#10-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
-| [11. Checklist](#11-checklist) | every line true, and the binding is done |
+| [9. Worked skeleton](#9-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
+| [10. Checklist](#10-checklist) | every line true, and the binding is done |
 
 ---
 
@@ -98,7 +97,7 @@ rather than blockers, and each has a stated fallback.
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
 gateway satisfies P1 through P4 cleanly and would be less code, but ERC-7786 defines no
 quote at all, so P9 fails outright and the entire quote surface goes dead for that binding.
-See [the research half](provider-research.md#2-erc-7786-as-a-transport) for how a 7786 binding would map and what
+See [the research half](provider-research.md#3-erc-7786-as-a-transport) for how a 7786 binding would map and what
 else it gives up.
 
 **P2 and P3 together are the real filter.** They are what "an account is its own endpoint"
@@ -119,7 +118,7 @@ existing LayerZero skeleton.
 
 | File | Extends | Role |
 | --- | --- | --- |
-| `<P>Codec.sol` | library | The one place the provider's chain id has a Solidity type. **Only where one survives**: under ERC-7786 the route slot holds a chain identifier, so a gateway binding has no provider-native id to type and no codec. See [§10](#10-worked-skeleton-an-erc-7786-gateway-binding). |
+| `<P>Codec.sol` | library | The one place the provider's chain id has a Solidity type. **Only where one survives**: under ERC-7786 the route slot holds a chain identifier, so a gateway binding has no provider-native id to type and no codec. See [§10](#9-worked-skeleton-an-erc-7786-gateway-binding). |
 | `<P>Endpoint.sol` | abstract | Shared send, quote, and receive plumbing, mixed into the four below. |
 | `<P>Transmitter.sol` | `TransmitterBase`, `<P>Endpoint` | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ReceiverBase`, `<P>Endpoint` | The per-user account on a spoke. Receives on path A. |
@@ -158,7 +157,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` LAST so the bootstrap payload runs against a configured provider. Never `super.initialize`. |
+| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` LAST so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
 | an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the spoke for exactly this. |
 | nothing else | | A binding MUST NOT expect the transceiver to reach a receiver after creation. `commit`, `cancel`, and `execute` are gated on the transmitter alone; the initializer is the transceiver's only call, ever. |
 
@@ -177,7 +176,22 @@ Every abstract or virtual member a binding must answer, and where.
 | `_checkAdmin()` | `TransceiverBase._checkAdmin` | As above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier, the hub's address, and `addressesDiverge` into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
-| the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from contract balance. See [§9.3](#93-the-receiver-report-landed-gated-on-a-flag). |
+| the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from contract balance. |
+
+**Why the receiver's initializer is the shape it is.** `__ReceiverBase_init` is
+`internal onlyInitializing` and the external `initialize` is a thin `initializer` wrapper,
+and that is the only arrangement a binding can hook. Calling `super.initialize` first runs
+the payload against an unconfigured provider, which is the ordering the guard exists to
+prevent; configuring first and then calling it reverts, because the SDK's own
+`onlyInitializing` setup would run while `_initializing` is still false; and declaring
+`initializer` on both reverts `InvalidInitialization`, since a nested `initializer` on a
+contract that already has code is not a valid top-level call. So: own `initialize`, provider
+setup, `__ReceiverBase_init` last.
+
+**It also carries the account's owner where the SDK needs one.** A binding whose SDK wants
+an owner-gated config surface declares its own initializer signature carrying it and
+overrides `SpokeTransceiverBase._accountInitializer` to encode that selector. No address
+moves: initializer calldata is not in the initcode.
 
 ### 4.6 Deliberately absent
 
@@ -380,8 +394,24 @@ destination and a recipient that is not this account fail here too. It is ungate
 the send, because a signer reviewing a payload before the owner submits it has to be able
 to call it.
 
-`quoteBootstrap` and `quoteBootstrapTo` remain in their `Call[]` and `bytes[]` forms,
-because path B's envelope is built by the transceiver rather than handed to it.
+`quoteBootstrap` and `quoteBootstrapTo` keep their `Call[]` and `bytes[]` forms, because
+path B's envelope is built by the transceiver rather than handed to it.
+
+**R2.9 The send and quote surfaces are 1:1, and a binding MUST keep them so.**
+`sendMessage`/`quoteMessage`, and each of the three bootstraps against its own quote, all
+with identical arity. That is R2.3 made structural rather than promised: `attributes`
+carries destination gas, which changes the price, so there is no no-attributes send that
+would have no quote to price it. A binding MUST NOT add a convenience overload that breaks
+the pairing.
+
+**A receiver has no quote and cannot acquire one.** `ReceiverBase` does not inherit
+`OutboundBase`, so the absence is structural rather than a gate someone could widen: a
+receiver never sends, and pricing a message that has no path is not a thing to expose.
+
+**The payload builders are shared, not duplicated.** Each quote calls the same
+`Payload.encodeCalls` / `Payload.encodeElements` / `Envelope.encodeBootstrap` its sending
+twin calls, so "the quote prices the exact bytes that go out" is a property of there being
+one builder rather than a promise two code paths make separately.
 
 **The transceiver's quote.** `TransceiverBase` MUST expose the path B quote it is asked
 for, matching its `bootstrap` and `bootstrapElements` entry points:
@@ -565,6 +595,12 @@ out, and this is the arrangement under which that cannot be written by accident.
 Both halves of an account declare `receive`, which on `TransmitterBase` is load-bearing
 rather than decorative: a provider's refund is a plain value transfer, and one to a
 contract that cannot accept it reverts the send that earned it.
+
+A binding MUST NOT reach for the two shapes that look like alternatives. A refund address
+inside the attributes leaves `_sendMessage` with no correct default on a bootstrap, since
+the owner is inside the encoded envelope and the binding would have to decode `Envelope` to
+find it. A fourth argument on `_sendMessage` widens the one primitive every binding
+implements, to carry a value both call sites can already read off the stack.
 
 **R7.3** A nested send (the receiver report, sent from inside a delivery callback) has
 `msg.value == 0` and MUST be funded from the sending contract's balance. A binding whose
@@ -752,125 +788,7 @@ commitment half and is
 
 ---
 
-## 9. Base changes the first binding needed. ALL LANDED
-
-These were gaps in this repo, not obligations on a binding. **All five have landed**, so
-nothing in this section blocks the first integration any more; it is kept as the record of
-what each one had to be and why, because a binding that misreads any of them reintroduces
-the gap.
-
-### 9.1 The quote seam. LANDED
-
-`_quoteMessage` now sits beside `_sendMessage` in `OutboundBase`, `view`, with a matching
-`QuoteNotImplemented` default. The two are adjacent so a binding that implements one and
-forgets the other is obvious on sight rather than discovered when an interface has nothing
-to call. `TransmitterBase` carries four public quotes (`quoteMessage`, `quoteBootstrap`, and
-`quoteBootstrapTo` in its `Call[]` and `bytes[]` forms) and `TransceiverBase` carries
-`quoteBootstrap` and `quoteBootstrapElements`, which is what the transmitter's three
-bootstrap quotes forward to through `IAccountTransceiver`.
-
-**The send and quote surfaces are 1:1, deliberately.** `sendMessage`/`quoteMessage`, and each
-of the three bootstraps against its own quote, all with identical arity. That is R2.3 made
-structural rather than promised: `attributes` carries destination gas, which changes the
-price, so there is no no-attributes send that would have no quote to price it. A binding
-inherits the property and MUST NOT add a convenience overload that breaks it.
-
-**A receiver has no quote and cannot acquire one.** `ReceiverBase` does not inherit
-`OutboundBase`, so the absence is structural rather than a gate someone could widen: a
-receiver never sends, and pricing a message that has no path is not a thing to expose.
-
-**The payload builders are shared, not duplicated.** Each quote calls the same
-`Payload.encodeCalls` / `Payload.encodeElements` / `Envelope.encodeBootstrap` its sending
-twin calls, so "the quote prices the exact bytes that go out" is a property of there being
-one builder rather than a promise two code paths make separately.
-
-### 9.2 The `ReceiverBase` initializer split. LANDED
-
-`ReceiverBase` now follows `TransmitterBase`: `__ReceiverBase_init` is
-`internal onlyInitializing` and does the work, and the external `initialize` is a thin
-`initializer` wrapper for bindings that need nothing extra.
-
-That split is what makes a binding possible at all. With the work inside an
-`external initializer` there was no way to configure a provider between the reentrancy
-guard and the payload:
-
-- calling `super.initialize` first runs the payload against an unconfigured provider;
-- configuring first and then calling `super.initialize` reverts, because the SDK's own
-  `onlyInitializing` setup would run while `_initializing` is still false;
-- declaring `initializer` on both reverts `InvalidInitialization` under OpenZeppelin v5,
-  since a nested `initializer` on a contract that already has code is not a valid
-  top-level call.
-
-A binding declares its own `initialize`, does provider setup, and calls
-`__ReceiverBase_init` LAST. It MUST NOT call `super.initialize`.
-
-**This also unblocks the owner problem.** A binding whose SDK needs an owner on the account
-declares its own initializer signature carrying it and overrides
-`SpokeTransceiverBase._accountInitializer` to encode that selector. The account address does
-not move: the initializer calldata is not in the initcode.
-
-**And it is now the transceiver's only reach into a receiver.** `commit`, `cancel`, and
-`execute` are gated on the source transmitter alone, so a binding MUST fold everything a
-receiver will ever need into that one initializer call. A transceiver holding standing
-authority over every receiver it created, on the chain where it is also the contract that
-authenticates every inbound message, was one compromise away from every account.
-
-### 9.3 The receiver report. LANDED, GATED ON A FLAG
-
-`SpokeTransceiverBase` gained `addressesDiverge`, written once in the initializer beside
-the other home values and with no setter. When it is true, `bootstrapInbound` reports the
-account it just created back to the hub; when it is false, nothing is sent.
-
-**The flag exists because the hub cannot work this out.** It derives a receiver's address by
-recomputing Ethereum's CREATE2 formula over the recorded factory, salt, and initcode hash,
-which is right on most EVM chains and wrong on zkSync and Tron. The chain itself is the only
-party that knows which it is, so it says so once rather than leaving the hub to infer it
-from a provenance cap that means something adjacent but not the same thing.
-
-**On a parity chain the report would be a downgrade, not merely waste.** A local derivation
-is `Derived`; anything arriving over a bridge is graded `Attested`. So most spokes send
-nothing, and only the ones that must be believed have to be funded to speak, which is what
-confines the funding problem to the chains that actually have it.
-
-**A failed report takes the account creation with it, and must.** The send is nested inside
-a delivery callback where `msg.value` is zero, so a diverging spoke pays from its own
-balance and a dry one reverts. Catching that would create an account the home chain could
-never address: `CrossProxy` arms exactly once and `initialize` is single-shot, so there is
-no second bootstrap to carry a second report. All-or-nothing is the only recoverable shape,
-and it makes the bootstrap retryable once the balance is topped up.
-
-Note that `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain,
-so the live cases for the flag here are zkSync and Tron. A Starknet or Move spoke implements
-the same rule in its own language, with the flag always set.
-
-### 9.4 Refund plumbing. LANDED, WITH NO PARAMETER AT ALL
-
-The gap was narrower than it looked, and the fix threads nothing. `OutboundBase._refundTo()`
-returns `msg.sender`, both endpoints inherit it, and both answers are already correct:
-owner-gated `sendMessage` makes it the owner, and account-gated `bootstrap` makes it the account.
-`TransmitterBase` gained a `receive` so a path B refund has somewhere to land.
-
-The rejected alternatives are worth recording, because each looks reasonable first:
-
-- **A fourth argument on `_sendMessage`.** Explicit and hard to get wrong, but
-  it widens the one primitive every binding implements, to carry a value both call sites
-  can already read off the stack.
-- **A refund address inside the attributes.** No base change, but an empty blob on a
-  bootstrap leaves `_sendMessage` with no correct default in scope: the owner is inside the
-  encoded envelope, so the binding would have to decode `Envelope` to find it.
-- **Transient-storage context set by `bootstrap`.** Keeps the primitive narrow, at the cost
-  of a second contract holding per-message state that only one call frame ever reads.
-
-### 9.5 A route read for accounts. LANDED
-
-`IAccountTransceiver` carries `routeTo` alongside `bootstrap`, `bootstrapElements`, and the
-two quotes that price them. An account holds exactly one transceiver address, so one
-interface named for that relationship is the shape that cannot drift as the things an account
-needs from it change.
-
----
-
-## 10. Worked skeleton: an ERC-7786 gateway binding
+## 9. Worked skeleton: an ERC-7786 gateway binding
 
 Abbreviated to the compliance-relevant lines. The core contracts already speak the
 standard, so a binding is thinner than it was: it names a gateway, decides who may deliver,
@@ -958,7 +876,7 @@ is its own address and `TransmitterBase` checks it. There is no inbound authenti
 because `receiveMessage` performs both halves before `_onMessage` runs. What remains is a
 gateway address, a policy about two-step sends, and a quote the standard did not define.
 
-## 11. Checklist
+## 10. Checklist
 
 A binding is done when every line is true.
 

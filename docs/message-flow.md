@@ -265,11 +265,11 @@ per-destination bootstrap record below, and nothing else.
   pass. On a chain that reports, the transceiver writes the real address through
   `onDestinationReceiverReported`, once: there is no override, not even the owner's, because
   an account's peer decides where a payload lands.
-- **The payload arrives built, and one guarantee went with that.** The old overloads knew
-  whether they held `Call[]` or `bytes[]`, so a typed payload bound for a non-EVM chain and
-  an opaque one bound for an EVM chain were both refused before they cost a fee. `bytes
-  payload` cannot be asked which it is. `payloadForCalls` and `payloadForElements` are pure
-  builders so the pairing is at least spelled the same way here as it is decoded there.
+- **The payload arrives built, and that costs one check.** `bytes payload` cannot be asked
+  whether it holds `Call[]` or opaque elements, so this contract cannot refuse a typed
+  payload bound for a non-EVM chain or an opaque one bound for an EVM chain; the pairing is
+  the caller's to get right. `payloadForCalls` and `payloadForElements` are pure builders so
+  it is at least spelled the same way here as it is decoded there.
 - **Every `bytes` argument has a builder that produces it**, because `Erc7930` is a library of
   `internal` functions and so is not callable off-chain at all: without these an integrator
   would have to reimplement ERC-7930 encoding, and an interoperable address got wrong is a
@@ -290,8 +290,9 @@ per-destination bootstrap record below, and nothing else.
   three rather than a third axis, so each has a quote of matching arity; see below.
   They pass `_owner()` and `accountSalt` rather than this contract's own address, because a
   CREATE2 address cannot be derived from itself. Holding `Call[]` and `bytes[]` rather than a
-  prebuilt payload is what keeps the pairing check `sendMessage` had to give up: `_typedKey`
-  refuses a non-EVM destination and `_opaqueKey` refuses an EVM one.
+  prebuilt payload is what lets path B enforce the pairing path A cannot:
+  `_typedIdentifier` refuses a non-EVM destination and `_opaqueIdentifier` refuses an EVM
+  one.
 - `execute(Call[] calls) payable onlyAccountOwner`: local, no bridge and no commitment. It
   takes no destination because it cannot have one.
 - `commitmentCall(receiver, commitment)` and `cancellationCall(receiver, index, expected)`:
@@ -408,10 +409,10 @@ The home side: one transceiver, N counterparts, one registry to tell them apart.
 - `_handleInbound`: a hub receives receiver reports and nothing else, decoded by
   `Envelope.decodeReceiverReport` and passed to `onDestinationReceiver`, which is self-call
   only and therefore reachable from `_onInbound` and nowhere else. **It writes to the
-  account, not to the registry.** The address used to be filed under a registry slot that
-  nothing on the send path reads, so a chain whose receiver could not be derived stayed
-  unreachable however faithfully its address was recorded; the transmitter is the contract
-  that addresses that receiver, so it is the contract that is told. The account is
+  account, not to the registry.** The registry is deliberately out of the send path, so an
+  address filed there could not make a diverging chain reachable however faithfully it was
+  recorded; the transmitter is the contract that addresses that receiver, so it is the
+  contract that is told. The account is
   `predictCrossAccount` of the authenticated `(owner, salt)`, so a destination cannot choose
   which account it writes, and the account itself refuses a second report.
 - The registry still says **which** chains may report: `requiresReceiverCallback(chainKey)`
@@ -628,10 +629,12 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   forces the dispatching functions from `pure` to `view`, the same tax `IVmDeriver`
   already pays.
 - **No transmitter entry point takes a `Scheme`.** `commitmentFor`/`commitmentForChain`
-  name an EVM destination and stay keccak-only and `pure`; the overload that took a
-  `Scheme` was removed. A preview is frozen with the account (a `CrossProxy` locks in the
-  call that arms it), so it could only ever name primitives that already existed, which is
-  exactly wrong for the part of the protocol most likely to grow. Non-EVM destinations are
+  name an EVM destination and stay keccak-only and `pure`, since every chain that executes
+  `Call[]` hashes with keccak256 and there is exactly one primitive they can ever need. A
+  scheme-parameterized preview belongs on the registry instead: here it would be frozen with
+  the account (a `CrossProxy` locks in the call that arms it), so it could only ever name
+  primitives that already existed, which is exactly wrong for the part of the protocol most
+  likely to grow. Non-EVM destinations are
   previewed through `ChainRegistry.commitmentFor`, where the primitive is an
   `ICommitmentScheme` bound per chainKey. The plugin supplies the primitive and the
   registry keeps the fold, so a bad plugin can only produce a digest the destination

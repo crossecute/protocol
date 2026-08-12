@@ -64,11 +64,11 @@ struct ProviderDeployment {
 ///      payload, and on the execute-on-arrival path there is no commitment binding the
 ///      destination, so a misroute runs the payload on the wrong chain.
 ///
-/// @dev THE GRADING IS STILL THE POINT, IT JUST MOVED UP A LEVEL. Collapsing a location and
-///      how it was learned into one `address` field is how a bridge-security assumption
-///      gets laundered into something that looks like a derivation. A hub stores the
-///      address; this contract says whether that chain's addresses can be recomputed at all,
-///      and a hub below its own bar refuses to send.
+/// @dev THE GRADING IS THE POINT, AND IT SITS ONE LEVEL ABOVE THE ADDRESS. Collapsing a
+///      location and how well it can be known into one `address` field is how a
+///      bridge-security assumption gets laundered into something that looks like a
+///      derivation. A hub stores the address; this contract says whether that chain's
+///      addresses can be recomputed at all, and a hub below its own bar refuses to send.
 contract ChainRegistry is OwnableUpgradeable {
     using Bytes32Set for Bytes32Set.Set;
 
@@ -230,10 +230,10 @@ contract ChainRegistry is OwnableUpgradeable {
     }
 
     /// @notice Drop a chain.
-    /// @dev IT NO LONGER CHECKS FOR A LIVE ROUTE, because this contract no longer holds one.
-    ///      Counterparts live on the hub that sends to them, and removing a chain here fails
-    ///      that hub CLOSED rather than orphaning it: `provenanceFor` returns `Unresolved`,
-    ///      which no bar accepts, so every send to that chain reverts until it is re-added.
+    /// @dev IT CANNOT CHECK FOR A LIVE COUNTERPART, because counterparts live on the hub that
+    ///      sends to them. Dropping a chain therefore fails that hub CLOSED rather than
+    ///      orphaning it: `provenanceFor` reverts `UnknownChainKey`, which no bar accepts, so
+    ///      every send to that chain reverts until it is re-added.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
 
@@ -452,11 +452,11 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /// @notice Check a location against everything this chain says about its addresses.
     ///
-    /// @dev THE VALIDATION STAYED HERE WHEN THE STORAGE LEFT, because what makes an address
-    ///      well-formed is a property of the CHAIN: the ERC-7930 canonicity rules, and the
-    ///      value ranges the envelope cannot express (Starknet's felt bound, Move's AIP-40
-    ///      width). A hub calls this before recording a counterpart, so one validator per
-    ///      chain serves every provider rather than each hub carrying its own.
+    /// @dev THE VALIDATION LIVES HERE AND THE STORAGE DOES NOT, because what makes an
+    ///      address well-formed is a property of the CHAIN: the ERC-7930 canonicity rules,
+    ///      and the value ranges the envelope cannot express (Starknet's felt bound, Move's
+    ///      AIP-40 width). A hub calls this before recording a counterpart, so one validator
+    ///      per chain serves every provider rather than each hub carrying its own.
     ///
     /// @dev IT ALSO CHECKS THE LOCATION IS ON THE CHAIN IT IS BEING FILED UNDER, which is
     ///      what stops a stored counterpart contradicting its own envelope.

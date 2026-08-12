@@ -27,9 +27,9 @@ Still missing on the transport itself:
 | Provider setup in `_accountInitializer` | `Hub`/`SpokeTransceiverBase` | `virtual` throughout, and no binding fills it |
 | `supportsAttribute` | `TransmitterBase` | returns false for everything |
 
-The spoke → hub report is no longer on this list: `SpokeTransceiverBase` sends it from
+The spoke → hub report is not on this list. `SpokeTransceiverBase` sends it from
 `bootstrapInbound`, gated on a write-once `addressesDiverge` flag, so it fires only where
-the hub cannot derive the address itself. What remains is funding a diverging spoke, below.
+the hub cannot derive the address itself. What it needs is funding a diverging spoke, below.
 
 ## 2. The provider binding
 
@@ -129,87 +129,15 @@ destination, read from the table rather than computed.
 
 ## 3. Blockers on specific paths
 
-- ~~**Path A does not work on a diverging chain.**~~ FIXED, by storing the counterpart
-  instead of deriving it. Both checks used to branch on chain TYPE, which cannot express
-  divergence: zkSync and Tron ARE `eip155`, so the transmitter enforced `address(this)` there
-  and refused the receiver that actually existed, while the receiver compared its sender
-  against `address(this)` and refused the transmitter that actually sent. Both now compare
-  against a stored fact: `TransmitterBase` against the counterpart `bootstrap` records and
-  a report from that chain replaces it with, `ReceiverBase` against the `sourceTransmitter` it was
-  already given at creation and simply was not using. `test/Transport.t.sol`'s
-  `DivergingDestinationTest` covers both directions.
-
-  **The check got stronger rather than weaker.** A derived peer could only be checked where
-  it was derivable, so every non-EVM recipient went unchecked; a stored one binds on every
-  chain, and it compares the whole ERC-7930 recipient, so the chain half is checked too.
-
-  **The derivation is wired too, and the seams are what made it possible.**
-  `predictCrossAccount` and `_deployAccount` are `virtual`, and `_createCrossAccount`
-  compares what it deployed against what was predicted, so a chain-specific spoke can
-  override the formula without being trusted to get it right.
-  `ZkSyncSpokeTransceiver` and `TronSpokeTransceiver` use `AddressDerive`'s existing
-  `zksyncCreate2` and `tronCreate2`. zkSync overrides both seams, because it cannot deploy
-  raw initcode at all: deployment goes through a system contract, so `new CrossProxy{salt:}`
-  is what zksolc lowers into it. Tron overrides only the prediction.
-
-  **Both take their account bytecode hash as a write-once initializer argument**, because
-  neither can compute it: `CROSS_PROXY_INIT_CODE_HASH` is keccak of SOLC's initcode, while
-  zkSync keys on an EraVM versioned hash of a zksolc artifact and Tron on TRON-solc's
-  initcode. The value comes from the build for that chain.
-
-  **zkSync compiles, checked rather than assumed.** zksolc 1.5.17 over era-solc
-  0.8.28-1.0.2 builds `CrossProxy` and every contract a spoke needs, under both the `evmla`
-  and `yul` codegens, and emits real EraVM bytecode. Reproduce with:
-
-  ```
-  zksolc --solc <era-solc-0.8.28-1.0.2> --codegen evmla \
-    --base-path . --include-path lib --allow-paths . \
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/" \
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/" \
-    "src/=src/" src/factories/CrossProxy.sol --bin
-  ```
-
-  It did NOT compile before that check, and the reason is worth keeping: EraVM has no
-  `ripemd160`, and zksolc rejects the whole compilation unit rather than the unreachable
-  function. A zkSync spoke imports `AddressDerive` for `zksyncCreate2` and so dragged
-  `hash160` in with it. The three Bitcoin helpers now live in `BitcoinDerive`, whose only
-  caller is `VmDeriver`. **`VmDeriver` and `ChainRegistry` still do not compile under
-  zksolc, and that is correct**: both are home-chain machinery, and the home chain must be a
-  full EVM chain with the EIP-152 precompile anyway.
-
-  The check also confirmed the deployment override rather than leaving it asserted. Building
-  the base's `_deployAccount` under zksolc warns that "EraVM does not use bytecode for
-  contract deployment... please use the `new` operator instead of raw create/create2 in
-  assembly". It is a WARNING, not an error, so a spoke that forgot the override would build
-  and fail on its first account. `type(CrossProxy).creationCode` is accepted without
-  complaint, so `CROSS_PROXY_INIT_CODE_HASH` is a valid constant there, but it hashes an EVM
-  artifact and means nothing on Era, which is why the bytecode hash is an initializer
-  argument.
-
-  **WHAT IS STILL UNVERIFIED IS BOTH FORMULAS AGAINST A REAL CHAIN**, and neither can be
-  settled here, because forge runs an Ethereum EVM. The suite pins that each override
-  reproduces `AddressDerive`'s formula under fuzzing, that neither matches Ethereum's, and
-  that both fail closed here through the guard. It cannot pin that Era's `ContractDeployer`
-  or Tron's deployer land where they predict.
-
-  1. **Tron's domain byte is still the open 0x41-vs-0xff question** (§5). Deploying one
-     account through the spoke on Shasta and comparing settles it.
-  2. **The zkSync bytecode hash and address have never been checked against Era.** Compiling
-     gives the artifact; `AddressDerive.hashL2Bytecode` over it gives the hash the
-     initializer wants; one deployment on a testnet says whether the address follows.
-
-  Both fail closed if wrong (`AccountAddressMismatch` on every account creation), so the
-  cost of being wrong is a redeploy rather than a loss. Until both are done, treat a zkSync
-  or Tron deployment as unverified rather than merely untested.
 - **Funding a diverging spoke.** The report fires from inside the destination's inbound
   callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
   one reverts the bootstrap with it. That revert is deliberate and keeps the operation
   retryable, but the balance still has to come from somewhere: either the msig funds each
   diverging spoke, or the bootstrap message drops value across.
 
-  **Much smaller than it was.** `addressesDiverge` keeps the report off every chain sharing
-  Ethereum's CREATE2 formula, so this is an operational requirement on zkSync, Tron, and the
-  non-EVM spokes rather than on the whole deployment.
+  **It is confined to the chains that report.** `addressesDiverge` keeps the report off
+  every chain sharing Ethereum's CREATE2 formula, so this is an operational requirement on
+  zkSync, Tron, and the non-EVM spokes rather than on the whole deployment.
 - **Starknet bytes↔felt packing.** Bridges deliver Starknet payloads as `Array<felt252>`,
   not bytes. Before any container format can be parsed there has to be an agreed packing
   rule. Unspecified, needed in either container format, and the kind of value that is wrong
@@ -227,12 +155,12 @@ destination, read from the table rather than computed.
   Starknet commitment is computed off-chain and carried in an opaque element that calls
   that receiver's own `commit`.
 
-  **No longer blocked on a redeploy.** `ICommitmentScheme` plus
+  **It does not need a redeploy.** `ICommitmentScheme` plus
   `ChainRegistry.setCommitmentScheme` make a primitive a per-chainKey plugin, so the port
   lands as a deployment and one owner transaction rather than as new account bytecode,
-  which frozen accounts could never receive anyway. The enum stays exactly as it is: it is
-  compiled into every live transmitter and cannot grow, and new primitives get a contract
-  instead of a member. What is still outstanding is Poseidon itself.
+  which frozen accounts could never receive anyway. The enum cannot grow, being compiled
+  into every live transmitter, so a new primitive gets a contract rather than a member.
+  What is outstanding is Poseidon itself.
 
 ## 4. Decisions taken that deserve a second look
 
@@ -248,16 +176,6 @@ mainnet.
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.
-- ~~**Two `isAuthorizedCommitter` arms are the same address.**~~ SETTLED, and the third arm
-  went with it. `commit`, `cancel`, and `execute` are now gated on `isAuthorizedCaller`:
-  the source transmitter, or a self-call. The PARENT TRANSCEIVER was removed outright,
-  because it only ever needed authority for the bootstrap payload and it has that inside
-  `__ReceiverBase_init`; keeping it made the contract that authenticates every inbound
-  message on a spoke a standing authority over every receiver it had created. The
-  `address(this)` arm was kept explicitly rather than left to coincide with
-  `sourceTransmitter`: the two share an address wherever Ethereum's CREATE2 formula holds,
-  but not on zkSync or Tron, and without the arm deferred payloads would work on most of a
-  deployment and fail silently on the rest.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.
@@ -265,28 +183,6 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
-- ~~**Split `provider-spec.md` into a normative half and a research half.**~~ DONE.
-  [`provider-spec.md`](provider-spec.md) is §1 through §11 and carries a table of contents;
-  the two appendices are [`provider-research.md`](provider-research.md), under a header that
-  states what each half is pinned to and what makes it go stale.
-
-  **The lifetimes were the argument and they still are.** The spec changes when this protocol
-  changes and a reader can check it against the tree; the research goes stale when somebody
-  ELSE ships a release, and it makes version-pinned claims about contracts in other
-  repositories. Findings that produced obligations stayed in the spec (P7, R3.5 through R3.7,
-  C29 through C31) and are cited from the research rather than the other way round, so
-  nothing normative depends on a file that rots.
-
-- ~~**Whether to bind to a 7786 gateway at all.**~~ SETTLED, in the core rather than as a
-  binding: `TransmitterBase` is an `IERC7786GatewaySource`, `ReceiverBase` an
-  `IERC7786Recipient`, and the route slot holds a chain identifier. Two guarantees were
-  traded for that and are recorded rather than hidden: the typed-versus-opaque payload
-  pairing is no longer checkable on path A, since `bytes payload` cannot be asked which form
-  it holds, and the recipient-is-this-account check binds on `eip155` only, because on a
-  diverging or non-EVM chain the address is not derivable here.
-  `CrosschainLinked(Upgradeable)` is NOT adopted: see
-  [`provider-research.md`](provider-research.md#2-erc-7786-as-a-transport).
-
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
   `draft-InteroperableAddress`.** 5.6.1 brought it: 245 lines against our 248, audited and
   maintained, covering the same ground with `formatEvmV1`, `parseEvmV1`, and `try` and
@@ -296,45 +192,14 @@ mainnet.
   `parseStrict` enforces strictness the registry depends on (non-minimal `eip155` references
   and trailing bytes both rejected) that `parseV1` may not match. Neither is a reason not to
   do it; both are reasons it is its own task with its own vectors. See
-  [`provider-research.md`](provider-research.md#2-erc-7786-as-a-transport).
+  [`provider-research.md`](provider-research.md#3-erc-7786-as-a-transport).
 
   **Which provider to bind is still open, and the 7786 answer is "only if it has to be".**
   A gateway binding is thin (see the skeleton in
-  [`provider-spec.md`](provider-spec.md#10-worked-skeleton-an-erc-7786-gateway-binding)) but
+  [`provider-spec.md`](provider-spec.md#9-worked-skeleton-an-erc-7786-gateway-binding)) but
   ERC-7786 defines no quote, so it fails P9 and the whole quote surface goes dead for that
   binding. Prefer a native SDK where a provider offers both.
 
-- ~~**RESEARCH: a requestId, or any unique identifier, for messages.**~~ RESEARCHED, and the
-  answer is no protocol-level id. The two halves of the question have different answers.
-
-  **Correlation never needed one, and that argument stands.** The receiver report's slot is
-  the account `predictCrossAccount(owner, salt)` resolves to, the chainKey comes from
-  `_authenticateOrigin`, the pair is stated, and the account refuses a second report. An id
-  would restate what the fields imply.
-
-  **Idempotency does need one, and the transport already has it.** Bootstrap and the report
-  are structurally single-shot, but an execute-on-arrival payload carries no commitment and
-  no id, so a duplicated delivery runs it twice. Checked against deployed source: LayerZero
-  keys `inboundPayloadHash` by `[receiver][srcEid][sender][nonce]` and clears it before
-  calling; Hyperlane keeps `deliveries[messageId]` and refuses a repeat; CCIP makes
-  `SUCCESS` terminal in `s_executionStates`; Axelar consumes the `commandId` inside
-  `validateContractCall`. All four write the mark FIRST and then make a plain external call,
-  so a revert rolls the mark back: exactly-once on success and retryable on failure out of
-  one mechanism.
-
-  **Wormhole's core layer does not dedupe at all**, by its own documentation, so a Wormhole
-  binding must carry replay protection itself, keyed on the VAA digest or
-  `(emitterChain, emitterAddress, sequence)`.
-
-  So the requirement is recorded rather than built: a provider prerequisite (P7), three
-  rules on the inbound path (R3.5 through R3.7), and three compliance tests (C29 through
-  C31) in [`provider-research.md`](provider-research.md#1-what-each-transport-guarantees-about-replay),
-  which carries the full matrix. Adding a protocol-level id would put a field on every
-  channel and a growing set on every receiver to buy what four of five transports give free.
-
-  **The one thing to keep in view**: a binding must never wrap the delivery call in
-  `try/catch`. That consumes the message and drops the payload, turning a retry into a loss,
-  and it looks like defensive coding.
 - **Who authenticates the receiver's inbound message.** Half-settled. `ReceiverBase`
   now carries its own gate: `receiveMessage` checks `_isAuthorizedGateway(msg.sender)` and
   that the ERC-7930 sender's address is `address(this)`, so an account is not relying on the
@@ -359,11 +224,6 @@ mainnet.
   When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
-- ~~**Refund plumbing.**~~ SETTLED, and it needed no parameter. `OutboundBase._refundTo()`
-  is `msg.sender`, which is already the right answer on both paths: `sendMessage` is owner-gated
-  so it is the owner, and `bootstrap` refuses any caller that is not the account so it is
-  the account. The shared transceiver cannot be its own refund target because it is never
-  the caller of its own `bootstrap`. `TransmitterBase` gained a `receive` to accept one.
 - **No storage gaps anywhere.** The transceiver is UUPS until `lockUpgrades()`.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
@@ -373,7 +233,7 @@ mainnet.
   `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
   fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
   being wrong is a redeploy rather than a loss. See §3.
-- **The home chain is now a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
+- **The home chain is a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
   takes its home chainKey, the provider's route to it, and the hub's address as
   write-once initializer arguments. Two things follow that are worth deciding rather than
   inheriting: the hub must be an EVM chain with the EIP-152 precompile, since the registry
@@ -391,10 +251,10 @@ mainnet.
   OZ-upgradeable 5.6.1. Committed deliberately: CREATE2 parity depends on byte-identical
   initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
 
-  **A dependency bump moves every account address**, which is why this one happened before
-  `script/` exists rather than after. `CrossProxy`'s initcode hash went
-  `0xf2d41a...` (5.1.0) to `0xc3e962...` (5.6.1). Free today because nothing is deployed;
-  after a deployment it is not a bump, it is a migration of every account on every chain.
+  **A dependency bump moves every account address**, because `CrossProxy`'s initcode hash
+  is a function of everything it compiles against. Free while nothing is deployed; after a
+  deployment it is not a bump, it is a migration of every account on every chain. So the
+  version to ship on has to be settled before `script/` exists, not after.
 
 - **The `paris` pin and OpenZeppelin are on a collision course.** Taking 5.6.1 already
   required forking `EnumerableSet` into `registry/Bytes32Set.sol`, because it now imports

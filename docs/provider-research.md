@@ -15,13 +15,14 @@ So: nothing in this file is normative. Where a finding here produced an obligati
 obligation lives in the spec and is cited from here, not the other way round. The
 [transport replay matrix](#1-what-each-transport-guarantees-about-replay) is the evidence
 behind prerequisite P7, rules R3.5 through R3.7, and compliance tests C29 through C31; the
-[ERC-7786 analysis](#2-erc-7786-as-a-transport) is the reasoning behind the core contracts
+[ERC-7786 analysis](#3-erc-7786-as-a-transport) is the reasoning behind the core contracts
 implementing the standard directly.
 
 | Section | Pinned to | Goes stale when |
 | --- | --- | --- |
-| [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, as deployed when checked | any of them changes how a delivered message is marked consumed |
-| [2. ERC-7786](#2-erc-7786-as-a-transport) | OpenZeppelin 5.6.1 `draft-IERC7786`, `draft-InteroperableAddress` | OpenZeppelin ships a minor release, which for a `draft-` may change the API |
+| [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, as deployed when checked; the four canonical rows are unverified | any of them changes how a delivered message is marked consumed |
+| [2. Canonical transports](#2-canonical-rollup-and-subnet-transports) | OP Stack, Arbitrum and Avalanche as documented, not as read | a fault-proof window changes, Superchain interop ships, or ICM changes its fee model |
+| [3. ERC-7786](#3-erc-7786-as-a-transport) | OpenZeppelin 5.6.1 `draft-IERC7786`, `draft-InteroperableAddress` | OpenZeppelin ships a minor release, which for a `draft-` may change the API |
 
 ---
 
@@ -38,6 +39,16 @@ against the deployed source rather than the marketing. This is the evidence behi
 | **CCIP** | Yes | `s_executionStates[sourceChainSelector][seqNum]`; `SUCCESS` is terminal | Yes, manual execution from the `FAILURE` state |
 | **Axelar** | Yes | the gateway marks a `commandId` consumed inside `validateContractCall`, which cannot be called twice | Yes, the whole `execute` reverts, so the approval survives |
 | **Wormhole (core)** | **No** | `parseAndVerifyVM` verifies signatures and nothing else; the core contract keeps no record of consumed VAAs | n/a, replay is the integrator's problem |
+| **OP Stack (canonical)** † | Yes | `successfulMessages[versionedHash]` in `CrossDomainMessenger`, set after a successful relay; `failedMessages` records the rest | Yes, `relayMessage` again from the `failedMessages` state |
+| **Arbitrum (canonical)** † | Yes | a retryable ticket id is redeemable once (`ArbRetryableTx`); L2→L1 uses the `Outbox` spent bitmap | Yes, manual redeem inside the ticket's lifetime, ~7 days |
+| **Avalanche Warp** † | **No** | the precompile verifies a BLS aggregate over the source L1's validator set and nothing else; it keeps no record of consumed messages | n/a, replay is the integrator's problem |
+| **Avalanche ICM (Teleporter)** † | Yes | message id, with `receivedFailedMessageHashes` for the rest | Yes, `retryMessageExecution` |
+
+**† THESE FOUR ROWS ARE FROM DOCUMENTATION AND RECALL, NOT FROM READING DEPLOYED SOURCE**,
+which is the standard the five above were held to. Treat them as a starting point for that
+check rather than as the check. Note in particular that Warp and Wormhole's core layer land
+in the same place for the same reason: both are signature-verification primitives with a
+delivery layer built on top, so the guarantee belongs to whatever sits above them.
 
 **The pattern is the same in all four that provide it, and it is worth naming**: write the
 consumed mark FIRST, then make a plain external call to the receiver. The write-first order
@@ -70,21 +81,107 @@ Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZer
 
 ---
 
-## 2. ERC-7786 as a transport
+## 2. Canonical rollup and subnet transports
+
+Avalanche, the OP Stack and the Arbitrum stack differ from the five above in kind rather
+than degree, and the replay matrix is the wrong lens for them. They are not third-party
+attestation networks: they are a chain's own bridge, so **the trust model is the chain's
+own** and there is no validator set to compromise separately from the chain itself. Against
+[P4](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist) and the security
+argument in the README that is a strict improvement on every provider in §1.
+
+What disqualifies or constrains them is elsewhere, in three properties the matrix does not
+capture.
+
+### Directionality and latency
+
+| | L1 → L2 | L2 → L1 | L2 ↔ L2 |
+| --- | --- | --- | --- |
+| **OP Stack** | minutes, one step | **~7 days**, two steps: prove, then finalize after the fault-proof window | not without Superchain interop (`L2ToL2CrossDomainMessenger`, and only inside a shared dependency set) |
+| **Arbitrum** | minutes, retryable ticket, auto-redeem when funded | **~7 days**, `ArbSys.sendTxToL1` then `Outbox.executeTransaction` after the challenge window | no |
+| **Avalanche ICM** | n/a: C-Chain and Avalanche L1s, not Ethereum | n/a | **seconds, any-to-any**, which is the one mesh in this table |
+
+**The asymmetry looks fatal and mostly is not.** This protocol is one-directional by
+construction: the hub sends and every destination is a leaf, and the ONLY return leg is the
+receiver report. That report fires only where `addressesDiverge`, which is false on both
+rollup stacks, since they use Ethereum's CREATE2 formula and the hub computes an account's
+address before the first message. So an Ethereum-anchored deployment reaching OP Stack and
+Arbitrum spokes over their canonical bridges never needs the slow direction at all.
+
+**It is fatal the other way round.** A deployment anchored ON an L2 with a spoke on its L1
+puts every bootstrap and every payload through the seven-day window. That is not a binding
+to write; it is a deployment topology to refuse, and it belongs in whatever `script/`
+eventually enforces "every spoke names the same home".
+
+### Address aliasing, which is the concrete trap
+
+An L1 CONTRACT that deposits to an L2 does not arrive as itself. Arbitrum and the OP
+Stack's `OptimismPortal` both add `0x1111000000000000000000000000000000001111` to the
+sender, so the L2 sees an aliased address.
+
+`ReceiverBase.receiveMessage` compares the sender against `sourceTransmitter`, and a
+transmitter is a contract, so **a naive canonical binding fails every inbound message**.
+The binding MUST un-alias before handing the sender to the protocol.
+`AddressDerive.applyL1ToL2Alias` is already in this repo and is the forward direction;
+subtracting the same offset is the inverse.
+
+The two stacks differ in whether you have to. OP Stack's `CrossDomainMessenger` un-aliases
+for you and exposes the original sender through `xDomainMessageSender()`, so a binding at
+that layer sees the real address; one built directly on `OptimismPortal` does not. Arbitrum
+has no equivalent, so `AddressAliasHelper.undoL1ToL2Alias` is the binding's job either way.
+
+### Fees and quotes
+
+| | Fee at source, native? | `view` quote? |
+| --- | --- | --- |
+| **OP Stack** | yes, L2 gas bought through the deposit | **no**: you state `minGasLimit` and pay for it, and there is nothing to ask for a price |
+| **Arbitrum** | yes | **partly**: `Inbox.calculateRetryableSubmissionFee(dataLength, baseFee)` is a view, and `NodeInterface.estimateRetryableTicket` covers the L2 gas |
+| **Avalanche ICM** | **no**: the relayer incentive is an ERC-20 | n/a |
+
+Arbitrum is the only one of the three that partly satisfies
+[P9](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist). OP Stack fails
+it and would use the off-chain measurement in
+[R2.2.2](provider-spec.md#r2-quote). Avalanche ICM fails
+[P8](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist) outright: a
+per-chain ERC-20 fee reintroduces exactly the funding matrix the protocol exists to remove,
+so a binding would have to pay relayers some other way or accept that signers hold a fee
+token per destination.
+
+### None of them is a fan-out
+
+The five providers in §1 are meshes: one binding reaches every chain they support. These
+are not. A canonical bridge connects one L2 to one L1, and Avalanche Warp connects
+Avalanche L1s to each other and to nothing else. So a canonical strategy means **one
+provider registration and one hub transceiver per rollup**, not one for the stack.
+
+That composes without any change to this protocol, since `ChainRegistry` already keys
+providers separately and each hub holds its own counterparts, and it is the arrangement
+that makes the trust argument worth having: a payload to Optimism trusts Optimism's bridge
+and nothing else, rather than trusting one attestation network with every destination at
+once. What it costs is N deployments, N `setProvenance` entries, and N sets of routes,
+which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
+
+**Avalanche is the odd one and the interesting one.** ICM is a real mesh, sub-minute and
+bidirectional, which is a better shape than anything else here; it just cannot reach
+Ethereum. It is the transport to reach for if a deployment ever anchors on the C-Chain, and
+irrelevant otherwise.
+
+---
+
+## 3. ERC-7786 as a transport
 
 OpenZeppelin ships `interfaces/draft-IERC7786.sol` and `crosschain/ERC7786Recipient.sol`,
 and this protocol arrived at nearly the same shape independently: an opaque `bytes` payload
 to a recipient named by an interoperable address, with an opaque per-send options blob. So
 the question is worth answering once rather than rediscovering per provider.
 
-**MOSTLY LANDED.** The core contracts now implement `IERC7786GatewaySource` and
-`IERC7786Recipient` directly, the route slot holds a chain identifier, and
-`TransceiverBase._recipientOn` builds the recipient. What is NOT adopted is
-`CrosschainLinked(Upgradeable)`: it sits behind `Bytes.sol` and its four `mcopy` sites, so
-it cannot compile at `paris`, and independently its per-contract `_links` table and
-`_isAuthorizedGateway` would replace the shared-transceiver routing and bypass the
-registry's provenance dial. The analysis below is kept because it is the reasoning, and
-because the gaps it names are now the protocol's gaps.
+**The core contracts implement `IERC7786GatewaySource` and `IERC7786Recipient` directly**,
+the route slot holds a chain identifier, and `TransceiverBase._recipientOn` builds the
+recipient. `CrosschainLinked(Upgradeable)` is NOT adopted: it sits behind `Bytes.sol` and
+its four `mcopy` sites, so it cannot compile at `paris`, and independently its per-contract
+`_links` table and `_isAuthorizedGateway` would replace the shared-transceiver routing and
+bypass the registry's provenance dial. The analysis below is the reasoning behind that, and
+the gaps it names are the protocol's gaps.
 
 ### The one thing that does not map, and how it resolves
 
