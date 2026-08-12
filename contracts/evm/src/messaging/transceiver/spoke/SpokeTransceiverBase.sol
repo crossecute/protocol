@@ -100,6 +100,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///        hub derives for it: zkSync and Tron among EVM chains. Leaving it false where it
     ///        should be true creates accounts the home chain can never address.
     function __SpokeTransceiverBase_init(
+        address admin_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes memory homeRoute_,
@@ -127,7 +128,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         emit AddressesDivergeSet(addressesDiverge_);
 
         // Last, and the spoke is sealed. See `TransceiverBase.__TransceiverBase_init`.
-        __TransceiverBase_init();
+        __TransceiverBase_init(admin_);
     }
 
     /// @notice The hub transceiver, in THIS chain's address format.

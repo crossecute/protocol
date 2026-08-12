@@ -22,8 +22,10 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 
 contract MockReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     uint256 public executedCount;
@@ -67,9 +69,10 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -77,7 +80,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __HubTransceiverBase_init(impl);
+        __HubTransceiverBase_init(owner_, impl);
     }
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
@@ -89,19 +92,16 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
     function arrive(bytes memory route, bytes memory sender, bytes calldata message)
         external
     {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -113,12 +113,9 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            owner_,
             impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
         );
-    }
-
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
     }
 
 
@@ -128,9 +125,10 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }

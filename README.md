@@ -213,11 +213,11 @@ The EVM side is built and tested: account creation, the approval queue, cancella
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```
-cd contracts/evm && forge test        # 298 passing
+cd contracts/evm && forge test        # 346 passing
 ```
 
 **Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` and
 `_quoteMessage` reverts `QuoteNotImplemented` until a protocol binding overrides them, and
-`LzReceiver._isAuthorizedGateway` returns false, so a receiver accepts nothing. No provider
+`LzReceiver` grants `GATEWAY_ROLE` to nobody, so a receiver accepts nothing. No provider
 is bound: `LzTransmitter` and friends are structure without an SDK behind them. That is the
 next thing to build, and every remaining path waits on it.

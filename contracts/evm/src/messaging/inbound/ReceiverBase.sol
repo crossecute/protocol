@@ -8,7 +8,7 @@ import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {GatewayBound} from "src/messaging/GatewayBound.sol";
+import {Roles} from "src/messaging/Roles.sol";
 import {IERC7786Recipient} from "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
@@ -83,9 +83,9 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      rather than merely tolerable, because the guard tests for `ENTERED` explicitly. It
 ///      costs one cold SSTORE on an account's first guarded call.
 abstract contract ReceiverBase is
-    Executor,
-    GatewayBound,
     Initializable,
+    Executor,
+    Roles,
     ReentrancyGuard,
     IReceiverInit,
     IERC7786Recipient
@@ -206,6 +206,11 @@ abstract contract ReceiverBase is
         onlyInitializing
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
+
+        // NO ADMIN, EVER. An account's gateway is granted here, by a binding that knows its
+        // transport, and after this call nothing can grant another: `GATEWAY` is administered
+        // by `ADMIN`, and an account holds none. See `Roles.__Roles_init`.
+        __Roles_init(address(0));
 
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;
@@ -450,10 +455,9 @@ abstract contract ReceiverBase is
         payable
         virtual
         override
+        onlyRole(GATEWAY_ROLE)
         returns (bytes4)
     {
-        _requireAuthorizedGateway(msg.sender);
-
         Erc7930.Interop memory io = Erc7930.parseStrict(sender);
         if (io.addr.length != 20 || address(bytes20(io.addr)) != sourceTransmitter) {
             revert SenderIsNotThisAccount(sender);

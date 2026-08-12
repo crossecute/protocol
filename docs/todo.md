@@ -22,7 +22,7 @@ Still missing on the transport itself:
 | --- | --- | --- |
 | The send | `OutboundBase._sendMessage` | reverts `SendNotImplemented` |
 | The quote | `OutboundBase._quoteMessage` | reverts `QuoteNotImplemented` |
-| Which gateway may deliver to a receiver | `ReceiverBase._isAuthorizedGateway` | `LzReceiver` returns false, so a receiver accepts nothing |
+| Which gateway may deliver to a receiver | `GATEWAY_ROLE`, granted in the binding's initializer | `LzReceiver` grants nobody, so a receiver accepts nothing |
 | The transceiver's inbound callback | the binding's own, feeding `TransceiverBase._onInbound` | does not exist; `_onInbound` has no caller |
 | Provider setup in `_accountInitializer` | `Hub`/`SpokeTransceiverBase` | `virtual` throughout, and no binding fills it |
 | `supportsAttribute` | `TransmitterBase` | returns false for everything |
@@ -97,11 +97,11 @@ back out of it, rather than out of a route lookup.
 | --- | --- |
 | `_sendMessage(recipient, payload, attributes)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
 | `_quoteMessage(recipient, payload, attributes)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
-| `_isAuthorizedGateway(address)` | `instance == address(endpoint)`, or however the binding routes `lzReceive` into `receiveMessage` |
+| `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
-| `isAdmin(address)` / `_checkOwner` | answered from OApp's own `Ownable`: `who == owner()` |
+| `ADMIN_ROLE` / `_checkOwner` | the role is granted at deployment; OApp's own `Ownable` governs OApp's configuration and nothing this role governs |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
 protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
@@ -138,7 +138,7 @@ destination, read from the table rather than computed.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
   the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  `withdrawFees`, whose destination must itself satisfy `isAdmin`. It is zero by default, so
+  `withdrawFees`, whose destination must itself hold `ADMIN_ROLE`. It is zero by default, so
   only the chains that actually report are
   charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
   than none: the caller would fund the send exactly and the bootstrap would revert with the
@@ -183,6 +183,21 @@ destination, read from the table rather than computed.
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
 mainnet.
 
+- **A TRANSCEIVER'S GATEWAY SET IS NOW ADMIN-MUTABLE, WHERE IT USED TO BE CODE.** This is the
+  one thing the move to roles loosened, and it is worth naming plainly. The old
+  `_isAuthorizedGateway` was a binding's immutable comparison (`instance == address(endpoint)`),
+  so which transport could deliver an authentic message was fixed at deployment alongside the
+  upgrade lock. `GATEWAY_ROLE` is administered by `ADMIN_ROLE`, so the msig can add a
+  transport to a live transceiver — and a transport that can deliver can forge, which is the
+  same power the upgrade lock exists to deny. The trade bought operability: a provider
+  migrating its endpoint no longer forces a redeploy at a new address, which would re-derive
+  every account.
+
+  Accounts are unaffected and already have the strict form: they hold no `ADMIN_ROLE`, so
+  their gateway is frozen at arming. Freezing a transceiver's would be one line —
+  `_setRoleAdmin(GATEWAY_ROLE, DEFAULT_ADMIN_ROLE)` with `DEFAULT_ADMIN_ROLE` unheld — and it
+  would make the transport as permanent as a route. Decide before mainnet, because the
+  looser version cannot be tightened afterwards on a locked transceiver.
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.
@@ -211,8 +226,8 @@ mainnet.
   binding. Prefer a native SDK where a provider offers both.
 
 - **Who authenticates the receiver's inbound message.** Half-settled. `ReceiverBase`
-  now carries its own gate: `receiveMessage` checks `_isAuthorizedGateway(msg.sender)` and
-  that the ERC-7930 sender's address is `address(this)`, so an account is not relying on the
+  now carries its own gate: `receiveMessage` is `onlyRole(GATEWAY_ROLE)` and checks that the
+  ERC-7930 sender's address is its `sourceTransmitter`, so an account is not relying on the
   transport to keep another account's payload out of its receiver. What remains open is the
   TRANSCEIVER path, where a provider's own peer check runs before any of our code and
   contradicts the rule stated on `TransceiverBase._onInbound`. For a 1:1 pairing there is

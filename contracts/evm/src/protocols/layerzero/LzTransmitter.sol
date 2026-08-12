@@ -39,12 +39,8 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
         OwnableUpgradeable._checkOwner();
     }
 
-    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
-    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
-    ///      gateway behind this yet, and a base that guessed an address would be worse than
-    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return false;
-    }
+    /// @notice NO GATEWAY IS GRANTED, so this transmitter sends through nothing. A real
+    ///         binding grants `GATEWAY_ROLE` to its endpoint here in `initialize`, which is
+    ///         the only moment it can: a transmitter holds no `ADMIN`.
 
 }

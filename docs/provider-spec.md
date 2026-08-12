@@ -168,7 +168,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `isAdmin(address who)` | `TransceiverBase.isAdmin` | Answer from the SDK's ownership, or from `OwnableUpgradeable`: `who == owner()`. MUST NOT introduce a second authority: two owners on one transceiver means an authority gated on one can be exercised through the other. It is a PREDICATE, not a caller check, because the base asks it about addresses other than `msg.sender` — `withdrawFees` requires the destination to be the authority too. `_checkAdmin()` and `onlyAdmin` are derived from it and MUST NOT be overridden. |
+| nothing for authority | `Roles.ADMIN_ROLE` | There is no seam to answer. The admin is a constructor-time argument threaded into `__TransceiverBase_init`, which grants `ADMIN_ROLE` and refuses a zero. A binding MUST NOT add a second authority over the same operations: if its SDK brings `Ownable`, that owner governs the SDK's own configuration and MUST NOT be given a path to routes, counterparts, fees, or the upgrade gate, since an authority gated on one would then be exercisable through the other. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
 
@@ -176,7 +176,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `isAdmin(address who)` | `TransceiverBase.isAdmin` | As above. |
+| nothing for authority | `Roles.ADMIN_ROLE` | As above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
@@ -449,12 +449,19 @@ do nothing else with the message.
 | transmitter | none | MUST revert |
 
 **R3.0 `ReceiverBase.receiveMessage` is `external`, so it carries its own gate.** Two
-checks, and they are not the same check. `_isAuthorizedGateway(msg.sender)` says the
-message came through transport this account trusts, and is the binding's to answer. The
-sender's address must equal `address(this)`, which says it came from THIS account on the
-other side; that one needs no configuration and is therefore answered in the base. An
-honest but shared gateway would otherwise let one account's payload land in another's
-receiver.
+checks, and they are not the same check. `onlyRole(GATEWAY_ROLE)` says the message came
+through transport this account trusts, which the binding establishes by granting the role.
+The sender's address must equal the account's `sourceTransmitter`, which says it came from
+THIS account on the other side; that one needs no configuration and is therefore answered in
+the base. An honest but shared gateway would otherwise let one account's payload land in
+another's receiver.
+
+**R3.0.1 An account MUST be granted its gateway during initialization, and there is no
+later chance.** An account holds no `ADMIN_ROLE`, and `GATEWAY_ROLE` is administered by
+`ADMIN_ROLE`, so after the arming call there is nobody a grant could come from — not the
+transceiver that created it, not the msig, not the account's own owner. A binding therefore
+calls `_grantGateway(endpoint)` from its own `initialize`, ahead of `__ReceiverBase_init`,
+where the rest of its provider setup already goes. The same applies to a transmitter.
 
 **R3.1 The transmitter MUST reject inbound messages.** There is no path in which a
 transmitter receives. If the SDK's base contract provides a receive entry point, the
@@ -858,10 +865,17 @@ contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
 }
 
 contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
-    /// R3.0: the binding answers WHICH gateway. The base answers whether the sender is
-    /// this account, because that half needs no configuration.
-    function _isAuthorizedGateway(address instance) internal view override returns (bool) {
-        return instance == address(gateway);
+    /// R3.0.1: the binding names WHICH gateway, once, in the call that arms the account.
+    /// The base answers whether the sender is this account, because that half needs no
+    /// configuration. Granting precedes `__ReceiverBase_init` so it is in place before the
+    /// bootstrap payload runs.
+    function initialize(address transmitter_, Call[] calldata calls)
+        external
+        override
+        initializer
+    {
+        _grantGateway(address(gateway));
+        __ReceiverBase_init(transmitter_, calls);
     }
 }
 
@@ -907,10 +921,11 @@ A binding is done when every line is true.
 - [ ] `_sendMessage` overridden on all four endpoints
 - [ ] `_quoteMessage` overridden on all four endpoints, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
-- [ ] `_isAuthorizedGateway` answered on the receiver, and inbound routed into `_onInbound`
-      on the transceivers
+- [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
+      `_onInbound` on the transceivers
 - [ ] Inbound reverts on the transmitter
-- [ ] `isAdmin(address)` and `_checkOwner` answered from one authority each
+- [ ] `ADMIN_ROLE` granted to the msig at deployment, and `_checkOwner` answered from an
+      authority that governs nothing `ADMIN_ROLE` governs
 - [ ] `_accountInitializer` overridden on both transceivers
 - [ ] Codec library and typed setters, only where a provider-native id survives
 

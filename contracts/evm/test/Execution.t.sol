@@ -32,8 +32,10 @@ contract Target {
 
 /// @dev Uses the CONCRETE `_execute` (no override), with an openable allowlist.
 contract PolicyReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     mapping(address => mapping(bytes4 => bool)) public permitted;
@@ -54,8 +56,10 @@ contract PolicyReceiver is ReceiverBase {
 
 /// @dev A receiver that implements no policy at all, to check the open default.
 contract SilentReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 

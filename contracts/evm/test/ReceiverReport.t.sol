@@ -7,6 +7,8 @@ import {OwnableUpgradeable} from
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {Roles} from "src/messaging/Roles.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -48,16 +50,19 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
 
 contract Receiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
@@ -79,16 +84,13 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            owner_,
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xB0BB1E)),
             addressesDiverge_
         );
-    }
-
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
     }
 
     /// @dev Stands in for a dry spoke: a provider whose fee cannot be paid reverts here.
@@ -121,9 +123,10 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
         this.bootstrapInbound(owner, salt, calls);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -323,7 +326,7 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __HubTransceiverBase_init(transmitterImplementation_);
+        __HubTransceiverBase_init(owner_, transmitterImplementation_);
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -349,10 +352,6 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         return payload.length;
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
     /// @dev Stands in for a provider adapter: translates a callback into the three
     ///      arguments `_onInbound` takes, and does nothing else.
     function arrive(bytes memory route, bytes memory sender, bytes calldata message)
@@ -361,9 +360,10 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -670,8 +670,11 @@ contract BootstrapFeeTest is Test {
     }
 
     function test_onlyTheAdminSetsTheFeeAndWithdraws() public {
-        bytes memory notAdmin =
-            abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, address(this));
+        bytes memory notAdmin = abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            address(this),
+            hub.ADMIN_ROLE()
+        );
 
         vm.expectRevert(notAdmin);
         hub.setBootstrapFee(divergingKey, 1);
@@ -687,9 +690,15 @@ contract BootstrapFeeTest is Test {
         vm.prank(owner);
         account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
 
+        // Hoisted: `hub.ADMIN_ROLE()` is an external call, and one inside the pranked
+        // expression would consume the prank and refuse on the CALLER instead of on `to`.
         address sink = address(0xF11);
+        bytes memory notAdminSink = abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector, sink, hub.ADMIN_ROLE()
+        );
+
         vm.prank(msig);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, sink));
+        vm.expectRevert(notAdminSink);
         hub.withdrawFees(sink);
 
         assertEq(hub.collectedFees(), FEE, "and nothing moved");

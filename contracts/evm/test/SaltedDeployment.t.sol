@@ -34,8 +34,10 @@ contract MiniFactory {
 }
 
 contract SaltedReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
@@ -56,16 +58,13 @@ contract MiniTransmitter {
 contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __HubTransceiverBase_init(impl);
+        __HubTransceiverBase_init(owner_, impl);
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -76,16 +75,13 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            owner_,
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xB0BB1E)),
             false
         );
-    }
-
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
     }
 
 
@@ -95,9 +91,10 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         return predictCrossAccount(owner_, bytes32(0));
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }

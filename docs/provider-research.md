@@ -327,8 +327,10 @@ the question is worth answering once rather than rediscovering per provider.
 the route slot holds a chain identifier, and `TransceiverBase._recipientOn` builds the
 recipient. `CrosschainLinked(Upgradeable)` is NOT adopted: it sits behind `Bytes.sol` and
 its four `mcopy` sites, so it cannot compile at `paris`, and independently its per-contract
-`_links` table and `_isAuthorizedGateway` would replace the shared-transceiver routing and
-bypass the registry's provenance dial. The analysis below is the reasoning behind that, and
+`_links` table and its own gateway allowlist would replace the shared-transceiver routing
+and bypass the registry's provenance dial. That `mcopy` problem is not unique to it:
+OZ's `AccessControlEnumerableUpgradeable` reaches `EnumerableSet` and so `Arrays`, which is
+why `Roles` uses OZ's plain `AccessControlUpgradeable` and carries its own member list. The analysis below is the reasoning behind that, and
 the gaps it names are the protocol's gaps.
 
 ### The one thing that does not map, and how it resolves

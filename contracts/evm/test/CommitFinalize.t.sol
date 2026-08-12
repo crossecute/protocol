@@ -15,14 +15,17 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     bytes[] public executed;
@@ -66,8 +69,10 @@ contract Switchboard {
 
 /// @dev A receiver whose payload can be made to fail, to exercise atomic delivery.
 contract RevertingReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     Switchboard public immutable switchboard;
@@ -100,6 +105,7 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            owner_,
             receiverImplementation_,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -109,47 +115,37 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     }
 
 
-    /// @dev The mock supplies its own authority, exactly as a real protocol binding does.
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
     /// @dev Stands in for `_onInbound`: the real path decodes the payload and reaches
     ///      `bootstrapInbound` via a self-call.
     function inbound(address transmitter, Call[] calldata calls) external {
         this.bootstrapInbound(transmitter, bytes32(0), calls);
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
 
-/// @dev A transceiver with NO `Ownable` anywhere in its inheritance: authority is a raw
-///      comparison. If this compiles and gates correctly, `TransceiverBase` genuinely has
-///      no ownership opinion, which is the property that lets a protocol SDK bringing its
-///      own `Ownable` (LayerZero's `OAppCore`, a Hyperlane mailbox client) be inherited
-///      alongside it without two ownership systems in one contract.
+/// @dev A transceiver with NO `Ownable` ANYWHERE in its inheritance, and nothing standing in
+///      for one. If this gates correctly, the authority is entirely `ADMIN_ROLE`, which is the
+///      property that lets a provider SDK bringing its own `Ownable` (LayerZero's `OAppCore`,
+///      a Hyperlane mailbox client) be inherited alongside this without the two contending
+///      over the same entry points.
 contract MsigTransceiver is HubTransceiverBase {
-    address public msigAdmin;
-
     function initialize(address admin_, address receiverImplementation_)
         external
         initializer
     {
-        msigAdmin = admin_;
-        __TransceiverBase_init();
+        __TransceiverBase_init(admin_);
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == msigAdmin;
-    }
-
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -706,17 +702,20 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== authorization ============================= */
 
-    /// @dev THE SEAM THAT LETS AN OAPP JOIN. The base declares `isAdmin` and never
-    ///      implements it, so the authority can be anything the concrete contract already
-    ///      has. Here it is a bare address comparison with no OpenZeppelin `Ownable` in
-    ///      the tree at all: the same slot a LayerZero `OAppCore` would fill with
-    ///      `who == owner()`.
-    function test_authorityCanBeSuppliedWithoutOwnable() public {
+    /// @dev THE AUTHORITY IS THE ROLE, AND NOTHING ELSE SUPPLIES ONE. This harness has no
+    ///      `Ownable` in its tree at all and no address comparison of its own: the admin comes
+    ///      from the initializer and lives in `ADMIN_ROLE`. That is what lets an SDK bringing
+    ///      its own `Ownable` be inherited alongside, since the two never gate the same thing.
+    function test_theAuthorityIsTheRoleAlone() public {
         MsigTransceiver m = new MsigTransceiver();
         m.initialize(msig, address(receiverImpl));
 
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, address(this))
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                address(this),
+                m.ADMIN_ROLE()
+            )
         );
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
 
@@ -727,22 +726,24 @@ contract CommitFinalizeTest is Test {
         // And the lock it arrived with does not depend on that authority being asked.
         assertTrue(m.upgradesLocked());
 
-        // And the predicate is readable, so an operator can check a deployment's authority
-        // without sending anything.
-        assertTrue(m.isAdmin(msig));
-        assertFalse(m.isAdmin(address(this)));
+        // The set is ENUMERABLE, so the answer to "who administers this" is the whole list
+        // rather than a guess plus a yes-or-no.
+        address[] memory admins = m.getRoleMembers(m.ADMIN_ROLE());
+        assertEq(admins.length, 1, "exactly one, and no other was granted along the way");
+        assertEq(admins[0], msig);
+        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above ADMIN");
     }
 
     /// @dev Two authorities in one contract would mean a transceiver "locked" behind one
     ///      can still be reconfigured through the other. There is exactly one here, and
     ///      the base contributes none of it.
-    function test_theOnlyAuthorityIsTheConcreteContracts() public {
+    function test_theOnlyAuthorityIsTheRole() public {
         MsigTransceiver m = new MsigTransceiver();
         m.initialize(msig, address(receiverImpl));
 
         (bool ok,) = address(m).staticcall(abi.encodeWithSignature("owner()"));
-        assertFalse(ok, "the base contributes no owner()");
-        assertEq(m.msigAdmin(), msig, "only the concrete contract's authority exists");
+        assertFalse(ok, "no ownership system anywhere in the tree");
+        assertTrue(m.hasRole(m.ADMIN_ROLE(), msig), "the role is the whole of it");
     }
 
     /* ======================== isolation between senders ======================= */

@@ -3,8 +3,6 @@ pragma solidity ^0.8.0;
 
 import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
     "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @notice The spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and
 ///         Tron. One concrete contract each, because the two diverge differently.
@@ -24,21 +22,21 @@ import {OwnableUpgradeable} from
 /// @notice zkSync Era.
 /// @dev It overrides both seams, because zkSync diverges in the deployment mechanism as
 ///      well as the address: see `ZkSyncSpokeTransceiver`.
-contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OwnableUpgradeable {
+contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver {
     /// @param accountBytecodeHash_ `AddressDerive.hashL2Bytecode` over the ZKSOLC artifact
     ///        for `CrossProxy`. Not `CROSS_PROXY_INIT_CODE_HASH`, which is keccak of solc's
     ///        initcode and means nothing on Era. Getting it wrong does not misdeliver:
     ///        every account creation reverts `AccountAddressMismatch` until it is right.
     function initialize(
-        address owner_,
+        address admin_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_,
         bytes32 accountBytecodeHash_
     ) external initializer {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            admin_,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,
@@ -48,37 +46,30 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OwnableUpgradeable 
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    /// @notice Satisfies `TransceiverBase.isAdmin`. The local msig owns the spoke.
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
-    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
-    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
-    ///      gateway behind this yet, and a base that guessed an address would be worse than
-    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return false;
-    }
+    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
+    /// @dev That is the honest state of a binding with no LayerZero behind it. A real binding
+    ///      grants `GATEWAY_ROLE` to its endpoint in the initializer, which is where the
+    ///      address is known; the absence fails loudly on the first message rather than
+    ///      quietly on a forged one.
 
 }
 
 /// @notice Tron.
 /// @dev It overrides the prediction only, because Tron runs raw-initcode CREATE2 and simply
 ///      derives a different address from it: see `TronSpokeTransceiver`.
-contract LzTronSpokeTransceiver is TronSpokeTransceiver, OwnableUpgradeable {
+contract LzTronSpokeTransceiver is TronSpokeTransceiver {
     /// @param accountBytecodeHash_ `keccak256` of TRON-solc's `CrossProxy` initcode, which
     ///        is not solc's. See `LzZkSyncSpokeTransceiver` for why it is an argument.
     function initialize(
-        address owner_,
+        address admin_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_,
         bytes32 accountBytecodeHash_
     ) external initializer {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            admin_,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,
@@ -88,17 +79,10 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OwnableUpgradeable {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    /// @notice Satisfies `TransceiverBase.isAdmin`. The local msig owns the spoke.
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
-    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
-    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
-    ///      gateway behind this yet, and a base that guessed an address would be worse than
-    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return false;
-    }
+    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
+    /// @dev That is the honest state of a binding with no LayerZero behind it. A real binding
+    ///      grants `GATEWAY_ROLE` to its endpoint in the initializer, which is where the
+    ///      address is known; the absence fails loudly on the first message rather than
+    ///      quietly on a forged one.
 
 }

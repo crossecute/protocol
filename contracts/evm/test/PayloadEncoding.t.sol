@@ -30,8 +30,10 @@ contract Sink {
 /// @dev A receiver with an open policy, so these tests are about encoding rather than
 ///      about `isAllowed`.
 contract OpenReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     function isAllowed(address, bytes4) public pure override returns (bool) {

@@ -91,9 +91,9 @@ interface IAccountTransceiver {
 ///      the DESTINATION chain. So the previews below hash with the destination's key, and
 ///      the chain-binding still does its job.
 abstract contract TransmitterBase is
+    Initializable,
     OutboundBase,
     Executor,
-    Initializable,
     IERC7786GatewaySource
 {
     /// The local transceiver for this protocol, which carries every message out.
@@ -749,6 +749,11 @@ abstract contract TransmitterBase is
         onlyInitializing
     {
         if (transceiver_ == address(0)) revert NoTransceiver();
+
+        // NO ADMIN. A transmitter answers to its own owner, and its gateway is granted here
+        // by a binding that knows one; with `ADMIN` empty nothing can grant another later.
+        __Roles_init(address(0));
+
         transceiver = transceiver_;
         accountSalt = salt_;
         emit TransmitterConfigured(owner_, transceiver_);

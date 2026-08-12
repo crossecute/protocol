@@ -2,8 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @notice The transceiver on every chain that is not the home chain.
 ///
@@ -14,7 +12,7 @@ import {OwnableUpgradeable} from
 /// @dev THE ROUTE IS THE CHAIN IDENTIFIER, NOT A PROVIDER'S ID FOR IT, which makes
 ///      `keccak256(homeRoute()) == homeChainKey` true by construction rather than by
 ///      configuration, and is what an ERC-7786 recipient is built from.
-contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
+contract LzSpokeTransceiver is SpokeTransceiverBase {
     /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier.
     /// @param homeChainIdentifier_ That identifier itself. It is passed rather than derived
     ///        because a chainKey is a hash and cannot be reversed, and it is checked
@@ -32,14 +30,14 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     ///      chain that really diverges needs different arithmetic as well as the flag, so it
     ///      gets `LzZkSyncSpokeTransceiver` or `LzTronSpokeTransceiver` instead.
     function initialize(
-        address owner_,
+        address admin_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_
     ) external initializer {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
+            admin_,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,
@@ -48,17 +46,10 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         );
     }
 
-    /// @notice Satisfies `TransceiverBase.isAdmin`. The local msig owns the spoke.
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
-    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
-    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
-    ///      gateway behind this yet, and a base that guessed an address would be worse than
-    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return false;
-    }
+    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
+    /// @dev That is the honest state of a binding with no LayerZero behind it. A real binding
+    ///      grants `GATEWAY_ROLE` to its endpoint in the initializer, which is where the
+    ///      address is known; the absence fails loudly on the first message rather than
+    ///      quietly on a forged one.
 
 }

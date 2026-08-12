@@ -45,7 +45,7 @@ import {UUPSUpgradeable} from
 ///      known before the first message, unchanged after the thousandth. Nothing about the
 ///      payload is in the salt, which would mint a new receiver per message and throw away
 ///      the state a receiver accumulates.
-abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeable {
+abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
@@ -93,7 +93,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      what a sender needs to address anything. This is only the authority over it: a
     ///      binding wraps this in a typed setter where it keeps a provider-native value of
     ///      its own, and a gateway binding adds nothing.
-    function setRoute(bytes32 chainKey, bytes memory route) public onlyAdmin {
+    function setRoute(bytes32 chainKey, bytes memory route) public onlyRole(ADMIN_ROLE) {
         _setRoute(chainKey, route);
     }
 
@@ -363,48 +363,34 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      address, which re-derives every account. That is the same trade `_setRoute`
     ///      makes and the same answer: what the protocol guarantees is worth what the
     ///      smallest set of things able to change it is worth.
-    function __TransceiverBase_init() internal onlyInitializing {
+    ///
+    /// @dev IT ALSO GRANTS `ADMIN`, AND REFUSES A ZERO ONE. Every configuring operation here
+    ///      is `onlyRole(ADMIN_ROLE)`, so a transceiver with an empty admin set is a
+    ///      transceiver that can never be given a route: it would deploy, seal itself, and be
+    ///      unusable, with the failure arriving one transaction later than the mistake.
+    function __TransceiverBase_init(address admin_) internal onlyInitializing {
+        if (admin_ == address(0)) revert NoAdmin();
+        __Roles_init(admin_);
+
         upgradesLocked = true;
         emit UpgradesLocked();
     }
 
     /* ============================== authorization ============================== */
 
-    /// @dev Something that is not this transceiver's authority tried a privileged
-    ///      operation, or one was aimed at an address that is not it.
-    error NotAdmin(address who);
-
-    /// @notice Whether `who` is the authority for privileged operations on this transceiver.
+    /// @notice THE AUTHORITY IS `ADMIN_ROLE`, and it is membership rather than a predicate a
+    ///         binding answers. See `Roles` for why both authorities are one system, why
+    ///         `DEFAULT_ADMIN_ROLE` is left unheld, and why the role ids are namespaced.
     ///
-    /// @dev DECLARED, NOT IMPLEMENTED. Inheriting an ownership system here would make this
-    ///      base impossible to combine with a provider SDK that brings its own without the
-    ///      concrete contract carrying two. Two owners on one contract is not a style
-    ///      problem: it means a transceiver whose upgrades are "locked" behind one authority
-    ///      can still be reconfigured through the other. So the base states the REQUIREMENT
-    ///      and the concrete contract satisfies it from whatever it already has: `owner()`
-    ///      for `Ownable`, `hasRole` for `AccessControl`, a raw msig comparison.
+    /// @dev A ROLE IS ALSO WHAT LETS THE BASE ASK ABOUT AN ADDRESS THAT IS NOT THE CALLER.
+    ///      `withdrawFees` requires the DESTINATION to be an admin, which no caller-shaped
+    ///      check can express: without it the admin could name any address at all, and a fee
+    ///      taken to fund spokes could leave to somewhere that funds none.
     ///
-    /// @dev IT ASKS ABOUT AN ADDRESS RATHER THAN CHECKING THE CALLER, which is what lets the
-    ///      base use it for anything other than gating. `withdrawFees` needs to know whether
-    ///      a DESTINATION is the authority, and a caller-shaped check cannot answer that: it
-    ///      would leave the admin able to name any address at all, so a fee taken to fund
-    ///      spokes could leave to somewhere that never funds one. Everything privileged still
-    ///      goes through `onlyAdmin`, which is now this predicate applied to `msg.sender`.
-    ///
-    /// @dev PUBLIC, so an operator can check a deployment's authority without sending
-    ///      anything, the same way `isAuthorizedGateway` exposes the transport seam.
-    function isAdmin(address who) public view virtual returns (bool);
-
-    /// @dev The caller-shaped form, now derived rather than declared. One predicate means a
-    ///      contract cannot gate its operations on one authority and pay its fees to another.
-    function _checkAdmin() internal view {
-        if (!isAdmin(msg.sender)) revert NotAdmin(msg.sender);
-    }
-
-    modifier onlyAdmin() {
-        _checkAdmin();
-        _;
-    }
+    /// @dev AND IT ANSWERS "WHO ELSE", which is the question a predicate could not.
+    ///      `getRoleMemberCount(ADMIN_ROLE)` and `getRoleMember` enumerate the whole set, so a
+    ///      live transceiver carrying an authority nobody remembers granting is visible rather
+    ///      than merely present.
 
     /// @notice WHERE THE TWO SIDES DIVERGE, and the only thing that does. Both halves of
     ///         addressing (`_routeTo` and `_counterpartOn`) are `OutboundBase`'s seams, and a
@@ -422,7 +408,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
     ///      was the wrong one.
     function _authorizeUpgrade(address) internal override {
         if (upgradesLocked) revert UpgradesAreLocked();
-        _checkAdmin();
+        _checkRole(ADMIN_ROLE);
     }
 
     /* ================================= inbound ================================= */

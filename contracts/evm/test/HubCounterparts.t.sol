@@ -19,16 +19,13 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
+        __TransceiverBase_init(owner_);
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
-
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }

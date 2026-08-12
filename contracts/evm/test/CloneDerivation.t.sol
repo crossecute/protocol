@@ -139,7 +139,7 @@ contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
 
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
+        __TransceiverBase_init(owner_);
         _impl = impl;
     }
 
@@ -163,9 +163,6 @@ contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
         return _createCrossAccount(owner, salt, new Call[](0));
     }
 
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
-    }
     function _accountImplementation() internal view override returns (address) { return _impl; }
     function _accountInitializer(address, bytes32, Call[] memory)
         internal pure override returns (bytes memory) { return ""; }
@@ -179,9 +176,10 @@ contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
     function _authenticateOrigin(bytes memory, bytes memory)
         internal pure override returns (bytes32) { return bytes32(0); }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }

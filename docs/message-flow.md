@@ -44,7 +44,7 @@ owner
  ══════════════════ bridge ══════════════════
  │
  ▼  receiver.receiveMessage(receiveId, sender, payload)
-      _isAuthorizedGateway(msg.sender)                                 binding answers
+      onlyRole(GATEWAY_ROLE)                                           granted at arming
       sender's address == address(this)                                1:1, derived
       _onMessage(payload):
         calls = Payload.decodeCalls(payload)                           abi.decode(_, (Call[]))
@@ -176,6 +176,37 @@ Signatures are the real ones; where a base declares something without implementi
 is said. The addressing, derivation, and registry trees are not covered here: see
 [`encoding.md`](encoding.md) for the commitment layer and `registry/ChainRegistry.sol` for
 the directory.
+
+### Roles
+
+The two authorities, and the only two. `ADMIN_ROLE` configures a transceiver; `GATEWAY_ROLE`
+is which transport may carry a contract's messages. Both were once a virtual predicate every
+binding answered for itself; they are role membership now, so authorization has one shape and
+a binding adds a transport or an operator by granting rather than by writing a comparison.
+
+- **One role covers both directions.** A contract that accepted deliveries from one address
+  while sending through another would be trusting two transports and authenticating against
+  one, and nothing would say so: the send would work, and only a message from the second
+  gateway would be silently refused. `ReceiverBase` inherits `Roles` directly rather than
+  through `OutboundBase`, because a receiver never sends yet has the strictest need to know
+  which gateway is real.
+- **`DEFAULT_ADMIN_ROLE` is never granted.** OZ's default puts it over every role, which
+  would make "who may add a gateway" a question with two answers. `ADMIN_ROLE` administers
+  itself and `GATEWAY_ROLE`, so an admin can hand over, add an operator, or change the
+  transport set, and nothing else can.
+- **An account holds no `ADMIN_ROLE`, and that is what freezes it.** A receiver or transmitter
+  grants its gateway in the call that arms it and leaves the admin set empty, so afterwards
+  there is nobody a grant could come from. The same guarantee the write-once slots give,
+  obtained by leaving a role unheld rather than by refusing a second write.
+- **The role ids are namespaced** (`keccak256("crossecute.role.ADMIN")`). A role is a bytes32,
+  so an SDK defining its own `ADMIN` would otherwise share this member set and hand its
+  administrators this authority through a string collision.
+- **Enumeration is ours, not OZ's, because of the `paris` pin.**
+  `AccessControlEnumerableUpgradeable` reaches `EnumerableSet` and so `Arrays`, which emits
+  `mcopy` and needs Cancun; a Cancun opcode in a spoke transceiver would not change an
+  address, it would fail to execute. The interface is OZ's `IAccessControlEnumerable` and the
+  member list is a swap-and-pop array, so `getRoleMembers` answers "who else" — the question
+  a predicate could not, since a predicate only speaks about an address already suspected.
 
 ### Executor
 
@@ -331,7 +362,7 @@ colliding with one declared here.
 - `CROSS_PROXY_INIT_CODE_HASH`: the one initcode hash every account deploys from, on every
   chain, transmitter and receiver alike. Exposed so the hub can reproduce addresses without
   deploying anything.
-- `setRoute(bytes32 chainKey, bytes route)`: `onlyAdmin` and **write-once**, maintaining the
+- `setRoute(bytes32 chainKey, bytes route)`: `ADMIN_ROLE` and **write-once**, maintaining the
   reverse index in the same call because two setters is how the two directions drift apart.
   **The route is the chain's ERC-7930 identifier**, not a provider's private id for it: an
   ERC-7786 recipient names its own chain, so there is nothing left to translate. That also
@@ -368,12 +399,14 @@ colliding with one declared here.
   place provider setup can happen**. The proxy locks in the same call that arms it, and an
   account's own configuration is owner-gated, so a transceiver has no authority over an
   account after creating it.
-- `isAdmin(address who)` is declared, not implemented; `_checkAdmin()` and `onlyAdmin` are
-  derived from it. Two ownership systems on one transceiver would mean an authority gated on
-  one could be exercised through the other. It asks about an ADDRESS rather than the caller
-  because the base needs the answer for addresses that are not `msg.sender`: `withdrawFees`
-  requires the destination to be the authority, so a fee taken to fund spokes cannot leave
-  to somewhere that funds none.
+- **The authority is `ADMIN_ROLE`**, granted in `__TransceiverBase_init` from an address the
+  deployment supplies, and a zero one is refused: every configuring operation is
+  `onlyRole(ADMIN_ROLE)`, so a transceiver with an empty admin set could never be given a
+  route. Two ownership systems over the same operations would mean an authority gated on one
+  could be exercised through the other, which is why nothing here reads an `owner()`.
+  Membership also answers about addresses that are not the caller, which a caller-shaped
+  check could not: `withdrawFees` requires the DESTINATION to hold `ADMIN_ROLE`, so a fee
+  taken to fund spokes cannot leave to somewhere that funds none.
 - **Upgrades lock in the initializer.** `__TransceiverBase_init` sets the flag and both
   halves call it last, so there is no `lockUpgrades()` and no window between "the real logic
   is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
@@ -534,15 +567,18 @@ could widen later.
 - `commit` is `external`, so the self-call is a real CALL rather than an internal jump.
 - `receiveMessage(bytes32 receiveId, bytes sender, bytes payload)`: `IERC7786Recipient`'s
   entry point, and the only way in. It is `external`, so it carries TWO checks rather than
-  one: `_isAuthorizedGateway(msg.sender)` says the message came through transport this
-  account trusts, and the sender's address must be `address(this)`, which says it came from
-  THIS account on the other side. An honest but shared gateway would otherwise let one
+  one: `onlyRole(GATEWAY_ROLE)` says the message came through transport this account trusts,
+  and the sender's address must match `sourceTransmitter`, which says it came from THIS
+  account on the other side. An honest but shared gateway would otherwise let one
   account's payload land in another's receiver. The `receiveId` is ignored: a payload either
   matches a queued commitment or executes on arrival, and neither asks which message
   carried it.
-- `_isAuthorizedGateway(address)`: declared, not implemented, for the same reason
-  `isAdmin` is on the transceiver. Which gateway is trusted is a property of the
-  binding; the sender half needs no configuration, so it is answered in the base.
+- `GATEWAY_ROLE`: which transport is trusted is a property of the binding, so the binding
+  grants it in the call that arms the account and nothing can grant another afterwards — an
+  account holds no `ADMIN_ROLE`, and that role is what administers this one. The sender half
+  needs no configuration, so it is answered in the base. The SAME role gates the outbound
+  direction on a transmitter or transceiver, so a contract cannot accept from one address
+  while sending through another; see `Roles`.
 - `_onMessage(bytes payload)`: the inbound funnel `receiveMessage` routes into. Decodes with
   `Payload.decodeCalls` and executes on arrival. The binding does not decode: every provider
   gets the same decoder and the same failure mode.

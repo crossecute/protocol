@@ -80,17 +80,20 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
         return payload.length * WEI_PER_BYTE + attributes.length;
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
 contract MockReceiver is ReceiverBase {
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
     function deliver(bytes calldata payload) external {
@@ -110,12 +113,8 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
 
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
+        __TransceiverBase_init(owner_);
         _impl = impl;
-    }
-
-    function isAdmin(address who) public view override returns (bool) {
-        return who == owner();
     }
 
     function _accountImplementation() internal view override returns (address) {
@@ -184,9 +183,10 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
         return payload.length * WEI_PER_BYTE;
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }
@@ -1128,9 +1128,10 @@ contract BareTransmitter is TransmitterBase, OwnableUpgradeable {
         OwnableUpgradeable._checkOwner();
     }
 
-    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
-    function _isAuthorizedGateway(address) internal pure override returns (bool) {
-        return true;
+    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    ///      membership read rather than granting a role keeps each test on its own subject.
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 
 }

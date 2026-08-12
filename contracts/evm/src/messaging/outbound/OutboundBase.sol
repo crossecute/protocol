@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {GatewayBound} from "src/messaging/GatewayBound.sol";
+import {Roles} from "src/messaging/Roles.sol";
 
 /// @title OutboundBase
 /// @notice The sending half: who this contract's counterpart is on each chain, how to
@@ -34,7 +34,7 @@ import {GatewayBound} from "src/messaging/GatewayBound.sol";
 ///      argument arrives, and the send event belongs to the standard: a gateway source MUST
 ///      emit `MessageSent`. Path B is not a gateway source, so `TransceiverBase` emits
 ///      `BootstrapSent` instead.
-abstract contract OutboundBase is GatewayBound {
+abstract contract OutboundBase is Roles {
     /// chainKey => that chain's canonical ERC-7930 chain identifier.
     ///
     /// @dev IT LIVES ON THE SENDER RATHER THAN IN THE REGISTRY. A registry read would put a
