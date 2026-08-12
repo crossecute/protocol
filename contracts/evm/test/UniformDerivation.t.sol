@@ -22,8 +22,8 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         __TransceiverBase_init();
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev A live gateway, so the harness exercises the checks rather than the refusal.

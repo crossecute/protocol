@@ -6,6 +6,7 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -77,7 +78,6 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __SpokeTransceiverBase_init(
             impl,
             ChainKey.forEvm(1),
@@ -87,8 +87,8 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
         );
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev Stands in for a dry spoke: a provider whose fee cannot be paid reverts here.
@@ -323,7 +323,6 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __HubTransceiverBase_init(transmitterImplementation_);
     }
 
@@ -350,8 +349,8 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         return payload.length;
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev Stands in for a provider adapter: translates a callback into the three
@@ -671,10 +670,29 @@ contract BootstrapFeeTest is Test {
     }
 
     function test_onlyTheAdminSetsTheFeeAndWithdraws() public {
-        vm.expectRevert();
+        bytes memory notAdmin =
+            abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, address(this));
+
+        vm.expectRevert(notAdmin);
         hub.setBootstrapFee(divergingKey, 1);
-        vm.expectRevert();
-        hub.withdrawFees(owner);
+        vm.expectRevert(notAdmin);
+        hub.withdrawFees(msig);
+    }
+
+    /// @dev THE FEE GOES TO THE AUTHORITY, NOT WHEREVER THE AUTHORITY SAYS. Gating the call
+    ///      and leaving the destination free would make this the one privileged operation
+    ///      that moves value to an arbitrary address, so a single compromised admin
+    ///      transaction empties the balance somewhere that funds no spoke.
+    function test_theFeeCannotBeWithdrawnToANonAdmin() public {
+        vm.prank(owner);
+        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+
+        address sink = address(0xF11);
+        vm.prank(msig);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, sink));
+        hub.withdrawFees(sink);
+
+        assertEq(hub.collectedFees(), FEE, "and nothing moved");
     }
 
     function test_withdrawingMovesOnlyTheAccruedFees() public {
@@ -683,12 +701,11 @@ contract BootstrapFeeTest is Test {
         // A provider refund landing on the transceiver is not a fee and must survive.
         vm.deal(address(hub), address(hub).balance + 3 ether);
 
-        address sink = address(0xF11);
         vm.prank(msig);
-        uint256 moved = hub.withdrawFees(sink);
+        uint256 moved = hub.withdrawFees(msig);
 
         assertEq(moved, FEE);
-        assertEq(sink.balance, FEE);
+        assertEq(msig.balance, FEE);
         assertEq(address(hub).balance, 3 ether, "the refund stayed");
         assertEq(hub.collectedFees(), 0);
     }

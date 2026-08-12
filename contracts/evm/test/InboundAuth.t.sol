@@ -77,7 +77,6 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __HubTransceiverBase_init(impl);
     }
 
@@ -90,8 +89,8 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     function arrive(bytes memory route, bytes memory sender, bytes calldata message)
@@ -113,14 +112,13 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __SpokeTransceiverBase_init(
             impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
         );
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
 

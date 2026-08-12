@@ -56,12 +56,11 @@ contract MiniTransmitter {
 contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __HubTransceiverBase_init(impl);
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
@@ -76,7 +75,6 @@ contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
 contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     function initialize(address owner_, address impl) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __SpokeTransceiverBase_init(
             impl,
             ChainKey.forEvm(1),
@@ -86,8 +84,8 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         );
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
 

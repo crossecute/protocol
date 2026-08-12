@@ -101,7 +101,7 @@ back out of it, rather than out of a route lookup.
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
-| `_checkAdmin` / `_checkOwner` | answered from OApp's own `Ownable` |
+| `isAdmin(address)` / `_checkOwner` | answered from OApp's own `Ownable`: `who == owner()` |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
 protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
@@ -138,7 +138,8 @@ destination, read from the table rather than computed.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
   the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  `withdrawFees`. It is zero by default, so only the chains that actually report are
+  `withdrawFees`, whose destination must itself satisfy `isAdmin`. It is zero by default, so
+  only the chains that actually report are
   charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
   than none: the caller would fund the send exactly and the bootstrap would revert with the
   signers already committed.
@@ -233,7 +234,9 @@ mainnet.
   When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
-- **No storage gaps anywhere.** The transceiver is UUPS until `lockUpgrades()`.
+- **No storage gaps anywhere.** A transceiver locks upgrades in its own initializer, so
+  there is no later upgrade to make room for; the registry and the account implementations
+  are where a gap would still buy something.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs

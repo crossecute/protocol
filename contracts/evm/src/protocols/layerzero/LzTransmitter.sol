@@ -23,7 +23,7 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
 
     /// @notice Where `TransmitterBase`'s ownership requirement is satisfied.
     ///
-    /// @dev THE SEAM, and the same one `LzHubTransceiver` uses for `_checkAdmin`. When this
+    /// @dev THE SEAM, and the same one `LzHubTransceiver` uses for `isAdmin`. When this
     ///      becomes an actual OApp the inheritance list gains `OAppUpgradeable` and these two
     ///      bodies answer from OApp's own `Ownable` instead, one line each; nothing in
     ///      `TransmitterBase` changes, because it never had an opinion about ownership.

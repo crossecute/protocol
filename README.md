@@ -48,9 +48,9 @@ confirms its destination, and the same bytes cannot be replayed onto another cha
 **What it costs.** The home chain and the message provider enter the trust path: a halt at
 home delays everything, and a provider that can forge a message can drive an account. No
 shared failure is exactly what N independent multisigs buy with N of everything else. The
-exposure is narrowed where it can be: a transceiver is upgradeable only until
-`lockUpgrades()`, an account's upgrade key dies in the call that arms it, and no shared
-contract sits in the path of a normal message.
+exposure is narrowed where it can be: a transceiver's upgrade key dies in the call that
+initializes it and an account's in the call that arms it, so neither is ever live and
+replaceable, and no shared contract sits in the path of a normal message.
 
 ## The idea
 
@@ -186,9 +186,10 @@ if its addresses cannot be recomputed here at all.
   `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
   comments included, which would otherwise put every derived address one comment edit
   away from moving.
-- Transceivers are deployed as upgradeable proxies, upgraded to their real implementation,
-  then `lockUpgrades()`. A transceiver decides which cross-chain payloads are authentic, so
-  a live upgrade key is a standing ability to forge one.
+- Transceivers are deployed as upgradeable proxies and the upgrade that installs the real
+  implementation runs the initializer that locks upgrades. A transceiver decides which
+  cross-chain payloads are authentic, so a live upgrade key is a standing ability to forge
+  one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
 - The crossecute msig owns the registry and every transceiver.

@@ -368,12 +368,20 @@ colliding with one declared here.
   place provider setup can happen**. The proxy locks in the same call that arms it, and an
   account's own configuration is owner-gated, so a transceiver has no authority over an
   account after creating it.
-- `_checkAdmin()` is declared, not implemented, and the modifier is `onlyAdmin`. Two
-  ownership systems on one transceiver would mean upgrades "locked" behind one authority
-  could still be reconfigured through the other.
-- `lockUpgrades()`: irreversible, `onlyAdmin`, and `_authorizeUpgrade` refuses outright once
-  set. A transceiver decides which cross-chain payloads are authentic, so a live upgrade key
-  is a standing ability to forge one.
+- `isAdmin(address who)` is declared, not implemented; `_checkAdmin()` and `onlyAdmin` are
+  derived from it. Two ownership systems on one transceiver would mean an authority gated on
+  one could be exercised through the other. It asks about an ADDRESS rather than the caller
+  because the base needs the answer for addresses that are not `msg.sender`: `withdrawFees`
+  requires the destination to be the authority, so a fee taken to fund spokes cannot leave
+  to somewhere that funds none.
+- **Upgrades lock in the initializer.** `__TransceiverBase_init` sets the flag and both
+  halves call it last, so there is no `lockUpgrades()` and no window between "the real logic
+  is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
+  are authentic, so a live upgrade key on one is a standing ability to forge any message the
+  protocol will honour, and an operator who has not locked yet is running an authenticator
+  somebody can replace. The proxy still gets exactly one upgrade — the one carrying this
+  initializer, which fixes the address before the implementation is known, since every
+  account's CREATE2 derives from it. `_authorizeUpgrade` refuses everything after.
 - `_onInbound(route, sender, message)`: the one funnel every binding routes an arriving
   message into. **Authentication is not the binding's job**: `_authenticateOrigin` runs here
   before anything is decoded, so a new binding cannot ship without it. It splits into two
@@ -533,7 +541,7 @@ could widen later.
   matches a queued commitment or executes on arrival, and neither asks which message
   carried it.
 - `_isAuthorizedGateway(address)`: declared, not implemented, for the same reason
-  `_checkAdmin` is on the transceiver. Which gateway is trusted is a property of the
+  `isAdmin` is on the transceiver. Which gateway is trusted is a property of the
   binding; the sender half needs no configuration, so it is answered in the base.
 - `_onMessage(bytes payload)`: the inbound funnel `receiveMessage` routes into. Decodes with
   `Payload.decodeCalls` and executes on arrival. The binding does not decode: every provider

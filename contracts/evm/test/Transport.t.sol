@@ -114,8 +114,8 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
         _impl = impl;
     }
 
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     function _accountImplementation() internal view override returns (address) {

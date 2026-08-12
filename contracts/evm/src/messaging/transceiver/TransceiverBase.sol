@@ -334,26 +334,72 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         virtual
         returns (bytes memory);
 
-    /// @notice The base hook every concrete transceiver calls.
-    /// @dev IT INITIALIZES NOTHING, AND THERE IS NOTHING TO INITIALIZE. `UUPSUpgradeable`
-    ///      holds no state of its own, the implementation address living in the ERC-1967
-    ///      slot the proxy owns, so there is nothing of its to set up. The hook exists
-    ///      because it is what every concrete transceiver calls and what a later base would
-    ///      hang its own setup on.
-    function __TransceiverBase_init() internal onlyInitializing {}
+    /// @notice The base hook, and the only thing it does is CLOSE THE TRANSCEIVER.
+    ///
+    /// @dev THE LOCK IS PART OF ARMING, NOT A LATER PROMISE. A transceiver decides which
+    ///      cross-chain payloads are authentic, so a live upgrade key on one is a standing
+    ///      ability to forge any message the protocol will honour. Locking on a separate
+    ///      admin transaction means every deployment has a window where that key exists, and
+    ///      nothing but intent closes it: an operator who forgets, or who is waiting to be
+    ///      sure, is running an authenticator somebody can replace. Doing it here converts
+    ///      "we will lock it" into "it was never unlocked", and the deployment either
+    ///      produced a sealed transceiver or reverted.
+    ///
+    /// @dev THE PROXY STILL GETS ONE UPGRADE, WHICH IS THE ONE THAT RUNS THIS. A transceiver
+    ///      lives at an address every account's CREATE2 depends on, so the proxy is deployed
+    ///      through a keyless factory to fix that address without fixing the implementation,
+    ///      then pointed at the real logic by an `upgradeToAndCall` carrying this
+    ///      initializer. That call is authorized against the stub it is leaving; by the time
+    ///      it returns the flag is set and `_authorizeUpgrade` refuses everything after. It
+    ///      is `CrossProxy`'s sequence one level up: upgrade, initialize, lock, in one call.
+    ///
+    /// @dev IT IS CALLED LAST, BY `__HubTransceiverBase_init` AND `__SpokeTransceiverBase_init`
+    ///      rather than by the binding, so a binding cannot ship a transceiver that never
+    ///      locked by leaving a line out. Both halves already have an init a concrete
+    ///      contract must call to be usable at all, so the lock rides on something that is
+    ///      not optional.
+    ///
+    /// @dev THE COST IS THAT A BUG HERE IS PERMANENT, and the fix is a redeploy at a new
+    ///      address, which re-derives every account. That is the same trade `_setRoute`
+    ///      makes and the same answer: what the protocol guarantees is worth what the
+    ///      smallest set of things able to change it is worth.
+    function __TransceiverBase_init() internal onlyInitializing {
+        upgradesLocked = true;
+        emit UpgradesLocked();
+    }
 
     /* ============================== authorization ============================== */
 
-    /// @notice The authority for privileged operations on this transceiver.
+    /// @dev Something that is not this transceiver's authority tried a privileged
+    ///      operation, or one was aimed at an address that is not it.
+    error NotAdmin(address who);
+
+    /// @notice Whether `who` is the authority for privileged operations on this transceiver.
     ///
     /// @dev DECLARED, NOT IMPLEMENTED. Inheriting an ownership system here would make this
     ///      base impossible to combine with a provider SDK that brings its own without the
     ///      concrete contract carrying two. Two owners on one contract is not a style
     ///      problem: it means a transceiver whose upgrades are "locked" behind one authority
     ///      can still be reconfigured through the other. So the base states the REQUIREMENT
-    ///      and the concrete contract satisfies it from whatever it already has: `_checkOwner`
-    ///      for `Ownable`, a role check for `AccessControl`, a raw msig comparison.
-    function _checkAdmin() internal view virtual;
+    ///      and the concrete contract satisfies it from whatever it already has: `owner()`
+    ///      for `Ownable`, `hasRole` for `AccessControl`, a raw msig comparison.
+    ///
+    /// @dev IT ASKS ABOUT AN ADDRESS RATHER THAN CHECKING THE CALLER, which is what lets the
+    ///      base use it for anything other than gating. `withdrawFees` needs to know whether
+    ///      a DESTINATION is the authority, and a caller-shaped check cannot answer that: it
+    ///      would leave the admin able to name any address at all, so a fee taken to fund
+    ///      spokes could leave to somewhere that never funds one. Everything privileged still
+    ///      goes through `onlyAdmin`, which is now this predicate applied to `msg.sender`.
+    ///
+    /// @dev PUBLIC, so an operator can check a deployment's authority without sending
+    ///      anything, the same way `isAuthorizedGateway` exposes the transport seam.
+    function isAdmin(address who) public view virtual returns (bool);
+
+    /// @dev The caller-shaped form, now derived rather than declared. One predicate means a
+    ///      contract cannot gate its operations on one authority and pay its fees to another.
+    function _checkAdmin() internal view {
+        if (!isAdmin(msg.sender)) revert NotAdmin(msg.sender);
+    }
 
     modifier onlyAdmin() {
         _checkAdmin();
@@ -369,20 +415,14 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
 
     /* ============================== upgrade lock =============================== */
 
-    /// @notice Permanently disable upgrades. IRREVERSIBLE.
-    /// @dev The proxy has to be upgradeable to get off the factory implementation it is
-    ///      created with. Once the real transceiver is in place that capability is pure
-    ///      downside: a transceiver decides which cross-chain payloads are authentic, so a
-    ///      live upgrade key is a standing ability to forge one. Locking converts "we promise
-    ///      not to" into "we cannot".
-    function lockUpgrades() external onlyAdmin {
-        upgradesLocked = true;
-        emit UpgradesLocked();
-    }
-
-    /// @dev Gate for UUPS. Admin-only, and refused outright once locked.
-    function _authorizeUpgrade(address) internal override onlyAdmin {
+    /// @dev Gate for UUPS. THERE IS NO `lockUpgrades()` TO CALL: `__TransceiverBase_init`
+    ///      sets the flag, so on any initialized transceiver this refuses unconditionally and
+    ///      the admin check below is never the reason. The order matters anyway, because the
+    ///      revert should say what is actually true: upgrades are closed, not that the caller
+    ///      was the wrong one.
+    function _authorizeUpgrade(address) internal override {
         if (upgradesLocked) revert UpgradesAreLocked();
+        _checkAdmin();
     }
 
     /* ================================= inbound ================================= */

@@ -25,13 +25,12 @@ contract LzHubTransceiver is HubTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __HubTransceiverBase_init(transmitterImplementation_);
     }
 
-    /// @notice Where the transceiver's `_checkAdmin` requirement is satisfied.
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    /// @notice Where the transceiver's `isAdmin` requirement is satisfied.
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.

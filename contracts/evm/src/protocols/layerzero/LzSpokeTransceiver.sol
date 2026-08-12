@@ -39,7 +39,6 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         bytes calldata homeTransceiver_
     ) external initializer {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __SpokeTransceiverBase_init(
             receiverImplementation_,
             homeChainKey_,
@@ -49,9 +48,9 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         );
     }
 
-    /// @notice Satisfies `TransceiverBase._checkAdmin`. The local msig owns the spoke.
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    /// @notice Satisfies `TransceiverBase.isAdmin`. The local msig owns the spoke.
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.

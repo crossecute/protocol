@@ -16,7 +16,7 @@ pragma solidity ^0.8.0;
 ///      which gateway is real, since `receiveMessage` is `external` and this check is one of
 ///      the two things standing in front of it.
 ///
-/// @dev DECLARED, NOT IMPLEMENTED, for the same reason `_checkAdmin` is on the transceiver:
+/// @dev DECLARED, NOT IMPLEMENTED, for the same reason `isAdmin` is on the transceiver:
 ///      which gateway is trusted is a property of the protocol binding, and a base that
 ///      guessed would either name a contract that does not exist on this chain or accept one
 ///      that should not be trusted.

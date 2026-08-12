@@ -168,7 +168,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_checkAdmin()` | `TransceiverBase._checkAdmin` | Answer from the SDK's ownership, or from `OwnableUpgradeable`. MUST NOT introduce a second authority: two owners on one transceiver means an upgrade lock held by one can be undone through the other. |
+| `isAdmin(address who)` | `TransceiverBase.isAdmin` | Answer from the SDK's ownership, or from `OwnableUpgradeable`: `who == owner()`. MUST NOT introduce a second authority: two owners on one transceiver means an authority gated on one can be exercised through the other. It is a PREDICATE, not a caller check, because the base asks it about addresses other than `msg.sender` — `withdrawFees` requires the destination to be the authority too. `_checkAdmin()` and `onlyAdmin` are derived from it and MUST NOT be overridden. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
 
@@ -176,7 +176,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_checkAdmin()` | `TransceiverBase._checkAdmin` | As above. |
+| `isAdmin(address who)` | `TransceiverBase.isAdmin` | As above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
@@ -665,8 +665,12 @@ slot.
 **R9.2** A typed wrapper around a write-once setter is the
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
-**R9.3** The binding MUST NOT expose an upgrade path that survives `lockUpgrades`. If the
-SDK carries its own upgrade mechanism, the binding MUST disable it.
+**R9.3** The binding MUST NOT expose an upgrade path that survives initialization. A
+transceiver locks upgrades in `__TransceiverBase_init`, which `__HubTransceiverBase_init` and
+`__SpokeTransceiverBase_init` call last, so a binding gets the lock by calling the base init
+it must call anyway and cannot ship a transceiver that never locked. If the SDK carries its
+own upgrade mechanism, the binding MUST disable it: an upgrade path the base does not gate is
+one the lock does not close.
 
 ---
 
@@ -689,7 +693,7 @@ chain unless noted:
 | 10 | `<P>HubTransceiver.setCounterpart(chainKey, interop)`, or `resolveCounterpart(chainKey, paramsCommitment)` where a deriver is configured | Write-once, on the hub. Most EVM chains need neither: the hub falls back to its own address. |
 | 11 | `<P>HubTransceiver.setRouting(registry, provider, minCounterpartProvenance)` | The provenance dial. |
 | 12 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
-| 13 | `lockUpgrades()` on every transceiver | Irreversible, and the point of the whole proxy dance. |
+| — | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
 There is no `script/` directory yet ([todo §6](todo.md#6-infrastructure-none-of-it-exists)).
 The first binding writes it, and the ordering above is its specification.
@@ -906,7 +910,7 @@ A binding is done when every line is true.
 - [ ] `_isAuthorizedGateway` answered on the receiver, and inbound routed into `_onInbound`
       on the transceivers
 - [ ] Inbound reverts on the transmitter
-- [ ] `_checkAdmin` and `_checkOwner` answered from one authority each
+- [ ] `isAdmin(address)` and `_checkOwner` answered from one authority each
 - [ ] `_accountInitializer` overridden on both transceivers
 - [ ] Codec library and typed setters, only where a provider-native id survives
 

@@ -125,6 +125,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
 
         addressesDiverge = addressesDiverge_;
         emit AddressesDivergeSet(addressesDiverge_);
+
+        // Last, and the spoke is sealed. See `TransceiverBase.__TransceiverBase_init`.
+        __TransceiverBase_init();
     }
 
     /// @notice The hub transceiver, in THIS chain's address format.

@@ -23,8 +23,8 @@ contract RoutingTransceiver is HubTransceiverBase, OwnableUpgradeable {
     }
 
     /// @dev The mock supplies its own authority, exactly as a real protocol binding does.
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.

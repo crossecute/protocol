@@ -94,6 +94,9 @@ abstract contract HubTransceiverBase is TransceiverBase {
         if (transmitterImplementation_ == address(0)) revert NoAccountImplementation();
         transmitterImplementation = transmitterImplementation_;
         emit TransmitterImplementationSet(transmitterImplementation_);
+
+        // Last, and the hub is sealed. See `TransceiverBase.__TransceiverBase_init`.
+        __TransceiverBase_init();
     }
 
     /* =========================== transmitter manufacture ======================= */
@@ -208,11 +211,26 @@ abstract contract HubTransceiverBase is TransceiverBase {
     }
 
     /// @notice Withdraw what has accrued, to fund the spokes it was collected for.
+    ///
+    /// @dev THE DESTINATION MUST ITSELF BE THE ADMIN. Gating the CALL on `onlyAdmin` and
+    ///      leaving `to` free would make this the one privileged operation that moves value
+    ///      to an address of the caller's choosing: a compromised or careless admin key
+    ///      empties the balance in a single transaction to anywhere, and the fee stops being
+    ///      "collected to fund spokes" and becomes "collected". Asking `isAdmin(to)` costs
+    ///      an authority that holds funds nothing, since it is the party the fee was for.
+    ///
+    /// @dev IT STILL TAKES A DESTINATION rather than reading one off an `admin()` getter,
+    ///      because the authority is a predicate and not necessarily a single address: a
+    ///      `AccessControl` role or a msig set has several, and there is no one address to
+    ///      read. `to` names which of them, and the predicate says it is one of them.
+    ///
     /// @dev IT TRACKS A BALANCE RATHER THAN SWEEPING `address(this).balance`, because a
     ///      transceiver's balance is not all fees: a provider refunding an overpaid send
     ///      lands here too on any binding whose refund target is the sender. Sweeping would
     ///      take that with it.
     function withdrawFees(address to) external onlyAdmin returns (uint256 amount) {
+        if (!isAdmin(to)) revert NotAdmin(to);
+
         amount = collectedFees;
         if (amount == 0) revert NothingToWithdraw();
         collectedFees = 0;

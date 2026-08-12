@@ -163,7 +163,9 @@ contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
         return _createCrossAccount(owner, salt, new Call[](0));
     }
 
-    function _checkAdmin() internal view override { _checkOwner(); }
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
+    }
     function _accountImplementation() internal view override returns (address) { return _impl; }
     function _accountInitializer(address, bytes32, Call[] memory)
         internal pure override returns (bytes memory) { return ""; }

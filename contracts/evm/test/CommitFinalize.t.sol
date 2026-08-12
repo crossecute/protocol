@@ -99,7 +99,6 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         initializer
     {
         __Ownable_init(owner_);
-        __TransceiverBase_init();
         __SpokeTransceiverBase_init(
             receiverImplementation_,
             ChainKey.forEvm(1),
@@ -111,8 +110,8 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
 
 
     /// @dev The mock supplies its own authority, exactly as a real protocol binding does.
-    function _checkAdmin() internal view override {
-        _checkOwner();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == owner();
     }
 
     /// @dev Stands in for `_onInbound`: the real path decodes the payload and reaches
@@ -136,8 +135,6 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
 contract MsigTransceiver is HubTransceiverBase {
     address public msigAdmin;
 
-    error NotMsig();
-
     function initialize(address admin_, address receiverImplementation_)
         external
         initializer
@@ -146,8 +143,8 @@ contract MsigTransceiver is HubTransceiverBase {
         __TransceiverBase_init();
     }
 
-    function _checkAdmin() internal view override {
-        if (msg.sender != msigAdmin) revert NotMsig();
+    function isAdmin(address who) public view override returns (bool) {
+        return who == msigAdmin;
     }
 
     /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
@@ -683,10 +680,11 @@ contract CommitFinalizeTest is Test {
         assertEq(t.receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev The lock is one-way: the proxy must be upgradeable to get off Nick's factory
-    ///      implementation, and must not stay that way once the real transceiver is in.
-    ///      Exercised behind a real proxy, since UUPS refuses upgrades outside one.
-    function test_upgradeLockIsOneWay() public {
+    /// @dev THE TRANSCEIVER ARRIVES LOCKED. Initializing is what locks it, so there is no
+    ///      window between "the real logic is in place" and "nobody can replace it", and no
+    ///      operator step that can be forgotten. Exercised behind a real proxy, since UUPS
+    ///      refuses upgrades outside one.
+    function test_initializingLocksUpgrades() public {
         MockTransceiver proxied = MockTransceiver(
             address(
                 new ERC1967Proxy(
@@ -695,22 +693,11 @@ contract CommitFinalizeTest is Test {
                 )
             )
         );
-        assertFalse(proxied.upgradesLocked());
+        assertTrue(proxied.upgradesLocked(), "locked by the initializer, not by a later call");
 
-        // While unlocked, the owner can still upgrade: that is how the proxy gets off
-        // the Arachnid/Nick's-factory implementation in the first place.
+        // And the admin cannot reopen it: there is no operation that clears the flag, so the
+        // authority that would have held the upgrade key has nothing to hold.
         // `new` is hoisted: a CREATE inside the pranked expression consumes the prank.
-        address nextImpl = address(new MockTransceiver());
-        vm.prank(msig);
-        proxied.upgradeToAndCall(nextImpl, "");
-
-        vm.expectRevert();
-        proxied.lockUpgrades();
-
-        vm.prank(msig);
-        proxied.lockUpgrades();
-        assertTrue(proxied.upgradesLocked());
-
         address blockedImpl = address(new MockTransceiver());
         vm.prank(msig);
         vm.expectRevert(TransceiverBase.UpgradesAreLocked.selector);
@@ -719,28 +706,31 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== authorization ============================= */
 
-    /// @dev THE SEAM THAT LETS AN OAPP JOIN. The base declares `_checkAdmin` and never
+    /// @dev THE SEAM THAT LETS AN OAPP JOIN. The base declares `isAdmin` and never
     ///      implements it, so the authority can be anything the concrete contract already
     ///      has. Here it is a bare address comparison with no OpenZeppelin `Ownable` in
     ///      the tree at all: the same slot a LayerZero `OAppCore` would fill with
-    ///      `_checkOwner()`.
+    ///      `who == owner()`.
     function test_authorityCanBeSuppliedWithoutOwnable() public {
         MsigTransceiver m = new MsigTransceiver();
         m.initialize(msig, address(receiverImpl));
 
-        vm.expectRevert(MsigTransceiver.NotMsig.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NotAdmin.selector, address(this))
+        );
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
 
         vm.prank(msig);
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
         assertEq(address(m.chainRegistry()), address(0xDEED));
 
-        // And it gates the upgrade lock too, which is the one that must not be bypassable.
-        vm.expectRevert(MsigTransceiver.NotMsig.selector);
-        m.lockUpgrades();
-        vm.prank(msig);
-        m.lockUpgrades();
+        // And the lock it arrived with does not depend on that authority being asked.
         assertTrue(m.upgradesLocked());
+
+        // And the predicate is readable, so an operator can check a deployment's authority
+        // without sending anything.
+        assertTrue(m.isAdmin(msig));
+        assertFalse(m.isAdmin(address(this)));
     }
 
     /// @dev Two authorities in one contract would mean a transceiver "locked" behind one
