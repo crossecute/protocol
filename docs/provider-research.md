@@ -206,6 +206,47 @@ and nothing else, rather than trusting one attestation network with every destin
 once. What it costs is N deployments, N `setProvenance` entries, and N sets of routes,
 which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
 
+### Chain-level deployment permissioning, which breaks bootstrap and not sends
+
+subnet-evm ships an optional `ContractDeployerAllowList` precompile at
+`0x0200000000000000000000000000000000000000`. A chain enables it in genesis, and from then
+on only allowlisted addresses may create contracts. It is opt-in, so most chains do not have
+it; **two that LayerZero supports do.**
+
+| | precompile | role of an arbitrary address |
+| --- | --- | --- |
+| Avalanche C-Chain | absent (`eth_getCode` empty) | n/a, deployment is open |
+| **DFK Chain** | **active** | `0`, None |
+| **Dexalot** | **active** | `0`, None |
+
+**It gates `tx.origin`, not the contract performing the CREATE**, which is the detail that
+decides how bad this is, and DFK says so in the error text. Probing it three ways:
+
+```
+top-level deploy, non-allowlisted from   ->  "tx.origin 0x1234… is not authorized
+                                              to deploy a contract"
+CREATE2 via Arachnid's factory, same from ->  execution reverted
+CREATE2 via Arachnid's factory, from 0x0  ->  0xb2e363e5…da1e80a1   (0x0 has role Enabled)
+```
+
+The factory is a CONTRACT doing the create, and it fails or succeeds purely on who
+originated the call. So allowlisting this protocol's transceiver buys nothing.
+
+**What that costs is bootstrap, and only bootstrap.** An account is created inside the
+inbound delivery callback, so `tx.origin` there is whoever submitted the delivery
+transaction: the provider's relayer or executor, not us and not the owner. On such a chain
+path B works only if that relayer is allowlisted, and
+[P6](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless
+retry is gone with it, since an arbitrary party retrying a failed bootstrap is exactly an
+arbitrary `tx.origin`. Path A is untouched: a normal send creates no contract.
+
+**And it generalises past this one precompile.** Any chain policy keyed on `tx.origin`
+lands the same way, because everything this protocol does on a destination happens inside
+somebody else's transaction. That is the shape to check for, not the precompile address.
+
+**DFK's CREATE2 is EIP-1014**, incidentally: the address it returned is the one computed for
+that salt and initcode, which is the same check that settled Aurora.
+
 **Teleporter imposes the same-address property this protocol already relies on.**
 `receiveCrossChainMessage` requires `warpMessage.originSenderAddress == address(this)`: the
 messenger will only accept a message from a messenger at its own address on the source

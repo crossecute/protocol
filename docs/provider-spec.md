@@ -73,9 +73,11 @@ independently.
 
 ## 2. Provider prerequisites: the go or no-go checklist
 
-Before any code is written, the provider must be able to do all fourteen of these. A "no"
-on any of P1 through P10 disqualifies the provider outright; P11 through P14 are costs
-rather than blockers, and each has a stated fallback.
+Before any code is written, the provider must be able to do all fifteen of these. A "no" on
+any of P1 through P10 disqualifies the provider outright; P11 through P14 are costs rather
+than blockers, and each has a stated fallback. P15 is not about the provider at all: it is a
+per-destination check, and a chain that fails it is one this protocol cannot stand an
+account up on however good the transport is.
 
 | # | Requirement | Why the protocol needs it |
 | --- | --- | --- |
@@ -93,6 +95,7 @@ rather than blockers, and each has a stated fallback.
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
+| **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). |
 
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
 gateway satisfies P1 through P4 cleanly and would be less code, but ERC-7786 defines no
