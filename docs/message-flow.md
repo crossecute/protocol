@@ -462,8 +462,15 @@ Every chain that is not the home chain: exactly one counterpart, named at initia
   `SpokeTransceiverBase` is Solidity and therefore only ever runs on an EVM chain.
 - `addressesDiverge`, write-once: whether an account's address here differs from the one the
   hub derives for it. True on zkSync and Tron among EVM chains, false everywhere parity
-  holds. The hub cannot determine this, and a provenance cap means something adjacent but
-  not the same thing, so it is stated once here.
+  holds. The hub cannot determine this, and a chain's provenance grade means something
+  adjacent but not the same thing, so the spoke states it.
+- **A deployment states it by choosing a contract, not by passing a bool.** The flag has to
+  agree with `predictCrossAccount`, since one says the hub cannot derive an address here and
+  the other is the arithmetic that makes that true. `LzSpokeTransceiver` is Ethereum's
+  formula and takes no flag; `LzZkSyncSpokeTransceiver` and `LzTronSpokeTransceiver` are
+  that chain's formula, set the flag themselves, and take the account bytecode hash their
+  compiler produces, which is the one value neither can compute. The pair is exhaustive and
+  mutually exclusive, so a flag disagreeing with the arithmetic is unrepresentable.
 - `_reportReceiver(owner, salt, receiver)`, called from `bootstrapInbound` when that flag is
   set, sending `Envelope.encodeReceiverReport` home with canonical ERC-7930 bytes for the
   receiver on this chain. It names the pair rather than the address alone, because the hub

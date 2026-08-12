@@ -68,8 +68,7 @@ contract DestinationNamingTest is Test {
                             recvImpl,
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(address(hub)),
-                            false
+                            abi.encodePacked(address(hub))
                         )
                     )
                 )
@@ -135,8 +134,7 @@ contract DestinationNamingTest is Test {
                             address(new LzReceiver()),
                             ChainKey.forEvm(42161),
                             Erc7930.encodeEvmChain(42161),
-                            abi.encodePacked(arbHub),
-                            false
+                            abi.encodePacked(arbHub)
                         )
                     )
                 )
@@ -346,8 +344,7 @@ contract DestinationNamingTest is Test {
             address(0xBEEF),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xBAD)),
-            false
+            abi.encodePacked(address(0xBAD))
         );
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)), "unchanged");
     }
@@ -366,8 +363,7 @@ contract DestinationNamingTest is Test {
                     address(0xBEEF),
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
-                    bytes(""),
-                    false
+                    bytes("")
                 )
             )
         );

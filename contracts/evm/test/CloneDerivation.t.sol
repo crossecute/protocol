@@ -11,11 +11,11 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {
-    DivergentSpokeTransceiver,
-    ZkSyncSpokeTransceiver,
-    TronSpokeTransceiver
-} from "src/messaging/transceiver/DivergentSpokeTransceiver.sol";
+import {DivergentSpokeTransceiver} from
+    "src/messaging/transceiver/DivergentSpokeTransceiver.sol";
+import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzZkSyncSpokeTransceiver, LzTronSpokeTransceiver} from
+    "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -238,36 +238,20 @@ contract MinimalAccount {
     function initialize() external {}
 }
 
-contract ZkSpoke is ZkSyncSpokeTransceiver, OwnableUpgradeable {
-    address private _impl;
-    function initialize(address o, address impl, bytes32 h, bytes32 homeKey, bytes memory homeId, bytes memory hub)
-        external initializer
-    {
-        __Ownable_init(o);
-        __TransceiverBase_init();
-        __SpokeTransceiverBase_init(impl, homeKey, homeId, hub, true);
-        __DivergentSpoke_init(h);
-        _impl = impl;
-    }
+/// @dev THE SHIPPED CONTRACTS, with one function added. Everything about initialization,
+///      the divergence flag and the bytecode hash is inherited rather than restated, so
+///      these exercise the initializer a deployment actually calls: a stand-in that
+///      reimplemented it could pass while the real one was never wired to anything.
+contract ZkSpoke is LzZkSyncSpokeTransceiver {
     function create(address o, bytes32 s) external returns (address) {
         return _createCrossAccount(o, s, new Call[](0));
     }
-    function _checkAdmin() internal view override { _checkOwner(); }
 }
 
-contract TronSpoke is TronSpokeTransceiver, OwnableUpgradeable {
-    function initialize(address o, address impl, bytes32 h, bytes32 homeKey, bytes memory homeId, bytes memory hub)
-        external initializer
-    {
-        __Ownable_init(o);
-        __TransceiverBase_init();
-        __SpokeTransceiverBase_init(impl, homeKey, homeId, hub, true);
-        __DivergentSpoke_init(h);
-    }
+contract TronSpoke is LzTronSpokeTransceiver {
     function create(address o, bytes32 s) external returns (address) {
         return _createCrossAccount(o, s, new Call[](0));
     }
-    function _checkAdmin() internal view override { _checkOwner(); }
 }
 
 /// @dev What this suite CAN establish about a diverging spoke, running on an Ethereum EVM:
@@ -284,16 +268,24 @@ contract DivergentSpokeTest is Test {
     function _zk() internal returns (ZkSpoke s) {
         s = new ZkSpoke();
         s.initialize(
-            address(this), address(new MinimalAccount()), HASH,
-            ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), abi.encodePacked(HUB)
+            address(this),
+            address(new MinimalAccount()),
+            ChainKey.forEvm(1),
+            Erc7930.encodeEvmChain(1),
+            abi.encodePacked(HUB),
+            HASH
         );
     }
 
     function _tron() internal returns (TronSpoke s) {
         s = new TronSpoke();
         s.initialize(
-            address(this), address(new MinimalAccount()), HASH,
-            ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), abi.encodePacked(HUB)
+            address(this),
+            address(new MinimalAccount()),
+            ChainKey.forEvm(1),
+            Erc7930.encodeEvmChain(1),
+            abi.encodePacked(HUB),
+            HASH
         );
     }
 
@@ -364,12 +356,12 @@ contract DivergentSpokeTest is Test {
 
         ZkSpoke s = new ZkSpoke();
         vm.expectRevert(DivergentSpokeTransceiver.ZeroAccountBytecodeHash.selector);
-        s.initialize(address(this), impl, bytes32(0), homeKey, homeId, hub);
+        s.initialize(address(this), impl, homeKey, homeId, hub, bytes32(0));
 
         ZkSpoke ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(address(this), impl, keccak256("other"), homeKey, homeId, hub);
+        ok.initialize(address(this), impl, homeKey, homeId, hub, keccak256("other"));
     }
 }
 
@@ -441,5 +433,72 @@ contract AddressAliasTest is Test {
         address asSeenOnL2 = AddressDerive.applyL1ToL2Alias(transmitter);
         assertTrue(asSeenOnL2 != transmitter, "the raw sender would not match");
         assertEq(AddressDerive.undoL1ToL2Alias(asSeenOnL2), transmitter);
+    }
+}
+
+/// @dev THE FLAG AND THE FORMULA CANNOT DISAGREE, because neither is an argument any more.
+///      A spoke that reported divergence while deriving addresses Ethereum's way, or the
+///      reverse, was the one state that cannot be right; picking the contract picks both.
+contract DivergenceIsNotConfigurableTest is Test {
+    address owner = address(0xA11CE);
+    bytes32 constant HASH = keccak256("artifact");
+
+    function _args() internal returns (address, bytes32, bytes memory, bytes memory) {
+        return (
+            address(new MinimalAccount()),
+            ChainKey.forEvm(1),
+            Erc7930.encodeEvmChain(1),
+            abi.encodePacked(address(0xC0FFEE))
+        );
+    }
+
+    function test_theParitySpokeAlwaysReportsNoDivergence() public {
+        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
+        LzSpokeTransceiver s = new LzSpokeTransceiver();
+        s.initialize(owner, impl, k, id, hub);
+
+        assertFalse(s.addressesDiverge(), "not settable, and false");
+        assertEq(
+            s.predictCrossAccount(owner, bytes32(0)),
+            Create2.computeAddress(
+                s.accountSalt(owner, bytes32(0)),
+                s.CROSS_PROXY_INIT_CODE_HASH(),
+                address(s)
+            ),
+            "and it derives the way the hub recomputes"
+        );
+    }
+
+    function test_theDivergentSpokesAlwaysReportDivergence() public {
+        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
+
+        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
+        zk.initialize(owner, impl, k, id, hub, HASH);
+        LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver();
+        tron.initialize(owner, impl, k, id, hub, HASH);
+
+        assertTrue(zk.addressesDiverge(), "not settable, and true");
+        assertTrue(tron.addressesDiverge());
+        assertEq(zk.accountBytecodeHash(), HASH, "the initializer wired it");
+        assertEq(tron.accountBytecodeHash(), HASH);
+
+        // And each derives its own way, not Ethereum's.
+        address ethWay = Create2.computeAddress(
+            zk.accountSalt(owner, bytes32(0)), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
+        );
+        assertTrue(zk.predictCrossAccount(owner, bytes32(0)) != ethWay);
+    }
+
+    /// @dev The bytecode hash has no setter, so a spoke initialized without one cannot
+    ///      acquire it later: the initializer refuses zero, which is the only way in.
+    function test_thereIsNoSetterForTheBytecodeHash() public {
+        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
+        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
+        zk.initialize(owner, impl, k, id, hub, HASH);
+
+        (bool ok,) = address(zk).call(
+            abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other"))
+        );
+        assertFalse(ok, "no setter on the ABI");
     }
 }

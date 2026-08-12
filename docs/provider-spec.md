@@ -175,7 +175,8 @@ Every abstract or virtual member a binding must answer, and where.
 | --- | --- | --- |
 | `_checkAdmin()` | `TransceiverBase._checkAdmin` | As above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
-| `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier, the hub's address, and `addressesDiverge` into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
+| `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
+| `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
 | the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from contract balance. |
 
 **Why the receiver's initializer is the shape it is.** `__ReceiverBase_init` is

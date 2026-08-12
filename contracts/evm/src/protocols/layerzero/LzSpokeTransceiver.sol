@@ -21,15 +21,22 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     ///        against `homeChainKey_` so the pair cannot disagree.
     /// @param homeTransceiver_ The hub, in this chain's address format. Fixed for the life
     ///        of the contract: there is no setter, by design.
-    /// @param addressesDiverge_ True on zkSync and Tron, false on every EVM chain that
-    ///        shares Ethereum's CREATE2 formula. See `SpokeTransceiverBase`.
+    /// @dev THIS IS THE PARITY SPOKE, AND IT DOES NOT TAKE THE DIVERGENCE FLAG. It inherits
+    ///      `TransceiverBase.predictCrossAccount`, which is Ethereum's CREATE2 formula and
+    ///      exactly what the hub recomputes, so accounts here do NOT diverge and the flag is
+    ///      `false` by construction rather than by configuration.
+    ///
+    ///      Taking it as an argument allowed the one state that cannot be right: `true` with
+    ///      Ethereum's arithmetic, which reports addresses home that the hub could already
+    ///      derive, and downgrades a `Derived` fact to an `Attested` one for nothing. A
+    ///      chain that really diverges needs different arithmetic as well as the flag, so it
+    ///      gets `LzZkSyncSpokeTransceiver` or `LzTronSpokeTransceiver` instead.
     function initialize(
         address owner_,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
-        bool addressesDiverge_
+        bytes calldata homeTransceiver_
     ) external initializer {
         __Ownable_init(owner_);
         __TransceiverBase_init();
@@ -38,7 +45,7 @@ contract LzSpokeTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            addressesDiverge_
+            false
         );
     }
 
