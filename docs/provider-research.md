@@ -240,6 +240,37 @@ path B works only if that relayer is allowlisted, and
 retry is gone with it, since an arbitrary party retrying a failed bootstrap is exactly an
 arbitrary `tx.origin`. Path A is untouched: a normal send creates no contract.
 
+**On these two chains today, LayerZero's executor cannot deploy, so bootstrap cannot
+happen.** Not degraded: impossible. The Executor CONTRACT is the wrong thing to check, since
+the gate is on the origin, and the origin is the off-chain key that drives it. Recent
+deliveries on both chains come from one signing EOA, and it holds no role on either:
+
+| | LayerZero executor contract | its signing EOA `0xe93685f3…` |
+| --- | --- | --- |
+| DFK Chain | `None` | **`None`** |
+| Dexalot | `None` | **`None`** |
+
+**And no arbitrary account can fix that for itself.** Granting is Admin-only, and the
+precompile refuses everyone else by name:
+
+```
+setEnabled from a random EOA  ->  cannot modify allow list: modify address: 0x1234…,
+                                  from role: NoRole, to role: EnabledRole
+setEnabled from 0x0           ->  same, though 0x0 holds Enabled on DFK and CAN deploy
+setAdmin  from a random EOA   ->  same, to role: AdminRole
+```
+
+The second line is the useful one: **Enabled is not Admin**. An address that may deploy
+still may not grant, so there is no bootstrapping-by-a-friendly-party route. Making either
+chain reachable requires that chain's own admin to allowlist the provider's executor key,
+which is a governance ask to a third party, outside both our control and LayerZero's.
+
+**And it is keyed on an operational key, which is the part that does not sit still.** If the
+provider rotates its executor signing address, bootstrap breaks again with no change on
+either side of this protocol and no event anyone here would see. A deployment that depends
+on this arrangement has a liveness dependency on somebody else's key-rotation policy
+matching somebody else's governance queue.
+
 **And it generalises past this one precompile.** Any chain policy keyed on `tx.origin`
 lands the same way, because everything this protocol does on a destination happens inside
 somebody else's transaction. That is the shape to check for, not the precompile address.
