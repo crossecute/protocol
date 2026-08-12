@@ -265,19 +265,17 @@ mainnet.
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
-- **Split `provider-spec.md` into a normative half and a research half.** It is past a
-  thousand lines and carries three appendices, which is the size at which a reader stops
-  being able to tell what they MUST do from what we happen to have found out. The normative
-  part is §1 through §8: the prerequisites, the seams, the rules, the prohibitions, the
-  compliance suite. The research part is §12 and §13 and growing: what each transport
-  actually guarantees about replay, how ERC-7786 would attach, what OpenZeppelin's ERC-7930
-  would replace.
+- ~~**Split `provider-spec.md` into a normative half and a research half.**~~ DONE.
+  [`provider-spec.md`](provider-spec.md) is §1 through §11 and carries a table of contents;
+  the two appendices are [`provider-research.md`](provider-research.md), under a header that
+  states what each half is pinned to and what makes it go stale.
 
-  They have different lifetimes, which is the real argument. The normative half changes when
-  this protocol changes; the research half goes stale when somebody ELSE ships a release,
-  and it carries version-pinned claims about contracts we do not control. Splitting them
-  makes the second half's staleness visible instead of letting it rot inside a document
-  people read as a specification. A table of contents on whatever remains, too.
+  **The lifetimes were the argument and they still are.** The spec changes when this protocol
+  changes and a reader can check it against the tree; the research goes stale when somebody
+  ELSE ships a release, and it makes version-pinned claims about contracts in other
+  repositories. Findings that produced obligations stayed in the spec (P7, R3.5 through R3.7,
+  C29 through C31) and are cited from the research rather than the other way round, so
+  nothing normative depends on a file that rots.
 
 - ~~**Whether to bind to a 7786 gateway at all.**~~ SETTLED, in the core rather than as a
   binding: `TransmitterBase` is an `IERC7786GatewaySource`, `ReceiverBase` an
@@ -287,7 +285,7 @@ mainnet.
   it holds, and the recipient-is-this-account check binds on `eip155` only, because on a
   diverging or non-EVM chain the address is not derivable here.
   `CrosschainLinked(Upgradeable)` is NOT adopted: see
-  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
+  [`provider-research.md`](provider-research.md#2-erc-7786-as-a-transport).
 
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
   `draft-InteroperableAddress`.** 5.6.1 brought it: 245 lines against our 248, audited and
@@ -298,7 +296,7 @@ mainnet.
   `parseStrict` enforces strictness the registry depends on (non-minimal `eip155` references
   and trailing bytes both rejected) that `parseV1` may not match. Neither is a reason not to
   do it; both are reasons it is its own task with its own vectors. See
-  [`provider-spec.md`](provider-spec.md#13-appendix-erc-7786-as-a-transport).
+  [`provider-research.md`](provider-research.md#2-erc-7786-as-a-transport).
 
   **Which provider to bind is still open, and the 7786 answer is "only if it has to be".**
   A gateway binding is thin (see the skeleton in
@@ -330,7 +328,7 @@ mainnet.
 
   So the requirement is recorded rather than built: a provider prerequisite (P7), three
   rules on the inbound path (R3.5 through R3.7), and three compliance tests (C29 through
-  C31) in [`provider-spec.md`](provider-spec.md#12-appendix-transport-replay-guarantees),
+  C31) in [`provider-research.md`](provider-research.md#1-what-each-transport-guarantees-about-replay),
   which carries the full matrix. Adding a protocol-level id would put a field on every
   channel and a growing set on every receiver to buy what four of five transports give free.
 

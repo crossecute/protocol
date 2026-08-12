@@ -199,7 +199,10 @@ if its addresses cannot be recomputed here at all.
 - [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and
   what changes off the EVM
 - [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
-  implement to be compliant, and what the provider itself must be capable of
+  implement to be compliant, and what the provider itself must be capable of. Normative
+- [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
+  guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
+  it goes stale on their schedule rather than ours
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status

@@ -9,16 +9,41 @@ worth writing.
 designs and a transport: everything a binding MUST satisfy, everything it MUST NOT do, and
 the fixed set of tests that decide whether it did.
 
-**The core contracts now speak ERC-7786 directly.** `TransmitterBase` is an
+**This file is normative, and only that.** Everything in it is a requirement on a binding
+or on the provider behind one, checkable against this repository. What we happen to have
+found out about transports we do not control, and about standards that are still drafts,
+lives in [`provider-research.md`](provider-research.md): it goes stale when somebody else
+ships a release rather than when this protocol changes, and keeping the two apart is what
+stops that staleness sitting inside a document people read as a specification. Findings
+there that produced obligations are cited from the rules here.
+
+**The core contracts speak ERC-7786 directly.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so a binding attaches a
 GATEWAY rather than translating a bespoke send. That narrows what a binding is, and several
-rules below narrowed with it; [§13](#13-appendix-erc-7786-as-a-transport) records what the
+rules below narrowed with it;
+[the research half](provider-research.md#2-erc-7786-as-a-transport) records what the
 standard gives up in exchange.
 
 Nothing here is LayerZero-specific. LayerZero is used for worked examples because it is the
 first binding, and its findings are recorded in [`todo.md`](todo.md#2-the-provider-binding).
 
 Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
+
+## Contents
+
+| | |
+| --- | --- |
+| [1. Terms](#1-terms) | what a provider, a binding, an account, a route and a counterpart are |
+| [2. Provider prerequisites](#2-provider-prerequisites-the-go-or-no-go-checklist) | P1-P14, the go or no-go checklist, before any code |
+| [3. The contract set](#3-the-contract-set) | the five or six files a binding is |
+| [4. The seams](#4-the-seams) | every abstract member to answer, and where |
+| [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
+| [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
+| [7. Prohibitions](#7-prohibitions) | the thirteen individually tempting mistakes |
+| [8. The compliance suite](#8-the-compliance-suite) | C1-C31, and which four would otherwise be found in production |
+| [9. Base changes](#9-base-changes-the-first-binding-needed-all-landed) | what this repo had to grow first, and why each is shaped as it is |
+| [10. Worked skeleton](#10-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
+| [11. Checklist](#11-checklist) | every line true, and the binding is done |
 
 ---
 
@@ -61,7 +86,7 @@ rather than blockers, and each has a stated fallback.
 | **P4** | Report the source chain and source address to the receiving contract | `_onInbound(route, sender, message)` cannot authenticate without both. A provider that reports only "some peer" is not authenticable at our layer. |
 | **P5** | Unordered delivery | Ordered lanes turn one permanently-failing message into a halt on that lane. See [Failure handling](message-flow.md#failure-handling). |
 | **P6** | Permissionless retry of a failed message | Execution runs inside the delivery callback, so a revert must be a retry and not a loss. |
-| **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [§12](#12-appendix-transport-replay-guarantees). |
+| **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay). |
 | **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
 | **P9** | **Quote that fee at source, as a `view`, before the send** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. Without a quote a caller either overpays blindly or has a send revert after the signers have already approved it. See [R2](#r2-quote). |
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
@@ -73,7 +98,7 @@ rather than blockers, and each has a stated fallback.
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
 gateway satisfies P1 through P4 cleanly and would be less code, but ERC-7786 defines no
 quote at all, so P9 fails outright and the entire quote surface goes dead for that binding.
-See [§13](#13-appendix-erc-7786-as-a-transport) for how a 7786 binding would map and what
+See [the research half](provider-research.md#2-erc-7786-as-a-transport) for how a 7786 binding would map and what
 else it gives up.
 
 **P2 and P3 together are the real filter.** They are what "an account is its own endpoint"
@@ -434,7 +459,7 @@ every message after the first takes.
 Four of the five providers in scope already guarantee it at the transport, and the
 binding does nothing. Wormhole's core layer does not, and there a binding MUST dedupe
 inside `<P>Endpoint` before reaching `_onMessage`, keyed on the VAA digest or on
-`(emitterChain, emitterAddress, sequence)`. See [§12](#12-appendix-transport-replay-guarantees)
+`(emitterChain, emitterAddress, sequence)`. See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
 for what each provider actually does.
 
 **R3.6 The dedupe MUST be per receiving account, not global to the binding.** Accounts are
@@ -969,127 +994,3 @@ A binding is done when every line is true.
 - [ ] No new setter for any write-once value
 - [ ] `script/` deploys in the order of [§6](#6-configuration-a-compliant-deployment-performs)
 - [ ] `ProviderCompliance.t.sol` C1 through C31 pass
-
----
-
-## 12. Appendix: transport replay guarantees
-
-What each candidate provider actually does about a message being delivered twice, checked
-against the deployed source rather than the marketing. This is the evidence behind
-[P7](#2-provider-prerequisites-the-go-or-no-go-checklist) and [R3.5](#r3-receive).
-
-| Provider | Dedupes a successful message | Mechanism | Failed message retryable |
-| --- | --- | --- | --- |
-| **LayerZero V2** | Yes | `inboundPayloadHash[receiver][srcEid][sender][nonce]`, cleared by `_clearPayload` before the receiver is called | Yes, `lzReceive` is permissionless and a revert rolls the clear back |
-| **Hyperlane** | Yes | `deliveries[messageId]` in `Mailbox`, written before `handle()`; `require(delivered(_id) == false, "Mailbox: already delivered")` | Yes, `process()` again; the `handle` call is plain, so a revert rolls the write back |
-| **CCIP** | Yes | `s_executionStates[sourceChainSelector][seqNum]`; `SUCCESS` is terminal | Yes, manual execution from the `FAILURE` state |
-| **Axelar** | Yes | the gateway marks a `commandId` consumed inside `validateContractCall`, which cannot be called twice | Yes, the whole `execute` reverts, so the approval survives |
-| **Wormhole (core)** | **No** | `parseAndVerifyVM` verifies signatures and nothing else; the core contract keeps no record of consumed VAAs | n/a, replay is the integrator's problem |
-
-**The pattern is the same in all four that provide it, and it is worth naming**: write the
-consumed mark FIRST, then make a plain external call to the receiver. The write-first order
-is reentrancy protection; the plain call is what gives retry, because the revert that fails
-the payload also rolls the mark back. One mechanism, both properties. A binding that wraps
-that call in `try/catch` breaks the second while appearing to improve it, which is
-[R3.7](#r3-receive).
-
-**Wormhole is the outlier and it is a documented one.** Its own guidance says integrators
-must implement replay protection themselves, offering the VAA digest or the
-`(emitterChain, emitterAddress, sequence)` triple as the key, and the same is true of the
-newer Executor framework. A Wormhole binding is therefore not simply more code, it is code
-carrying a guarantee the other four inherit for free, and it is the one place in this
-protocol where a binding holds a security property rather than a translation.
-
-**What this settles.** The protocol needs no `requestId` and no per-message nonce of its
-own. Correlation never needed one: the receiver report's slot is derived from the
-authenticated origin plus the stated `(owner, salt)`, and the slot is write-once.
-Idempotency does need one, but it exists at the transport for every provider currently in
-scope, and adding a protocol-level id would put a field on every channel plus a growing set
-on every receiver to buy something four of five transports already give. The correct shape
-is what is written above: state the requirement, test it per binding, and make the one
-provider that lacks it carry the cost in its own `<P>Endpoint`.
-
-Sources: [LayerZero `EndpointV2.sol`](https://github.com/LayerZero-Labs/LayerZero-v2/blob/main/packages/layerzero-v2/evm/protocol/contracts/EndpointV2.sol),
-[Hyperlane `Mailbox.sol`](https://github.com/hyperlane-xyz/hyperlane-monorepo/blob/main/solidity/contracts/Mailbox.sol),
-[CCIP manual execution](https://docs.chain.link/ccip/concepts/manual-execution),
-[Axelar Executable](https://docs.axelar.dev/dev/general-message-passing/executable),
-[Wormhole core contracts](https://wormhole.com/docs/products/messaging/guides/core-contracts/).
-
----
-
-## 13. Appendix: ERC-7786 as a transport
-
-OpenZeppelin ships `interfaces/draft-IERC7786.sol` and `crosschain/ERC7786Recipient.sol`,
-and this protocol arrived at nearly the same shape independently: an opaque `bytes` payload
-to a recipient named by an interoperable address, with an opaque per-send options blob. So
-the question is worth answering once rather than rediscovering per provider.
-
-**MOSTLY LANDED.** The core contracts now implement `IERC7786GatewaySource` and
-`IERC7786Recipient` directly, the route slot holds a chain identifier, and
-`TransceiverBase._recipientOn` builds the recipient. What is NOT adopted is
-`CrosschainLinked(Upgradeable)`: it sits behind `Bytes.sol` and its four `mcopy` sites, so
-it cannot compile at `paris`, and independently its per-contract `_links` table and
-`_isAuthorizedGateway` would replace the shared-transceiver routing and bypass the
-registry's provenance dial. The analysis below is kept because it is the reasoning, and
-because the gaps it names are now the protocol's gaps.
-
-### The one thing that does not map, and how it resolves
-
-ERC-7786 addresses a recipient as a binary interoperable address: chain and address in one
-ERC-7930 blob. This protocol holds a `chainKey`, which is
-`keccak256(<canonical chain identifier>)` and therefore one-way. A chainKey cannot produce a
-7786 recipient.
-
-**Store the chain identifier in the route slot.** `setRoute(chainKey, identifier)` makes the
-reverse index correct BY CONSTRUCTION rather than by configuration, since
-`keccak256(identifier) == chainKey` is the definition of a chainKey. `setRoute` already
-enforces injectivity and chain identifiers are unique per chain, so nothing else changes.
-The route slot holds a chain identifier instead of an eid, and every other piece of the
-routing machinery works untouched.
-
-That is the whole trick. A 7786 gateway needs no provider-native chain id, which is what the
-route table existed to hold.
-
-### Where each seam attaches
-
-| Our hook | ERC-7786 |
-| --- | --- |
-| `_sendMessage(recipient, payload, attributes)` | `gateway.sendMessage(recipient, payload, attributes)`, one to one |
-| `_quoteMessage(...)` | **nothing.** See below |
-| `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
-| `attributes` | passed straight through |
-
-The inbound split is the pleasing part: `Erc7930.toChainIdentifier` already reduces an
-account envelope to a bare chain identifier, which is exactly the `route` the hub's
-`chainKeyOfRoute` and the spoke's `_isHome` expect. `_authenticateOrigin` needs no override
-on either side.
-
-### What ERC-7786 gives up
-
-1. **No quote, at all.** The interface is `supportsAttribute` and `sendMessage`. A payable
-   send with no way to ask its price fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist)
-   and kills eight functions of read surface. This is the largest cost and the reason to
-   prefer a native SDK where one exists. Fallbacks are in [R2.2.2](#r2-quote).
-2. **`sendMessage` may not complete the send.** It returns a `sendId`, and a non-zero value
-   means further gateway-specific, non-standardised action is required. `_sendMessage`
-   returns nothing and assumes the message is away, so a binding must either handle a
-   two-step send or restrict itself to gateways that return zero, and say which.
-3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
-   requires nothing about replay, so [R3.5](#r3-receive) stays a per-gateway question rather
-   than being answered by the standard. Note the `receiveId` is free where our own channels
-   carry no id; see [`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look) for why
-   we concluded none was needed.
-
-### The other draft worth knowing about
-
-`utils/draft-InteroperableAddress.sol` is OpenZeppelin's ERC-7930, 245 lines against this
-repo's 248-line `src/addressing/Erc7930.sol`, covering the same ground with `formatEvmV1`,
-`parseEvmV1`, and `try` and calldata variants. Replacing ours with it is a real candidate:
-audited, maintained, and one fewer library to own.
-
-Two things block a straight swap. It is a `draft-`, which OpenZeppelin explicitly excludes
-from its API stability guarantee and may change in a MINOR release, and this codebase freezes
-accounts against exact bytes. And `Erc7930.parseStrict` enforces strictness the registry
-depends on, rejecting non-minimal `eip155` references and trailing bytes; whether `parseV1`
-matches has not been checked. Neither is a reason not to do it, both are reasons it is its
-own task with its own vectors.
