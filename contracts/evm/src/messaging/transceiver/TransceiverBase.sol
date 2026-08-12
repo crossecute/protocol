@@ -223,7 +223,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _sendMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrap(owner, salt, calls),
-            attributes
+            attributes,
+            _bootstrapSendValue(destinationChainKey)
         );
     }
 
@@ -249,7 +250,8 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
         _sendMessage(
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
-            attributes
+            attributes,
+            _bootstrapSendValue(destinationChainKey)
         );
     }
 
@@ -276,7 +278,7 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrap(owner, salt, calls),
             attributes
-        );
+        ) + _bootstrapSurcharge(destinationChainKey);
     }
 
     /// @notice `quoteBootstrap`, for a destination whose calls this chain cannot express.
@@ -292,7 +294,26 @@ abstract contract TransceiverBase is OutboundBase, Initializable, UUPSUpgradeabl
             _recipientOn(destinationChainKey),
             Envelope.encodeBootstrapElements(owner, salt, elements),
             attributes
-        );
+        ) + _bootstrapSurcharge(destinationChainKey);
+    }
+
+    /// @notice What this transceiver charges on top of the message, per destination.
+    ///
+    /// @dev IT IS IN THE QUOTE OR THE QUOTE IS A LIE. R2.5 says a quote must revert wherever
+    ///      its send would, and a quote that omitted the fee would do worse than that: it
+    ///      would succeed, and the caller would fund the send exactly, and the bootstrap
+    ///      would revert `InsufficientBootstrapFee` with the signers already committed.
+    function _bootstrapSurcharge(bytes32) internal view virtual returns (uint256) {
+        return 0;
+    }
+
+    /// @notice How much of `msg.value` a bootstrap may spend on the message itself.
+    ///
+    /// @dev THE SEAM THE FEE HANGS ON. A spoke never bootstraps anyone, so the default is
+    ///      the whole value; a hub takes its per-destination fee off the top first, and the
+    ///      binding is told what is left rather than reading `msg.value` and overspending.
+    function _bootstrapSendValue(bytes32) internal virtual returns (uint256) {
+        return msg.value;
     }
 
     /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.

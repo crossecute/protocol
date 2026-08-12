@@ -56,7 +56,8 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
     function _sendMessage(
         bytes memory recipient,
         bytes memory payload,
-        bytes[] memory attributes
+        bytes[] memory attributes,
+        uint256 value
     ) internal override returns (bytes32) {
         sentRecipient = recipient;
         sentPayload = payload;
@@ -78,6 +79,12 @@ contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
     ) internal pure override returns (uint256) {
         return payload.length * WEI_PER_BYTE + attributes.length;
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
@@ -152,7 +159,7 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
         return sentAttributes.length;
     }
 
-    function _sendMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
+    function _sendMessage(bytes memory, bytes memory payload, bytes[] memory attributes, uint256)
         internal
         override
         returns (bytes32)
@@ -176,6 +183,12 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     {
         return payload.length * WEI_PER_BYTE;
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract Sink {
@@ -1114,6 +1127,12 @@ contract BareTransmitter is TransmitterBase, OwnableUpgradeable {
     function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
         OwnableUpgradeable._checkOwner();
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so an account's

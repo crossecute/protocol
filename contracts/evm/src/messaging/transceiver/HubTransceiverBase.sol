@@ -163,6 +163,86 @@ abstract contract HubTransceiverBase is TransceiverBase {
         );
     }
 
+    /* ============================== the bootstrap fee ========================== */
+
+    /// chainKey => what standing an account up there costs, on top of the message fee.
+    ///
+    /// @dev IT PAYS FOR THE RETURN LEG ON A CHAIN THAT HAS ONE. A spoke whose addresses
+    ///      diverge reports each account home from its OWN balance, because the send is
+    ///      nested inside a delivery callback where `msg.value` is zero, so somebody has to
+    ///      keep that spoke funded and a dry one fails every bootstrap on its chain. This is
+    ///      that somebody, made systematic: the account being stood up pays, once, at the
+    ///      moment it creates the obligation.
+    ///
+    /// @dev IT IS NOT A BRIDGE FOR THE MONEY, AND CANNOT BE. The fee accrues here, in the
+    ///      home chain's currency; the spoke needs the DESTINATION's currency on the
+    ///      destination. Nothing on-chain connects the two, so the msig withdraws and funds
+    ///      spokes out of band. What this buys is that the funding is recovered from the
+    ///      accounts that cause it rather than subsidised indefinitely, which is the
+    ///      difference between an operational cost and an operational surprise.
+    ///
+    /// @dev PER CHAIN, AND ZERO BY DEFAULT, so a parity destination pays nothing. Those
+    ///      chains send no report and create no obligation, and charging them would be a
+    ///      tax on the common case to fund the rare one.
+    mapping(bytes32 => uint256) public bootstrapFee;
+
+    /// Fees collected and not yet withdrawn.
+    uint256 public collectedFees;
+
+    event BootstrapFeeSet(bytes32 indexed chainKey, uint256 fee);
+    event FeesWithdrawn(address indexed to, uint256 amount);
+
+    /// @dev The caller sent less than the destination's fee, so the message would be
+    ///      dispatched with the shortfall taken out of the provider's payment instead.
+    error InsufficientBootstrapFee(uint256 required, uint256 provided);
+    error NothingToWithdraw();
+    error WithdrawFailed();
+
+    /// @notice Set what standing an account up on `chainKey` costs.
+    /// @dev REBINDABLE, unlike a route or a counterpart. It redirects nothing and points at
+    ///      nothing; it is a price, and a price that could not be corrected would be the
+    ///      only value here that has to be right first time for a reason nobody can state.
+    function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyAdmin {
+        bootstrapFee[chainKey] = fee;
+        emit BootstrapFeeSet(chainKey, fee);
+    }
+
+    /// @notice Withdraw what has accrued, to fund the spokes it was collected for.
+    /// @dev IT TRACKS A BALANCE RATHER THAN SWEEPING `address(this).balance`, because a
+    ///      transceiver's balance is not all fees: a provider refunding an overpaid send
+    ///      lands here too on any binding whose refund target is the sender. Sweeping would
+    ///      take that with it.
+    function withdrawFees(address to) external onlyAdmin returns (uint256 amount) {
+        amount = collectedFees;
+        if (amount == 0) revert NothingToWithdraw();
+        collectedFees = 0;
+
+        (bool ok,) = to.call{value: amount}("");
+        if (!ok) revert WithdrawFailed();
+        emit FeesWithdrawn(to, amount);
+    }
+
+    /// @inheritdoc TransceiverBase
+    function _bootstrapSurcharge(bytes32 chainKey) internal view override returns (uint256) {
+        return bootstrapFee[chainKey];
+    }
+
+    /// @inheritdoc TransceiverBase
+    /// @dev Take the fee off the top and hand the binding what is left. Recording before the
+    ///      send matters for the same reason the bootstrap flag does: the dispatch reaches a
+    ///      provider endpoint and, through it, arbitrary code, and if it reverts the whole
+    ///      transaction unwinds and the accrual goes with it.
+    function _bootstrapSendValue(bytes32 chainKey)
+        internal
+        override
+        returns (uint256)
+    {
+        uint256 fee = bootstrapFee[chainKey];
+        if (msg.value < fee) revert InsufficientBootstrapFee(fee, msg.value);
+        collectedFees += fee;
+        return msg.value - fee;
+    }
+
     /* ========================= the counterpart directory ======================= */
 
     /// @notice Record where this provider's transceiver sits on a destination chain.

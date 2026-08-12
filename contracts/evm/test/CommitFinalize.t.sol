@@ -120,6 +120,12 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
     function inbound(address transmitter, Call[] calldata calls) external {
         this.bootstrapInbound(transmitter, bytes32(0), calls);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @dev A transceiver with NO `Ownable` anywhere in its inheritance: authority is a raw
@@ -143,6 +149,12 @@ contract MsigTransceiver is HubTransceiverBase {
     function _checkAdmin() internal view override {
         if (msg.sender != msigAdmin) revert NotMsig();
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract CommitFinalizeTest is Test {

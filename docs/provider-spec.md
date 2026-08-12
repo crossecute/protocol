@@ -571,7 +571,20 @@ payload can itself send, and it can call arbitrary targets.
 before the payload. A proxy runs no constructor, so the guard is uninitialized until that
 line.
 
-**R6.4** A binding SHOULD account for the per-account provider cost and state it.
+**R6.4 Any provider-side authority over an account MUST be the account itself.** Where an
+SDK takes a delegate, an owner, or a configurator at initialization, the binding passes
+`address(this)`, which inside `upgradeInitializeAndLock`'s delegatecall is the account. It
+MUST NOT be the transceiver, the msig, or an operator.
+
+The account locks in the same call that arms it and its own configuration is owner-gated, so
+any address named here is an authority nobody can revoke and the account cannot override.
+Naming the transceiver would hand the contract that authenticates every inbound message a
+standing power to reconfigure every account it created, which is the arrangement
+`ReceiverBase.isAuthorizedCaller` refuses one level up. Naming the account costs nothing:
+an account that needs to change its own provider configuration can, because a payload it
+executes runs as itself.
+
+**R6.5** A binding SHOULD account for the per-account provider cost and state it.
 LayerZero's `__OAppCore_init` calls `endpoint.setDelegate`, so every account creation
 touches the endpoint. That is real gas on the bootstrap path and the concrete form of
 "peers and send-side security configuration are per-user rather than shared". It is also a

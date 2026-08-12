@@ -63,6 +63,12 @@ contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
     function _checkAdmin() internal view override {
         _checkOwner();
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
@@ -90,6 +96,12 @@ contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
         this.bootstrapInbound(owner_, bytes32(0), new Call[](0));
         return predictCrossAccount(owner_, bytes32(0));
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @dev A transmitter that answers `owner()`, which is how `createReceiver` decides who

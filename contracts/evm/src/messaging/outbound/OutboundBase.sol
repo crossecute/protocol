@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {GatewayBound} from "src/messaging/GatewayBound.sol";
 
 /// @title OutboundBase
 /// @notice The sending half: who this contract's counterpart is on each chain, how to
@@ -33,7 +34,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      argument arrives, and the send event belongs to the standard: a gateway source MUST
 ///      emit `MessageSent`. Path B is not a gateway source, so `TransceiverBase` emits
 ///      `BootstrapSent` instead.
-abstract contract OutboundBase {
+abstract contract OutboundBase is GatewayBound {
     /// chainKey => that chain's canonical ERC-7930 chain identifier.
     ///
     /// @dev IT LIVES ON THE SENDER RATHER THAN IN THE REGISTRY. A registry read would put a
@@ -94,6 +95,14 @@ abstract contract OutboundBase {
     ///
     /// @dev Re-writing the SAME route is a no-op, so a replayed configuration transaction is
     ///      not a failure. A DIFFERENT one reverts.
+    ///
+    /// @dev WRITE-ONCE HAS NO RECOVERY PATH, AND THAT IS THE PROPERTY RATHER THAN A GAP IN
+    ///      IT. A route declared wrong is permanent and the fix is a redeploy. The
+    ///      alternative, a timelocked repoint, is a standing ability to redirect every
+    ///      message to a destination, which is the exact power this refusal exists to deny;
+    ///      a delay makes it observable, not absent. The protocol's guarantees are worth
+    ///      what the smallest set of things that can change them is worth, so values that
+    ///      decide where a payload lands do not change.
     function _setRoute(bytes32 chainKey, bytes memory route) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (route.length == 0) revert ZeroRoute();
@@ -236,9 +245,16 @@ abstract contract OutboundBase {
     ///      address. Three signatures would be three places to get authentication or fee
     ///      handling subtly different, and a `bytes32` could express none of them.
     ///
-    /// @dev PAYABLE BY THE CALLER, NOT HERE. Every entry point that reaches this is
-    ///      `payable`; the binding reads `msg.value` and refunds the excess, since only it
-    ///      knows the provider's convention.
+    /// @dev IT IS TOLD HOW MUCH IT MAY SPEND, AND MUST NOT READ `msg.value`. Those were the
+    ///      same number until the hub began taking a bootstrap fee off the top, and they are
+    ///      not the same on a nested send at all, where `msg.value` is zero and the payment
+    ///      comes from the contract's balance. A binding reading `msg.value` would overpay a
+    ///      provider by the fee, or refund the fee to the sender, or send nothing.
+    ///
+    ///      This is the one argument `OutboundBase` widens the primitive for, and the test
+    ///      it passes that a refund address did not: the callee CANNOT read the right value
+    ///      off the stack. Refusing the parameter would mean a rule every binding has to
+    ///      remember instead of one the compiler states.
     ///
     /// @param attributes Selector-prefixed values the gateway understands, and a gateway MUST
     ///        refuse one it does not (see `supportsAttribute`). Per send rather than
@@ -251,7 +267,8 @@ abstract contract OutboundBase {
     function _sendMessage(
         bytes memory recipient,
         bytes memory payload,
-        bytes[] memory attributes
+        bytes[] memory attributes,
+        uint256 value
     ) internal virtual returns (bytes32 sendId) {
         revert SendNotImplemented();
     }

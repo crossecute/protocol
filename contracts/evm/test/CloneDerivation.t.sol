@@ -176,6 +176,12 @@ contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
     function _handleInbound(bytes32, bytes calldata) internal override {}
     function _authenticateOrigin(bytes memory, bytes memory)
         internal pure override returns (bytes32) { return bytes32(0); }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract DivergingFormulaTest is Test {

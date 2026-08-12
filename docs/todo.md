@@ -115,11 +115,13 @@ destination, read from the table rather than computed.
 
 ### Two consequences to decide on
 
-- **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`.** That runs inside
-  `upgradeInitializeAndLock`'s delegatecall, so `address(this)` is the proxy and the
-  delegate is registered per account: correct, but it means **every account creation
-  touches the endpoint**. Real gas on the bootstrap path, and the concrete form of the cost
-  named as "peers and any send-side security configuration are per-user rather than shared".
+- **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`, and the delegate is
+  `address(this)`.** Settled: inside `upgradeInitializeAndLock`'s delegatecall that is the
+  ACCOUNT, so each account is its own delegate and no other party can reconfigure it. The
+  cost is that every account creation touches the endpoint, which is real gas on the
+  bootstrap path and the concrete form of "peers and any send-side security configuration
+  are per-user rather than shared". Recorded as R6.4 in the spec, which generalises it: any
+  provider-side authority over an account is the account.
 - **OApp authenticates inbound before our code runs.** `lzReceive` does
   `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
   `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
@@ -129,15 +131,28 @@ destination, read from the table rather than computed.
 
 ## 3. Blockers on specific paths
 
-- **Funding a diverging spoke.** The report fires from inside the destination's inbound
-  callback, where `msg.value` is zero, so it is paid from the spoke's own balance and a dry
-  one reverts the bootstrap with it. That revert is deliberate and keeps the operation
-  retryable, but the balance still has to come from somewhere: either the msig funds each
-  diverging spoke, or the bootstrap message drops value across.
+- **Funding a diverging spoke, and getting the money there.** The report fires from inside
+  the destination's inbound callback, where `msg.value` is zero, so it is paid from the
+  spoke's own balance and a dry one reverts the bootstrap with it. That revert is deliberate
+  and keeps the operation retryable.
 
-  **It is confined to the chains that report.** `addressesDiverge` keeps the report off
-  every chain sharing Ethereum's CREATE2 formula, so this is an operational requirement on
-  zkSync, Tron, and the non-EVM spokes rather than on the whole deployment.
+  **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
+  the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
+  `withdrawFees`. It is zero by default, so only the chains that actually report are
+  charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
+  than none: the caller would fund the send exactly and the bootstrap would revert with the
+  signers already committed.
+
+  **What is not built is the crossing.** The fee accrues on the home chain in the home
+  currency and the spoke needs the destination's, so the msig withdraws and funds spokes out
+  of band. Making that automatic means the bootstrap message drops value across, which is a
+  provider capability question rather than a contract one.
+
+  **And the report's refund target is unresolved.** `_refundTo()` is `msg.sender`, which on
+  a nested send is whoever delivered the message, so a provider refunding an overpaid report
+  pays the relayer out of the spoke's balance. Nobody is stolen from, but the spoke drains
+  at a rate nothing here bounds. A spoke wanting to pass its whole balance to the send, as
+  `_reportReceiver` now does, needs an answer to this first.
 - **Starknet bytes↔felt packing.** Bridges deliver Starknet payloads as `Array<felt252>`,
   not bytes. Before any container format can be parsed there has to be an agreed packing
   rule. Unspecified, needed in either container format, and the kind of value that is wrong
@@ -167,10 +182,6 @@ destination, read from the table rather than computed.
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
 mainnet.
 
-- **Write-once has no recovery path.** `setCounterpart`, `setProviderDeployment`, and a
-  reported ref slot all refuse a second write. A route declared wrong is permanent; a
-  receiver slot written wrong has no fix at all. The alternative is a timelocked repoint
-  rather than an outright refusal.
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.

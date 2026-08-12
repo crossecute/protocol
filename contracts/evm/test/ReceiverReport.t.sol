@@ -38,7 +38,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
         OwnableUpgradeable._checkOwner();
     }
 
-    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
         override
@@ -46,6 +46,12 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
     {
         return bytes32(0);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract Receiver is ReceiverBase {
@@ -92,7 +98,12 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
 
     error NoBalanceForTheReport();
 
-    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory)
+    function _sendMessage(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory,
+        uint256
+    )
         internal
         override
         returns (bytes32)
@@ -109,6 +120,12 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
         this.bootstrapInbound(owner, salt, calls);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @notice The return leg: which chains report where their receiver landed, and which
@@ -310,13 +327,27 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         __HubTransceiverBase_init(transmitterImplementation_);
     }
 
-    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+    /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
+    uint256 public lastSendValue;
+
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256 value)
         internal
-        pure
         override
         returns (bytes32)
     {
+        lastSendValue = value;
         return bytes32(0);
+    }
+
+    /// @dev Priced per byte, like every real provider, so the surcharge is visibly ON TOP
+    ///      of a message price rather than standing in for one.
+    function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
+        return payload.length;
     }
 
     function _checkAdmin() internal view override {
@@ -330,6 +361,12 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
     {
         _onInbound(route, sender, message);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @notice The report crossing BOTH halves. Every other test of this path builds the
@@ -525,5 +562,140 @@ contract ReceiverReportRoundTripTest is Test {
             abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this))
         );
         account.onDestinationReceiverReported(spokeKey, abi.encodePacked(address(0xBAD)));
+    }
+}
+
+/// @notice The bootstrap fee, which pays for the return leg on the chains that have one.
+///
+/// @dev IT IS NOT A BRIDGE FOR THE MONEY. The fee accrues on the home chain in the home
+///      currency; the spoke needs the destination's currency on the destination. What it
+///      buys is that the funding is recovered from the accounts that create the obligation
+///      rather than subsidised, and the msig moves it across out of band.
+contract BootstrapFeeTest is Test {
+    Hub hub;
+    ChainRegistry registry;
+    Transmitter account;
+
+    address msig = address(0x5165);
+    address owner = address(0xA11CE);
+    bytes32 constant SALT = keccak256("acct");
+    bytes32 provider;
+    bytes32 divergingKey;
+    bytes32 parityKey;
+
+    uint256 constant DIVERGING = 8453;
+    uint256 constant PARITY = 42161;
+    uint256 constant FEE = 0.05 ether;
+
+    function setUp() public {
+        registry = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()),
+                    abi.encodeCall(ChainRegistry.initialize, (msig))
+                )
+            )
+        );
+        hub = new Hub();
+        hub.initialize(msig, address(new Transmitter()));
+
+        vm.startPrank(msig);
+        provider = registry.addMessageProvider("layerzero");
+        registry.setLocalTransceiver(provider, address(hub));
+        hub.setRouting(
+            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
+        );
+        divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING));
+        parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY));
+        registry.setProvenance(divergingKey, Provenance.Attested);
+        hub.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
+        hub.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
+        hub.setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
+        // Only the chain that reports is charged.
+        hub.setBootstrapFee(divergingKey, FEE);
+        vm.stopPrank();
+
+        vm.prank(owner);
+        account = Transmitter(payable(hub.createTransmitter(SALT)));
+        vm.deal(owner, 10 ether);
+    }
+
+    /// @dev A PARITY DESTINATION PAYS NOTHING. It sends no report and creates no obligation,
+    ///      so charging it would tax the common case to fund the rare one.
+    function test_aParityDestinationIsNotCharged() public {
+        assertEq(hub.bootstrapFee(parityKey), 0);
+        vm.prank(owner);
+        account.bootstrap(PARITY, new Call[](0), new bytes[](0));
+        assertEq(hub.collectedFees(), 0);
+    }
+
+    function test_theFeeIsCollectedOnADivergingDestination() public {
+        vm.prank(owner);
+        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+        assertEq(hub.collectedFees(), FEE, "accrued on the hub");
+        assertEq(address(hub).balance, FEE);
+    }
+
+    /// @dev UNDERPAYING REVERTS RATHER THAN EATING THE PROVIDER'S PAYMENT. The alternative
+    ///      is a bootstrap that dispatches with a shortfall taken out of the message fee and
+    ///      fails on arrival, after the signers have committed.
+    function test_underpayingTheFeeReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1
+            )
+        );
+        account.bootstrap{value: FEE - 1}(DIVERGING, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev THE QUOTE CARRIES IT, or it is worse than no quote: a caller would fund the send
+    ///      exactly and the bootstrap would revert with the signers already committed.
+    function test_theQuoteIncludesTheFee() public view {
+        uint256 withFee = hub.quoteBootstrap(
+            divergingKey, owner, SALT, new Call[](0), new bytes[](0)
+        );
+        uint256 withoutFee = hub.quoteBootstrap(
+            parityKey, owner, SALT, new Call[](0), new bytes[](0)
+        );
+        assertEq(withFee - withoutFee, FEE, "exactly the surcharge, on top of the message");
+        assertGt(withoutFee, 0, "and the message still costs something");
+    }
+
+    /// @dev THE BINDING IS TOLD WHAT IS LEFT, not `msg.value`. Reading `msg.value` would
+    ///      overpay the provider by the fee, or refund the fee to the sender.
+    function test_theBindingSeesTheValueMinusTheFee() public {
+        vm.prank(owner);
+        account.bootstrap{value: FEE + 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
+        assertEq(hub.lastSendValue(), 1 ether, "message value, fee already taken");
+    }
+
+    function test_onlyTheAdminSetsTheFeeAndWithdraws() public {
+        vm.expectRevert();
+        hub.setBootstrapFee(divergingKey, 1);
+        vm.expectRevert();
+        hub.withdrawFees(owner);
+    }
+
+    function test_withdrawingMovesOnlyTheAccruedFees() public {
+        vm.prank(owner);
+        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+        // A provider refund landing on the transceiver is not a fee and must survive.
+        vm.deal(address(hub), address(hub).balance + 3 ether);
+
+        address sink = address(0xF11);
+        vm.prank(msig);
+        uint256 moved = hub.withdrawFees(sink);
+
+        assertEq(moved, FEE);
+        assertEq(sink.balance, FEE);
+        assertEq(address(hub).balance, 3 ether, "the refund stayed");
+        assertEq(hub.collectedFees(), 0);
+    }
+
+    function test_withdrawingNothingReverts() public {
+        vm.prank(msig);
+        vm.expectRevert(HubTransceiverBase.NothingToWithdraw.selector);
+        hub.withdrawFees(msig);
     }
 }

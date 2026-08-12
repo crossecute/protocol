@@ -58,7 +58,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
         OwnableUpgradeable._checkOwner();
     }
 
-    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
         override
@@ -66,6 +66,12 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
     {
         return bytes32(0);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract Hub is HubTransceiverBase, OwnableUpgradeable {
@@ -75,7 +81,7 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
         __HubTransceiverBase_init(impl);
     }
 
-    function _sendMessage(bytes memory, bytes memory, bytes[] memory)
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
         override
@@ -93,6 +99,12 @@ contract Hub is HubTransceiverBase, OwnableUpgradeable {
     {
         _onInbound(route, sender, message);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
@@ -117,6 +129,12 @@ contract Spoke is SpokeTransceiverBase, OwnableUpgradeable {
     {
         _onInbound(route, sender, message);
     }
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 contract InboundAuthTest is Test {

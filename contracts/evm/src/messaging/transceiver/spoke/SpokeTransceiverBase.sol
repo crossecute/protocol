@@ -289,7 +289,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
             Envelope.encodeReceiverReport(
                 owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
             ),
-            new bytes[](0)
+            new bytes[](0),
+            address(this).balance
         );
     }
 }

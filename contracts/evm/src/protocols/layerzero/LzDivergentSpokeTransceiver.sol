@@ -53,6 +53,15 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OwnableUpgradeable 
     function _checkAdmin() internal view override {
         _checkOwner();
     }
+
+    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
+    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
+    ///      gateway behind this yet, and a base that guessed an address would be worse than
+    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return false;
+    }
+
 }
 
 /// @notice Tron.
@@ -85,4 +94,13 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OwnableUpgradeable {
     function _checkAdmin() internal view override {
         _checkOwner();
     }
+
+    /// @notice Which gateway may carry this contract's messages. Satisfies `GatewayBound`.
+    /// @dev UNANSWERED UNTIL A BINDING EXISTS, so it accepts nothing. There is no LayerZero
+    ///      gateway behind this yet, and a base that guessed an address would be worse than
+    ///      one that refuses. A real binding returns `instance == address(endpoint)`.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return false;
+    }
+
 }

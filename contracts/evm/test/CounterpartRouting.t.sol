@@ -28,6 +28,12 @@ contract RoutingTransceiver is HubTransceiverBase, OwnableUpgradeable {
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
+
+    /// @dev A live gateway, so the harness exercises the checks rather than the refusal.
+    function _isAuthorizedGateway(address) internal pure override returns (bool) {
+        return true;
+    }
+
 }
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather

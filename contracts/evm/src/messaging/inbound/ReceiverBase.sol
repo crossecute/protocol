@@ -8,6 +8,7 @@ import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {GatewayBound} from "src/messaging/GatewayBound.sol";
 import {IERC7786Recipient} from "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
@@ -83,6 +84,7 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      costs one cold SSTORE on an account's first guarded call.
 abstract contract ReceiverBase is
     Executor,
+    GatewayBound,
     Initializable,
     ReentrancyGuard,
     IReceiverInit,
@@ -117,8 +119,6 @@ abstract contract ReceiverBase is
 
     error NotSourceTransmitter();
     error ZeroTransmitter();
-    /// @dev Something that is not a gateway this receiver trusts tried to deliver a message.
-    error NotAuthorizedGateway(address gateway);
     /// @dev The message claims to come from an address that is not this receiver's
     ///      transmitter, so it is another account's payload arriving at the wrong receiver.
     error SenderIsNotThisAccount(bytes sender);
@@ -452,7 +452,7 @@ abstract contract ReceiverBase is
         override
         returns (bytes4)
     {
-        if (!_isAuthorizedGateway(msg.sender)) revert NotAuthorizedGateway(msg.sender);
+        _requireAuthorizedGateway(msg.sender);
 
         Erc7930.Interop memory io = Erc7930.parseStrict(sender);
         if (io.addr.length != 20 || address(bytes20(io.addr)) != sourceTransmitter) {
@@ -462,13 +462,6 @@ abstract contract ReceiverBase is
         _onMessage(payload);
         return IERC7786Recipient.receiveMessage.selector;
     }
-
-    /// @notice Whether `gateway` may deliver to this receiver.
-    /// @dev DECLARED, NOT IMPLEMENTED, for the same reason `_checkAdmin` is on the
-    ///      transceiver: which gateway is trusted is a property of the binding, and a base
-    ///      that guessed would either name a contract that does not exist on this chain or
-    ///      accept one that should not be trusted.
-    function _isAuthorizedGateway(address gateway) internal view virtual returns (bool);
 
     /// @notice Run a payload that arrived over the wire.
     ///

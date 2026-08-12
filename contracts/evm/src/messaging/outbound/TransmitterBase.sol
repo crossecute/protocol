@@ -289,7 +289,7 @@ abstract contract TransmitterBase is
             msg.value,
             attributes
         );
-        return _sendMessage(recipient, payload, attributes);
+        return _sendMessage(recipient, payload, attributes, msg.value);
     }
 
     /// @notice Whether this account understands a per-send attribute.
