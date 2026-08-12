@@ -20,8 +20,8 @@ implementing the standard directly.
 
 | Section | Pinned to | Goes stale when |
 | --- | --- | --- |
-| [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, as deployed when checked; the four canonical rows are unverified | any of them changes how a delivered message is marked consumed |
-| [2. Canonical transports](#2-canonical-rollup-and-subnet-transports) | OP Stack, Arbitrum and Avalanche as documented, not as read | a fault-proof window changes, Superchain interop ships, or ICM changes its fee model |
+| [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | source as read: LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, OP `CrossDomainMessenger`, Arbitrum `AbsOutbox`, Warp `contract.go`, `TeleporterMessenger`. Arbitrum's L1→L2 retryable is ArbOS Go and remains unread | any of them changes how a delivered message is marked consumed |
+| [2. Canonical transports](#2-canonical-rollup-and-subnet-transports) | OP Stack, Arbitrum and Avalanche; the aliasing and same-address findings are from source, the latency and fee figures from documentation | a fault-proof window changes, Superchain interop ships, or ICM changes its fee model |
 | [3. ERC-7786](#3-erc-7786-as-a-transport) | OpenZeppelin 5.6.1 `draft-IERC7786`, `draft-InteroperableAddress` | OpenZeppelin ships a minor release, which for a `draft-` may change the API |
 
 ---
@@ -39,28 +39,41 @@ against the deployed source rather than the marketing. This is the evidence behi
 | **CCIP** | Yes | `s_executionStates[sourceChainSelector][seqNum]`; `SUCCESS` is terminal | Yes, manual execution from the `FAILURE` state |
 | **Axelar** | Yes | the gateway marks a `commandId` consumed inside `validateContractCall`, which cannot be called twice | Yes, the whole `execute` reverts, so the approval survives |
 | **Wormhole (core)** | **No** | `parseAndVerifyVM` verifies signatures and nothing else; the core contract keeps no record of consumed VAAs | n/a, replay is the integrator's problem |
-| **OP Stack (canonical)** † | Yes | `successfulMessages[versionedHash]` in `CrossDomainMessenger`, set after a successful relay; `failedMessages` records the rest | Yes, `relayMessage` again from the `failedMessages` state |
-| **Arbitrum (canonical)** † | Yes | a retryable ticket id is redeemable once (`ArbRetryableTx`); L2→L1 uses the `Outbox` spent bitmap | Yes, manual redeem inside the ticket's lifetime, ~7 days |
-| **Avalanche Warp** † | **No** | the precompile verifies a BLS aggregate over the source L1's validator set and nothing else; it keeps no record of consumed messages | n/a, replay is the integrator's problem |
-| **Avalanche ICM (Teleporter)** † | Yes | message id, with `receivedFailedMessageHashes` for the rest | Yes, `retryMessageExecution` |
+| **OP Stack (canonical)** | Yes | `successfulMessages[versionedHash]` in `CrossDomainMessenger`, written only after the call returns true; `failedMessages` takes the rest | Yes, `relayMessage` again, and it `require`s `failedMessages[versionedHash]` for any caller that is not the other messenger |
+| **Arbitrum, L2→L1** | Yes | `Outbox.spent`, a packed bitmap over the withdrawal's merkle index; `recordOutputAsSpent` reverts `AlreadySpent` | Yes, `executeBridgeCall` bubbles the revert, so a failure rolls the spent bit back |
+| **Arbitrum, L1→L2** † | Yes | retryable ticket id, redeemable once | Yes, manual redeem inside the ticket lifetime, ~7 days |
+| **Avalanche Warp** | **No** | the precompile verifies a BLS aggregate over the source L1's validator set and nothing else; the word "replay" does not appear in it | n/a, replay is the integrator's problem |
+| **Avalanche ICM (Teleporter)** | Yes | `_receivedMessageNonces[messageID]`, written BEFORE execution; `receivedFailedMessageHashes` is a separate record of a delivered message whose execution failed | Yes, `retryMessageExecution`, and see below: this is the only one that retries execution WITHOUT re-delivery |
 
-**† THESE FOUR ROWS ARE FROM DOCUMENTATION AND RECALL, NOT FROM READING DEPLOYED SOURCE**,
-which is the standard the five above were held to. Treat them as a starting point for that
-check rather than as the check. Note in particular that Warp and Wormhole's core layer land
-in the same place for the same reason: both are signature-verification primitives with a
-delivery layer built on top, so the guarantee belongs to whatever sits above them.
+**† One row is still unverified.** Arbitrum's retryable redeem is implemented in ArbOS, in
+Go, and `ArbRetryableTx` in `nitro-contracts` is an interface only, so nothing in that
+repository states the guarantee. Every other row here was read from source: OP Stack's
+`CrossDomainMessenger` (`develop`), Arbitrum's `AbsOutbox` and `AddressAliasHelper`
+(`main`), the Warp precompile's `contract.go` (`master`), and `TeleporterMessenger`
+(`main`).
 
-**Seven of the nine provide it, by two different shapes, and the difference matters to a
-binding author.**
+**Eight of the ten provide it, by three shapes, and the difference matters to a binding
+author.**
 
-MARK FIRST, THEN CALL PLAINLY, which is LayerZero, Hyperlane, Axelar and Avalanche ICM.
-The write-first order is reentrancy protection; the plain call is what gives retry, because
-the revert that fails the payload also rolls the mark back. One mechanism, both properties.
+MARK FIRST, THEN CALL PLAINLY: LayerZero, Hyperlane, Axelar, and Arbitrum's outbox. The
+write-first order is reentrancy protection; the plain call is what gives retry, because the
+revert that fails the payload also rolls the mark back. One state write, both properties.
+Arbitrum is the clearest instance: `recordOutputAsSpent` runs before
+`executeTransactionImpl`, and `executeBridgeCall` re-throws the callee's revert data
+verbatim, so a failed withdrawal is simply not spent.
 
-CALL, THEN RECORD WHICH WAY IT WENT, which is CCIP and the OP Stack. `relayMessage` makes a
-low-level call and branches: `successfulMessages` on success, `failedMessages` on failure,
-and the failed entry is what a retry replays from. Same two properties, reached the other
-way round.
+CALL, THEN RECORD WHICH WAY IT WENT: CCIP and the OP Stack. `relayMessage` makes a
+low-level call and branches, `successfulMessages` on success and `failedMessages` on
+failure, and the failed entry is what a later replay is required to come from. Two state
+writes, and the failure is a first-class state rather than an absence.
+
+MARK DELIVERY FIRST, RECORD EXECUTION SEPARATELY: Avalanche ICM alone, and it is the
+strongest of the three. `_markMessageReceived` writes the nonce before
+`_handleInitialMessageExecution` runs, so the message can never be delivered twice; the
+execution then happens through a bare `call` whose boolean is checked, and a failure is
+stored as `receivedFailedMessageHashes[messageID]`. **Delivery and execution are separate
+facts**, so `retryMessageExecution` re-runs a failed payload with no new bridge message.
+Every other transport here conflates them and needs the message re-delivered.
 
 **The second shape looks like the thing [R3.7](provider-spec.md#r3-receive) forbids, and is
 not.** That rule says a BINDING must never wrap the delivery call in `try/catch`, because a
@@ -148,7 +161,14 @@ subtracting the same offset is the inverse.
 The two stacks differ in whether you have to. OP Stack's `CrossDomainMessenger` un-aliases
 for you and exposes the original sender through `xDomainMessageSender()`, so a binding at
 that layer sees the real address; one built directly on `OptimismPortal` does not. Arbitrum
-has no equivalent, so `AddressAliasHelper.undoL1ToL2Alias` is the binding's job either way.
+has no equivalent, so undoing the alias is the binding's job either way.
+
+**Two things about our helper.** `AddressDerive.applyL1ToL2Alias` uses
+`0x1111000000000000000000000000000000001111` and an unchecked add, which is Arbitrum's
+`AddressAliasHelper.OFFSET` and `applyL1ToL2Alias` character for character, so it is
+correct for both stacks. But it sits in the file's zkSync section, which reads as though it
+were zkSync-specific, and there is no inverse: a binding needs the SUBTRACTION, and it is
+the direction nothing here provides.
 
 ### Fees and quotes
 
@@ -180,6 +200,13 @@ that makes the trust argument worth having: a payload to Optimism trusts Optimis
 and nothing else, rather than trusting one attestation network with every destination at
 once. What it costs is N deployments, N `setProvenance` entries, and N sets of routes,
 which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
+
+**Teleporter imposes the same-address property this protocol already relies on.**
+`receiveCrossChainMessage` requires `warpMessage.originSenderAddress == address(this)`: the
+messenger will only accept a message from a messenger at its own address on the source
+chain. That is the account-is-its-own-peer rule one layer down, arrived at independently,
+and it means an ICM binding inherits a deployment constraint the protocol was going to
+impose anyway.
 
 **Avalanche is the odd one and the interesting one.** ICM is a real mesh, sub-minute and
 bidirectional, which is a better shape than anything else here; it just cannot reach
