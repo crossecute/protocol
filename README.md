@@ -35,14 +35,14 @@ currency and execution runs inside the delivery callback. A payload that spends 
 currency draws on the receiver's address, which is derivable and fundable before the
 receiver exists: topped up once, not per signer.
 
-**One admin address everywhere.** Allowlists, deploy configs, an `owner()` read on an
-explorer, a runbook step: each names one address instead of a per-chain table someone has
-to keep correct. A wrong address is immediately visible rather than merely plausible.
+**One admin address everywhere.** The same exact CREATE2 address holds the account on every
+supported chain, which unifies access control. Chain exceptions that do not use Ethereum's
+CREATE2 formula, eg. Tron and zkSync, are derived uniquely and reported back to central authority.
 
 **One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
 and M chains means M batches reviewed separately plus the work of confirming they agree.
 Here it is one batch, reviewed in totality. The commitment folds the destination chainKey
-in with the calls, so an approval names what runs *and* where: confirming a payload
+in with the calls, so an approval names what runs _and_ where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
 **What it costs.** The home chain and the message provider enter the trust path: a halt at
@@ -63,25 +63,16 @@ Home chain only, no bridge. The owner claims an address that is theirs on every 
 before anything exists on any of them.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Owner
-    participant Hub as Hub transceiver
-    participant Proxy as CrossProxy
-
-    Owner->>Hub: createTransmitter(salt)
-    Note over Hub: owner is msg.sender by construction,<br/>so nobody can squat another party's address
-    Hub->>Hub: predictCrossAccount(owner, salt)<br/>revert if code is already there
-    Hub->>Proxy: CREATE2 at accountSalt(owner, salt)<br/>argument-free initcode, one constant
-    Note over Hub,Proxy: deployed == predicted, or revert
-    Hub->>Proxy: upgradeInitializeAndLock(transmitterImpl,<br/>initialize(owner, hub, salt))
-    Proxy->>Proxy: install logic, run the initializer,<br/>zero the admin — in that order
-    Hub-->>Owner: CrossAccountCreated(owner, account, salt)
+flowchart LR
+    Owner([owner]) -->|"createTransmitter(salt)"| Hub[Hub transceiver]
+    Hub -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Proxy -->|"arm and lock"| Tx[Transmitter]
 ```
 
-The upgrade key exists for part of this transaction and is never live afterwards. The same
-three CREATE2 inputs are used on every chain, so this address is also where the owner's
-receivers will land.
+The owner is `msg.sender` by construction, so nobody can squat an address another party
+intends to use. Arming installs the logic, runs the initializer, and zeroes the upgrade key in
+one call, so it is never live afterwards. The same three CREATE2 inputs are used on every
+chain, so this address is also where the owner's receivers will land.
 
 ### 2 · Creating a receiver: bootstrap
 
@@ -89,39 +80,21 @@ The one path a transceiver is on. There is no peer on the destination yet, so th
 goes to the one contract that already exists there.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Owner
-    participant Tx as Transmitter<br/>(home)
-    participant Hub as Hub transceiver<br/>(home)
-    participant Bridge as message provider
-    participant Spoke as Spoke transceiver<br/>(destination)
-    participant Rx as Receiver<br/>(destination)
-
-    Owner->>Tx: bootstrap{value: fee}(chainId, calls, attributes)
-    Note over Tx: onlyAccountOwner · destination must not<br/>already be bootstrapped
-    Tx->>Tx: record the route and a presumed counterpart<br/>BEFORE dispatching, so a re-entrant<br/>second bootstrap meets the flag
-    Tx->>Hub: bootstrap(chainKey, owner, salt, calls, attributes)
-    Note over Hub: caller must BE predictCrossAccount(owner, salt)<br/>_requireRoutable — the provenance bar applies here<br/>and only here
-    Hub->>Bridge: _sendMessage(_recipientOn(chainKey),<br/>encodeBootstrap(owner, salt, calls))
-    Note over Bridge: the message carries the OWNER AND SALT,<br/>not the transmitter: a CREATE2 address<br/>cannot be derived from itself
-    Bridge->>Spoke: _onInbound(route, sender, message)
-    Spoke->>Spoke: _authenticateOrigin — route and sender must be<br/>the home hub, both write-once, no lookup
-    Spoke->>Rx: CREATE2 at accountSalt(owner, salt)<br/>same salt, same initcode, same deployer
-    Spoke->>Rx: upgradeInitializeAndLock(receiverImpl,<br/>initialize(peer, calls))
-    Rx->>Rx: grant GATEWAY_ROLE, execute the payload,<br/>drop the upgrade key — one call
-    alt addressesDiverge (zkSync, Tron)
-        Spoke->>Bridge: _reportReceiver(owner, salt, receiver)<br/>paid from the spoke's own balance
-        Bridge->>Hub: _onInbound → decodeReceiverReport
-        Hub->>Tx: onDestinationReceiverReported(chainKey, receiver)
-        Note over Tx: write-once, and what sendMessage<br/>checks against from here on
-    else parity chain
-        Note over Spoke,Hub: no message spent: the hub derived this<br/>address before the first one left
-    end
+flowchart LR
+    Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
+    Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Hub[Hub transceiver]
+    Hub -->|"bridge"| Spoke[Spoke transceiver]
+    Spoke -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
+    Spoke -.->|"bridge: where it landed"| Hub
+    Hub -.->|"onDestinationReceiverReported"| Tx
 ```
 
-The return leg is nested inside the delivery callback, so a dry spoke reverts and takes the
-account creation with it — all or nothing, and retryable once it is funded. This runs once
+The message carries the owner and their salt, not the transmitter, because a CREATE2 address
+cannot be derived from itself. The dashed return leg fires only where `addressesDiverge` —
+zkSync and Tron — since elsewhere the hub derived the receiver's address before the first
+message left. It is sent from inside the delivery callback, so a dry spoke reverts and takes
+the account creation with it: all or nothing, and retryable once it is funded. This runs once
 per chain.
 
 ### 3 · Sending a message
@@ -129,32 +102,54 @@ per chain.
 After bootstrap the transmitter is its own message-provider endpoint, sending straight to its
 receiver. No shared contract is in the path.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Owner
-    participant Tx as Transmitter<br/>(home)
-    participant Bridge as message provider
-    participant Rx as Receiver<br/>(destination)
-    actor Anyone
+The transmitter refuses any recipient that is not the counterpart it recorded, chain half
+included, and the receiver accepts only its own transport and its own transmitter on the other
+side. Execution is in order and all or nothing.
 
-    Owner->>Tx: sendMessage{value: fee}(recipient, payload, attributes)
-    Note over Tx: onlyAccountOwner · recipient must equal the<br/>stored counterpart, chain half included ·<br/>destination must be bootstrapped
-    Tx->>Bridge: _sendMessage(recipient, payload, attributes)<br/>emit MessageSent
-    Bridge->>Rx: receiveMessage(receiveId, sender, payload)
-    Note over Rx: onlyRole(GATEWAY_ROLE) — the transport is real ·<br/>sender's address == sourceTransmitter — the<br/>account is this one
-    Rx->>Rx: decodeCalls(payload) → _execute<br/>nonReentrant, in order, all or nothing
-    alt ordinary payload
-        Note over Rx: it runs on arrival. A revert fails the<br/>message, which the provider lets anyone retry
-    else the payload's one element calls commit(hash)
-        Rx->>Rx: append to the approval queue, return its index
-        Anyone->>Rx: finalize(calls)
-        Note over Rx: permissionless, strictly FIFO, and the hash<br/>folds in the local chainKey, so an array<br/>approved for one chain cannot land here
-    end
+A payload either runs when it lands or waits for someone to supply it. Nothing on the wire
+distinguishes the two: committing is a call, not a message kind, which is why there is no
+message-type tag anywhere in the protocol.
+
+#### 3a · Execute on arrival
+
+The payload names a target, and the receiver calls it inside the delivery callback. Nobody
+has to come back for it.
+
+```mermaid
+flowchart LR
+    Owner([owner]) -->|"sendMessage(recipient, payload)"| Tx[Transmitter]
+    Tx -->|"bridge"| Rx[Receiver]
+    Rx -->|"call(target, value, data)"| Target[target contract]
 ```
 
-Nothing on the wire distinguishes the two branches: committing is a call, not a message kind,
-which is why there is no message-type tag anywhere in the protocol.
+#### 3b · Approve now: the commitment
+
+The same path, carrying a payload whose one element calls the receiver's own `commit`. It
+lands, executes, and what it leaves behind is a hash.
+
+```mermaid
+flowchart LR
+    Owner([owner]) -->|"sendMessage(recipient, commit payload)"| Tx[Transmitter]
+    Tx -->|"bridge"| Rx[Receiver]
+    Rx -->|"commit(hash)"| Queue[approval queue]
+```
+
+#### 3c · Run later: finalize
+
+Anyone supplies the array afterwards, and pays for it. The receiver hashes what it was given
+and compares it against the oldest outstanding approval, so what runs is what was approved.
+
+```mermaid
+flowchart LR
+    Anyone([anyone]) -->|"finalize(calls)"| Rx[Receiver]
+    Rx -->|"hash(calls) vs head of queue"| Check{match?}
+    Check -->|"no"| Revert([revert])
+    Check -->|"yes"| Target[target contract]
+```
+
+The check is why `finalize` needs no caller gate: exactly one of "the payload is checked" or
+"the caller is checked" holds, and each entry point picks a different one. The hash folds in
+the local chainKey, so an array approved for one chain cannot be finalized on another.
 
 ## The idea
 
@@ -168,7 +163,7 @@ logic and driven by messages from the first. Same address, different half.
 reads that way, but nothing requires it: a team can centralize on whichever chain they are
 willing to anchor to, and every spoke names that one instead. A spoke is exactly as rigid
 either way: its home chainKey, route, and counterpart are all written once at
-initialization with no setters. What the home chain *must* be is an EVM chain with the
+initialization with no setters. What the home chain _must_ be is an EVM chain with the
 EIP-152 precompile, because the registry recomputes addresses and commitments locally.
 
 Only bootstrap involves a transceiver, and it runs once per chain. After it, the account
@@ -214,7 +209,7 @@ addressing <- derivation <- registry <- validators
      +------- messaging --------+ <- protocols
 ```
 
-There is no `libs/` or `utils/`. A folder named for what a file *is not* is a place to put
+There is no `libs/` or `utils/`. A folder named for what a file _is not_ is a place to put
 things rather than a statement about them.
 
 ## Where the reasoning lives
@@ -222,23 +217,23 @@ things rather than a statement about them.
 Every design decision is argued in the contract that implements it. This is an index, not a
 summary: the file is always the newer statement.
 
-| Question | Answered in |
-| --- | --- |
-| Why one address, and why a proxy rather than a clone | `account/CrossProxy.sol` |
+| Question                                                                 | Answered in                           |
+| ------------------------------------------------------------------------ | ------------------------------------- |
+| Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
-| Why a hub makes transmitters and a spoke makes receivers | `TransceiverBase`, `Hub` / `Spoke` |
-| Why approvals are an ordered queue, and why `cancel` is load-bearing | `inbound/ReceiverBase.sol` |
-| Why the wire carries a payload rather than a digest | `outbound/OutboundBase.sol` |
-| Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else | `messaging/Payload.sol` |
-| Why a commitment is defined over elements nothing here parses | `messaging/Commitment.sol` |
-| Why a chain is graded, and what each grade is worth | `registry/Provenance.sol` |
-| Why the hub holds counterparts and the registry holds their grade | `HubTransceiverBase.setCounterpart` |
-| Why routes live on the transceiver rather than in the registry | `TransceiverBase.setRoute` |
-| Why neither base inherits an ownership system | `TransmitterBase`, `TransceiverBase` |
-| Why a chain type needs more than a `ChainType` constant | `addressing/Erc7930.sol` |
-| Why the commitment *preview* is swappable when the commitment is not | `registry/ICommitmentScheme.sol` |
-| Why the route slot holds a chain identifier, not a provider's id | `TransceiverBase._recipientOn` |
-| Why the recipient is checked rather than trusted, and only on `eip155` | `TransmitterBase.sendMessage` |
+| Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, `Hub` / `Spoke`    |
+| Why approvals are an ordered queue, and why `cancel` is load-bearing     | `inbound/ReceiverBase.sol`            |
+| Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
+| Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
+| Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |
+| Why a chain is graded, and what each grade is worth                      | `registry/Provenance.sol`             |
+| Why the hub holds counterparts and the registry holds their grade        | `HubTransceiverBase.setCounterpart`   |
+| Why routes live on the transceiver rather than in the registry           | `TransceiverBase.setRoute`            |
+| Why neither base inherits an ownership system                            | `TransmitterBase`, `TransceiverBase`  |
+| Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
+| Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
+| Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
+| Why the recipient is checked rather than trusted, and only on `eip155`   | `TransmitterBase.sendMessage`         |
 
 ## Adding a chain type
 
