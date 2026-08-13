@@ -128,6 +128,29 @@ existing LayerZero skeleton.
 | `<P>HubTransceiver.sol` | `HubTransceiverBase`, `<P>Endpoint` | Sends bootstrap, receives reports. |
 | `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase`, `<P>Endpoint` | Receives bootstrap, sends the report. |
 
+Where the provider sits, on each path. Path A carries every ordinary message and touches
+only the two accounts:
+
+```mermaid
+flowchart LR
+    Tx[Transmitter] -->|"_sendMessage"| Gw[provider gateway]
+    Gw -->|"the SDK's inbound callback"| Rx[Receiver]
+```
+
+Path B runs once per chain, between the two transceivers, with the report coming back only
+where `addressesDiverge` is set:
+
+```mermaid
+flowchart LR
+    Hub[Hub transceiver] -->|"_sendMessage"| Gw[provider gateway]
+    Gw -->|"inbound callback → _onInbound"| Spoke[Spoke transceiver]
+    Spoke -.->|"_reportReceiver"| Gw
+    Gw -.->|"_onInbound"| Hub
+```
+
+Four contracts, one gateway, and the same two seams on every one of them: `_sendMessage`
+outbound and the SDK's callback inbound.
+
 **`<P>Endpoint` is not optional structure, it is the deduplication that keeps the four in
 agreement.** Fee handling, attribute decoding, the recipient byte form, and the sender byte
 form must be identical across all four or authentication silently diverges between path A
