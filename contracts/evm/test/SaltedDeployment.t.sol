@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
@@ -55,10 +57,9 @@ contract MiniTransmitter {
 }
 
 /// @dev A hub deployed from the SAME initcode as the spoke, so both land on one address.
-contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
+contract HubForAccounts is HubTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
-        __Ownable_init(owner_);
-        __HubTransceiverBase_init(owner_, impl);
+        __HubTransceiverBase_init(Deploy.ownedBy(owner_), impl);
     }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
@@ -71,11 +72,10 @@ contract HubForAccounts is HubTransceiverBase, OwnableUpgradeable {
 
 /// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
 ///      `createReceiver` to call at all.
-contract SaltedTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
+contract SaltedTransceiver is SpokeTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
-            owner_,
+            Deploy.ownedBy(owner_),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),

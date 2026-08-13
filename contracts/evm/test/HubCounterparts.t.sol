@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -16,10 +18,9 @@ import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.s
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
-contract Hub is HubTransceiverBase, OwnableUpgradeable {
+contract Hub is HubTransceiverBase {
     function initialize(address owner_) external initializer {
-        __Ownable_init(owner_);
-        __TransceiverBase_init(owner_);
+        __TransceiverBase_init(Deploy.ownedBy(owner_));
     }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the

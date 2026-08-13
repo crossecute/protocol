@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
@@ -16,10 +18,9 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
-contract Hub is HubTransceiverBase, OwnableUpgradeable {
+contract Hub is HubTransceiverBase {
     function initialize(address owner_) external initializer {
-        __Ownable_init(owner_);
-        __TransceiverBase_init(owner_);
+        __TransceiverBase_init(Deploy.ownedBy(owner_));
     }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the

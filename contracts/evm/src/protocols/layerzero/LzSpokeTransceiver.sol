@@ -30,14 +30,14 @@ contract LzSpokeTransceiver is SpokeTransceiverBase {
     ///      chain that really diverges needs different arithmetic as well as the flag, so it
     ///      gets `LzZkSyncSpokeTransceiver` or `LzTronSpokeTransceiver` instead.
     function initialize(
-        address admin_,
+        Deployment calldata deployment,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_
     ) external initializer {
         __SpokeTransceiverBase_init(
-            admin_,
+            deployment,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,

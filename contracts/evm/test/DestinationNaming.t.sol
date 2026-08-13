@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {Deploy} from "test/Deployment.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -51,7 +52,10 @@ contract DestinationNamingTest is Test {
             address(
                 new ERC1967Proxy(
                     address(new LzHubTransceiver()),
-                    abi.encodeCall(LzHubTransceiver.initialize, (msig, address(new MockTransmitterImpl())))
+                    abi.encodeCall(
+                        LzHubTransceiver.initialize,
+                        (Deploy.ownedBy(msig), address(new MockTransmitterImpl()))
+                    )
                 )
             )
         );
@@ -64,7 +68,7 @@ contract DestinationNamingTest is Test {
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
-                            msig,
+                            Deploy.ownedBy(msig),
                             recvImpl,
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
@@ -130,7 +134,7 @@ contract DestinationNamingTest is Test {
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
-                            msig,
+                            Deploy.ownedBy(msig),
                             address(new LzReceiver()),
                             ChainKey.forEvm(42161),
                             Erc7930.encodeEvmChain(42161),
@@ -340,7 +344,7 @@ contract DestinationNamingTest is Test {
         vm.prank(msig);
         vm.expectRevert();
         spoke.initialize(
-            msig,
+            Deploy.ownedBy(msig),
             address(0xBEEF),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -359,7 +363,7 @@ contract DestinationNamingTest is Test {
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
                 (
-                    msig,
+                    Deploy.ownedBy(msig),
                     address(0xBEEF),
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),

@@ -87,16 +87,16 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      allowed to replace it.
     error ChainDoesNotReport(bytes32 chainKey);
 
-    function __HubTransceiverBase_init(address admin_, address transmitterImplementation_)
-        internal
-        onlyInitializing
-    {
+    function __HubTransceiverBase_init(
+        Deployment memory deployment,
+        address transmitterImplementation_
+    ) internal onlyInitializing {
         if (transmitterImplementation_ == address(0)) revert NoAccountImplementation();
         transmitterImplementation = transmitterImplementation_;
         emit TransmitterImplementationSet(transmitterImplementation_);
 
         // Last, and the hub is sealed. See `TransceiverBase.__TransceiverBase_init`.
-        __TransceiverBase_init(admin_);
+        __TransceiverBase_init(deployment);
     }
 
     /* =========================== transmitter manufacture ======================= */
@@ -157,7 +157,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
         IChainRegistryRefs chainRegistry_,
         bytes32 messageProvider_,
         Provenance minCounterpartProvenance_
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyOwner {
         chainRegistry = chainRegistry_;
         messageProvider = messageProvider_;
         minCounterpartProvenance = minCounterpartProvenance_;
@@ -205,7 +205,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @dev REBINDABLE, unlike a route or a counterpart. It redirects nothing and points at
     ///      nothing; it is a price, and a price that could not be corrected would be the
     ///      only value here that has to be right first time for a reason nobody can state.
-    function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyRole(ADMIN_ROLE) {
+    function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyOwner {
         bootstrapFee[chainKey] = fee;
         emit BootstrapFeeSet(chainKey, fee);
     }
@@ -214,14 +214,19 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///
     /// @dev THE DESTINATION MUST ITSELF BE AN ADMIN. Gating the CALL on the role and
     ///      leaving `to` free would make this the one privileged operation that moves value
-    ///      to an address of the caller's choosing: a compromised or careless admin key
-    ///      empties the balance in a single transaction to anywhere, and the fee stops being
-    ///      "collected to fund spokes" and becomes "collected". Asking the role about `to` costs
-    ///      an authority that holds funds nothing, since it is the party the fee was for.
+    ///      to an address of the caller's choosing: a compromised or careless owner empties
+    ///      the balance in a single transaction to anywhere, and the fee stops being
+    ///      "collected to fund spokes" and becomes "collected". Asking the role about `to`
+    ///      costs the treasury nothing, since it is the party the fee was for.
+    ///
+    /// @dev AND `TREASURY` CANNOT BE GRANTED, so this is a bound the owner cannot lift. The
+    ///      role has no role admin, so the destinations named at initialization are the only
+    ///      ones this transceiver will ever pay: an owner who wants the fees elsewhere has to
+    ///      persuade the treasury contract, which answers to its own owner.
     ///
     /// @dev IT STILL TAKES A DESTINATION rather than reading one off the role's member list,
-    ///      because `ADMIN` is a SET and may hold several: a msig plus an operator, or an
-    ///      authority mid-handover. `to` names which of them, and the role says it is one.
+    ///      because `TREASURY` is a SET and may hold several: one per purpose, or a
+    ///      destination mid-handover. `to` names which of them, and the role says it is one.
     ///
     /// @dev IT TRACKS A BALANCE RATHER THAN SWEEPING `address(this).balance`, because a
     ///      transceiver's balance is not all fees: a provider refunding an overpaid send
@@ -229,10 +234,10 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      take that with it.
     function withdrawFees(address to)
         external
-        onlyRole(ADMIN_ROLE)
+        onlyOwner
         returns (uint256 amount)
     {
-        _checkRole(ADMIN_ROLE, to);
+        _checkRole(TREASURY_ROLE, to);
 
         amount = collectedFees;
         if (amount == 0) revert NothingToWithdraw();
@@ -280,7 +285,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @param interop Canonical ERC-7930 bytes for the counterpart, so the registry can
     ///        check it is well-formed AND on the chain it is being filed under. The address
     ///        half is what gets stored, since that is what an inbound sender is compared to.
-    function setCounterpart(bytes32 chainKey, bytes calldata interop) external onlyRole(ADMIN_ROLE) {
+    function setCounterpart(bytes32 chainKey, bytes calldata interop) external onlyOwner {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
 
@@ -304,7 +309,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     /// @param paramsCommitment `keccak256(chainRegistry.deriveParams(chainKey))`.
     function resolveCounterpart(bytes32 chainKey, bytes32 paramsCommitment)
         external
-        onlyRole(ADMIN_ROLE)
+        onlyOwner
     {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
@@ -337,7 +342,7 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      it lives at, and that is a redeploy.
     function setQualifier(bytes32 chainKey, Move.MoveQualifier calldata q)
         external
-        onlyRole(ADMIN_ROLE)
+        onlyOwner
     {
         if (!hasCounterpart(chainKey)) revert NoCounterpartFor(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();

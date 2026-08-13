@@ -197,6 +197,7 @@ src/
     transceiver/  TransceiverBase -> Hub
       spoke/      SpokeTransceiverBase -> zkSync / Tron
   account/        CrossProxy                                what both halves ARE
+  treasury/       Treasury                                  where fees land, Ownable
   protocols/      per message provider; the only files naming an SDK
 ```
 
@@ -229,7 +230,8 @@ summary: the file is always the newer statement.
 | Why a chain is graded, and what each grade is worth                      | `registry/Provenance.sol`             |
 | Why the hub holds counterparts and the registry holds their grade        | `HubTransceiverBase.setCounterpart`   |
 | Why routes live on the transceiver rather than in the registry           | `TransceiverBase.setRoute`            |
-| Why neither base inherits an ownership system                            | `TransmitterBase`, `TransceiverBase`  |
+| Why the transceiver owns and the roles do not                            | `messaging/Roles.sol`, `TransceiverBase` |
+| Why a treasury is a role on one contract and an owner on another         | `treasury/Treasury.sol`               |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
@@ -275,7 +277,12 @@ if its addresses cannot be recomputed here at all.
   one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
-- The crossecute msig owns the registry and every transceiver.
+- The crossecute msig owns the registry, every transceiver, and the treasury each
+  transceiver pays. Ownership is the only live authority: a transceiver's transports and its
+  treasury are named in the `Deployment` it is initialized with, and neither role has an
+  administrator, so nothing can grant either afterwards. A compromised owner can drop a
+  transport and cannot add one, and can move fees only to an address that already held
+  `TREASURY_ROLE` when the contract was deployed.
 
 ## Docs
 

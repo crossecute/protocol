@@ -207,10 +207,11 @@ abstract contract ReceiverBase is
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 
-        // NO ADMIN, EVER. An account's gateway is granted here, by a binding that knows its
-        // transport, and after this call nothing can grant another: `GATEWAY` is administered
-        // by `ADMIN`, and an account holds none. See `Roles.__Roles_init`.
-        __Roles_init(address(0));
+        // NO TREASURY, AND NO GATEWAY YET. An account collects no fees, and its transport is
+        // granted just below this by a binding that knows one. Nothing can grant another
+        // afterwards: `GATEWAY` has no role admin anywhere in this protocol, so the transport
+        // an account is armed with is the transport it has for life. See `Roles.__Roles_init`.
+        __Roles_init(address(0), new address[](0));
 
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;

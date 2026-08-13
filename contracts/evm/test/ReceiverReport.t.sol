@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -68,7 +70,7 @@ contract Receiver is ReceiverBase {
 
 /// @dev A spoke whose divergence flag is a constructor-time choice, so both arms can be
 ///      exercised against otherwise identical contracts.
-contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
+contract ReportingSpoke is SpokeTransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
@@ -82,9 +84,8 @@ contract ReportingSpoke is SpokeTransceiverBase, OwnableUpgradeable {
         external
         initializer
     {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
-            owner_,
+            Deploy.ownedBy(owner_),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -320,13 +321,16 @@ contract ReceiverReportTest is Test {
 
 /// @dev The home side: a real hub, a real registry, and nothing hand-built. Everything
 ///      below feeds the spoke's ACTUAL wire bytes into it.
-contract Hub is HubTransceiverBase, OwnableUpgradeable {
-    function initialize(address owner_, address transmitterImplementation_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __HubTransceiverBase_init(owner_, transmitterImplementation_);
+contract Hub is HubTransceiverBase {
+    function initialize(
+        address owner_,
+        address treasury_,
+        address transmitterImplementation_
+    ) external initializer {
+        __HubTransceiverBase_init(
+            Deployment({owner: owner_, treasury: treasury_, gateways: new address[](0)}),
+            transmitterImplementation_
+        );
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -402,7 +406,9 @@ contract ReceiverReportRoundTripTest is Test {
         );
 
         hub = new Hub();
-        hub.initialize(msig, address(new Transmitter()));
+        // The msig owns the hub AND is the treasury it may pay: one address here, two
+        // facts, and the tests below separate them.
+        hub.initialize(msig, msig, address(new Transmitter()));
         spoke = new ReportingSpoke();
         spoke.initialize(msig, address(new Receiver()), true);
 
@@ -596,7 +602,9 @@ contract BootstrapFeeTest is Test {
             )
         );
         hub = new Hub();
-        hub.initialize(msig, address(new Transmitter()));
+        // The msig owns the hub AND is the treasury it may pay: one address here, two
+        // facts, and the tests below separate them.
+        hub.initialize(msig, msig, address(new Transmitter()));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
@@ -669,36 +677,35 @@ contract BootstrapFeeTest is Test {
         assertEq(hub.lastSendValue(), 1 ether, "message value, fee already taken");
     }
 
-    function test_onlyTheAdminSetsTheFeeAndWithdraws() public {
-        bytes memory notAdmin = abi.encodeWithSelector(
-            IAccessControl.AccessControlUnauthorizedAccount.selector,
-            address(this),
-            hub.ADMIN_ROLE()
+    function test_onlyTheOwnerSetsTheFeeAndWithdraws() public {
+        bytes memory notOwner = abi.encodeWithSelector(
+            OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
         );
 
-        vm.expectRevert(notAdmin);
+        vm.expectRevert(notOwner);
         hub.setBootstrapFee(divergingKey, 1);
-        vm.expectRevert(notAdmin);
+        vm.expectRevert(notOwner);
         hub.withdrawFees(msig);
     }
 
-    /// @dev THE FEE GOES TO THE AUTHORITY, NOT WHEREVER THE AUTHORITY SAYS. Gating the call
-    ///      and leaving the destination free would make this the one privileged operation
-    ///      that moves value to an arbitrary address, so a single compromised admin
-    ///      transaction empties the balance somewhere that funds no spoke.
-    function test_theFeeCannotBeWithdrawnToANonAdmin() public {
+    /// @dev THE FEE GOES TO THE TREASURY, NOT WHEREVER THE OWNER SAYS. Gating the call and
+    ///      leaving the destination free would make this the one privileged operation that
+    ///      moves value to an arbitrary address, so a single compromised owner transaction
+    ///      empties the balance somewhere that funds no spoke. And the owner cannot widen the
+    ///      set, since `TREASURY_ROLE` has no role admin.
+    function test_theFeeCannotBeWithdrawnToANonTreasury() public {
         vm.prank(owner);
         account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
 
-        // Hoisted: `hub.ADMIN_ROLE()` is an external call, and one inside the pranked
+        // Hoisted: `hub.TREASURY_ROLE()` is an external call, and one inside the pranked
         // expression would consume the prank and refuse on the CALLER instead of on `to`.
         address sink = address(0xF11);
-        bytes memory notAdminSink = abi.encodeWithSelector(
-            IAccessControl.AccessControlUnauthorizedAccount.selector, sink, hub.ADMIN_ROLE()
+        bytes memory notTreasurySink = abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector, sink, hub.TREASURY_ROLE()
         );
 
         vm.prank(msig);
-        vm.expectRevert(notAdminSink);
+        vm.expectRevert(notTreasurySink);
         hub.withdrawFees(sink);
 
         assertEq(hub.collectedFees(), FEE, "and nothing moved");

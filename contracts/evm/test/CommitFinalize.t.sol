@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -98,14 +100,13 @@ contract RevertingReceiver is ReceiverBase {
 }
 
 /// @dev Exposes the self-call `commit` and the implementation setter for testing.
-contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
+contract MockTransceiver is SpokeTransceiverBase {
     function initialize(address owner_, address receiverImplementation_)
         external
         initializer
     {
-        __Ownable_init(owner_);
         __SpokeTransceiverBase_init(
-            owner_,
+            Deploy.ownedBy(owner_),
             receiverImplementation_,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -129,24 +130,26 @@ contract MockTransceiver is SpokeTransceiverBase, OwnableUpgradeable {
 
 }
 
-/// @dev A transceiver with NO `Ownable` ANYWHERE in its inheritance, and nothing standing in
-///      for one. If this gates correctly, the authority is entirely `ADMIN_ROLE`, which is the
-///      property that lets a provider SDK bringing its own `Ownable` (LayerZero's `OAppCore`,
-///      a Hyperlane mailbox client) be inherited alongside this without the two contending
-///      over the same entry points.
+/// @dev A transceiver that adds NO authority of its own: the owner is the base's, and the
+///      two roles are named at initialization and ungrantable afterwards. If this gates
+///      correctly, configuring is `Ownable` and the roles confer nothing, which is the split
+///      the design turns on.
 contract MsigTransceiver is HubTransceiverBase {
-    function initialize(address admin_, address receiverImplementation_)
-        external
-        initializer
-    {
-        __TransceiverBase_init(admin_);
+    function initialize(
+        address owner_,
+        address treasury_,
+        address[] calldata gateways_,
+        address receiverImplementation_
+    ) external initializer {
+        __TransceiverBase_init(
+            Deployment({owner: owner_, treasury: treasury_, gateways: gateways_})
+        );
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
+    /// @dev NO BLANKET GATEWAY ANSWER HERE, unlike the other harnesses in this file. These
+    ///      tests read the member list itself, and OZ's `_grantRole` is a no-op when `hasRole`
+    ///      already says yes, so an override that trusted every gateway would leave the list
+    ///      empty and the tests measuring nothing.
 
 }
 
@@ -158,6 +161,8 @@ contract CommitFinalizeTest is Test {
     address transmitter2 = address(0x7A12);
     address relayer = address(0xF00D);
     address msig = address(0x5165);
+    address treasury = address(0x71EA);
+    address gateway = address(0x6A7E);
 
     function setUp() public {
         receiverImpl = new MockReceiver();
@@ -702,19 +707,15 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== authorization ============================= */
 
-    /// @dev THE AUTHORITY IS THE ROLE, AND NOTHING ELSE SUPPLIES ONE. This harness has no
-    ///      `Ownable` in its tree at all and no address comparison of its own: the admin comes
-    ///      from the initializer and lives in `ADMIN_ROLE`. That is what lets an SDK bringing
-    ///      its own `Ownable` be inherited alongside, since the two never gate the same thing.
-    function test_theAuthorityIsTheRoleAlone() public {
-        MsigTransceiver m = new MsigTransceiver();
-        m.initialize(msig, address(receiverImpl));
+    /// @dev CONFIGURING IS THE OWNER'S, AND ONLY THE OWNER'S. The roles name a treasury and
+    ///      a set of transports; neither can call anything, which is what makes it safe for
+    ///      them to be permanent.
+    function test_theConfiguringAuthorityIsTheOwner() public {
+        MsigTransceiver m = _msigTransceiver();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector,
-                address(this),
-                m.ADMIN_ROLE()
+                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
             )
         );
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
@@ -725,25 +726,87 @@ contract CommitFinalizeTest is Test {
 
         // And the lock it arrived with does not depend on that authority being asked.
         assertTrue(m.upgradesLocked());
-
-        // The set is ENUMERABLE, so the answer to "who administers this" is the whole list
-        // rather than a guess plus a yes-or-no.
-        address[] memory admins = m.getRoleMembers(m.ADMIN_ROLE());
-        assertEq(admins.length, 1, "exactly one, and no other was granted along the way");
-        assertEq(admins[0], msig);
-        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above ADMIN");
     }
 
-    /// @dev Two authorities in one contract would mean a transceiver "locked" behind one
-    ///      can still be reconfigured through the other. There is exactly one here, and
-    ///      the base contributes none of it.
-    function test_theOnlyAuthorityIsTheRole() public {
-        MsigTransceiver m = new MsigTransceiver();
-        m.initialize(msig, address(receiverImpl));
+    /// @dev THE MEMBERSHIP IS WHATEVER THE INITIALIZER SAID, FOR LIFE. Neither role has a
+    ///      role admin, and `DEFAULT_ADMIN_ROLE` is never granted, so `grantRole` has no
+    ///      caller that can succeed: not the owner, not the treasury, not a gateway.
+    function test_neitherRoleCanBeGrantedAfterInitialization() public {
+        MsigTransceiver m = _msigTransceiver();
 
-        (bool ok,) = address(m).staticcall(abi.encodeWithSignature("owner()"));
-        assertFalse(ok, "no ownership system anywhere in the tree");
-        assertTrue(m.hasRole(m.ADMIN_ROLE(), msig), "the role is the whole of it");
+        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above either");
+
+        address[] memory gateways = m.getRoleMembers(m.GATEWAY_ROLE());
+        assertEq(gateways.length, 1, "exactly what was named, and nothing acquired since");
+        assertEq(gateways[0], gateway);
+
+        address[] memory treasuries = m.getRoleMembers(m.TREASURY_ROLE());
+        assertEq(treasuries.length, 1);
+        assertEq(treasuries[0], treasury);
+
+        // The owner is the strongest caller there is here, and it still cannot.
+        // Hoisted: an external call inside a pranked expression consumes the prank.
+        bytes32 gatewayRole = m.GATEWAY_ROLE();
+        vm.prank(msig);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                msig,
+                bytes32(0) // DEFAULT_ADMIN_ROLE: what both roles default to being under
+            )
+        );
+        m.grantRole(gatewayRole, address(0xBADBAD));
+    }
+
+    /// @dev REVOKING IS THE ASYMMETRY, AND IT IS DELIBERATE. A compromised transport has to
+    ///      be droppable; admitting one is the operation nobody should have. So the owner can
+    ///      subtract from `GATEWAY_ROLE` and cannot add to it, and cannot touch `TREASURY` at
+    ///      all.
+    function test_theOwnerMayRevokeAGatewayAndNothingElse() public {
+        MsigTransceiver m = _msigTransceiver();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
+            )
+        );
+        m.revokeGateway(gateway);
+
+        vm.prank(msig);
+        m.revokeGateway(gateway);
+        assertEq(m.getRoleMembers(m.GATEWAY_ROLE()).length, 0, "dropped");
+
+        // And there is no way back: the grant path does not exist for anyone.
+        bytes32 gatewayRole = m.GATEWAY_ROLE();
+        vm.prank(msig);
+        vm.expectRevert();
+        m.grantRole(gatewayRole, gateway);
+    }
+
+    /// @dev FEES LEAVE ONLY TO A `TREASURY_ROLE` HOLDER, which the owner cannot extend. The
+    ///      owner decides WHEN, the initializer decided WHERE, and those are different
+    ///      questions answered by different transactions.
+    function test_feesLeaveOnlyToTheTreasuryNamedAtInitialization() public {
+        MsigTransceiver m = _msigTransceiver();
+
+        vm.prank(msig);
+        m.setBootstrapFee(ChainKey.forEvm(8453), 1 ether);
+
+        // Hoisted for the same reason: `m.TREASURY_ROLE()` is an external call.
+        bytes memory notTreasury = abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector, msig, m.TREASURY_ROLE()
+        );
+        vm.prank(msig);
+        vm.expectRevert(notTreasury);
+        m.withdrawFees(msig);
+    }
+
+    function _msigTransceiver() internal returns (MsigTransceiver m) {
+        address[] memory gateways = new address[](1);
+        gateways[0] = gateway;
+
+        m = new MsigTransceiver();
+        m.initialize(msig, treasury, gateways, address(receiverImpl));
     }
 
     /* ======================== isolation between senders ======================= */

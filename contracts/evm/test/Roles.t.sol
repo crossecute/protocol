@@ -17,8 +17,8 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
-/// @dev An account names its transport in the call that arms it, which is the only moment it
-///      can: it holds no `ADMIN`, so nothing may grant one afterwards. Granting ahead of
+/// @dev An account names its transport in the call that arms it, which is the only moment
+///      anything can: `GATEWAY` has no role admin, so no grant ever succeeds. Granting ahead of
 ///      `__ReceiverBase_init` is the documented shape — a binding's provider setup goes in
 ///      front of the bootstrap payload, and this is that setup.
 contract RoleReceiver is ReceiverBase {
@@ -58,16 +58,27 @@ contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
 
 /// @dev The role graph on its own, with no messaging around it.
 contract RoleHarness is Roles {
-    function initialize(address admin) external initializer {
-        __Roles_init(admin);
+    function initialize(address treasury, address[] calldata gateways) external initializer {
+        __Roles_init(treasury, gateways);
+    }
+
+    /// @dev Stands in for the gated entry point a transceiver exposes over `_revokeGateway`.
+    ///      The harness leaves it ungated, because what is under test is the membership
+    ///      bookkeeping rather than who may reach it.
+    function revokeGateway(address gateway) external {
+        _revokeGateway(gateway);
     }
 }
 
-/// @notice The two authorities, and the shape of the answer.
+/// @notice The two roles, and the shape of the answer.
 ///
 /// @dev THE POINT OF ONE ROLE FOR BOTH DIRECTIONS is that a contract accepting deliveries from
 ///      one address while sending through another would be trusting two transports and
 ///      authenticating against one, and only a message from the second would ever reveal it.
+///
+/// @dev AND NEITHER ROLE IS AN AUTHORITY. `TREASURY` names where fees may go and `GATEWAY`
+///      names which transports are real; neither can call anything, and neither can be
+///      granted after the initializer that named it.
 contract RolesTest is Test {
     address constant GATEWAY = address(0x6A7EAA7);
     address constant IMPOSTOR = address(0xBAD);
@@ -78,7 +89,7 @@ contract RolesTest is Test {
     RoleTransmitter transmitter;
 
     bytes32 gatewayRole;
-    bytes32 adminRole;
+    bytes32 treasuryRole;
 
     function setUp() public {
         receiver = new RoleReceiver();
@@ -88,7 +99,7 @@ contract RolesTest is Test {
         transmitter.initializeWith(owner, address(0xC0DE), GATEWAY);
 
         gatewayRole = receiver.GATEWAY_ROLE();
-        adminRole = receiver.ADMIN_ROLE();
+        treasuryRole = receiver.TREASURY_ROLE();
     }
 
     function _unauthorized(address who, bytes32 role) internal pure returns (bytes memory) {
@@ -148,59 +159,119 @@ contract RolesTest is Test {
         assertFalse(t.hasRole(t.GATEWAY_ROLE(), anyone));
     }
 
-    /* ============================ an account has no admin =========================== */
+    /* ========================== nothing can be granted ============================== */
 
     /// @dev AN ACCOUNT'S TRANSPORT IS FROZEN THE MOMENT IT IS ARMED, and not because a slot
-    ///      refuses a second write: `GATEWAY` is administered by `ADMIN`, and an account holds
-    ///      none, so there is nobody a grant could come from. Not the transceiver that created
-    ///      it, not the msig, not the account's own owner.
+    ///      refuses a second write: `GATEWAY` has no role admin, so it defaults to
+    ///      `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. There is no
+    ///      caller a grant could come from. Not the transceiver that created it, not the msig,
+    ///      not the account's own owner.
     function test_nothingCanAddAGatewayToAnAccount() public {
-        assertEq(receiver.getRoleMemberCount(adminRole), 0, "an account has no admin");
+        assertEq(
+            receiver.getRoleMemberCount(receiver.DEFAULT_ADMIN_ROLE()),
+            0,
+            "and nothing holds what administers it"
+        );
+
+        // Hoisted: an external call inside a pranked expression consumes the prank.
+        bytes32 root = receiver.DEFAULT_ADMIN_ROLE();
 
         address[3] memory tryers = [receiver.parentTransceiver(), msig, address(0xB0B)];
         for (uint256 i; i < tryers.length; i++) {
             vm.prank(tryers[i]);
-            vm.expectRevert(_unauthorized(tryers[i], adminRole));
+            vm.expectRevert(_unauthorized(tryers[i], root));
             receiver.grantRole(gatewayRole, IMPOSTOR);
         }
         assertFalse(receiver.hasRole(gatewayRole, IMPOSTOR));
     }
 
-    /* ================================= the role graph =============================== */
-
-    /// @dev `DEFAULT_ADMIN_ROLE` IS LEFT UNHELD ON PURPOSE. OZ's default puts it over every
-    ///      role, which would make "who may add a gateway" a question with two answers.
-    function test_nothingSitsAboveAdmin() public {
-        RoleHarness h = new RoleHarness();
-        h.initialize(msig);
-
-        assertEq(h.getRoleAdmin(adminRole), adminRole, "ADMIN administers itself");
-        assertEq(h.getRoleAdmin(gatewayRole), adminRole, "and GATEWAY");
-        assertEq(h.getRoleMemberCount(h.DEFAULT_ADMIN_ROLE()), 0);
-
-        // So the address OZ would normally have made omnipotent has no power here.
-        vm.prank(IMPOSTOR);
-        vm.expectRevert(_unauthorized(IMPOSTOR, adminRole));
-        h.grantRole(gatewayRole, IMPOSTOR);
+    /// @dev AN ACCOUNT NAMES NO TREASURY, because it collects no fees and has nothing to pay
+    ///      out. The role exists on it and is empty, which is the same shape as `GATEWAY` on a
+    ///      contract whose binding granted none.
+    function test_anAccountHoldsNoTreasury() public view {
+        assertEq(receiver.getRoleMemberCount(treasuryRole), 0);
+        assertEq(transmitter.getRoleMemberCount(treasuryRole), 0);
     }
 
-    function test_theAdminMovesTheGatewaySetAndItsOwn() public {
-        RoleHarness h = new RoleHarness();
-        h.initialize(msig);
+    /* ================================= the role graph =============================== */
+
+    /// @dev NEITHER ROLE HAS AN ADMIN, WHICH IS WHAT SEALS BOTH. `__Roles_init` sets no role
+    ///      admin, so each falls back to `DEFAULT_ADMIN_ROLE`, and that is granted to nobody
+    ///      here or anywhere else in the protocol. The membership the initializer stated is
+    ///      the membership for life.
+    function test_neitherRoleHasAnAdmin() public {
+        RoleHarness h = _harness();
+
+        assertEq(h.getRoleAdmin(treasuryRole), h.DEFAULT_ADMIN_ROLE());
+        assertEq(h.getRoleAdmin(gatewayRole), h.DEFAULT_ADMIN_ROLE());
+        assertEq(h.getRoleMemberCount(h.DEFAULT_ADMIN_ROLE()), 0, "and nobody holds it");
+    }
+
+    /// @dev THE INITIALIZER IS THE ONLY MOMENT. A treasury and a set of gateways go in, and
+    ///      afterwards no caller — not the one that deployed it, not a member of either role —
+    ///      can add to either.
+    function test_theInitializerIsTheOnlyGrantThatEverHappens() public {
+        RoleHarness h = _harness();
+
+        assertTrue(h.hasRole(treasuryRole, msig), "the treasury it was given");
+        assertTrue(h.hasRole(gatewayRole, GATEWAY), "and the transport");
+
+        bytes32 root = h.DEFAULT_ADMIN_ROLE();
+
+        address[3] memory tryers = [address(this), msig, GATEWAY];
+        for (uint256 i; i < tryers.length; i++) {
+            vm.prank(tryers[i]);
+            vm.expectRevert(_unauthorized(tryers[i], root));
+            h.grantRole(gatewayRole, IMPOSTOR);
+
+            vm.prank(tryers[i]);
+            vm.expectRevert(_unauthorized(tryers[i], root));
+            h.grantRole(treasuryRole, IMPOSTOR);
+        }
+    }
+
+    /// @dev REVOKING SURVIVES, AND ONLY THROUGH AN ENTRY POINT A CONTRACT CHOOSES TO EXPOSE.
+    ///      `_revokeGateway` is internal, so an account (which exposes nothing over it) cannot
+    ///      lose its transport, while a transceiver's owner can drop a compromised one. The
+    ///      public `revokeRole` remains unusable, since that is the path with no valid caller.
+    function test_revokingIsInternalAndOneWay() public {
+        RoleHarness h = _harness();
+
+        bytes32 root = h.DEFAULT_ADMIN_ROLE();
 
         vm.prank(msig);
+        vm.expectRevert(_unauthorized(msig, root));
+        h.revokeRole(gatewayRole, GATEWAY);
+
+        h.revokeGateway(GATEWAY);
+        assertFalse(h.hasRole(gatewayRole, GATEWAY), "gone through the internal path");
+
+        // And it cannot come back.
+        vm.expectRevert(_unauthorized(address(this), root));
         h.grantRole(gatewayRole, GATEWAY);
-        assertTrue(h.hasRole(gatewayRole, GATEWAY));
+    }
 
-        // Handover: an admin may grant its own role, which is the equivalent of what
-        // `transferOwnership` used to be, and revoking the old one completes it.
-        vm.prank(msig);
-        h.grantRole(adminRole, owner);
-        vm.prank(owner);
-        h.revokeRole(adminRole, msig);
+    /// @dev A ZERO IN EITHER POSITION IS SKIPPED RATHER THAN GRANTED. `address(0)` holding a
+    ///      role would make `hasRole(role, address(0))` true, and the treasury check on
+    ///      `withdrawFees` would then pass for the burn address.
+    function test_zeroAddressesAreNeverMembers() public {
+        RoleHarness h = new RoleHarness();
+        address[] memory gateways = new address[](2);
+        gateways[0] = address(0);
+        gateways[1] = GATEWAY;
+        h.initialize(address(0), gateways);
 
-        assertEq(h.getRoleMembers(adminRole).length, 1);
-        assertEq(h.getRoleMember(adminRole, 0), owner);
+        assertFalse(h.hasRole(treasuryRole, address(0)));
+        assertFalse(h.hasRole(gatewayRole, address(0)));
+        assertEq(h.getRoleMemberCount(gatewayRole), 1, "only the real one");
+    }
+
+    function _harness() internal returns (RoleHarness h) {
+        address[] memory gateways = new address[](1);
+        gateways[0] = GATEWAY;
+
+        h = new RoleHarness();
+        h.initialize(msig, gateways);
     }
 
     /* ================================= enumeration ================================== */
@@ -208,25 +279,24 @@ contract RolesTest is Test {
     /// @dev THE SET IS WHAT AN OPERATOR ACTUALLY WANTS. A predicate answers only about an
     ///      address already suspected, so a deployment could carry a gateway nobody thought to
     ///      ask about; the member list makes it visible.
-    function test_theMemberListSurvivesGrantsAndRevokes() public {
-        RoleHarness h = new RoleHarness();
-        h.initialize(msig);
+    function test_theMemberListSurvivesTheInitializerAndRevokes() public {
         address a = address(0xA);
         address b = address(0xB);
         address c = address(0xC);
 
-        vm.startPrank(msig);
-        h.grantRole(gatewayRole, a);
-        h.grantRole(gatewayRole, b);
-        h.grantRole(gatewayRole, c);
-
-        // A repeated grant changes nothing, so the list cannot hold a duplicate.
-        h.grantRole(gatewayRole, b);
+        RoleHarness h = new RoleHarness();
+        address[] memory gateways = new address[](4);
+        gateways[0] = a;
+        gateways[1] = b;
+        gateways[2] = c;
+        // A repeated entry changes nothing, so the list cannot hold a duplicate.
+        gateways[3] = b;
+        h.initialize(msig, gateways);
         assertEq(h.getRoleMemberCount(gatewayRole), 3);
 
         // Revoking from the MIDDLE is the case swap-and-pop gets wrong if the index bookkeeping
         // is off: the tail moves into the hole and must be findable there afterwards.
-        h.revokeRole(gatewayRole, b);
+        h.revokeGateway(b);
         address[] memory left = h.getRoleMembers(gatewayRole);
         assertEq(left.length, 2);
         assertEq(left[0], a);
@@ -234,33 +304,31 @@ contract RolesTest is Test {
         assertFalse(h.hasRole(gatewayRole, b));
 
         // And the moved member is still revocable, which is what a stale index would break.
-        h.revokeRole(gatewayRole, c);
+        h.revokeGateway(c);
         assertEq(h.getRoleMemberCount(gatewayRole), 1);
         assertEq(h.getRoleMember(gatewayRole, 0), a);
 
         // Revoking a non-member is a no-op rather than a pop of somebody else's entry.
-        h.revokeRole(gatewayRole, b);
+        h.revokeGateway(b);
         assertEq(h.getRoleMemberCount(gatewayRole), 1);
 
-        h.revokeRole(gatewayRole, a);
+        h.revokeGateway(a);
         assertEq(h.getRoleMemberCount(gatewayRole), 0);
-        vm.stopPrank();
     }
 
     /// @dev Announced, so a monitor can discover the enumeration rather than be told about it.
     function test_theEnumerableInterfaceIsAnnounced() public {
-        RoleHarness h = new RoleHarness();
-        h.initialize(msig);
+        RoleHarness h = _harness();
         assertTrue(h.supportsInterface(type(IAccessControlEnumerable).interfaceId));
         assertTrue(h.supportsInterface(type(IAccessControl).interfaceId));
     }
 
-    /// @dev The role ids are namespaced, so an SDK that defines its own `ADMIN` cannot land in
-    ///      the same member set through a string collision.
+    /// @dev The role ids are namespaced, so an SDK that defines its own `TREASURY` cannot land
+    ///      in the same member set through a string collision.
     function test_theRoleIdsAreNamespaced() public view {
-        assertEq(adminRole, keccak256("crossecute.role.ADMIN"));
+        assertEq(treasuryRole, keccak256("crossecute.role.TREASURY"));
         assertEq(gatewayRole, keccak256("crossecute.role.GATEWAY"));
-        assertTrue(adminRole != keccak256("ADMIN"));
+        assertTrue(treasuryRole != keccak256("TREASURY"));
         assertTrue(gatewayRole != keccak256("GATEWAY"));
     }
 }

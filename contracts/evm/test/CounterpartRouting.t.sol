@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -16,10 +18,9 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
-contract RoutingTransceiver is HubTransceiverBase, OwnableUpgradeable {
+contract RoutingTransceiver is HubTransceiverBase {
     function initialize(address owner_) external initializer {
-        __Ownable_init(owner_);
-        __TransceiverBase_init(owner_);
+        __TransceiverBase_init(Deploy.ownedBy(owner_));
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.

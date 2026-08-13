@@ -208,10 +208,11 @@ the directory.
 
 ### Roles
 
-The two authorities, and the only two. `ADMIN_ROLE` configures a transceiver; `GATEWAY_ROLE`
-is which transport may carry a contract's messages. Both were once a virtual predicate every
-binding answered for itself; they are role membership now, so authorization has one shape and
-a binding adds a transport or an operator by granting rather than by writing a comparison.
+The two role-shaped facts, and the only two. `TREASURY_ROLE` is where collected fees may go;
+`GATEWAY_ROLE` is which transport may carry a contract's messages. **Neither is an
+authority**: a treasury cannot call anything and a gateway cannot grant anything. Configuring
+a transceiver is `Ownable`, deliberately somewhere else, so the address that gets paid and the
+address that decides are never the same fact.
 
 - **One role covers both directions.** A contract that accepted deliveries from one address
   while sending through another would be trusting two transports and authenticating against
@@ -219,17 +220,24 @@ a binding adds a transport or an operator by granting rather than by writing a c
   gateway would be silently refused. `ReceiverBase` inherits `Roles` directly rather than
   through `OutboundBase`, because a receiver never sends yet has the strictest need to know
   which gateway is real.
-- **`DEFAULT_ADMIN_ROLE` is never granted.** OZ's default puts it over every role, which
-  would make "who may add a gateway" a question with two answers. `ADMIN_ROLE` administers
-  itself and `GATEWAY_ROLE`, so an admin can hand over, add an operator, or change the
-  transport set, and nothing else can.
-- **An account holds no `ADMIN_ROLE`, and that is what freezes it.** A receiver or transmitter
-  grants its gateway in the call that arms it and leaves the admin set empty, so afterwards
-  there is nobody a grant could come from. The same guarantee the write-once slots give,
-  obtained by leaving a role unheld rather than by refusing a second write.
-- **The role ids are namespaced** (`keccak256("crossecute.role.ADMIN")`). A role is a bytes32,
-  so an SDK defining its own `ADMIN` would otherwise share this member set and hand its
-  administrators this authority through a string collision.
+- **No role admin is set, so neither role can ever be granted again.** `__Roles_init` names a
+  treasury and a set of gateways and wires nothing above them, so both fall back to
+  `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. `grantRole` has no
+  caller that can succeed — not the owner, not a member, not the msig — on a transceiver or on
+  an account. The membership a deployment states is the membership it has for life, which is
+  the same guarantee the write-once slots give, obtained by leaving a role unheld.
+- **The gateways are an array, because that call is the only chance.** A deployment routing
+  through two endpoints, or migrating between them, has no later grant to make.
+- **Revoking survives, and only through an entry point a contract chooses to expose.**
+  `_revokeGateway` is internal; `TransceiverBase.revokeGateway` is `onlyOwner` over it, and an
+  account exposes nothing at all. The asymmetry is the point: a compromised transport has to
+  be droppable, while admitting one is the operation that could hand the protocol to a
+  transport nobody vetted. The door opens outward only.
+- **An account holds no treasury, and that is not what freezes it.** What freezes it is the
+  paragraph above: an account collects no fees, names its gateway in the call that arms it,
+  and cannot acquire another because nothing can grant one.
+- **The role ids are namespaced** (`keccak256("crossecute.role.TREASURY")`). A role is a
+  bytes32, so an SDK defining its own `TREASURY` would otherwise share this member set.
 - **Enumeration is ours, not OZ's, because of the `paris` pin.**
   `AccessControlEnumerableUpgradeable` reaches `EnumerableSet` and so `Arrays`, which emits
   `mcopy` and needs Cancun; a Cancun opcode in a spoke transceiver would not change an
@@ -391,7 +399,7 @@ colliding with one declared here.
 - `CROSS_PROXY_INIT_CODE_HASH`: the one initcode hash every account deploys from, on every
   chain, transmitter and receiver alike. Exposed so the hub can reproduce addresses without
   deploying anything.
-- `setRoute(bytes32 chainKey, bytes route)`: `ADMIN_ROLE` and **write-once**, maintaining the
+- `setRoute(bytes32 chainKey, bytes route)`: `onlyOwner` and **write-once**, maintaining the
   reverse index in the same call because two setters is how the two directions drift apart.
   **The route is the chain's ERC-7930 identifier**, not a provider's private id for it: an
   ERC-7786 recipient names its own chain, so there is nothing left to translate. That also
@@ -428,14 +436,20 @@ colliding with one declared here.
   place provider setup can happen**. The proxy locks in the same call that arms it, and an
   account's own configuration is owner-gated, so a transceiver has no authority over an
   account after creating it.
-- **The authority is `ADMIN_ROLE`**, granted in `__TransceiverBase_init` from an address the
-  deployment supplies, and a zero one is refused: every configuring operation is
-  `onlyRole(ADMIN_ROLE)`, so a transceiver with an empty admin set could never be given a
-  route. Two ownership systems over the same operations would mean an authority gated on one
-  could be exercised through the other, which is why nothing here reads an `owner()`.
-  Membership also answers about addresses that are not the caller, which a caller-shaped
-  check could not: `withdrawFees` requires the DESTINATION to hold `ADMIN_ROLE`, so a fee
-  taken to fund spokes cannot leave to somewhere that funds none.
+- **The authority is the owner**, set in `__TransceiverBase_init` from a `Deployment` the
+  deployment supplies, and a zero one is refused by `Ownable`: every configuring operation is
+  `onlyOwner`, so a transceiver without one could never be given a route. A binding's SDK must
+  not bring a SECOND ownership implementation; one using OpenZeppelin's own
+  `OwnableUpgradeable` shares this one, which is what should happen.
+- **The two roles bound what that owner can do.** `withdrawFees` requires the DESTINATION to
+  hold `TREASURY_ROLE`, which no caller-shaped check can express, and the owner cannot widen
+  that set: a fee taken to fund spokes cannot leave to somewhere that funds none, and no
+  transaction can make somewhere else eligible. Likewise the owner may drop a gateway and
+  cannot add one.
+- **`Deployment` is one struct rather than three arguments.** It carries the owner, the
+  treasury, and the gateways together at every layer, so a binding writing an initializer
+  cannot thread two through and drop the third — and it keeps the divergent spokes' initializers
+  under the stack limit, which `paris` without via-IR makes a real constraint.
 - **Upgrades lock in the initializer.** `__TransceiverBase_init` sets the flag and both
   halves call it last, so there is no `lockUpgrades()` and no window between "the real logic
   is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
@@ -603,8 +617,8 @@ could widen later.
   matches a queued commitment or executes on arrival, and neither asks which message
   carried it.
 - `GATEWAY_ROLE`: which transport is trusted is a property of the binding, so the binding
-  grants it in the call that arms the account and nothing can grant another afterwards — an
-  account holds no `ADMIN_ROLE`, and that role is what administers this one. The sender half
+  grants it in the call that arms the account and nothing can grant another afterwards —
+  `GATEWAY_ROLE` has no role admin, so no grant succeeds anywhere in this protocol. The sender half
   needs no configuration, so it is answered in the base. The SAME role gates the outbound
   direction on a transmitter or transceiver, so a contract cannot accept from one address
   while sending through another; see `Roles`.

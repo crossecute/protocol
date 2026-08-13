@@ -8,15 +8,19 @@ import {IAccessControlEnumerable} from
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title Roles
-/// @notice The two authorities every contract here recognises, and the only two.
+/// @notice The two role-shaped facts every contract here recognises, and the only two.
 ///
-/// @dev ONE SYSTEM FOR BOTH, BECAUSE THEY ARE THE SAME KIND OF FACT. `ADMIN` is who may
-///      configure a transceiver; `GATEWAY` is which transport may carry its messages. Both
-///      were previously a virtual predicate each concrete contract answered from whatever it
-///      had, which meant every binding re-implemented authorization and the answers were only
-///      as good as the binding's care. They are role membership now, so the answer has one
-///      shape, and a binding that adds a transport or an operator does it by granting rather
-///      than by writing a comparison.
+/// @dev NEITHER OF THESE IS AN AUTHORITY, AND THAT IS THE POINT. `TREASURY` is where fees may
+///      go; `GATEWAY` is which transport may carry this contract's messages. Both are
+///      addresses a deployment names, not powers a holder exercises: a treasury cannot
+///      configure a transceiver and a gateway cannot grant itself anything. Configuration is
+///      `Ownable` on the transceiver, deliberately somewhere else, so the address that gets
+///      PAID and the address that DECIDES are never the same fact.
+///
+/// @dev A MEMBERSHIP RATHER THAN A PREDICATE, because the question is "which addresses", not
+///      "is this one". Both were once a virtual each concrete contract answered from whatever
+///      it had, which meant every binding re-implemented authorization and the answers were
+///      only as good as the binding's care.
 ///
 /// @dev BOTH DIRECTIONS ASK FOR `GATEWAY`, which is the property the seam exists for. A
 ///      contract that accepted deliveries from one address while sending through another would
@@ -31,7 +35,10 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      about an address you already suspect, so a deployment could carry an authority nobody
 ///      thought to ask about. `getRoleMemberCount` / `getRoleMember` make the whole set
 ///      readable, which is what lets an operator — or a monitor — verify that a live
-///      transceiver has exactly the admins and exactly the gateways it should.
+///      transceiver has exactly the treasury and exactly the gateways it should. It matters
+///      more now that membership is fixed at initialization: the set cannot be corrected
+///      later, so being able to read it whole is how a mistake is caught while a redeploy is
+///      still cheap.
 ///
 /// @dev THE ENUMERATION IS OURS RATHER THAN OZ's, AND THE REASON IS THE EVM VERSION. OZ's
 ///      `AccessControlEnumerableUpgradeable` reaches `EnumerableSet`, which reaches `Arrays`,
@@ -42,13 +49,16 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      `AccessControlUpgradeable`, the interface is OZ's `IAccessControlEnumerable`, and the
 ///      member list below is a swap-and-pop array that compiles under paris.
 abstract contract Roles is AccessControlUpgradeable, IAccessControlEnumerable {
-    /// @notice Configures a transceiver: routes, counterparts, fees, the provenance bar.
-    /// @dev NAMESPACED RATHER THAN `keccak256("ADMIN")`. A role is just a bytes32, so two
+    /// @notice Where collected fees may be withdrawn to, and nothing else.
+    /// @dev IT NAMES A DESTINATION, NOT A CALLER. `withdrawFees` asks whether the address it
+    ///      was handed holds this, which is the question no caller-shaped check can express:
+    ///      without it the owner could name any address at all, and a fee taken to fund
+    ///      spokes could leave to somewhere that funds none. Holding it confers no ability to
+    ///      call anything.
+    /// @dev NAMESPACED RATHER THAN `keccak256("TREASURY")`. A role is just a bytes32, so two
     ///      contracts in one inheritance tree that pick the same string share the same member
-    ///      set. A provider SDK with an `ADMIN` role of its own would then silently hand its
-    ///      administrators this one, which is the two-authorities failure the seam exists to
-    ///      prevent, arriving through a string collision instead of an inheritance list.
-    bytes32 public constant ADMIN_ROLE = keccak256("crossecute.role.ADMIN");
+    ///      set, and a provider SDK with a role of that name would silently share this one.
+    bytes32 public constant TREASURY_ROLE = keccak256("crossecute.role.TREASURY");
 
     /// @notice May deliver a message to this contract, and may carry one out of it.
     bytes32 public constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
@@ -70,38 +80,64 @@ abstract contract Roles is AccessControlUpgradeable, IAccessControlEnumerable {
         }
     }
 
-    /// @dev A transceiver was initialized with no admin, which would seal it as unusable.
-    error NoAdmin();
-
-    /// @notice Wire the role graph, and grant `admin` if there is one.
+    /// @notice Name the treasury and the transports, once, and close the door behind them.
     ///
-    /// @dev `DEFAULT_ADMIN_ROLE` IS NEVER GRANTED, so there is no authority above these two.
-    ///      OZ's default makes `DEFAULT_ADMIN_ROLE` the administrator of every role, which
-    ///      would put a third party over both of these and make "who can add a gateway" a
-    ///      question with two answers. `ADMIN` administers itself and `GATEWAY`: an admin can
-    ///      hand over, add an operator, or change the transport set, and nothing else can.
+    /// @dev NO ROLE ADMIN IS SET, WHICH MAKES BOTH ROLES UNGRANTABLE AFTERWARDS. Every role
+    ///      defaults to being administered by `DEFAULT_ADMIN_ROLE`, and this protocol never
+    ///      grants that to anyone, so `grantRole` and `revokeRole` can never succeed on
+    ///      either of these — on a transceiver, on an account, on any contract in the tree.
+    ///      The membership a deployment states here is the membership it has for life. That is
+    ///      the same guarantee the write-once slots give, obtained by leaving a role unheld
+    ///      rather than by refusing a second write, and it holds against a compromised owner
+    ///      as well as a careless one: an owner cannot add a transport, and cannot add a
+    ///      destination for the fees it may withdraw.
     ///
-    /// @dev A ZERO `admin` MEANS THERE IS NO ADMIN, AND THAT IS THE ACCOUNT CASE. An account
-    ///      is configured entirely in the call that arms it and is owner-gated afterwards, so
-    ///      it grants its gateway during initialization and leaves `ADMIN` empty. Nothing can
-    ///      grant `GATEWAY` on it after that — not the transceiver that created it, not the
-    ///      msig — because granting needs an `ADMIN` and there is none. That is the same
-    ///      guarantee the write-once slots give, obtained by leaving a role unheld.
-    ///      `TransceiverBase` refuses a zero, since a transceiver with no admin could never
-    ///      be configured at all.
-    function __Roles_init(address admin) internal onlyInitializing {
+    /// @dev THE GATEWAYS ARE AN ARRAY BECAUSE A DEPLOYMENT CAN HAVE SEVERAL AND MUST DECLARE
+    ///      THEM AT ONCE. A binding that routes through two endpoints, or one migrating
+    ///      between them, has no later opportunity: there is no grant path after this call, so
+    ///      an initializer that named one transport would fix that choice permanently. Passing
+    ///      an empty array is the ordinary case for a contract whose binding grants its own
+    ///      gateway through `_grantGateway` further down its initializer.
+    ///
+    /// @dev A ZERO `treasury` MEANS THERE IS NONE, AND THAT IS THE ACCOUNT CASE. An account
+    ///      collects no fees and has nothing to withdraw, so it names no treasury and leaves
+    ///      the role empty.
+    function __Roles_init(address treasury, address[] memory gateways)
+        internal
+        onlyInitializing
+    {
         __AccessControl_init();
-        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
-        _setRoleAdmin(GATEWAY_ROLE, ADMIN_ROLE);
-        if (admin != address(0)) _grantRole(ADMIN_ROLE, admin);
+
+        if (treasury != address(0)) _grantRole(TREASURY_ROLE, treasury);
+
+        for (uint256 i; i < gateways.length; ++i) {
+            if (gateways[i] != address(0)) _grantRole(GATEWAY_ROLE, gateways[i]);
+        }
     }
 
     /// @notice Trust `gateway` to carry this contract's messages, in both directions.
-    /// @dev Internal, so granting is an initializer's or an admin operation's decision rather
-    ///      than an entry point of its own. `grantRole(GATEWAY_ROLE, ...)` is the admin path
-    ///      and needs no wrapper.
+    /// @dev Internal, and reachable only while initializing in practice, since `grantRole`
+    ///      cannot succeed on this role and no entry point wraps this one. A binding calls it
+    ///      from its own initializer when the gateway is a value the binding computes rather
+    ///      than one the deployment passes.
     function _grantGateway(address gateway) internal {
         _grantRole(GATEWAY_ROLE, gateway);
+    }
+
+    /// @notice Stop trusting `gateway`, in both directions at once.
+    ///
+    /// @dev REVOKING IS THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, and it is
+    ///      internal, so it exists only where a contract deliberately exposes a gated entry
+    ///      point over it. The asymmetry is the point: a compromised transport has to be
+    ///      droppable, since the alternative is a live forgery path with a redeploy as the
+    ///      only remedy, while ADDING one is the operation that could hand the protocol to a
+    ///      transport nobody vetted. So the door opens outward only.
+    ///
+    /// @dev AN ACCOUNT EXPOSES NOTHING OVER THIS, and therefore cannot lose its gateway. Its
+    ///      transport is named in the call that arms it and is as permanent as its
+    ///      implementation.
+    function _revokeGateway(address gateway) internal {
+        _revokeRole(GATEWAY_ROLE, gateway);
     }
 
     /// @notice Whether `account` holds `role`.

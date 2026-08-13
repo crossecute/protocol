@@ -101,7 +101,8 @@ back out of it, rather than out of a route lookup.
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
-| `ADMIN_ROLE` / `_checkOwner` | the role is granted at deployment; OApp's own `Ownable` governs OApp's configuration and nothing this role governs |
+| the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are ONE owner rather than two authorities. A binding must not add a third |
+| `TREASURY_ROLE` / `GATEWAY_ROLE` | named in the `Deployment` struct at initialization, ungrantable afterwards; the endpoint goes in `gateways` |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
 protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
@@ -138,7 +139,7 @@ destination, read from the table rather than computed.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
   the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  `withdrawFees`, whose destination must itself hold `ADMIN_ROLE`. It is zero by default, so
+  `withdrawFees`, whose destination must itself hold `TREASURY_ROLE`. It is zero by default, so
   only the chains that actually report are
   charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
   than none: the caller would fund the send exactly and the bootstrap would revert with the
@@ -183,21 +184,23 @@ destination, read from the table rather than computed.
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
 mainnet.
 
-- **A TRANSCEIVER'S GATEWAY SET IS NOW ADMIN-MUTABLE, WHERE IT USED TO BE CODE.** This is the
-  one thing the move to roles loosened, and it is worth naming plainly. The old
-  `_isAuthorizedGateway` was a binding's immutable comparison (`instance == address(endpoint)`),
-  so which transport could deliver an authentic message was fixed at deployment alongside the
-  upgrade lock. `GATEWAY_ROLE` is administered by `ADMIN_ROLE`, so the msig can add a
-  transport to a live transceiver — and a transport that can deliver can forge, which is the
-  same power the upgrade lock exists to deny. The trade bought operability: a provider
-  migrating its endpoint no longer forces a redeploy at a new address, which would re-derive
-  every account.
+- **~~A TRANSCEIVER'S GATEWAY SET IS ADMIN-MUTABLE~~. SETTLED: it is not, any more.** The
+  question was whether the msig could add a transport to a live transceiver, since a transport
+  that can deliver can forge, which is the same power the upgrade lock exists to deny. It
+  cannot: `__Roles_init` sets no role admin, so both roles fall back to `DEFAULT_ADMIN_ROLE`
+  and nothing anywhere holds it. A transceiver's gateways are named in its `Deployment` and
+  can only ever be REVOKED, through `revokeGateway`, which is `onlyOwner`.
 
-  Accounts are unaffected and already have the strict form: they hold no `ADMIN_ROLE`, so
-  their gateway is frozen at arming. Freezing a transceiver's would be one line —
-  `_setRoleAdmin(GATEWAY_ROLE, DEFAULT_ADMIN_ROLE)` with `DEFAULT_ADMIN_ROLE` unheld — and it
-  would make the transport as permanent as a route. Decide before mainnet, because the
-  looser version cannot be tightened afterwards on a locked transceiver.
+  What that costs is the operability the looser version bought: a provider migrating its
+  endpoint now forces a redeploy at a new address, which re-derives every account, unless the
+  deployment named both endpoints up front. Naming several is exactly why `gateways` is an
+  array. The remaining question is a deployment-time one — how many endpoints to name — rather
+  than a protocol one.
+- **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
+  when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
+  write-once, add no transport, and pay no address that does not already hold `TREASURY_ROLE`.
+  What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
+  bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
 - **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
   stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
   each other; neither should be removed alone.

@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 import {VmDeriver} from "src/derivation/VmDeriver.sol";
@@ -132,14 +134,13 @@ contract CloneDerivationTest is Test {
 ///      are `eip155`, so nothing about the chain type separates them, and only the spoke
 ///      itself knows. Both seams must be overridden together, and this is what happens when
 ///      they are not.
-contract DivergingFormulaTransceiver is TransceiverBase, OwnableUpgradeable {
+contract DivergingFormulaTransceiver is TransceiverBase {
     address private _impl;
     /// Stands in for a chain-specific derivation: any answer other than Ethereum's.
     bool public overridePrediction;
 
     function initialize(address owner_, address impl) external initializer {
-        __Ownable_init(owner_);
-        __TransceiverBase_init(owner_);
+        __TransceiverBase_init(Deploy.ownedBy(owner_));
         _impl = impl;
     }
 
@@ -267,6 +268,7 @@ contract TronSpoke is LzTronSpokeTransceiver {
 ///      on-chain check against Era and Shasta.
 contract DivergentSpokeTest is Test {
     address owner = address(0xA11CE);
+
     bytes32 constant HASH = keccak256("zksolc-or-tronsolc-artifact");
     bytes32 constant SALT = bytes32(0);
     address constant HUB = address(0xC0FFEE);
@@ -274,7 +276,7 @@ contract DivergentSpokeTest is Test {
     function _zk() internal returns (ZkSpoke s) {
         s = new ZkSpoke();
         s.initialize(
-            address(this),
+            Deploy.ownedBy(address(this)),
             address(new MinimalAccount()),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -286,7 +288,7 @@ contract DivergentSpokeTest is Test {
     function _tron() internal returns (TronSpoke s) {
         s = new TronSpoke();
         s.initialize(
-            address(this),
+            Deploy.ownedBy(address(this)),
             address(new MinimalAccount()),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -362,12 +364,12 @@ contract DivergentSpokeTest is Test {
 
         ZkSpoke s = new ZkSpoke();
         vm.expectRevert(DivergentSpokeTransceiver.ZeroAccountBytecodeHash.selector);
-        s.initialize(address(this), impl, homeKey, homeId, hub, bytes32(0));
+        s.initialize(Deploy.ownedBy(address(this)), impl, homeKey, homeId, hub, bytes32(0));
 
         ZkSpoke ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(address(this), impl, homeKey, homeId, hub, keccak256("other"));
+        ok.initialize(Deploy.ownedBy(address(this)), impl, homeKey, homeId, hub, keccak256("other"));
     }
 }
 
@@ -461,7 +463,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_theParitySpokeAlwaysReportsNoDivergence() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
         LzSpokeTransceiver s = new LzSpokeTransceiver();
-        s.initialize(owner, impl, k, id, hub);
+        s.initialize(Deploy.ownedBy(owner), impl, k, id, hub);
 
         assertFalse(s.addressesDiverge(), "not settable, and false");
         assertEq(
@@ -479,9 +481,9 @@ contract DivergenceIsNotConfigurableTest is Test {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
 
         LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
-        zk.initialize(owner, impl, k, id, hub, HASH);
+        zk.initialize(Deploy.ownedBy(owner), impl, k, id, hub, HASH);
         LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver();
-        tron.initialize(owner, impl, k, id, hub, HASH);
+        tron.initialize(Deploy.ownedBy(owner), impl, k, id, hub, HASH);
 
         assertTrue(zk.addressesDiverge(), "not settable, and true");
         assertTrue(tron.addressesDiverge());
@@ -500,7 +502,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_thereIsNoSetterForTheBytecodeHash() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
         LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
-        zk.initialize(owner, impl, k, id, hub, HASH);
+        zk.initialize(Deploy.ownedBy(owner), impl, k, id, hub, HASH);
 
         (bool ok,) = address(zk).call(
             abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other"))

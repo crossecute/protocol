@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+
+import {Deploy} from "test/Deployment.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -104,7 +106,7 @@ contract MockReceiver is ReceiverBase {
 /// @dev Records the bootstrap the transmitter asked for.
 /// @dev A spoke-free stand-in for the hub: `TransceiverBase` with the two routing hooks
 ///      answered directly, so `bootstrap`'s provenance lookup succeeds without a registry.
-contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
+contract MockTransceiver is TransceiverBase {
     bytes public sentPayload;
     uint256 public bootCount;
     address public bootRefund;
@@ -112,8 +114,7 @@ contract MockTransceiver is TransceiverBase, OwnableUpgradeable {
     address private _impl;
 
     function initialize(address owner_, address impl) external initializer {
-        __Ownable_init(owner_);
-        __TransceiverBase_init(owner_);
+        __TransceiverBase_init(Deploy.ownedBy(owner_));
         _impl = impl;
     }
 

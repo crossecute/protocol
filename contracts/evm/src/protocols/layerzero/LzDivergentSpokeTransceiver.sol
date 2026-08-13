@@ -28,7 +28,7 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver {
     ///        initcode and means nothing on Era. Getting it wrong does not misdeliver:
     ///        every account creation reverts `AccountAddressMismatch` until it is right.
     function initialize(
-        address admin_,
+        Deployment calldata deployment,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
@@ -36,7 +36,7 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver {
         bytes32 accountBytecodeHash_
     ) external initializer {
         __SpokeTransceiverBase_init(
-            admin_,
+            deployment,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,
@@ -61,7 +61,7 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver {
     /// @param accountBytecodeHash_ `keccak256` of TRON-solc's `CrossProxy` initcode, which
     ///        is not solc's. See `LzZkSyncSpokeTransceiver` for why it is an argument.
     function initialize(
-        address admin_,
+        Deployment calldata deployment,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
@@ -69,7 +69,7 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver {
         bytes32 accountBytecodeHash_
     ) external initializer {
         __SpokeTransceiverBase_init(
-            admin_,
+            deployment,
             receiverImplementation_,
             homeChainKey_,
             homeChainIdentifier_,

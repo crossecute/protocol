@@ -8,6 +8,8 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from
     "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
@@ -29,10 +31,18 @@ import {UUPSUpgradeable} from
 ///      payload that can never execute strands itself at its own transmitter's receiver,
 ///      which is one-per-transmitter by construction, and blocks nobody.
 ///
-/// @dev IT INHERITS NO OWNERSHIP. Privileged operations go through `_checkAdmin`, which the
-///      concrete contract satisfies from whatever authority it already has. That is what
-///      lets a protocol binding join at the concrete contract without its `Ownable`
-///      colliding with one declared here.
+/// @dev CONFIGURATION IS `Ownable`; THE ROLES ARE NOT AUTHORITIES. The owner sets routes,
+///      counterparts, fees, and the provenance bar, and is expected to be the crossecute
+///      msig. `TREASURY_ROLE` and `GATEWAY_ROLE` name addresses rather than powers, are fixed
+///      in the initializer, and cannot be granted afterwards by the owner or by anyone: see
+///      `Roles.__Roles_init`. So the worst a compromised owner can do is misconfigure a
+///      destination, not admit a transport or invent a place for fees to go.
+///
+/// @dev THE COST IS THAT A BINDING'S SDK MUST NOT BRING A SECOND `Ownable`. An SDK using
+///      OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen:
+///      one owner, one `owner()`, one storage slot. An SDK carrying a DIFFERENT ownership
+///      implementation would put two authorities over one contract, and a binding must
+///      resolve that in favour of this one rather than shipping both.
 ///
 /// @dev EVERYTHING ASYMMETRIC IS BEHIND `_counterpartOn` AND `_routeTo`, because the two
 ///      sides have opposite cardinality: the hub has N counterparts and needs a registry to
@@ -45,7 +55,27 @@ import {UUPSUpgradeable} from
 ///      known before the first message, unchanged after the thousandth. Nothing about the
 ///      payload is in the salt, which would mint a new receiver per message and throw away
 ///      the state a receiver accumulates.
-abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
+abstract contract TransceiverBase is
+    Initializable,
+    OutboundBase,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
+    /// @notice The three addresses a deployment names, and the only three it can never
+    ///         revisit: the owner that configures, the treasury that may be paid, and the
+    ///         transports that may carry messages.
+    ///
+    /// @dev ONE STRUCT RATHER THAN THREE ARGUMENTS, for two reasons. It keeps the divergent
+    ///      spokes' initializers under the stack limit, which `paris` without via-IR makes a
+    ///      real constraint rather than a style question. And it puts the three in one place
+    ///      at every layer, so a binding writing an initializer cannot thread two of them
+    ///      through and quietly drop the third.
+    struct Deployment {
+        address owner;
+        address treasury;
+        address[] gateways;
+    }
+
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
@@ -93,8 +123,19 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      what a sender needs to address anything. This is only the authority over it: a
     ///      binding wraps this in a typed setter where it keeps a provider-native value of
     ///      its own, and a gateway binding adds nothing.
-    function setRoute(bytes32 chainKey, bytes memory route) public onlyRole(ADMIN_ROLE) {
+    function setRoute(bytes32 chainKey, bytes memory route) public onlyOwner {
         _setRoute(chainKey, route);
+    }
+
+    /// @notice Stop trusting a transport this transceiver was initialized with.
+    /// @dev THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, and it only ever
+    ///      subtracts: there is no matching grant, here or anywhere, because `GATEWAY_ROLE`
+    ///      has no role admin. A compromised transport has to be droppable — the alternative
+    ///      is a live forgery path with a redeploy as the only remedy — while admitting one
+    ///      is exactly the operation that should not be an owner's to make. An account
+    ///      exposes nothing over this and so cannot lose its gateway at all.
+    function revokeGateway(address gateway) external onlyOwner {
+        _revokeGateway(gateway);
     }
 
     /* ============================ account manufacture ========================== */
@@ -364,13 +405,24 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      makes and the same answer: what the protocol guarantees is worth what the
     ///      smallest set of things able to change it is worth.
     ///
-    /// @dev IT ALSO GRANTS `ADMIN`, AND REFUSES A ZERO ONE. Every configuring operation here
-    ///      is `onlyRole(ADMIN_ROLE)`, so a transceiver with an empty admin set is a
-    ///      transceiver that can never be given a route: it would deploy, seal itself, and be
-    ///      unusable, with the failure arriving one transaction later than the mistake.
-    function __TransceiverBase_init(address admin_) internal onlyInitializing {
-        if (admin_ == address(0)) revert NoAdmin();
-        __Roles_init(admin_);
+    /// @dev IT ALSO NAMES THE THREE THINGS A TRANSCEIVER CANNOT BE GIVEN LATER. The owner is
+    ///      the configuring authority and `Ownable` refuses a zero one, since a transceiver
+    ///      with none could never be given a route: it would deploy, seal itself, and be
+    ///      unusable, with the failure arriving one transaction later than the mistake. The
+    ///      treasury and the gateways are role membership, and `Roles` sets no role admin, so
+    ///      this call is the only opportunity either will ever have. See `Roles.__Roles_init`.
+    ///
+    /// @dev A ZERO TREASURY IS ALLOWED HERE AND COSTS A REDEPLOY. Fees accumulate against a
+    ///      `withdrawFees` that can never name a valid destination, which is recoverable only
+    ///      by deploying again. It is not refused because a deployment that collects no fees
+    ///      is legitimate, and because refusing it would put a second address in the way of
+    ///      the simplest possible transceiver.
+    function __TransceiverBase_init(Deployment memory deployment)
+        internal
+        onlyInitializing
+    {
+        __Ownable_init(deployment.owner);
+        __Roles_init(deployment.treasury, deployment.gateways);
 
         upgradesLocked = true;
         emit UpgradesLocked();
@@ -378,19 +430,21 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
 
     /* ============================== authorization ============================== */
 
-    /// @notice THE AUTHORITY IS `ADMIN_ROLE`, and it is membership rather than a predicate a
-    ///         binding answers. See `Roles` for why both authorities are one system, why
-    ///         `DEFAULT_ADMIN_ROLE` is left unheld, and why the role ids are namespaced.
+    /// @notice THE CONFIGURING AUTHORITY IS THE OWNER, and the roles are not authorities at
+    ///         all. See `Roles` for why `TREASURY` and `GATEWAY` are addresses a deployment
+    ///         names rather than powers a holder exercises, why neither has a role admin, and
+    ///         why the role ids are namespaced.
     ///
-    /// @dev A ROLE IS ALSO WHAT LETS THE BASE ASK ABOUT AN ADDRESS THAT IS NOT THE CALLER.
-    ///      `withdrawFees` requires the DESTINATION to be an admin, which no caller-shaped
-    ///      check can express: without it the admin could name any address at all, and a fee
-    ///      taken to fund spokes could leave to somewhere that funds none.
+    /// @dev A ROLE IS WHAT LETS THE BASE ASK ABOUT AN ADDRESS THAT IS NOT THE CALLER.
+    ///      `withdrawFees` requires the DESTINATION to hold `TREASURY_ROLE`, which no
+    ///      caller-shaped check can express: without it the owner could name any address at
+    ///      all, and a fee taken to fund spokes could leave to somewhere that funds none.
+    ///      That is the whole reason a treasury is a role and not an address slot.
     ///
     /// @dev AND IT ANSWERS "WHO ELSE", which is the question a predicate could not.
-    ///      `getRoleMemberCount(ADMIN_ROLE)` and `getRoleMember` enumerate the whole set, so a
-    ///      live transceiver carrying an authority nobody remembers granting is visible rather
-    ///      than merely present.
+    ///      `getRoleMembers(GATEWAY_ROLE)` enumerates the transports this contract trusts, so
+    ///      a live transceiver carrying one nobody remembers naming is visible rather than
+    ///      merely present.
 
     /// @notice WHERE THE TWO SIDES DIVERGE, and the only thing that does. Both halves of
     ///         addressing (`_routeTo` and `_counterpartOn`) are `OutboundBase`'s seams, and a
@@ -403,12 +457,12 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
 
     /// @dev Gate for UUPS. THERE IS NO `lockUpgrades()` TO CALL: `__TransceiverBase_init`
     ///      sets the flag, so on any initialized transceiver this refuses unconditionally and
-    ///      the admin check below is never the reason. The order matters anyway, because the
+    ///      the owner check below is never the reason. The order matters anyway, because the
     ///      revert should say what is actually true: upgrades are closed, not that the caller
     ///      was the wrong one.
     function _authorizeUpgrade(address) internal override {
         if (upgradesLocked) revert UpgradesAreLocked();
-        _checkRole(ADMIN_ROLE);
+        _checkOwner();
     }
 
     /* ================================= inbound ================================= */

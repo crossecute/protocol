@@ -18,11 +18,11 @@ import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.s
 contract LzHubTransceiver is HubTransceiverBase {
     /// @dev NO RECEIVER IMPLEMENTATION, because a hub never makes a receiver. The
     ///      manufacturing half lives on the spoke; see `TransceiverBase`.
-    function initialize(address admin_, address transmitterImplementation_)
-        external
-        initializer
-    {
-        __HubTransceiverBase_init(admin_, transmitterImplementation_);
+    function initialize(
+        Deployment calldata deployment,
+        address transmitterImplementation_
+    ) external initializer {
+        __HubTransceiverBase_init(deployment, transmitterImplementation_);
     }
 
     /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.

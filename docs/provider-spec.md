@@ -191,7 +191,8 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `Roles.ADMIN_ROLE` | There is no seam to answer. The admin is a constructor-time argument threaded into `__TransceiverBase_init`, which grants `ADMIN_ROLE` and refuses a zero. A binding MUST NOT add a second authority over the same operations: if its SDK brings `Ownable`, that owner governs the SDK's own configuration and MUST NOT be given a path to routes, counterparts, fees, or the upgrade gate, since an authority gated on one would then be exercisable through the other. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner arrives in the `Deployment` struct threaded into `__TransceiverBase_init`, and `Ownable` refuses a zero. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for the roles | `Roles.TREASURY_ROLE`, `Roles.GATEWAY_ROLE` | Named in the same `Deployment` and ungrantable afterwards, since neither role has a role admin. A binding MUST NOT add a grant path, and MUST NOT expect one: a transport it wants trusted goes in `Deployment.gateways` or into `_grantGateway` inside the initializer, and nowhere else. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
 
@@ -199,7 +200,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `Roles.ADMIN_ROLE` | As above. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | As above, including the roles. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
@@ -480,9 +481,11 @@ the base. An honest but shared gateway would otherwise let one account's payload
 another's receiver.
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
-later chance.** An account holds no `ADMIN_ROLE`, and `GATEWAY_ROLE` is administered by
-`ADMIN_ROLE`, so after the arming call there is nobody a grant could come from — not the
-transceiver that created it, not the msig, not the account's own owner. A binding therefore
+later chance.** `GATEWAY_ROLE` has no role admin anywhere in this protocol, so it falls back
+to `DEFAULT_ADMIN_ROLE`, which nothing is ever granted: after the arming call there is nobody
+a grant could come from — not the transceiver that created it, not the msig, not the account's
+own owner. The same holds on a transceiver, whose gateways are named in its `Deployment` and
+can afterwards only be revoked. A binding therefore
 calls `_grantGateway(endpoint)` from its own `initialize`, ahead of `__ReceiverBase_init`,
 where the rest of its provider setup already goes. The same applies to a transmitter.
 
@@ -947,8 +950,9 @@ A binding is done when every line is true.
 - [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
       `_onInbound` on the transceivers
 - [ ] Inbound reverts on the transmitter
-- [ ] `ADMIN_ROLE` granted to the msig at deployment, and `_checkOwner` answered from an
-      authority that governs nothing `ADMIN_ROLE` governs
+- [ ] `Deployment` passed at initialization: msig as `owner`, a `Treasury` as `treasury`, and
+      every transport the deployment needs in `gateways` — none is grantable afterwards
+- [ ] No second ownership implementation in the tree, and no grant path added
 - [ ] `_accountInitializer` overridden on both transceivers
 - [ ] Codec library and typed setters, only where a provider-native id survives
 
