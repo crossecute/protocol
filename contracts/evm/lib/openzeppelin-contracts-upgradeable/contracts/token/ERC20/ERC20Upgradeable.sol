@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC20/ERC20.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/ERC20.sol)
 
 pragma solidity ^0.8.20;
 
@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ContextUpgradeable} from "../../utils/ContextUpgradeable.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the {IERC20} interface.
@@ -280,10 +280,10 @@ abstract contract ERC20Upgradeable is Initializable, ContextUpgradeable, IERC20,
      * @dev Variant of {_approve} with an optional flag to enable or disable the {Approval} event.
      *
      * By default (when calling {_approve}) the flag is set to true. On the other hand, approval changes made by
-     * `_spendAllowance` during the `transferFrom` operation sets the flag to false. This saves gas by not emitting any
+     * `_spendAllowance` during the `transferFrom` operation set the flag to false. This saves gas by not emitting any
      * `Approval` event during `transferFrom` operations.
      *
-     * Anyone who wishes to continue emitting `Approval` events on the `transferFrom` operation can force the flag to
+     * Anyone who wishes to continue emitting `Approval` events on the`transferFrom` operation can force the flag to
      * true using the following override:
      *
      * ```solidity

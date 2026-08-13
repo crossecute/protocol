@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 
 import {IAccessManaged} from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import {IAuthority} from "@openzeppelin/contracts/access/manager/IAuthority.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
     function __NotAuthorityMock_init() internal onlyInitializing {
@@ -13,7 +13,7 @@ contract NotAuthorityMockUpgradeable is Initializable, IAuthority {
     function __NotAuthorityMock_init_unchained() internal onlyInitializing {
     }
     function canCall(address /* caller */, address /* target */, bytes4 /* selector */) external pure returns (bool) {
-        revert("NotAuthorityMock: not implemented");
+        revert("AuthorityNoDelayMock: not implemented");
     }
 }
 

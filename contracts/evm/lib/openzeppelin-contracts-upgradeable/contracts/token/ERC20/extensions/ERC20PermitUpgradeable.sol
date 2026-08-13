@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (token/ERC20/extensions/ERC20Permit.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/extensions/ERC20Permit.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712Upgradeable} from "../../../utils/cryptography/EIP712Upgradeable.sol";
 import {NoncesUpgradeable} from "../../../utils/NoncesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the ERC-20 Permit extension allowing approvals to be made via signatures, as defined in
@@ -76,7 +76,7 @@ abstract contract ERC20PermitUpgradeable is Initializable, ERC20Upgradeable, IER
 
     /// @inheritdoc IERC20Permit
     // solhint-disable-next-line func-name-mixedcase
-    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+    function DOMAIN_SEPARATOR() external view virtual returns (bytes32) {
         return _domainSeparatorV4();
     }
 }

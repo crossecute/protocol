@@ -3,7 +3,7 @@ const { fromBytes32, toBytes32 } = require('./conversion');
 const { SET_TYPES } = require('./Enumerable.opts');
 
 const header = `\
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {Arrays} from "../Arrays.sol";
 import {Math} from "../math/Math.sol";
@@ -37,7 +37,6 @@ import {Math} from "../math/Math.sol";
  * - \`uint256\` (\`UintSet\`) since v3.3.0
  * - \`string\` (\`StringSet\`) since v5.4.0
  * - \`bytes\` (\`BytesSet\`) since v5.4.0
- * - \`bytes4\` (\`Bytes4Set\`) since v5.6.0
  *
  * [WARNING]
  * ====

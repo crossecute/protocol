@@ -11,14 +11,14 @@ import {Packing} from "@openzeppelin/contracts/utils/Packing.sol";
 `;
 
 const testPack = (left, right) => `\
-function testSymbolicPack(bytes${left} left, bytes${right} right) external pure {
+function testPack(bytes${left} left, bytes${right} right) external pure {
     assertEq(left, Packing.pack_${left}_${right}(left, right).extract_${left + right}_${left}(0));
     assertEq(right, Packing.pack_${left}_${right}(left, right).extract_${left + right}_${right}(${left}));
 }
 `;
 
 const testReplace = (outer, inner) => `\
-function testSymbolicReplace(bytes${outer} container, bytes${inner} newValue, uint8 offset) external pure {
+function testReplace(bytes${outer} container, bytes${inner} newValue, uint8 offset) external pure {
     offset = uint8(bound(offset, 0, ${outer - inner}));
 
     bytes${inner} oldValue = container.extract_${outer}_${inner}(offset);

@@ -11,7 +11,7 @@ async function fixture() {
   return { mock };
 }
 
-describe('Base64', function () {
+describe('Strings', function () {
   beforeEach(async function () {
     Object.assign(this, await loadFixture(fixture));
   });
@@ -27,9 +27,8 @@ describe('Base64', function () {
     ])
       it(title, async function () {
         const buffer = Buffer.from(input, 'ascii');
-        await expect(this.mock.$encode(buffer)).to.eventually.equal(ethers.encodeBase64(buffer));
-        await expect(this.mock.$encode(buffer)).to.eventually.equal(expected);
-        await expect(this.mock.$decode(expected)).to.eventually.equal(ethers.hexlify(buffer));
+        expect(await this.mock.$encode(buffer)).to.equal(ethers.encodeBase64(buffer));
+        expect(await this.mock.$encode(buffer)).to.equal(expected);
       });
   });
 
@@ -44,28 +43,9 @@ describe('Base64', function () {
     ])
       it(title, async function () {
         const buffer = Buffer.from(input, 'ascii');
-        await expect(this.mock.$encodeURL(buffer)).to.eventually.equal(base64toBase64Url(ethers.encodeBase64(buffer)));
-        await expect(this.mock.$encodeURL(buffer)).to.eventually.equal(expected);
-        await expect(this.mock.$decode(expected)).to.eventually.equal(ethers.hexlify(buffer));
+        expect(await this.mock.$encodeURL(buffer)).to.equal(base64toBase64Url(ethers.encodeBase64(buffer)));
+        expect(await this.mock.$encodeURL(buffer)).to.equal(expected);
       });
-  });
-
-  it('Decode invalid base64 string', async function () {
-    const getHexCode = str => ethers.hexlify(ethers.toUtf8Bytes(str));
-    const helper = { interface: ethers.Interface.from(['error InvalidBase64Char(bytes1)']) };
-
-    // ord('*') < 43
-    await expect(this.mock.$decode('dGVzd*=='))
-      .to.be.revertedWithCustomError(helper, 'InvalidBase64Char')
-      .withArgs(getHexCode('*'));
-    // ord('{') > 122
-    await expect(this.mock.$decode('dGVzd{=='))
-      .to.be.revertedWithCustomError(helper, 'InvalidBase64Char')
-      .withArgs(getHexCode('{'));
-    // ord('@') in range, but '@' not in the dictionary
-    await expect(this.mock.$decode('dGVzd@=='))
-      .to.be.revertedWithCustomError(helper, 'InvalidBase64Char')
-      .withArgs(getHexCode('@'));
   });
 
   it('Encode reads beyond the input buffer into dirty memory', async function () {
@@ -73,7 +53,7 @@ describe('Base64', function () {
     const buffer32 = ethers.id('example');
     const buffer31 = buffer32.slice(0, -2);
 
-    await expect(mock.encode(buffer31)).to.eventually.equal(ethers.encodeBase64(buffer31));
-    await expect(mock.encode(buffer32)).to.eventually.equal(ethers.encodeBase64(buffer32));
+    expect(await mock.encode(buffer31)).to.equal(ethers.encodeBase64(buffer31));
+    expect(await mock.encode(buffer32)).to.equal(ethers.encodeBase64(buffer32));
   });
 });

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (utils/cryptography/signers/MultiSignerERC7913.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (utils/cryptography/signers/MultiSignerERC7913.sol)
 
 pragma solidity ^0.8.26;
 
 import {AbstractSigner} from "@openzeppelin/contracts/utils/cryptography/signers/AbstractSigner.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of {AbstractSigner} using multiple ERC-7913 signers with a threshold-based
@@ -135,13 +135,6 @@ abstract contract MultiSignerERC7913Upgradeable is Initializable, AbstractSigner
      *
      * * Each of `newSigners` must be at least 20 bytes long. Reverts with {MultiSignerERC7913InvalidSigner} if not.
      * * Each of `newSigners` must not be authorized. See {isSigner}. Reverts with {MultiSignerERC7913AlreadyExists} if so.
-     *
-     * NOTE: This function does not validate that signers are controlled or represent appropriate entities. Integrators
-     * must ensure signers are properly validated before adding them. Problematic signers can compromise
-     * the multisig's security or functionality. Examples include uncontrolled addresses (e.g., `address(0)`),
-     * the account's own address (which may cause recursive validation loops), or contracts that may unintentionally
-     * allow arbitrary validation (e.g. using the identity precompile at `address(0x04)`, which would return the
-     * ERC-1271 magic value for any `isValidSignature` call).
      */
     function _addSigners(bytes[] memory newSigners) internal virtual {
         MultiSignerERC7913Storage storage $ = _getMultiSignerERC7913Storage();

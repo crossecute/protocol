@@ -18,7 +18,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";

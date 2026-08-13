@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (governance/utils/Votes.sol)
-
-pragma solidity ^0.8.24;
+// OpenZeppelin Contracts (last updated v5.2.0) (governance/utils/Votes.sol)
+pragma solidity ^0.8.20;
 
 import {IERC5805} from "@openzeppelin/contracts/interfaces/IERC5805.sol";
 import {ContextUpgradeable} from "../../utils/ContextUpgradeable.sol";
@@ -11,7 +10,7 @@ import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev This is a base abstract contract that tracks voting units, which are a measure of voting power that can be

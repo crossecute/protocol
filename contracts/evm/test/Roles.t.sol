@@ -8,7 +8,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IAccessControlEnumerable} from
     "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
 
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {Roles} from "src/messaging/Roles.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";

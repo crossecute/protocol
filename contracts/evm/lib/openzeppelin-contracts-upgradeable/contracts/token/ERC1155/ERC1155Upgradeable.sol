@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC1155/ERC1155.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC1155/ERC1155.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {IERC1155MetadataURI} from "@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol";
@@ -11,7 +11,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165Upgradeable} from "../../utils/introspection/ERC165Upgradeable.sol";
 import {Arrays} from "@openzeppelin/contracts/utils/Arrays.sol";
 import {IERC1155Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of the basic standard multi-token.
@@ -118,7 +118,10 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
 
     /// @inheritdoc IERC1155
     function safeTransferFrom(address from, address to, uint256 id, uint256 value, bytes memory data) public virtual {
-        _checkAuthorized(_msgSender(), from);
+        address sender = _msgSender();
+        if (from != sender && !isApprovedForAll(from, sender)) {
+            revert ERC1155MissingApprovalForAll(sender, from);
+        }
         _safeTransferFrom(from, to, id, value, data);
     }
 
@@ -130,15 +133,11 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
         uint256[] memory values,
         bytes memory data
     ) public virtual {
-        _checkAuthorized(_msgSender(), from);
-        _safeBatchTransferFrom(from, to, ids, values, data);
-    }
-
-    /// @dev Checks if `operator` is authorized to transfer tokens owned by `owner`. Reverts with {ERC1155MissingApprovalForAll} if not.
-    function _checkAuthorized(address operator, address owner) internal view virtual {
-        if (owner != operator && !isApprovedForAll(owner, operator)) {
-            revert ERC1155MissingApprovalForAll(operator, owner);
+        address sender = _msgSender();
+        if (from != sender && !isApprovedForAll(from, sender)) {
+            revert ERC1155MissingApprovalForAll(sender, from);
         }
+        _safeBatchTransferFrom(from, to, ids, values, data);
     }
 
     /**
@@ -200,9 +199,6 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
      * IMPORTANT: Overriding this function is discouraged because it poses a reentrancy risk from the receiver. So any
      * update to the contract state after this function would break the check-effect-interaction pattern. Consider
      * overriding {_update} instead.
-     *
-     * NOTE: This version is kept for backward compatibility. We recommend calling the alternative version with a boolean
-     * flag in order to achieve better control over which hook to call.
      */
     function _updateWithAcceptanceCheck(
         address from,
@@ -211,35 +207,15 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
         uint256[] memory values,
         bytes memory data
     ) internal virtual {
-        _updateWithAcceptanceCheck(from, to, ids, values, data, ids.length != 1);
-    }
-
-    /**
-     * @dev Version of {_update} that performs the token acceptance check by calling
-     * {IERC1155Receiver-onERC1155Received} or {IERC1155Receiver-onERC1155BatchReceived} on the receiver address if it
-     * contains code (eg. is a smart contract at the moment of execution).
-     *
-     * IMPORTANT: Overriding this function is discouraged because it poses a reentrancy risk from the receiver. So any
-     * update to the contract state after this function would break the check-effect-interaction pattern. Consider
-     * overriding {_update} instead.
-     */
-    function _updateWithAcceptanceCheck(
-        address from,
-        address to,
-        uint256[] memory ids,
-        uint256[] memory values,
-        bytes memory data,
-        bool batch
-    ) internal virtual {
         _update(from, to, ids, values);
         if (to != address(0)) {
             address operator = _msgSender();
-            if (batch) {
-                ERC1155Utils.checkOnERC1155BatchReceived(operator, from, to, ids, values, data);
-            } else {
+            if (ids.length == 1) {
                 uint256 id = ids.unsafeMemoryAccess(0);
                 uint256 value = values.unsafeMemoryAccess(0);
                 ERC1155Utils.checkOnERC1155Received(operator, from, to, id, value, data);
+            } else {
+                ERC1155Utils.checkOnERC1155BatchReceived(operator, from, to, ids, values, data);
             }
         }
     }
@@ -264,7 +240,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
             revert ERC1155InvalidSender(address(0));
         }
         (uint256[] memory ids, uint256[] memory values) = _asSingletonArrays(id, value);
-        _updateWithAcceptanceCheck(from, to, ids, values, data, false);
+        _updateWithAcceptanceCheck(from, to, ids, values, data);
     }
 
     /**
@@ -291,7 +267,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
         if (from == address(0)) {
             revert ERC1155InvalidSender(address(0));
         }
-        _updateWithAcceptanceCheck(from, to, ids, values, data, true);
+        _updateWithAcceptanceCheck(from, to, ids, values, data);
     }
 
     /**
@@ -334,7 +310,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
             revert ERC1155InvalidReceiver(address(0));
         }
         (uint256[] memory ids, uint256[] memory values) = _asSingletonArrays(id, value);
-        _updateWithAcceptanceCheck(address(0), to, ids, values, data, false);
+        _updateWithAcceptanceCheck(address(0), to, ids, values, data);
     }
 
     /**
@@ -353,7 +329,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
         if (to == address(0)) {
             revert ERC1155InvalidReceiver(address(0));
         }
-        _updateWithAcceptanceCheck(address(0), to, ids, values, data, true);
+        _updateWithAcceptanceCheck(address(0), to, ids, values, data);
     }
 
     /**
@@ -371,7 +347,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
             revert ERC1155InvalidSender(address(0));
         }
         (uint256[] memory ids, uint256[] memory values) = _asSingletonArrays(id, value);
-        _updateWithAcceptanceCheck(from, address(0), ids, values, "", false);
+        _updateWithAcceptanceCheck(from, address(0), ids, values, "");
     }
 
     /**
@@ -389,7 +365,7 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
         if (from == address(0)) {
             revert ERC1155InvalidSender(address(0));
         }
-        _updateWithAcceptanceCheck(from, address(0), ids, values, "", true);
+        _updateWithAcceptanceCheck(from, address(0), ids, values, "");
     }
 
     /**
@@ -399,14 +375,10 @@ abstract contract ERC1155Upgradeable is Initializable, ContextUpgradeable, ERC16
      *
      * Requirements:
      *
-     * - `owner` cannot be the zero address.
      * - `operator` cannot be the zero address.
      */
     function _setApprovalForAll(address owner, address operator, bool approved) internal virtual {
         ERC1155Storage storage $ = _getERC1155Storage();
-        if (owner == address(0)) {
-            revert ERC1155InvalidApprover(address(0));
-        }
         if (operator == address(0)) {
             revert ERC1155InvalidOperator(address(0));
         }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC20/extensions/ERC20Wrapper.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/extensions/ERC20Wrapper.sol)
 
 pragma solidity ^0.8.20;
 
@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20Upgradeable} from "../ERC20Upgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of the ERC-20 token contract to support token wrapping.
@@ -47,7 +47,7 @@ abstract contract ERC20WrapperUpgradeable is Initializable, ERC20Upgradeable {
 
     function __ERC20Wrapper_init_unchained(IERC20 underlyingToken) internal onlyInitializing {
         ERC20WrapperStorage storage $ = _getERC20WrapperStorage();
-        if (address(underlyingToken) == address(this)) {
+        if (underlyingToken == this) {
             revert ERC20InvalidUnderlying(address(this));
         }
         $._underlying = underlyingToken;

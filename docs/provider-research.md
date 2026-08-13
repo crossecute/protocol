@@ -22,7 +22,7 @@ implementing the standard directly.
 | --- | --- | --- |
 | [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | source as read: LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, OP `CrossDomainMessenger`, Arbitrum `AbsOutbox`, Warp `contract.go`, `TeleporterMessenger`. Arbitrum's L1→L2 retryable is ArbOS Go and remains unread | any of them changes how a delivered message is marked consumed |
 | [2. Canonical transports](#2-canonical-rollup-and-subnet-transports) | OP Stack, Arbitrum and Avalanche; the aliasing and same-address findings are from source, the latency and fee figures from documentation | a fault-proof window changes, Superchain interop ships, or ICM changes its fee model |
-| [3. ERC-7786](#3-erc-7786-as-a-transport) | OpenZeppelin 5.6.1 `draft-IERC7786`, `draft-InteroperableAddress` | OpenZeppelin ships a minor release, which for a `draft-` may change the API |
+| [3. ERC-7786](#3-erc-7786-as-a-transport) | ERC-7786 as of OpenZeppelin 5.5.0, whose `draft-IERC7786` is vendored at `src/messaging/IErc7786.sol`; `draft-InteroperableAddress` for comparison | The ERC changes. The vendored copy makes that a reviewed edit rather than a dependency bump |
 
 ---
 
@@ -323,15 +323,19 @@ and this protocol arrived at nearly the same shape independently: an opaque `byt
 to a recipient named by an interoperable address, with an opaque per-send options blob. So
 the question is worth answering once rather than rediscovering per provider.
 
+**The interfaces are vendored, at `src/messaging/IErc7786.sol`.** They are copied byte for
+byte from OpenZeppelin 5.5.0's `draft-IERC7786.sol`, because the `draft-` prefix is upstream
+saying it may change the API in a minor release, and these two interfaces are this protocol's
+ABI: an event topic, a selector, an argument order. Holding the copy makes a change a
+reviewed diff on our schedule rather than a side effect of a dependency bump.
+
 **The core contracts implement `IERC7786GatewaySource` and `IERC7786Recipient` directly**,
 the route slot holds a chain identifier, and `TransceiverBase._recipientOn` builds the
 recipient. `CrosschainLinked(Upgradeable)` is NOT adopted: it sits behind `Bytes.sol` and
 its four `mcopy` sites, so it cannot compile at `paris`, and independently its per-contract
 `_links` table and its own gateway allowlist would replace the shared-transceiver routing
-and bypass the registry's provenance dial. That `mcopy` problem is not unique to it:
-OZ's `AccessControlEnumerableUpgradeable` reaches `EnumerableSet` and so `Arrays`, which is
-why `Roles` uses OZ's plain `AccessControlUpgradeable` and carries its own member list. The analysis below is the reasoning behind that, and
-the gaps it names are the protocol's gaps.
+and bypass the registry's provenance dial. The analysis below is the reasoning behind that,
+and the gaps it names are the protocol's gaps.
 
 ### The one thing that does not map, and how it resolves
 

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (utils/Multicall.sol)
+// OpenZeppelin Contracts (last updated v5.3.0) (utils/Multicall.sol)
 
 pragma solidity ^0.8.20;
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ContextUpgradeable} from "./ContextUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 /**
  * @dev Provides a function to batch together multiple calls in a single external call.
@@ -29,7 +29,7 @@ abstract contract MulticallUpgradeable is Initializable, ContextUpgradeable {
      * @dev Receives and executes a batch of function calls on this contract.
      * @custom:oz-upgrades-unsafe-allow-reachable delegatecall
      */
-    function multicall(bytes[] calldata data) public virtual returns (bytes[] memory results) {
+    function multicall(bytes[] calldata data) external virtual returns (bytes[] memory results) {
         bytes memory context = msg.sender == _msgSender()
             ? new bytes(0)
             : msg.data[msg.data.length - _contextSuffixLength():];

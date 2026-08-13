@@ -1,5 +1,4 @@
 const { ethers } = require('hardhat');
-const { expect } = require('chai');
 const { ProposalState } = require('./enums');
 const { unique } = require('./iterate');
 const time = require('./time');

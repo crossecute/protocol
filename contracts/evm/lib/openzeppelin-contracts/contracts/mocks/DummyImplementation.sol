@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.22;
 
 import {ERC1967Utils} from "../proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "../utils/StorageSlot.sol";
+
+abstract contract Impl {
+    function version() public pure virtual returns (string memory);
+}
 
 contract DummyImplementation {
     uint256 public value;

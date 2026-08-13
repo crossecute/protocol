@@ -268,7 +268,7 @@ describe('ERC2771Forwarder', function () {
             this.accounts[1],
           );
 
-          await expect(this.forwarder.executeBatch(this.requests, this.refundReceiver, { value: this.value }))
+          await expect(this.forwarder.executeBatch(this.requests, this.refundReceiver, { value: this.amount }))
             .to.be.revertedWithCustomError(this.forwarder, 'ERC2771ForwarderExpiredRequest')
             .withArgs(this.requests[idx].deadline);
         });

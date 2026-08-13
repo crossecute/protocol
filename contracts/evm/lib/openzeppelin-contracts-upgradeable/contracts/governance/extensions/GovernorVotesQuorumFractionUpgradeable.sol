@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (governance/extensions/GovernorVotesQuorumFraction.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (governance/extensions/GovernorVotesQuorumFraction.sol)
 
 pragma solidity ^0.8.24;
 
@@ -7,7 +7,7 @@ import {GovernorVotesUpgradeable} from "./GovernorVotesUpgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {Governor} for voting weight extraction from an {ERC20Votes} token and a quorum expressed as a
@@ -92,7 +92,7 @@ abstract contract GovernorVotesQuorumFractionUpgradeable is Initializable, Gover
      * - Must be called through a governance proposal.
      * - New numerator must be smaller or equal to the denominator.
      */
-    function updateQuorumNumerator(uint256 newQuorumNumerator) public virtual onlyGovernance {
+    function updateQuorumNumerator(uint256 newQuorumNumerator) external virtual onlyGovernance {
         _updateQuorumNumerator(newQuorumNumerator);
     }
 

@@ -188,10 +188,11 @@ src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
   derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
   registry/       ChainRegistry, Provenance, IRefValidator, IChainRegistryRefs
-                  ICommitmentScheme, Bytes32Set
+                  ICommitmentScheme
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey
   schemes/        Keccak, Sha256, Blake2b                   pluggable, per chainKey
-  messaging/      Commitment, Call, Payload, Envelope, Executor
+  messaging/      Commitment, Call, Payload, Envelope, Executor, Roles
+                  IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase
     inbound/      ReceiverBase
     transceiver/  TransceiverBase -> Hub
@@ -277,6 +278,12 @@ if its addresses cannot be recomputed here at all.
   one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
+- OpenZeppelin 5.4.0, vendored in `lib/` rather than submoduled. The version is an
+  address-determining input like the compiler pin: `CrossProxy`'s initcode compiles OZ's
+  `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes any of their
+  bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
+  `src/messaging/IErc7786.sol` instead of imported, because they are a `draft-` upstream and
+  this protocol's ABI here.
 - The crossecute msig owns the registry, every transceiver, and the treasury each
   transceiver pays. Ownership is the only live authority: a transceiver's transports and its
   treasury are named in the `Deployment` it is initialized with, and neither role has an

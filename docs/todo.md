@@ -213,9 +213,11 @@ mainnet.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
-  `draft-InteroperableAddress`.** 5.6.1 brought it: 245 lines against our 248, audited and
+  `draft-InteroperableAddress`.** OZ 5.5.0 brought it, 235 lines against our 248, audited and
   maintained, covering the same ground with `formatEvmV1`, `parseEvmV1`, and `try` and
-  calldata variants. The one decision left over from the ERC-7786 work, and it is not taken.
+  calldata variants. **It is out of reach at the pinned version**, which predates it, so
+  adopting it means moving the dependency first. That is the trade to weigh, not the line
+  count.
   Blocked on two checks: it is a `draft-`, which OZ excludes from API stability and may
   change in a MINOR release, and this codebase freezes accounts against exact bytes; and our
   `parseStrict` enforces strictness the registry depends on (non-minimal `eip155` references
@@ -280,8 +282,8 @@ mainnet.
 
 ## 6. Infrastructure: None of it exists
 
-- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.6.1,
-  OZ-upgradeable 5.6.1. Committed deliberately: CREATE2 parity depends on byte-identical
+- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.4.0,
+  OZ-upgradeable 5.4.0. Committed deliberately: CREATE2 parity depends on byte-identical
   initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
 
   **A dependency bump moves every account address**, because `CrossProxy`'s initcode hash
@@ -289,16 +291,10 @@ mainnet.
   deployment it is not a bump, it is a migration of every account on every chain. So the
   version to ship on has to be settled before `script/` exists, not after.
 
-- **The `paris` pin and OpenZeppelin are on a collision course.** Taking 5.6.1 already
-  required forking `EnumerableSet` into `registry/Bytes32Set.sol`, because it now imports
-  `Arrays`, which uses `mcopy`, which needs Cancun. The pin exists because PUSH0 is absent
-  on zkSync, Tron, and several L2s, and identical initcode everywhere is the whole CREATE2
-  story, so the pin won.
-
-  It will recur, and next time larger: OZ has DEPRECATED the storage-based `ReentrancyGuard`
-  and says it will be replaced by `ReentrancyGuardTransient` in v6.0, which needs TSTORE and
-  therefore Cancun as well. The question to settle before then is which chains the pin is
-  actually buying, since zkSync and Tron are ALREADY excluded from address derivation by
+- **The `paris` pin and OpenZeppelin are on a collision course, and it gets worse.** OZ has
+  DEPRECATED the storage-based `ReentrancyGuard` and says it will be replaced by
+  `ReentrancyGuardTransient` in v6.0, which needs TSTORE and therefore Cancun. The question
+  to settle before then is which chains the pin is actually buying, since zkSync and Tron are ALREADY excluded from address derivation by
   their provenance caps: their CREATE2 formulas differ, so parity never held for them. If
   the pin is only protecting chains that the registry already declines to derive, it is
   costing more than it buys.

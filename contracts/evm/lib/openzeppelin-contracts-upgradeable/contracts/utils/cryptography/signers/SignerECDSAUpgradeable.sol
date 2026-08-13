@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (utils/cryptography/signers/SignerECDSA.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (utils/cryptography/signers/SignerECDSA.sol)
 
 pragma solidity ^0.8.20;
 
 import {AbstractSigner} from "@openzeppelin/contracts/utils/cryptography/signers/AbstractSigner.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of {AbstractSigner} using xref:api:utils/cryptography#ECDSA[ECDSA] signatures.
@@ -69,7 +69,7 @@ abstract contract SignerECDSAUpgradeable is Initializable, AbstractSigner {
         bytes32 hash,
         bytes calldata signature
     ) internal view virtual override returns (bool) {
-        (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecoverCalldata(hash, signature);
+        (address recovered, ECDSA.RecoverError err, ) = ECDSA.tryRecover(hash, signature);
         return signer() == recovered && err == ECDSA.RecoverError.NoError;
     }
 }

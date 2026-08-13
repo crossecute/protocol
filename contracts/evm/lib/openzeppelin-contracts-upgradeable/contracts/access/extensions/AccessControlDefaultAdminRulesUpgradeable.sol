@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (access/extensions/AccessControlDefaultAdminRules.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (access/extensions/AccessControlDefaultAdminRules.sol)
 
 pragma solidity ^0.8.20;
 
@@ -10,7 +10,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {AccessControl} that allows specifying special rules to manage
@@ -342,7 +342,7 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     /**
      * @dev Setter of the tuple for pending admin and its schedule.
      *
-     * May emit a {DefaultAdminTransferCanceled} event.
+     * May emit a DefaultAdminTransferCanceled event.
      */
     function _setPendingDefaultAdmin(address newAdmin, uint48 newSchedule) private {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
@@ -361,7 +361,7 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     /**
      * @dev Setter of the tuple for pending delay and its schedule.
      *
-     * May emit a {DefaultAdminDelayChangeCanceled} event.
+     * May emit a DefaultAdminDelayChangeCanceled event.
      */
     function _setPendingDelay(uint48 newDelay, uint48 newSchedule) private {
         AccessControlDefaultAdminRulesStorage storage $ = _getAccessControlDefaultAdminRulesStorage();
@@ -386,14 +386,14 @@ abstract contract AccessControlDefaultAdminRulesUpgradeable is Initializable, IA
     ///
 
     /**
-     * @dev Defines if a `schedule` is considered set. For consistency purposes.
+     * @dev Defines if an `schedule` is considered set. For consistency purposes.
      */
     function _isScheduleSet(uint48 schedule) private pure returns (bool) {
         return schedule != 0;
     }
 
     /**
-     * @dev Defines if a `schedule` is considered passed. For consistency purposes.
+     * @dev Defines if an `schedule` is considered passed. For consistency purposes.
      */
     function _hasSchedulePassed(uint48 schedule) private view returns (bool) {
         return schedule < block.timestamp;

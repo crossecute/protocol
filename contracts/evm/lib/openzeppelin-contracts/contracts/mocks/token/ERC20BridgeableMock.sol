@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.20;
 
-import {ERC20Bridgeable} from "../../token/ERC20/extensions/draft-ERC20Bridgeable.sol";
+import {ERC20, ERC20Bridgeable} from "../../token/ERC20/extensions/draft-ERC20Bridgeable.sol";
 
 abstract contract ERC20BridgeableMock is ERC20Bridgeable {
     address private _bridge;
@@ -10,11 +10,7 @@ abstract contract ERC20BridgeableMock is ERC20Bridgeable {
     error OnlyTokenBridge();
     event OnlyTokenBridgeFnCalled(address caller);
 
-    constructor(address initialBridge) {
-        _setBridge(initialBridge);
-    }
-
-    function _setBridge(address bridge) internal {
+    constructor(address bridge) {
         _bridge = bridge;
     }
 

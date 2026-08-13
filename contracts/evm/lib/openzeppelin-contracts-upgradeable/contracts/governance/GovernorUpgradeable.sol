@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (governance/Governor.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (governance/Governor.sol)
 
 pragma solidity ^0.8.24;
 
@@ -17,7 +17,7 @@ import {NoncesUpgradeable} from "../utils/NoncesUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {IERC6372} from "@openzeppelin/contracts/interfaces/IERC6372.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 /**
  * @dev Core of the governance system, designed to be extended through various modules.
@@ -685,13 +685,13 @@ abstract contract GovernorUpgradeable is Initializable, ContextUpgradeable, ERC1
      * in a governance proposal to recover tokens or Ether that was sent to the governor contract by mistake.
      * Note that if the executor is simply the governor itself, use of `relay` is redundant.
      */
-    function relay(address target, uint256 value, bytes calldata data) public payable virtual onlyGovernance {
+    function relay(address target, uint256 value, bytes calldata data) external payable virtual onlyGovernance {
         (bool success, bytes memory returndata) = target.call{value: value}(data);
         Address.verifyCallResult(success, returndata);
     }
 
     /**
-     * @dev Address through which the governor executes action. Will be overloaded by module that executes actions
+     * @dev Address through which the governor executes action. Will be overloaded by module that execute actions
      * through another contract such as a timelock.
      */
     function _executor() internal view virtual returns (address) {
@@ -767,7 +767,7 @@ abstract contract GovernorUpgradeable is Initializable, ContextUpgradeable, ERC1
         return currentState;
     }
 
-    /**
+    /*
      * @dev Check if the proposer is authorized to submit a proposal with the given description.
      *
      * If the proposal description ends with `#proposer=0x???`, where `0x???` is an address written as a hex string
@@ -778,7 +778,6 @@ abstract contract GovernorUpgradeable is Initializable, ContextUpgradeable, ERC1
      * which would result in a different proposal id.
      *
      * If the description does not match this pattern, it is unrestricted and anyone can submit it. This includes:
-     *
      * - If the `0x???` part is not a valid hex string.
      * - If the `0x???` part is a valid hex string, but does not contain exactly 40 hex digits.
      * - If it ends with the expected suffix followed by newlines or other whitespace.

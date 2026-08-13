@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {ERC721Upgradeable} from "../../token/ERC721/ERC721Upgradeable.sol";
 import {ERC721ConsecutiveUpgradeable} from "../../token/ERC721/extensions/ERC721ConsecutiveUpgradeable.sol";
 import {ERC721PausableUpgradeable} from "../../token/ERC721/extensions/ERC721PausableUpgradeable.sol";
 import {ERC721VotesUpgradeable} from "../../token/ERC721/extensions/ERC721VotesUpgradeable.sol";
 import {EIP712Upgradeable} from "../../utils/cryptography/EIP712Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @title ERC721ConsecutiveMock

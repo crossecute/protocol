@@ -7,9 +7,9 @@ module.exports = async ({ github, context }) => {
 
   await github.rest.repos.createRelease({
     owner: context.repo.owner,
-    repo: context.repo.repo + (process.env.REPO_SUFFIX ?? ''),
+    repo: context.repo.repo,
     tag_name: `v${version}`,
-    target_commitish: process.env.TARGET_COMMIT ?? context.sha,
+    target_commitish: github.ref_name,
     body: extractSection(changelog, version),
     prerelease: process.env.PRERELEASE === 'true',
   });

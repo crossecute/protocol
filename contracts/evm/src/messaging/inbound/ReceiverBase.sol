@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {ReentrancyGuardUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Roles} from "src/messaging/Roles.sol";
-import {IERC7786Recipient} from "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
+import {IERC7786Recipient} from "src/messaging/IErc7786.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
 ///
@@ -75,18 +76,19 @@ interface IReceiverInit is ICommitFinalize, IExecute {
 ///      at deterministic addresses across chains, which is exactly where a cross-chain
 ///      replay would otherwise work.
 ///
-/// @dev THE REENTRANCY GUARD IS THE NON-UPGRADEABLE ONE, AND THAT IS NOT A DOWNGRADE.
-///      OpenZeppelin removed the upgradeable variant in 5.6.0 having flagged the contract
-///      stateless: it keeps its state in an ERC-7201 namespaced slot rather than a linear
-///      one, which is also why swapping it moves no field of ours. A proxy runs no
-///      constructor, so the slot is never set to `NOT_ENTERED` and stays zero; that is safe
-///      rather than merely tolerable, because the guard tests for `ENTERED` explicitly. It
-///      costs one cold SSTORE on an account's first guarded call.
+/// @dev THE REENTRANCY GUARD IS THE UPGRADEABLE ONE, WHICH AT OZ 5.4 IS NOT THE SAME
+///      CONTRACT. The plain `ReentrancyGuard` keeps `_status` in a LINEAR slot at this
+///      version, so mixing it into a proxied implementation would put protocol state in a
+///      slot the layout has to reserve forever. The upgradeable variant keeps the same state
+///      in an ERC-7201 namespaced slot, which is why it moves no field of ours. (OZ 5.5 later
+///      made the plain one namespaced too and dropped the upgradeable variant; on 5.4 the
+///      distinction is real and this is the side to be on.) `__ReentrancyGuard_init` runs
+///      first in `__ReceiverBase_init`, before any payload can execute.
 abstract contract ReceiverBase is
     Initializable,
     Executor,
     Roles,
-    ReentrancyGuard,
+    ReentrancyGuardUpgradeable,
     IReceiverInit,
     IERC7786Recipient
 {
@@ -206,6 +208,9 @@ abstract contract ReceiverBase is
         onlyInitializing
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
+
+        // First, so the guard is live before the payload at the end of this function runs.
+        __ReentrancyGuard_init();
 
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;

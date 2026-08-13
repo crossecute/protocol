@@ -246,12 +246,9 @@ address that decides are never the same fact.
   and cannot acquire another because nothing can grant one.
 - **The role ids are namespaced** (`keccak256("crossecute.role.TREASURY")`). A role is a
   bytes32, so an SDK defining its own `TREASURY` would otherwise share this member set.
-- **Enumeration is ours, not OZ's, because of the `paris` pin.**
-  `AccessControlEnumerableUpgradeable` reaches `EnumerableSet` and so `Arrays`, which emits
-  `mcopy` and needs Cancun; a Cancun opcode in a spoke transceiver would not change an
-  address, it would fail to execute. The interface is OZ's `IAccessControlEnumerable` and the
-  member list is a swap-and-pop array, so `getRoleMembers` answers "who else" — the question
-  a predicate could not, since a predicate only speaks about an address already suspected.
+- **Enumeration is OpenZeppelin's.** `Roles` inherits `AccessControlEnumerableUpgradeable`,
+  so `getRoleMembers` answers "who else" — the question a predicate could not, since a
+  predicate only speaks about an address already suspected.
 
 ### Executor
 
@@ -644,11 +641,11 @@ could widen later.
 - `ReentrancyGuard` is the **storage** version, not the transient one, because `TSTORE`
   needs Cancun and the build is pinned to `paris` for CREATE2 parity. It guards
   `_onMessage`, `finalize`, and `execute` under one lock. It is the NON-upgradeable
-  contract: OpenZeppelin removed the upgradeable variant in 5.6.0, having flagged the guard
-  stateless, because it keeps its state in an ERC-7201 namespaced slot rather than a linear
-  one. Nothing initializes it, and nothing needs to: a proxy runs no constructor, so the
-  slot stays zero, and the guard tests for `ENTERED` explicitly, so zero reads as
-  not-entered. It costs one cold write on an account's first guarded call.
+  contract: the plain `ReentrancyGuard` keeps `_status` in a LINEAR slot, which a proxied
+  implementation would have to reserve forever, while the upgradeable variant keeps the same
+  state in an ERC-7201 namespaced slot and so moves no field of ours. `__ReentrancyGuard_init`
+  runs first in `__ReceiverBase_init`, before any payload can execute. It costs one cold write
+  on an account's first guarded call.
 - `receive()`: `finalize` is permissionless and carries no value, so a payload that spends
   native draws on a balance already here. The address is deterministic and fundable before
   the receiver exists, which makes a shortfall "top it up and retry" rather than a loss.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
+import {ECDSA} from "../../../utils/cryptography/ECDSA.sol";
 import {ERC7739} from "../../../utils/cryptography/signers/draft-ERC7739.sol";
 import {SignerECDSA} from "../../../utils/cryptography/signers/SignerECDSA.sol";
 import {SignerP256} from "../../../utils/cryptography/signers/SignerP256.sol";

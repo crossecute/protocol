@@ -1,4 +1,4 @@
-const { ethers, predeploy } = require('hardhat');
+const { ethers, entrypoint } = require('hardhat');
 const { expect } = require('chai');
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
 
@@ -33,7 +33,7 @@ async function fixture() {
   // ERC-4337 env
   const helper = new ERC4337Helper();
   await helper.wait();
-  const entrypointDomain = await getDomain(predeploy.entrypoint.v09);
+  const entrypointDomain = await getDomain(entrypoint.v08);
   const domain = { name: 'AccountMultiSignerWeighted', version: '1', chainId: entrypointDomain.chainId }; // Missing verifyingContract
 
   const makeMock = (signers, weights, threshold) =>

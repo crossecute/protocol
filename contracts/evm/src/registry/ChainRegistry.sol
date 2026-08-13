@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {Bytes32Set} from "src/registry/Bytes32Set.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {IVmDeriver} from "src/derivation/VmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
@@ -70,7 +70,7 @@ struct ProviderDeployment {
 ///      derivation. A hub stores the address; this contract says whether that chain's
 ///      addresses can be recomputed at all, and a hub below its own bar refuses to send.
 contract ChainRegistry is OwnableUpgradeable {
-    using Bytes32Set for Bytes32Set.Set;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /// @notice Arachnid's deterministic deployment proxy, at the same address on every
     ///         standard EVM chain. The default for `create2Factory`.
@@ -80,13 +80,13 @@ contract ChainRegistry is OwnableUpgradeable {
     /* ================================= storage ================================= */
 
     /// Set of keccak256(canonical ERC-7930 chain identifier).
-    Bytes32Set.Set private _chainKeys;
+    EnumerableSet.Bytes32Set private _chainKeys;
     /// chainKey => the canonical chain identifier it hashes from, kept so the envelope
     /// is recoverable on-chain rather than only off-chain.
     mapping(bytes32 => bytes) private _chainIdentifier;
 
     /// Set of keccak256(message provider name).
-    Bytes32Set.Set private _messageProviders;
+    EnumerableSet.Bytes32Set private _messageProviders;
     /// messageProvider => the name it hashes from.
     mapping(bytes32 => string) private _messageProviderName;
     /// messageProvider => the CREATE2 inputs its transceiver and receivers deploy from.

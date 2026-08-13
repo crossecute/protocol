@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (finance/VestingWallet.sol)
-
+// OpenZeppelin Contracts (last updated v5.3.0) (finance/VestingWallet.sol)
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -8,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ContextUpgradeable} from "../utils/ContextUpgradeable.sol";
 import {OwnableUpgradeable} from "../access/OwnableUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../proxy/utils/Initializable.sol";
 
 /**
  * @dev A vesting wallet is an ownable contract that can receive native currency and ERC-20 tokens, and release these
@@ -133,7 +132,7 @@ contract VestingWalletUpgradeable is Initializable, ContextUpgradeable, OwnableU
     }
 
     /**
-     * @dev Release the native tokens (ether) that have already vested.
+     * @dev Release the native token (ether) that have already vested.
      *
      * Emits a {EtherReleased} event.
      */

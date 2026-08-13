@@ -91,10 +91,11 @@ describe('GovernorNoncesKeyed', function () {
 
           const maskedProposalId = BigInt(this.helper.id) & (2n ** 192n - 1n);
 
-          this.getNonce = address =>
-            nonceType === 'default'
+          this.getNonce = async address => {
+            return await (nonceType === 'default'
               ? this.mock.nonces(address)
-              : this.mock['nonces(address,uint192)'](address, maskedProposalId);
+              : this.mock['nonces(address,uint192)'](address, maskedProposalId));
+          };
         });
 
         it('votes with an EOA signature', async function () {

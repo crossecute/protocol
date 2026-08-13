@@ -1,25 +1,16 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (account/extensions/draft-AccountERC7579.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (account/extensions/draft-AccountERC7579.sol)
 
 pragma solidity ^0.8.26;
 
 import {PackedUserOperation} from "../../interfaces/draft-IERC4337.sol";
 import {IERC1271} from "../../interfaces/IERC1271.sol";
-import {
-    IERC7579Module,
-    IERC7579Validator,
-    IERC7579Execution,
-    IERC7579AccountConfig,
-    IERC7579ModuleConfig,
-    MODULE_TYPE_VALIDATOR,
-    MODULE_TYPE_EXECUTOR,
-    MODULE_TYPE_FALLBACK
-} from "../../interfaces/draft-IERC7579.sol";
+import {IERC7579Module, IERC7579Validator, IERC7579Execution, IERC7579AccountConfig, IERC7579ModuleConfig, MODULE_TYPE_VALIDATOR, MODULE_TYPE_EXECUTOR, MODULE_TYPE_FALLBACK} from "../../interfaces/draft-IERC7579.sol";
 import {ERC7579Utils, Mode, CallType, ExecType} from "../../account/utils/draft-ERC7579Utils.sol";
 import {EnumerableSet} from "../../utils/structs/EnumerableSet.sol";
-import {LowLevelCall} from "../../utils/LowLevelCall.sol";
 import {Bytes} from "../../utils/Bytes.sol";
 import {Packing} from "../../utils/Packing.sol";
+import {Address} from "../../utils/Address.sol";
 import {Calldata} from "../../utils/Calldata.sol";
 import {Account} from "../Account.sol";
 
@@ -68,9 +59,6 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
     /// @dev The account's {fallback} was called with a selector that doesn't have an installed handler.
     error ERC7579MissingFallbackHandler(bytes4 selector);
 
-    /// @dev The provided initData/deInitData for a fallback module is too short to extract a selector.
-    error ERC7579CannotDecodeFallbackData();
-
     /// @dev Modifier that checks if the caller is an installed module of the given type.
     modifier onlyModule(uint256 moduleTypeId, bytes calldata additionalContext) {
         _checkModule(moduleTypeId, msg.sender, additionalContext);
@@ -85,7 +73,7 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
     /// @inheritdoc IERC7579AccountConfig
     function accountId() public view virtual returns (string memory) {
         // vendorname.accountname.semver
-        return "@openzeppelin/contracts.AccountERC7579.v1.0.0";
+        return "@openzeppelin/community-contracts.AccountERC7579.v0.0.0";
     }
 
     /**
@@ -152,9 +140,7 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
     ) public view virtual returns (bool) {
         if (moduleTypeId == MODULE_TYPE_VALIDATOR) return _validators.contains(module);
         if (moduleTypeId == MODULE_TYPE_EXECUTOR) return _executors.contains(module);
-        if (moduleTypeId == MODULE_TYPE_FALLBACK)
-            // ERC-7579 requires this function to return bool, never revert. Check length to avoid out-of-bounds access.
-            return additionalContext.length > 3 && _fallbacks[bytes4(additionalContext[0:4])] == module;
+        if (moduleTypeId == MODULE_TYPE_FALLBACK) return _fallbacks[bytes4(additionalContext[0:4])] == module;
         return false;
     }
 
@@ -210,14 +196,13 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      */
     function _validateUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        bytes calldata signature
+        bytes32 userOpHash
     ) internal virtual override returns (uint256) {
         address module = _extractUserOpValidator(userOp);
         return
             isModuleInstalled(MODULE_TYPE_VALIDATOR, module, Calldata.emptyBytes())
                 ? IERC7579Validator(module).validateUserOp(userOp, _signableUserOpHash(userOp, userOpHash))
-                : super._validateUserOp(userOp, userOpHash, signature);
+                : super._validateUserOp(userOp, userOpHash);
     }
 
     /**
@@ -302,8 +287,7 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
             delete _fallbacks[selector];
         }
 
-        // Ignores success purposely to avoid modules that revert on uninstall
-        LowLevelCall.callNoReturn(module, abi.encodeCall(IERC7579Module.onUninstall, (deInitData)));
+        IERC7579Module(module).onUninstall(deInitData);
         emit ModuleUninstalled(moduleTypeId, module);
     }
 
@@ -322,10 +306,14 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
         // From https://eips.ethereum.org/EIPS/eip-7579#fallback[ERC-7579 specifications]:
         // - MUST utilize ERC-2771 to add the original msg.sender to the calldata sent to the fallback handler
         // - MUST use call to invoke the fallback handler
-        if (LowLevelCall.callNoReturn(handler, msg.value, abi.encodePacked(msg.data, msg.sender))) {
-            return LowLevelCall.returnData();
-        } else {
-            LowLevelCall.bubbleRevert();
+        (bool success, bytes memory returndata) = handler.call{value: msg.value}(
+            abi.encodePacked(msg.data, msg.sender)
+        );
+
+        if (success) return returndata;
+
+        assembly ("memory-safe") {
+            revert(add(returndata, 0x20), mload(returndata))
         }
     }
 
@@ -385,13 +373,11 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      * https://github.com/erc7579/erc7579-implementation/blob/16138d1afd4e9711f6c1425133538837bd7787b5/src/MSAAdvanced.sol#L296[ERC7579 reference implementation].
      *
      * This is not standardized in ERC-7579 (or in any follow-up ERC). Some accounts may want to override these internal functions.
-     *
-     * NOTE: This function expects the signature to be at least 20 bytes long. Panics with {Panic-ARRAY_OUT_OF_BOUNDS} (0x32) otherwise.
      */
     function _extractSignatureValidator(
         bytes calldata signature
     ) internal pure virtual returns (address module, bytes calldata innerSignature) {
-        return (address(bytes20(signature)), signature[20:]);
+        return (address(bytes20(signature[0:20])), signature[20:]);
     }
 
     /**
@@ -401,12 +387,11 @@ abstract contract AccountERC7579 is Account, IERC1271, IERC7579Execution, IERC75
      * actual copy. However, this would require `_installModule` to get a calldata bytes object instead of a memory
      * bytes object. This would prevent calling `_installModule` from a contract constructor and would force the use
      * of external initializers. That may change in the future, as most accounts will probably be deployed as
-     * clones/proxy/EIP-7702 delegates and therefore rely on initializers anyway.
+     * clones/proxy/ERC-7702 delegates and therefore rely on initializers anyway.
      */
     function _decodeFallbackData(
         bytes memory data
     ) internal pure virtual returns (bytes4 selector, bytes memory remaining) {
-        require(data.length > 3, ERC7579CannotDecodeFallbackData());
         return (bytes4(data), data.slice(4));
     }
 

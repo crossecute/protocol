@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (token/ERC721/ERC721.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (token/ERC721/ERC721.sol)
 
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
@@ -11,7 +11,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165Upgradeable} from "../../utils/introspection/ERC165Upgradeable.sol";
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Implementation of https://eips.ethereum.org/EIPS/eip-721[ERC-721] Non-Fungible Token Standard, including
@@ -436,9 +436,6 @@ abstract contract ERC721Upgradeable is Initializable, ContextUpgradeable, ERC165
      */
     function _setApprovalForAll(address owner, address operator, bool approved) internal virtual {
         ERC721Storage storage $ = _getERC721Storage();
-        if (owner == address(0)) {
-            revert ERC721InvalidApprover(address(0));
-        }
         if (operator == address(0)) {
             revert ERC721InvalidOperator(operator);
         }

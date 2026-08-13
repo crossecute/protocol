@@ -7,8 +7,7 @@ for (const variant of ['', 'Transient']) {
     async function fixture() {
       const name = `Reentrancy${variant}Mock`;
       const mock = await ethers.deployContract(name);
-      const attacker = await ethers.deployContract('ReentrancyAttack');
-      return { name, mock, attacker };
+      return { name, mock };
     }
 
     beforeEach(async function () {
@@ -21,16 +20,9 @@ for (const variant of ['', 'Transient']) {
       expect(await this.mock.counter()).to.equal(1n);
     });
 
-    it('nonReentrantView function can be called', async function () {
-      await this.mock.viewCallback();
-    });
-
-    it('does not allow remote callback to nonReentrant function', async function () {
-      await expect(this.mock.countAndCall(this.attacker)).to.be.revertedWith('ReentrancyAttack: failed call');
-    });
-
-    it('does not allow remote callback to nonReentrantView function', async function () {
-      await expect(this.mock.countAndCallView(this.attacker)).to.be.revertedWith('ReentrancyAttack: failed call');
+    it('does not allow remote callback', async function () {
+      const attacker = await ethers.deployContract('ReentrancyAttack');
+      await expect(this.mock.countAndCall(attacker)).to.be.revertedWith('ReentrancyAttack: failed call');
     });
 
     it('_reentrancyGuardEntered should be true when guarded', async function () {

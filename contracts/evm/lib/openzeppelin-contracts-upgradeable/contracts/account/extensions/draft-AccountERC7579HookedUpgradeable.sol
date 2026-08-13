@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.6.0) (account/extensions/draft-AccountERC7579Hooked.sol)
+// OpenZeppelin Contracts (last updated v5.4.0) (account/extensions/draft-AccountERC7579Hooked.sol)
 
 pragma solidity ^0.8.26;
 
 import {IERC7579Hook, MODULE_TYPE_HOOK} from "@openzeppelin/contracts/interfaces/draft-IERC7579.sol";
 import {ERC7579Utils, Mode} from "@openzeppelin/contracts/account/utils/draft-ERC7579Utils.sol";
 import {AccountERC7579Upgradeable} from "./draft-AccountERC7579Upgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "../../proxy/utils/Initializable.sol";
 
 /**
  * @dev Extension of {AccountERC7579} with support for a single hook module (type 4).
@@ -60,7 +60,7 @@ abstract contract AccountERC7579HookedUpgradeable is Initializable, AccountERC75
     /// @inheritdoc AccountERC7579Upgradeable
     function accountId() public view virtual override returns (string memory) {
         // vendorname.accountname.semver
-        return "@openzeppelin/contracts.AccountERC7579Hooked.v1.0.0";
+        return "@openzeppelin/community-contracts.AccountERC7579Hooked.v0.0.0";
     }
 
     /// @dev Returns the hook module address if installed, or `address(0)` otherwise.

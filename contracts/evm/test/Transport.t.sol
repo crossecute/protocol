@@ -12,7 +12,7 @@ import {TransmitterBase, IAccountTransceiver} from
     "src/messaging/outbound/TransmitterBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IERC7786GatewaySource} from
-    "@openzeppelin/contracts/interfaces/draft-IERC7786.sol";
+    "src/messaging/IErc7786.sol";
 import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";

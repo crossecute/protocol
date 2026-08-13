@@ -7,11 +7,11 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from
-    "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+    "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @title TransceiverBase
 /// @notice Authentication, routing, manufacture, and the upgrade lock: the half that is
