@@ -52,6 +52,110 @@ exposure is narrowed where it can be: a transceiver's upgrade key dies in the ca
 initializes it and an account's in the call that arms it, so neither is ever live and
 replaceable, and no shared contract sits in the path of a normal message.
 
+## Three transactions
+
+Everything the protocol does is one of these. The first is local, the second crosses once per
+chain, and the third is every message after that.
+
+### 1 · Creating a transmitter
+
+Home chain only, no bridge. The owner claims an address that is theirs on every parity chain
+before anything exists on any of them.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant Hub as Hub transceiver
+    participant Proxy as CrossProxy
+
+    Owner->>Hub: createTransmitter(salt)
+    Note over Hub: owner is msg.sender by construction,<br/>so nobody can squat another party's address
+    Hub->>Hub: predictCrossAccount(owner, salt)<br/>revert if code is already there
+    Hub->>Proxy: CREATE2 at accountSalt(owner, salt)<br/>argument-free initcode, one constant
+    Note over Hub,Proxy: deployed == predicted, or revert
+    Hub->>Proxy: upgradeInitializeAndLock(transmitterImpl,<br/>initialize(owner, hub, salt))
+    Proxy->>Proxy: install logic, run the initializer,<br/>zero the admin — in that order
+    Hub-->>Owner: CrossAccountCreated(owner, account, salt)
+```
+
+The upgrade key exists for part of this transaction and is never live afterwards. The same
+three CREATE2 inputs are used on every chain, so this address is also where the owner's
+receivers will land.
+
+### 2 · Creating a receiver: bootstrap
+
+The one path a transceiver is on. There is no peer on the destination yet, so the message
+goes to the one contract that already exists there.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant Tx as Transmitter<br/>(home)
+    participant Hub as Hub transceiver<br/>(home)
+    participant Bridge as message provider
+    participant Spoke as Spoke transceiver<br/>(destination)
+    participant Rx as Receiver<br/>(destination)
+
+    Owner->>Tx: bootstrap{value: fee}(chainId, calls, attributes)
+    Note over Tx: onlyAccountOwner · destination must not<br/>already be bootstrapped
+    Tx->>Tx: record the route and a presumed counterpart<br/>BEFORE dispatching, so a re-entrant<br/>second bootstrap meets the flag
+    Tx->>Hub: bootstrap(chainKey, owner, salt, calls, attributes)
+    Note over Hub: caller must BE predictCrossAccount(owner, salt)<br/>_requireRoutable — the provenance bar applies here<br/>and only here
+    Hub->>Bridge: _sendMessage(_recipientOn(chainKey),<br/>encodeBootstrap(owner, salt, calls))
+    Note over Bridge: the message carries the OWNER AND SALT,<br/>not the transmitter: a CREATE2 address<br/>cannot be derived from itself
+    Bridge->>Spoke: _onInbound(route, sender, message)
+    Spoke->>Spoke: _authenticateOrigin — route and sender must be<br/>the home hub, both write-once, no lookup
+    Spoke->>Rx: CREATE2 at accountSalt(owner, salt)<br/>same salt, same initcode, same deployer
+    Spoke->>Rx: upgradeInitializeAndLock(receiverImpl,<br/>initialize(peer, calls))
+    Rx->>Rx: grant GATEWAY_ROLE, execute the payload,<br/>drop the upgrade key — one call
+    alt addressesDiverge (zkSync, Tron)
+        Spoke->>Bridge: _reportReceiver(owner, salt, receiver)<br/>paid from the spoke's own balance
+        Bridge->>Hub: _onInbound → decodeReceiverReport
+        Hub->>Tx: onDestinationReceiverReported(chainKey, receiver)
+        Note over Tx: write-once, and what sendMessage<br/>checks against from here on
+    else parity chain
+        Note over Spoke,Hub: no message spent: the hub derived this<br/>address before the first one left
+    end
+```
+
+The return leg is nested inside the delivery callback, so a dry spoke reverts and takes the
+account creation with it — all or nothing, and retryable once it is funded. This runs once
+per chain.
+
+### 3 · Sending a message
+
+After bootstrap the transmitter is its own message-provider endpoint, sending straight to its
+receiver. No shared contract is in the path.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant Tx as Transmitter<br/>(home)
+    participant Bridge as message provider
+    participant Rx as Receiver<br/>(destination)
+    actor Anyone
+
+    Owner->>Tx: sendMessage{value: fee}(recipient, payload, attributes)
+    Note over Tx: onlyAccountOwner · recipient must equal the<br/>stored counterpart, chain half included ·<br/>destination must be bootstrapped
+    Tx->>Bridge: _sendMessage(recipient, payload, attributes)<br/>emit MessageSent
+    Bridge->>Rx: receiveMessage(receiveId, sender, payload)
+    Note over Rx: onlyRole(GATEWAY_ROLE) — the transport is real ·<br/>sender's address == sourceTransmitter — the<br/>account is this one
+    Rx->>Rx: decodeCalls(payload) → _execute<br/>nonReentrant, in order, all or nothing
+    alt ordinary payload
+        Note over Rx: it runs on arrival. A revert fails the<br/>message, which the provider lets anyone retry
+    else the payload's one element calls commit(hash)
+        Rx->>Rx: append to the approval queue, return its index
+        Anyone->>Rx: finalize(calls)
+        Note over Rx: permissionless, strictly FIFO, and the hash<br/>folds in the local chainKey, so an array<br/>approved for one chain cannot land here
+    end
+```
+
+Nothing on the wire distinguishes the two branches: committing is a call, not a message kind,
+which is why there is no message-type tag anywhere in the protocol.
+
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
@@ -67,24 +171,8 @@ either way: its home chainKey, route, and counterpart are all written once at
 initialization with no setters. What the home chain *must* be is an EVM chain with the
 EIP-152 precompile, because the registry recomputes addresses and commitments locally.
 
-Two paths, and only the second involves a transceiver:
-
-```
-A · normal send    owner → account.sendMessage(recipient, payload)
-                        ══ bridge ══
-                   → its own account on Base: decode, execute        nonReentrant
-
-B · bootstrap      owner → account.bootstrap(8453, calls, attributes)
-                   → hub transceiver: (owner, salt, calls)           ← provenance bar
-                        ══ bridge ══
-                   → spoke transceiver: deploy the account, arm it,
-                     run the payload, drop the upgrade key (one call)
-                        ══ bridge ══
-                   → hub → registry: where it landed
-```
-
-Path B runs once per chain. After it, the account talks to its counterpart directly and no
-shared contract is in the path of a normal message.
+Only bootstrap involves a transceiver, and it runs once per chain. After it, the account
+talks to its counterpart directly and no shared contract is in the path of a normal message.
 
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
