@@ -34,22 +34,25 @@ reporting back where it landed.
 
 ### A. Normal send: transmitter to its own receiver
 
+```mermaid
+flowchart LR
+    Owner([owner]) -->|"sendMessage(recipient, payload)"| Tx[Transmitter]
+    Tx -->|"bridge"| Rx[Receiver]
+    Rx -->|"call(target, value, data)"| Target[target contract]
 ```
-owner
- │  transmitter.sendMessage{value: fee}(recipient, payload, attributes)  onlyAccountOwner
- │    recipient = <erc7930: chain 8453, address(this)>                  checked, not trusted
- │    payload   = abi.encode(calls)                                     built by the caller
- │    _sendMessage(recipient, payload, attributes)
- ▼
- ══════════════════ bridge ══════════════════
- │
- ▼  receiver.receiveMessage(receiveId, sender, payload)
-      onlyRole(GATEWAY_ROLE)                                           granted at arming
-      sender's address == address(this)                                1:1, derived
-      _onMessage(payload):
-        calls = Payload.decodeCalls(payload)                           abi.decode(_, (Call[]))
-        _execute(calls)                                                nonReentrant
-```
+
+Every check on that path, in the order a message meets them:
+
+- `sendMessage{value: fee}(recipient, payload, attributes)` is `onlyAccountOwner`. The
+  recipient is checked against the stored counterpart, not trusted, and the destination must
+  already be bootstrapped.
+- `recipient` is `<erc7930: chain 8453, address(this)>` and `payload` is
+  `abi.encode(calls)`, both built by the caller. `_sendMessage(recipient, payload,
+  attributes)` hands them to the gateway.
+- `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
+  arming, and the sender's address must equal `sourceTransmitter`: 1:1, derived.
+- `_onMessage` decodes with `Payload.decodeCalls` — `abi.decode(_, (Call[]))` — and
+  `_execute`s the array `nonReentrant`, in order, all or nothing.
 
 The peer relationship is exactly 1:1 (one transmitter, one receiver, one chain pair),
 which is the shape every provider's peer table already has. This is the reason the
@@ -67,37 +70,63 @@ calls[0] = Call({
 });
 ```
 
-It arrives, executes, and stores the hash. Anyone supplies the matching array to
-`finalize` afterwards. Nothing on the wire distinguishes this from any other payload, and
-nothing needs to.
+It travels the path above and executes on arrival like anything else. What it leaves behind
+is a queue entry rather than a call to somewhere:
+
+```mermaid
+flowchart LR
+    Owner([owner]) -->|"sendMessage(recipient, commit payload)"| Tx[Transmitter]
+    Tx -->|"bridge"| Rx[Receiver]
+    Rx -->|"commit(hash)"| Queue[approval queue]
+```
+
+Anyone supplies the matching array afterwards, and pays for it. The receiver hashes what it
+was handed and compares it against the head of the queue, which is what lets the caller go
+unchecked:
+
+```mermaid
+flowchart LR
+    Anyone([anyone]) -->|"finalize(calls)"| Rx[Receiver]
+    Rx -->|"hash(calls) vs head of queue"| Check{match?}
+    Check -->|"no"| Revert([revert])
+    Check -->|"yes"| Target[target contract]
+```
+
+Nothing on the wire distinguishes any of this from an ordinary payload, and nothing needs
+to.
 
 ### B. Bootstrap: no receiver on the destination yet
 
 There is no peer to send to, so the message goes to the one contract that already exists
 on that chain.
 
+```mermaid
+flowchart LR
+    Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
+    Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Hub[Hub transceiver]
+    Hub -->|"bridge"| Spoke[Spoke transceiver]
+    Spoke -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
+    Spoke -.->|"bridge: where it landed"| Hub
+    Hub -.->|"onDestinationReceiverReported"| Tx
 ```
-owner
- │  transmitter.bootstrap{value: fee}(chainId, calls)          onlyAccountOwner
- ▼
-hub transceiver .bootstrap(chainKey, owner, salt, calls, attributes)   msg.sender must BE the account
- │    _requireRoutable(chainKey)                                       ← provenance bar applies here
- │    _sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)
- ▼
- ══════════════════ bridge ══════════════════
- │
- ▼  spoke transceiver ._onInbound(route, sender, message)
-      _authenticateOrigin  → must be the hub
-      _handleInbound → bootstrapInbound(owner, salt, calls):
-        deploy CrossProxy at accountSalt(owner, salt)                  CREATE2, no args
-        upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))
-              installs logic, executes the calls, drops the upgrade key (one call)
-        if (addressesDiverge) _reportReceiver(owner, salt, receiver)
- ▼
- ══════════════════ bridge ══════════════════          ← only where the flag is set
- │
- ▼  hub transceiver ._handleInbound  → onDestinationReceiver → registry
-```
+
+Hop by hop:
+
+- `transmitter.bootstrap{value: fee}(chainId, calls)` is `onlyAccountOwner`, and refuses a
+  destination this account has already bootstrapped.
+- `hub.bootstrap(chainKey, owner, salt, calls, attributes)`: `msg.sender` must BE the
+  account, `_requireRoutable(chainKey)` applies the provenance bar here and only here, and
+  `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.
+- `spoke._onInbound(route, sender, message)`: `_authenticateOrigin` runs first and the
+  sender must be the hub; `_handleInbound` decodes and calls
+  `bootstrapInbound(owner, salt, calls)`.
+- That deploys `CrossProxy` at `accountSalt(owner, salt)` — CREATE2, no constructor args —
+  and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`, which
+  installs the logic, executes the calls, and drops the upgrade key in one call.
+- The dashed return leg is `_reportReceiver(owner, salt, receiver)`, sent only where
+  `addressesDiverge` is set. It arrives at `hub._handleInbound`, which passes it to
+  `onDestinationReceiver` and on to the account's own counterpart slot — not the registry.
 
 **The message carries the OWNER AND THEIR SALT, not the transmitter**, because the account
 address derives from that pair and a CREATE2 address cannot be derived from itself. The
