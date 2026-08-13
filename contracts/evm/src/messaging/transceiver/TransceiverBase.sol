@@ -8,8 +8,6 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from
     "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -31,12 +29,17 @@ import {UUPSUpgradeable} from
 ///      payload that can never execute strands itself at its own transmitter's receiver,
 ///      which is one-per-transmitter by construction, and blocks nobody.
 ///
-/// @dev CONFIGURATION IS `Ownable`; THE ROLES ARE NOT AUTHORITIES. The owner sets routes,
-///      counterparts, fees, and the provenance bar, and is expected to be the crossecute
-///      msig. `TREASURY_ROLE` and `GATEWAY_ROLE` name addresses rather than powers, are fixed
-///      in the initializer, and cannot be granted afterwards by the owner or by anyone: see
-///      `Roles.grantRole`. So the worst a compromised owner can do is misconfigure a
-///      destination, not admit a transport or invent a place for fees to go.
+/// @dev IT HAS NO AUTHORITY AT ALL, AND THAT IS WHAT THE TWO HALVES DISAGREE ABOUT.
+///      `Ownable` sits on `HubTransceiverBase`, because the hub is the only half with
+///      anything to configure after deployment: a spoke's home, route, counterpart,
+///      implementation, and divergence flag are written in its initializer and have no
+///      setters, so an owner there would be an authority over nothing. Keeping ownership out
+///      of this base makes that structural rather than a matter of the spoke declining to
+///      exercise one.
+///
+/// @dev `TREASURY_ROLE` AND `GATEWAY_ROLE` ARE NOT AUTHORITIES EITHER. They name addresses
+///      rather than powers, are fixed in the initializer, and cannot be granted afterwards by
+///      anyone: see `Roles.grantRole`.
 ///
 /// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS. It has no revoke entry point
 ///      either, which an account does have: a transceiver is shared by every owner on its
@@ -45,12 +48,6 @@ import {UUPSUpgradeable} from
 ///      transport is answered by deploying a new transceiver rather than by a transaction,
 ///      which is the same remedy the upgrade lock already implies. Naming several gateways up
 ///      front is how a deployment keeps a migration cheap.
-///
-/// @dev THE COST IS THAT A BINDING'S SDK MUST NOT BRING A SECOND `Ownable`. An SDK using
-///      OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen:
-///      one owner, one `owner()`, one storage slot. An SDK carrying a DIFFERENT ownership
-///      implementation would put two authorities over one contract, and a binding must
-///      resolve that in favour of this one rather than shipping both.
 ///
 /// @dev EVERYTHING ASYMMETRIC IS BEHIND `_counterpartOn` AND `_routeTo`, because the two
 ///      sides have opposite cardinality: the hub has N counterparts and needs a registry to
@@ -63,23 +60,20 @@ import {UUPSUpgradeable} from
 ///      known before the first message, unchanged after the thousandth. Nothing about the
 ///      payload is in the salt, which would mint a new receiver per message and throw away
 ///      the state a receiver accumulates.
-abstract contract TransceiverBase is
-    Initializable,
-    OutboundBase,
-    OwnableUpgradeable,
-    UUPSUpgradeable
-{
-    /// @notice The three addresses a deployment names, and the only three it can never
-    ///         revisit: the owner that configures, the treasury that may be paid, and the
-    ///         transports that may carry messages.
+abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
+    /// @notice What a deployment names on EITHER half, and can never revisit: the treasury
+    ///         that may be paid, and the transports that may carry messages.
     ///
-    /// @dev ONE STRUCT RATHER THAN THREE ARGUMENTS, for two reasons. It keeps the divergent
+    /// @dev THE OWNER IS NOT IN HERE, BECAUSE ONLY THE HUB HAS ONE. It is
+    ///      `__HubTransceiverBase_init`'s own argument, so a spoke deployment cannot pass an
+    ///      owner that would silently govern nothing.
+    ///
+    /// @dev ONE STRUCT RATHER THAN LOOSE ARGUMENTS, for two reasons. It keeps the divergent
     ///      spokes' initializers under the stack limit, which `paris` without via-IR makes a
-    ///      real constraint rather than a style question. And it puts the three in one place
-    ///      at every layer, so a binding writing an initializer cannot thread two of them
-    ///      through and quietly drop the third.
+    ///      real constraint rather than a style question. And it puts both in one place at
+    ///      every layer, so a binding writing an initializer cannot thread one through and
+    ///      quietly drop the other.
     struct Deployment {
-        address owner;
         address treasury;
         address[] gateways;
     }
@@ -125,15 +119,6 @@ abstract contract TransceiverBase is
     ///      `(chainKey, owner, salt)` is what an account IS, and it is what the registry slot
     ///      on the return leg is keyed by.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
-
-    /// @notice Teach this transceiver how a destination is named. WRITE-ONCE.
-    /// @dev The table, the reverse index, and the reads all live on `OutboundBase`, which is
-    ///      what a sender needs to address anything. This is only the authority over it: a
-    ///      binding wraps this in a typed setter where it keeps a provider-native value of
-    ///      its own, and a gateway binding adds nothing.
-    function setRoute(bytes32 chainKey, bytes memory route) public onlyOwner {
-        _setRoute(chainKey, route);
-    }
 
     /* ============================ account manufacture ========================== */
 
@@ -402,13 +387,10 @@ abstract contract TransceiverBase is
     ///      makes and the same answer: what the protocol guarantees is worth what the
     ///      smallest set of things able to change it is worth.
     ///
-    /// @dev IT ALSO NAMES THE THREE THINGS A TRANSCEIVER CANNOT BE GIVEN LATER. The owner is
-    ///      the configuring authority and `Ownable` refuses a zero one, since a transceiver
-    ///      with none could never be given a route: it would deploy, seal itself, and be
-    ///      unusable, with the failure arriving one transaction later than the mistake. The
-    ///      treasury and the gateways are role membership, and `Roles` sets no role admin, so
-    ///      this call is the only opportunity either will ever have, since `grantRole` closes
-    ///      with the initialization window. See `Roles.grantRole`.
+    /// @dev IT ALSO NAMES THE TWO THINGS A TRANSCEIVER CANNOT BE GIVEN LATER. The treasury
+    ///      and the gateways are role membership, and `Roles` sets no role admin, so this call
+    ///      is the only opportunity either will ever have, since `grantRole` closes with the
+    ///      initialization window. See `Roles.grantRole`.
     ///
     /// @dev A ZERO TREASURY IS ALLOWED HERE AND COSTS A REDEPLOY. Fees accumulate against a
     ///      `withdrawFees` that can never name a valid destination, which is recoverable only
@@ -419,8 +401,6 @@ abstract contract TransceiverBase is
         internal
         onlyInitializing
     {
-        __Ownable_init(deployment.owner);
-
         if (deployment.treasury != address(0)) {
             grantRole(TREASURY_ROLE, deployment.treasury);
         }
@@ -461,14 +441,15 @@ abstract contract TransceiverBase is
 
     /* ============================== upgrade lock =============================== */
 
-    /// @dev Gate for UUPS. THERE IS NO `lockUpgrades()` TO CALL: `__TransceiverBase_init`
-    ///      sets the flag, so on any initialized transceiver this refuses unconditionally and
-    ///      the owner check below is never the reason. The order matters anyway, because the
-    ///      revert should say what is actually true: upgrades are closed, not that the caller
-    ///      was the wrong one.
-    function _authorizeUpgrade(address) internal override {
-        if (upgradesLocked) revert UpgradesAreLocked();
-        _checkOwner();
+    /// @dev Gate for UUPS, AND IT ASKS NOBODY. THERE IS NO `lockUpgrades()` TO CALL:
+    ///      `__TransceiverBase_init` sets the flag and both halves call it last, so on any
+    ///      initialized transceiver this refuses unconditionally. There is no second branch
+    ///      because there is no state to reach it from: an uninitialized transceiver has no
+    ///      owner on either half, so a caller check could only ever have refused as well.
+    ///      The one upgrade a proxy gets is authorized against the stub it is leaving, not
+    ///      here.
+    function _authorizeUpgrade(address) internal view override {
+        revert UpgradesAreLocked();
     }
 
     /* ================================= inbound ================================= */

@@ -230,8 +230,8 @@ summary: the file is always the newer statement.
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |
 | Why a chain is graded, and what each grade is worth                      | `registry/Provenance.sol`             |
 | Why the hub holds counterparts and the registry holds their grade        | `HubTransceiverBase.setCounterpart`   |
-| Why routes live on the transceiver rather than in the registry           | `TransceiverBase.setRoute`            |
-| Why the transceiver owns and the roles do not                            | `messaging/Roles.sol`, `TransceiverBase` |
+| Why routes live on the transceiver rather than in the registry           | `HubTransceiverBase.setRoute`         |
+| Why the hub owns, the spoke does not, and the roles are not authorities   | `messaging/Roles.sol`, `HubTransceiverBase` |
 | Why a treasury is a role on one contract and an owner on another         | `treasury/Treasury.sol`               |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |

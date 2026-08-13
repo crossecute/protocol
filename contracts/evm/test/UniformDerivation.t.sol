@@ -20,7 +20,9 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///         any destination, and the same read returns its transceiver, regardless of VM.
 contract Hub is HubTransceiverBase {
     function initialize(address owner_) external initializer {
-        __TransceiverBase_init(Deploy.ownedBy(owner_));
+        // Through the hub's own initializer, because that is where the owner is set. The
+        // implementation only has to be non-zero: these suites never create an account.
+        __HubTransceiverBase_init(owner_, Deploy.bare(), address(0x1E19));
     }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the

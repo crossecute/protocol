@@ -85,7 +85,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.ownedBy(owner_),
+            Deploy.bare(),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -328,7 +328,8 @@ contract Hub is HubTransceiverBase {
         address transmitterImplementation_
     ) external initializer {
         __HubTransceiverBase_init(
-            Deployment({owner: owner_, treasury: treasury_, gateways: new address[](0)}),
+            owner_,
+            Deployment({treasury: treasury_, gateways: new address[](0)}),
             transmitterImplementation_
         );
     }

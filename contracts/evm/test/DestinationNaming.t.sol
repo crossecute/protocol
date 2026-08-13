@@ -54,7 +54,7 @@ contract DestinationNamingTest is Test {
                     address(new LzHubTransceiver()),
                     abi.encodeCall(
                         LzHubTransceiver.initialize,
-                        (Deploy.ownedBy(msig), address(new MockTransmitterImpl()))
+                        (msig, Deploy.bare(), address(new MockTransmitterImpl()))
                     )
                 )
             )
@@ -68,7 +68,7 @@ contract DestinationNamingTest is Test {
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
-                            Deploy.ownedBy(msig),
+                            Deploy.bare(),
                             recvImpl,
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
@@ -134,7 +134,7 @@ contract DestinationNamingTest is Test {
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
-                            Deploy.ownedBy(msig),
+                            Deploy.bare(),
                             address(new LzReceiver()),
                             ChainKey.forEvm(42161),
                             Erc7930.encodeEvmChain(42161),
@@ -344,7 +344,7 @@ contract DestinationNamingTest is Test {
         vm.prank(msig);
         vm.expectRevert();
         spoke.initialize(
-            Deploy.ownedBy(msig),
+            Deploy.bare(),
             address(0xBEEF),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -363,7 +363,7 @@ contract DestinationNamingTest is Test {
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
                 (
-                    Deploy.ownedBy(msig),
+                    Deploy.bare(),
                     address(0xBEEF),
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),

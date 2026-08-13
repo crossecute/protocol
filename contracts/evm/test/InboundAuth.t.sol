@@ -81,7 +81,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
 
 contract Hub is HubTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
-        __HubTransceiverBase_init(Deploy.ownedBy(owner_), impl);
+        __HubTransceiverBase_init(owner_, Deploy.bare(), impl);
     }
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
@@ -113,7 +113,7 @@ contract Spoke is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.ownedBy(owner_),
+            Deploy.bare(),
             impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
         );
     }

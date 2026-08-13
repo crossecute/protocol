@@ -404,17 +404,6 @@ colliding with one declared here.
 - `CROSS_PROXY_INIT_CODE_HASH`: the one initcode hash every account deploys from, on every
   chain, transmitter and receiver alike. Exposed so the hub can reproduce addresses without
   deploying anything.
-- `setRoute(bytes32 chainKey, bytes route)`: `onlyOwner` and **write-once**, maintaining the
-  reverse index in the same call because two setters is how the two directions drift apart.
-  **The route is the chain's ERC-7930 identifier**, not a provider's private id for it: an
-  ERC-7786 recipient names its own chain, so there is nothing left to translate. That also
-  makes the reverse index correct by construction, since `keccak256(identifier)` IS the
-  chainKey.
-  Re-writing the same route is a no-op; a different one reverts `RouteAlreadySet`, and a
-  route already held by another chain reverts `RouteInUse`, since two chains sharing one
-  identifier would let an inbound message be attributed to the wrong source. Reads are
-  `routeFor`, `chainKeyOfRoute`, `hasRoute`, and the public `routeTo`. The table lives here
-  rather than in the registry because this is the contract that sends.
 - `_recipientOn(chainKey)`: the two halves of `_requireRoutable` joined into the
   interoperable address a gateway takes, by parsing the stored identifier for its chain type
   and reference and re-encoding it around `_counterpartOn(chainKey)`. Building it here means
@@ -441,20 +430,16 @@ colliding with one declared here.
   place provider setup can happen**. The proxy locks in the same call that arms it, and an
   account's own configuration is owner-gated, so a transceiver has no authority over an
   account after creating it.
-- **The authority is the owner**, set in `__TransceiverBase_init` from a `Deployment` the
-  deployment supplies, and a zero one is refused by `Ownable`: every configuring operation is
-  `onlyOwner`, so a transceiver without one could never be given a route. A binding's SDK must
-  not bring a SECOND ownership implementation; one using OpenZeppelin's own
-  `OwnableUpgradeable` shares this one, which is what should happen.
-- **The two roles bound what that owner can do.** `withdrawFees` requires the DESTINATION to
-  hold `TREASURY_ROLE`, which no caller-shaped check can express, and the owner cannot widen
-  that set: a fee taken to fund spokes cannot leave to somewhere that funds none, and no
-  transaction can make somewhere else eligible. Likewise the owner may drop a gateway and
-  cannot add one.
-- **`Deployment` is one struct rather than three arguments.** It carries the owner, the
-  treasury, and the gateways together at every layer, so a binding writing an initializer
-  cannot thread two through and drop the third — and it keeps the divergent spokes' initializers
-  under the stack limit, which `paris` without via-IR makes a real constraint.
+- **It has no ownership at all.** `Ownable` sits on `HubTransceiverBase`, because the hub is
+  the only half with anything to configure after deployment: a spoke's home, route,
+  counterpart, implementation, and divergence flag are all written in its initializer and have
+  no setters. `LzSpokeTransceiver`'s ABI carries no `owner()`, no `transferOwnership`, and no
+  `setRoute` — the absence is structural rather than a spoke declining to use one.
+- **`Deployment` is one struct, and the owner is not in it.** It carries the treasury and the
+  gateways, which both halves have, while the owner is `__HubTransceiverBase_init`'s own
+  argument, so a spoke deployment cannot pass an owner that would silently govern nothing. The
+  struct also keeps the divergent spokes' initializers under the stack limit, which `paris`
+  without via-IR makes a real constraint.
 - **Upgrades lock in the initializer.** `__TransceiverBase_init` sets the flag and both
   halves call it last, so there is no `lockUpgrades()` and no window between "the real logic
   is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
@@ -474,7 +459,31 @@ colliding with one declared here.
 
 ### HubTransceiverBase
 
-The home side: one transceiver, N counterparts, one registry to tell them apart.
+The home side: one transceiver, N counterparts, one registry to tell them apart, and the
+only half with an owner.
+
+- **The authority is the owner**, set in `__HubTransceiverBase_init` and refused if zero by
+  `Ownable`: every configuring operation here is `onlyOwner`, so a hub without one could never
+  be given a route. A binding's SDK must not bring a SECOND ownership implementation; one
+  using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen.
+- **The two roles bound what that owner can do.** `withdrawFees` requires the DESTINATION to
+  hold `TREASURY_ROLE`, which no caller-shaped check can express, and the owner cannot widen
+  that set: a fee taken to fund spokes cannot leave to somewhere that funds none, and no
+  transaction can make somewhere else eligible. The owner cannot add a transport either.
+- `setRoute(bytes32 chainKey, bytes route)`: `onlyOwner` and **write-once**, maintaining the
+  reverse index in the same call because two setters is how the two directions drift apart.
+  **It lives here rather than on the shared base**, because adding a destination is something
+  only a hub does: it fans out to N chains and learns them over time, while a spoke knows one
+  route — its home — written at initialization. **The route is the chain's ERC-7930
+  identifier**, not a provider's private id for it: an ERC-7786 recipient names its own chain,
+  so there is nothing left to translate, and the reverse index is correct by construction
+  since `keccak256(identifier)` IS the chainKey.
+  Re-writing the same route is a no-op; a different one reverts `RouteAlreadySet`, and a
+  route already held by another chain reverts `RouteInUse`, since two chains sharing one
+  identifier would let an inbound message be attributed to the wrong source. Reads are
+  `routeFor`, `chainKeyOfRoute`, `hasRoute`, and the public `routeTo`, all on `OutboundBase`.
+  The table lives on the transceiver rather than in the registry because this is the contract
+  that sends.
 
 - `transmitterImplementation`, write-once, because changing it forks the population: an
   account's proxy is locked the moment it is armed, so a change moves nobody who already has
@@ -518,7 +527,9 @@ The home side: one transceiver, N counterparts, one registry to tell them apart.
 
 ### SpokeTransceiverBase
 
-Every chain that is not the home chain: exactly one counterpart, named at initialization.
+Every chain that is not the home chain: exactly one counterpart, named at initialization, and
+**no owner and no setters of any kind**. Everything it knows is written while it is being
+armed, so there is no configuring authority for a compromised key to be.
 
 - `homeChainKey`, `homeRoute()`, `homeTransceiver()`, and `receiverImplementation` are all
   written once in `__SpokeTransceiverBase_init` and **none has a setter**. That is a security

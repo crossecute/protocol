@@ -59,7 +59,7 @@ contract MiniTransmitter {
 /// @dev A hub deployed from the SAME initcode as the spoke, so both land on one address.
 contract HubForAccounts is HubTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
-        __HubTransceiverBase_init(Deploy.ownedBy(owner_), impl);
+        __HubTransceiverBase_init(owner_, Deploy.bare(), impl);
     }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
@@ -75,7 +75,7 @@ contract HubForAccounts is HubTransceiverBase {
 contract SaltedTransceiver is SpokeTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
         __SpokeTransceiverBase_init(
-            Deploy.ownedBy(owner_),
+            Deploy.bare(),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),

@@ -114,7 +114,7 @@ contract MockTransceiver is TransceiverBase {
     address private _impl;
 
     function initialize(address owner_, address impl) external initializer {
-        __TransceiverBase_init(Deploy.ownedBy(owner_));
+        __TransceiverBase_init(Deploy.bare());
         _impl = impl;
     }
 

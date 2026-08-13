@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {OwnableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -39,7 +41,7 @@ interface IAccountReceiverReport {
 /// @dev THE HUB IS THE ONLY THING THAT GRADES. `minCounterpartProvenance` is a statement
 ///      about how much trust to place in a claim about a remote address: a question that
 ///      only arises when the address was learned rather than known.
-abstract contract HubTransceiverBase is TransceiverBase {
+abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// The transmitter logic every account on this chain is armed with.
     ///
     /// @dev WRITE-ONCE, BECAUSE CHANGING IT FORKS THE POPULATION. An account's proxy locks
@@ -87,10 +89,19 @@ abstract contract HubTransceiverBase is TransceiverBase {
     ///      allowed to replace it.
     error ChainDoesNotReport(bytes32 chainKey);
 
+    /// @param owner_ The configuring authority, and the only live one in the protocol: it
+    ///        adds destinations, prices bootstraps, and withdraws fees to an address that
+    ///        already holds `TREASURY_ROLE`. `Ownable` refuses a zero, since a hub with no
+    ///        owner could never be given a route and would deploy, seal itself, and be
+    ///        unusable, with the failure arriving one transaction later than the mistake.
+    ///        A SPOKE TAKES NO SUCH ARGUMENT, because it has nothing for one to do.
     function __HubTransceiverBase_init(
+        address owner_,
         Deployment memory deployment,
         address transmitterImplementation_
     ) internal onlyInitializing {
+        __Ownable_init(owner_);
+
         if (transmitterImplementation_ == address(0)) revert NoAccountImplementation();
         transmitterImplementation = transmitterImplementation_;
         emit TransmitterImplementationSet(transmitterImplementation_);
@@ -150,6 +161,23 @@ abstract contract HubTransceiverBase is TransceiverBase {
         returns (address)
     {
         return predictCrossAccount(owner, salt);
+    }
+
+    /// @notice Teach this hub how a destination is named. WRITE-ONCE, and the msig's.
+    ///
+    /// @dev IT IS ON THE HUB RATHER THAN THE SHARED BASE, because adding a destination is
+    ///      something only a hub ever does: it fans out to N chains and learns them over time,
+    ///      while a spoke knows exactly one route — its home — written in its initializer with
+    ///      no setter. A public setter on the base would have given a spoke an entry point
+    ///      whose every argument it refuses anyway, since `_routeTo` reverts `NotHome` for
+    ///      anything else.
+    ///
+    /// @dev The table, the reverse index, and the reads all live on `OutboundBase`, which is
+    ///      what a sender needs to address anything. This is only the authority over it: a
+    ///      binding wraps this in a typed setter where it keeps a provider-native value of its
+    ///      own, and a gateway binding adds nothing.
+    function setRoute(bytes32 chainKey, bytes memory route) public onlyOwner {
+        _setRoute(chainKey, route);
     }
 
     /// @notice Point this transceiver at the registry, and state its provenance bar.

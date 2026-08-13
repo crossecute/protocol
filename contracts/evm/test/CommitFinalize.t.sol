@@ -107,7 +107,7 @@ contract MockTransceiver is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.ownedBy(owner_),
+            Deploy.bare(),
             receiverImplementation_,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -142,8 +142,10 @@ contract MsigTransceiver is HubTransceiverBase {
         address[] calldata gateways_,
         address receiverImplementation_
     ) external initializer {
-        __TransceiverBase_init(
-            Deployment({owner: owner_, treasury: treasury_, gateways: gateways_})
+        __HubTransceiverBase_init(
+            owner_,
+            Deployment({treasury: treasury_, gateways: gateways_}),
+            receiverImplementation_
         );
     }
 

@@ -191,7 +191,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner arrives in the `Deployment` struct threaded into `__TransceiverBase_init`, and `Ownable` refuses a zero. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for authority | `OwnableUpgradeable`, via `HubTransceiverBase` | There is no seam to answer. The owner is `__HubTransceiverBase_init`'s own argument, and `Ownable` refuses a zero. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
 | nothing for the roles | `Roles.grantRole` | Named in the same `Deployment`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
@@ -200,7 +200,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | As above, including the roles. |
+| no authority at all | — | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
