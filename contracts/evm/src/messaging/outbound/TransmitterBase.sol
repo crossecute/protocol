@@ -750,11 +750,6 @@ abstract contract TransmitterBase is
     {
         if (transceiver_ == address(0)) revert NoTransceiver();
 
-        // NO TREASURY. A transmitter collects no fees, and it answers to its own owner. Its
-        // gateway is granted by a binding that knows one, and nothing can grant another
-        // later: `GATEWAY` has no role admin. See `Roles.__Roles_init`.
-        __Roles_init(address(0), new address[](0));
-
         transceiver = transceiver_;
         accountSalt = salt_;
         emit TransmitterConfigured(owner_, transceiver_);

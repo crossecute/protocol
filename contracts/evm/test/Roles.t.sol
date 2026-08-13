@@ -8,6 +8,8 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IAccessControlEnumerable} from
     "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
 
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+
 import {Roles} from "src/messaging/Roles.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
@@ -27,7 +29,7 @@ contract RoleReceiver is ReceiverBase {
         address gateway_,
         Call[] calldata calls
     ) external initializer {
-        _grantGateway(gateway_);
+        grantRole(GATEWAY_ROLE, gateway_);
         __ReceiverBase_init(transmitter_, calls);
     }
 }
@@ -39,7 +41,7 @@ contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
     {
         __Ownable_init(owner_);
         __TransmitterBase_init(owner_, transceiver_, bytes32(0));
-        _grantGateway(gateway_);
+        grantRole(GATEWAY_ROLE, gateway_);
     }
 
     function _owner() internal view override returns (address) {
@@ -59,14 +61,23 @@ contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
 /// @dev The role graph on its own, with no messaging around it.
 contract RoleHarness is Roles {
     function initialize(address treasury, address[] calldata gateways) external initializer {
-        __Roles_init(treasury, gateways);
+        if (treasury != address(0)) grantRole(TREASURY_ROLE, treasury);
+        for (uint256 i; i < gateways.length; ++i) {
+            if (gateways[i] != address(0)) grantRole(GATEWAY_ROLE, gateways[i]);
+        }
     }
 
-    /// @dev Stands in for the gated entry point a transceiver exposes over `_revokeGateway`.
-    ///      The harness leaves it ungated, because what is under test is the membership
-    ///      bookkeeping rather than who may reach it.
+    /// @dev Stands in for the gated entry point a RECEIVER exposes; the harness leaves it
+    ///      ungated, because what is under test is the membership bookkeeping rather than who
+    ///      may reach it.
     function revokeGateway(address gateway) external {
-        _revokeGateway(gateway);
+        _revokeRole(GATEWAY_ROLE, gateway);
+    }
+
+    /// @dev Proves the window is what closes the grant, rather than a caller check: this is
+    ///      the same call the initializer makes, made one transaction later.
+    function grantLate(bytes32 role, address account) external {
+        grantRole(role, account);
     }
 }
 
@@ -173,13 +184,10 @@ contract RolesTest is Test {
             "and nothing holds what administers it"
         );
 
-        // Hoisted: an external call inside a pranked expression consumes the prank.
-        bytes32 root = receiver.DEFAULT_ADMIN_ROLE();
-
         address[3] memory tryers = [receiver.parentTransceiver(), msig, address(0xB0B)];
         for (uint256 i; i < tryers.length; i++) {
             vm.prank(tryers[i]);
-            vm.expectRevert(_unauthorized(tryers[i], root));
+            vm.expectRevert(Initializable.NotInitializing.selector);
             receiver.grantRole(gatewayRole, IMPOSTOR);
         }
         assertFalse(receiver.hasRole(gatewayRole, IMPOSTOR));
@@ -195,10 +203,10 @@ contract RolesTest is Test {
 
     /* ================================= the role graph =============================== */
 
-    /// @dev NEITHER ROLE HAS AN ADMIN, WHICH IS WHAT SEALS BOTH. `__Roles_init` sets no role
-    ///      admin, so each falls back to `DEFAULT_ADMIN_ROLE`, and that is granted to nobody
-    ///      here or anywhere else in the protocol. The membership the initializer stated is
-    ///      the membership for life.
+    /// @dev NEITHER ROLE HAS AN ADMIN, WHICH IS WHY THE GRANT PATH IS THE WINDOW INSTEAD.
+    ///      Each falls back to `DEFAULT_ADMIN_ROLE`, and that is granted to nobody here or
+    ///      anywhere else, so a role-gated `grantRole` could never have succeeded at all. The
+    ///      membership the initializer stated is the membership for life.
     function test_neitherRoleHasAnAdmin() public {
         RoleHarness h = _harness();
 
@@ -216,24 +224,22 @@ contract RolesTest is Test {
         assertTrue(h.hasRole(treasuryRole, msig), "the treasury it was given");
         assertTrue(h.hasRole(gatewayRole, GATEWAY), "and the transport");
 
-        bytes32 root = h.DEFAULT_ADMIN_ROLE();
-
         address[3] memory tryers = [address(this), msig, GATEWAY];
         for (uint256 i; i < tryers.length; i++) {
             vm.prank(tryers[i]);
-            vm.expectRevert(_unauthorized(tryers[i], root));
+            vm.expectRevert(Initializable.NotInitializing.selector);
             h.grantRole(gatewayRole, IMPOSTOR);
 
             vm.prank(tryers[i]);
-            vm.expectRevert(_unauthorized(tryers[i], root));
+            vm.expectRevert(Initializable.NotInitializing.selector);
             h.grantRole(treasuryRole, IMPOSTOR);
         }
     }
 
     /// @dev REVOKING SURVIVES, AND ONLY THROUGH AN ENTRY POINT A CONTRACT CHOOSES TO EXPOSE.
-    ///      `_revokeGateway` is internal, so an account (which exposes nothing over it) cannot
-    ///      lose its transport, while a transceiver's owner can drop a compromised one. The
-    ///      public `revokeRole` remains unusable, since that is the path with no valid caller.
+    ///      A receiver exposes `revokeGateway` behind `onlySourceTransmitter`; a transceiver
+    ///      exposes nothing at all. The inherited `revokeRole` remains unusable either way,
+    ///      since that is the path with no valid caller.
     function test_revokingIsInternalAndOneWay() public {
         RoleHarness h = _harness();
 
@@ -247,7 +253,7 @@ contract RolesTest is Test {
         assertFalse(h.hasRole(gatewayRole, GATEWAY), "gone through the internal path");
 
         // And it cannot come back.
-        vm.expectRevert(_unauthorized(address(this), root));
+        vm.expectRevert(Initializable.NotInitializing.selector);
         h.grantRole(gatewayRole, GATEWAY);
     }
 
@@ -272,6 +278,45 @@ contract RolesTest is Test {
 
         h = new RoleHarness();
         h.initialize(msig, gateways);
+    }
+
+    /* ============================ an account may drop one =========================== */
+
+    /// @dev A RECEIVER CAN DROP ITS TRANSPORT AND CANNOT REPLACE IT. That is the one
+    ///      membership change surviving initialization anywhere in the protocol, and the
+    ///      direction is deliberate: a gateway that can deliver can forge, so going deaf is
+    ///      the recoverable failure and a compromised transport driving the account is not.
+    function test_aReceiverDropsItsGatewayOnItsTransmittersSayS0() public {
+        assertTrue(receiver.hasRole(gatewayRole, GATEWAY));
+
+        vm.prank(IMPOSTOR);
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
+        receiver.revokeGateway(GATEWAY);
+
+        vm.prank(address(0xB0B)); // the source transmitter
+        receiver.revokeGateway(GATEWAY);
+        assertFalse(receiver.hasRole(gatewayRole, GATEWAY), "deaf, and deliberately");
+
+        // And nothing can put one back: the grant window closed with the initializer.
+        vm.prank(address(0xB0B));
+        vm.expectRevert();
+        receiver.grantRole(gatewayRole, GATEWAY);
+    }
+
+    /// @dev A TRANSCEIVER HAS NO SUCH ENTRY POINT, because it is shared by every owner on its
+    ///      chain. Pinned here because the asymmetry is easy to erase by adding one line.
+    function test_theGrantWindowClosesWithInitialization() public {
+        RoleHarness h = _harness();
+
+        vm.expectRevert(); // NotInitializing
+        h.grantLate(gatewayRole, IMPOSTOR);
+
+        vm.prank(msig);
+        vm.expectRevert();
+        h.grantLate(treasuryRole, IMPOSTOR);
+
+        assertFalse(h.hasRole(gatewayRole, IMPOSTOR));
+        assertFalse(h.hasRole(treasuryRole, IMPOSTOR));
     }
 
     /* ================================= enumeration ================================== */

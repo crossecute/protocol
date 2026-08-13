@@ -187,9 +187,10 @@ mainnet.
 - **~~A TRANSCEIVER'S GATEWAY SET IS ADMIN-MUTABLE~~. SETTLED: it is not, any more.** The
   question was whether the msig could add a transport to a live transceiver, since a transport
   that can deliver can forge, which is the same power the upgrade lock exists to deny. It
-  cannot: `__Roles_init` sets no role admin, so both roles fall back to `DEFAULT_ADMIN_ROLE`
-  and nothing anywhere holds it. A transceiver's gateways are named in its `Deployment` and
-  can only ever be REVOKED, through `revokeGateway`, which is `onlyOwner`.
+  cannot: `grantRole` is `onlyInitializing`, so membership arrives while a contract is being
+  armed and never afterwards. A transceiver's gateways are named in its `Deployment` and
+  cannot be added to OR revoked; only a receiver may drop one, through `revokeGateway`, gated
+  on its source transmitter.
 
   What that costs is the operability the looser version bought: a provider migrating its
   endpoint now forces a redeploy at a new address, which re-derives every account, unless the

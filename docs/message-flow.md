@@ -220,19 +220,27 @@ address that decides are never the same fact.
   gateway would be silently refused. `ReceiverBase` inherits `Roles` directly rather than
   through `OutboundBase`, because a receiver never sends yet has the strictest need to know
   which gateway is real.
-- **No role admin is set, so neither role can ever be granted again.** `__Roles_init` names a
-  treasury and a set of gateways and wires nothing above them, so both fall back to
-  `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. `grantRole` has no
-  caller that can succeed — not the owner, not a member, not the msig — on a transceiver or on
-  an account. The membership a deployment states is the membership it has for life, which is
-  the same guarantee the write-once slots give, obtained by leaving a role unheld.
+- **`grantRole` is `onlyInitializing`, and that is the whole grant path.** It overrides OZ's
+  role-gated version rather than sitting beside it, because no role here has an administrator
+  and the inherited one could never have succeeded. Membership arrives while a contract is
+  being armed and never afterwards: not from the owner, not from the msig, not from the
+  transceiver that created an account, not from a member of the role itself. That is the same
+  guarantee the write-once slots give, expressed as a window instead of a caller check.
+  (`public` rather than `external`, because Solidity widens `external` to `public` in an
+  override and not the reverse.)
+- **The window reaches the bootstrap payload, deliberately.** `__ReceiverBase_init` runs the
+  payload while `_initializing` is still true, so an owner's first payload can name their own
+  account's gateway with a self-call — the owner configuring their own account in the
+  transaction that creates it.
 - **The gateways are an array, because that call is the only chance.** A deployment routing
   through two endpoints, or migrating between them, has no later grant to make.
-- **Revoking survives, and only through an entry point a contract chooses to expose.**
-  `_revokeGateway` is internal; `TransceiverBase.revokeGateway` is `onlyOwner` over it, and an
-  account exposes nothing at all. The asymmetry is the point: a compromised transport has to
-  be droppable, while admitting one is the operation that could hand the protocol to a
-  transport nobody vetted. The door opens outward only.
+- **A receiver may drop a gateway; a transceiver may not.** `ReceiverBase.revokeGateway` is
+  gated `onlySourceTransmitter` and calls `_revokeRole` directly. It is the only membership
+  change surviving initialization anywhere, and it only subtracts: a dropped transport cannot
+  be replaced, so the account goes deaf. That is the right side to fail on, since a gateway
+  that can deliver can forge. A spoke transceiver has no equivalent because it is shared by
+  every owner on its chain: dropping its gateway would take every account's bootstrap path
+  with it, so its transports are whatever its `Deployment` named, for life.
 - **An account holds no treasury, and that is not what freezes it.** What freezes it is the
   paragraph above: an account collects no fees, names its gateway in the call that arms it,
   and cannot acquire another because nothing can grant one.

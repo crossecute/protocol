@@ -35,8 +35,16 @@ import {UUPSUpgradeable} from
 ///      counterparts, fees, and the provenance bar, and is expected to be the crossecute
 ///      msig. `TREASURY_ROLE` and `GATEWAY_ROLE` name addresses rather than powers, are fixed
 ///      in the initializer, and cannot be granted afterwards by the owner or by anyone: see
-///      `Roles.__Roles_init`. So the worst a compromised owner can do is misconfigure a
+///      `Roles.grantRole`. So the worst a compromised owner can do is misconfigure a
 ///      destination, not admit a transport or invent a place for fees to go.
+///
+/// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS. It has no revoke entry point
+///      either, which an account does have: a transceiver is shared by every owner on its
+///      chain, so dropping a gateway here would take every account's bootstrap path with it,
+///      while an account's is one owner's to drop. What that costs is that a compromised
+///      transport is answered by deploying a new transceiver rather than by a transaction,
+///      which is the same remedy the upgrade lock already implies. Naming several gateways up
+///      front is how a deployment keeps a migration cheap.
 ///
 /// @dev THE COST IS THAT A BINDING'S SDK MUST NOT BRING A SECOND `Ownable`. An SDK using
 ///      OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen:
@@ -125,17 +133,6 @@ abstract contract TransceiverBase is
     ///      its own, and a gateway binding adds nothing.
     function setRoute(bytes32 chainKey, bytes memory route) public onlyOwner {
         _setRoute(chainKey, route);
-    }
-
-    /// @notice Stop trusting a transport this transceiver was initialized with.
-    /// @dev THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, and it only ever
-    ///      subtracts: there is no matching grant, here or anywhere, because `GATEWAY_ROLE`
-    ///      has no role admin. A compromised transport has to be droppable — the alternative
-    ///      is a live forgery path with a redeploy as the only remedy — while admitting one
-    ///      is exactly the operation that should not be an owner's to make. An account
-    ///      exposes nothing over this and so cannot lose its gateway at all.
-    function revokeGateway(address gateway) external onlyOwner {
-        _revokeGateway(gateway);
     }
 
     /* ============================ account manufacture ========================== */
@@ -410,7 +407,8 @@ abstract contract TransceiverBase is
     ///      with none could never be given a route: it would deploy, seal itself, and be
     ///      unusable, with the failure arriving one transaction later than the mistake. The
     ///      treasury and the gateways are role membership, and `Roles` sets no role admin, so
-    ///      this call is the only opportunity either will ever have. See `Roles.__Roles_init`.
+    ///      this call is the only opportunity either will ever have, since `grantRole` closes
+    ///      with the initialization window. See `Roles.grantRole`.
     ///
     /// @dev A ZERO TREASURY IS ALLOWED HERE AND COSTS A REDEPLOY. Fees accumulate against a
     ///      `withdrawFees` that can never name a valid destination, which is recoverable only
@@ -422,7 +420,15 @@ abstract contract TransceiverBase is
         onlyInitializing
     {
         __Ownable_init(deployment.owner);
-        __Roles_init(deployment.treasury, deployment.gateways);
+
+        if (deployment.treasury != address(0)) {
+            grantRole(TREASURY_ROLE, deployment.treasury);
+        }
+        for (uint256 i; i < deployment.gateways.length; ++i) {
+            if (deployment.gateways[i] != address(0)) {
+                grantRole(GATEWAY_ROLE, deployment.gateways[i]);
+            }
+        }
 
         upgradesLocked = true;
         emit UpgradesLocked();

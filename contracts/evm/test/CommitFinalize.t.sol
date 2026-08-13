@@ -18,6 +18,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
@@ -748,39 +749,28 @@ contract CommitFinalizeTest is Test {
         // Hoisted: an external call inside a pranked expression consumes the prank.
         bytes32 gatewayRole = m.GATEWAY_ROLE();
         vm.prank(msig);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector,
-                msig,
-                bytes32(0) // DEFAULT_ADMIN_ROLE: what both roles default to being under
-            )
-        );
+        vm.expectRevert(Initializable.NotInitializing.selector);
         m.grantRole(gatewayRole, address(0xBADBAD));
     }
 
-    /// @dev REVOKING IS THE ASYMMETRY, AND IT IS DELIBERATE. A compromised transport has to
-    ///      be droppable; admitting one is the operation nobody should have. So the owner can
-    ///      subtract from `GATEWAY_ROLE` and cannot add to it, and cannot touch `TREASURY` at
-    ///      all.
-    function test_theOwnerMayRevokeAGatewayAndNothingElse() public {
+    /// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS, which is the asymmetry
+    ///      against an account. It is shared by every owner on its chain, so dropping a
+    ///      gateway here would take every account's bootstrap path with it; an account's is
+    ///      one owner's to drop, and `ReceiverBase.revokeGateway` is where that lives.
+    function test_aTransceiverCanNeitherAddNorDropAGateway() public {
         MsigTransceiver m = _msigTransceiver();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
-            )
+        (bool found,) = address(m).call(
+            abi.encodeWithSignature("revokeGateway(address)", gateway)
         );
-        m.revokeGateway(gateway);
+        assertFalse(found, "no revoke entry point on the ABI at all");
 
-        vm.prank(msig);
-        m.revokeGateway(gateway);
-        assertEq(m.getRoleMembers(m.GATEWAY_ROLE()).length, 0, "dropped");
-
-        // And there is no way back: the grant path does not exist for anyone.
         bytes32 gatewayRole = m.GATEWAY_ROLE();
         vm.prank(msig);
         vm.expectRevert();
-        m.grantRole(gatewayRole, gateway);
+        m.revokeRole(gatewayRole, gateway);
+
+        assertEq(m.getRoleMembers(gatewayRole).length, 1, "still exactly what it was given");
     }
 
     /// @dev FEES LEAVE ONLY TO A `TREASURY_ROLE` HOLDER, which the owner cannot extend. The

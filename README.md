@@ -280,9 +280,12 @@ if its addresses cannot be recomputed here at all.
 - The crossecute msig owns the registry, every transceiver, and the treasury each
   transceiver pays. Ownership is the only live authority: a transceiver's transports and its
   treasury are named in the `Deployment` it is initialized with, and neither role has an
-  administrator, so nothing can grant either afterwards. A compromised owner can drop a
-  transport and cannot add one, and can move fees only to an address that already held
-  `TREASURY_ROLE` when the contract was deployed.
+  administrator: `grantRole` is `onlyInitializing`, so nothing can add a member afterwards.
+  A compromised owner cannot admit a transport, cannot drop one — a transceiver is shared by
+  every owner on its chain — and can move fees only to an address that already held
+  `TREASURY_ROLE` when the contract was deployed. An account is one owner's, so a receiver
+  may drop its own gateway through `revokeGateway`, which is the only membership change that
+  survives initialization anywhere.
 
 ## Docs
 

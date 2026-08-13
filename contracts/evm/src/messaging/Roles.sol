@@ -80,65 +80,38 @@ abstract contract Roles is AccessControlUpgradeable, IAccessControlEnumerable {
         }
     }
 
-    /// @notice Name the treasury and the transports, once, and close the door behind them.
+    /// @notice Grant a role. THE ONLY GRANT PATH, AND IT CLOSES WHEN INITIALIZATION DOES.
     ///
-    /// @dev NO ROLE ADMIN IS SET, WHICH MAKES BOTH ROLES UNGRANTABLE AFTERWARDS. Every role
-    ///      defaults to being administered by `DEFAULT_ADMIN_ROLE`, and this protocol never
-    ///      grants that to anyone, so `grantRole` and `revokeRole` can never succeed on
-    ///      either of these — on a transceiver, on an account, on any contract in the tree.
-    ///      The membership a deployment states here is the membership it has for life. That is
-    ///      the same guarantee the write-once slots give, obtained by leaving a role unheld
-    ///      rather than by refusing a second write, and it holds against a compromised owner
-    ///      as well as a careless one: an owner cannot add a transport, and cannot add a
-    ///      destination for the fees it may withdraw.
+    /// @dev IT IS `onlyInitializing`, NOT ROLE-GATED, WHICH IS THE WHOLE DESIGN. OZ gates this
+    ///      on `getRoleAdmin(role)`, and no role here has an administrator: `DEFAULT_ADMIN_ROLE`
+    ///      is never granted to anything, so the inherited version could never succeed and the
+    ///      membership would have to arrive through some internal back door instead. Replacing
+    ///      the gate with the initialization window says the same thing in one place: a
+    ///      contract's treasury and transports are named while it is being armed, and after
+    ///      that no caller of any kind can add another. Not the owner, not the msig, not the
+    ///      transceiver that created an account, not a member of the role itself.
     ///
-    /// @dev THE GATEWAYS ARE AN ARRAY BECAUSE A DEPLOYMENT CAN HAVE SEVERAL AND MUST DECLARE
-    ///      THEM AT ONCE. A binding that routes through two endpoints, or one migrating
-    ///      between them, has no later opportunity: there is no grant path after this call, so
-    ///      an initializer that named one transport would fix that choice permanently. Passing
-    ///      an empty array is the ordinary case for a contract whose binding grants its own
-    ///      gateway through `_grantGateway` further down its initializer.
+    /// @dev IT IS `public` RATHER THAN `external` BECAUSE IT OVERRIDES ONE. Solidity permits
+    ///      widening `external` to `public` in an override and not the reverse, and this must
+    ///      override OZ's `grantRole` rather than sit beside it: a second entry point would
+    ///      leave the inherited one reachable, and "which of the two grants" is exactly the
+    ///      question this contract exists to have one answer to. Internal calls from an
+    ///      initializer are what actually use it.
     ///
-    /// @dev A ZERO `treasury` MEANS THERE IS NONE, AND THAT IS THE ACCOUNT CASE. An account
-    ///      collects no fees and has nothing to withdraw, so it names no treasury and leaves
-    ///      the role empty.
-    function __Roles_init(address treasury, address[] memory gateways)
-        internal
+    /// @dev THE WINDOW REACHES THE BOOTSTRAP PAYLOAD, DELIBERATELY. `__ReceiverBase_init`
+    ///      executes the payload while `_initializing` is still true, so an owner's very first
+    ///      payload can name its account's gateway with a self-call. That is the owner
+    ///      configuring their own account in the transaction that creates it, which is the one
+    ///      moment the protocol already trusts for exactly this.
+    function grantRole(bytes32 role, address account)
+        public
+        virtual
+        override(AccessControlUpgradeable, IAccessControl)
         onlyInitializing
     {
-        __AccessControl_init();
-
-        if (treasury != address(0)) _grantRole(TREASURY_ROLE, treasury);
-
-        for (uint256 i; i < gateways.length; ++i) {
-            if (gateways[i] != address(0)) _grantRole(GATEWAY_ROLE, gateways[i]);
-        }
+        _grantRole(role, account);
     }
 
-    /// @notice Trust `gateway` to carry this contract's messages, in both directions.
-    /// @dev Internal, and reachable only while initializing in practice, since `grantRole`
-    ///      cannot succeed on this role and no entry point wraps this one. A binding calls it
-    ///      from its own initializer when the gateway is a value the binding computes rather
-    ///      than one the deployment passes.
-    function _grantGateway(address gateway) internal {
-        _grantRole(GATEWAY_ROLE, gateway);
-    }
-
-    /// @notice Stop trusting `gateway`, in both directions at once.
-    ///
-    /// @dev REVOKING IS THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, and it is
-    ///      internal, so it exists only where a contract deliberately exposes a gated entry
-    ///      point over it. The asymmetry is the point: a compromised transport has to be
-    ///      droppable, since the alternative is a live forgery path with a redeploy as the
-    ///      only remedy, while ADDING one is the operation that could hand the protocol to a
-    ///      transport nobody vetted. So the door opens outward only.
-    ///
-    /// @dev AN ACCOUNT EXPOSES NOTHING OVER THIS, and therefore cannot lose its gateway. Its
-    ///      transport is named in the call that arms it and is as permanent as its
-    ///      implementation.
-    function _revokeGateway(address gateway) internal {
-        _revokeRole(GATEWAY_ROLE, gateway);
-    }
 
     /// @notice Whether `account` holds `role`.
     /// @dev RE-DECLARED SO THE TREE BELOW SEES ONE DECLARATION. `Roles` inherits `hasRole`

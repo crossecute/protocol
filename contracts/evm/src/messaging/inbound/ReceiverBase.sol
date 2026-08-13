@@ -207,16 +207,35 @@ abstract contract ReceiverBase is
     {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 
-        // NO TREASURY, AND NO GATEWAY YET. An account collects no fees, and its transport is
-        // granted just below this by a binding that knows one. Nothing can grant another
-        // afterwards: `GATEWAY` has no role admin anywhere in this protocol, so the transport
-        // an account is armed with is the transport it has for life. See `Roles.__Roles_init`.
-        __Roles_init(address(0), new address[](0));
-
         sourceTransmitter = sourceTransmitter_;
         parentTransceiver = msg.sender;
         emit ReceiverInitialized(sourceTransmitter_, msg.sender);
         if (calls.length != 0) _execute(calls);
+    }
+
+    /// @notice Stop trusting a transport this receiver was armed with.
+    ///
+    /// @dev THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, ANYWHERE IN THE PROTOCOL,
+    ///      and it only ever subtracts. There is no matching grant: `grantRole` is
+    ///      `onlyInitializing`, so a transport dropped here cannot be replaced and the account
+    ///      is deaf until it is redeployed — which it cannot be, since `CrossProxy` arms once.
+    ///      That is the honest cost, and it is the right side to fail on: a gateway that can
+    ///      deliver can forge, so the recoverable case is "this account stops accepting
+    ///      messages" and the unrecoverable one is "a compromised transport keeps driving it".
+    ///
+    /// @dev GATED LIKE `commit` AND `cancel`, WHICH IS THE STRONGEST BAR AVAILABLE HERE. Only
+    ///      the source transmitter reaches it, meaning the owner acting through their own
+    ///      account on the home chain, or a payload this receiver is already executing. The
+    ///      transceiver that created this receiver is NOT on that list, as everywhere else:
+    ///      its whole relationship with a receiver is the initializer it already spent.
+    ///
+    /// @dev A SPOKE TRANSCEIVER HAS NO EQUIVALENT, deliberately. It is shared by every owner
+    ///      on that chain, so dropping its gateway would take every account's bootstrap path
+    ///      with it, on the authority of whoever reached the entry point. Its transports are
+    ///      whatever its `Deployment` named, for life; only accounts, which are one owner's
+    ///      each, can drop theirs.
+    function revokeGateway(address gateway) external onlySourceTransmitter {
+        _revokeRole(GATEWAY_ROLE, gateway);
     }
 
     /// @notice Append the hash of a call array to be executed later.
