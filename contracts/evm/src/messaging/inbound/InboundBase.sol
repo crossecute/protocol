@@ -23,6 +23,16 @@ interface ICommitFinalize {
     function finalize(Call[][] calldata batches) external;
 }
 
+/// @notice Withdrawing an approval.
+/// @dev THE SIGNATURE IS SHARED AND THE GATE IS NOT. An account answers to its transmitter;
+///      a transceiver answers only to a payload it is already executing, which means one that
+///      arrived from its authenticated counterpart. Neither is reachable by an arbitrary
+///      caller, which is the property that matters on a contract every owner's bootstrap goes
+///      through.
+interface ICancel {
+    function cancel(bytes32 commitment) external;
+}
+
 /// @title InboundBase
 /// @notice Everything a contract needs to RECEIVE: an authenticated delivery, an approval it
 ///         can hold, and the array that discharges one. Shared by `ReceiverBase`, which is
@@ -36,10 +46,14 @@ interface ICommitFinalize {
 ///      anyone willing to pay for it, which is why the transceiver needs the same machinery
 ///      rather than a second copy of it.
 ///
-/// @dev WHAT IT DOES NOT INCLUDE IS `cancel`. Withdrawing an approval is an account's
-///      operation, gated on the one transmitter that owns it. A transceiver is shared by
-///      every owner on its chain, so an entry point that removed an approval there would let
-///      whoever reached it strip a bootstrap somebody else has already paid to send.
+/// @dev `cancel` IS HERE AS PLUMBING, NOT AS AN ENTRY POINT. `_cancel` removes every copy of
+///      an approval and each inheritor exposes it behind its own gate: an account answers to
+///      its transmitter, a transceiver to a payload it is already executing. The gate is the
+///      whole question, because a transceiver is shared by every owner on its chain and an
+///      openly reachable cancel there would let whoever found it strip a bootstrap somebody
+///      else has already paid to send. Without ANY cancel, an approved bootstrap could never
+///      be withdrawn: it would sit indefinitely with the timing of its execution — and so the
+///      state its payload runs against — belonging to whoever chose to finalize it.
 ///
 /// @dev EXECUTION IS UNORDERED, and `_commitments` is a count rather than a set: see the
 ///      storage comment below. Both properties are the same on either inheritor, which is
@@ -77,10 +91,16 @@ abstract contract InboundBase is
     ///      commitment discharged or a gated entry point drove locally. A monitor that cannot
     ///      tell those apart cannot audit any of them.
     event Delivered(uint256 callCount);
+    /// @dev Carries what was dropped, since cancelling removes every outstanding copy.
+    event Cancelled(bytes32 indexed commitment, uint256 dropped);
 
     /// @dev No approval matches the array supplied, which covers both "nothing is
     ///      outstanding" and "something is, but not this".
     error CommitmentMismatch();
+    /// @dev Nothing outstanding under that hash, so there is nothing to withdraw. Refused
+    ///      rather than treated as a no-op, because reporting success would suggest a payload
+    ///      had been stopped when it may already have run.
+    error NotCommitted(bytes32 commitment);
     /// @dev Zero would make "committed" indistinguishable from "never committed".
     error ZeroCommitment();
     error EmptyBatch();
@@ -169,15 +189,26 @@ abstract contract InboundBase is
         _execute(calls);
     }
 
-    /// @dev Removes every outstanding copy of one approval. Internal, so it exists only where
-    ///      an inheritor deliberately exposes a gated entry point over it: `ReceiverBase`
-    ///      does, a transceiver does not. See the contract note.
-    function _cancel(bytes32 commitment_) internal returns (uint256 dropped) {
-        bool held;
-        (held, dropped) = _commitments.tryGet(commitment_);
-        if (!held) return 0;
+    /// @notice Withdraw an approval so it can never be finalized.
+    ///
+    /// @dev IT ZEROES THE ENTRY, NOT ONE COPY OF IT. A hash approved three times is dropped
+    ///      three times over, because cancelling is what a party reaches for when a payload
+    ///      turns out to be wrong, and a payload that is wrong is wrong in every copy.
+    ///      Re-approving is one `commit` away if only some were meant to go.
+    ///
+    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS THE ONLY HANDLE THERE IS. Positions went
+    ///      with the queue, and a hash cannot go stale the way an index could: the value a
+    ///      caller passes is the value removed, so cancelling the wrong approval requires
+    ///      naming the wrong approval.
+    ///
+    /// @dev Internal, so it is reachable only through the gate an inheritor puts in front of
+    ///      it. See the contract note for why that gate is the whole question.
+    function _cancel(bytes32 commitment_) internal {
+        (bool held, uint256 dropped) = _commitments.tryGet(commitment_);
+        if (!held) revert NotCommitted(commitment_);
 
         _commitments.remove(commitment_);
+        emit Cancelled(commitment_, dropped);
     }
 
     /* ============================== approval reads ============================== */

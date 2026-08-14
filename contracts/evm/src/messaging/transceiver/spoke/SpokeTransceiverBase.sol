@@ -235,6 +235,27 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         );
     }
 
+    /// @notice What an arriving payload may call here: `TransceiverBase`'s two, plus the
+    ///         bootstrap itself.
+    ///
+    /// @dev `bootstrapInbound` IS THE POINT OF THE DEFERRED PATH. A payload that arrives as
+    ///      `commit(hash)` is finalized later by whoever is willing to pay for the deployment,
+    ///      and the array it supplies is exactly one call to this. It is already `msg.sender ==
+    ///      address(this)`, so the allowlist adds no authority; it only refuses everything the
+    ///      base refuses, on a contract that deploys every account on this chain.
+    function isAllowed(address target, bytes4 selector)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        if (target == address(this) && selector == this.bootstrapInbound.selector) {
+            return true;
+        }
+        return super.isAllowed(target, selector);
+    }
+
     /// @notice Inbound path: stand this owner's receiver up and run the payload that
     ///         justified doing so.
     ///

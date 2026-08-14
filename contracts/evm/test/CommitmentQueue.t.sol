@@ -207,14 +207,14 @@ contract CommitmentQueueTest is Test {
     ///      payload had been stopped when it may already have run.
     function test_cancellingWhatIsNotThereIsRefused() public {
         vm.expectRevert(
-            abi.encodeWithSelector(ReceiverBase.NotCommitted.selector, _hash(1))
+            abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1))
         );
         r.cancel(_hash(1));
 
         r.commit(_hash(1));
         r.finalize(_calls(1));
         vm.expectRevert(
-            abi.encodeWithSelector(ReceiverBase.NotCommitted.selector, _hash(1))
+            abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1))
         );
         r.cancel(_hash(1));
     }

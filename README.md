@@ -225,7 +225,7 @@ summary: the file is always the newer statement.
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
 | Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, `Hub` / `Spoke`    |
 | Why approvals are an unordered map of hash to count                      | `inbound/InboundBase.sol`             |
-| Why a transceiver receives, and why it cannot cancel                     | `inbound/InboundBase.sol`, `TransceiverBase` |
+| Why a transceiver receives, and what an arriving payload may call        | `inbound/InboundBase.sol`, `TransceiverBase.isAllowed` |
 | Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |

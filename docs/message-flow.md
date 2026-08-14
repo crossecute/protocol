@@ -411,10 +411,24 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
   its bar. `_checkCommitter` says who may approve a hash — an account answers "its
   transmitter, or a payload it is already executing", a transceiver answers "a payload it is
   already executing" and nothing else.
-- **`cancel` is deliberately NOT here.** Withdrawing an approval is an account's operation,
-  gated on the one transmitter that owns it. A transceiver is shared by every owner on its
-  chain, so an entry point that removed an approval there would let whoever reached it strip
-  a bootstrap somebody else has already paid to send.
+- **`cancel` is here as plumbing, and the gate is the whole question.** `_cancel` removes
+  every copy of an approval; each inheritor exposes it behind its own bar. An account answers
+  to its transmitter. A transceiver answers only to a payload it is already executing — which
+  means one that arrived from its authenticated counterpart — because an openly reachable
+  cancel on a contract every owner's bootstrap goes through would let whoever found it strip
+  a bootstrap somebody else has already paid to send. Without any cancel at all, an approved
+  bootstrap could never be withdrawn: `finalize` is permissionless and has no deadline, so the
+  moment it executed, and the state its payload ran against, would belong to whoever chose to
+  supply the array.
+- **What an arriving payload may CALL is an allowlist, not "anything".** `Executor.isAllowed`
+  is open on an account and two entries long on a transceiver: `commit` and `cancel` on
+  itself, plus `bootstrapInbound` on a spoke. That is not tidiness. `onDestinationReceiver` is
+  self-call gated and takes its `chainKey` as an argument, which the envelope path fills from
+  `_authenticateOrigin`, so an unconstrained payload let a spoke on one chain pin an account's
+  receiver on another — write-once, and unrecoverable. And a `Call` carries value, so it let
+  an authenticated counterpart move the fee balance around `withdrawFees`, its owner gate, the
+  `TREASURY_ROLE` destination check, and the accounting. Both allowed targets are
+  `address(this)` and non-payable, so value reverts without the check reasoning about it.
 - **A transceiver receives because a bootstrap cannot pay for itself.** It is the one message
   that lands where there is no account yet, inside a delivery callback, and standing an
   account up plus running its first payload is the most expensive thing the protocol does. A

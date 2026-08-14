@@ -22,6 +22,9 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Executor} from "src/messaging/Executor.sol";
+import {Payload} from "src/messaging/Payload.sol";
+import {ICancel, ICommitFinalize} from "src/messaging/inbound/InboundBase.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
@@ -508,6 +511,102 @@ contract ReceiverReportRoundTripTest is Test {
         spoke.inbound(owner, SALT, new Call[](0));
         produced = spoke.sentPayload();
         vm.chainId(1);
+    }
+
+    /* ===================== what an executed payload may call ==================== */
+
+    /// @notice REGRESSION: a spoke on one chain cannot report an address on another, and the
+    ///         `Call[]` path is not a way around that.
+    ///
+    /// @dev THE ESCALATION THIS CLOSES. `onDestinationReceiver` is self-call gated and takes
+    ///      its `chainKey` as an argument, which the envelope path fills from
+    ///      `_authenticateOrigin`. Once a transceiver executed arrays, an authenticated spoke
+    ///      could send a payload that called it directly with ANY chainKey, pinning an
+    ///      account's receiver on a chain it has nothing to do with — write-once, and so
+    ///      unrecoverable. `test_aChainCannotReportAnAddressOnAnotherChain` covers the
+    ///      envelope path and passed throughout; only this covers the way around it.
+    function test_anExecutedPayloadCannotReachOnDestinationReceiver() public {
+        uint256 OTHER = 999;
+        vm.startPrank(msig);
+        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(OTHER));
+        registry.setProvenance(otherKey, Provenance.Attested);
+        hub.setCounterpart(otherKey, Erc7930.encodeEvm(OTHER, address(0xDEAD)));
+        hub.setRoute(otherKey, Erc7930.encodeEvmChain(OTHER));
+        vm.stopPrank();
+
+        vm.prank(owner);
+        account.bootstrap(OTHER, new Call[](0), new bytes[](0));
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({
+            target: address(hub),
+            value: 0,
+            data: abi.encodeCall(
+                HubTransceiverBase.onDestinationReceiver,
+                (otherKey, owner, SALT, Erc7930.encodeEvm(OTHER, address(0xBADBAD)))
+            )
+        });
+
+        // Refused before the call is made, not by the callee: the allowlist is the check.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Executor.SelectorNotAllowed.selector,
+                address(hub),
+                HubTransceiverBase.onDestinationReceiver.selector
+            )
+        );
+        hub.receiveMessage(
+            bytes32(0),
+            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
+            Payload.encodeCalls(calls)
+        );
+
+        assertEq(
+            hub.destinationReceiverOn(otherKey, owner, SALT),
+            abi.encodePacked(address(account)),
+            "still the bootstrap presumption, not what another chain claimed"
+        );
+    }
+
+    /// @notice REGRESSION: an executed payload cannot move the transceiver's balance.
+    /// @dev A `Call` carries value, so an unconstrained `_execute` let an authenticated
+    ///      counterpart send the fee balance anywhere, around `withdrawFees`, its owner gate,
+    ///      the `TREASURY_ROLE` destination check, and the `collectedFees` accounting.
+    function test_anExecutedPayloadCannotMoveTheBalance() public {
+        vm.deal(address(hub), 5 ether);
+        address thief = address(0xF00D);
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: thief, value: 5 ether, data: ""});
+
+        vm.expectRevert();
+        hub.receiveMessage(
+            bytes32(0),
+            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
+            Payload.encodeCalls(calls)
+        );
+
+        assertEq(thief.balance, 0, "nothing left");
+        assertEq(address(hub).balance, 5 ether, "and the fee balance is intact");
+    }
+
+    /// @dev THE ALLOWLIST IS TWO ENTRIES, NOT ZERO. The payload the deferred path actually
+    ///      sends still lands.
+    function test_anExecutedPayloadMayStillApproveAHash() public {
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({
+            target: address(hub),
+            value: 0,
+            data: abi.encodeCall(ICommitFinalize.commit, (keccak256("deferred")))
+        });
+
+        hub.receiveMessage(
+            bytes32(0),
+            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
+            Payload.encodeCalls(calls)
+        );
+
+        assertTrue(hub.isCommitted(keccak256("deferred")));
     }
 
     /// @dev THE WHOLE POINT OF THE FILE. The spoke creates an account and puts a report on

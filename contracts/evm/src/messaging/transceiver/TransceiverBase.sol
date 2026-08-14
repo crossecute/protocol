@@ -5,7 +5,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {InboundBase} from "src/messaging/inbound/InboundBase.sol";
+import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -72,6 +72,7 @@ abstract contract TransceiverBase is
     Initializable,
     OutboundBase,
     InboundBase,
+    ICancel,
     UUPSUpgradeable
 {
     /// @notice What a deployment names on EITHER half, and can never revisit: the treasury
@@ -493,6 +494,66 @@ abstract contract TransceiverBase is
         _authenticateOrigin(
             Erc7930.toChainIdentifier(sender), Erc7930.parseStrict(sender).addr
         );
+    }
+
+    /// @notice What an arriving payload is allowed to call. NOT ARBITRARY, unlike an
+    ///         account's.
+    ///
+    /// @dev A TRANSCEIVER EXECUTES ARRAYS AND MUST NOT EXECUTE ANY ARRAY. It is the contract
+    ///      that authenticates every inbound message, holds the fee balance, and deploys every
+    ///      account on its chain, so an unconstrained `_execute` here hands an authenticated
+    ///      counterpart the transceiver's whole address. Two concrete escalations that closes,
+    ///      both of which a shipped version would have had:
+    ///
+    ///      A SELF-CALL TO A SELF-GATED FUNCTION IS INDISTINGUISHABLE FROM THE REAL PATH.
+    ///      `HubTransceiverBase.onDestinationReceiver` is `require(msg.sender == address(this))`
+    ///      and takes its `chainKey` as an argument, which the envelope path fills from
+    ///      `_authenticateOrigin`. An executed payload could call it directly with any chainKey
+    ///      at all, so a spoke on one chain could pin an account's receiver on another —
+    ///      exactly the invariant `ReportedChainMismatch` exists to hold, reached around the
+    ///      side. The slot is write-once, so it would not have been recoverable.
+    ///
+    ///      A `Call` CARRIES VALUE. An executed payload could send the balance anywhere,
+    ///      bypassing `withdrawFees`, its owner gate, the `TREASURY_ROLE` destination check,
+    ///      and the `collectedFees` accounting in one call.
+    ///
+    /// @dev SO THE ANSWER IS AN ALLOWLIST, AND IT IS TWO ENTRIES LONG. A payload may approve a
+    ///      hash on this contract, and — on a spoke, which extends this — discharge one into a
+    ///      bootstrap. Both targets are `address(this)` and both functions are non-payable, so
+    ///      a call carrying value reverts without this having to reason about value at all.
+    ///      Anything else a transceiver needs to be told arrives as an envelope through
+    ///      `_onInbound`, where the argument comes from the authenticated origin rather than
+    ///      from the payload.
+    function isAllowed(address target, bytes4 selector)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        return target == address(this)
+            && (
+                selector == ICommitFinalize.commit.selector
+                    || selector == ICancel.cancel.selector
+            );
+    }
+
+    /// @notice Withdraw an approval this transceiver is holding.
+    ///
+    /// @dev GATED LIKE `commit`, WHICH MEANS A PAYLOAD AND NOT A CALLER. The only way to reach
+    ///      it is an array this contract is already executing, which arrived from the
+    ///      authenticated counterpart or discharged an approval that did. So the authority
+    ///      that approved a bootstrap is the authority that can withdraw it, and no caller
+    ///      gains anything: an openly reachable cancel on a contract every owner's bootstrap
+    ///      goes through would let whoever found it strip a bootstrap somebody else paid for.
+    ///
+    /// @dev WITHOUT IT AN APPROVED BOOTSTRAP COULD NEVER BE WITHDRAWN. It would sit
+    ///      indefinitely, and because `finalize` is permissionless and has no deadline, the
+    ///      moment it executed — and so the state its payload ran against — would belong to
+    ///      whoever chose to supply the array.
+    function cancel(bytes32 commitment_) external virtual override {
+        _checkCommitter();
+        _cancel(commitment_);
     }
 
     /// @notice The one funnel every protocol binding routes an arriving message into.

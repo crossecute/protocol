@@ -11,7 +11,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
+import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
@@ -994,6 +994,60 @@ contract CommitFinalizeTest is Test {
             "and it was armed exactly as a direct bootstrap would have armed it"
         );
         assertEq(t.pendingCount(), 0, "the approval is spent");
+    }
+
+    /// @notice REGRESSION: an approved bootstrap can be withdrawn, and only by the authority
+    ///         that approved it.
+    ///
+    /// @dev WITHOUT THIS THE APPROVAL WAS PERMANENT. `finalize` is permissionless and has no
+    ///      deadline, so an outstanding bootstrap left the MOMENT it executed — and therefore
+    ///      the state its payload ran against — to whoever chose to supply the array. The
+    ///      cancel is gated like `commit`: a payload this contract is already executing,
+    ///      which means one that arrived from the authenticated hub.
+    function test_anApprovedBootstrapCanBeWithdrawnByTheHubAndNobodyElse() public {
+        Call[] memory boot = new Call[](1);
+        boot[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(
+                SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls())
+            )
+        });
+        bytes32 pending = hashOf(boot);
+
+        _deliverToTransceiver(_callTo(address(t), abi.encodeCall(ICommitFinalize.commit, (pending))));
+        assertTrue(t.isCommitted(pending));
+
+        // Not the relayer, and not anyone else with an address.
+        vm.prank(relayer);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NotSelfCall.selector, relayer)
+        );
+        t.cancel(pending);
+
+        // The hub withdraws it the same way it approved it: a payload, through the gateway.
+        _deliverToTransceiver(_callTo(address(t), abi.encodeCall(ICancel.cancel, (pending))));
+
+        assertFalse(t.isCommitted(pending), "withdrawn");
+        vm.prank(relayer);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        t.finalize(boot);
+    }
+
+    function _callTo(address target, bytes memory data)
+        internal
+        pure
+        returns (Call[] memory calls)
+    {
+        calls = new Call[](1);
+        calls[0] = Call({target: target, value: 0, data: data});
+    }
+
+    function _deliverToTransceiver(Call[] memory calls) internal {
+        vm.prank(gateway);
+        t.receiveMessage(
+            bytes32(0), Erc7930.encodeEvm(1, address(0xB0BB1E)), Payload.encodeCalls(calls)
+        );
     }
 
     /// @dev The approval is over the WHOLE bootstrap, so a finalizer cannot stand up a

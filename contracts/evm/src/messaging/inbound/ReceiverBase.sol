@@ -5,7 +5,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ReentrancyGuardUpgradeable} from
     "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
-import {ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
+import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
 
 /// @notice Two-step execution: pin a hash now, supply the matching array later.
 ///
@@ -18,15 +18,6 @@ import {ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.so
 ///      The commitment stays defined over opaque elements, because that layer must be
 ///      VM-agnostic and `Commitment` hashes both forms to one value; the ENTRY POINT does
 ///      not, because this contract only ever runs on an EVM chain.
-/// @notice Withdrawing an approval, which only an account can do.
-/// @dev IT IS NOT ON `InboundBase`, and the asymmetry is the point: a transceiver is shared
-///      by every owner on its chain, so an entry point that removed an approval there would
-///      let whoever reached it strip a bootstrap somebody else has already paid to send. An
-///      account is one owner's, and answers to one transmitter.
-interface ICancel {
-    function cancel(bytes32 commitment) external;
-}
-
 /// @notice One-step execution: run this array, no hash comparison.
 /// @dev THE MIRROR OF `ICommitFinalize`, and the trade is exact. `finalize` may be
 ///      permissionless BECAUSE it checks the payload against an approved hash; `execute`
@@ -102,10 +93,6 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev The message claims to come from an address that is not this receiver's
     ///      transmitter, so it is another account's payload arriving at the wrong receiver.
     error SenderIsNotThisAccount(bytes sender);
-    /// @dev Nothing outstanding under that hash, so there is nothing to withdraw. Refused
-    ///      rather than treated as a no-op, because reporting success would suggest a payload
-    ///      had been stopped when it may already have run.
-    error NotCommitted(bytes32 commitment);
 
     /// @notice Whether `account` is the transmitter this receiver was created for.
     function isSourceTransmitter(address account) public view returns (bool) {
@@ -244,10 +231,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///      turns out to be wrong, and a payload that is wrong is wrong in every copy.
     ///      Re-approving is one `commit` away if only some were meant to go.
     function cancel(bytes32 commitment_) external virtual override onlySourceTransmitter {
-        uint256 dropped = _cancel(commitment_);
-        if (dropped == 0) revert NotCommitted(commitment_);
-
-        emit ReceiverCancelled(commitment_, dropped);
+        _cancel(commitment_);
     }
 
     /// @notice Run these calls now, with no commitment and no hash comparison.
