@@ -207,6 +207,12 @@ mainnet.
   and a permanently-failing payload stalls nothing. What that gives up is the guarantee that
   approvals land in the order they were made — a relayer holding two valid arrays chooses —
   so a sequence that matters has to be expressed inside the payloads.
+- **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
+  true from dispatch there, because the address is pre-deterministic and correct; what is not
+  guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for someone to
+  finalize it. Those sends fail on arrival and are retryable at the provider, so the cost is
+  the fee and the wait. Closing it would mean a confirmation message on chains that need none,
+  which is the trade this deliberately does not make.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.

@@ -496,6 +496,18 @@ abstract contract TransceiverBase is
         );
     }
 
+    /// @notice Whether `chainKey` reports its receiver address back rather than having it
+    ///         derived. FALSE HERE, AND ANSWERED PROPERLY ONLY BY THE HUB.
+    ///
+    /// @dev AN ACCOUNT ASKS ITS TRANSCEIVER THIS BEFORE RECORDING A COUNTERPART, because
+    ///      whether an address is knowable in advance is a property of the destination and an
+    ///      account holds no registry. The base answers false because only a hub grades
+    ///      chains: a spoke has one counterpart, told to it at initialization, and no account
+    ///      on it ever asks. See `HubTransceiverBase.reportsReceiver`.
+    function reportsReceiver(bytes32) public view virtual returns (bool) {
+        return false;
+    }
+
     /// @notice What an arriving payload is allowed to call. NOT ARBITRARY, unlike an
     ///         account's.
     ///

@@ -513,6 +513,56 @@ contract ReceiverReportRoundTripTest is Test {
         vm.chainId(1);
     }
 
+    /* ======================== bootstrapped vs reachable ======================== */
+
+    /// @notice REGRESSION: a chain that reports is NOT sendable until it has reported.
+    ///
+    /// @dev THE GAP THIS CLOSES. `bootstrap` used to record a counterpart at dispatch on every
+    ///      chain, and on a reporting chain that value was a guess: `address(this)`, which is
+    ///      exactly what `recipientOn` builds. So a send made before the report landed matched
+    ///      the guess, passed the recipient check, and was addressed at an address holding no
+    ///      receiver — paid for, and undeliverable. Now nothing is recorded until the report
+    ///      arrives.
+    function test_aReportingChainIsNotSendableUntilItHasReported() public {
+        assertTrue(account.isBootstrapped(spokeKey), "the bootstrap went");
+        assertFalse(account.isReachable(spokeKey), "but the receiver is not known yet");
+
+        // Both hoisted: an external call inside the pranked expression consumes the prank,
+        // and one inside `expectRevert`'s next call would be the call it measures.
+        bytes memory recipient = account.recipientOn(SPOKE_CHAIN);
+        bytes memory payload = account.payloadForCalls(new Call[](0));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, spokeKey)
+        );
+        account.sendMessage(recipient, payload, new bytes[](0));
+
+        // The report lands, and only then does the destination become sendable — at the
+        // address the spoke actually created, not at the guess.
+        bytes memory produced = _report();
+        address created = spoke.predictCrossAccount(owner, SALT);
+        hub.arrive(
+            Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced
+        );
+
+        assertTrue(account.isReachable(spokeKey), "now it is");
+        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
+    }
+
+    /// @dev AND A SECOND BOOTSTRAP IS STILL REFUSED IN THE MEANTIME. The dispatch record is
+    ///      what prevents that, which is why it had to become a fact of its own rather than
+    ///      being read off the counterpart table.
+    function test_aSecondBootstrapIsRefusedWhileTheReportIsOutstanding() public {
+        assertFalse(account.isReachable(spokeKey));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, spokeKey)
+        );
+        account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
+    }
+
     /* ===================== what an executed payload may call ==================== */
 
     /// @notice REGRESSION: a spoke on one chain cannot report an address on another, and the
@@ -561,10 +611,9 @@ contract ReceiverReportRoundTripTest is Test {
             Payload.encodeCalls(calls)
         );
 
-        assertEq(
-            hub.destinationReceiverOn(otherKey, owner, SALT),
-            abi.encodePacked(address(account)),
-            "still the bootstrap presumption, not what another chain claimed"
+        assertFalse(
+            account.isReachable(otherKey),
+            "nothing was recorded, so no chain got to speak for another"
         );
     }
 
@@ -722,7 +771,10 @@ contract ReceiverReportRoundTripTest is Test {
         vm.expectRevert();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
 
-        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(address(account)));
+        // Nothing was recorded, which on a REPORTING chain is the state before the report:
+        // the account is bootstrapped there and not yet reachable.
+        assertTrue(account.isBootstrapped(spokeKey));
+        assertFalse(account.isReachable(spokeKey));
         assertFalse(account.isReceiverPinned(spokeKey));
     }
 

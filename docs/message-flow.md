@@ -325,14 +325,25 @@ per-destination bootstrap record below, and nothing else.
 
 - **The destination is a parameter, not state.** One transmitter fans out to every chain,
   which is also what keeps one receiver per (transmitter, destination).
-- **A per-destination bootstrap record**, `isBootstrapped(chainKey)` (and
-  `isBootstrappedOn(chainId)` for the plain-chain-id spelling). `sendMessage` requires the
-  destination present in it and `bootstrap` requires it absent, so a payload cannot be paid
-  for and sent to a chain where this account has no receiver, and a second bootstrap cannot
-  be paid for to revert on arrival. It records that a bootstrap was DISPATCHED rather than
-  that one landed: the message is asynchronous, and on a parity chain no report ever comes
-  back, so there is no confirmation to wait for. Delivery is retryable at the provider, so
-  a bootstrap that reverts on arrival is pending rather than lost.
+- **Two per-destination facts, not one.** `isBootstrapped(chainKey)` says a bootstrap was
+  DISPATCHED there — the message is asynchronous, so nothing on this chain can say one landed
+  — and `bootstrap` requires it absent, so a second cannot be paid for to revert on arrival.
+  `isReachable(chainKey)` says the receiver's address is KNOWN, and `sendMessage` requires
+  that, so a payload cannot be addressed at a guess.
+- **The two come apart exactly on the chains that report.** Where the address is
+  pre-deterministic — every chain sharing Ethereum's CREATE2 formula — the counterpart is
+  recorded at dispatch, because the hub already knows where the account will land, and the two
+  answers agree from the first transaction. Where it is not — zkSync, Tron, every non-EVM VM —
+  nothing is recorded until `onDestinationReceiverReported` arrives. The account asks its
+  transceiver which case it is in, through `IAccountTransceiver.reportsReceiver`, because a
+  chain's derivability is a property of the chain and an account holds no registry.
+  Previously the guess (`address(this)`) was written on every chain, and since that is exactly
+  what `recipientOn` builds, a send made before the report landed matched it, passed the
+  recipient check, and was addressed at an address holding no receiver — paid for, and
+  undeliverable.
+- **A dispatched bootstrap that never lands leaves the destination unreachable, not broken.**
+  Delivery is retryable at the provider, and a deferred bootstrap sits as an approval until
+  somebody finalizes it, so the account arrives late rather than never.
 - `sendMessage(bytes recipient, bytes payload, bytes[] attributes)`: path A, and the ONLY
   send. It is `IERC7786GatewaySource`'s signature, and one signature covers every
   destination: a recipient carries its own chain, so the chain id, the ERC-7930 envelope, and

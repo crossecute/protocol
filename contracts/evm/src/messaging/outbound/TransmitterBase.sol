@@ -54,6 +54,16 @@ interface IAccountTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
+    /// @notice Whether a destination reports its receiver address back, rather than the hub
+    ///         deriving it.
+    ///
+    /// @dev THE ACCOUNT ASKS BECAUSE IT CANNOT KNOW. It holds no registry, and whether a chain
+    ///      is pre-deterministic is a property of that chain rather than of this account: it
+    ///      is true on every chain sharing Ethereum's CREATE2 formula and false on zkSync,
+    ///      Tron, and every non-EVM VM. The hub already holds the answer, because it is the
+    ///      contract that decides which chains may report at all.
+    function reportsReceiver(bytes32 chainKey) external view returns (bool);
+
     /// @notice The chain identifier the MSIG has configured a destination under.
     ///
     /// @dev IT ANSWERS FOR DESTINATIONS AN ACCOUNT HAS NOT REACHED YET, which is the one
@@ -160,12 +170,26 @@ abstract contract TransmitterBase is
     ///      then blocks the retry. Both causes are transceiver misconfiguration, which is
     ///      write-once and a redeploy to correct, so the account was stranded either way.
     function isBootstrapped(bytes32 destinationChainKey) public view returns (bool) {
-        return hasCounterpart(destinationChainKey);
+        return _bootstrapDispatched[destinationChainKey];
     }
 
     /// @notice Whether this account has been stood up on an EVM chain, by plain chain id.
     function isBootstrappedOn(uint256 destinationChainId) external view returns (bool) {
-        return hasCounterpart(ChainKey.forEvm(destinationChainId));
+        return _bootstrapDispatched[ChainKey.forEvm(destinationChainId)];
+    }
+
+    /// @notice Whether this account can be SENT to on `destinationChainKey` yet, which is a
+    ///         different question from whether a bootstrap was dispatched there.
+    ///
+    /// @dev THE TWO COME APART EXACTLY ON THE CHAINS THAT REPORT. Where the address is
+    ///      pre-deterministic the counterpart is recorded at dispatch, because the hub already
+    ///      knows where the account will land and nothing a message does can change it, so the
+    ///      two answers agree from the first transaction. Where it is not — zkSync, Tron, and
+    ///      every non-EVM VM — the address is not known until the spoke reports it, so this
+    ///      stays false until `onDestinationReceiverReported` lands and a send is refused
+    ///      rather than addressed at a guess.
+    function isReachable(bytes32 destinationChainKey) external view returns (bool) {
+        return hasCounterpart(destinationChainKey);
     }
 
     /// @notice This account's receiver on `destinationChainKey`, in that chain's own format.
@@ -192,6 +216,18 @@ abstract contract TransmitterBase is
     ///      misbuilt, and that chain is lost either way.
     mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
 
+    /// @notice Destinations this account has dispatched a bootstrap to.
+    ///
+    /// @dev IT IS SEPARATE FROM THE COUNTERPART TABLE, AND THAT SEPARATION IS THE POINT. The
+    ///      two used to be one fact: `bootstrap` wrote a counterpart, and holding one meant
+    ///      both "do not bootstrap again" and "you may send here". That is wrong on any chain
+    ///      whose address is not pre-deterministic, where the counterpart written at dispatch
+    ///      is a GUESS the report will replace, and a send made against it in the meantime is
+    ///      addressed at nothing. Splitting them lets a bootstrap be recorded — so a second
+    ///      cannot be paid for — while the destination stays unreachable until its receiver
+    ///      is known.
+    mapping(bytes32 destinationChainKey => bool) private _bootstrapDispatched;
+
     /// @notice The transceiver reports where the destination actually created this account's
     ///         receiver.
     ///
@@ -212,7 +248,9 @@ abstract contract TransmitterBase is
         bytes calldata receiver
     ) external {
         if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
-        if (!hasCounterpart(destinationChainKey)) {
+        // The DISPATCH is what a report answers, not a counterpart: on a reporting chain
+        // there is no counterpart yet, which is the whole reason the report exists.
+        if (!_bootstrapDispatched[destinationChainKey]) {
             revert NotBootstrapped(destinationChainKey);
         }
         if (_receiverPinned[destinationChainKey]) {
@@ -234,7 +272,7 @@ abstract contract TransmitterBase is
     }
 
     function _requireNotBootstrapped(bytes32 chainKey) private view {
-        if (hasCounterpart(chainKey)) revert AlreadyBootstrapped(chainKey);
+        if (_bootstrapDispatched[chainKey]) revert AlreadyBootstrapped(chainKey);
     }
 
     /// @notice The account's owner. Declared, not implemented: see the contract note.
@@ -598,11 +636,14 @@ abstract contract TransmitterBase is
     ///      would otherwise race. If the dispatch reverts the whole transaction unwinds and
     ///      the record goes with it, so the ordering costs nothing.
     ///
-    /// @dev THE RECEIVER IT RECORDS IS A PRESUMPTION, AND ON MOST CHAINS A CORRECT ONE. An
-    ///      account and its receiver share an address wherever Ethereum's CREATE2 formula
-    ///      holds, which is every destination but zkSync, Tron, and the non-EVM chains. There
-    ///      the value is wrong until the spoke's own report replaces it, and until then a
-    ///      send is refused rather than misdelivered.
+    /// @dev IT RECORDS A RECEIVER ONLY WHERE ONE IS ALREADY KNOWN. An account and its
+    ///      receiver share an address wherever Ethereum's CREATE2 formula holds, so on those
+    ///      chains the value is not a guess and writing it here costs nothing. On zkSync,
+    ///      Tron, and every non-EVM chain it IS a guess, and it used to be written anyway: a
+    ///      send made before the report landed then matched the guess, passed the recipient
+    ///      check, and was addressed at an address holding no receiver. Now nothing is written
+    ///      until the report arrives, so those destinations are unreachable rather than
+    ///      misaddressed, and `isBootstrapped` and `isReachable` answer different questions.
     function _markBootstrapped(bytes memory identifier)
         private
         returns (bytes32 chainKey)
@@ -611,8 +652,16 @@ abstract contract TransmitterBase is
         chainKey = ChainKey.fromIdentifier(identifier);
         _requireNotBootstrapped(chainKey);
 
+        _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, identifier);
-        _setCounterpart(chainKey, abi.encodePacked(address(this)));
+
+        // The counterpart is recorded HERE only where it is already knowable. On a chain that
+        // reports, it arrives with the report; until then this destination is unreachable and
+        // `sendMessage` refuses it, rather than accepting a recipient nobody can be sure of.
+        if (!IAccountTransceiver(transceiver).reportsReceiver(chainKey)) {
+            _setCounterpart(chainKey, abi.encodePacked(address(this)));
+        }
+
         emit DestinationBootstrapped(chainKey);
     }
 

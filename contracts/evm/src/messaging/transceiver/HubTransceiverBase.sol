@@ -522,6 +522,24 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         emit DestinationReceiverReported(chainKey, owner, salt, account);
     }
 
+    /// @notice Whether `chainKey` reports its receiver address back, rather than this hub
+    ///         deriving it.
+    ///
+    /// @dev THE ACCOUNT ASKS THIS BEFORE IT RECORDS A COUNTERPART, because whether an address
+    ///      is knowable in advance is a property of the destination and an account holds no
+    ///      registry. True exactly where this contract cannot recompute an address — zkSync,
+    ///      Tron, every non-EVM VM — which is the same condition `onDestinationReceiver`
+    ///      enforces when a report arrives, read from the same place, so the two cannot
+    ///      disagree about which chains speak for themselves.
+    ///
+    /// @dev A HUB WITH NO REGISTRY ANSWERS FALSE, which is the honest answer rather than a
+    ///      revert: no chain has been graded, so no chain reports, and `_requireRoutable`
+    ///      refuses the bootstrap that would have depended on it a moment later.
+    function reportsReceiver(bytes32 chainKey) public view override returns (bool) {
+        if (address(chainRegistry) == address(0)) return false;
+        return chainRegistry.requiresReceiverCallback(chainKey);
+    }
+
     /// @notice Where an account's receiver lives on `chainKey`, as that account records it.
     /// @dev A passthrough, kept because an operator reading the hub should not have to know
     ///      that the answer moved. It is the account's own counterpart table, which is also
