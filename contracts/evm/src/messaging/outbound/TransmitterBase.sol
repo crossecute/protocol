@@ -668,17 +668,17 @@ abstract contract TransmitterBase is
         });
     }
 
-    /// @notice The call that withdraws approval `index` on a receiver, for inclusion in a
-    ///         payload bound for that receiver's chain.
+    /// @notice The call that withdraws an approval on a receiver, for inclusion in a payload
+    ///         bound for that receiver's chain.
     ///
     /// @dev CANCELLATION IS INHERENTLY REMOTE, because approvals are: a transmitter executes
-    ///      directly and holds no queue, so there is nothing local to withdraw.
+    ///      directly and holds nothing to withdraw.
     ///
-    /// @dev THE `expected` HASH EARNS ITS KEEP HERE. This element is built when the payload
-    ///      is approved and executes whenever it lands, so the queue can have moved in
-    ///      between and nobody is watching when it runs. Naming the approval as well as the
-    ///      slot makes a stale index revert instead of withdrawing whatever sits there now.
-    function cancellationCall(address receiver, uint256 index, bytes32 expected)
+    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS WHY THIS SURVIVES THE TRIP. The element is
+    ///      built when the payload is approved and executes whenever it lands, with nobody
+    ///      watching in between. A hash cannot go stale the way a position could: it either
+    ///      still has an approval, or the call reverts.
+    function cancellationCall(address receiver, bytes32 commitment)
         public
         pure
         returns (Call memory)
@@ -686,7 +686,7 @@ abstract contract TransmitterBase is
         return Call({
             target: receiver,
             value: 0,
-            data: abi.encodeCall(ICommitFinalize.cancel, (index, expected))
+            data: abi.encodeCall(ICommitFinalize.cancel, (commitment))
         });
     }
 

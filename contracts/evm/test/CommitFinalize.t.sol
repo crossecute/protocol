@@ -255,7 +255,7 @@ contract CommitFinalizeTest is Test {
     ///      already verified upstream, so the receiver takes its word.
     function test_executeRunsCallsWithNoCommitmentAtAll() public {
         MockReceiver r = _liveReceiver();
-        assertEq(r.commitment(), bytes32(0), "nothing pending");
+        assertEq(r.pendingCount(), 0, "nothing pending");
 
         Call[] memory calls = _otherCalls();
         vm.prank(address(r));
@@ -339,13 +339,13 @@ contract CommitFinalizeTest is Test {
 
         vm.prank(address(r));
         r.execute(_otherCalls());
-        assertEq(r.commitment(), pending, "approval untouched");
+        assertTrue(r.isCommitted(pending), "approval untouched");
 
         // And it still requires its own matching array.
         vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_otherCalls());
         r.finalize(approved);
-        assertEq(r.commitment(), bytes32(0));
+        assertEq(r.pendingCount(), 0);
     }
 
     /// @dev An execution that skipped the hash comparison must be distinguishable
@@ -418,9 +418,7 @@ contract CommitFinalizeTest is Test {
         address predicted = t.predictCrossAccount(transmitter, bytes32(0));
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
-        assertEq(
-            MockReceiver(payable(predicted)).commitment(),
-            keccak256("p"),
+        assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")),
             "the bootstrap payload landed"
         );
 
@@ -468,7 +466,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(predicted.code.length != 0, "arrival manufactured it");
         MockReceiver r = MockReceiver(payable(predicted));
         assertEq(r.sourceTransmitter(), address(r));
-        assertEq(r.commitment(), pending, "and it holds the bridged commitment");
+        assertTrue(r.isCommitted(pending), "and it holds the bridged commitment");
     }
 
     /// @dev The salt is the transmitter alone, so the address does not move between
@@ -529,11 +527,11 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         assertEq(r.executedCount(), 0, "arrival executed nothing of the payload");
-        assertEq(r.commitment(), hashOf(calls), "the receiver holds the approval");
+        assertTrue(r.isCommitted(hashOf(calls)), "the receiver holds the approval");
 
         r.finalize(calls);
         assertEq(r.executedCount(), 2, "executed once, in the receiver");
-        assertEq(r.commitment(), bytes32(0));
+        assertEq(r.pendingCount(), 0);
     }
 
     /// @dev CREATION AND THE PAYLOAD ARE ONE TRANSACTION. The clone is created and its
@@ -550,7 +548,7 @@ contract CommitFinalizeTest is Test {
         _r_transmitter.commit(pending);
         MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0))));
 
-        assertEq(r.commitment(), pending, "the payload pinned the hash itself");
+        assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 inits;
         for (uint256 i; i < logs.length; ++i) {
@@ -577,12 +575,12 @@ contract CommitFinalizeTest is Test {
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
         RevertingReceiver r = RevertingReceiver(payable(addr));
-        assertEq(r.commitment(), pending, "arrival succeeded regardless");
+        assertTrue(r.isCommitted(pending), "arrival succeeded regardless");
 
         vm.prank(relayer);
         vm.expectRevert(RevertingReceiver.Nope.selector);
         r.finalize(calls);
-        assertEq(r.commitment(), pending, "approval survives a failed execution");
+        assertTrue(r.isCommitted(pending), "approval survives a failed execution");
 
         // Anyone may retry, and it still fails while the cause stands.
         vm.prank(address(0xCAFE));
@@ -594,7 +592,7 @@ contract CommitFinalizeTest is Test {
         vm.prank(relayer);
         r.finalize(calls);
         assertEq(r.executedCount(), 2);
-        assertEq(r.commitment(), bytes32(0), "consumed only on success");
+        assertEq(r.pendingCount(), 0, "consumed only on success");
     }
 
     /// @dev The bootstrap event names the receiver as well as the transmitter, because
@@ -641,7 +639,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
         r.finalize(calls);
 
-        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -814,12 +812,13 @@ contract CommitFinalizeTest is Test {
             abi.encodeWithSignature("pendingOf(address)", transmitter)
         );
         assertFalse(a, "no pending mapping");
-        (bool b,) = address(t).staticcall(abi.encodeWithSignature("commitment()"));
+        (bool b,) = address(t).staticcall(abi.encodeWithSignature("pendingCount()"));
         assertFalse(b, "no single slot either");
 
-        assertEq(
-            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).commitment(),
-            hashOf(_calls()),
+        assertTrue(
+            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).isCommitted(
+                hashOf(_calls())
+            ),
             "the approval lives with the sender it belongs to"
         );
     }
@@ -832,8 +831,8 @@ contract CommitFinalizeTest is Test {
         MockReceiver rb = _arrive(transmitter2, b);
 
         assertTrue(ra != rb, "one receiver per transmitter");
-        assertEq(ra.commitment(), hashOf(a));
-        assertEq(rb.commitment(), hashOf(b));
+        assertTrue(ra.isCommitted(hashOf(a)));
+        assertTrue(rb.isCommitted(hashOf(b)));
     }
 
     /// @dev A payload that can never execute strands itself and nothing else. One receiver
@@ -870,7 +869,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r2.executedCount(), 3);
 
         // And the stuck one is still stuck, in its own receiver, harming nobody.
-        assertEq(RevertingReceiver(payable(poisoned)).commitment(), hashOf(stuck));
+        assertTrue(RevertingReceiver(payable(poisoned)).isCommitted(hashOf(stuck)));
     }
 
     /// @dev Even when two senders commit to the IDENTICAL array, discharging one leaves
@@ -881,17 +880,16 @@ contract CommitFinalizeTest is Test {
         MockReceiver rb = _arrive(transmitter2, calls);
 
         ra.finalize(calls);
-        assertEq(ra.commitment(), bytes32(0));
-        assertEq(rb.commitment(), hashOf(calls), "still owed");
+        assertEq(ra.pendingCount(), 0);
+        assertTrue(rb.isCommitted(hashOf(calls)), "still owed");
         rb.finalize(calls);
-        assertEq(rb.commitment(), bytes32(0));
+        assertEq(rb.pendingCount(), 0);
     }
 
-    /// @dev One live approval per sender, not a queue. Overlapping payloads from one msig
-    ///      would need a nonce and an ordering rule.
-    /// @dev One sender's payloads do not block each other from being recorded. Both are
-    ///      queued; they are discharged in the order they arrived.
-    function test_oneSendersPayloadsQueueBehindEachOther() public {
+    /// @dev One sender's payloads do not block each other, in either direction: both are
+    ///      recorded, and either may be discharged first. Under the queue this test asserted
+    ///      the opposite, and the second payload had to wait for the first.
+    function test_oneSendersPayloadsDoNotBlockEachOther() public {
         Call[] memory a = _calls();
         Call[] memory b = _otherCalls();
         MockReceiver r = _arrive(transmitter, a);
@@ -901,13 +899,11 @@ contract CommitFinalizeTest is Test {
         _r_transmitter.commit(hashOf(b));
         assertEq(r.pendingCount(), 2, "both recorded, neither blocked the other");
 
-        // FIFO: the second cannot jump the first.
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        // The later approval goes first, which is now allowed rather than refused.
         r.finalize(b);
+        assertTrue(r.isCommitted(hashOf(a)), "and the earlier one is untouched");
 
         r.finalize(a);
-        assertEq(r.commitment(), hashOf(b), "the second is now at the head");
-        r.finalize(b);
         assertEq(r.pendingCount(), 0);
     }
 
@@ -940,7 +936,7 @@ contract CommitFinalizeTest is Test {
         (MockReceiver r,) = _deployedReceiver();
         assertEq(r.sourceTransmitter(), address(r));
         assertEq(r.parentTransceiver(), address(t));
-        assertEq(r.commitment(), bytes32(0), "discharged by the helper");
+        assertEq(r.pendingCount(), 0, "discharged by the helper");
     }
 
     function test_isSourceTransmitter() public {
@@ -980,7 +976,7 @@ contract CommitFinalizeTest is Test {
 
         vm.prank(address(r));
         r.commit(keccak256("new"));
-        assertEq(r.commitment(), keccak256("new"));
+        assertTrue(r.isCommitted(keccak256("new")));
     }
 
     /// @dev Anyone may supply the calls: only the matching array does anything. This is
@@ -999,21 +995,21 @@ contract CommitFinalizeTest is Test {
         assertEq(r.executedCount(), 3, "2 on delivery + 1 through commit/finalize");
     }
 
-    /// @dev A long-lived receiver holds one pending payload at a time.
-    /// @dev THE OPPOSITE OF WHAT A SINGLE SLOT DID. A second approval appends rather than
-    ///      colliding, so a payload waiting on a slow relayer cannot stop the next from
-    ///      being recorded. Both stay outstanding, in order.
-    function test_receiverQueuesASecondCommitmentRatherThanRefusingIt() public {
+    /// @dev THE OPPOSITE OF WHAT A SINGLE SLOT DID. A second approval joins the first
+    ///      rather than colliding with it, so a payload waiting on a slow relayer cannot
+    ///      stop the next from being recorded — and with no ordering, cannot stop it from
+    ///      being discharged either.
+    function test_receiverHoldsSeveralApprovalsAtOnce() public {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(address(r));
-        uint256 first = r.commit(keccak256("first"));
+        r.commit(keccak256("first"));
         vm.prank(address(r));
-        uint256 second = r.commit(keccak256("other"));
+        r.commit(keccak256("other"));
 
-        assertEq(second, first + 1, "appended, not overwritten");
-        assertEq(r.pendingCount(), 2);
-        assertEq(r.commitment(), keccak256("first"), "the older one is still next");
+        assertEq(r.pendingCount(), 2, "both recorded, neither overwritten");
+        assertTrue(r.isCommitted(keccak256("first")));
+        assertTrue(r.isCommitted(keccak256("other")));
     }
 
     /// @dev Zero is the sentinel for cancelled and absent alike, so it can never be an
@@ -1038,7 +1034,7 @@ contract CommitFinalizeTest is Test {
         r.finalize(second);
 
         assertEq(r.executedCount(), 3, "both payloads ran");
-        assertEq(r.commitment(), bytes32(0), "and nothing is queued behind them");
+        assertEq(r.pendingCount(), 0, "and nothing is queued behind them");
     }
 
     function test_receiverCannotBeReinitialized() public {

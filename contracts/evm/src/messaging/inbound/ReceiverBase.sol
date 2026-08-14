@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ReentrancyGuardUpgradeable} from
     "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -24,8 +25,8 @@ import {IERC7786Recipient} from "src/messaging/IErc7786.sol";
 ///      VM-agnostic and `Commitment` hashes both forms to one value; the ENTRY POINT does
 ///      not, because this contract only ever runs on an EVM chain.
 interface ICommitFinalize {
-    function commit(bytes32 commitment) external returns (uint256 index);
-    function cancel(uint256 index, bytes32 expected) external;
+    function commit(bytes32 commitment) external returns (uint256 approvals);
+    function cancel(bytes32 commitment) external;
     function finalize(Call[] calldata calls) external;
     function finalize(Call[][] calldata batches) external;
 }
@@ -92,28 +93,48 @@ abstract contract ReceiverBase is
     IReceiverInit,
     IERC7786Recipient
 {
+    using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
+
     /// The transmitter this receiver answers to. Set once, at initialization.
     address public sourceTransmitter;
     /// The transceiver that created this receiver. Named to avoid colliding with
     /// `TransmitterBase.transceiver`, which means the opposite direction: a Transceiver
     /// inherits both.
     address public parentTransceiver;
-    /// The approvals, oldest first. Append-only; a cancelled entry is zeroed in place.
-    bytes32[] private _commitments;
-    /// Index of the next approval `finalize` will require. Everything below it is spent.
-    uint256 private _head;
+    /// @notice The outstanding approvals: commitment => how many times it may still be
+    ///         finalized.
+    ///
+    /// @dev A MAP RATHER THAN A QUEUE, WHICH IS WHAT MAKES EXECUTION UNORDERED. Approvals no
+    ///      longer have positions, so `finalize` takes whichever array it is handed and
+    ///      discharges THAT approval: a payload waiting on a slow relayer no longer blocks
+    ///      every payload approved after it, and `cancel` is no longer the only way out of a
+    ///      head-of-line stall. What it gives up is the guarantee that approvals land in the
+    ///      order they were made — a relayer holding two valid arrays now chooses. An owner
+    ///      who needs one to precede another has to express that inside the payloads.
+    ///
+    /// @dev THE VALUE IS A COUNT, BECAUSE A HASH IS NOT AN IDENTITY. Two identical payloads
+    ///      are two separate approvals, and a set would silently collapse them into one:
+    ///      approving the same transfer twice would buy one. Each `finalize` decrements, and
+    ///      the entry leaves the map at zero.
+    ///
+    /// @dev ENUMERABLE BECAUSE "WHAT IS OUTSTANDING" HAS TO BE ANSWERABLE ON-CHAIN, and with
+    ///      no ordering there is no head to read instead. `commitments()` returns the whole
+    ///      set, which is what an owner reviewing what they have approved actually wants.
+    EnumerableMap.Bytes32ToUintMap private _commitments;
 
     event ReceiverInitialized(address indexed sourceTransmitter, address indexed transceiver);
-    event ReceiverCommitted(uint256 indexed index, bytes32 commitment);
-    event ReceiverCancelled(uint256 indexed index, bytes32 commitment);
-    event ReceiverFinalized(uint256 indexed index, bytes32 commitment, uint256 callCount);
+    event ReceiverCommitted(bytes32 indexed commitment, uint256 outstanding);
+    /// @dev Carries what was dropped, since cancelling removes every outstanding copy.
+    event ReceiverCancelled(bytes32 indexed commitment, uint256 dropped);
+    event ReceiverFinalized(bytes32 indexed commitment, uint256 remaining, uint256 callCount);
     event ReceiverExecuted(address indexed caller, uint256 callCount);
     /// @dev A payload that arrived over the wire and ran on arrival, as distinct from one a
     ///      commitment discharged or the owner drove locally. A monitor that cannot tell
     ///      those apart cannot audit any of them.
     event ReceiverDelivered(uint256 callCount);
 
-    error NothingCommitted();
+    /// @dev No approval matches the array supplied, which covers both "nothing is
+    ///      outstanding" and "something is, but not this".
     error CommitmentMismatch();
     /// @dev Zero marks a cancelled queue entry and an absent one alike, so it can never be
     ///      an approval.
@@ -124,13 +145,10 @@ abstract contract ReceiverBase is
     /// @dev The message claims to come from an address that is not this receiver's
     ///      transmitter, so it is another account's payload arriving at the wrong receiver.
     error SenderIsNotThisAccount(bytes sender);
-    error IndexOutOfRange(uint256 index);
-    /// @dev Already executed. Cancelling would suggest the payload can still be stopped.
-    error AlreadyConsumed(uint256 index);
-    error AlreadyCancelled(uint256 index);
-    /// @dev The entry at that index is not the approval the caller meant to withdraw.
-    ///      Carries both so the caller can see what it would have removed.
-    error CancelMismatch(uint256 index, bytes32 pending, bytes32 expected);
+    /// @dev Nothing outstanding under that hash, so there is nothing to withdraw. Refused
+    ///      rather than treated as a no-op, because reporting success would suggest a payload
+    ///      had been stopped when it may already have run.
+    error NotCommitted(bytes32 commitment);
     error EmptyBatch();
 
     /// @notice Whether `account` is the transmitter this receiver was created for.
@@ -243,83 +261,80 @@ abstract contract ReceiverBase is
         _revokeRole(GATEWAY_ROLE, gateway);
     }
 
-    /// @notice Append the hash of a call array to be executed later.
-    /// @dev The same hash may be queued twice: two identical payloads are two separate
-    ///      approvals and each needs its own `finalize`.
-    /// @return index The queue position, stable for the life of this receiver. Keep it: it
-    ///         is what `cancel` takes.
+    /// @notice Approve the hash of a call array, to be executed later by anyone.
+    /// @dev The same hash may be approved twice: two identical payloads are two separate
+    ///      approvals, and each needs its own `finalize`. That is what the count is for.
+    /// @return approvals How many times this hash may now be finalized.
     function commit(bytes32 commitment_)
         external
         virtual
         override
         onlySourceTransmitter
-        returns (uint256 index)
+        returns (uint256 approvals)
     {
         _requireCommittable(commitment_);
-        index = _commit(commitment_);
+
+        (, uint256 held) = _commitments.tryGet(commitment_);
+        approvals = held + 1;
+        _commitments.set(commitment_, approvals);
+        emit ReceiverCommitted(commitment_, approvals);
     }
 
-    /// @notice Withdraw a queued approval so it can never be finalized.
+    /// @notice Withdraw an approval so it can never be finalized.
     ///
     /// @dev GATED EXACTLY LIKE `commit`, AND THAT IS THE RIGHT BAR. Cancelling grants no
-    ///      authority committing does not: an authorized caller can already queue any
-    ///      approval, so letting it remove one adds nothing, while leaving it permissionless
+    ///      authority committing does not: an authorized caller can already approve any
+    ///      array, so letting it remove one adds nothing, while leaving it permissionless
     ///      would hand any caller a way to strip approvals.
     ///
-    /// @dev IT NAMES THE APPROVAL TWICE, AND BOTH MUST AGREE. Indices are stable and the
-    ///      guards below catch the ordinary mistakes, so this is not protecting against a
-    ///      race: it is protecting against an off-by-one being indistinguishable from
-    ///      success. Cancelling the wrong approval is otherwise silent, and the first sign of
-    ///      it is a `finalize` that stops matching. It matters most on the remote path, where
-    ///      `cancellationCall` builds the element at approval time and it executes later,
-    ///      against a queue that may have moved. An already-executed entry is refused rather
-    ///      than treated as a no-op, because reporting success would suggest a payload had
-    ///      been stopped when it has already run.
-    /// @param expected The commitment currently queued at `index`, from `commitmentAt`.
-    function cancel(uint256 index, bytes32 expected)
-        external
-        virtual
-        override
-        onlySourceTransmitter
-    {
-        if (index >= _commitments.length) revert IndexOutOfRange(index);
-        bytes32 pending = _commitments[index];
-        if (pending == bytes32(0)) revert AlreadyCancelled(index);
-        if (index < _head) revert AlreadyConsumed(index);
-        if (pending != expected) revert CancelMismatch(index, pending, expected);
+    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS THE ONLY HANDLE THERE IS NOW. Positions
+    ///      are gone with the queue, and a hash cannot go stale the way an index could: the
+    ///      value a caller passes is the value that is removed, so cancelling the wrong
+    ///      approval requires naming the wrong approval. An absent one reverts rather than
+    ///      passing silently, because reporting success would suggest a payload had been
+    ///      stopped when it may already have run.
+    ///
+    /// @dev IT ZEROES THE ENTRY, NOT ONE COPY OF IT. A hash approved three times is dropped
+    ///      three times over, because cancelling is what an owner reaches for when a payload
+    ///      turns out to be wrong, and a payload that is wrong is wrong in every copy.
+    ///      Re-approving is one `commit` away if only some were meant to go.
+    function cancel(bytes32 commitment_) external virtual override onlySourceTransmitter {
+        (bool held, uint256 dropped) = _commitments.tryGet(commitment_);
+        if (!held) revert NotCommitted(commitment_);
 
-        delete _commitments[index];
-        emit ReceiverCancelled(index, pending);
+        _commitments.remove(commitment_);
+        emit ReceiverCancelled(commitment_, dropped);
     }
 
-    /// @notice Supply the calls the OLDEST outstanding approval was made over, and run them.
+    /// @notice Supply an approved array, and run it.
     ///
-    /// @dev NOT GATED ON THE TRANSMITTER, deliberately: only the array matching the
-    ///      commitment does anything, which is the point of committing to a hash instead of
-    ///      trusting a caller. It takes the head and nothing else, so a relayer holding two
-    ///      valid payloads cannot decide which lands first; skipping one requires `cancel`,
-    ///      which is gated, so reordering is an owner decision recorded on-chain.
+    /// @dev NOT GATED ON THE TRANSMITTER, deliberately: only an array matching an outstanding
+    ///      commitment does anything, which is the point of approving a hash instead of
+    ///      trusting a caller.
+    ///
+    /// @dev IT DISCHARGES THE APPROVAL THE ARRAY MATCHES, NOT THE OLDEST ONE. The array names
+    ///      its own approval by hashing to it, so nothing has to be in order and nothing can
+    ///      block: a payload nobody relays sits outstanding without stalling the ones approved
+    ///      after it. The cost is that a relayer holding two valid arrays chooses which lands
+    ///      first, so an owner needing a sequence expresses it inside the payloads.
     ///
     /// @dev THE COMMITMENT MAY HAVE BEEN BUILT IN EITHER FORM. `Commitment` hashes `Call[]`
     ///      and the equivalent opaque elements to one value, so an approval made over
     ///      `bytes[]` off-chain is discharged by the typed array here. The approval covers
     ///      the calls, not the serialization somebody chose.
     function finalize(Call[] calldata calls) external virtual nonReentrant {
-        _finalizeNext(calls);
+        _finalize(calls);
     }
 
-    /// @notice Discharge several queued approvals in one transaction, in queue order.
+    /// @notice Discharge several approvals in one transaction, in the order given.
     ///
-    /// @dev `batches[i]` must match the i-th outstanding approval: the same FIFO rule applied
-    ///      repeatedly, not a way to pick entries out of order. ALL OR NOTHING, because the
-    ///      head advances as each is consumed, so letting a prefix stand would discharge
-    ///      approvals whose payloads never completed and leave the queue advanced past them
-    ///      unrepeatably.
+    /// @dev ALL OR NOTHING, because each entry is decremented before its payload runs: a
+    ///      prefix standing would discharge approvals whose payloads never completed.
     function finalize(Call[][] calldata batches) external virtual nonReentrant {
         uint256 n = batches.length;
         if (n == 0) revert EmptyBatch();
         for (uint256 i; i < n; ++i) {
-            _finalizeNext(batches[i]);
+            _finalize(batches[i]);
         }
     }
 
@@ -351,89 +366,68 @@ abstract contract ReceiverBase is
 
     /* ================================= the rules =============================== */
 
-    /// @notice The discharge rule: only the approved array does anything.
-    /// @dev `Commitment.isHashedCall` folds in `ChainKey.local()`, so the chain-binding
-    ///      travels with the check rather than with the caller: wherever this runs, it binds
-    ///      to the chain it runs on.
-    function _requireMatchingCalls(bytes32 pending, Call[] memory calls) private view {
-        if (pending == bytes32(0)) revert NothingCommitted();
-        if (!Commitment.isHashedCall(pending, calls)) revert CommitmentMismatch();
+    /// @notice The discharge rule: only an approved array does anything.
+    /// @dev `Commitment.hashCalls` folds in `ChainKey.local()`, so the chain-binding travels
+    ///      with the check rather than with the caller: wherever this runs, it binds to the
+    ///      chain it runs on, and an array approved for another chain hashes to a value this
+    ///      map does not hold.
+    ///
+    /// @dev IT DECREMENTS BEFORE `_execute` RUNS, so a re-entrant `finalize` supplying the
+    ///      same array finds that copy of the approval already spent.
+    function _finalize(Call[] calldata calls) private {
+        bytes32 pending = Commitment.hashCalls(calls);
+
+        (bool held, uint256 approvals) = _commitments.tryGet(pending);
+        if (!held) revert CommitmentMismatch();
+
+        uint256 remaining = approvals - 1;
+        if (remaining == 0) {
+            _commitments.remove(pending);
+        } else {
+            _commitments.set(pending, remaining);
+        }
+
+        emit ReceiverFinalized(pending, remaining, calls.length);
+        _execute(calls);
     }
 
-    /// @notice The pinning rule: an approval is never zero, because zero is the sentinel for
-    ///         a cancelled entry and an absent one alike.
-    /// @dev There is no "one live approval" rule: a second commit appends rather than
-    ///      replacing, so there is nothing to overwrite and nothing to protect.
+    /// @notice The pinning rule: an approval is never zero, because zero is what an absent
+    ///         entry hashes to nowhere and would make "committed" indistinguishable from
+    ///         "never committed" for a caller reading the map.
     function _requireCommittable(bytes32 incoming) private pure {
         if (incoming == bytes32(0)) revert ZeroCommitment();
     }
 
-    /// @dev The head advances BEFORE `_execute` runs, so a reentrant call sees this approval
-    ///      already spent and cannot discharge it twice.
-    function _finalizeNext(Call[] calldata calls) private {
-        uint256 index = _nextIndex();
-        bytes32 pending = _commitments[index];
-        _requireMatchingCalls(pending, calls);
+    /* ============================== approval reads ============================== */
 
-        _head = index + 1;
-        emit ReceiverFinalized(index, pending, calls.length);
-        _execute(calls);
+    /// @notice How many times `commitment_` may still be finalized. Zero means never.
+    function outstanding(bytes32 commitment_) external view returns (uint256) {
+        (, uint256 held) = _commitments.tryGet(commitment_);
+        return held;
     }
 
-    /// @dev The oldest outstanding approval, stepping over anything cancelled. The scan is
-    ///      bounded by the run of cancellations at the head, and the head pointer moves past
-    ///      them the first time a payload is finalized.
-    function _nextIndex() private view returns (uint256 index) {
-        uint256 len = _commitments.length;
-        for (index = _head; index < len; ++index) {
-            if (_commitments[index] != bytes32(0)) return index;
+    /// @notice Whether `commitment_` has an approval left.
+    function isCommitted(bytes32 commitment_) external view returns (bool) {
+        return _commitments.contains(commitment_);
+    }
+
+    /// @notice Every outstanding approval, which is what an owner reviewing what they have
+    ///         approved actually wants.
+    /// @dev THE ORDER IS NOT STABLE AND MEANS NOTHING. Discharging one swaps the last entry
+    ///      into its place, and nothing executes by position anyway.
+    function commitments() external view returns (bytes32[] memory hashes) {
+        uint256 n = _commitments.length();
+        hashes = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            (hashes[i],) = _commitments.at(i);
         }
-        revert NothingCommitted();
     }
 
-    /* ================================== queue reads ============================= */
-
-    /// @notice The approval `finalize` will require next, or zero when none is pending.
-    function commitment() public view returns (bytes32) {
-        uint256 len = _commitments.length;
-        for (uint256 i = _head; i < len; ++i) {
-            if (_commitments[i] != bytes32(0)) return _commitments[i];
-        }
-        return bytes32(0);
-    }
-
-    /// @notice The queue position `finalize` will consume next.
-    /// @dev Reverts when nothing is outstanding, so a caller cannot mistake "the queue is
-    ///      empty" for "position zero".
-    function nextIndex() external view returns (uint256) {
-        return _nextIndex();
-    }
-
-    /// @notice Every position ever committed, including spent and cancelled ones.
-    function queueLength() external view returns (uint256) {
-        return _commitments.length;
-    }
-
-    /// @notice The head pointer. Everything below it has been executed or skipped.
-    function head() external view returns (uint256) {
-        return _head;
-    }
-
-    /// @notice The approval at `index`. Zero means cancelled, or never committed.
-    /// @dev A CONSUMED ENTRY KEEPS ITS VALUE, so `commitmentAt(i) != 0 && i < head()`
-    ///      identifies one that executed and `commitmentAt(i) == 0` one that was cancelled.
-    ///      Deleting on finalize would collapse those two states into one.
-    function commitmentAt(uint256 index) external view returns (bytes32) {
-        if (index >= _commitments.length) revert IndexOutOfRange(index);
-        return _commitments[index];
-    }
-
-    /// @notice How many approvals are still outstanding.
-    function pendingCount() external view returns (uint256 n) {
-        uint256 len = _commitments.length;
-        for (uint256 i = _head; i < len; ++i) {
-            if (_commitments[i] != bytes32(0)) ++n;
-        }
+    /// @notice How many distinct approvals are outstanding.
+    /// @dev DISTINCT, not total: a hash approved twice counts once here and twice in
+    ///      `outstanding`.
+    function pendingCount() external view returns (uint256) {
+        return _commitments.length();
     }
 
     /* ================================== inbound ================================= */
@@ -516,9 +510,4 @@ abstract contract ReceiverBase is
     ///      the receiver exists, which makes a shortfall "top it up and retry".
     receive() external payable {}
 
-    function _commit(bytes32 commitment_) internal returns (uint256 index) {
-        index = _commitments.length;
-        _commitments.push(commitment_);
-        emit ReceiverCommitted(index, commitment_);
-    }
 }

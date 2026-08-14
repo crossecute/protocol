@@ -87,7 +87,7 @@ unchecked:
 ```mermaid
 flowchart LR
     Anyone([anyone]) -->|"finalize(calls)"| Rx[Receiver]
-    Rx -->|"hash(calls) vs head of queue"| Check{match?}
+    Rx -->|"hash(calls) vs outstanding approvals"| Check{match?}
     Check -->|"no"| Revert([revert])
     Check -->|"yes"| Target[target contract]
 ```
@@ -600,16 +600,22 @@ could widen later.
   payload that should wait rather than run says so itself, by carrying a self-call to
   `commit`. An empty array is the inert case, and is not refused the way `execute` refuses
   one.
-- **Approvals are a queue, not a slot**, because the receiver is long-lived: with one slot a
-  second commit would have to revert while one was still pending. It is append-only, so the
-  index `commit` returns names that approval for the life of the receiver.
-- `commit(bytes32) returns (uint256 index)`, `cancel(uint256 index, bytes32 expected)`,
-  `finalize(Call[])`, `finalize(Call[][])`, and `execute(Call[]) payable`.
-- **Execution is strictly FIFO.** `finalize` takes the head and only the head, so a relayer
-  holding two valid payloads cannot choose which lands first. The cost is head-of-line
-  blocking, and `cancel` is the escape hatch: the two are load-bearing for each other and
-  neither should be removed alone. `cancel` names the approval twice, index and `expected`,
-  so a caller working from stale state cannot withdraw a different payload than it meant.
+- **Approvals are a map, not a slot and not a queue**, because the receiver is long-lived:
+  with one slot a second commit would have to revert while one was still pending, and with a
+  queue a payload nobody relays stalls every payload approved after it. The map is
+  `commitment => how many times it may still be finalized`.
+- `commit(bytes32) returns (uint256 approvals)`, `cancel(bytes32)`, `finalize(Call[])`,
+  `finalize(Call[][])`, and `execute(Call[]) payable`. Reads are `outstanding(bytes32)`,
+  `isCommitted(bytes32)`, `commitments()`, and `pendingCount()`.
+- **Execution is unordered.** An array names its own approval by hashing to it, so `finalize`
+  discharges the approval the array matches and nothing has a position. Nothing can block:
+  a payload that can never succeed sits outstanding while everything else discharges around
+  it. The cost is that a relayer holding two valid arrays chooses which lands first, so an
+  owner needing a sequence expresses it inside the payloads.
+- **The value is a count, because a hash is not an identity.** Two identical payloads are two
+  separate approvals, and a set would silently collapse them into one. `cancel` names the hash
+  and drops every outstanding copy of it, since a payload that turns out to be wrong is wrong
+  in every copy.
 - **`finalize` is permissionless; `commit`, `cancel`, and `execute` are gated.** Exactly one
   of "the payload is checked" or "the caller is checked" holds, and each entry point picks a
   different one.
@@ -801,19 +807,20 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   loop, one policy check, one all-or-nothing rule. `TransceiverBase` deliberately does not
   inherit it. Cancellation is inherently remote (a transmitter holds no queue), so
   `cancellationCall` builds the element and a payload carries it.
-- **Approvals are an ordered queue with cancellation.** `ReceiverBase` holds
-  `bytes32[] _commitments` plus a head pointer instead of a single slot. `commit` appends
-  and returns a stable index; `finalize(Call[])` discharges only the oldest outstanding
-  approval; `finalize(Call[][])` discharges several in queue order, all-or-nothing;
-  `cancel(uint256 index, bytes32 expected)` withdraws one, naming the approval as well as the slot so a stale index reverts rather than silently dropping a different payload, and is gated exactly like `commit`. The head
-  advances before execution, so a re-entrant `finalize` finds its own approval spent.
-  Cancellation is inherently remote, since a transmitter holds no queue: `cancellationCall`
-  builds the element and a payload carries it, which the `bytes` wire expresses without a
-  message-type tag.
-  **Ordering and cancellation are load-bearing for each other**: strict FIFO means a
-  permanently-failing payload would stall everything behind it, and `cancel` is the only
-  way out. This is the same trade the failure-handling section notes for ordered bridge
-  delivery, now made deliberately at the approval layer rather than inherited from a lane.
+- **Approvals are an unordered map with cancellation.** `ReceiverBase` holds an
+  `EnumerableMap.Bytes32ToUintMap` of commitment to outstanding count. `commit` increments and
+  returns the new count; `finalize(Call[])` hashes the array, discharges the approval it
+  matches, and decrements before executing, so a re-entrant `finalize` finds that copy spent;
+  `finalize(Call[][])` discharges several in the order given, all-or-nothing; `cancel(bytes32)`
+  drops every copy of one approval and is gated exactly like `commit`. Cancellation is
+  inherently remote, since a transmitter holds no approvals: `cancellationCall` builds the
+  element and a payload carries it, which the `bytes` wire expresses without a message-type
+  tag.
+  **Ordering was traded away deliberately.** Under FIFO a permanently-failing payload stalled
+  everything behind it and `cancel` was the only way out; the two were load-bearing for each
+  other. Unordered, `cancel` is for withdrawing an approval that turned out to be wrong, and
+  nothing stalls in the first place. What is lost is the guarantee that approvals land in the
+  order they were made.
 
 **Provenance is two useful values and a null.** `Derived` means this chain can recompute an
 address on that one; `Attested` means it cannot and was told, so the value is worth exactly

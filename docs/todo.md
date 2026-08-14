@@ -202,9 +202,11 @@ mainnet.
   write-once, add no transport, and pay no address that does not already hold `TREASURY_ROLE`.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
-- **Ordered execution blocks the queue.** Strict FIFO means a permanently-failing payload
-  stalls everything behind it until `cancel`. Ordering and cancellation are load-bearing for
-  each other; neither should be removed alone.
+- **~~Ordered execution blocks the queue.~~ SETTLED: approvals are unordered.** The queue
+  became a `commitment => count` map, so `finalize` discharges the approval its array matches
+  and a permanently-failing payload stalls nothing. What that gives up is the guarantee that
+  approvals land in the order they were made — a relayer holding two valid arrays chooses —
+  so a sequence that matters has to be expressed inside the payloads.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.
@@ -308,6 +310,6 @@ mainnet.
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where
   there is no commitment at all. **Now load-bearing for the scheme plugins**: an
   `ICommitmentScheme` is only as good as the evidence that its primitive matches what the
-  destination's own receiver applies, and a wrong one wedges that receiver's FIFO queue
-  until a `cancel` crosses. The corpus is what turns "we believe this is Blake2b" into a
+  destination's own receiver applies, and a wrong one leaves an approval that can never be
+  discharged. The corpus is what turns "we believe this is Blake2b" into a
   check.

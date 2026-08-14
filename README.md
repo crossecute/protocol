@@ -137,12 +137,12 @@ flowchart LR
 #### 3c · Run later: finalize
 
 Anyone supplies the array afterwards, and pays for it. The receiver hashes what it was given
-and compares it against the oldest outstanding approval, so what runs is what was approved.
+and looks for a matching outstanding approval, so what runs is what was approved.
 
 ```mermaid
 flowchart LR
     Anyone([anyone]) -->|"finalize(calls)"| Rx[Receiver]
-    Rx -->|"hash(calls) vs head of queue"| Check{match?}
+    Rx -->|"hash(calls) vs outstanding approvals"| Check{match?}
     Check -->|"no"| Revert([revert])
     Check -->|"yes"| Target[target contract]
 ```
@@ -224,7 +224,7 @@ summary: the file is always the newer statement.
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
 | Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, `Hub` / `Spoke`    |
-| Why approvals are an ordered queue, and why `cancel` is load-bearing     | `inbound/ReceiverBase.sol`            |
+| Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |

@@ -534,7 +534,7 @@ contract TransportTest is Test {
         r.deliver(transmitter.sentPayload());
 
         assertEq(sink.total(), 0, "nothing ran on arrival");
-        assertEq(r.commitment(), hash, "the payload pinned its own hash");
+        assertTrue(r.isCommitted(hash), "the payload pinned its own hash");
 
         vm.prank(address(0xF00D));
         r.finalize(later);

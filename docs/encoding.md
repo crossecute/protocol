@@ -318,9 +318,9 @@ receiver enforces with the keccak fold frozen into `ReceiverBase` and can never 
 lookup), that is the whole safety argument for letting the preview be swappable.
 
 Getting the primitive wrong therefore fails closed, the same way building a commitment with
-the local chainKey does. It is not free: an unmatched commitment sits in a strict-FIFO queue
-and blocks everything behind it until a `cancel` crosses, which is why a plugin is checked
-against `test/vectors/` rather than trusted.
+the local chainKey does. It is not free: an unmatched commitment sits outstanding until a
+`cancel` crosses, which is why a plugin is checked against `test/vectors/` rather than
+trusted. It no longer blocks anything else, since approvals are unordered.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured, which is exactly why the

@@ -42,8 +42,12 @@ contract QueueReceiver is ReceiverBase {
     }
 }
 
-/// @notice The approval queue: ordered execution, cancellation, and the relationship
-///         between the two.
+/// @notice The approval map: unordered discharge, duplicate approvals, and cancellation.
+///
+/// @dev THE PROPERTY THAT REPLACED FIFO. An array names its own approval by hashing to it,
+///      so nothing executes by position and nothing can block: a payload nobody relays sits
+///      outstanding while every other approval discharges around it. What is given up is
+///      ordering, which the payloads themselves now have to express.
 contract CommitmentQueueTest is Test {
     QueueReceiver r;
     Ledger ledger;
@@ -54,112 +58,107 @@ contract CommitmentQueueTest is Test {
         ledger = new Ledger();
         r = new QueueReceiver();
         r.initialize(TRANSMITTER, new Call[](0));
-        // The transmitter is the only party that may queue or withdraw an approval. The
-        // test contract created this receiver and has no authority over it afterwards,
-        // which is the property being relied on rather than worked around.
+        // The transmitter is the only party that may approve or withdraw. The test contract
+        // created this receiver and has no authority over it afterwards, which is the
+        // property being relied on rather than worked around.
         vm.startPrank(TRANSMITTER);
     }
 
-    /* ================================== ordering ================================ */
+    /* ================================= approving ================================ */
 
-    function test_anEmptyReceiverHasNothingPending() public view {
+    function test_anEmptyReceiverHasNothingOutstanding() public view {
         assertEq(r.pendingCount(), 0);
-        assertEq(r.commitment(), bytes32(0));
-        assertEq(r.queueLength(), 0);
-        assertEq(r.head(), 0);
+        assertEq(r.commitments().length, 0);
+        assertFalse(r.isCommitted(_hash(1)));
+        assertEq(r.outstanding(_hash(1)), 0);
     }
 
-    function test_commitReturnsAStableIndex() public {
-        assertEq(r.commit(_hash(1)), 0);
+    function test_commitReturnsTheOutstandingCount() public {
+        assertEq(r.commit(_hash(1)), 1);
         assertEq(r.commit(_hash(2)), 1);
-        assertEq(r.commit(_hash(3)), 2);
-        assertEq(r.queueLength(), 3);
-        assertEq(r.pendingCount(), 3);
+        assertEq(r.pendingCount(), 2, "two distinct approvals");
     }
 
-    /// @dev THE RULE: `finalize` takes the oldest outstanding approval and nothing else.
-    ///      A relayer holding two valid payloads cannot choose which lands first.
-    function test_finalizeTakesTheHeadAndOnlyTheHead() public {
+    function test_aZeroCommitmentIsRefused() public {
+        vm.expectRevert(ReceiverBase.ZeroCommitment.selector);
+        r.commit(bytes32(0));
+    }
+
+    /* ================================ unordered ================================= */
+
+    /// @dev THE RULE: `finalize` discharges the approval its array matches, whichever that
+    ///      is. Approving 1 then 2 and finalizing 2 first is not a reordering to be
+    ///      prevented; it is the point.
+    function test_finalizeTakesWhicheverArrayItIsHanded() public {
         r.commit(_hash(1));
         r.commit(_hash(2));
 
+        r.finalize(_calls(2));
+        assertEq(ledger.seen(0), 2, "the second approval ran first");
+        assertEq(r.pendingCount(), 1);
+        assertTrue(r.isCommitted(_hash(1)), "and the first is untouched");
+
+        r.finalize(_calls(1));
+        assertEq(r.pendingCount(), 0);
+    }
+
+    /// @dev THE WHOLE REASON THE QUEUE WENT. Under FIFO a payload that can never succeed
+    ///      stalled everything approved after it until it was cancelled. Here it stalls
+    ///      nothing: it simply stays outstanding.
+    function test_anUndischargeablePayloadBlocksNothing() public {
+        r.commit(_failingHash());
+        r.commit(_hash(1));
+
+        r.finalize(_calls(1));
+        assertEq(ledger.seen(0), 1, "the good payload ran with the bad one still pending");
+        assertTrue(r.isCommitted(_failingHash()), "which is still there to cancel or retry");
+    }
+
+    function test_anUnapprovedArrayIsRefused() public {
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        r.finalize(_calls(1));
+
+        r.commit(_hash(1));
         vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_calls(2));
-
-        r.finalize(_calls(1));
-        r.finalize(_calls(2));
-
-        assertEq(ledger.seen(0), 1);
-        assertEq(ledger.seen(1), 2);
     }
 
-    function test_finalizeOnAnEmptyQueueReverts() public {
-        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
-        r.finalize(_calls(1));
-    }
-
-    /// @dev Two identical payloads are two separate approvals, and each needs its own
-    ///      finalize. A single slot could not express this at all.
+    /// @dev Two identical payloads are two separate approvals: a set would have collapsed
+    ///      them, so approving the same transfer twice would have bought one.
     function test_identicalPayloadsAreSeparateApprovals() public {
-        r.commit(_hash(7));
-        r.commit(_hash(7));
-
-        r.finalize(_calls(7));
-        assertEq(r.pendingCount(), 1, "the second approval survives the first");
-        r.finalize(_calls(7));
-        assertEq(r.pendingCount(), 0);
-        assertEq(ledger.count(), 2, "it ran twice, because it was approved twice");
-    }
-
-    /// @dev A consumed entry keeps its value and is passed by the head pointer; a
-    ///      cancelled one is zeroed. That is what keeps the two distinguishable after the
-    ///      fact rather than collapsing into one state.
-    function test_aConsumedEntryIsDistinguishableFromACancelledOne() public {
         r.commit(_hash(1));
-        r.commit(_hash(2));
-        r.cancel(1, _hash(2));
+        assertEq(r.commit(_hash(1)), 2, "counted, not deduplicated");
+        assertEq(r.pendingCount(), 1, "one distinct hash");
+
+        r.finalize(_calls(1));
+        assertEq(r.outstanding(_hash(1)), 1, "one copy left");
         r.finalize(_calls(1));
 
-        assertEq(r.commitmentAt(0), _hash(1), "executed: value kept, below head");
-        assertEq(r.head(), 1);
-        assertEq(r.commitmentAt(1), bytes32(0), "cancelled: zeroed");
+        assertEq(ledger.count(), 2, "it ran twice, once per approval");
+        assertFalse(r.isCommitted(_hash(1)), "and the entry left the map at zero");
     }
 
-    /* ================================ batch finalize ============================ */
+    /* ================================== batches ================================= */
 
-    function test_batchFinalizeRunsTheQueueInOrder() public {
+    function test_batchFinalizeDischargesEachArray() public {
         r.commit(_hash(1));
         r.commit(_hash(2));
         r.commit(_hash(3));
 
         Call[][] memory batches = new Call[][](3);
-        batches[0] = _calls(1);
-        batches[1] = _calls(2);
-        batches[2] = _calls(3);
-        r.finalize(batches);
-
-        assertEq(r.pendingCount(), 0);
-        assertEq(ledger.seen(0), 1);
-        assertEq(ledger.seen(1), 2);
-        assertEq(ledger.seen(2), 3);
-    }
-
-    /// @dev It is the same FIFO rule applied repeatedly, not a way to pick entries out of
-    ///      order.
-    function test_batchFinalizeCannotReorderTheQueue() public {
-        r.commit(_hash(1));
-        r.commit(_hash(2));
-
-        Call[][] memory batches = new Call[][](2);
-        batches[0] = _calls(2);
+        batches[0] = _calls(3);
         batches[1] = _calls(1);
-
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        batches[2] = _calls(2);
         r.finalize(batches);
+
+        assertEq(ledger.seen(0), 3, "in the order given, which is the caller's to choose");
+        assertEq(ledger.seen(1), 1);
+        assertEq(ledger.seen(2), 2);
+        assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev ALL OR NOTHING. A prefix would discharge approvals whose payloads never
-    ///      completed and leave the head advanced past them unrepeatably.
+    /// @dev ALL OR NOTHING. Each entry is decremented before its payload runs, so a prefix
+    ///      standing would discharge approvals whose payloads never completed.
     function test_aFailureLateInABatchRevertsTheWholeBatch() public {
         r.commit(_hash(1));
         r.commit(_failingHash());
@@ -171,8 +170,8 @@ contract CommitmentQueueTest is Test {
         vm.expectRevert();
         r.finalize(batches);
 
-        assertEq(r.pendingCount(), 2, "the queue did not move");
-        assertEq(ledger.count(), 0, "and the first payload did not stick");
+        assertEq(ledger.count(), 0, "nothing ran");
+        assertEq(r.pendingCount(), 2, "and nothing was spent");
     }
 
     function test_anEmptyBatchIsRefused() public {
@@ -180,132 +179,64 @@ contract CommitmentQueueTest is Test {
         r.finalize(new Call[][](0));
     }
 
-    /* ================================ cancellation ============================== */
+    /* ================================ cancelling ================================ */
 
-    function test_cancelRemovesAnApprovalFromTheQueue() public {
+    function test_cancelRemovesAnApproval() public {
         r.commit(_hash(1));
-        r.commit(_hash(2));
+        r.cancel(_hash(1));
 
-        r.cancel(0, _hash(1));
-
-        assertEq(r.pendingCount(), 1);
-        assertEq(r.commitment(), _hash(2), "the survivor moved to the head");
-
+        assertFalse(r.isCommitted(_hash(1)));
         vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_calls(1));
-
-        r.finalize(_calls(2));
-        assertEq(ledger.seen(0), 2);
     }
 
-    /// @dev THE WHOLE REASON CANCEL EXISTS. Ordered execution means a payload that can
-    ///      never succeed stalls everything behind it, until it is withdrawn.
-    function test_cancelUnblocksAQueueStuckOnAFailingPayload() public {
-        r.commit(_failingHash());
-        r.commit(_hash(2));
-
-        // Head-of-line blocking, demonstrated rather than asserted in a comment.
-        vm.expectRevert();
-        r.finalize(_failingCalls());
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
-        r.finalize(_calls(2));
-
-        r.cancel(0, _failingHash());
-
-        r.finalize(_calls(2));
-        assertEq(ledger.seen(0), 2, "the queue moves again");
-    }
-
-    function test_cancelSkipsARunOfCancelledEntries() public {
+    /// @dev IT ZEROES THE ENTRY, NOT ONE COPY. A payload that turns out to be wrong is
+    ///      wrong in every copy; re-approving is one `commit` away if only some were meant
+    ///      to go.
+    function test_cancelDropsEveryCopyOfAnApproval() public {
         r.commit(_hash(1));
-        r.commit(_hash(2));
-        r.commit(_hash(3));
-        r.cancel(0, _hash(1));
-        r.cancel(1, _hash(2));
-
-        assertEq(r.commitment(), _hash(3));
-        assertEq(r.nextIndex(), 2);
-        r.finalize(_calls(3));
-        assertEq(r.pendingCount(), 0);
-    }
-
-    function test_cancellingEverythingLeavesNothingToFinalize() public {
         r.commit(_hash(1));
-        r.cancel(0, _hash(1));
-
-        assertEq(r.pendingCount(), 0);
-        assertEq(r.commitment(), bytes32(0));
-        vm.expectRevert(ReceiverBase.NothingCommitted.selector);
-        r.finalize(_calls(1));
-    }
-
-    function test_cancelTwiceIsRefused() public {
         r.commit(_hash(1));
-        r.cancel(0, _hash(1));
 
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.AlreadyCancelled.selector, 0));
-        r.cancel(0, _hash(1));
+        r.cancel(_hash(1));
+        assertEq(r.outstanding(_hash(1)), 0);
     }
 
     /// @dev Refused rather than treated as a no-op: reporting success would suggest a
-    ///      payload had been stopped when it has already run.
-    function test_anExecutedApprovalCannotBeCancelled() public {
+    ///      payload had been stopped when it may already have run.
+    function test_cancellingWhatIsNotThereIsRefused() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(ReceiverBase.NotCommitted.selector, _hash(1))
+        );
+        r.cancel(_hash(1));
+
         r.commit(_hash(1));
         r.finalize(_calls(1));
-
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.AlreadyConsumed.selector, 0));
-        r.cancel(0, _hash(1));
-    }
-
-    /// @dev THE OFF-BY-ONE THAT WOULD OTHERWISE BE SILENT. Cancelling the wrong slot
-    ///      succeeds and simply loses a payload nobody chose to drop; the first sign is a
-    ///      `finalize` that stops matching. Naming the approval as well as the slot
-    ///      turns that into a revert.
-    function test_cancelRefusesAStaleIndex() public {
-        r.commit(_hash(1));
-        r.commit(_hash(2));
-
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ReceiverBase.CancelMismatch.selector, uint256(1), _hash(2), _hash(1)
-            )
+            abi.encodeWithSelector(ReceiverBase.NotCommitted.selector, _hash(1))
         );
-        r.cancel(1, _hash(1));
-
-        assertEq(r.pendingCount(), 2, "nothing was withdrawn");
-    }
-
-    function test_cancelRejectsAnIndexPastTheQueue() public {
-        r.commit(_hash(1));
-
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.IndexOutOfRange.selector, 5));
-        r.cancel(5, _hash(1));
+        r.cancel(_hash(1));
     }
 
     /// @dev GATED EXACTLY LIKE `commit`. Leaving it open would hand any caller a way to
-    ///      strip approvals, which is the one direction that would be an escalation.
+    ///      strip approvals.
     function test_cancelIsGatedOnTheSameBarAsCommit() public {
         r.commit(_hash(1));
-
-        // Step out of the standing transmitter prank to speak as somebody else.
         vm.stopPrank();
+
         vm.prank(address(0xBAD));
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
-        r.cancel(0, _hash(1));
+        r.cancel(_hash(1));
 
-        // The source transmitter queued it, so the source transmitter may withdraw it.
-        vm.startPrank(TRANSMITTER);
-        r.cancel(0, _hash(1));
-        assertEq(r.pendingCount(), 0);
+        assertTrue(r.isCommitted(_hash(1)));
     }
 
-    /* ============================ reentrancy on the head ======================== */
+    /* ============================ reentrancy on an approval ===================== */
 
-    /// @dev TWO DEFENCES, AND THE OUTER ONE FIRES FIRST. `finalize` is `nonReentrant`, so
-    ///      a payload that re-enters is stopped before it can reach the queue at all.
-    ///      Underneath that, the head still advances BEFORE `_execute`, so even without
-    ///      the guard a re-entrant call would find its own approval already spent. This
-    ///      asserts the guard; `test_theHeadIsSpentBeforeExecution` asserts the other.
+    /// @dev TWO DEFENCES, AND THE OUTER ONE FIRES FIRST. `finalize` is `nonReentrant`, so a
+    ///      payload that re-enters is stopped before it can reach the map at all.
+    ///      Underneath that, the count is decremented BEFORE `_execute`, so even without the
+    ///      guard a re-entrant call would find that copy of the approval already spent.
     function test_reentrantFinalizeIsRefused() public {
         Reenterer bad = new Reenterer();
         Call[] memory calls = new Call[](1);
@@ -319,10 +250,6 @@ contract CommitmentQueueTest is Test {
         r.commit(h);
         bad.arm(r, calls);
 
-        // The inner revert is the proof: the re-entrant `finalize` found NOTHING pending,
-        // because the head had already moved past this approval before the call ran. Had
-        // it advanced afterwards, the re-entrant call would have matched and executed the
-        // payload a second time against one approval.
         vm.expectRevert(
             abi.encodeWithSelector(
                 Executor.CallFailed.selector,
@@ -358,15 +285,6 @@ contract CommitmentQueueTest is Test {
         calls = new Call[](1);
         calls[0] =
             Call({target: address(ledger), value: 0, data: abi.encodeCall(Ledger.boom, ())});
-    }
-}
-
-/// @dev Reads the receiver's pending count from inside the payload it is executing.
-contract Peeker {
-    uint256 public pendingDuring = type(uint256).max;
-
-    function look(address receiver) external {
-        pendingDuring = QueueReceiver(payable(receiver)).pendingCount();
     }
 }
 
