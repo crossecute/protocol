@@ -11,7 +11,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
+import {ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
+import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -22,6 +23,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
@@ -342,7 +344,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(r.isCommitted(pending), "approval untouched");
 
         // And it still requires its own matching array.
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(_otherCalls());
         r.finalize(approved);
         assertEq(r.pendingCount(), 0);
@@ -514,7 +516,7 @@ contract CommitFinalizeTest is Test {
         tampered[1].data = abi.encodeWithSignature("bar(address)", address(0xBAD));
 
         vm.prank(relayer);
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(tampered);
     }
 
@@ -639,7 +641,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
         r.finalize(calls);
 
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -801,19 +803,19 @@ contract CommitFinalizeTest is Test {
 
     /* ======================== isolation between senders ======================= */
 
-    /// @dev THE TRANSCEIVER HOLDS NOTHING, AND ISOLATION IS STRUCTURAL. An approval lives
-    ///      in the sender's own receiver, and there is exactly one receiver per transmitter
-    ///      because the CREATE2 salt is the transmitter. There is no shared slot and no
-    ///      per-sender bookkeeping to get wrong.
-    function test_transceiverHoldsNoCommitmentState() public {
+    /// @dev AN ACCOUNT'S APPROVALS LIVE IN THE ACCOUNT, AND ISOLATION IS STRUCTURAL. There
+    ///      is exactly one receiver per transmitter, because the CREATE2 salt is the
+    ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
+    ///      wrong. The transceiver holds approvals of its own now, but they are bootstraps
+    ///      rather than anybody's payload, and this one holds none.
+    function test_anAccountsApprovalsLiveInTheAccount() public {
         t.inbound(transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0)), hashOf(_calls())));
 
         (bool a,) = address(t).staticcall(
             abi.encodeWithSignature("pendingOf(address)", transmitter)
         );
-        assertFalse(a, "no pending mapping");
-        (bool b,) = address(t).staticcall(abi.encodeWithSignature("pendingCount()"));
-        assertFalse(b, "no single slot either");
+        assertFalse(a, "no per-sender mapping on the transceiver");
+        assertEq(t.pendingCount(), 0, "and nothing of its own here");
 
         assertTrue(
             MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).isCommitted(
@@ -909,19 +911,127 @@ contract CommitFinalizeTest is Test {
 
     /// @dev The single-slot entry points cannot say WHOSE commitment they mean, and the
     ///      transceiver has no commitments to mean. Neither was ever inherited.
-    function test_transceiverHasNoCommitFinalizeEntryPoints() public {
-        (bool a,) = address(t).call(
-            abi.encodeWithSignature("finalize(bytes[])", new bytes[](0))
+    /// @dev A TRANSCEIVER COMMITS AND FINALIZES, AND CANCELS NEITHER ITS OWN NOR ANYBODY'S.
+    ///      `commit` admits only a payload this contract is already executing, so no caller
+    ///      can approve work on the contract every account's bootstrap goes through, and
+    ///      there is no `cancel` at all: an entry point that removed an approval on a shared
+    ///      contract would let whoever reached it strip a bootstrap somebody else paid for.
+    function test_theTransceiverCommitsOnlyToItselfAndCannotCancel() public {
+        vm.prank(relayer);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NotSelfCall.selector, relayer)
         );
-        assertFalse(a, "no finalize(bytes[])");
+        t.commit(keccak256("mine"));
 
-        (bool b,) = address(t).call(abi.encodeWithSignature("commit(bytes32)", bytes32(0)));
-        assertFalse(b, "no commit(bytes32)");
-
-        (bool c,) = address(t).call(
-            abi.encodeWithSignature("finalizeTo(address,bytes[])", transmitter, new bytes[](0))
+        (bool cancelled,) = address(t).call(
+            abi.encodeWithSignature("cancel(bytes32)", keccak256("mine"))
         );
-        assertFalse(c, "and nothing to finalize to");
+        assertFalse(cancelled, "no cancel on a shared contract");
+
+        (bool executed,) = address(t).call(
+            abi.encodeWithSignature("execute((address,uint256,bytes)[])", new Call[](0))
+        );
+        assertFalse(executed, "and no ungated execute either");
+    }
+
+    /* ========================== bootstrap, deferred =========================== */
+
+    /// @notice A bootstrap that arrives as an APPROVAL, and is paid for by somebody else.
+    ///
+    /// @dev THE MESSAGE THAT CANNOT PAY FOR ITSELF. Every other payload in the protocol lands
+    ///      in an account that already exists and whose owner chose to send it. A bootstrap
+    ///      lands where there is no account yet, inside a delivery callback, and standing an
+    ///      account up plus running its first payload is the most expensive thing this
+    ///      protocol does. Committing splits it: the authenticated message from the hub costs
+    ///      the gas of one `commit`, and whoever wants the account to exist supplies the array
+    ///      afterwards and pays for the deployment.
+    ///
+    /// @dev NOTHING ON THE WIRE SAYS WHICH IT IS. The hub sends a payload either way;
+    ///      `commit` is a call in it, exactly as it is for an account. That is the same rule
+    ///      the receiver follows, now applied to the one contract that has to receive on
+    ///      behalf of an account that does not exist.
+    function test_aBootstrapCanBeCommittedThenFinalizedByAnyone() public {
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        assertEq(predicted.code.length, 0, "no account yet");
+
+        // What the finalizer will supply: the bootstrap itself, as a self-call.
+        Call[] memory boot = new Call[](1);
+        boot[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(
+                SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls())
+            )
+        });
+        bytes32 pending = hashOf(boot);
+
+        // What the hub sends: a payload whose one element approves that hash.
+        Call[] memory approve = new Call[](1);
+        approve[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(ICommitFinalize.commit, (pending))
+        });
+
+        vm.prank(gateway);
+        t.receiveMessage(
+            bytes32(0),
+            Erc7930.encodeEvm(1, address(0xB0BB1E)), // the home chain, and the hub on it
+            Payload.encodeCalls(approve)
+        );
+
+        assertTrue(t.isCommitted(pending), "the transceiver holds the approval");
+        assertEq(predicted.code.length, 0, "and the account still does not exist");
+
+        // A different party entirely supplies the array and pays for the deployment.
+        vm.prank(relayer);
+        t.finalize(boot);
+
+        assertGt(predicted.code.length, 0, "the account exists, paid for by the relayer");
+        assertEq(
+            MockReceiver(payable(predicted)).sourceTransmitter(),
+            predicted,
+            "and it was armed exactly as a direct bootstrap would have armed it"
+        );
+        assertEq(t.pendingCount(), 0, "the approval is spent");
+    }
+
+    /// @dev The approval is over the WHOLE bootstrap, so a finalizer cannot stand up a
+    ///      different account, or the same one carrying a different payload.
+    function test_aDeferredBootstrapCannotBeRedirected() public {
+        Call[] memory boot = new Call[](1);
+        boot[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(
+                SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls())
+            )
+        });
+
+        Call[] memory approve = new Call[](1);
+        approve[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(ICommitFinalize.commit, (hashOf(boot)))
+        });
+
+        vm.prank(gateway);
+        t.receiveMessage(
+            bytes32(0), Erc7930.encodeEvm(1, address(0xB0BB1E)), Payload.encodeCalls(approve)
+        );
+
+        Call[] memory hijacked = new Call[](1);
+        hijacked[0] = Call({
+            target: address(t),
+            value: 0,
+            data: abi.encodeCall(
+                SpokeTransceiverBase.bootstrapInbound, (transmitter2, bytes32(0), _calls())
+            )
+        });
+
+        vm.prank(relayer);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        t.finalize(hijacked);
     }
 
     /* =============================== receiver ================================= */
@@ -1018,7 +1128,7 @@ contract CommitFinalizeTest is Test {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(address(r));
-        vm.expectRevert(ReceiverBase.ZeroCommitment.selector);
+        vm.expectRevert(InboundBase.ZeroCommitment.selector);
         r.commit(bytes32(0));
     }
 
@@ -1052,7 +1162,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         vm.chainId(999);
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -1065,7 +1175,7 @@ contract CommitFinalizeTest is Test {
         r.commit(pending);
 
         vm.chainId(999);
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(later);
     }
 }

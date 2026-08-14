@@ -391,15 +391,37 @@ per-destination bootstrap record below, and nothing else.
   configured under. Only the bootstrap and quote members are called from this contract;
   `routeTo` is there so an account never needs a route table of its own.
 
+### InboundBase
+
+Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `TransceiverBase`:
+`receiveMessage`, the approval map, `commit`, both `finalize` overloads, and the reads.
+`Executor` + `Roles` + `ReentrancyGuard`.
+
+- **Two seams, and they are the only things the inheritors disagree about.**
+  `_authenticateSender` says which origin a delivery is accepted from — an account answers
+  "my transmitter", a transceiver answers "the counterpart on the chain this came from", at
+  its bar. `_checkCommitter` says who may approve a hash — an account answers "its
+  transmitter, or a payload it is already executing", a transceiver answers "a payload it is
+  already executing" and nothing else.
+- **`cancel` is deliberately NOT here.** Withdrawing an approval is an account's operation,
+  gated on the one transmitter that owns it. A transceiver is shared by every owner on its
+  chain, so an entry point that removed an approval there would let whoever reached it strip
+  a bootstrap somebody else has already paid to send.
+- **A transceiver receives because a bootstrap cannot pay for itself.** It is the one message
+  that lands where there is no account yet, inside a delivery callback, and standing an
+  account up plus running its first payload is the most expensive thing the protocol does. A
+  payload arriving as `commit(hash)` splits that: the authenticated message costs one
+  `commit`, and whoever wants the account supplies the array afterwards and pays for the
+  deployment. `bootstrapInbound` runs as the self-call it already required.
+
 ### TransceiverBase
 
-`OutboundBase` + `Initializable` + `UUPSUpgradeable`. Authentication, routing, manufacture,
-and the upgrade lock: the symmetric half, shared by hub and spoke.
+`OutboundBase` + `InboundBase` + `Initializable` + `UUPSUpgradeable`. Authentication,
+routing, manufacture, and the upgrade lock: the symmetric half, shared by hub and spoke.
 
-It is deliberately **not** an `Executor` (a transceiver has no payload of its own) and not a
-`ReceiverBase` (both commitment rules live where the commitment lives). It inherits no
-ownership at all, so a binding can join at the concrete contract without its `Ownable`
-colliding with one declared here.
+It is **not** a `ReceiverBase`: it holds no `sourceTransmitter`, has no `execute`, and cannot
+`cancel`. It has no ownership either — that is `HubTransceiverBase`'s — so a binding can join
+at the concrete contract without an `Ownable` colliding with one declared here.
 
 - `CROSS_PROXY_INIT_CODE_HASH`: the one initcode hash every account deploys from, on every
   chain, transmitter and receiver alike. Exposed so the hub can reproduce addresses without
@@ -581,10 +603,10 @@ armed, so there is no configuring authority for a compromised key to be.
 
 ### ReceiverBase
 
-`Executor` + `Initializable` + `ReentrancyGuard` + `IReceiverInit` + `IERC7786Recipient`.
-Exactly one
-receiver per transmitter per destination, reused for every payload that transmitter ever
-sends.
+`InboundBase` + `Initializable` + `IReceiverInit`. Exactly one receiver per transmitter per
+destination, reused for every payload that transmitter ever sends. What it adds to
+`InboundBase` is everything an ACCOUNT has and a shared contract does not: a
+`sourceTransmitter`, a gated `execute`, `cancel`, `revokeGateway`, and a `receive()`.
 
 **It is not an `OutboundBase`.** A receiver never sends, so it has no `_sendMessage`, no
 `_quoteMessage`, and no quote surface. It is a recipient and nothing else. The absence is structural rather than a gate someone

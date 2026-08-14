@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
+import {InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -80,7 +81,7 @@ contract CommitmentQueueTest is Test {
     }
 
     function test_aZeroCommitmentIsRefused() public {
-        vm.expectRevert(ReceiverBase.ZeroCommitment.selector);
+        vm.expectRevert(InboundBase.ZeroCommitment.selector);
         r.commit(bytes32(0));
     }
 
@@ -115,11 +116,11 @@ contract CommitmentQueueTest is Test {
     }
 
     function test_anUnapprovedArrayIsRefused() public {
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(_calls(1));
 
         r.commit(_hash(1));
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(_calls(2));
     }
 
@@ -175,7 +176,7 @@ contract CommitmentQueueTest is Test {
     }
 
     function test_anEmptyBatchIsRefused() public {
-        vm.expectRevert(ReceiverBase.EmptyBatch.selector);
+        vm.expectRevert(InboundBase.EmptyBatch.selector);
         r.finalize(new Call[][](0));
     }
 
@@ -186,7 +187,7 @@ contract CommitmentQueueTest is Test {
         r.cancel(_hash(1));
 
         assertFalse(r.isCommitted(_hash(1)));
-        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
         r.finalize(_calls(1));
     }
 

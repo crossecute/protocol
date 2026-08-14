@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
+import {ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -686,7 +686,7 @@ abstract contract TransmitterBase is
         return Call({
             target: receiver,
             value: 0,
-            data: abi.encodeCall(ICommitFinalize.cancel, (commitment))
+            data: abi.encodeCall(ICancel.cancel, (commitment))
         });
     }
 

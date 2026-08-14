@@ -5,6 +5,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {InboundBase} from "src/messaging/inbound/InboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -22,12 +23,19 @@ import {UUPSUpgradeable} from
 ///      chain would collide with the transmitter that belongs there. Absence beats a revert,
 ///      because there is no entry point for a later change to expose.
 ///
-/// @dev IT IS NOT AN `Executor` AND NOT A `ReceiverBase`. A transceiver has no payload of its
-///      own, and both commitment rules live where the commitment lives. It keeps
-///      `OutboundBase` because it does send: bootstrap messages onward, and the spoke's
-///      receiver-address report home. It also means there is no shared slot to wedge: a
-///      payload that can never execute strands itself at its own transmitter's receiver,
-///      which is one-per-transmitter by construction, and blocks nobody.
+/// @dev IT IS AN `InboundBase`, AND THAT IS WHAT MAKES A BOOTSTRAP DEFERRABLE. A bootstrap is
+///      the one message whose gas lands on whoever is delivering it rather than on the party
+///      that wanted it, and it is the one message an account cannot receive for itself, since
+///      the account does not exist yet. So a payload arriving here as `commit(hash)` can be
+///      finalized later by anyone willing to pay for it, and `bootstrapInbound` runs as the
+///      self-call it already required. What that costs is that a transceiver now executes
+///      arrays, which it previously did not: the bar is `InboundBase`'s, one authenticated
+///      origin, plus a `_checkCommitter` that admits nothing but this contract itself.
+///
+/// @dev IT IS STILL NOT A `ReceiverBase`. It holds no `sourceTransmitter`, has no `execute`,
+///      and cannot `cancel`: withdrawing an approval on a contract shared by every owner on
+///      the chain would let whoever reached the entry point strip a bootstrap somebody else
+///      has already paid to send.
 ///
 /// @dev IT HAS NO AUTHORITY AT ALL, AND THAT IS WHAT THE TWO HALVES DISAGREE ABOUT.
 ///      `Ownable` sits on `HubTransceiverBase`, because the hub is the only half with
@@ -60,7 +68,12 @@ import {UUPSUpgradeable} from
 ///      known before the first message, unchanged after the thousandth. Nothing about the
 ///      payload is in the salt, which would mint a new receiver per message and throw away
 ///      the state a receiver accumulates.
-abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
+abstract contract TransceiverBase is
+    Initializable,
+    OutboundBase,
+    InboundBase,
+    UUPSUpgradeable
+{
     /// @notice What a deployment names on EITHER half, and can never revisit: the treasury
     ///         that may be paid, and the transports that may carry messages.
     ///
@@ -111,6 +124,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      chain must override BOTH; this is what catches overriding one.
     error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
+    /// @dev Reachable only from a payload this contract is already executing, which means one
+    ///      that arrived through an authenticated delivery.
+    error NotSelfCall(address caller);
 
     /* ================================== routing ================================ */
 
@@ -453,6 +469,31 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     }
 
     /* ================================= inbound ================================= */
+
+    /// @notice Who may approve a hash here: nothing but a payload this contract is already
+    ///         executing, which means one that arrived through `receiveMessage` from an
+    ///         authenticated origin.
+    ///
+    /// @dev THE NARROWEST ANSWER AVAILABLE, and narrower than a receiver's. An account admits
+    ///      its own transmitter as well, because an account has exactly one and it is the
+    ///      party the account exists for. A transceiver is shared by every owner on its chain
+    ///      and has no equivalent, so anything wider would let one party approve work that
+    ///      binds the contract everyone else's bootstrap goes through.
+    function _checkCommitter() internal view override {
+        if (msg.sender != address(this)) revert NotSelfCall(msg.sender);
+    }
+
+    /// @notice Which origins a delivery is accepted from: the counterpart on the chain the
+    ///         message says it came from, at this transceiver's bar.
+    /// @dev It splits the ERC-7930 sender envelope the way every binding already does — the
+    ///      chain half is the route, the address half is the sender — and hands both to
+    ///      `_authenticateOrigin`, so `receiveMessage` and a binding's own inbound callback
+    ///      reach the same check rather than two that could drift.
+    function _authenticateSender(bytes calldata sender) internal view override {
+        _authenticateOrigin(
+            Erc7930.toChainIdentifier(sender), Erc7930.parseStrict(sender).addr
+        );
+    }
 
     /// @notice The one funnel every protocol binding routes an arriving message into.
     ///
