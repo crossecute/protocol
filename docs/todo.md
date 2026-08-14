@@ -291,9 +291,15 @@ mainnet.
 
 ## 6. Infrastructure: None of it exists
 
-- **`lib/` is vendored rather than submoduled**: forge-std 1.16.2, OZ 5.4.0,
-  OZ-upgradeable 5.4.0. Committed deliberately: CREATE2 parity depends on byte-identical
-  initcode, so the exact dependency bytes are load-bearing. Costs 37MB per clone.
+- **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
+  recorded as an exact commit rather than a branch, because CREATE2 parity depends on
+  byte-identical initcode and a floating dependency would move every account address on the
+  next `--remote`. `git submodule update --init` is enough; the nested submodules OZ carries
+  for its own test suite are not needed and `--recursive` only costs time.
+
+  **What this gives up against vendoring is availability, not exactness.** A gitlink is as
+  precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag
+  is a repository nobody can build. Worth a mirror before mainnet rather than a policy.
 
   **A dependency bump moves every account address**, because `CrossProxy`'s initcode hash
   is a function of everything it compiles against. Free while nothing is deployed; after a

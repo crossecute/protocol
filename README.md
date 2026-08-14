@@ -279,7 +279,7 @@ if its addresses cannot be recomputed here at all.
   one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
-- OpenZeppelin 5.4.0, vendored in `lib/` rather than submoduled. The version is an
+- OpenZeppelin 5.4.0, a submodule pinned to that exact commit. The version is an
   address-determining input like the compiler pin: `CrossProxy`'s initcode compiles OZ's
   `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes any of their
   bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
@@ -313,7 +313,8 @@ The EVM side is built and tested: account creation, the approval queue, cancella
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```
-cd contracts/evm && forge test        # 346 passing
+git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
+cd contracts/evm && forge test        # 355 passing
 ```
 
 **Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` and
