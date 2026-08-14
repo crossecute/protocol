@@ -956,8 +956,8 @@ A binding is done when every line is true.
 - [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
       `_onInbound` on the transceivers
 - [ ] Inbound reverts on the transmitter
-- [ ] `Deployment` passed at initialization: msig as `owner`, a `Treasury` as `treasury`, and
-      every transport the deployment needs in `gateways` — none is grantable afterwards
+- [ ] Initialized with the msig as `owner`, the protocol's one `Treasury` as `treasury` (hub
+      only), and every transport the deployment needs in `gateways` — none grantable afterwards
 - [ ] No second ownership implementation in the tree, and no grant path added
 - [ ] `_accountInitializer` overridden on both transceivers
 - [ ] Codec library and typed setters, only where a provider-native id survives

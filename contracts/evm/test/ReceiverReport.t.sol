@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Deploy} from "test/Deployment.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -12,6 +11,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Roles} from "src/messaging/Roles.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -98,7 +98,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.bare(),
+            new address[](0),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -399,9 +399,7 @@ contract Hub is HubTransceiverBase {
         address transmitterImplementation_
     ) external initializer {
         __HubTransceiverBase_init(
-            owner_,
-            Deployment({treasury: treasury_, gateways: new address[](0)}),
-            transmitterImplementation_
+            owner_, treasury_, new address[](0), transmitterImplementation_
         );
     }
 
@@ -811,6 +809,7 @@ contract BootstrapFeeTest is Test {
     uint256 constant DIVERGING = 8453;
     uint256 constant PARITY = 42161;
     uint256 constant FEE = 0.05 ether;
+    address treasury;
 
     function setUp() public {
         registry = ChainRegistry(
@@ -822,9 +821,9 @@ contract BootstrapFeeTest is Test {
             )
         );
         hub = new Hub();
-        // The msig owns the hub AND is the treasury it may pay: one address here, two
-        // facts, and the tests below separate them.
-        hub.initialize(msig, msig, address(new Transmitter()));
+        // One treasury for the protocol, named at deployment and never moved.
+        treasury = address(new Treasury(msig));
+        hub.initialize(msig, treasury, address(new Transmitter()));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
@@ -853,14 +852,28 @@ contract BootstrapFeeTest is Test {
         assertEq(hub.bootstrapFee(parityKey), 0);
         vm.prank(owner);
         account.bootstrap(PARITY, new Call[](0), new bytes[](0));
-        assertEq(hub.collectedFees(), 0);
+        assertEq(treasury.balance, 0);
     }
 
-    function test_theFeeIsCollectedOnADivergingDestination() public {
+    /// @dev THE FEE MOVES IN THE TRANSACTION THAT CHARGES IT. Nothing accrues on the hub, so
+    ///      there is no balance to direct later and nothing to confuse with a provider refund.
+    function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
         account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
-        assertEq(hub.collectedFees(), FEE, "accrued on the hub");
-        assertEq(address(hub).balance, FEE);
+
+        assertEq(treasury.balance, FEE, "paid, not accrued");
+        assertEq(address(hub).balance, 0, "and the hub holds none of it");
+    }
+
+    /// @dev The treasury is `Ownable`, so the msig moves it onward from there — which is the
+    ///      only place a fee is ever withdrawn from now.
+    function test_theMsigMovesFeesOnFromTheTreasury() public {
+        vm.prank(owner);
+        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(msig);
+        Treasury(payable(treasury)).withdraw(msig, FEE);
+        assertEq(msig.balance, FEE);
     }
 
     /// @dev UNDERPAYING REVERTS RATHER THAN EATING THE PROVIDER'S PAYMENT. The alternative
@@ -897,58 +910,63 @@ contract BootstrapFeeTest is Test {
         assertEq(hub.lastSendValue(), 1 ether, "message value, fee already taken");
     }
 
-    function test_onlyTheOwnerSetsTheFeeAndWithdraws() public {
-        bytes memory notOwner = abi.encodeWithSelector(
-            OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
+    function test_onlyTheOwnerSetsTheFee() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
+            )
         );
-
-        vm.expectRevert(notOwner);
         hub.setBootstrapFee(divergingKey, 1);
-        vm.expectRevert(notOwner);
-        hub.withdrawFees(msig);
     }
 
-    /// @dev THE FEE GOES TO THE TREASURY, NOT WHEREVER THE OWNER SAYS. Gating the call and
-    ///      leaving the destination free would make this the one privileged operation that
-    ///      moves value to an arbitrary address, so a single compromised owner transaction
-    ///      empties the balance somewhere that funds no spoke. And the owner cannot widen the
-    ///      set, since `TREASURY_ROLE` has no role admin.
-    function test_theFeeCannotBeWithdrawnToANonTreasury() public {
-        vm.prank(owner);
-        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+    /// @dev THE TREASURY IS WRITE-ONCE AND THE HUB HAS NO WITHDRAWAL. Together those remove
+    ///      the operation a compromised owner would have reached for: there is no accrued
+    ///      balance, no destination to name, and no setter to repoint.
+    function test_thereIsNoWithdrawalAndNoWayToRepointTheTreasury() public {
+        assertEq(hub.treasury(), treasury);
 
-        // Hoisted: `hub.TREASURY_ROLE()` is an external call, and one inside the pranked
-        // expression would consume the prank and refuse on the CALLER instead of on `to`.
-        address sink = address(0xF11);
-        bytes memory notTreasurySink = abi.encodeWithSelector(
-            IAccessControl.AccessControlUnauthorizedAccount.selector, sink, hub.TREASURY_ROLE()
+        (bool withdrew,) =
+            address(hub).call(abi.encodeWithSignature("withdrawFees(address)", msig));
+        assertFalse(withdrew);
+
+        (bool set,) =
+            address(hub).call(abi.encodeWithSignature("setTreasury(address)", msig));
+        assertFalse(set);
+    }
+
+    /// @dev A REVERTING TREASURY FAILS THE BOOTSTRAP RATHER THAN SILENTLY UNDER-PAYING THE
+    ///      PROVIDER. The fee is taken off the top, so a payment that did not happen would
+    ///      otherwise leave the message dispatched with the shortfall coming out of it.
+    function test_aTreasuryThatRefusesPaymentFailsTheBootstrap() public {
+        Hub h = new Hub();
+        address rejecting = address(new Rejector());
+        h.initialize(msig, rejecting, address(new Transmitter()));
+
+        vm.startPrank(msig);
+        bytes32 second = registry.addMessageProvider("second");
+        registry.setLocalTransceiver(second, address(h));
+        h.setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Attested);
+        h.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
+        h.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
+        h.setBootstrapFee(divergingKey, FEE);
+        vm.stopPrank();
+
+        vm.prank(owner);
+        Transmitter a = Transmitter(payable(h.createTransmitter(SALT)));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.FeeTransferFailed.selector, rejecting, FEE
+            )
         );
-
-        vm.prank(msig);
-        vm.expectRevert(notTreasurySink);
-        hub.withdrawFees(sink);
-
-        assertEq(hub.collectedFees(), FEE, "and nothing moved");
+        a.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
     }
+}
 
-    function test_withdrawingMovesOnlyTheAccruedFees() public {
-        vm.prank(owner);
-        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
-        // A provider refund landing on the transceiver is not a fee and must survive.
-        vm.deal(address(hub), address(hub).balance + 3 ether);
-
-        vm.prank(msig);
-        uint256 moved = hub.withdrawFees(msig);
-
-        assertEq(moved, FEE);
-        assertEq(msig.balance, FEE);
-        assertEq(address(hub).balance, 3 ether, "the refund stayed");
-        assertEq(hub.collectedFees(), 0);
-    }
-
-    function test_withdrawingNothingReverts() public {
-        vm.prank(msig);
-        vm.expectRevert(HubTransceiverBase.NothingToWithdraw.selector);
-        hub.withdrawFees(msig);
+/// @dev Refuses native currency, standing in for a treasury that has been misconfigured.
+contract Rejector {
+    receive() external payable {
+        revert("no");
     }
 }

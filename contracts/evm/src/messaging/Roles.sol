@@ -8,14 +8,18 @@ import {AccessControlUpgradeable} from
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title Roles
-/// @notice The two role-shaped facts every contract here recognises, and the only two.
+/// @notice The one role-shaped fact every contract here recognises: which transports may
+///         carry its messages.
 ///
-/// @dev NEITHER OF THESE IS AN AUTHORITY, AND THAT IS THE POINT. `TREASURY` is where fees may
-///      go; `GATEWAY` is which transport may carry this contract's messages. Both are
-///      addresses a deployment names, not powers a holder exercises: a treasury cannot
-///      configure a transceiver and a gateway cannot grant itself anything. Configuration is
-///      `Ownable` on the transceiver, deliberately somewhere else, so the address that gets
-///      PAID and the address that DECIDES are never the same fact.
+/// @dev IT IS NOT AN AUTHORITY, AND THAT IS THE POINT. `GATEWAY` names addresses rather than
+///      powers: a gateway cannot configure a transceiver and cannot grant itself anything.
+///      Configuration is `Ownable` on the hub, deliberately somewhere else.
+///
+/// @dev THERE WAS A SECOND ROLE AND IT WAS THE WRONG SHAPE. `TREASURY` bounded where
+///      `withdrawFees` could send an accrued balance; fees now move to the hub's `treasury`
+///      address inside the bootstrap that charges them, so there is no balance to direct and
+///      no operation to bound. A role answers "may this address be paid", and the question
+///      was always "where does this go".
 ///
 /// @dev A MEMBERSHIP RATHER THAN A PREDICATE, because the question is "which addresses", not
 ///      "is this one". Both were once a virtual each concrete contract answered from whatever
@@ -35,7 +39,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      about an address you already suspect, so a deployment could carry an authority nobody
 ///      thought to ask about. `getRoleMemberCount` / `getRoleMember` make the whole set
 ///      readable, which is what lets an operator — or a monitor — verify that a live
-///      transceiver has exactly the treasury and exactly the gateways it should. It matters
+///      transceiver has exactly the gateways it should. It matters
 ///      more now that membership is fixed at initialization: the set cannot be corrected
 ///      later, so being able to read it whole is how a mistake is caught while a redeploy is
 ///      still cheap.
@@ -50,18 +54,11 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      member list buys nothing. If OZ is ever bumped past 5.4, this inheritance is the
 ///      first thing that stops building, and forking the member list back out is the answer.
 abstract contract Roles is AccessControlEnumerableUpgradeable {
-    /// @notice Where collected fees may be withdrawn to, and nothing else.
-    /// @dev IT NAMES A DESTINATION, NOT A CALLER. `withdrawFees` asks whether the address it
-    ///      was handed holds this, which is the question no caller-shaped check can express:
-    ///      without it the owner could name any address at all, and a fee taken to fund
-    ///      spokes could leave to somewhere that funds none. Holding it confers no ability to
-    ///      call anything.
-    /// @dev NAMESPACED RATHER THAN `keccak256("TREASURY")`. A role is just a bytes32, so two
+    /// @notice May deliver a message to this contract, and may carry one out of it. THE ONLY
+    ///         ROLE THERE IS.
+    /// @dev NAMESPACED RATHER THAN `keccak256("GATEWAY")`. A role is just a bytes32, so two
     ///      contracts in one inheritance tree that pick the same string share the same member
     ///      set, and a provider SDK with a role of that name would silently share this one.
-    bytes32 public constant TREASURY_ROLE = keccak256("crossecute.role.TREASURY");
-
-    /// @notice May deliver a message to this contract, and may carry one out of it.
     bytes32 public constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
 
     /// @notice Grant a role. THE ONLY GRANT PATH, AND IT CLOSES WHEN INITIALIZATION DOES.

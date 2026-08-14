@@ -102,7 +102,7 @@ back out of it, rather than out of a route lookup.
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are ONE owner rather than two authorities. A binding must not add a third |
-| `TREASURY_ROLE` / `GATEWAY_ROLE` | named in the `Deployment` struct at initialization, ungrantable afterwards; the endpoint goes in `gateways` |
+| `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
 protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
@@ -139,7 +139,7 @@ destination, read from the table rather than computed.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
   the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  `withdrawFees`, whose destination must itself hold `TREASURY_ROLE`. It is zero by default, so
+  the hub's `treasury` address in the same transaction. It is zero by default, so
   only the chains that actually report are
   charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
   than none: the caller would fund the send exactly and the bootstrap would revert with the
@@ -199,7 +199,8 @@ mainnet.
   than a protocol one.
 - **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
   when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
-  write-once, add no transport, and pay no address that does not already hold `TREASURY_ROLE`.
+  write-once, add no transport, and redirect no fee: the treasury is write-once and is paid in
+  the same transaction that charges it.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
 - **~~Ordered execution blocks the queue.~~ SETTLED: approvals are unordered.** The queue

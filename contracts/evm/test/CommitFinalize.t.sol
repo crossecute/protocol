@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Deploy} from "test/Deployment.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -109,7 +108,7 @@ contract MockTransceiver is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.bare(),
+            new address[](0),
             receiverImplementation_,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
@@ -144,11 +143,7 @@ contract MsigTransceiver is HubTransceiverBase {
         address[] calldata gateways_,
         address receiverImplementation_
     ) external initializer {
-        __HubTransceiverBase_init(
-            owner_,
-            Deployment({treasury: treasury_, gateways: gateways_}),
-            receiverImplementation_
-        );
+        __HubTransceiverBase_init(owner_, treasury_, gateways_, receiverImplementation_);
     }
 
     /// @dev NO BLANKET GATEWAY ANSWER HERE, unlike the other harnesses in this file. These
@@ -710,9 +705,8 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== authorization ============================= */
 
-    /// @dev CONFIGURING IS THE OWNER'S, AND ONLY THE OWNER'S. The roles name a treasury and
-    ///      a set of transports; neither can call anything, which is what makes it safe for
-    ///      them to be permanent.
+    /// @dev CONFIGURING IS THE OWNER'S, AND ONLY THE OWNER'S. The one role names transports
+    ///      and can call nothing, which is what makes it safe for the set to be permanent.
     function test_theConfiguringAuthorityIsTheOwner() public {
         MsigTransceiver m = _msigTransceiver();
 
@@ -731,21 +725,17 @@ contract CommitFinalizeTest is Test {
         assertTrue(m.upgradesLocked());
     }
 
-    /// @dev THE MEMBERSHIP IS WHATEVER THE INITIALIZER SAID, FOR LIFE. Neither role has a
-    ///      role admin, and `DEFAULT_ADMIN_ROLE` is never granted, so `grantRole` has no
-    ///      caller that can succeed: not the owner, not the treasury, not a gateway.
-    function test_neitherRoleCanBeGrantedAfterInitialization() public {
+    /// @dev THE MEMBERSHIP IS WHATEVER THE INITIALIZER SAID, FOR LIFE. The role has no role
+    ///      admin and `DEFAULT_ADMIN_ROLE` is never granted, so `grantRole` has no caller that
+    ///      can succeed: not the owner, not the msig, not a gateway.
+    function test_theRoleCannotBeGrantedAfterInitialization() public {
         MsigTransceiver m = _msigTransceiver();
 
-        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above either");
+        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above it");
 
         address[] memory gateways = m.getRoleMembers(m.GATEWAY_ROLE());
         assertEq(gateways.length, 1, "exactly what was named, and nothing acquired since");
         assertEq(gateways[0], gateway);
-
-        address[] memory treasuries = m.getRoleMembers(m.TREASURY_ROLE());
-        assertEq(treasuries.length, 1);
-        assertEq(treasuries[0], treasury);
 
         // The owner is the strongest caller there is here, and it still cannot.
         // Hoisted: an external call inside a pranked expression consumes the prank.
@@ -775,22 +765,37 @@ contract CommitFinalizeTest is Test {
         assertEq(m.getRoleMembers(gatewayRole).length, 1, "still exactly what it was given");
     }
 
-    /// @dev FEES LEAVE ONLY TO A `TREASURY_ROLE` HOLDER, which the owner cannot extend. The
-    ///      owner decides WHEN, the initializer decided WHERE, and those are different
-    ///      questions answered by different transactions.
-    function test_feesLeaveOnlyToTheTreasuryNamedAtInitialization() public {
+    /// @dev THE TREASURY IS AN ADDRESS THE DEPLOYMENT NAMED, AND THERE IS NO WAY TO MOVE IT.
+    ///      Fees leave in the transaction that charges them, so there is no accrued balance to
+    ///      direct, no `withdrawFees` to gate, and no setter for a compromised owner to reach.
+    function test_theTreasuryIsFixedAndThereIsNoWithdrawal() public {
         MsigTransceiver m = _msigTransceiver();
+        assertEq(m.treasury(), treasury);
 
-        vm.prank(msig);
-        m.setBootstrapFee(ChainKey.forEvm(8453), 1 ether);
-
-        // Hoisted for the same reason: `m.TREASURY_ROLE()` is an external call.
-        bytes memory notTreasury = abi.encodeWithSelector(
-            IAccessControl.AccessControlUnauthorizedAccount.selector, msig, m.TREASURY_ROLE()
+        (bool withdrew,) = address(m).call(
+            abi.encodeWithSignature("withdrawFees(address)", msig)
         );
+        assertFalse(withdrew, "no withdrawal entry point at all");
+
+        (bool set,) = address(m).call(
+            abi.encodeWithSignature("setTreasury(address)", address(0xBAD))
+        );
+        assertFalse(set, "and no setter");
+    }
+
+    /// @dev A FEE WITH NOWHERE TO GO IS REFUSED WHERE IT IS SET, not where it is charged:
+    ///      the mistake surfaces at configuration time rather than burning the fee inside
+    ///      somebody's bootstrap.
+    function test_aFeeCannotBeSetWithoutATreasury() public {
+        address[] memory gateways = new address[](1);
+        gateways[0] = gateway;
+
+        MsigTransceiver m = new MsigTransceiver();
+        m.initialize(msig, address(0), gateways, address(receiverImpl));
+
         vm.prank(msig);
-        vm.expectRevert(notTreasury);
-        m.withdrawFees(msig);
+        vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
+        m.setBootstrapFee(ChainKey.forEvm(8453), 1 ether);
     }
 
     function _msigTransceiver() internal returns (MsigTransceiver m) {

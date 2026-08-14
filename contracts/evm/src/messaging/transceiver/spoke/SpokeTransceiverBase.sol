@@ -99,8 +99,12 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @param addressesDiverge_ True only where an account's address here is NOT the one the
     ///        hub derives for it: zkSync and Tron among EVM chains. Leaving it false where it
     ///        should be true creates accounts the home chain can never address.
+    /// @dev NO TREASURY ARGUMENT, BECAUSE A SPOKE CHARGES NOTHING. Fees are taken at
+    ///      bootstrap, which happens on the home chain; a spoke holds only the float that pays
+    ///      for its own reports, and an address to withdraw that to would be a key worth
+    ///      stealing for money that has a job.
     function __SpokeTransceiverBase_init(
-        Deployment memory deployment,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes memory homeRoute_,
@@ -128,7 +132,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         emit AddressesDivergeSet(addressesDiverge_);
 
         // Last, and the spoke is sealed. See `TransceiverBase.__TransceiverBase_init`.
-        __TransceiverBase_init(deployment);
+        __TransceiverBase_init(gateways);
     }
 
     /// @notice The hub transceiver, in THIS chain's address format.

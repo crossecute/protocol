@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Deploy} from "test/Deployment.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -114,7 +113,7 @@ contract MockTransceiver is TransceiverBase {
     address private _impl;
 
     function initialize(address owner_, address impl) external initializer {
-        __TransceiverBase_init(Deploy.bare());
+        __TransceiverBase_init(new address[](0));
         _impl = impl;
     }
 

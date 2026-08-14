@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {Deploy} from "test/Deployment.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -81,7 +80,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
 
 contract Hub is HubTransceiverBase {
     function initialize(address owner_, address impl) external initializer {
-        __HubTransceiverBase_init(owner_, Deploy.bare(), impl);
+        __HubTransceiverBase_init(owner_, address(0), new address[](0), impl);
     }
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
@@ -113,7 +112,7 @@ contract Spoke is SpokeTransceiverBase {
         initializer
     {
         __SpokeTransceiverBase_init(
-            Deploy.bare(),
+            new address[](0),
             impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
         );
     }

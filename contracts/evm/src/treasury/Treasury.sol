@@ -10,15 +10,18 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///
 /// @dev IT IS A DESTINATION, NOT AN AUTHORITY. Nothing here configures a transceiver, decides
 ///      which payloads are authentic, or reaches an account. It holds a balance and hands it
-///      to whoever its owner names, which is why it can afford to be this small and why the
-///      role that points at it grants nothing beyond being paid.
+///      to whoever its owner names, which is why it can afford to be this small: being the
+///      address a hub pays grants nothing beyond being paid.
 ///
 /// @dev THE OWNER IS EXPECTED TO BE THE CROSSECUTE MSIG, and `Ownable` rather than a role
 ///      because there is nothing here to separate: a treasury has exactly one authority and
-///      two operations. `TREASURY_ROLE` on a transceiver names WHERE fees may go; this
-///      contract decides where they go NEXT, and the two questions are deliberately answered
-///      by different contracts, so a compromised withdrawal path cannot repoint the flow of
-///      fees at its source.
+///      two operations. The hub's write-once `treasury` decides WHERE fees go; this contract
+///      decides where they go NEXT, and the two questions are answered by different contracts,
+///      so a compromised withdrawal path cannot repoint the flow of fees at its source.
+///
+/// @dev ONE OF THESE EXISTS, ON THE HOME CHAIN. Bootstrap fees are charged where bootstraps
+///      start, in that chain's currency, so a spoke has nothing to collect and no treasury of
+///      its own.
 ///
 /// @dev IT IS NOT UPGRADEABLE AND HOLDS NO CREATE2 PROMISE. Nothing derives an address from
 ///      it and no account's identity depends on it, so it is a plain deployment: a treasury
@@ -41,8 +44,8 @@ contract Treasury is Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    /// @notice Accept fees. A transceiver's `withdrawFees` is a plain value transfer, so
-    ///         without this the withdrawal it is the destination of would revert.
+    /// @notice Accept fees. The hub forwards each one with a plain `call` inside the
+    ///         bootstrap that charges it, so without this every paid bootstrap would revert.
     receive() external payable {}
 
     /// @notice Send `amount` of native currency to `to`.

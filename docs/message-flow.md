@@ -210,9 +210,9 @@ the directory.
 
 ### Roles
 
-The two role-shaped facts, and the only two. `TREASURY_ROLE` is where collected fees may go;
-`GATEWAY_ROLE` is which transport may carry a contract's messages. **Neither is an
-authority**: a treasury cannot call anything and a gateway cannot grant anything. Configuring
+The one role-shaped fact: `GATEWAY_ROLE` is which transport may carry a contract's messages.
+**It is not an authority**: a gateway cannot call anything and cannot grant anything.
+Configuring
 a transceiver is `Ownable`, deliberately somewhere else, so the address that gets paid and the
 address that decides are never the same fact.
 
@@ -243,9 +243,11 @@ address that decides are never the same fact.
   that can deliver can forge. A spoke transceiver has no equivalent because it is shared by
   every owner on its chain: dropping its gateway would take every account's bootstrap path
   with it, so its transports are whatever its `Deployment` named, for life.
-- **An account holds no treasury, and that is not what freezes it.** What freezes it is the
-  paragraph above: an account collects no fees, names its gateway in the call that arms it,
-  and cannot acquire another because nothing can grant one.
+- **There was a second role, `TREASURY`, and it was the wrong shape.** It bounded where
+  `withdrawFees` could send an accrued balance. Fees now move to the hub's `treasury` address
+  inside the bootstrap that charges them, so there is no balance to direct and no operation to
+  bound: a role answers "may this address be paid", and the question was always "where does
+  this go".
 - **The role ids are namespaced** (`keccak256("crossecute.role.TREASURY")`). A role is a
   bytes32, so an SDK defining its own `TREASURY` would otherwise share this member set.
 - **Enumeration is OpenZeppelin's.** `Roles` inherits `AccessControlEnumerableUpgradeable`,
@@ -438,7 +440,8 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
   `_authenticateOrigin`, so an unconstrained payload let a spoke on one chain pin an account's
   receiver on another — write-once, and unrecoverable. And a `Call` carries value, so it let
   an authenticated counterpart move the fee balance around `withdrawFees`, its owner gate, the
-  `TREASURY_ROLE` destination check, and the accounting. Both allowed targets are
+  even though nothing accrues there any more — a transceiver still holds provider refunds, and
+  a spoke the float that pays for its reports. Both allowed targets are
   `address(this)` and non-payable, so value reverts without the check reasoning about it.
 - **A transceiver receives because a bootstrap cannot pay for itself.** It is the one message
   that lands where there is no account yet, inside a delivery callback, and standing an
@@ -490,11 +493,9 @@ at the concrete contract without an `Ownable` colliding with one declared here.
   counterpart, implementation, and divergence flag are all written in its initializer and have
   no setters. `LzSpokeTransceiver`'s ABI carries no `owner()`, no `transferOwnership`, and no
   `setRoute` — the absence is structural rather than a spoke declining to use one.
-- **`Deployment` is one struct, and the owner is not in it.** It carries the treasury and the
-  gateways, which both halves have, while the owner is `__HubTransceiverBase_init`'s own
-  argument, so a spoke deployment cannot pass an owner that would silently govern nothing. The
-  struct also keeps the divergent spokes' initializers under the stack limit, which `paris`
-  without via-IR makes a real constraint.
+- **The initializer takes the gateways and nothing else.** The owner and the treasury are
+  `__HubTransceiverBase_init`'s own arguments, so a spoke deployment cannot pass either and
+  have it silently govern nothing: a spoke has no configuring authority and charges no fees.
 - **Upgrades lock in the initializer.** `__TransceiverBase_init` sets the flag and both
   halves call it last, so there is no `lockUpgrades()` and no window between "the real logic
   is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
@@ -521,10 +522,15 @@ only half with an owner.
   `Ownable`: every configuring operation here is `onlyOwner`, so a hub without one could never
   be given a route. A binding's SDK must not bring a SECOND ownership implementation; one
   using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen.
-- **The two roles bound what that owner can do.** `withdrawFees` requires the DESTINATION to
-  hold `TREASURY_ROLE`, which no caller-shaped check can express, and the owner cannot widen
-  that set: a fee taken to fund spokes cannot leave to somewhere that funds none, and no
-  transaction can make somewhere else eligible. The owner cannot add a transport either.
+- **What the owner cannot do is move money or admit a transport.** `treasury` is write-once
+  and there is no `withdrawFees`: a bootstrap fee goes to that address in the transaction that
+  charges it, so there is no accrued balance for a compromised owner to direct. `GATEWAY_ROLE`
+  cannot be granted after initialization either.
+- **The bootstrap fee is charged on the hub and paid straight through.** `setBootstrapFee` is
+  per chainKey, rebindable, and refuses a non-zero fee while `treasury` is zero, so a fee can
+  never be taken with nowhere to send it. `_bootstrapSendValue` takes it off the top, forwards
+  it, and hands the binding what is left — before the dispatch, so nothing depends on what the
+  provider's code does afterwards.
 - `setRoute(bytes32 chainKey, bytes route)`: `onlyOwner` and **write-once**, maintaining the
   reverse index in the same call because two setters is how the two directions drift apart.
   **It lives here rather than on the shared base**, because adding a destination is something

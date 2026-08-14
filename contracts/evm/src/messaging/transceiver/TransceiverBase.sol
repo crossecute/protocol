@@ -45,9 +45,9 @@ import {UUPSUpgradeable} from
 ///      of this base makes that structural rather than a matter of the spoke declining to
 ///      exercise one.
 ///
-/// @dev `TREASURY_ROLE` AND `GATEWAY_ROLE` ARE NOT AUTHORITIES EITHER. They name addresses
-///      rather than powers, are fixed in the initializer, and cannot be granted afterwards by
-///      anyone: see `Roles.grantRole`.
+/// @dev `GATEWAY_ROLE` IS NOT AN AUTHORITY EITHER. It names addresses rather than powers, is
+///      fixed in the initializer, and cannot be granted afterwards by anyone: see
+///      `Roles.grantRole`.
 ///
 /// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS. It has no revoke entry point
 ///      either, which an account does have: a transceiver is shared by every owner on its
@@ -75,23 +75,6 @@ abstract contract TransceiverBase is
     ICancel,
     UUPSUpgradeable
 {
-    /// @notice What a deployment names on EITHER half, and can never revisit: the treasury
-    ///         that may be paid, and the transports that may carry messages.
-    ///
-    /// @dev THE OWNER IS NOT IN HERE, BECAUSE ONLY THE HUB HAS ONE. It is
-    ///      `__HubTransceiverBase_init`'s own argument, so a spoke deployment cannot pass an
-    ///      owner that would silently govern nothing.
-    ///
-    /// @dev ONE STRUCT RATHER THAN LOOSE ARGUMENTS, for two reasons. It keeps the divergent
-    ///      spokes' initializers under the stack limit, which `paris` without via-IR makes a
-    ///      real constraint rather than a style question. And it puts both in one place at
-    ///      every layer, so a binding writing an initializer cannot thread one through and
-    ///      quietly drop the other.
-    struct Deployment {
-        address treasury;
-        address[] gateways;
-    }
-
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
@@ -404,26 +387,22 @@ abstract contract TransceiverBase is
     ///      makes and the same answer: what the protocol guarantees is worth what the
     ///      smallest set of things able to change it is worth.
     ///
-    /// @dev IT ALSO NAMES THE TWO THINGS A TRANSCEIVER CANNOT BE GIVEN LATER. The treasury
-    ///      and the gateways are role membership, and `Roles` sets no role admin, so this call
-    ///      is the only opportunity either will ever have, since `grantRole` closes with the
-    ///      initialization window. See `Roles.grantRole`.
+    /// @dev IT ALSO NAMES THE ONE THING A TRANSCEIVER CANNOT BE GIVEN LATER. The gateways are
+    ///      role membership, and `Roles` sets no role admin, so this call is the only
+    ///      opportunity there will ever be, since `grantRole` closes with the initialization
+    ///      window. See `Roles.grantRole`.
     ///
-    /// @dev A ZERO TREASURY IS ALLOWED HERE AND COSTS A REDEPLOY. Fees accumulate against a
-    ///      `withdrawFees` that can never name a valid destination, which is recoverable only
-    ///      by deploying again. It is not refused because a deployment that collects no fees
-    ///      is legitimate, and because refusing it would put a second address in the way of
-    ///      the simplest possible transceiver.
-    function __TransceiverBase_init(Deployment memory deployment)
+    /// @dev AN ARRAY BECAUSE A DEPLOYMENT MAY HAVE SEVERAL AND MUST DECLARE THEM AT ONCE, and
+    ///      a memory array rather than loose arguments because the divergent spokes'
+    ///      initializers sit near the stack limit, which `paris` without via-IR makes a real
+    ///      constraint rather than a style question.
+    function __TransceiverBase_init(address[] memory gateways)
         internal
         onlyInitializing
     {
-        if (deployment.treasury != address(0)) {
-            grantRole(TREASURY_ROLE, deployment.treasury);
-        }
-        for (uint256 i; i < deployment.gateways.length; ++i) {
-            if (deployment.gateways[i] != address(0)) {
-                grantRole(GATEWAY_ROLE, deployment.gateways[i]);
+        for (uint256 i; i < gateways.length; ++i) {
+            if (gateways[i] != address(0)) {
+                grantRole(GATEWAY_ROLE, gateways[i]);
             }
         }
 
@@ -433,16 +412,9 @@ abstract contract TransceiverBase is
 
     /* ============================== authorization ============================== */
 
-    /// @notice THE CONFIGURING AUTHORITY IS THE OWNER, and the roles are not authorities at
-    ///         all. See `Roles` for why `TREASURY` and `GATEWAY` are addresses a deployment
-    ///         names rather than powers a holder exercises, why neither has a role admin, and
-    ///         why the role ids are namespaced.
-    ///
-    /// @dev A ROLE IS WHAT LETS THE BASE ASK ABOUT AN ADDRESS THAT IS NOT THE CALLER.
-    ///      `withdrawFees` requires the DESTINATION to hold `TREASURY_ROLE`, which no
-    ///      caller-shaped check can express: without it the owner could name any address at
-    ///      all, and a fee taken to fund spokes could leave to somewhere that funds none.
-    ///      That is the whole reason a treasury is a role and not an address slot.
+    /// @notice THE CONFIGURING AUTHORITY IS THE OWNER, and the one role is not an authority
+    ///         at all. See `Roles` for why `GATEWAY` names addresses rather than powers, why
+    ///         it has no role admin, and why the role id is namespaced.
     ///
     /// @dev AND IT ANSWERS "WHO ELSE", which is the question a predicate could not.
     ///      `getRoleMembers(GATEWAY_ROLE)` enumerates the transports this contract trusts, so
@@ -526,8 +498,8 @@ abstract contract TransceiverBase is
     ///      side. The slot is write-once, so it would not have been recoverable.
     ///
     ///      A `Call` CARRIES VALUE. An executed payload could send the balance anywhere,
-    ///      bypassing `withdrawFees`, its owner gate, the `TREASURY_ROLE` destination check,
-    ///      and the `collectedFees` accounting in one call.
+    ///      even though nothing accrues here any more: a transceiver still holds whatever a
+    ///      provider refunds it, and a spoke holds the float that pays for its reports.
     ///
     /// @dev SO THE ANSWER IS AN ALLOWLIST, AND IT IS TWO ENTRIES LONG. A payload may approve a
     ///      hash on this contract, and — on a spoke, which extends this — discharge one into a

@@ -198,7 +198,7 @@ src/
     transceiver/  TransceiverBase -> Hub
       spoke/      SpokeTransceiverBase -> zkSync / Tron
   account/        CrossProxy                                what both halves ARE
-  treasury/       Treasury                                  where fees land, Ownable
+  treasury/       Treasury                     one for the protocol, on the home chain
   protocols/      per message provider; the only files naming an SDK
 ```
 
@@ -233,7 +233,7 @@ summary: the file is always the newer statement.
 | Why the hub holds counterparts and the registry holds their grade        | `HubTransceiverBase.setCounterpart`   |
 | Why routes live on the transceiver rather than in the registry           | `HubTransceiverBase.setRoute`         |
 | Why the hub owns, the spoke does not, and the roles are not authorities   | `messaging/Roles.sol`, `HubTransceiverBase` |
-| Why a treasury is a role on one contract and an owner on another         | `treasury/Treasury.sol`               |
+| Why the treasury is one address on the hub, paid in the same transaction | `HubTransceiverBase._bootstrapSendValue` |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
@@ -285,15 +285,14 @@ if its addresses cannot be recomputed here at all.
   bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
   `src/messaging/IErc7786.sol` instead of imported, because they are a `draft-` upstream and
   this protocol's ABI here.
-- The crossecute msig owns the registry, every transceiver, and the treasury each
-  transceiver pays. Ownership is the only live authority: a transceiver's transports and its
-  treasury are named in the `Deployment` it is initialized with, and neither role has an
-  administrator: `grantRole` is `onlyInitializing`, so nothing can add a member afterwards.
-  A compromised owner cannot admit a transport, cannot drop one — a transceiver is shared by
-  every owner on its chain — and can move fees only to an address that already held
-  `TREASURY_ROLE` when the contract was deployed. An account is one owner's, so a receiver
-  may drop its own gateway through `revokeGateway`, which is the only membership change that
-  survives initialization anywhere.
+- The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
+  treasury for the whole protocol, on the home chain, named at the hub's deployment and
+  write-once: a bootstrap fee is charged on the home chain and forwarded to it in the same
+  transaction, so no transceiver ever holds an accrued balance and there is no withdrawal to
+  gate. Ownership is the only live authority, and it cannot admit a transport, drop one, or
+  repoint the treasury. An account is one owner's, so a receiver may drop its own gateway
+  through `revokeGateway`, which is the only membership change that survives initialization
+  anywhere.
 
 ## Docs
 

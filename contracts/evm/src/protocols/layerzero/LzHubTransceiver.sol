@@ -20,10 +20,11 @@ contract LzHubTransceiver is HubTransceiverBase {
     ///      manufacturing half lives on the spoke; see `TransceiverBase`.
     function initialize(
         address owner_,
-        Deployment calldata deployment,
+        address treasury_,
+        address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
-        __HubTransceiverBase_init(owner_, deployment, transmitterImplementation_);
+        __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
     }
 
     /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.

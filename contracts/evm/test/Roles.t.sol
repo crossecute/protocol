@@ -60,8 +60,7 @@ contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
 
 /// @dev The role graph on its own, with no messaging around it.
 contract RoleHarness is Roles {
-    function initialize(address treasury, address[] calldata gateways) external initializer {
-        if (treasury != address(0)) grantRole(TREASURY_ROLE, treasury);
+    function initialize(address[] calldata gateways) external initializer {
         for (uint256 i; i < gateways.length; ++i) {
             if (gateways[i] != address(0)) grantRole(GATEWAY_ROLE, gateways[i]);
         }
@@ -100,7 +99,6 @@ contract RolesTest is Test {
     RoleTransmitter transmitter;
 
     bytes32 gatewayRole;
-    bytes32 treasuryRole;
 
     function setUp() public {
         receiver = new RoleReceiver();
@@ -110,7 +108,6 @@ contract RolesTest is Test {
         transmitter.initializeWith(owner, address(0xC0DE), GATEWAY);
 
         gatewayRole = receiver.GATEWAY_ROLE();
-        treasuryRole = receiver.TREASURY_ROLE();
     }
 
     function _unauthorized(address who, bytes32 role) internal pure returns (bytes memory) {
@@ -193,36 +190,25 @@ contract RolesTest is Test {
         assertFalse(receiver.hasRole(gatewayRole, IMPOSTOR));
     }
 
-    /// @dev AN ACCOUNT NAMES NO TREASURY, because it collects no fees and has nothing to pay
-    ///      out. The role exists on it and is empty, which is the same shape as `GATEWAY` on a
-    ///      contract whose binding granted none.
-    function test_anAccountHoldsNoTreasury() public view {
-        assertEq(receiver.getRoleMemberCount(treasuryRole), 0);
-        assertEq(transmitter.getRoleMemberCount(treasuryRole), 0);
-    }
-
     /* ================================= the role graph =============================== */
 
     /// @dev NEITHER ROLE HAS AN ADMIN, WHICH IS WHY THE GRANT PATH IS THE WINDOW INSTEAD.
     ///      Each falls back to `DEFAULT_ADMIN_ROLE`, and that is granted to nobody here or
     ///      anywhere else, so a role-gated `grantRole` could never have succeeded at all. The
     ///      membership the initializer stated is the membership for life.
-    function test_neitherRoleHasAnAdmin() public {
+    function test_theRoleHasNoAdmin() public {
         RoleHarness h = _harness();
 
-        assertEq(h.getRoleAdmin(treasuryRole), h.DEFAULT_ADMIN_ROLE());
         assertEq(h.getRoleAdmin(gatewayRole), h.DEFAULT_ADMIN_ROLE());
         assertEq(h.getRoleMemberCount(h.DEFAULT_ADMIN_ROLE()), 0, "and nobody holds it");
     }
 
-    /// @dev THE INITIALIZER IS THE ONLY MOMENT. A treasury and a set of gateways go in, and
-    ///      afterwards no caller — not the one that deployed it, not a member of either role —
-    ///      can add to either.
+    /// @dev THE INITIALIZER IS THE ONLY MOMENT. A set of gateways goes in, and afterwards no
+    ///      caller — not the one that deployed it, not a member of the role — can add one.
     function test_theInitializerIsTheOnlyGrantThatEverHappens() public {
         RoleHarness h = _harness();
 
-        assertTrue(h.hasRole(treasuryRole, msig), "the treasury it was given");
-        assertTrue(h.hasRole(gatewayRole, GATEWAY), "and the transport");
+        assertTrue(h.hasRole(gatewayRole, GATEWAY), "the transport it was given");
 
         address[3] memory tryers = [address(this), msig, GATEWAY];
         for (uint256 i; i < tryers.length; i++) {
@@ -230,9 +216,6 @@ contract RolesTest is Test {
             vm.expectRevert(Initializable.NotInitializing.selector);
             h.grantRole(gatewayRole, IMPOSTOR);
 
-            vm.prank(tryers[i]);
-            vm.expectRevert(Initializable.NotInitializing.selector);
-            h.grantRole(treasuryRole, IMPOSTOR);
         }
     }
 
@@ -257,17 +240,16 @@ contract RolesTest is Test {
         h.grantRole(gatewayRole, GATEWAY);
     }
 
-    /// @dev A ZERO IN EITHER POSITION IS SKIPPED RATHER THAN GRANTED. `address(0)` holding a
-    ///      role would make `hasRole(role, address(0))` true, and the treasury check on
-    ///      `withdrawFees` would then pass for the burn address.
+    /// @dev A ZERO IS SKIPPED RATHER THAN GRANTED. `address(0)` holding the role would make
+    ///      `hasRole(GATEWAY_ROLE, address(0))` true, and a delivery from an address the
+    ///      protocol never named would then authenticate.
     function test_zeroAddressesAreNeverMembers() public {
         RoleHarness h = new RoleHarness();
         address[] memory gateways = new address[](2);
         gateways[0] = address(0);
         gateways[1] = GATEWAY;
-        h.initialize(address(0), gateways);
+        h.initialize(gateways);
 
-        assertFalse(h.hasRole(treasuryRole, address(0)));
         assertFalse(h.hasRole(gatewayRole, address(0)));
         assertEq(h.getRoleMemberCount(gatewayRole), 1, "only the real one");
     }
@@ -277,7 +259,7 @@ contract RolesTest is Test {
         gateways[0] = GATEWAY;
 
         h = new RoleHarness();
-        h.initialize(msig, gateways);
+        h.initialize(gateways);
     }
 
     /* ============================ an account may drop one =========================== */
@@ -313,10 +295,9 @@ contract RolesTest is Test {
 
         vm.prank(msig);
         vm.expectRevert();
-        h.grantLate(treasuryRole, IMPOSTOR);
+        h.grantLate(gatewayRole, msig);
 
         assertFalse(h.hasRole(gatewayRole, IMPOSTOR));
-        assertFalse(h.hasRole(treasuryRole, IMPOSTOR));
     }
 
     /* ================================= enumeration ================================== */
@@ -336,7 +317,7 @@ contract RolesTest is Test {
         gateways[2] = c;
         // A repeated entry changes nothing, so the list cannot hold a duplicate.
         gateways[3] = b;
-        h.initialize(msig, gateways);
+        h.initialize(gateways);
         assertEq(h.getRoleMemberCount(gatewayRole), 3);
 
         // Revoking from the MIDDLE is the case swap-and-pop gets wrong if the index bookkeeping
@@ -368,12 +349,10 @@ contract RolesTest is Test {
         assertTrue(h.supportsInterface(type(IAccessControl).interfaceId));
     }
 
-    /// @dev The role ids are namespaced, so an SDK that defines its own `TREASURY` cannot land
+    /// @dev The role id is namespaced, so an SDK that defines its own `GATEWAY` cannot land
     ///      in the same member set through a string collision.
-    function test_theRoleIdsAreNamespaced() public view {
-        assertEq(treasuryRole, keccak256("crossecute.role.TREASURY"));
+    function test_theRoleIdIsNamespaced() public view {
         assertEq(gatewayRole, keccak256("crossecute.role.GATEWAY"));
-        assertTrue(treasuryRole != keccak256("TREASURY"));
         assertTrue(gatewayRole != keccak256("GATEWAY"));
     }
 }

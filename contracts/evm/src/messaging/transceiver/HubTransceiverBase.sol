@@ -89,25 +89,33 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      allowed to replace it.
     error ChainDoesNotReport(bytes32 chainKey);
 
-    /// @param owner_ The configuring authority, and the only live one in the protocol: it
-    ///        adds destinations, prices bootstraps, and withdraws fees to an address that
-    ///        already holds `TREASURY_ROLE`. `Ownable` refuses a zero, since a hub with no
-    ///        owner could never be given a route and would deploy, seal itself, and be
-    ///        unusable, with the failure arriving one transaction later than the mistake.
-    ///        A SPOKE TAKES NO SUCH ARGUMENT, because it has nothing for one to do.
+    /// @param owner_ The configuring authority, and the only live one in the protocol: it adds
+    ///        destinations and prices bootstraps, and can move no money at all. `Ownable`
+    ///        refuses a zero, since a hub with no owner could never be given a route and would
+    ///        deploy, seal itself, and be unusable, with the failure arriving one transaction
+    ///        later than the mistake. A SPOKE TAKES NO SUCH ARGUMENT, because it has nothing
+    ///        for one to do.
+    /// @param treasury_ Where bootstrap fees go, the moment they are charged. Write-once,
+    ///        and the only one in the protocol: fees are charged here, on the home chain, in
+    ///        the home chain's currency. A zero one is allowed and means this hub charges
+    ///        nothing — `setBootstrapFee` then refuses a non-zero fee, so a fee can never be
+    ///        taken with nowhere to send it.
     function __HubTransceiverBase_init(
         address owner_,
-        Deployment memory deployment,
+        address treasury_,
+        address[] memory gateways,
         address transmitterImplementation_
     ) internal onlyInitializing {
         __Ownable_init(owner_);
+
+        treasury = treasury_;
 
         if (transmitterImplementation_ == address(0)) revert NoAccountImplementation();
         transmitterImplementation = transmitterImplementation_;
         emit TransmitterImplementationSet(transmitterImplementation_);
 
         // Last, and the hub is sealed. See `TransceiverBase.__TransceiverBase_init`.
-        __TransceiverBase_init(deployment);
+        __TransceiverBase_init(gateways);
     }
 
     /* =========================== transmitter manufacture ======================= */
@@ -217,63 +225,49 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      tax on the common case to fund the rare one.
     mapping(bytes32 => uint256) public bootstrapFee;
 
-    /// Fees collected and not yet withdrawn.
-    uint256 public collectedFees;
+    /// @notice Where a bootstrap fee goes, the moment it is charged. ONE ADDRESS, NAMED AT
+    ///         DEPLOYMENT, FOR THE WHOLE PROTOCOL.
+    ///
+    /// @dev A SINGLE ADDRESS RATHER THAN A ROLE, because a role answers "may this address be
+    ///      paid" and the question here is "where does this go". Nothing chooses between
+    ///      several destinations any more: the fee moves in the same transaction that charges
+    ///      it, so there is no held balance for a caller to direct and no `withdrawFees` to
+    ///      gate. The role bought a bound on an operation that no longer exists.
+    ///
+    /// @dev ON THE HUB ONLY, AND THERE IS ONLY ONE HUB. Fees are charged at bootstrap, which
+    ///      happens on the home chain in the home chain's currency; a spoke charges nothing
+    ///      and holds nothing to withdraw, so a treasury there would be an address with no
+    ///      purpose and a key worth stealing. One treasury, one chain, one address.
+    ///
+    /// @dev WRITE-ONCE, LIKE EVERYTHING ELSE A DEPLOYMENT NAMES. A settable one would let a
+    ///      compromised owner redirect every future fee in a single transaction, which is
+    ///      exactly what routing the money straight through is meant to make impossible.
+    address public treasury;
 
     event BootstrapFeeSet(bytes32 indexed chainKey, uint256 fee);
-    event FeesWithdrawn(address indexed to, uint256 amount);
+    /// @dev Emitted where the money actually moves, which is now inside the bootstrap that
+    ///      caused it rather than in a later withdrawal.
+    event BootstrapFeePaid(bytes32 indexed chainKey, address indexed to, uint256 amount);
 
     /// @dev The caller sent less than the destination's fee, so the message would be
     ///      dispatched with the shortfall taken out of the provider's payment instead.
     error InsufficientBootstrapFee(uint256 required, uint256 provided);
-    error NothingToWithdraw();
-    error WithdrawFailed();
+    /// @dev A fee cannot be charged with nowhere to send it. Refused when it is SET rather
+    ///      than when it is charged, so the mistake surfaces at configuration time.
+    error NoTreasury();
+    error FeeTransferFailed(address to, uint256 amount);
 
     /// @notice Set what standing an account up on `chainKey` costs.
     /// @dev REBINDABLE, unlike a route or a counterpart. It redirects nothing and points at
     ///      nothing; it is a price, and a price that could not be corrected would be the
     ///      only value here that has to be right first time for a reason nobody can state.
+    /// @dev A NON-ZERO FEE NEEDS A TREASURY, and this is where that is refused: charging with
+    ///      nowhere to send it would burn the fee inside the bootstrap that paid it, one
+    ///      transaction after the mistake and with nothing to recover.
     function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyOwner {
+        if (fee != 0 && treasury == address(0)) revert NoTreasury();
         bootstrapFee[chainKey] = fee;
         emit BootstrapFeeSet(chainKey, fee);
-    }
-
-    /// @notice Withdraw what has accrued, to fund the spokes it was collected for.
-    ///
-    /// @dev THE DESTINATION MUST ITSELF BE AN ADMIN. Gating the CALL on the role and
-    ///      leaving `to` free would make this the one privileged operation that moves value
-    ///      to an address of the caller's choosing: a compromised or careless owner empties
-    ///      the balance in a single transaction to anywhere, and the fee stops being
-    ///      "collected to fund spokes" and becomes "collected". Asking the role about `to`
-    ///      costs the treasury nothing, since it is the party the fee was for.
-    ///
-    /// @dev AND `TREASURY` CANNOT BE GRANTED, so this is a bound the owner cannot lift. The
-    ///      role has no role admin, so the destinations named at initialization are the only
-    ///      ones this transceiver will ever pay: an owner who wants the fees elsewhere has to
-    ///      persuade the treasury contract, which answers to its own owner.
-    ///
-    /// @dev IT STILL TAKES A DESTINATION rather than reading one off the role's member list,
-    ///      because `TREASURY` is a SET and may hold several: one per purpose, or a
-    ///      destination mid-handover. `to` names which of them, and the role says it is one.
-    ///
-    /// @dev IT TRACKS A BALANCE RATHER THAN SWEEPING `address(this).balance`, because a
-    ///      transceiver's balance is not all fees: a provider refunding an overpaid send
-    ///      lands here too on any binding whose refund target is the sender. Sweeping would
-    ///      take that with it.
-    function withdrawFees(address to)
-        external
-        onlyOwner
-        returns (uint256 amount)
-    {
-        _checkRole(TREASURY_ROLE, to);
-
-        amount = collectedFees;
-        if (amount == 0) revert NothingToWithdraw();
-        collectedFees = 0;
-
-        (bool ok,) = to.call{value: amount}("");
-        if (!ok) revert WithdrawFailed();
-        emit FeesWithdrawn(to, amount);
     }
 
     /// @inheritdoc TransceiverBase
@@ -282,10 +276,22 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev Take the fee off the top and hand the binding what is left. Recording before the
-    ///      send matters for the same reason the bootstrap flag does: the dispatch reaches a
-    ///      provider endpoint and, through it, arbitrary code, and if it reverts the whole
-    ///      transaction unwinds and the accrual goes with it.
+    /// @dev TAKE THE FEE OFF THE TOP, FORWARD IT, AND HAND THE BINDING WHAT IS LEFT. It used
+    ///      to accrue here against a later `withdrawFees`, which meant a balance sitting on
+    ///      the contract that authenticates every inbound message, an owner-gated operation
+    ///      to move it, and a role to bound where it could go. Paying the treasury in the same
+    ///      transaction removes all three: nothing accumulates, so nothing can be redirected,
+    ///      swept, or confused with a provider's refund.
+    ///
+    /// @dev IT MOVES BEFORE THE SEND, which is the same ordering the bootstrap flag uses and
+    ///      for the same reason: the dispatch that follows reaches a provider endpoint and,
+    ///      through it, arbitrary code. Paying afterwards would leave the fee's fate depending
+    ///      on what that code did. If anything below reverts, the whole transaction unwinds
+    ///      and the payment goes with it.
+    ///
+    /// @dev THE TREASURY IS OURS AND STILL GETS A `call`, not a `transfer`: the 2300-gas
+    ///      stipend is not survivable by a contract that does anything on receipt, and a
+    ///      failure here must be loud rather than silently under-paying the provider.
     function _bootstrapSendValue(bytes32 chainKey)
         internal
         override
@@ -293,7 +299,13 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     {
         uint256 fee = bootstrapFee[chainKey];
         if (msg.value < fee) revert InsufficientBootstrapFee(fee, msg.value);
-        collectedFees += fee;
+        if (fee == 0) return msg.value;
+
+        address to = treasury;
+        (bool ok,) = to.call{value: fee}("");
+        if (!ok) revert FeeTransferFailed(to, fee);
+
+        emit BootstrapFeePaid(chainKey, to, fee);
         return msg.value - fee;
     }
 
