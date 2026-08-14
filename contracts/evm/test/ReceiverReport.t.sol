@@ -52,6 +52,15 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
         return bytes32(0);
     }
 
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
+        return 0;
+    }
+
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
@@ -73,6 +82,7 @@ contract Receiver is ReceiverBase {
 contract ReportingSpoke is SpokeTransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
+    uint256 public sentValue;
     uint256 public sentCount;
 
     /// @dev Off by default: a report on a parity chain is the case that must NOT happen,
@@ -101,19 +111,40 @@ contract ReportingSpoke is SpokeTransceiverBase {
 
     error NoBalanceForTheReport();
 
+    /// @dev A PROVIDER THAT CHARGES, so the report is priced rather than handed the whole
+    ///      balance. `_reportReceiver` quotes this and sends exactly it.
+    uint256 public reportFee;
+
+    function setReportFee(uint256 v) external {
+        reportFee = v;
+    }
+
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        override
+        returns (uint256)
+    {
+        return reportFee;
+    }
+
     function _sendMessage(
         bytes memory recipient,
         bytes memory payload,
         bytes[] memory,
-        uint256
+        uint256 value
     )
         internal
         override
         returns (bytes32)
     {
         if (sendReverts) revert NoBalanceForTheReport();
+        // What a real binding does with the value it was handed: refuse if the balance
+        // cannot cover the fee the quote named.
+        if (value > address(this).balance) revert NoBalanceForTheReport();
         sentRecipient = recipient;
         sentPayload = payload;
+        sentValue = value;
         ++sentCount;
         return bytes32(0);
     }
@@ -256,6 +287,43 @@ contract ReceiverReportTest is Test {
             0,
             "no account, so the bootstrap can be retried once funded"
         );
+    }
+
+    /// @notice The report is priced, not handed the balance.
+    ///
+    /// @dev IT USED TO SEND `address(this).balance`, which told the provider "take what you
+    ///      like" and left a spoke unable to hold a float for anything else. Quoting first
+    ///      means the provider charges what it charges and the rest stays put, which is what
+    ///      lets one spoke fund many reports.
+    function test_theReportSendsTheQuotedFeeAndNotTheBalance() public {
+        ReportingSpoke s = _spoke(true);
+        s.setReportFee(0.1 ether);
+        vm.deal(address(s), 5 ether);
+
+        s.inbound(owner, SALT, new Call[](0));
+
+        assertEq(s.sentValue(), 0.1 ether, "exactly the quote");
+        assertEq(address(s).balance, 5 ether, "and the float is untouched by the accounting");
+    }
+
+    /// @dev THE HELPER IS WHAT MAKES THE QUOTE REACHABLE. The payload is built inside a
+    ///      delivery callback from the envelope layout, this chain's id, and the address the
+    ///      account will land at; without a view producing those exact bytes, anyone funding
+    ///      a spoke would be pricing a guess.
+    function test_theReportPayloadHelperMatchesWhatIsSent() public {
+        ReportingSpoke s = _spoke(true);
+        vm.deal(address(s), 1 ether);
+
+        address receiver = s.predictCrossAccount(owner, SALT);
+        bytes memory expected = s.reportPayload(owner, SALT, receiver);
+
+        // Priced through the surface `OutboundBase` now exposes, before anything is sent.
+        uint256 quoted = s.quoteMessage(s.homeTransceiver(), expected, new bytes[](0));
+
+        s.inbound(owner, SALT, new Call[](0));
+
+        assertEq(s.sentPayload(), expected, "the helper builds the bytes that went");
+        assertEq(s.sentValue(), quoted, "and they were sent at the price it quoted");
     }
 
     /// @dev And the retry works, which is the property the revert buys.

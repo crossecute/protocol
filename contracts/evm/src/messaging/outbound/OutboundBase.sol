@@ -306,4 +306,31 @@ abstract contract OutboundBase is Roles {
     ) internal view virtual returns (uint256 nativeFee) {
         revert QuoteNotImplemented();
     }
+
+    /// @notice What sending `payload` to `recipient` would cost, in this chain's native
+    ///         currency.
+    ///
+    /// @dev IT IS HERE RATHER THAN ON THE ACCOUNT BECAUSE EVERY SENDER NEEDS IT, and a spoke
+    ///      needs it most: its receiver report is sent from inside a delivery callback where
+    ///      `msg.value` is zero, so it pays from its own balance, and anyone who has to fund
+    ///      that balance — or who is about to finalize a deferred bootstrap that ends in one —
+    ///      has to be able to price it first. Leaving the surface on `TransmitterBase` meant
+    ///      the one contract that cannot ask for value at call time was also the one that
+    ///      could not be asked what it needed.
+    ///
+    /// @dev UNGATED, DELIBERATELY. It spends nothing, writes nothing, and reveals nothing an
+    ///      observer could not compute. `TransmitterBase` overrides it to carry the same
+    ///      checks its send does, because there a quote that succeeded for a message the send
+    ///      would refuse reports the operation ready when it is not.
+    ///
+    /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own addition alongside it. A
+    ///      gateway that cannot answer leaves `_quoteMessage` reverting `QuoteNotImplemented`,
+    ///      with the off-chain measurement documented in its place.
+    function quoteMessage(
+        bytes calldata recipient,
+        bytes calldata payload,
+        bytes[] calldata attributes
+    ) external view virtual returns (uint256 nativeFee) {
+        return _quoteMessage(recipient, payload, attributes);
+    }
 }

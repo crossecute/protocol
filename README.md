@@ -93,9 +93,9 @@ flowchart LR
 The message carries the owner and their salt, not the transmitter, because a CREATE2 address
 cannot be derived from itself. The dashed return leg fires only where `addressesDiverge` —
 zkSync and Tron — since elsewhere the hub derived the receiver's address before the first
-message left. It is sent from inside the delivery callback, so a dry spoke reverts and takes
-the account creation with it: all or nothing, and retryable once it is funded. This runs once
-per chain.
+message left. It is sent from inside the delivery callback at the fee its own quote names, so
+an underfunded spoke reverts and takes the account creation with it: all or nothing, and
+retryable once it is funded. This runs once per chain.
 
 ### 3 · Sending a message
 

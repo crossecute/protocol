@@ -288,13 +288,39 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      is single-shot, so there is no second bootstrap to carry a second report.
     function _reportReceiver(address owner, bytes32 salt, address receiver) internal {
         emit ReceiverReported(owner, salt, receiver);
+
+        bytes memory recipient = _recipientOn(homeChainKey);
+        bytes memory payload = reportPayload(owner, salt, receiver);
+
         _sendMessage(
-            _recipientOn(homeChainKey),
-            Envelope.encodeReceiverReport(
-                owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
-            ),
+            recipient,
+            payload,
             new bytes[](0),
-            address(this).balance
+            _quoteMessage(recipient, payload, new bytes[](0))
+        );
+    }
+
+    /// @notice The report this spoke would send for `(owner, salt)` and the receiver it
+    ///         created, as the exact bytes `_sendMessage` carries.
+    ///
+    /// @dev IT EXISTS SO THE REPORT CAN BE PRICED BEFORE IT IS OWED. `quoteMessage` takes a
+    ///      recipient and a payload, and the payload here is built inside a delivery callback
+    ///      from values nobody outside can assemble: the envelope layout, this chain's id, and
+    ///      the address the account will land at. Anyone funding this spoke — or about to
+    ///      finalize a deferred bootstrap that ends in a report — can now quote it exactly
+    ///      rather than guessing, with `homeRoute()` and `homeTransceiver()` giving the
+    ///      recipient half.
+    ///
+    /// @dev `predictCrossAccount(owner, salt)` IS THE RECEIVER ARGUMENT on the live path, and
+    ///      taking it explicitly rather than deriving it keeps this honest on a chain whose
+    ///      derivation is overridden: the value quoted is the value reported.
+    function reportPayload(address owner, bytes32 salt, address receiver)
+        public
+        view
+        returns (bytes memory)
+    {
+        return Envelope.encodeReceiverReport(
+            owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
         );
     }
 }

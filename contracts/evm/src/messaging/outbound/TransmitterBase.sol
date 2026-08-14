@@ -457,7 +457,7 @@ abstract contract TransmitterBase is
         bytes calldata recipient,
         bytes calldata payload,
         bytes[] calldata attributes
-    ) external view returns (uint256 nativeFee) {
+    ) external view override returns (uint256 nativeFee) {
         _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 

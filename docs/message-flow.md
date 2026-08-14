@@ -149,7 +149,9 @@ most EVM chains and wrong on zkSync and Tron, and only the chain itself knows wh
 
 **A failed report takes the account creation with it.** The send is nested inside the
 delivery callback, where `msg.value` is zero, so a diverging spoke pays from its own balance
-and a dry one reverts. That is the correct shape rather than something to catch: creating
+and an underfunded one reverts. It sends the FEE, not the balance: `_reportReceiver` prices
+the report through `_quoteMessage` and hands over exactly that, so a spoke can hold a float
+covering many reports instead of surrendering it to the first provider that asks. That is the correct shape rather than something to catch: creating
 the account anyway would leave the hub permanently unable to address it, since `CrossProxy`
 arms exactly once and `initialize` is single-shot, so there is no second bootstrap to carry
 a second report. All or nothing keeps the operation retryable once the spoke is funded.
@@ -289,6 +291,12 @@ is what makes it free to mix into a contract that already has a layout.
   `bytes` to an interoperable address. The `sendId` is the gateway's, and a non-zero one
   means the message is NOT away yet; a binding either handles the second step or refuses
   gateways that need one.
+- `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: the public surface,
+  ungated, **on `OutboundBase` rather than on the account**. Every sender needs it and a spoke
+  needs it most: its report is sent from inside a delivery callback where `msg.value` is zero,
+  so anyone funding that spoke — or about to finalize a deferred bootstrap that ends in a
+  report — has to be able to price it. `TransmitterBase` overrides it to carry the same checks
+  its send does.
 - `_quoteMessage(...)`: the same three arguments, `view`, reverting `QuoteNotImplemented`
   by default, and called directly for the same reason `_sendMessage` is. `quoteMessage`
   repeats the entry point's checks so a quote cannot succeed for a message the send would
@@ -595,7 +603,10 @@ armed, so there is no configuring authority for a compromised key to be.
   mutually exclusive, so a flag disagreeing with the arithmetic is unrepresentable.
 - `_reportReceiver(owner, salt, receiver)`, called from `bootstrapInbound` when that flag is
   set, sending `Envelope.encodeReceiverReport` home with canonical ERC-7930 bytes for the
-  receiver on this chain. It names the pair rather than the address alone, because the hub
+  receiver on this chain, **at the price `_quoteMessage` names** rather than at whatever the
+  balance happens to be. `reportPayload(owner, salt, receiver)` is the matching view: the
+  payload is assembled inside a delivery callback from the envelope layout, this chain's id,
+  and the address the account will land at, so without it a funder would be pricing a guess. It names the pair rather than the address alone, because the hub
   derives the registry slot from the pair plus the origin it already authenticated. Paid
   from this contract's balance, since the send is nested inside a delivery callback; a dry
   spoke reverts, which takes the account creation with it and keeps the bootstrap
