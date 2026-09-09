@@ -10,11 +10,11 @@ designs and a transport: everything a binding MUST satisfy, everything it MUST N
 the fixed set of tests that decide whether it did.
 
 **This file is normative, and only that.** Everything in it is a requirement on a binding
-or on the provider behind one, checkable against this repository. What we happen to have
-found out about transports we do not control, and about standards that are still drafts,
-lives in [`provider-research.md`](provider-research.md): it goes stale when somebody else
-ships a release rather than when this protocol changes, and keeping the two apart is what
-stops that staleness sitting inside a document people read as a specification. Findings
+or on the provider behind one, checkable against this repository. What we know about
+transports we do not control, and about standards that are still drafts, lives in
+[`provider-research.md`](provider-research.md). That file goes stale when somebody else
+ships a release, not when this protocol changes. Keeping the two apart is what stops the
+staleness sitting inside a document people read as a specification. Findings
 there that produced obligations are cited from the rules here.
 
 **The core contracts speak ERC-7786 directly.** `TransmitterBase` is an
@@ -98,8 +98,8 @@ account up on however good the transport is.
 | **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the RELAYER'S SIGNING KEY, not for any contract. |
 
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
-gateway satisfies P1 through P4 cleanly and would be less code, but ERC-7786 defines no
-quote at all, so P9 fails outright and the entire quote surface goes dead for that binding.
+gateway satisfies P1 through P4 cleanly and would be less code. But ERC-7786 defines no
+quote at all, so P9 fails outright and the whole quote surface goes dead for that binding.
 See [the research half](provider-research.md#3-erc-7786-as-a-transport) for how a 7786 binding would map and what
 else it gives up.
 
@@ -153,9 +153,9 @@ outbound and the SDK's callback inbound.
 
 **`<P>Endpoint` is not optional structure, it is the deduplication that keeps the four in
 agreement.** Fee handling, attribute decoding, the recipient byte form, and the sender byte
-form must be identical across all four or authentication silently diverges between path A
-and path B, and a quote stops predicting its own send. Writing them once is what makes that
-structural. It declares no storage of its own beyond what the SDK brings.
+form must be identical across all four. Otherwise authentication silently diverges between
+path A and path B, and a quote stops predicting its own send. Writing them once is what
+makes that structural. It declares no storage of its own beyond what the SDK brings.
 
 ---
 
@@ -208,13 +208,16 @@ Every abstract or virtual member a binding must answer, and where.
 
 **Why the receiver's initializer is the shape it is.** `__ReceiverBase_init` is
 `internal onlyInitializing` and the external `initialize` is a thin `initializer` wrapper,
-and that is the only arrangement a binding can hook. Calling `super.initialize` first runs
-the payload against an unconfigured provider, which is the ordering the guard exists to
-prevent; configuring first and then calling it reverts, because the SDK's own
-`onlyInitializing` setup would run while `_initializing` is still false; and declaring
-`initializer` on both reverts `InvalidInitialization`, since a nested `initializer` on a
-contract that already has code is not a valid top-level call. So: own `initialize`, provider
-setup, `__ReceiverBase_init` last.
+and that is the only arrangement a binding can hook. The three alternatives all fail:
+
+- Calling `super.initialize` first runs the payload against an unconfigured provider, which
+  is the ordering the guard exists to prevent.
+- Configuring first and then calling it reverts, because the SDK's own `onlyInitializing`
+  setup would run while `_initializing` is still false.
+- Declaring `initializer` on both reverts `InvalidInitialization`, since a nested
+  `initializer` on a contract that already has code is not a valid top-level call.
+
+So: own `initialize`, provider setup, `__ReceiverBase_init` last.
 
 **It also carries the account's owner where the SDK needs one.** A binding whose SDK wants
 an owner-gated config surface declares its own initializer signature carrying it and
@@ -242,8 +245,8 @@ A binding MUST NOT expect any of these, and MUST NOT add them.
 
 `_sendMessage` MUST put `payload` on the wire addressed to `recipient`, and MUST revert if
 it cannot. It MUST return the gateway's `sendId`, and MUST NOT discard a non-zero one
-silently: a non-zero id means the gateway has further, unstandardised work to do before the
-message is away, so a binding either performs that second step or refuses gateways that need
+silently. A non-zero id means the gateway has further, unstandardised work to do before the
+message is away. A binding either performs that second step or refuses gateways that need
 one, and says which in its NatSpec.
 
 **R1.1 The recipient arrives built, and the binding MUST NOT re-derive it.** It is a
@@ -258,10 +261,10 @@ the read, on the transceiver an account already stores.
 
 **R1.2.1** Every `bytes` argument on the account's own surface MUST have a public builder
 that produces it, and a binding MUST NOT remove one. `Erc7930` is a library of `internal`
-functions, so an integrator cannot reach it: `recipientOn`, `chainIdentifierFor`,
+functions, so an integrator cannot reach it. `recipientOn`, `chainIdentifierFor`,
 `payloadForCalls`, and `payloadForElements` are the only way to construct these values
-without reimplementing the encoding, and a wrong interoperable address is a message
-addressed into the void rather than a revert.
+without reimplementing the encoding. A wrong interoperable address is a message addressed
+nowhere, not a revert.
 
 **R1.3** The destination on path A is the counterpart the account recorded for that chain,
 which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
@@ -311,7 +314,7 @@ function _quoteMessage(
 **R2.2 It MUST be `view`.** A quote that writes state cannot be called from an off-chain
 `eth_call` in the same block as the send it prices, which is the only way it is ever used.
 A provider whose quote is not `view` fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist)
-and the binding MUST document the fallback rather than making the seam non-view: making
+and the binding MUST document the fallback rather than making the seam non-view. Making
 `_quoteMessage` mutable would force the whole read surface below to be mutable too, and a
 `quoteMessage` that cannot be `eth_call`ed is not a quote.
 
@@ -358,10 +361,10 @@ back on `_refundTo()` and the delta is therefore the net. It cannot be exposed t
 `quoteMessage`, since the on-chain constraints still hold, so it belongs in `script/` and
 in the compliance suite rather than in the contracts.
 
-The same measurement answers two other open questions, and should be written once and
-reused: it is how [C11](#8-the-compliance-suite) checks that a quote equals what the send
-actually consumes, and it is how an operator sizes the balance a diverging spoke needs for
-its return report under [R7.5](#r7-fees-and-value).
+The same measurement answers two other open questions, so write it once and reuse it. It is
+how [C11](#8-the-compliance-suite) checks that a quote equals what the send actually
+consumes, and how an operator sizes the balance a diverging spoke needs for its return
+report under [R7.5](#r7-fees-and-value).
 
 A binding whose provider has no quote MUST say so in the NatSpec of the `_quoteMessage`
 that reverts `QuoteNotImplemented`, and point at the script that measures instead.
@@ -438,8 +441,8 @@ receiver never sends, and pricing a message that has no path is not a thing to e
 
 **The payload builders are shared, not duplicated.** Each quote calls the same
 `Payload.encodeCalls` / `Payload.encodeElements` / `Envelope.encodeBootstrap` its sending
-twin calls, so "the quote prices the exact bytes that go out" is a property of there being
-one builder rather than a promise two code paths make separately.
+twin calls. "The quote prices the exact bytes that go out" is therefore a property of there
+being one builder, rather than a promise two code paths make separately.
 
 **The transceiver's quote.** `TransceiverBase` MUST expose the path B quote it is asked
 for, matching its `bootstrap` and `bootstrapElements` entry points:
@@ -490,7 +493,7 @@ in its `Deployment` instead.
 
 **R3.0.2 A binding MUST NOT add a grant path, and MUST NOT expect one.** The only membership
 change that survives initialization anywhere in this protocol is
-`ReceiverBase.revokeGateway`, gated on the source transmitter, and it only subtracts: a
+`ReceiverBase.revokeGateway`, gated on the source transmitter, and it only subtracts. A
 dropped transport cannot be replaced, so the account goes deaf and stays that way. A
 transceiver has no equivalent at all, since it is shared by every owner on its chain. A
 binding that needs two transports names both while arming.
@@ -520,8 +523,8 @@ inside `_onMessage`, so every provider gets the same decoder and the same failur
 
 **R3.5 Replay protection on path A is the transport's, and a binding whose transport does
 not provide it MUST supply it.** This is the one protocol-level guarantee that is imported
-rather than enforced here, and it is worth stating precisely because it is invisible in
-this repo's source.
+rather than enforced here. It is worth stating precisely, because it is invisible in this
+repo's source.
 
 An execute-on-arrival payload carries no commitment and no identifier, so a second delivery
 of the same message runs it again. Bootstrap and the receiver report are both structurally
@@ -531,9 +534,9 @@ every message after the first takes.
 
 Most candidate transports guarantee it, and there the binding does nothing. The exceptions
 are the raw signature primitives, Wormhole's core layer and Avalanche's Warp precompile,
-which prove a message was authorised and stop there; on either, a binding MUST dedupe inside
+which prove a message was authorised and stop there. On either, a binding MUST dedupe inside
 `<P>Endpoint` before reaching `_onMessage`, keyed on whatever that transport makes unique
-per message (Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`). See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
+per message: Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`. See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
 for what each provider actually does.
 
 **R3.6 The dedupe MUST be per receiving account, not global to the binding.** Accounts are
@@ -827,8 +830,8 @@ Everything below is written once, against those hooks.
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). |
 
 **C11, C29 and C30 want FORK tests, against the real endpoint.** A mock provider does
-whatever the harness makes it do, so exercising a binding against one proves the harness
-dedupes, prices, and retries: it proves nothing about the transport, which is where all
+whatever the harness makes it do. Exercising a binding against one proves the harness
+dedupes, prices, and retries. It proves nothing about the transport, which is where all
 three properties actually live. Run them against a forked chain with the provider's real
 deployment, or accept that P7 and P9 remain documented assumptions.
 
@@ -931,11 +934,11 @@ contract GatewaySpokeTransceiver is SpokeTransceiverBase, GatewayEndpoint {
 }
 ```
 
-The split is the pleasing part, and it is why `_authenticateOrigin` needs no override on
-either side: `Erc7930.toChainIdentifier` reduces the sender envelope to exactly the bytes
-`setRoute` stored, so `chainKeyOfRoute` on a hub and `_isHome` on a spoke both match
-byte for byte ([R4.1](#r4-the-byte-forms-which-are-the-authentication)), and `io.addr` is
-exactly the raw form the counterpart lookup returns
+That split is why `_authenticateOrigin` needs no override on either side.
+`Erc7930.toChainIdentifier` reduces the sender envelope to exactly the bytes `setRoute`
+stored, so `chainKeyOfRoute` on a hub and `_isHome` on a spoke both match byte for byte
+([R4.1](#r4-the-byte-forms-which-are-the-authentication)). And `io.addr` is exactly the raw
+form the counterpart lookup returns
 ([R4.2](#r4-the-byte-forms-which-are-the-authentication)).
 
 Note what is absent. There is no codec, because a recipient names its own chain and the

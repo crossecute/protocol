@@ -6,8 +6,8 @@ import {Call} from "src/messaging/Call.sol";
 /// @title Executor
 /// @notice Running a verified call array, and the policy that gates it.
 ///
-/// @dev SHARED BECAUSE BOTH ENDS RUN PAYLOADS. A receiver runs what arrives over a bridge, a
-///      transmitter what its owner hands it locally; those differ in how the payload was
+/// @dev SHARED BECAUSE BOTH ENDS RUN PAYLOADS. A receiver runs what arrives over a bridge; a
+///      transmitter runs what its owner hands it locally. They differ in how the payload was
 ///      authorized and in nothing else, so the loop, the policy check, and the
 ///      all-or-nothing rule are stated once rather than twice with a chance to drift.
 ///

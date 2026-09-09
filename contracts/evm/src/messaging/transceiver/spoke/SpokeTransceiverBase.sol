@@ -138,8 +138,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @notice The hub transceiver, in THIS chain's address format.
     ///
     /// @dev IT IS `OutboundBase`'s COUNTERPART SLOT, written once in the initializer. Raw
-    ///      bytes rather than `address` because a spoke may not be an EVM chain, and stored
-    ///      rather than derived because the chains where a spoke most needs to be sure
+    ///      bytes rather than `address`, because a spoke may not be an EVM chain. Stored
+    ///      rather than derived, because the chains where a spoke most needs to be sure
     ///      (zkSync and Tron, and every non-EVM VM) are exactly the ones where a derivation
     ///      does not hold, and a spoke has no registry to ask.
     ///

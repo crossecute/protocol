@@ -12,8 +12,8 @@ pragma solidity >=0.8.4;
 ///      upstream name is the whole argument: OpenZeppelin is free to change these signatures
 ///      when the ERC changes, and upstream doing so would silently change what this protocol
 ///      promises to every integrator, whether an event topic, a selector, or an argument
-///      order, as a side effect of a dependency bump. Holding the copy makes that a reviewed edit with a
-///      diff, on the schedule of the people who have to migrate.
+///      order, as a side effect of a dependency bump. Holding the copy makes that a
+///      reviewed edit with a diff, on the schedule of the people who have to migrate.
 ///
 /// @dev THERE IS NOTHING HERE TO DRIFT SEMANTICALLY. An interface is a set of selectors and
 ///      one event topic; it carries no logic that could fall behind upstream's. What it can

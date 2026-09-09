@@ -19,8 +19,8 @@ import {UUPSUpgradeable} from
 /// @dev A SPOKE MAKES RECEIVERS. A HUB DOES NOT. Manufacturing lives in
 ///      `SpokeTransceiverBase`, so a hub does not merely decline to create a receiver: it
 ///      has no function that could. That matters because a transmitter and its receivers
-///      share one address, and an address holds one contract, so a receiver on the home
-///      chain would collide with the transmitter that belongs there. Absence beats a revert,
+///      share one address, and an address holds one contract. A receiver on the home chain
+///      would collide with the transmitter that belongs there. Absence beats a revert,
 ///      because there is no entry point for a later change to expose.
 ///
 /// @dev IT IS AN `InboundBase`, AND THAT IS WHAT MAKES A BOOTSTRAP DEFERRABLE. A bootstrap is
@@ -29,17 +29,17 @@ import {UUPSUpgradeable} from
 ///      the account does not exist yet. So a payload arriving here as `commit(hash)` can be
 ///      finalized later by anyone willing to pay for it, and `bootstrapInbound` runs as the
 ///      self-call it already required. What that costs is that a transceiver now executes
-///      arrays, which it previously did not: the bar is `InboundBase`'s, one authenticated
+///      arrays, which it previously did not. The bar is `InboundBase`'s, one authenticated
 ///      origin, plus a `_checkCommitter` that admits nothing but this contract itself.
 ///
 /// @dev IT IS STILL NOT A `ReceiverBase`. It holds no `sourceTransmitter`, has no `execute`,
-///      and cannot `cancel`: withdrawing an approval on a contract shared by every owner on
+///      and cannot `cancel`. Withdrawing an approval on a contract shared by every owner on
 ///      the chain would let whoever reached the entry point strip a bootstrap somebody else
 ///      has already paid to send.
 ///
 /// @dev IT HAS NO AUTHORITY AT ALL, AND THAT IS WHAT THE TWO HALVES DISAGREE ABOUT.
 ///      `Ownable` sits on `HubTransceiverBase`, because the hub is the only half with
-///      anything to configure after deployment: a spoke's home, route, counterpart,
+///      anything to configure after deployment. A spoke's home, route, counterpart,
 ///      implementation, and divergence flag are written in its initializer and have no
 ///      setters, so an owner there would be an authority over nothing. Keeping ownership out
 ///      of this base makes that structural rather than a matter of the spoke declining to
@@ -50,15 +50,15 @@ import {UUPSUpgradeable} from
 ///      `Roles.grantRole`.
 ///
 /// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS. It has no revoke entry point
-///      either, which an account does have: a transceiver is shared by every owner on its
+///      either, which an account does have. A transceiver is shared by every owner on its
 ///      chain, so dropping a gateway here would take every account's bootstrap path with it,
 ///      while an account's is one owner's to drop. What that costs is that a compromised
 ///      transport is answered by deploying a new transceiver rather than by a transaction,
-///      which is the same remedy the upgrade lock already implies. Naming several gateways up
+///      the same remedy the upgrade lock already implies. Naming several gateways up
 ///      front is how a deployment keeps a migration cheap.
 ///
 /// @dev EVERYTHING ASYMMETRIC IS BEHIND `_counterpartOn` AND `_routeTo`, because the two
-///      sides have opposite cardinality: the hub has N counterparts and needs a registry to
+///      sides have opposite cardinality. The hub has N counterparts and needs a registry to
 ///      tell them apart, while a spoke has exactly one and is told which at deployment. So a
 ///      spoke never carries a registry pointer, a provenance dial, or a routing table it has
 ///      no use for.
@@ -125,7 +125,7 @@ abstract contract TransceiverBase is
     /// @notice The salt an owner's account deploys at, on every chain.
     ///
     /// @dev THE OWNER AND A SALT THEY CHOOSE. The owner is what makes the address mean the
-    ///      same thing on both sides: a CREATE2 address cannot be derived from itself, so the
+    ///      same thing on both sides. A CREATE2 address cannot be derived from itself, so the
     ///      account's own address could never serve, and the owner is the one identity the
     ///      home chain and the destination both name. The salt is what lets one owner hold
     ///      more than one account: one per purpose, per counterparty, per mandate.
@@ -161,10 +161,10 @@ abstract contract TransceiverBase is
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
     ///
     /// @dev SEPARATE FROM THE PREDICTION BECAUSE A CHAIN CAN DIVERGE IN EITHER, AND ZKSYNC
-    ///      DIVERGES IN BOTH. Its addresses use a different formula AND it cannot deploy raw
-    ///      initcode at all: deployment goes through a system contract against a bytecode
+    ///      DIVERGES IN BOTH. Its addresses use a different formula, AND it cannot deploy
+    ///      raw initcode at all. Deployment goes through a system contract against a bytecode
     ///      hash published in advance, so `type(CrossProxy).creationCode` is not a deploy
-    ///      input there and `new CrossProxy{salt: s}()` is what a spoke must emit instead.
+    ///      input there, and `new CrossProxy{salt: s}()` is what a spoke must emit instead.
     ///      Tron diverges only in the formula.
     function _deployAccount(bytes32 salt) internal virtual returns (address deployed) {
         return Create2.deploy(0, salt, type(CrossProxy).creationCode);
@@ -220,13 +220,14 @@ abstract contract TransceiverBase is
     /// @dev PERMISSIONLESS, AND THE ARGUMENT IS THE ADDRESS. `msg.sender` must be what
     ///      `predictCrossAccount(owner, salt)` resolves to, so the only account anyone can
     ///      bootstrap is the one that already answers to them, and nobody gains anything by
-    ///      paying to create somebody else's. That check is also what lets the owner and salt
-    ///      travel in the message without a caller claiming another account's identity.
+    ///      paying to create somebody else's. That check is also what lets the owner and
+    ///      salt travel in the message without a caller claiming another account's
+    ///      identity.
     ///
     /// @dev THE ONLY CALLER OF `_requireRoutable`, and therefore the only place
-    ///      `minCounterpartProvenance` is enforced: a bar on the first message to a chain
-    ///      rather than on every send, since once an account exists there its own sends go
-    ///      straight to it and never reach this contract again.
+    ///      `minCounterpartProvenance` is enforced. It is a bar on the first message to a
+    ///      chain rather than on every send, since once an account exists there its own
+    ///      sends go straight to it and never reach this contract again.
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -281,12 +282,12 @@ abstract contract TransceiverBase is
     /// @notice What `bootstrap` would cost, before anything is spent.
     ///
     /// @dev THE MESSAGE A CALLER IS LEAST ABLE TO GUESS THE PRICE OF, AND THE ONE THAT FAILS
-    ///      MOST EXPENSIVELY: a bootstrap carries account creation as well as the payload,
+    ///      MOST EXPENSIVELY. A bootstrap carries account creation as well as the payload,
     ///      and an underfunded one is not a retry, because the account still does not exist
     ///      on that chain.
     ///
     /// @dev IT APPLIES `_requireRoutable` SO THE BAR FAILS THE QUOTE WHEREVER IT FAILS THE
-    ///      SEND, but NOT `bootstrap`'s caller check: a quote is taken by an interface or a
+    ///      SEND, but NOT `bootstrap`'s caller check. A quote is taken by an interface or a
     ///      signer BEFORE that account exists, so the same check would make the function
     ///      uncallable in exactly the case it is for. There is nothing to protect on a `view`.
     function quoteBootstrap(
@@ -363,7 +364,7 @@ abstract contract TransceiverBase is
     ///      cross-chain payloads are authentic, so a live upgrade key on one is a standing
     ///      ability to forge any message the protocol will honour. Locking on a separate
     ///      admin transaction means every deployment has a window where that key exists, and
-    ///      nothing but intent closes it: an operator who forgets, or who is waiting to be
+    ///      nothing but intent closes it. An operator who forgets, or who is waiting to be
     ///      sure, is running an authenticator somebody can replace. Doing it here converts
     ///      "we will lock it" into "it was never unlocked", and the deployment either
     ///      produced a sealed transceiver or reverted.
@@ -372,8 +373,8 @@ abstract contract TransceiverBase is
     ///      lives at an address every account's CREATE2 depends on, so the proxy is deployed
     ///      through a keyless factory to fix that address without fixing the implementation,
     ///      then pointed at the real logic by an `upgradeToAndCall` carrying this
-    ///      initializer. That call is authorized against the stub it is leaving; by the time
-    ///      it returns the flag is set and `_authorizeUpgrade` refuses everything after. It
+    ///      initializer. That call is authorized against the stub it is leaving. By the time
+    ///      it returns the flag is set, and `_authorizeUpgrade` refuses everything after. It
     ///      is `CrossProxy`'s sequence one level up: upgrade, initialize, lock, in one call.
     ///
     /// @dev IT IS CALLED LAST, BY `__HubTransceiverBase_init` AND `__SpokeTransceiverBase_init`
@@ -423,8 +424,8 @@ abstract contract TransceiverBase is
 
     /// @notice WHERE THE TWO SIDES DIVERGE, and the only thing that does. Both halves of
     ///         addressing (`_routeTo` and `_counterpartOn`) are `OutboundBase`'s seams, and a
-    ///         transceiver differs from an account only in what it fills them with: a hub
-    ///         overrides `_counterpartOn` to read the registry at a provenance bar, a spoke
+    ///         transceiver differs from an account only in what it fills them with. A hub
+    ///         overrides `_counterpartOn` to read the registry at a provenance bar. A spoke
     ///         overrides both to answer from write-once home values and refuse every other
     ///         key. Nothing here needs restating; see `OutboundBase._recipientOn`.
 

@@ -36,24 +36,21 @@ interface IReceiverInit is ICommitFinalize, ICancel, IExecute {
 /// @notice The destination-side half. Exactly ONE receiver per transmitter per destination,
 ///         created by the transceiver and reused for every payload that transmitter sends.
 ///
-/// @dev APPROVALS ARE AN ORDERED, APPEND-ONLY QUEUE, and every property below follows from
-///      the receiver being long-lived:
+/// @dev APPROVALS ARE AN UNORDERED MAP OF HASH TO COUNT, and every property below follows
+///      from the receiver being long-lived:
 ///
-///      A QUEUE rather than a slot, because with one slot a second commit would have to
+///      A MAP rather than a slot, because with one slot a second commit would have to
 ///      revert while one was still pending, so a payload waiting on a slow relayer would
 ///      block every later one from even being recorded.
 ///
-///      APPEND-ONLY, so the index `commit` returns names that approval for the life of the
-///      receiver, which is what lets `cancel` take an index and not race anything. A
-///      cancelled entry is zeroed in place; a consumed one keeps its value and is passed by
-///      the head pointer, so the two stay distinguishable on-chain afterwards.
+///      A COUNT rather than a set, because a hash is not an identity. Two identical
+///      payloads are two approvals, and each `finalize` discharges one of them.
 ///
-///      STRICTLY FIFO, because a multisig payload sequence usually means something only in
-///      order (approve then transfer, set then use), and a queue that executed out of order
-///      would let a relayer choose which half of that pair lands first. The cost is
-///      head-of-line blocking, and `cancel` is the escape hatch: ordering is only safe
-///      because a stuck entry can be removed, and cancellation is only necessary because
-///      execution is ordered. Neither should be removed without the other.
+///      UNORDERED, so a payload nobody relays stalls nothing approved after it. What that
+///      gives up is the guarantee that approvals land in the order they were made: a
+///      relayer holding two valid arrays chooses. A sequence that matters has to be
+///      expressed inside the payloads. `cancel(bytes32)` takes the hash, not an index,
+///      so it cannot go stale the way an index could.
 ///
 /// @dev EVERYTHING IS STORAGE, NOT IMMUTABLE. A receiver is a proxy, and immutables live in
 ///      the implementation's bytecode, so every account would share one value. They are set
@@ -157,9 +154,9 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev SPLIT OUT SO A PROTOCOL BINDING CAN GET IN FRONT OF THE PAYLOAD, and it is the
     ///      only arrangement that compiles. A binding needs its provider configured after the
     ///      reentrancy guard and before `_execute`, and with the work inside an `external
-    ///      initializer` there is no way to say that: `super.initialize` first runs the
-    ///      payload against an unconfigured provider; configuring first reverts, because the
-    ///      SDK's `onlyInitializing` setup would run while `_initializing` is false; and
+    ///      initializer` there is no way to say that. `super.initialize` first runs the
+    ///      payload against an unconfigured provider. Configuring first reverts, because the
+    ///      SDK's `onlyInitializing` setup would run while `_initializing` is false. And
     ///      `initializer` on both reverts `InvalidInitialization`. So a binding calls this
     ///      LAST, and never `super.initialize`.
     ///
@@ -280,16 +277,16 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///
     /// @dev IT COMPARES AGAINST `sourceTransmitter`, NOT `address(this)`, and that is the
     ///      mirror of what `TransmitterBase._requireOwnRecipient` does with its recorded
-    ///      counterpart. The two happen to be equal wherever Ethereum's CREATE2 formula holds,
-    ///      which is what made `address(this)` look free; they are NOT equal on zkSync or
-    ///      Tron, where the receiver and its transmitter part company, and comparing against
-    ///      the derived value there refused the only transmitter that could legitimately send.
+    ///      counterpart. The two are equal wherever Ethereum's CREATE2 formula holds, which
+    ///      is what made `address(this)` look free. They are NOT equal on zkSync or Tron,
+    ///      where the receiver and its transmitter part company, and comparing against the
+    ///      derived value there refused the only transmitter that could legitimately send.
     ///      The stored fact holds on every chain.
     ///
     /// @dev IT STILL NEEDS NO CONFIGURATION. `sourceTransmitter` is written once by the
     ///      transceiver at creation, from the `(owner, salt)` pair the bootstrap message
-    ///      carried, and there is no setter: there is no state an operator could set wrongly
-    ///      after the fact.
+    ///      carried, and there is no setter. There is no state an operator could set
+    ///      wrongly after the fact.
     ///
     /// @dev THIS IS THE SECOND OF THE TWO CHECKS IN FRONT OF `receiveMessage`. The gateway
     ///      role says the message came through transport this account trusts; this says it

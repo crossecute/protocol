@@ -56,7 +56,7 @@ library AddressDerive {
     ///      The address item is always 21 bytes (0x94 plus twenty), and the nonce item is
     ///      1 byte in the first two arms but `1 + len` in the third, so the prefix is
     ///      0xd6 in the first two and `0xd6 + len` in the third. It read `0xd5 + len`
-    ///      until `test/CreateDerivation.t.sol` was written: every nonce at or above 128
+    ///      until `test/CreateDerivation.t.sol` was written. Every nonce at or above 128
     ///      produced a well-formed address that was not the one Ethereum would use. Only
     ///      `create3` called this, always with a hardcoded nonce of 1, so nothing
     ///      exercised the arm. `VmDeriver.Scheme.EvmCreate` takes the nonce from
@@ -106,7 +106,7 @@ library AddressDerive {
     ///      45-byte runtime with the implementation address spliced in at byte 20:
     ///        3d602d80600a3d3981f3  363d3d373d3d3d363d73 <impl> 5af43d82803e903d91602b57fd5bf3
     ///      Verified against OpenZeppelin's `Clones.predictDeterministicAddress` in tests
-    ///      rather than trusted from memory; if OZ ever changes its proxy bytecode this
+    ///      rather than trusted from memory. If OZ ever changes its proxy bytecode, this
     ///      constant is wrong and the test fails.
     function cloneInitCodeHash(address implementation) internal pure returns (bytes32) {
         return keccak256(

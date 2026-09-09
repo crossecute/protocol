@@ -34,10 +34,10 @@ contract Hub is HubTransceiverBase {
 
 /// @notice The counterpart directory after it moved off the registry.
 ///
-/// @dev THE SPLIT IS THE POINT, AND IT IS ONE LINE: the hub holds WHERE a counterpart is,
-///      because that is per provider and two providers put two transceivers on one chain;
-///      the registry holds WHAT A CLAIM ABOUT THAT CHAIN IS WORTH, because that is the same
-///      question for every provider and two hubs must not be able to answer it differently.
+/// @dev THE SPLIT IS THE POINT, AND IT IS ONE LINE. The hub holds WHERE a counterpart is,
+///      because that is per provider, and two providers put two transceivers on one chain.
+///      The registry holds WHAT A CLAIM ABOUT THAT CHAIN IS WORTH, because that is the same
+///      question for every provider, and two hubs must not answer it differently.
 contract HubCounterpartsTest is Test {
     ChainRegistry registry;
     Hub hub;

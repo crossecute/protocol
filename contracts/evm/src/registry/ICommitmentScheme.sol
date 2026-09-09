@@ -25,9 +25,9 @@ pragma solidity ^0.8.0;
 interface ICommitmentScheme {
     /// @notice The destination's hash of `data`.
     /// @dev MUST be the exact primitive the destination's own receiver applies. A
-    ///      mismatch is not a safety hole (the destination simply never matches the
-    ///      commitment), but it wedges that receiver's FIFO queue until a `cancel`
-    ///      crosses, so it is verified against `test/vectors/` rather than assumed.
+    ///      mismatch is not a safety hole, since the destination simply never matches the
+    ///      commitment, but it leaves an approval outstanding until a `cancel` crosses. It
+    ///      is verified against `test/vectors/` rather than assumed.
     function hash(bytes calldata data) external view returns (bytes32);
 }
 

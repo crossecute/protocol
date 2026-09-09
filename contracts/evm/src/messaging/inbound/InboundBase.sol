@@ -41,17 +41,17 @@ interface ICancel {
 ///
 /// @dev THE TWO INHERITORS ARE HERE FOR THE SAME REASON AND USE IT DIFFERENTLY. An account
 ///      receives its owner's payloads. A transceiver receives bootstraps, and a bootstrap is
-///      the one message in the protocol whose gas cost lands on whoever happens to be
-///      delivering it: a payload that arrives as `commit(hash)` can be finalized later by
-///      anyone willing to pay for it, which is why the transceiver needs the same machinery
-///      rather than a second copy of it.
+///      the one message whose gas cost lands on whoever happens to be delivering it. A
+///      payload that arrives as `commit(hash)` can be finalized later by anyone willing to
+///      pay for it, which is why the transceiver needs the same machinery rather than a
+///      second copy of it.
 ///
-/// @dev `cancel` IS HERE AS SHARED CODE, NOT AS AN ENTRY POINT. `_cancel` removes every copy of
-///      an approval and each inheritor exposes it behind its own gate: an account answers to
-///      its transmitter, a transceiver to a payload it is already executing. The gate is the
-///      whole question, because a transceiver is shared by every owner on its chain and an
-///      openly reachable cancel there would let whoever found it strip a bootstrap somebody
-///      else has already paid to send. Without ANY cancel, an approved bootstrap could never
+/// @dev `cancel` IS HERE AS SHARED CODE, NOT AS AN ENTRY POINT. `_cancel` removes every copy
+///      of an approval, and each inheritor exposes it behind its own gate. An account
+///      answers to its transmitter, a transceiver to a payload it is already executing. The
+///      gate is the whole question: a transceiver is shared by every owner on its chain, and
+///      an openly reachable cancel there would let whoever found it strip a bootstrap
+///      somebody else has already paid to send. Without ANY cancel, an approved bootstrap could never
 ///      be withdrawn: it would sit indefinitely, with the timing of its execution, and so
 ///      the state its payload runs against, belonging to whoever chose to finalize it.
 ///

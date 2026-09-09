@@ -444,8 +444,8 @@ contract Hub is HubTransceiverBase {
 
 /// @notice The report crossing BOTH halves. Every other test of this path builds the
 ///         message by hand on one side or the other, which cannot catch the two sides
-///         drifting apart: an encoder change on the spoke and a decoder that still expects
-///         the old shape would leave both files green.
+///         drifting apart. An encoder change on the spoke, and a decoder that still
+///         expects the old shape, would leave both files green.
 contract ReceiverReportRoundTripTest is Test {
     Hub hub;
     ReportingSpoke spoke;

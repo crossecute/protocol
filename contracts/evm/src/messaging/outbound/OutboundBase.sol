@@ -38,8 +38,8 @@ abstract contract OutboundBase is Roles {
     /// chainKey => that chain's canonical ERC-7930 chain identifier.
     ///
     /// @dev IT LIVES ON THE SENDER RATHER THAN IN THE REGISTRY. A registry read would put a
-    ///      second shared contract in the path of every send and give a compromised one the
-    ///      ability to misroute a payload; on the execute-on-arrival path there is no
+    ///      second shared contract in the path of every send, and give a compromised one the
+    ///      ability to misroute a payload. On the execute-on-arrival path there is no
     ///      commitment binding the destination, so a wrong identifier means the payload runs
     ///      on the wrong chain.
     mapping(bytes32 => bytes) private _routes;
@@ -53,10 +53,10 @@ abstract contract OutboundBase is Roles {
 
     /// chainKey => this contract's counterpart there, in that chain's own address format.
     ///
-    /// @dev RAW BYTES, NOT `address`. The counterpart is not assumed to be at this contract's
-    ///      own address: that holds on most EVM chains and not on zkSync or Tron, whose
-    ///      CREATE2 formulas differ, and obviously not on Solana or the Move chains, where a
-    ///      32-byte key cannot be narrowed to 20.
+    /// @dev RAW BYTES, NOT `address`. The counterpart is not assumed to be at this
+    ///      contract's own address. That holds on most EVM chains, but not on zkSync or
+    ///      Tron, whose CREATE2 formulas differ, and not on Solana or the Move chains, where
+    ///      a 32-byte key cannot be narrowed to 20.
     mapping(bytes32 => bytes) private _counterparts;
 
     event RouteSet(bytes32 indexed chainKey, bytes route);
@@ -226,7 +226,7 @@ abstract contract OutboundBase is Roles {
     /// @dev `msg.sender` RESOLVES CORRECTLY ON BOTH PATHS with nothing threaded through the
     ///      call stack. On path A `sendMessage` is owner-gated, so it is the wallet that
     ///      signed and funded the message. On path B `bootstrap` refuses any caller that is
-    ///      not `predictCrossAccount(owner, salt)`, so it is the ACCOUNT: a shared
+    ///      not `predictCrossAccount(owner, salt)`, so it is the ACCOUNT. A shared
     ///      transceiver cannot be its own refund target, because it is never the caller of
     ///      its own `bootstrap`, and refunding to `address(this)` would pool every user's
     ///      excess into infrastructure with no per-user way out.
@@ -311,17 +311,17 @@ abstract contract OutboundBase is Roles {
     ///         currency.
     ///
     /// @dev IT IS HERE RATHER THAN ON THE ACCOUNT BECAUSE EVERY SENDER NEEDS IT, and a spoke
-    ///      needs it most: its receiver report is sent from inside a delivery callback where
-    ///      `msg.value` is zero, so it pays from its own balance, and anyone who has to fund
-    ///      that balance, or who is about to finalize a deferred bootstrap that ends in one,
-    ///      has to be able to price it first. Leaving the surface on `TransmitterBase` meant
-    ///      the one contract that cannot ask for value at call time was also the one that
-    ///      could not be asked what it needed.
+    ///      needs it most. Its receiver report is sent from inside a delivery callback where
+    ///      `msg.value` is zero, so it pays from its own balance. Anyone who has to fund that
+    ///      balance, or who is about to finalize a deferred bootstrap that ends in one, has
+    ///      to be able to price it first. Leaving the surface on `TransmitterBase` meant the
+    ///      one contract that cannot ask for value at call time was also the one that could
+    ///      not be asked what it needed.
     ///
     /// @dev UNGATED, DELIBERATELY. It spends nothing, writes nothing, and reveals nothing an
     ///      observer could not compute. `TransmitterBase` overrides it to carry the same
-    ///      checks its send does, because there a quote that succeeded for a message the send
-    ///      would refuse reports the operation ready when it is not.
+    ///      checks its send does. There, a quote that succeeded for a message the send would
+    ///      refuse reports the operation ready when it is not.
     ///
     /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own addition alongside it. A
     ///      gateway that cannot answer leaves `_quoteMessage` reverting `QuoteNotImplemented`,

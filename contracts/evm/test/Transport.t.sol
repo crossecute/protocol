@@ -1071,8 +1071,8 @@ contract TransportTest is Test {
 
     /// @dev AN ACCOUNT HOLDS ONE TRANSCEIVER ADDRESS AND ONE INTERFACE OVER IT. `routeTo`
     ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on a
-    ///      second type, and it answers for a destination the account has not bootstrapped,
-    ///      which is the one thing its own table cannot: that table is written by
+    ///      second type. It answers for a destination the account has not bootstrapped,
+    ///      which is the one thing its own table cannot do: that table is written by
     ///      `bootstrap`, so before the first message to a chain it holds nothing.
     function test_theAccountInterfaceResolvesARoute() public {
         MockTransceiver t = new MockTransceiver();

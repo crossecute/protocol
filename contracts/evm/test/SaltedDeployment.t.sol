@@ -437,9 +437,9 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev A RECORDED DEPLOYMENT STATES ITS INPUTS RATHER THAN ASSUMING PARITY. The hub's
     ///      own fallback (its own address, on a chain graded `Derived`) reaches the same
-    ///      answer by assuming the remote deployment matches the local one; this reaches it
+    ///      answer by assuming the remote deployment matches the local one. This reaches it
     ///      by arithmetic over a factory, salt, and initcode hash that sat in the signed
-    ///      calldata that recorded them, and it works before a hub exists at all. A deploy
+    ///      calldata that recorded them, and it works before a hub exists. A deploy
     ///      script computes it here and writes it with `HubTransceiverBase.setCounterpart`.
     function test_theRecordedDerivationStatesItsInputs() public {
         _record(keccak256(type(SaltedTransceiver).creationCode), keccak256("receiver"));

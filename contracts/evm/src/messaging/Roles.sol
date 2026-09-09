@@ -27,9 +27,9 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      only as good as the binding's care.
 ///
 /// @dev BOTH DIRECTIONS ASK FOR `GATEWAY`, which is the property the seam exists for. A
-///      contract that accepted deliveries from one address while sending through another would
-///      be trusting two transports and authenticating against one, and nothing would say so:
-///      the send would work and only a message from the second gateway would be silently
+///      contract that accepted deliveries from one address while sending through another
+///      would trust two transports and authenticate against one, and nothing would say so.
+///      The send would work, and only a message from the second gateway would be silently
 ///      refused. One role, held or not, makes that unrepresentable. `ReceiverBase` inherits
 ///      this directly rather than through `OutboundBase` because a receiver never sends, yet
 ///      it is the contract with the strictest need to know which gateway is real, since
@@ -73,10 +73,10 @@ abstract contract Roles is AccessControlEnumerableUpgradeable {
     ///      transceiver that created an account, not a member of the role itself.
     ///
     /// @dev IT IS `public` RATHER THAN `external` BECAUSE IT OVERRIDES ONE. Solidity permits
-    ///      widening `external` to `public` in an override and not the reverse, and this must
-    ///      override OZ's `grantRole` rather than sit beside it: a second entry point would
-    ///      leave the inherited one reachable, and "which of the two grants" is exactly the
-    ///      question this contract exists to have one answer to. Internal calls from an
+    ///      widening `external` to `public` in an override and not the reverse, and this
+    ///      must override OZ's `grantRole` rather than sit beside it. A second entry point
+    ///      would leave the inherited one reachable, and "which of the two grants" is
+    ///      exactly the question this contract exists to have one answer to. Internal calls from an
     ///      initializer are what actually use it.
     ///
     /// @dev THE WINDOW REACHES THE BOOTSTRAP PAYLOAD, DELIBERATELY. `__ReceiverBase_init`
