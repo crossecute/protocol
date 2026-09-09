@@ -158,10 +158,10 @@ abstract contract TransmitterBase is
     ///      there" are one fact and cannot disagree.
     ///
     /// @dev IT RECORDS THAT A BOOTSTRAP WAS DISPATCHED, NOT THAT ONE LANDED, and nothing on
-    ///      this chain can close that gap: the message is asynchronous, and on a parity chain
-    ///      no report ever comes back, because the hub derives the receiver's address rather
-    ///      than being told it. A flag that waited for confirmation would never be set on
-    ///      most chains. That is sound because delivery is retryable at the provider, so a
+    ///      this chain can close that gap. The message is asynchronous, and on a parity
+    ///      chain no report ever comes back, because the hub derives the receiver's address
+    ///      rather than being told it. A flag that waited for confirmation would never be set
+    ///      on most chains. That is sound because delivery is retryable at the provider, so a
     ///      bootstrap that reverts on arrival is pending rather than lost. See
     ///      [Failure handling](../../../../../docs/message-flow.md#failure-handling).
     ///
@@ -349,9 +349,9 @@ abstract contract TransmitterBase is
     ///
     /// @dev THE TWIN OF `recipientOn`, AND IT EXISTS FOR THE SAME REASON. Every entry point
     ///      here that takes `bytes` has a builder that produces it, because `Erc7930` is a
-    ///      library of `internal` functions and is therefore not callable off-chain at all: a
-    ///      caller without this would have to reimplement the encoding to reach `bootstrapTo`,
-    ///      and an interoperable address got wrong is a message addressed into the void.
+    ///      library of `internal` functions and is therefore not callable off-chain at all.
+    ///      Without this a caller would have to reimplement the encoding to reach
+    ///      `bootstrapTo`, and a wrong interoperable address is a message addressed nowhere.
     ///
     /// @dev IT NAMES A CHAIN, WHERE `recipientOn` NAMES AN ACCOUNT ON ONE, which is the whole
     ///      difference between the two entry points they serve. Path A addresses this

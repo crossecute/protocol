@@ -130,9 +130,9 @@ The sender picks by destination chain type. On path B that is still enforced on-
 `bootstrap(uint256, ...)` is `eip155` by construction, and `bootstrapTo(bytes, ...)` reads
 the type off the ERC-7930 envelope it was handed, refusing typed calls to a non-EVM chain
 (`TypedPayloadToNonEvmDestination`) and opaque elements to an EVM one
-(`OpaquePayloadToEvmDestination`). On path A it is not: `sendMessage` takes the payload
+(`OpaquePayloadToEvmDestination`). On path A it is not. `sendMessage` takes the payload
 already built, and `bytes` cannot be asked which form it holds, so the pairing is the
-caller's to get right and `payloadForCalls` / `payloadForElements` exist so it is at least
+caller's to get right. `payloadForCalls` and `payloadForElements` exist so it is at least
 spelled the same way here as it is decoded there. The receiver still decodes the single
 shape its own VM implies. Both sides know which before a byte is written, so a field saying
 so would carry a value each already holds. That is the same reason `Envelope` has no
@@ -510,9 +510,9 @@ One element carrying 36 bytes: **44 bytes packed against 192 ABI-framed.** Most 
 overhead is zero-padding: cheap in EVM calldata gas, but several providers price by raw
 byte.
 
-**This costs nothing to defer, and that is why it is deferred rather than guessed at.** The
-commitment folds `keccak256(element)` one at a time and never sees the array framing, so
-the container can differ per destination without changing a preimage, invalidating a
+**Deferring this costs nothing, which is why it is deferred rather than guessed at.** The
+commitment folds `keccak256(element)` one at a time and never sees the array framing. The
+container can therefore differ per destination without changing a preimage, invalidating a
 commitment, or touching anything on the approval path. ABI framing stays for now because
 EVM→EVM is the only path that exists and it is the natively cheap choice there.
 
@@ -528,9 +528,9 @@ version needs checking. Starknet's `starknet_keccak` is *not* keccak256: see abo
 
 ## Rejected
 
-**`bytes[]` as the EVM wire format.** It costs an extra length word per call, requires N+1
-decode passes against one for `Call[]` (the outer array, then each element again, copying
-every `data` field twice), carries no standard tooling, and shows a signer opaque blobs
+**`bytes[]` as the EVM wire format.** It costs an extra length word per call. It needs N+1
+decode passes against one for `Call[]`: the outer array, then each element again, copying
+every `data` field twice. It has no standard tooling. And it shows a signer opaque blobs
 where `Call[]` decodes to named fields in a signing UI. It remains the canonical
 *commitment* form, since that layer must stay VM-agnostic, and the only form a non-EVM
 destination receives.

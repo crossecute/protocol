@@ -41,12 +41,12 @@ struct ProviderDeployment {
 /// @notice The home-chain directory of every chain crossecute talks to, and of what can be
 ///         known about addresses on each.
 ///
-/// @dev IT ANSWERS QUESTIONS ABOUT A CHAIN, AND NOTHING ABOUT A COUNTERPART. That is the
-///      whole line, and it decides every field below. Where a provider's transceiver sits
-///      on a chain is per provider, since two providers put two transceivers there, so it
-///      lives on the hub that sends to it. How well an address on that chain can be known
-///      is the same question for every provider, so it is answered once, here, and every
-///      hub references it. Two hubs cannot disagree about a chain.
+/// @dev IT ANSWERS QUESTIONS ABOUT A CHAIN, AND NOTHING ABOUT A COUNTERPART. That decides
+///      every field below. Where a provider's transceiver sits on a chain is per provider,
+///      since two providers put two transceivers there, so it lives on the hub that sends
+///      to it. How well an address on that chain can be known is the same question for
+///      every provider, so it is answered once, here, and every hub references it. Two hubs
+///      cannot disagree about a chain.
 ///
 ///      What that leaves is a DIRECTORY: enumerable sets of `chainKey` and
 ///      `messageProvider`, the canonical identifier each key hashes from, and the local hub
@@ -58,17 +58,17 @@ struct ProviderDeployment {
 ///      an address from the deriver and inputs recorded for this chain), and
 ///      `commitmentFor` (the primitive its receiver hashes with).
 ///
-/// @dev IT HOLDS NO ROUTES AND NO COUNTERPARTS, for one reason stated twice: the contract
-///      that sends should hold what it needs to send. A registry read on the send path
-///      would put a second shared contract there and let a compromised one misroute a
-///      payload, and on the execute-on-arrival path there is no commitment binding the
-///      destination, so a misroute runs the payload on the wrong chain.
+/// @dev IT HOLDS NO ROUTES AND NO COUNTERPARTS. The contract that sends should hold what it
+///      needs to send. A registry read on the send path would put a second shared contract
+///      there and let a compromised one misroute a payload. On the execute-on-arrival path
+///      there is no commitment binding the destination, so a misroute runs the payload on
+///      the wrong chain.
 ///
-/// @dev THE GRADING IS THE POINT, AND IT SITS ONE LEVEL ABOVE THE ADDRESS. Collapsing a
+/// @dev THE GRADING IS THE POINT, AND IT SITS ONE LEVEL ABOVE THE ADDRESS. Putting a
 ///      location and how well it can be known into one `address` field is how a
-///      bridge-security assumption gets laundered into something that looks like a
-///      derivation. A hub stores the address; this contract says whether that chain's
-///      addresses can be recomputed at all, and a hub below its own bar refuses to send.
+///      bridge-security assumption gets passed off as a derivation. A hub stores the
+///      address. This contract says whether that chain's addresses can be recomputed at
+///      all, and a hub below its own bar refuses to send.
 contract ChainRegistry is OwnableUpgradeable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
@@ -131,9 +131,9 @@ contract ChainRegistry is OwnableUpgradeable {
     ///
     /// @dev `Derived` means this contract can recompute an address on that chain from
     ///      inputs in a signed transaction. `Attested` means it cannot, so the value was
-    ///      learned over a bridge and is worth exactly that bridge's security: Starknet,
-    ///      whose derivation is Pedersen, and zkSync and Tron, whose CREATE2 formulas
-    ///      differ. Unset reads as `Unresolved`, which no bar accepts.
+    ///      learned over a bridge and is worth exactly that bridge's security. That covers
+    ///      Starknet, whose derivation is Pedersen, and zkSync and Tron, whose CREATE2
+    ///      formulas differ. Unset reads as `Unresolved`, which no bar accepts.
     mapping(bytes32 => Provenance) public provenanceOf;
 
     /// chainKey => the primitive that chain's receiver hashes commitments with.
@@ -359,9 +359,9 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Where a provider's transceiver lands on `chainKey`.
     ///
     /// @dev RECOMPUTED FROM THE RECORDED INPUTS, so the answer is `Derived` in the strong
-    ///      sense: the factory, salt, and initcode hash were all in the signed calldata that
-    ///      recorded them, and this is arithmetic over them rather than a local address
-    ///      assumed to match the remote one.
+    ///      sense. The factory, salt, and initcode hash were all in the signed calldata that
+    ///      recorded them, and this is arithmetic over them, not a local address assumed to
+    ///      match the remote one.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider)
         public
         view

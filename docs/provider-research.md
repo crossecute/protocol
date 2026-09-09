@@ -83,9 +83,9 @@ catches a failure and RECORDS IT AS REPLAYABLE has done the opposite: it is prov
 The distinction is whether the failure survives the catch, and on both of these it does.
 
 **Two of the nine are outliers, and they are outliers for one reason.** Wormhole's core
-layer and Avalanche's Warp precompile are both signature-verification primitives: they prove
-a message was authorised by a validator set and stop there, with delivery, ordering and
-dedupe left to whatever is built on top. Wormhole's own guidance says integrators must
+layer and Avalanche's Warp precompile are both signature-verification primitives. They
+prove a message was authorised by a validator set and stop there, leaving delivery,
+ordering and dedupe to whatever is built on top. Wormhole's own guidance says integrators must
 implement replay protection themselves, offering the VAA digest or the
 `(emitterChain, emitterAddress, sequence)` triple as the key; Warp's equivalent is the
 Teleporter layer above it, which is why ICM appears separately in the table and does provide
@@ -166,9 +166,9 @@ has no equivalent, so undoing the alias is the binding's job either way.
 **`AddressDerive` carries both directions**, under their own heading rather than zkSync's,
 since the same constant serves all three stacks and it is Arbitrum's
 `AddressAliasHelper.OFFSET` character for character. `undoL1ToL2Alias` is the one a binding
-calls, and its NatSpec carries the two traps: it is L1 -> L2 only, so applying it to a
-withdrawal corrupts a sender that arrived unaliased; and the arithmetic wraps, so undoing an
-alias that was never applied yields a well-formed address belonging to nobody rather than
+calls, and its NatSpec carries two traps. It is L1 -> L2 only, so applying it to a
+withdrawal corrupts a sender that arrived unaliased. And the arithmetic wraps, so undoing an
+alias that was never applied yields a well-formed address belonging to nobody, rather than
 reverting. A caller decides from the DIRECTION of the message, never from the value.
 
 Exactly one input undoes to the zero address, the offset itself, which a fuzz case pins.
@@ -200,8 +200,8 @@ Avalanche L1s to each other and to nothing else. So a canonical strategy means *
 provider registration and one hub transceiver per rollup**, not one for the stack.
 
 That composes without any change to this protocol, since `ChainRegistry` already keys
-providers separately and each hub holds its own counterparts, and it is the arrangement
-that makes the trust argument worth having: a payload to Optimism trusts Optimism's bridge
+providers separately and each hub holds its own counterparts. It is also the arrangement
+that makes the trust argument worth having. A payload to Optimism trusts Optimism's bridge
 and nothing else, rather than trusting one attestation network with every destination at
 once. What it costs is N deployments, N `setProvenance` entries, and N sets of routes,
 which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
@@ -288,7 +288,7 @@ impose anyway.
 **Aurora is a parity chain, checked rather than assumed.** NEAR itself runs WASM and has no
 EVM, so Solidity does not run on it; Aurora is an EVM implemented AS a NEAR contract, and it
 presents as `eip155` chain 1313161554. The question that decides whether it needs anything
-of its own is whether its CREATE2 is EIP-1014, and it is: Arachnid's factory is deployed
+of its own is whether its CREATE2 is EIP-1014, and it is. Arachnid's factory is deployed
 there at the usual address, and `eth_call`ing it executes on Aurora's own engine rather than
 on a local simulation, so it answers directly. Three salts over `CrossProxy`'s initcode
 returned exactly the addresses EIP-1014 predicts:
@@ -324,9 +324,9 @@ to a recipient named by an interoperable address, with an opaque per-send option
 the question is worth answering once rather than rediscovering per provider.
 
 **The interfaces are vendored, at `src/messaging/IErc7786.sol`.** They are copied byte for
-byte from OpenZeppelin 5.5.0's `draft-IERC7786.sol`, because the `draft-` prefix is upstream
-saying it may change the API in a minor release, and these two interfaces are this protocol's
-ABI: an event topic, a selector, an argument order. Holding the copy makes a change a
+byte from OpenZeppelin 5.5.0's `draft-IERC7786.sol`. The `draft-` prefix is upstream saying
+it may change the API in a minor release, and these two interfaces are this protocol's ABI:
+an event topic, a selector, an argument order. Holding the copy makes a change a
 reviewed diff on our schedule rather than a side effect of a dependency bump.
 
 **The core contracts implement `IERC7786GatewaySource` and `IERC7786Recipient` directly**,
@@ -363,7 +363,7 @@ route table existed to hold.
 | `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
 | `attributes` | passed straight through |
 
-The inbound split is the pleasing part: `Erc7930.toChainIdentifier` already reduces an
+The inbound split is the useful part: `Erc7930.toChainIdentifier` already reduces an
 account envelope to a bare chain identifier, which is exactly the `route` the hub's
 `chainKeyOfRoute` and the spoke's `_isHome` expect. `_authenticateOrigin` needs no override
 on either side.

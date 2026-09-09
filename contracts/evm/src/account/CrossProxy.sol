@@ -17,12 +17,12 @@ interface ICrossProxy {
 /// @notice The proxy every crossecute account is deployed as: transmitter and receiver alike.
 ///
 /// @dev IT TAKES NO CONSTRUCTOR ARGUMENTS, AND THAT IS THE ENTIRE POINT. CREATE2 hashes the
-///      initcode, so anything baked into it changes the address. With no arguments the
-///      initcode is one constant byte string, so a transmitter deployed by the hub and a
-///      receiver deployed by a spoke (same deployer, same salt, same initcode) land on ONE
-///      address and diverge only in what they are upgraded to, which the derivation never
-///      sees. A minimal clone could not do this: EIP-1167 embeds the implementation address
-///      in its initcode, so the two could never share an address however they were salted.
+///      initcode, so anything written into it changes the address. With no arguments the
+///      initcode is one constant byte string. A transmitter deployed by the hub and a
+///      receiver deployed by a spoke (same deployer, same salt, same initcode) therefore
+///      land on ONE address, and diverge only in what they are upgraded to, which the
+///      derivation never sees. A minimal clone could not do this: EIP-1167 embeds the
+///      implementation address in its initcode, so the two could never share an address.
 ///
 /// @dev THERE IS NO WAY TO UPGRADE WITHOUT LOCKING. The single admin operation upgrades,
 ///      runs the initializer, and zeroes the admin, in that order and in one call. Not "the

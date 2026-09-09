@@ -34,7 +34,7 @@ interface IAccountReceiverReport {
 /// @dev WHY THE REGISTRY IS ONLY EVER HERE. The fan-out is one-directional: the hub talks to
 ///      every destination, and every destination talks only back to the hub. A directory is
 ///      what you need to hold N claims about where remote code lives and how much each claim
-///      is worth; a spoke holds one, is told it at initialization, and would gain nothing
+///      is worth. A spoke holds one, is told it at initialization, and would gain nothing
 ///      from the machinery but a mutable pointer to be compromised. So `chainRegistry`,
 ///      `messageProvider`, and the provenance dial are absent from the spoke entirely.
 ///
@@ -174,16 +174,16 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @notice Teach this hub how a destination is named. WRITE-ONCE, and the msig's.
     ///
     /// @dev IT IS ON THE HUB RATHER THAN THE SHARED BASE, because adding a destination is
-    ///      something only a hub ever does: it fans out to N chains and learns them over time,
-    ///      while a spoke knows exactly one route, its home, written in its initializer with
-    ///      no setter. A public setter on the base would have given a spoke an entry point
+    ///      something only a hub ever does. It fans out to N chains and learns them over
+    ///      time, while a spoke knows exactly one route, its home, written in its
+    ///      initializer with no setter. A public setter on the base would have given a spoke an entry point
     ///      whose every argument it refuses anyway, since `_routeTo` reverts `NotHome` for
     ///      anything else.
     ///
     /// @dev The table, the reverse index, and the reads all live on `OutboundBase`, which is
-    ///      what a sender needs to address anything. This is only the authority over it: a
-    ///      binding wraps this in a typed setter where it keeps a provider-native value of its
-    ///      own, and a gateway binding adds nothing.
+    ///      what a sender needs to address anything. This is only the authority over it. A
+    ///      binding wraps this in a typed setter where it keeps a provider-native value of
+    ///      its own, and a gateway binding adds nothing.
     function setRoute(bytes32 chainKey, bytes memory route) public onlyOwner {
         _setRoute(chainKey, route);
     }
@@ -478,26 +478,26 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
 
     /// @notice Inbound callback: the destination reports where it created the receiver.
     ///
-    /// @dev THE ESCAPE HATCH FOR UNDERIVABLE CHAINS. Most destinations need nothing like it,
+    /// @dev THE WAY OUT FOR UNDERIVABLE CHAINS. Most destinations need nothing like it,
     ///      because the hub can compute a parity chain's receiver address before the first
     ///      message. Starknet cannot: its derivation is a Pedersen hash chain the EVM cannot
-    ///      run at any price, and zkSync and Tron simply use different CREATE2 formulas. So
-    ///      the destination creates the receiver, learns the address, and sends it back.
+    ///      run at any price, and zkSync and Tron use different CREATE2 formulas. So the
+    ///      destination creates the receiver, learns the address, and sends it back.
     ///      Hub-only, which is the whole architecture in one function: the spoke sends, the
     ///      hub records, and a spoke has nowhere to record anything to. Self-call only, so
     ///      it is reachable from `_onInbound` and nowhere else.
     ///
     /// @dev IT WRITES TO THE ACCOUNT, NOT TO THE REGISTRY, and that is what makes the report
     ///      worth sending. The registry is deliberately out of the send path, so an address
-    ///      recorded there could not make a diverging chain reachable however faithfully it
-    ///      was filed. The transmitter is the contract that addresses that receiver, so it is
-    ///      the contract that is told.
+    ///      recorded there could not make a diverging chain reachable, however faithfully it
+    ///      was filed. The transmitter is the contract that addresses that receiver, so it
+    ///      is the contract that is told.
     ///
     /// @dev THE REGISTRY STILL SAYS WHICH CHAINS MAY REPORT, which is the part that IS
     ///      directory data. `requiresReceiverCallback` is true exactly where this contract
     ///      cannot recompute an address, so a report from a chain the hub can derive itself
-    ///      is refused: it would either restate a `Derived` fact or replace it with a
-    ///      weaker one, and neither is something a remote chain gets to do.
+    ///      is refused. It would either restate a `Derived` fact or replace it with a weaker
+    ///      one, and neither is something a remote chain gets to do.
     ///
     /// @dev THE DESTINATION CANNOT CHOOSE WHICH ACCOUNT IT WRITES, WHICH IS WHY NO REQUEST
     ///      ID IS NEEDED. `chainKey` came from `_authenticateOrigin` and `(owner, salt)` is
@@ -508,7 +508,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev THE REPORTED ADDRESS MUST BE ON THE CHAIN THAT REPORTED IT, so a stored
     ///      counterpart cannot contradict its own envelope. It buys an attacker nothing on
     ///      its own, since an authenticated spoke can already report a wrong address on its
-    ///      own chain. That is the residual risk and it has no recovery: the account pins
+    ///      own chain. That is the residual risk, and it has no recovery. The account pins
     ///      the first report it accepts, so a compromised spoke costs its own chain.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function onDestinationReceiver(

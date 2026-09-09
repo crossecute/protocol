@@ -126,8 +126,8 @@ destination, read from the table rather than computed.
 - **OApp authenticates inbound before our code runs.** `lzReceive` does
   `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
   `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
-  the open question in §4 below, now concrete: it contradicts the rule stated for the
-  transceiver, and for a 1:1 pairing there is nothing extra to verify, so accepting it is
+  the open question in §4 below, now concrete. It contradicts the rule stated for the
+  transceiver. For a 1:1 pairing there is nothing extra to verify, so accepting it is
   defensible, but it should be a **written exception** rather than an omission.
 
 ## 3. Blockers on specific paths
@@ -139,11 +139,10 @@ destination, read from the table rather than computed.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
   the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  the hub's `treasury` address in the same transaction. It is zero by default, so
-  only the chains that actually report are
-  charged, and it is in `quoteBootstrap`, because a quote that omitted it would be worse
-  than none: the caller would fund the send exactly and the bootstrap would revert with the
-  signers already committed.
+  the hub's `treasury` address in the same transaction. It is zero by default, so only the
+  chains that actually report are charged. It is in `quoteBootstrap` because a quote that
+  omitted it would be worse than none: the caller would fund the send exactly, and the
+  bootstrap would revert with the signers already committed.
 
   **What is not built is the crossing.** The fee accrues on the home chain in the home
   currency and the spoke needs the destination's, so the msig withdraws and funds spokes out
@@ -199,8 +198,8 @@ mainnet.
   than a protocol one.
 - **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
   when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
-  write-once, add no transport, and redirect no fee: the treasury is write-once and is paid in
-  the same transaction that charges it.
+  write-once, add no transport, and redirect no fee. The treasury is write-once and is paid
+  in the same transaction that charges it.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
 - **~~Ordered execution blocks the queue.~~ SETTLED: approvals are unordered.** The queue
@@ -209,9 +208,9 @@ mainnet.
   approvals land in the order they were made. A relayer holding two valid arrays chooses,
   so a sequence that matters has to be expressed inside the payloads.
 - **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
-  true from dispatch there, because the address is pre-deterministic and correct; what is not
-  guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for someone to
-  finalize it. Those sends fail on arrival and are retryable at the provider, so the cost is
+  true from dispatch there, because the address is pre-deterministic and correct. What is
+  not guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for
+  someone to finalize it. Those sends fail on arrival and are retryable at the provider, so the cost is
   the fee and the wait. Closing it would mean a confirmation message on chains that need none,
   which is the trade this deliberately does not make.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
@@ -227,10 +226,10 @@ mainnet.
   calldata variants. **It is out of reach at the pinned version**, which predates it, so
   adopting it means moving the dependency first. That is the trade to weigh, not the line
   count.
-  Blocked on two checks: it is a `draft-`, which OZ excludes from API stability and may
-  change in a MINOR release, and this codebase freezes accounts against exact bytes; and our
-  `parseStrict` enforces strictness the registry depends on (non-minimal `eip155` references
-  and trailing bytes both rejected) that `parseV1` may not match. Neither is a reason not to
+  Blocked on two checks. It is a `draft-`, which OZ excludes from API stability and may
+  change in a MINOR release, while this codebase freezes accounts against exact bytes. And
+  our `parseStrict` enforces strictness the registry depends on, rejecting both non-minimal
+  `eip155` references and trailing bytes, which `parseV1` may not match. Neither is a reason not to
   do it; both are reasons it is its own task with its own vectors. See
   [`provider-research.md`](provider-research.md#3-erc-7786-as-a-transport).
 
@@ -279,11 +278,11 @@ mainnet.
   being wrong is a redeploy rather than a loss. See §3.
 - **The home chain is a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
   takes its home chainKey, the provider's route to it, and the hub's address as
-  write-once initializer arguments. Two things follow that are worth deciding rather than
-  inheriting: the hub must be an EVM chain with the EIP-152 precompile, since the registry
-  recomputes addresses and commitments locally, and every spoke in one deployment must be
-  given the SAME home: nothing on-chain cross-checks that, because a spoke has no view of
-  its siblings. A deploy script is the natural place to enforce it, and there is no
+  write-once initializer arguments. Two things follow, and both are worth deciding rather
+  than inheriting. The hub must be an EVM chain with the EIP-152 precompile, since the
+  registry recomputes addresses and commitments locally. And every spoke in one deployment
+  must be given the SAME home: nothing on-chain cross-checks that, because a spoke has no
+  view of its siblings. A deploy script is the natural place to enforce it, and there is no
   `script/` yet.
 - **Merkle-verified calls** as an opt-in policy, replacing the `(target, selector)`
   predicate. `isAllowed` defaults open, so this is an owner's restriction rather than a
@@ -294,8 +293,8 @@ mainnet.
 - **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
   recorded as an exact commit rather than a branch, because CREATE2 parity depends on
   byte-identical initcode and a floating dependency would move every account address on the
-  next `--remote`. `git submodule update --init` is enough; the nested submodules OZ carries
-  for its own test suite are not needed and `--recursive` only costs time.
+  next `--remote`. `git submodule update --init` is enough. The nested submodules OZ carries
+  for its own test suite are not needed, and `--recursive` only costs time.
 
   **What this gives up against vendoring is availability, not exactness.** A gitlink is as
   precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag

@@ -7,13 +7,12 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 
 /// @notice The hash a destination computes its commitments with.
 ///
-/// @dev THE FOLD IS FIXED; ONLY THE PRIMITIVE VARIES. A deliberate narrowing, and worth
-///      being honest about the cost: a fully VM-native commitment would be TON's cell hash
-///      or Starknet's `poseidon_hash_span` over a felt array, neither of which is a
-///      byte-oriented fold and neither of which the hub could reproduce to show a signer
-///      what they are approving. Holding the fold fixed keeps both sides able to compute one
-///      value; the price is that a non-EVM receiver implements a byte fold rather than its
-///      idiomatic digest.
+/// @dev THE FOLD IS FIXED; ONLY THE PRIMITIVE VARIES. This is a deliberate narrowing, and
+///      the cost is worth stating. A fully VM-native commitment would be TON's cell hash or
+///      Starknet's `poseidon_hash_span` over a felt array. Neither is a byte-oriented fold,
+///      and neither could the hub reproduce to show a signer what they are approving.
+///      Holding the fold fixed keeps both sides able to compute one value. The price is
+///      that a non-EVM receiver implements a byte fold rather than its idiomatic digest.
 ///
 /// @dev keccak256 IS THE ONLY ONE AN EVM RECEIVER EVER USES. The rest exist for the source
 ///      side, where the hub builds a commitment a *different* VM will recompute.
@@ -130,12 +129,12 @@ library Commitment {
     /// @notice The same value, from typed calls.
     ///
     /// @dev IT DELEGATES RATHER THAN REPEATING THE FOLD. `Calls.encodeAll` produces exactly
-    ///      the elements the overload above folds, so "both spellings of one payload produce
-    ///      one hash" is structural rather than a property two copies of a loop happen to
-    ///      share, in a library whose first line is that the fold does not drift.
+    ///      the elements the overload above folds. "Both spellings of one payload produce one
+    ///      hash" is therefore structural, not a property two copies of a loop happen to
+    ///      share.
     ///
     /// @dev THE ARRAY COPY IS FREE WHERE THIS RUNS. The keccak overloads avoid materializing
-    ///      elements because they are on the gas-paying `finalize` path; a
+    ///      elements because they are on the gas-paying `finalize` path. A
     ///      scheme-parameterized commitment is only ever read through `eth_call`.
     function hashCalls(
         Scheme scheme,

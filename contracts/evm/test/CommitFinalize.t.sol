@@ -918,8 +918,8 @@ contract CommitFinalizeTest is Test {
     ///      transceiver has no commitments to mean. Neither was ever inherited.
     /// @dev A TRANSCEIVER COMMITS AND FINALIZES, AND CANCELS NEITHER ITS OWN NOR ANYBODY'S.
     ///      `commit` admits only a payload this contract is already executing, so no caller
-    ///      can approve work on the contract every account's bootstrap goes through, and
-    ///      there is no `cancel` at all: an entry point that removed an approval on a shared
+    ///      can approve work on the contract every account's bootstrap goes through. There
+    ///      is no `cancel` at all: an entry point that removed an approval on a shared
     ///      contract would let whoever reached it strip a bootstrap somebody else paid for.
     function test_theTransceiverCommitsOnlyToItselfAndCannotCancel() public {
         vm.prank(relayer);

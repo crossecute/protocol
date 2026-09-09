@@ -6,7 +6,7 @@ Secure multisig operations across chains, anchored on one of them.
 
 A team on six chains runs six multisigs: six addresses, six signer sets to keep in step,
 six proposals per change, six sets of funded signers. Everything below follows from
-collapsing that to one.
+reducing that to one.
 
 **A signer is removed once, not N times.** The signer set exists only in the home-chain
 multisig. Receivers elsewhere never learn who the signers are: they authenticate the
@@ -35,7 +35,7 @@ currency and execution runs inside the delivery callback. A payload that spends 
 currency draws on the receiver's address, which is derivable and fundable before the
 receiver exists: topped up once, not per signer.
 
-**One admin address everywhere.** The same exact CREATE2 address holds the account on every
+**One admin address everywhere.** The same CREATE2 address holds the account on every
 supported chain, which unifies access control. Chain exceptions that do not use Ethereum's
 CREATE2 formula, eg. Tron and zkSync, are derived uniquely and reported back to central authority.
 
@@ -45,12 +45,12 @@ Here it is one batch, reviewed in totality. The commitment folds the destination
 in with the calls, so an approval names what runs _and_ where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
-**What it costs.** The home chain and the message provider enter the trust path: a halt at
+**What it costs.** The home chain and the message provider enter the trust path. A halt at
 home delays everything, and a provider that can forge a message can drive an account. No
-shared failure is exactly what N independent multisigs buy with N of everything else. The
-exposure is narrowed where it can be: a transceiver's upgrade key dies in the call that
-initializes it and an account's in the call that arms it, so neither is ever live and
-replaceable, and no shared contract sits in the path of a normal message.
+shared failure is what N independent multisigs buy with N of everything else. The exposure
+is narrowed where it can be. A transceiver's upgrade key dies in the call that initializes
+it, and an account's in the call that arms it, so neither is ever live and replaceable. No
+shared contract sits in the path of a normal message.
 
 ## Three transactions
 
@@ -166,20 +166,12 @@ either way: its home chainKey, route, and counterpart are all written once at
 initialization with no setters. What the home chain _must_ be is an EVM chain with the
 EIP-152 precompile, because the registry recomputes addresses and commitments locally.
 
-Only bootstrap involves a transceiver, and it runs once per chain. After it, the account
-talks to its counterpart directly and no shared contract is in the path of a normal message.
-
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
 binary interoperable address (ERC-7930) that carries its own chain and `payload` is opaque
 `bytes`. One signature therefore covers every destination, and the transceiver's route slot
 holds a chain identifier rather than a provider's private id for a chain. The standard
 defines no quote, so `quoteMessage` is the protocol's own addition alongside it.
-
-**Committing is a call, not a message kind.** To approve a payload now and run it later,
-send one whose single element calls the receiver's own `commit`. Nothing on the wire
-distinguishes it from any other payload, which is why there is no message-type tag anywhere
-in the protocol.
 
 ## Layout
 
@@ -244,8 +236,8 @@ summary: the file is always the newer statement.
 Two steps, and the second is the one nothing will remind you about.
 
 1. **Allocate the `ChainType` constant** in `addressing/ChainType.sol`, and nowhere else.
-   Every value used in the repo is allocated in that one file, because a ChainType is baked
-   into every envelope and registry keys are `keccak256(envelope)`: two files each picking a
+   Every value used in the repo is allocated in that one file, because a ChainType is
+   written into every envelope and registry keys are `keccak256(envelope)`: two files each picking a
    provisional value is a silent collision that surfaces as two chains sharing a key. Use the
    CASA CAIP-350 value where one exists; otherwise take the next free slot at or above
    `PROVISIONAL_FLOOR` and accept that a published profile later means a re-keying migration.
@@ -257,10 +249,12 @@ Two steps, and the second is the one nothing will remind you about.
    for the same chain and hash to two different keys. Allocating the constant does not close
    that; only the rule does. `test/UnknownChainType.t.sol` pins the current behaviour.
 
-Then, per destination: a `Scheme` or `ICommitmentScheme` plugin if the chain does not hash
-with keccak256, an `IVmDeriver` if its addresses can be recomputed here, an `IRefValidator`
-if the envelope cannot express its value ranges, and a `setProvenance` grade below `Derived`
-if its addresses cannot be recomputed here at all.
+Then, per destination, add what the chain needs:
+
+- a `Scheme` or `ICommitmentScheme` plugin, if it does not hash with keccak256
+- an `IVmDeriver`, if its addresses can be recomputed here
+- an `IRefValidator`, if the envelope cannot express its value ranges
+- a `setProvenance` grade below `Derived`, if its addresses cannot be recomputed here at all
 
 ## Assumptions
 
@@ -287,9 +281,8 @@ if its addresses cannot be recomputed here at all.
   this protocol's ABI here.
 - The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
   treasury for the whole protocol, on the home chain, named at the hub's deployment and
-  write-once: a bootstrap fee is charged on the home chain and forwarded to it in the same
-  transaction, so no transceiver ever holds an accrued balance and there is no withdrawal to
-  gate. Ownership is the only live authority, and it cannot admit a transport, drop one, or
+  write-once. A bootstrap fee is charged there and forwarded in the same transaction, so no
+  transceiver ever holds an accrued balance and there is no withdrawal to gate. Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint the treasury. An account is one owner's, so a receiver may drop its own gateway
   through `revokeGateway`, which is the only membership change that survives initialization
   anywhere.

@@ -4,13 +4,12 @@ The two paths a message takes, the wire formats, and what each contract does.
 
 **Status.** Both paths are built end to end in-process: `_sendMessage(bytes, bytes,
 bytes[])`, `sendMessage` / `bootstrap`, the quote surface, the inbound funnel, and the
-reentrancy guard. The send and receive surfaces are ERC-7786's:
-`TransmitterBase` is an `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`. What is missing is a **message provider
-binding**: `_sendMessage` reverts `SendNotImplemented` and `_quoteMessage` reverts
-`QuoteNotImplemented` by default, so nothing crosses a real bridge yet. What a binding must
-implement is specified in [`provider-spec.md`](provider-spec.md). The README's `TransceiverBase` /
-`TransmitterBase` sections describe the same design; where they disagree with this file,
-this file is the newer statement.
+reentrancy guard. The send and receive surfaces are ERC-7786's: `TransmitterBase` is an
+`IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`. What is missing is a
+**message provider binding**. `_sendMessage` reverts `SendNotImplemented` and
+`_quoteMessage` reverts `QuoteNotImplemented` by default, so nothing crosses a real bridge
+yet. What a binding must implement is specified in
+[`provider-spec.md`](provider-spec.md).
 
 ## Three properties the whole design turns on
 
@@ -141,7 +140,7 @@ things the report needs at once: the home route, the hub's address, the authenti
 `(owner, salt)` pair, and the receiver it has just created.
 
 **`addressesDiverge` decides whether it fires.** On a chain sharing Ethereum's CREATE2
-formula the hub computed the receiver's address before the first message ever left, so a
+formula the hub computed the receiver's address before the first message ever left. A
 report would spend a message to restate a derivation it already holds, and would replace a
 `Derived` fact with an `Attested` one. The flag is written once at initialization because
 the hub cannot work this out for itself: it recomputes Ethereum's formula, which is right on
@@ -180,8 +179,8 @@ channel names a destination separately from its message.
 | spoke → hub transceiver | `abi.encode(address owner, bytes32 salt, bytes interop)` |
 
 **Both transceiver channels name the OWNER AND SALT rather than an address.** The pair has
-to be stated because the hub is shared by every owner, so nothing the bridge reports says who
-authorized the message; and it is the pair rather than the address because the address is a
+to be stated because the hub is shared by every owner, so nothing the bridge reports says
+who authorized the message. It is the pair rather than the address because the address is a
 derivation of it. That is also what lets the hub key the receiver slot without a request id.
 
 A call is `(address target, uint256 value, bytes data)`: the tuple ERC-7579 and ERC-7821
@@ -217,9 +216,9 @@ a transceiver is `Ownable`, deliberately somewhere else, so the address that get
 address that decides are never the same fact.
 
 - **One role covers both directions.** A contract that accepted deliveries from one address
-  while sending through another would be trusting two transports and authenticating against
-  one, and nothing would say so: the send would work, and only a message from the second
-  gateway would be silently refused. `ReceiverBase` inherits `Roles` directly rather than
+  while sending through another would trust two transports and authenticate against one,
+  and nothing would say so. The send would work, and only a message from the second gateway
+  would be silently refused. `ReceiverBase` inherits `Roles` directly rather than
   through `OutboundBase`, because a receiver never sends yet has the strictest need to know
   which gateway is real.
 - **`grantRole` is `onlyInitializing`, and that is the whole grant path.** It overrides OZ's
@@ -273,10 +272,10 @@ The shared execution loop, inherited by `TransmitterBase` and `ReceiverBase` ali
   including the bootstrap payload a receiver runs inside its initializer. Merkle-verified
   calls remain the plan, as an opt-in.
 - **The two ends share it rather than one calling the other.** At home there is no receiver
-  to run a payload in: a transmitter and its receivers share one address, and an address
+  to run a payload in. A transmitter and its receivers share one address, and an address
   holds one contract, so at home that address is the transmitter. A payload authorized by
-  the owner locally and a payload authorized by a commitment remotely therefore run through
-  the same loop, the same policy check, and the same all-or-nothing rule.
+  the owner locally and one authorized by a commitment remotely therefore run through the
+  same loop, the same policy check, and the same all-or-nothing rule.
 
 ### OutboundBase
 
@@ -294,10 +293,10 @@ is what makes it free to mix into a contract that already has a layout.
   means the message is NOT away yet; a binding either handles the second step or refuses
   gateways that need one.
 - `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: the public surface,
-  ungated, **on `OutboundBase` rather than on the account**. Every sender needs it and a spoke
-  needs it most: its report is sent from inside a delivery callback where `msg.value` is zero,
-  so anyone funding that spoke, or about to finalize a deferred bootstrap that ends in a
-  report, has to be able to price it. `TransmitterBase` overrides it to carry the same checks
+  ungated, **on `OutboundBase` rather than on the account**. Every sender needs it, and a spoke
+  needs it most. Its report is sent from inside a delivery callback where `msg.value` is
+  zero, so anyone funding that spoke, or about to finalize a deferred bootstrap that ends in
+  a report, has to be able to price it. `TransmitterBase` overrides it to carry the same checks
   its send does.
 - `_quoteMessage(...)`: the same three arguments, `view`, reverting `QuoteNotImplemented`
   by default, and called directly for the same reason `_sendMessage` is. `quoteMessage`
@@ -334,11 +333,12 @@ per-destination bootstrap record below, and nothing else.
   that, so a payload cannot be addressed at a guess.
 - **The two come apart exactly on the chains that report.** Where the address is
   pre-deterministic, which is every chain sharing Ethereum's CREATE2 formula, the counterpart
-  is recorded at dispatch, because the hub already knows where the account will land, and the
+  is recorded at dispatch, because the hub already knows where the account will land. The
   two answers agree from the first transaction. Where it is not, meaning zkSync, Tron, and
-  every non-EVM VM, nothing is recorded until `onDestinationReceiverReported` arrives. The account asks its
-  transceiver which case it is in, through `IAccountTransceiver.reportsReceiver`, because a
-  chain's derivability is a property of the chain and an account holds no registry.
+  every non-EVM VM, nothing is recorded until `onDestinationReceiverReported` arrives. The
+  account asks its transceiver which case it is in, through
+  `IAccountTransceiver.reportsReceiver`, because a chain's derivability is a property of the
+  chain and an account holds no registry.
   Previously the guess (`address(this)`) was written on every chain, and since that is exactly
   what `recipientOn` builds, a send made before the report landed matched it, passed the
   recipient check, and was addressed at an address holding no receiver. It was paid for, and
@@ -353,21 +353,21 @@ per-destination bootstrap record below, and nothing else.
 - **The recipient is checked against the stored counterpart, not against `address(this)`.**
   `bootstrap` records the receiver it is standing up, and `sendMessage` refuses any recipient
   that is not it, whole: chain half included. Deriving the peer instead looked free, because
-  an account and its receiver share an address wherever Ethereum's CREATE2 formula holds, but
-  it could only be checked where it was derivable (so non-EVM recipients went unchecked) and
+  an account and its receiver share an address wherever Ethereum's CREATE2 formula holds. But
+  it could only be checked where it was derivable, so non-EVM recipients went unchecked, and
   it was wrong on zkSync and Tron, which are `eip155` and so kept a check that could never
   pass. On a chain that reports, the transceiver writes the real address through
   `onDestinationReceiverReported`, once: there is no override, not even the owner's, because
   an account's peer decides where a payload lands.
 - **The payload arrives built, and that costs one check.** `bytes payload` cannot be asked
-  whether it holds `Call[]` or opaque elements, so this contract cannot refuse a typed
-  payload bound for a non-EVM chain or an opaque one bound for an EVM chain; the pairing is
+  whether it holds `Call[]` or opaque elements. This contract therefore cannot refuse a typed
+  payload bound for a non-EVM chain, or an opaque one bound for an EVM chain. The pairing is
   the caller's to get right. `payloadForCalls` and `payloadForElements` are pure builders so
   it is at least spelled the same way here as it is decoded there.
 - **Every `bytes` argument has a builder that produces it**, because `Erc7930` is a library of
-  `internal` functions and so is not callable off-chain at all: without these an integrator
-  would have to reimplement ERC-7930 encoding, and an interoperable address got wrong is a
-  message addressed into the void. `recipientOn(chainId)` builds `sendMessage`'s recipient
+  `internal` functions and so is not callable off-chain at all. Without these an integrator
+  would have to reimplement ERC-7930 encoding, and a wrong interoperable address is a message
+  addressed nowhere. `recipientOn(chainId)` builds `sendMessage`'s recipient
   (this account, on that chain) and `chainIdentifierFor(chainId)` builds `bootstrapTo`'s
   identifier (the chain alone, since path B addresses a chain that has no account yet). The
   two agree on the chain half, which is what lets a caller choose an entry point on
@@ -444,8 +444,8 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
   a spoke the float that pays for its reports. Both allowed targets are
   `address(this)` and non-payable, so value reverts without the check reasoning about it.
 - **A transceiver receives because a bootstrap cannot pay for itself.** It is the one message
-  that lands where there is no account yet, inside a delivery callback, and standing an
-  account up plus running its first payload is the most expensive thing the protocol does. A
+  that lands where there is no account yet, inside a delivery callback. Standing an account
+  up and running its first payload is the most expensive thing the protocol does. A
   payload arriving as `commit(hash)` splits that: the authenticated message costs one
   `commit`, and whoever wants the account supplies the array afterwards and pays for the
   deployment. `bootstrapInbound` runs as the self-call it already required.
@@ -523,8 +523,8 @@ only half with an owner.
   be given a route. A binding's SDK must not bring a SECOND ownership implementation; one
   using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is what should happen.
 - **What the owner cannot do is move money or admit a transport.** `treasury` is write-once
-  and there is no `withdrawFees`: a bootstrap fee goes to that address in the transaction that
-  charges it, so there is no accrued balance for a compromised owner to direct. `GATEWAY_ROLE`
+  and there is no `withdrawFees`. A bootstrap fee goes to that address in the transaction
+  that charges it, so there is no accrued balance for a compromised owner to direct. `GATEWAY_ROLE`
   cannot be granted after initialization either.
 - **The bootstrap fee is charged on the hub and paid straight through.** `setBootstrapFee` is
   per chainKey, rebindable, and refuses a non-zero fee while `treasury` is zero, so a fee can
@@ -569,8 +569,8 @@ only half with an owner.
   `Envelope.decodeReceiverReport` and passed to `onDestinationReceiver`, which is self-call
   only and therefore reachable from `_onInbound` and nowhere else. **It writes to the
   account, not to the registry.** The registry is deliberately out of the send path, so an
-  address filed there could not make a diverging chain reachable however faithfully it was
-  recorded; the transmitter is the contract that addresses that receiver, so it is the
+  address filed there could not make a diverging chain reachable, however faithfully it was
+  recorded. The transmitter is the contract that addresses that receiver, so it is the
   contract that is told. The account is
   `predictCrossAccount` of the authenticated `(owner, salt)`, so a destination cannot choose
   which account it writes, and the account itself refuses a second report.
@@ -664,8 +664,8 @@ could widen later.
   payload that should wait rather than run says so itself, by carrying a self-call to
   `commit`. An empty array is the inert case, and is not refused the way `execute` refuses
   one.
-- **Approvals are a map, not a slot and not a queue**, because the receiver is long-lived:
-  with one slot a second commit would have to revert while one was still pending, and with a
+- **Approvals are a map, not a slot and not a queue**, because the receiver is long-lived.
+  With one slot a second commit would have to revert while one was still pending. With a
   queue a payload nobody relays stalls every payload approved after it. The map is
   `commitment => how many times it may still be finalized`.
 - `commit(bytes32) returns (uint256 approvals)`, `cancel(bytes32)`, `finalize(Call[])`,
@@ -685,12 +685,12 @@ could widen later.
   different one.
 - The gate is `onlySourceTransmitter`, over `isAuthorizedCaller`: the source transmitter, or
   `address(this)`. **The parent transceiver is not on the list.** Its whole relationship with
-  a receiver is the initializer it already spent; letting it commit afterwards would make it
+  a receiver is the initializer it already spent. Letting it commit afterwards would make it
   a standing authority over every receiver it had created, on the chain where it is also the
-  contract that authenticates every inbound message. `address(this)` is what makes a
-  deferred payload work, and it is stated explicitly rather than inherited from the fact
-  that a receiver and its transmitter usually share an address: they do not on zkSync or
-  Tron, and without the arm deferring would fail silently on exactly those chains. It is
+  contract that authenticates every inbound message. `address(this)` is what makes a deferred
+  payload work. It is stated explicitly rather than inherited from a receiver and its
+  transmitter usually sharing an address: they do not on zkSync or Tron, and without the arm
+  deferring would fail silently on exactly those chains. It is
   safe because the only way to produce `msg.sender == address(this)` is through `_execute`,
   reachable only from an authenticated inbound message or a gated entry point.
 - `commit` is `external`, so the self-call is a real CALL rather than an internal jump.
@@ -711,9 +711,9 @@ could widen later.
 - `_onMessage(bytes payload)`: the inbound funnel `receiveMessage` routes into. Decodes with
   `Payload.decodeCalls` and executes on arrival. The binding does not decode: every provider
   gets the same decoder and the same failure mode.
-- Queue reads: `commitment()`, `nextIndex()`, `queueLength()`, `head()`, `commitmentAt()`,
-  `pendingCount()`. A consumed entry keeps its value and is passed by the head pointer while
-  a cancelled one is zeroed in place, so the two stay distinguishable on-chain afterwards.
+- Approval reads: `outstanding(bytes32)`, `isCommitted(bytes32)`, `commitments()`, and
+  `pendingCount()`. A discharged approval decrements its count and is removed at zero, so
+  nothing distinguishes a consumed entry from one that was never made.
 - The two commitment rules, `_requireMatchingCalls` and `_requireCommittable`, are `private`:
   this is the only contract that holds a commitment.
 - The commitment is chain-bound. `Commitment.hashCalls` folds in `ChainKey.local()`, so an
@@ -802,7 +802,7 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
 - **The commitment hash is per-destination.** `Scheme` selects the primitive:
   `Keccak256` (EVM, Solana, Aptos, Sui, NEAR, Cosmos), `Sha256` (TON),
   `Blake2b256Scheme` (Cardano), and `Poseidon` (Starknet) which is **declared and not
-  implemented**: it reverts with `SchemeNotComputable` rather than falling back to keccak
+  implemented**. It reverts with `SchemeNotComputable` rather than falling back to keccak
   and handing back a digest the destination could never match. The fold structure is held
   fixed so both sides can compute it, which is a deliberate trade against TON's cell hash
   and Starknet's felt-span Poseidon being more idiomatic there. Blake2b's precompile
@@ -811,10 +811,10 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
 - **No transmitter entry point takes a `Scheme`.** `commitmentFor`/`commitmentForChain`
   name an EVM destination and stay keccak-only and `pure`, since every chain that executes
   `Call[]` hashes with keccak256 and there is exactly one primitive they can ever need. A
-  scheme-parameterized preview belongs on the registry instead: here it would be frozen with
-  the account (a `CrossProxy` locks in the call that arms it), so it could only ever name
-  primitives that already existed, which is exactly wrong for the part of the protocol most
-  likely to grow. Non-EVM destinations are
+  scheme-parameterized preview belongs on the registry instead. Here it would be frozen with
+  the account, since a `CrossProxy` locks in the call that arms it, so it could only ever
+  name primitives that already existed. That is exactly wrong for the part of the protocol
+  most likely to grow. Non-EVM destinations are
   previewed through `ChainRegistry.commitmentFor`, where the primitive is an
   `ICommitmentScheme` bound per chainKey. The plugin supplies the primitive and the
   registry keeps the fold, so a bad plugin can only produce a digest the destination
@@ -822,10 +822,10 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   frozen keccak fold, and advisory-here / enforced-there is what makes a mutable preview
   safe. See [`encoding.md`](encoding.md) and `registry/ICommitmentScheme.sol`.
 - **A destination report carries no `requestId`, and nothing is registered in advance.**
-  The correlation an id would provide is already implied: the target is the account
+  The correlation an id would provide is already implied. The target is the account
   `predictCrossAccount(owner, salt)` resolves to, the chainKey comes from
-  `_authenticateOrigin`, and the pair is stated in the report, so a destination cannot
-  choose which account it writes.
+  `_authenticateOrigin`, and the pair is stated in the report. A destination therefore
+  cannot choose which account it writes.
   It is keyed by `(owner, salt)` rather than by the transmitter's address because that pair
   is what an account IS; the address is a derivation of it. That argument is about
   CORRELATION. IDEMPOTENCY is a separate question and it is settled the same way: an
@@ -862,8 +862,8 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   are created by `createTransmitter(salt)` on the hub, where `owner` is `msg.sender` by
   construction.
 - **The upgrade key exists for part of one transaction.** `CrossProxy` offers exactly one
-  admin operation, which installs the implementation, runs the initializer, and zeroes the
-  admin in that order: there is no way to upgrade without locking, and no reachable state
+  admin operation. It installs the implementation, runs the initializer, and zeroes the
+  admin in that order, so there is no way to upgrade without locking, and no reachable state
   in which an account has real logic and a live key. The transceiver that created the
   account holds it in between and cannot outlive the call.
 - **A transmitter executes its own local payloads.** There is no receiver on the home chain to
@@ -873,10 +873,10 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   `cancellationCall` builds the element and a payload carries it.
 - **Approvals are an unordered map with cancellation.** `ReceiverBase` holds an
   `EnumerableMap.Bytes32ToUintMap` of commitment to outstanding count. `commit` increments and
-  returns the new count; `finalize(Call[])` hashes the array, discharges the approval it
-  matches, and decrements before executing, so a re-entrant `finalize` finds that copy spent;
-  `finalize(Call[][])` discharges several in the order given, all-or-nothing; `cancel(bytes32)`
-  drops every copy of one approval and is gated exactly like `commit`. Cancellation is
+  returns the new count. `finalize(Call[])` hashes the array, discharges the approval it
+  matches, and decrements before executing, so a re-entrant `finalize` finds that copy spent.
+  `finalize(Call[][])` discharges several in the order given, all-or-nothing.
+  `cancel(bytes32)` drops every copy of one approval and is gated exactly like `commit`. Cancellation is
   inherently remote, since a transmitter holds no approvals: `cancellationCall` builds the
   element and a payload carries it, which the `bytes` wire expresses without a message-type
   tag.
@@ -887,8 +887,8 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   order they were made.
 
 **Provenance is two useful values and a null.** `Derived` means this chain can recompute an
-address on that one; `Attested` means it cannot and was told, so the value is worth exactly
-the bridge that carried it; `Unresolved` means nothing has been declared and no bar accepts
+address on that one. `Attested` means it cannot and was told, so the value is worth exactly
+the bridge that carried it. `Unresolved` means nothing has been declared and no bar accepts
 it. There is no middle grade because the question has no middle, and the order is the
 semantics, so inserting one would renumber the rest.
 
