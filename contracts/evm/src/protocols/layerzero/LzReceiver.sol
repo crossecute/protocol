@@ -7,6 +7,6 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 ///
 /// @dev NO GATEWAY IS GRANTED, so this receiver accepts nothing, which is the honest state of
 ///      a binding with no LayerZero behind it. A real binding grants `GATEWAY_ROLE` to its
-///      endpoint from its own `initialize`, before calling `__ReceiverBase_init`. The account
-///      holds no `ADMIN`, so initialization is the only moment a gateway can be named.
+///      endpoint from its own `initialize`, before calling `__ReceiverBase_init`. `grantRole`
+///      is `onlyInitializing`, so that is the only moment a gateway can be named.
 contract LzReceiver is ReceiverBase {}

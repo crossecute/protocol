@@ -17,8 +17,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///
 /// @dev THE SALT IS PER PROVIDER, NOT PER CHAIN. One salt used everywhere is what makes a
 ///      provider's transceiver land on ONE address on every chain: the property
-///      `defaultCounterpart` relies on, stated as inputs rather than assumed from a local
-///      deployment.
+///      `HubTransceiverBase._counterpartOn` falls back on when no counterpart is set. Stated
+///      as inputs rather than assumed from a local deployment.
 ///
 /// @dev IT EXISTS TO BE MINED. A transceiver is a proxy that is then frozen, so its address
 ///      is fixed for the life of the protocol and appears in calldata forever after. Zero
@@ -443,9 +443,9 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev IT IS DERIVED, NOT DECLARED, so it cannot disagree with the caps. A chain needs
     ///      a callback exactly when this contract cannot recompute its addresses: it is not
     ///      `eip155`, or it is capped below `Derived` because its CREATE2 formula differs.
-    ///      Those are the same two conditions `defaultCounterpart` withdraws on, read the
-    ///      other way round, and a separate flag would be a second source of truth for one
-    ///      fact. It is the hub's side of `SpokeTransceiverBase.addressesDiverge`.
+    ///      Those are the same two conditions the hub's unset-counterpart fallback withdraws
+    ///      on, read the other way round, and a separate flag would be a second source of
+    ///      truth for one fact. It is the hub's side of `SpokeTransceiverBase.addressesDiverge`.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
     }

@@ -617,8 +617,9 @@ contract ReceiverReportRoundTripTest is Test {
 
     /// @notice REGRESSION: an executed payload cannot move the transceiver's balance.
     /// @dev A `Call` carries value, so an unconstrained `_execute` let an authenticated
-    ///      counterpart send the fee balance anywhere, around `withdrawFees`, its owner gate,
-    ///      the `TREASURY_ROLE` destination check, and the `collectedFees` accounting.
+    ///      counterpart send the transceiver's balance anywhere. A hub holds provider refunds
+    ///      and a spoke the float that pays for its reports, so there is still a balance to
+    ///      protect even though bootstrap fees now leave in the transaction that charges them.
     function test_anExecutedPayloadCannotMoveTheBalance() public {
         vm.deal(address(hub), 5 ether);
         address thief = address(0xF00D);

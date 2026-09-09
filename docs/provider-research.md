@@ -358,7 +358,7 @@ route table existed to hold.
 
 | Our hook | ERC-7786 |
 | --- | --- |
-| `_sendMessage(recipient, payload, attributes)` | `gateway.sendMessage(recipient, payload, attributes)`, one to one |
+| `_sendMessage(recipient, payload, attributes, value)` | `gateway.sendMessage{value: value}(recipient, payload, attributes)`, one to one. Pay from `value`, never from `msg.value` |
 | `_quoteMessage(...)` | **nothing.** See below |
 | `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
 | `attributes` | passed straight through |
@@ -376,8 +376,8 @@ on either side.
    prefer a native SDK where one exists. Fallbacks are in [R2.2.2](provider-spec.md#r2-quote).
 2. **`sendMessage` may not complete the send.** It returns a `sendId`, and a non-zero value
    means further gateway-specific, non-standardised action is required. `_sendMessage`
-   returns nothing and assumes the message is away, so a binding must either handle a
-   two-step send or restrict itself to gateways that return zero, and say which.
+   passes that id straight back and nothing here acts on it, so a binding must either handle
+   the second step or restrict itself to gateways that return zero, and say which.
 3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
    requires nothing about replay, so [R3.5](provider-spec.md#r3-receive) stays a per-gateway question rather
    than being answered by the standard. Note the `receiveId` is free where our own channels
@@ -386,9 +386,9 @@ on either side.
 
 ### The other draft worth knowing about
 
-`utils/draft-InteroperableAddress.sol` is OpenZeppelin's ERC-7930, 245 lines against this
-repo's 248-line `src/addressing/Erc7930.sol`, covering the same ground with `formatEvmV1`,
-`parseEvmV1`, and `try` and calldata variants. Replacing ours with it is a real candidate:
+`utils/draft-InteroperableAddress.sol` is OpenZeppelin's ERC-7930. It covers the same
+ground as this repo's `src/addressing/Erc7930.sol`, with `formatEvmV1`, `parseEvmV1`, and
+`try` and calldata variants. Replacing ours with it is a real candidate:
 audited, maintained, and one fewer library to own.
 
 Two things block a straight swap. It is a `draft-`, which OpenZeppelin explicitly excludes

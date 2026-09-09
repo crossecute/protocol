@@ -12,7 +12,8 @@ import {Roles} from "src/messaging/Roles.sol";
 ///      HAVE THE OWNER. A transceiver already answers to the crossecute msig, and an account
 ///      to its user; merging the two would collide on `owner` outright. So the setters below
 ///      are `internal` and ungated, and each side wraps them in the authority it already
-///      has: `onlyAdmin` on a transceiver, `onlyAccountOwner` on an account.
+///      has: `onlyOwner` on a hub transceiver, `onlyAccountOwner` on an account. A spoke
+///      wraps them in nothing, because it has no setters at all.
 ///
 /// @dev EVERY SENDER HAS THE SAME TWO QUESTIONS, WHICH IS WHY THIS IS ONE TABLE. To address
 ///      anything, a sender needs the chain (an ERC-7930 identifier) and the counterpart's

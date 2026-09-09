@@ -68,8 +68,8 @@ contract TreasuryTest is Test {
         vm.deal(address(treasury), 10 ether);
     }
 
-    /// @dev A TRANSCEIVER'S `withdrawFees` IS A PLAIN VALUE TRANSFER, so a treasury that could
-    ///      not receive one would revert the withdrawal it is the destination of.
+    /// @dev THE HUB FORWARDS A BOOTSTRAP FEE WITH A PLAIN VALUE TRANSFER, so a treasury that
+    ///      could not receive one would revert every bootstrap that charges a fee.
     function test_itAcceptsAPlainTransfer() public {
         (bool ok,) = address(treasury).call{value: 1 ether}("");
         assertTrue(ok);
