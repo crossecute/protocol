@@ -51,7 +51,7 @@ Every check on that path, in the order a message meets them:
   attributes)` hands them to the gateway.
 - `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
   arming, and the sender's address must equal `sourceTransmitter`: 1:1, derived.
-- `_onMessage` decodes with `Payload.decodeCalls` — `abi.decode(_, (Call[]))` — and
+- `_onMessage` decodes with `Payload.decodeCalls`, which is `abi.decode(_, (Call[]))`, then
   `_execute`s the array `nonReentrant`, in order, all or nothing.
 
 The peer relationship is exactly 1:1 (one transmitter, one receiver, one chain pair),
@@ -121,12 +121,12 @@ Hop by hop:
 - `spoke._onInbound(route, sender, message)`: `_authenticateOrigin` runs first and the
   sender must be the hub; `_handleInbound` decodes and calls
   `bootstrapInbound(owner, salt, calls)`.
-- That deploys `CrossProxy` at `accountSalt(owner, salt)` — CREATE2, no constructor args —
-  and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`, which
+- That deploys `CrossProxy` at `accountSalt(owner, salt)`, by CREATE2 with no constructor
+  arguments, and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`, which
   installs the logic, executes the calls, and drops the upgrade key in one call.
 - The dashed return leg is `_reportReceiver(owner, salt, receiver)`, sent only where
   `addressesDiverge` is set. It arrives at `hub._handleInbound`, which passes it to
-  `onDestinationReceiver` and on to the account's own counterpart slot — not the registry.
+  `onDestinationReceiver` and on to the account's own counterpart slot, not the registry.
 
 **The message carries the OWNER AND THEIR SALT, not the transmitter**, because the account
 address derives from that pair and a CREATE2 address cannot be derived from itself. The
@@ -232,7 +232,7 @@ address that decides are never the same fact.
   override and not the reverse.)
 - **The window reaches the bootstrap payload, deliberately.** `__ReceiverBase_init` runs the
   payload while `_initializing` is still true, so an owner's first payload can name their own
-  account's gateway with a self-call — the owner configuring their own account in the
+  account's gateway with a self-call. That is the owner configuring their own account in the
   transaction that creates it.
 - **The gateways are an array, because that call is the only chance.** A deployment routing
   through two endpoints, or migrating between them, has no later grant to make.
@@ -251,8 +251,8 @@ address that decides are never the same fact.
 - **The role ids are namespaced** (`keccak256("crossecute.role.TREASURY")`). A role is a
   bytes32, so an SDK defining its own `TREASURY` would otherwise share this member set.
 - **Enumeration is OpenZeppelin's.** `Roles` inherits `AccessControlEnumerableUpgradeable`,
-  so `getRoleMembers` answers "who else" — the question a predicate could not, since a
-  predicate only speaks about an address already suspected.
+  so `getRoleMembers` answers "who else", the question a predicate could not. A predicate
+  only speaks about an address already suspected.
 
 ### Executor
 
@@ -296,8 +296,8 @@ is what makes it free to mix into a contract that already has a layout.
 - `quoteMessage(bytes recipient, bytes payload, bytes[] attributes)`: the public surface,
   ungated, **on `OutboundBase` rather than on the account**. Every sender needs it and a spoke
   needs it most: its report is sent from inside a delivery callback where `msg.value` is zero,
-  so anyone funding that spoke — or about to finalize a deferred bootstrap that ends in a
-  report — has to be able to price it. `TransmitterBase` overrides it to carry the same checks
+  so anyone funding that spoke, or about to finalize a deferred bootstrap that ends in a
+  report, has to be able to price it. `TransmitterBase` overrides it to carry the same checks
   its send does.
 - `_quoteMessage(...)`: the same three arguments, `view`, reverting `QuoteNotImplemented`
   by default, and called directly for the same reason `_sendMessage` is. `quoteMessage`
@@ -328,20 +328,20 @@ per-destination bootstrap record below, and nothing else.
 - **The destination is a parameter, not state.** One transmitter fans out to every chain,
   which is also what keeps one receiver per (transmitter, destination).
 - **Two per-destination facts, not one.** `isBootstrapped(chainKey)` says a bootstrap was
-  DISPATCHED there — the message is asynchronous, so nothing on this chain can say one landed
-  — and `bootstrap` requires it absent, so a second cannot be paid for to revert on arrival.
+  DISPATCHED there. The message is asynchronous, so nothing on this chain can say one landed.
+  `bootstrap` requires it absent, so a second cannot be paid for to revert on arrival.
   `isReachable(chainKey)` says the receiver's address is KNOWN, and `sendMessage` requires
   that, so a payload cannot be addressed at a guess.
 - **The two come apart exactly on the chains that report.** Where the address is
-  pre-deterministic — every chain sharing Ethereum's CREATE2 formula — the counterpart is
-  recorded at dispatch, because the hub already knows where the account will land, and the two
-  answers agree from the first transaction. Where it is not — zkSync, Tron, every non-EVM VM —
-  nothing is recorded until `onDestinationReceiverReported` arrives. The account asks its
+  pre-deterministic, which is every chain sharing Ethereum's CREATE2 formula, the counterpart
+  is recorded at dispatch, because the hub already knows where the account will land, and the
+  two answers agree from the first transaction. Where it is not, meaning zkSync, Tron, and
+  every non-EVM VM, nothing is recorded until `onDestinationReceiverReported` arrives. The account asks its
   transceiver which case it is in, through `IAccountTransceiver.reportsReceiver`, because a
   chain's derivability is a property of the chain and an account holds no registry.
   Previously the guess (`address(this)`) was written on every chain, and since that is exactly
   what `recipientOn` builds, a send made before the report landed matched it, passed the
-  recipient check, and was addressed at an address holding no receiver — paid for, and
+  recipient check, and was addressed at an address holding no receiver. It was paid for, and
   undeliverable.
 - **A dispatched bootstrap that never lands leaves the destination unreachable, not broken.**
   Delivery is retryable at the provider, and a deferred bootstrap sits as an approval until
@@ -419,15 +419,15 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
 `Executor` + `Roles` + `ReentrancyGuard`.
 
 - **Two seams, and they are the only things the inheritors disagree about.**
-  `_authenticateSender` says which origin a delivery is accepted from — an account answers
+  `_authenticateSender` says which origin a delivery is accepted from. An account answers
   "my transmitter", a transceiver answers "the counterpart on the chain this came from", at
-  its bar. `_checkCommitter` says who may approve a hash — an account answers "its
+  its bar. `_checkCommitter` says who may approve a hash. An account answers "its
   transmitter, or a payload it is already executing", a transceiver answers "a payload it is
   already executing" and nothing else.
-- **`cancel` is here as plumbing, and the gate is the whole question.** `_cancel` removes
+- **`cancel` is here as shared code, and the gate is the whole question.** `_cancel` removes
   every copy of an approval; each inheritor exposes it behind its own bar. An account answers
-  to its transmitter. A transceiver answers only to a payload it is already executing — which
-  means one that arrived from its authenticated counterpart — because an openly reachable
+  to its transmitter. A transceiver answers only to a payload it is already executing, which
+  means one that arrived from its authenticated counterpart. An openly reachable
   cancel on a contract every owner's bootstrap goes through would let whoever found it strip
   a bootstrap somebody else has already paid to send. Without any cancel at all, an approved
   bootstrap could never be withdrawn: `finalize` is permissionless and has no deadline, so the
@@ -438,9 +438,9 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
   itself, plus `bootstrapInbound` on a spoke. That is not tidiness. `onDestinationReceiver` is
   self-call gated and takes its `chainKey` as an argument, which the envelope path fills from
   `_authenticateOrigin`, so an unconstrained payload let a spoke on one chain pin an account's
-  receiver on another — write-once, and unrecoverable. And a `Call` carries value, so it let
+  receiver on another, which is write-once and unrecoverable. And a `Call` carries value, so it let
   an authenticated counterpart move the fee balance around `withdrawFees`, its owner gate, the
-  even though nothing accrues there any more — a transceiver still holds provider refunds, and
+  even though nothing accrues there any more. A transceiver still holds provider refunds, and
   a spoke the float that pays for its reports. Both allowed targets are
   `address(this)` and non-payable, so value reverts without the check reasoning about it.
 - **A transceiver receives because a bootstrap cannot pay for itself.** It is the one message
@@ -456,7 +456,7 @@ Everything a contract needs to RECEIVE, shared by `ReceiverBase` and `Transceive
 routing, manufacture, and the upgrade lock: the symmetric half, shared by hub and spoke.
 
 It is **not** a `ReceiverBase`: it holds no `sourceTransmitter`, has no `execute`, and cannot
-`cancel`. It has no ownership either — that is `HubTransceiverBase`'s — so a binding can join
+`cancel`. It has no ownership either, since that is `HubTransceiverBase`'s, so a binding can join
 at the concrete contract without an `Ownable` colliding with one declared here.
 
 - `CROSS_PROXY_INIT_CODE_HASH`: the one initcode hash every account deploys from, on every
@@ -492,7 +492,7 @@ at the concrete contract without an `Ownable` colliding with one declared here.
   the only half with anything to configure after deployment: a spoke's home, route,
   counterpart, implementation, and divergence flag are all written in its initializer and have
   no setters. `LzSpokeTransceiver`'s ABI carries no `owner()`, no `transferOwnership`, and no
-  `setRoute` — the absence is structural rather than a spoke declining to use one.
+  `setRoute`. The absence is structural rather than a spoke declining to use one.
 - **The initializer takes the gateways and nothing else.** The owner and the treasury are
   `__HubTransceiverBase_init`'s own arguments, so a spoke deployment cannot pass either and
   have it silently govern nothing: a spoke has no configuring authority and charges no fees.
@@ -501,7 +501,7 @@ at the concrete contract without an `Ownable` colliding with one declared here.
   is in place" and "nobody can replace it". A transceiver decides which cross-chain payloads
   are authentic, so a live upgrade key on one is a standing ability to forge any message the
   protocol will honour, and an operator who has not locked yet is running an authenticator
-  somebody can replace. The proxy still gets exactly one upgrade — the one carrying this
+  somebody can replace. The proxy still gets exactly one upgrade, the one carrying this
   initializer, which fixes the address before the implementation is known, since every
   account's CREATE2 derives from it. `_authorizeUpgrade` refuses everything after.
 - `_onInbound(route, sender, message)`: the one funnel every binding routes an arriving
@@ -529,13 +529,13 @@ only half with an owner.
 - **The bootstrap fee is charged on the hub and paid straight through.** `setBootstrapFee` is
   per chainKey, rebindable, and refuses a non-zero fee while `treasury` is zero, so a fee can
   never be taken with nowhere to send it. `_bootstrapSendValue` takes it off the top, forwards
-  it, and hands the binding what is left — before the dispatch, so nothing depends on what the
-  provider's code does afterwards.
+  it, and hands the binding what is left. That happens before the dispatch, so nothing depends
+  on what the provider's code does afterwards.
 - `setRoute(bytes32 chainKey, bytes route)`: `onlyOwner` and **write-once**, maintaining the
   reverse index in the same call because two setters is how the two directions drift apart.
   **It lives here rather than on the shared base**, because adding a destination is something
   only a hub does: it fans out to N chains and learns them over time, while a spoke knows one
-  route — its home — written at initialization. **The route is the chain's ERC-7930
+  route, its home, written at initialization. **The route is the chain's ERC-7930
   identifier**, not a provider's private id for it: an ERC-7786 recipient names its own chain,
   so there is nothing left to translate, and the reverse index is correct by construction
   since `keccak256(identifier)` IS the chainKey.
@@ -703,7 +703,7 @@ could widen later.
   matches a queued commitment or executes on arrival, and neither asks which message
   carried it.
 - `GATEWAY_ROLE`: which transport is trusted is a property of the binding, so the binding
-  grants it in the call that arms the account and nothing can grant another afterwards —
+  grants it in the call that arms the account and nothing can grant another afterwards.
   `GATEWAY_ROLE` has no role admin, so no grant succeeds anywhere in this protocol. The sender half
   needs no configuration, so it is answered in the base. The SAME role gates the outbound
   direction on a transmitter or transceiver, so a contract cannot accept from one address

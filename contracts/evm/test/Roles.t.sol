@@ -21,7 +21,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @dev An account names its transport in the call that arms it, which is the only moment
 ///      anything can: `GATEWAY` has no role admin, so no grant ever succeeds. Granting ahead of
-///      `__ReceiverBase_init` is the documented shape — a binding's provider setup goes in
+///      `__ReceiverBase_init` is the documented shape. A binding's provider setup goes in
 ///      front of the bootstrap payload, and this is that setup.
 contract RoleReceiver is ReceiverBase {
     function initializeWith(
@@ -204,7 +204,7 @@ contract RolesTest is Test {
     }
 
     /// @dev THE INITIALIZER IS THE ONLY MOMENT. A set of gateways goes in, and afterwards no
-    ///      caller — not the one that deployed it, not a member of the role — can add one.
+    ///      caller can add one, not the one that deployed it, and not a member of the role.
     function test_theInitializerIsTheOnlyGrantThatEverHappens() public {
         RoleHarness h = _harness();
 

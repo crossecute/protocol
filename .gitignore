@@ -1,4 +1,4 @@
-# Foundry build output — regenerable from source, and large.
+# Foundry build output: regenerable from source, and large.
 contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/broadcast/

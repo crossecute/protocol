@@ -38,7 +38,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 /// @dev ENUMERABLE BECAUSE "WHO ELSE" IS THE QUESTION THAT MATTERS. A predicate answers only
 ///      about an address you already suspect, so a deployment could carry an authority nobody
 ///      thought to ask about. `getRoleMemberCount` / `getRoleMember` make the whole set
-///      readable, which is what lets an operator — or a monitor — verify that a live
+///      readable, which is what lets an operator, or a monitor, verify that a live
 ///      transceiver has exactly the gateways it should. It matters
 ///      more now that membership is fixed at initialization: the set cannot be corrected
 ///      later, so being able to read it whole is how a mistake is caught while a redeploy is
@@ -46,8 +46,8 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///
 /// @dev THE ENUMERATION IS OPENZEPPELIN'S, AND THAT IS A DEPENDENCY-VERSION FACT. `Arrays`
 ///      picked up raw `mcopy` in OZ 5.5.0, and `EnumerableSet` imports it, so
-///      `AccessControlEnumerableUpgradeable` does not COMPILE at `paris` from 5.5 onward —
-///      six sites, whether or not the reaching code is ever called. The pin exists because
+///      `AccessControlEnumerableUpgradeable` does not COMPILE at `paris` from 5.5 onward,
+///      at six sites, whether or not the reaching code is ever called. The pin exists because
 ///      PUSH0 is absent on zkSync, Tron, and several L2s and identical initcode everywhere is
 ///      what the CREATE2 story rests on, so the pin wins and the dependency version follows
 ///      it: this repo is on 5.4.0, where the extension compiles cleanly and a hand-rolled
@@ -97,9 +97,9 @@ abstract contract Roles is AccessControlEnumerableUpgradeable {
     /// @dev RE-DECLARED SO THE TREE BELOW SEES ONE DECLARATION. `hasRole` arrives from both
     ///      `AccessControlUpgradeable` and `IAccessControl`, and Solidity then demands every
     ///      further override name both bases. Collapsing them here means a contract that wants
-    ///      to say something about membership — a test harness that trusts any gateway, a
-    ///      binding narrowing an answer — writes plain `override`, against this file rather
-    ///      than against OpenZeppelin's inheritance graph.
+    ///      to say something about membership, such as a test harness that trusts any
+    ///      gateway or a binding narrowing an answer, writes plain `override`, against this
+    ///      file rather than against OpenZeppelin's inheritance graph.
     function hasRole(bytes32 role, address account)
         public
         view

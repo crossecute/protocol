@@ -46,14 +46,14 @@ interface ICancel {
 ///      anyone willing to pay for it, which is why the transceiver needs the same machinery
 ///      rather than a second copy of it.
 ///
-/// @dev `cancel` IS HERE AS PLUMBING, NOT AS AN ENTRY POINT. `_cancel` removes every copy of
+/// @dev `cancel` IS HERE AS SHARED CODE, NOT AS AN ENTRY POINT. `_cancel` removes every copy of
 ///      an approval and each inheritor exposes it behind its own gate: an account answers to
 ///      its transmitter, a transceiver to a payload it is already executing. The gate is the
 ///      whole question, because a transceiver is shared by every owner on its chain and an
 ///      openly reachable cancel there would let whoever found it strip a bootstrap somebody
 ///      else has already paid to send. Without ANY cancel, an approved bootstrap could never
-///      be withdrawn: it would sit indefinitely with the timing of its execution — and so the
-///      state its payload runs against — belonging to whoever chose to finalize it.
+///      be withdrawn: it would sit indefinitely, with the timing of its execution, and so
+///      the state its payload runs against, belonging to whoever chose to finalize it.
 ///
 /// @dev EXECUTION IS UNORDERED, and `_commitments` is a count rather than a set: see the
 ///      storage comment below. Both properties are the same on either inheritor, which is
@@ -74,7 +74,7 @@ abstract contract InboundBase is
     ///      have no positions, so `finalize` takes whichever array it is handed and discharges
     ///      THAT approval: a payload waiting on a slow relayer does not block the ones
     ///      approved after it. What it gives up is the guarantee that approvals land in the
-    ///      order they were made — a relayer holding two valid arrays chooses.
+    ///      order they were made. A relayer holding two valid arrays chooses.
     ///
     /// @dev THE VALUE IS A COUNT, BECAUSE A HASH IS NOT AN IDENTITY. Two identical payloads
     ///      are two separate approvals, and a set would silently collapse them into one:

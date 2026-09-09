@@ -519,7 +519,7 @@ contract ReceiverReportRoundTripTest is Test {
     ///      chain, and on a reporting chain that value was a guess: `address(this)`, which is
     ///      exactly what `recipientOn` builds. So a send made before the report landed matched
     ///      the guess, passed the recipient check, and was addressed at an address holding no
-    ///      receiver — paid for, and undeliverable. Now nothing is recorded until the report
+    ///      receiver. It was paid for, and undeliverable. Now nothing is recorded until the report
     ///      arrives.
     function test_aReportingChainIsNotSendableUntilItHasReported() public {
         assertTrue(account.isBootstrapped(spokeKey), "the bootstrap went");
@@ -536,7 +536,7 @@ contract ReceiverReportRoundTripTest is Test {
         );
         account.sendMessage(recipient, payload, new bytes[](0));
 
-        // The report lands, and only then does the destination become sendable — at the
+        // The report lands, and only then does the destination become sendable, at the
         // address the spoke actually created, not at the guess.
         bytes memory produced = _report();
         address created = spoke.predictCrossAccount(owner, SALT);
@@ -570,8 +570,8 @@ contract ReceiverReportRoundTripTest is Test {
     ///      its `chainKey` as an argument, which the envelope path fills from
     ///      `_authenticateOrigin`. Once a transceiver executed arrays, an authenticated spoke
     ///      could send a payload that called it directly with ANY chainKey, pinning an
-    ///      account's receiver on a chain it has nothing to do with — write-once, and so
-    ///      unrecoverable. `test_aChainCannotReportAnAddressOnAnotherChain` covers the
+    ///      account's receiver on a chain it has nothing to do with. That is write-once, and
+    ///      so unrecoverable. `test_aChainCannotReportAnAddressOnAnotherChain` covers the
     ///      envelope path and passed throughout; only this covers the way around it.
     function test_anExecutedPayloadCannotReachOnDestinationReceiver() public {
         uint256 OTHER = 999;
@@ -865,7 +865,7 @@ contract BootstrapFeeTest is Test {
         assertEq(address(hub).balance, 0, "and the hub holds none of it");
     }
 
-    /// @dev The treasury is `Ownable`, so the msig moves it onward from there — which is the
+    /// @dev The treasury is `Ownable`, so the msig moves it onward from there, which is the
     ///      only place a fee is ever withdrawn from now.
     function test_theMsigMovesFeesOnFromTheTreasury() public {
         vm.prank(owner);

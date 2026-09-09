@@ -195,7 +195,7 @@ mainnet.
   What that costs is the operability the looser version bought: a provider migrating its
   endpoint now forces a redeploy at a new address, which re-derives every account, unless the
   deployment named both endpoints up front. Naming several is exactly why `gateways` is an
-  array. The remaining question is a deployment-time one — how many endpoints to name — rather
+  array. The remaining question is a deployment-time one, how many endpoints to name, rather
   than a protocol one.
 - **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
   when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
@@ -206,7 +206,7 @@ mainnet.
 - **~~Ordered execution blocks the queue.~~ SETTLED: approvals are unordered.** The queue
   became a `commitment => count` map, so `finalize` discharges the approval its array matches
   and a permanently-failing payload stalls nothing. What that gives up is the guarantee that
-  approvals land in the order they were made — a relayer holding two valid arrays chooses —
+  approvals land in the order they were made. A relayer holding two valid arrays chooses,
   so a sequence that matters has to be expressed inside the payloads.
 - **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
   true from dispatch there, because the address is pre-deterministic and correct; what is not
@@ -220,7 +220,7 @@ mainnet.
 - **Self-replaying payloads.** `finalize` clears an approval before executing, so a payload
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
-  being true. Disallowing it costs plumbing; allowing it is strictly cheaper.
+  being true. Disallowing it costs extra code. Allowing it is strictly cheaper.
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
   `draft-InteroperableAddress`.** OZ 5.5.0 brought it, 235 lines against our 248, audited and
   maintained, covering the same ground with `formatEvmV1`, `parseEvmV1`, and `try` and

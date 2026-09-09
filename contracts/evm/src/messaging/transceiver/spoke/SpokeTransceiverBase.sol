@@ -331,8 +331,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev IT EXISTS SO THE REPORT CAN BE PRICED BEFORE IT IS OWED. `quoteMessage` takes a
     ///      recipient and a payload, and the payload here is built inside a delivery callback
     ///      from values nobody outside can assemble: the envelope layout, this chain's id, and
-    ///      the address the account will land at. Anyone funding this spoke — or about to
-    ///      finalize a deferred bootstrap that ends in a report — can now quote it exactly
+    ///      the address the account will land at. Anyone funding this spoke, or about to
+    ///      finalize a deferred bootstrap that ends in a report, can now quote it exactly
     ///      rather than guessing, with `homeRoute()` and `homeTransceiver()` giving the
     ///      recipient half.
     ///

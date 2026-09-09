@@ -184,7 +184,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev THE ONE MEMBERSHIP CHANGE THAT SURVIVES INITIALIZATION, ANYWHERE IN THE PROTOCOL,
     ///      and it only ever subtracts. There is no matching grant: `grantRole` is
     ///      `onlyInitializing`, so a transport dropped here cannot be replaced and the account
-    ///      is deaf until it is redeployed — which it cannot be, since `CrossProxy` arms once.
+    ///      is deaf until it is redeployed, which it cannot be, since `CrossProxy` arms once.
     ///      That is the honest cost, and it is the right side to fail on: a gateway that can
     ///      deliver can forge, so the recoverable case is "this account stops accepting
     ///      messages" and the unrecoverable one is "a compromised transport keeps driving it".

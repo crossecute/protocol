@@ -7,7 +7,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @notice Deterministic address derivation across EVM and non-EVM chains, computed
 ///         on-chain inside an Ethereum transaction. Pure where possible, no chain state.
 ///
-/// @dev Formerly ForeignCreate2. EVM derivations are now first-class rather than a
+/// @dev Formerly ForeignCreate2. EVM derivations are now a real path rather than a
 ///      test-only comparison, because on an EVM destination the registry can resolve
 ///      locally and skip the round trip entirely.
 ///

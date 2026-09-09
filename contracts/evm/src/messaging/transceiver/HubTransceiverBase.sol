@@ -98,7 +98,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @param treasury_ Where bootstrap fees go, the moment they are charged. Write-once,
     ///        and the only one in the protocol: fees are charged here, on the home chain, in
     ///        the home chain's currency. A zero one is allowed and means this hub charges
-    ///        nothing — `setBootstrapFee` then refuses a non-zero fee, so a fee can never be
+    ///        nothing. `setBootstrapFee` then refuses a non-zero fee, so a fee can never be
     ///        taken with nowhere to send it.
     function __HubTransceiverBase_init(
         address owner_,
@@ -175,7 +175,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///
     /// @dev IT IS ON THE HUB RATHER THAN THE SHARED BASE, because adding a destination is
     ///      something only a hub ever does: it fans out to N chains and learns them over time,
-    ///      while a spoke knows exactly one route — its home — written in its initializer with
+    ///      while a spoke knows exactly one route, its home, written in its initializer with
     ///      no setter. A public setter on the base would have given a spoke an entry point
     ///      whose every argument it refuses anyway, since `_routeTo` reverts `NotHome` for
     ///      anything else.
@@ -539,9 +539,10 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///
     /// @dev THE ACCOUNT ASKS THIS BEFORE IT RECORDS A COUNTERPART, because whether an address
     ///      is knowable in advance is a property of the destination and an account holds no
-    ///      registry. True exactly where this contract cannot recompute an address — zkSync,
-    ///      Tron, every non-EVM VM — which is the same condition `onDestinationReceiver`
-    ///      enforces when a report arrives, read from the same place, so the two cannot
+    ///      registry. True exactly where this contract cannot recompute an address, which is
+    ///      zkSync, Tron, and every non-EVM VM. That is the same condition
+    ///      `onDestinationReceiver` enforces when a report arrives, read from the same place,
+    ///      so the two cannot
     ///      disagree about which chains speak for themselves.
     ///
     /// @dev A HUB WITH NO REGISTRY ANSWERS FALSE, which is the honest answer rather than a

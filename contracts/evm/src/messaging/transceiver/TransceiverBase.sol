@@ -458,8 +458,8 @@ abstract contract TransceiverBase is
 
     /// @notice Which origins a delivery is accepted from: the counterpart on the chain the
     ///         message says it came from, at this transceiver's bar.
-    /// @dev It splits the ERC-7930 sender envelope the way every binding already does — the
-    ///      chain half is the route, the address half is the sender — and hands both to
+    /// @dev It splits the ERC-7930 sender envelope the way every binding already does. The
+    ///      chain half is the route, the address half is the sender. It hands both to
     ///      `_authenticateOrigin`, so `receiveMessage` and a binding's own inbound callback
     ///      reach the same check rather than two that could drift.
     function _authenticateSender(bytes calldata sender) internal view override {
@@ -493,16 +493,16 @@ abstract contract TransceiverBase is
     ///      `HubTransceiverBase.onDestinationReceiver` is `require(msg.sender == address(this))`
     ///      and takes its `chainKey` as an argument, which the envelope path fills from
     ///      `_authenticateOrigin`. An executed payload could call it directly with any chainKey
-    ///      at all, so a spoke on one chain could pin an account's receiver on another —
-    ///      exactly the invariant `ReportedChainMismatch` exists to hold, reached around the
-    ///      side. The slot is write-once, so it would not have been recoverable.
+    ///      at all, so a spoke on one chain could pin an account's receiver on another.
+    ///      That is exactly the invariant `ReportedChainMismatch` exists to hold, reached
+    ///      around the side. The slot is write-once, so it would not have been recoverable.
     ///
     ///      A `Call` CARRIES VALUE. An executed payload could send the balance anywhere,
     ///      even though nothing accrues here any more: a transceiver still holds whatever a
     ///      provider refunds it, and a spoke holds the float that pays for its reports.
     ///
     /// @dev SO THE ANSWER IS AN ALLOWLIST, AND IT IS TWO ENTRIES LONG. A payload may approve a
-    ///      hash on this contract, and — on a spoke, which extends this — discharge one into a
+    ///      hash on this contract, and, on a spoke which extends this, discharge one into a
     ///      bootstrap. Both targets are `address(this)` and both functions are non-payable, so
     ///      a call carrying value reverts without this having to reason about value at all.
     ///      Anything else a transceiver needs to be told arrives as an envelope through
@@ -533,7 +533,7 @@ abstract contract TransceiverBase is
     ///
     /// @dev WITHOUT IT AN APPROVED BOOTSTRAP COULD NEVER BE WITHDRAWN. It would sit
     ///      indefinitely, and because `finalize` is permissionless and has no deadline, the
-    ///      moment it executed — and so the state its payload ran against — would belong to
+    ///      moment it executed, and so the state its payload ran against, would belong to
     ///      whoever chose to supply the array.
     function cancel(bytes32 commitment_) external virtual override {
         _checkCommitter();
