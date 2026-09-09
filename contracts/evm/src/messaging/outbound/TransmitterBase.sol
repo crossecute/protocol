@@ -86,7 +86,8 @@ interface IAccountTransceiver {
 ///      than `onlyOwner`. A provider SDK that brings `Ownable` also brings `onlyOwner`, and
 ///      two base classes declaring one name forces every derived contract to override it:
 ///      the same collision the seam exists to avoid, one level down. `TransceiverBase`
-///      sidesteps it identically, with `onlyAdmin`. Concrete contracts answer `_owner` and
+///      sidesteps it by declaring no ownership at all, leaving `Ownable` to
+///      `HubTransceiverBase`. Concrete contracts answer `_owner` and
 ///      `_checkOwner` from whatever authority they already have; `LzTransmitter` uses
 ///      `OwnableUpgradeable`, which also exposes `renounceOwnership`, and renouncing bricks
 ///      the transmitter since every entry point here is owner-gated.

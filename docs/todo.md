@@ -77,7 +77,7 @@ the same endpoint, which is exactly what an implementation-level immutable expre
 **It fits our layout without collisions.** `OAppCoreUpgradeable` keeps its peer mapping in
 ERC-7201 namespaced storage (`OAPP_CORE_STORAGE_LOCATION`), as do `OAppOptionsType3`,
 `PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `accountSalt`,
-or the approval queue however our layout changes, which also removes the storage-gap
+or the approval map however our layout changes, which also removes the storage-gap
 question for accounts specifically.
 
 **`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
@@ -138,22 +138,22 @@ destination, read from the table rather than computed.
   and keeps the operation retryable.
 
   **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
-  the msig sets, taken off `msg.value` at bootstrap and accrued in `collectedFees` for
-  the hub's `treasury` address in the same transaction. It is zero by default, so only the
-  chains that actually report are charged. It is in `quoteBootstrap` because a quote that
-  omitted it would be worse than none: the caller would fund the send exactly, and the
-  bootstrap would revert with the signers already committed.
+  the msig sets. `_bootstrapSendValue` takes it off `msg.value` at bootstrap and forwards it
+  to the hub's `treasury` in the same transaction, so nothing accrues anywhere. It is zero
+  by default, so only the chains that actually report are charged. It is in `quoteBootstrap`
+  because a quote that omitted it would be worse than none: the caller would fund the send
+  exactly, and the bootstrap would revert with the signers already committed.
 
-  **What is not built is the crossing.** The fee accrues on the home chain in the home
-  currency and the spoke needs the destination's, so the msig withdraws and funds spokes out
+  **What is not built is the crossing.** The fee is paid on the home chain in the home
+  currency and the spoke needs the destination's, so the two are funded separately and out
   of band. Making that automatic means the bootstrap message drops value across, which is a
   provider capability question rather than a contract one.
 
   **And the report's refund target is unresolved.** `_refundTo()` is `msg.sender`, which on
   a nested send is whoever delivered the message, so a provider refunding an overpaid report
   pays the relayer out of the spoke's balance. Nobody is stolen from, but the spoke drains
-  at a rate nothing here bounds. A spoke wanting to pass its whole balance to the send, as
-  `_reportReceiver` now does, needs an answer to this first.
+  at a rate nothing here bounds. `_reportReceiver` sends the quoted fee rather than the
+  balance, which bounds one report; it does not answer where the refund goes.
 - **Starknet bytes↔felt packing.** Bridges deliver Starknet payloads as `Array<felt252>`,
   not bytes. Before any container format can be parsed there has to be an agreed packing
   rule. Unspecified, needed in either container format, and the kind of value that is wrong
@@ -183,30 +183,22 @@ destination, read from the table rather than computed.
 None of these are bugs. Each is a deliberate choice with a cost worth confirming before
 mainnet.
 
-- **~~A TRANSCEIVER'S GATEWAY SET IS ADMIN-MUTABLE~~. SETTLED: it is not, any more.** The
-  question was whether the msig could add a transport to a live transceiver, since a transport
-  that can deliver can forge, which is the same power the upgrade lock exists to deny. It
-  cannot: `grantRole` is `onlyInitializing`, so membership arrives while a contract is being
-  armed and never afterwards. A transceiver's gateways are named in its `Deployment` and
-  cannot be added to OR revoked; only a receiver may drop one, through `revokeGateway`, gated
-  on its source transmitter.
-
-  What that costs is the operability the looser version bought: a provider migrating its
-  endpoint now forces a redeploy at a new address, which re-derives every account, unless the
-  deployment named both endpoints up front. Naming several is exactly why `gateways` is an
-  array. The remaining question is a deployment-time one, how many endpoints to name, rather
-  than a protocol one.
+- **How many gateway endpoints a deployment should name.** `grantRole` is
+  `onlyInitializing`, so a transceiver's gateways are fixed in its `Deployment` and cannot be
+  added to later. A provider migrating its endpoint therefore forces a redeploy at a new
+  address, which re-derives every account, unless the deployment named both endpoints up
+  front. Naming several is why `gateways` is an array. This is a deployment-time decision,
+  not a protocol one, and it has to be made before mainnet.
 - **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
   when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
   write-once, add no transport, and redirect no fee. The treasury is write-once and is paid
   in the same transaction that charges it.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
-- **~~Ordered execution blocks the queue.~~ SETTLED: approvals are unordered.** The queue
-  became a `commitment => count` map, so `finalize` discharges the approval its array matches
-  and a permanently-failing payload stalls nothing. What that gives up is the guarantee that
-  approvals land in the order they were made. A relayer holding two valid arrays chooses,
-  so a sequence that matters has to be expressed inside the payloads.
+- **Approvals are unordered, and a sequence has to be expressed inside the payloads.** A
+  relayer holding two valid arrays chooses which lands first. Nothing stalls, which is the
+  trade, but an operation that depends on order cannot rely on the approval layer for it.
+  Worth confirming that no planned operation does before mainnet.
 - **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
   true from dispatch there, because the address is pre-deterministic and correct. What is
   not guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for
@@ -221,17 +213,12 @@ mainnet.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs extra code. Allowing it is strictly cheaper.
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
-  `draft-InteroperableAddress`.** OZ 5.5.0 brought it, 235 lines against our 248, audited and
-  maintained, covering the same ground with `formatEvmV1`, `parseEvmV1`, and `try` and
-  calldata variants. **It is out of reach at the pinned version**, which predates it, so
-  adopting it means moving the dependency first. That is the trade to weigh, not the line
-  count.
-  Blocked on two checks. It is a `draft-`, which OZ excludes from API stability and may
-  change in a MINOR release, while this codebase freezes accounts against exact bytes. And
-  our `parseStrict` enforces strictness the registry depends on, rejecting both non-minimal
-  `eip155` references and trailing bytes, which `parseV1` may not match. Neither is a reason not to
-  do it; both are reasons it is its own task with its own vectors. See
-  [`provider-research.md`](provider-research.md#3-erc-7786-as-a-transport).
+  `draft-InteroperableAddress`.** It is out of reach at the pinned version, which predates
+  it, so adopting it means moving the dependency first. Two checks come before that: the
+  upstream is a `draft-`, and our `parseStrict` enforces strictness the registry depends on.
+  Both are argued in
+  [`provider-research.md`](provider-research.md#the-other-draft-worth-knowing-about). It is
+  its own task with its own vectors.
 
   **Which provider to bind is still open, and the 7786 answer is "only if it has to be".**
   A gateway binding is thin (see the skeleton in

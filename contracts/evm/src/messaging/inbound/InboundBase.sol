@@ -196,8 +196,8 @@ abstract contract InboundBase is
     ///      turns out to be wrong, and a payload that is wrong is wrong in every copy.
     ///      Re-approving is one `commit` away if only some were meant to go.
     ///
-    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS THE ONLY HANDLE THERE IS. Positions went
-    ///      with the queue, and a hash cannot go stale the way an index could: the value a
+    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS THE ONLY HANDLE THERE IS. Approvals hold
+    ///      no position, and a hash cannot go stale the way an index could: the value a
     ///      caller passes is the value removed, so cancelling the wrong approval requires
     ///      naming the wrong approval.
     ///

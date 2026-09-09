@@ -37,7 +37,8 @@ receiver exists: topped up once, not per signer.
 
 **One admin address everywhere.** The same CREATE2 address holds the account on every
 supported chain, which unifies access control. Chain exceptions that do not use Ethereum's
-CREATE2 formula, eg. Tron and zkSync, are derived uniquely and reported back to central authority.
+CREATE2 formula, such as Tron and zkSync, derive their own address and report it back to
+the home chain.
 
 **One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
 and M chains means M batches reviewed separately plus the work of confirming they agree.
@@ -131,7 +132,7 @@ lands, executes, and what it leaves behind is a hash.
 flowchart LR
     Owner([owner]) -->|"sendMessage(recipient, commit payload)"| Tx[Transmitter]
     Tx -->|"bridge"| Rx[Receiver]
-    Rx -->|"commit(hash)"| Queue[approval queue]
+    Rx -->|"commit(hash)"| Map[approval map]
 ```
 
 #### 3c · Run later: finalize
@@ -215,7 +216,7 @@ summary: the file is always the newer statement.
 | ------------------------------------------------------------------------ | ------------------------------------- |
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
-| Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, `Hub` / `Spoke`    |
+| Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, and its two halves |
 | Why approvals are an unordered map of hash to count                      | `inbound/InboundBase.sol`             |
 | Why a transceiver receives, and what an arriving payload may call        | `inbound/InboundBase.sol`, `TransceiverBase.isAllowed` |
 | Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
@@ -282,15 +283,16 @@ Then, per destination, add what the chain needs:
 - The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
   treasury for the whole protocol, on the home chain, named at the hub's deployment and
   write-once. A bootstrap fee is charged there and forwarded in the same transaction, so no
-  transceiver ever holds an accrued balance and there is no withdrawal to gate. Ownership is the only live authority, and it cannot admit a transport, drop one, or
-  repoint the treasury. An account is one owner's, so a receiver may drop its own gateway
-  through `revokeGateway`, which is the only membership change that survives initialization
+  transceiver ever holds an accrued balance and there is no withdrawal to gate. Ownership is
+  the only live authority, and it cannot admit a transport, drop one, or repoint the
+  treasury. An account is one owner's, so a receiver may drop its own gateway through
+  `revokeGateway`, which is the only membership change that survives initialization
   anywhere.
 
 ## Docs
 
-- [`docs/message-flow.md`](docs/message-flow.md): the two paths, wire formats, and what
-  each contract does
+- [`docs/message-flow.md`](docs/message-flow.md): the two paths, the wire formats, and how
+  the contracts fit together
 - [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and
   what changes off the EVM
 - [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
@@ -302,7 +304,7 @@ Then, per destination, add what the chain needs:
 
 ## Status
 
-The EVM side is built and tested: account creation, the approval queue, cancellation,
+The EVM side is built and tested: account creation, the approval map, cancellation,
 execution, per-destination commitment schemes, and both message paths end to end in-process.
 
 ```

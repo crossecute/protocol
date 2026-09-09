@@ -41,6 +41,6 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
 
     /// @notice NO GATEWAY IS GRANTED, so this transmitter sends through nothing. A real
     ///         binding grants `GATEWAY_ROLE` to its endpoint here in `initialize`, which is
-    ///         the only moment it can: a transmitter holds no `ADMIN`.
+    ///         the only moment it can: `grantRole` is `onlyInitializing`.
 
 }

@@ -108,7 +108,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///
     /// @dev `address(this)` IS WHAT MAKES A DEFERRED PAYLOAD WORK, and it is not a second
     ///      authority: a payload that should wait carries one element targeting this
-    ///      receiver's own `commit`, so the queue is filled by the approved payload itself.
+    ///      receiver's own `commit`, so the approval is recorded by the payload itself.
     ///      It is safe because the only way to produce `msg.sender == address(this)` is
     ///      through `_execute`, reachable only from an authenticated inbound message or a
     ///      gated entry point; a target calling back presents itself, not this contract.
@@ -195,7 +195,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev A SPOKE TRANSCEIVER HAS NO EQUIVALENT, deliberately. It is shared by every owner
     ///      on that chain, so dropping its gateway would take every account's bootstrap path
     ///      with it, on the authority of whoever reached the entry point. Its transports are
-    ///      whatever its `Deployment` named, for life; only accounts, which are one owner's
+    ///      whatever its `ProviderDeployment` named, for life; only accounts, which are one owner's
     ///      each, can drop theirs.
     function revokeGateway(address gateway) external onlySourceTransmitter {
         _revokeRole(GATEWAY_ROLE, gateway);
@@ -216,17 +216,9 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///      array, so letting it remove one adds nothing, while leaving it permissionless
     ///      would hand any caller a way to strip approvals.
     ///
-    /// @dev IT NAMES THE APPROVAL ITSELF, WHICH IS THE ONLY HANDLE THERE IS NOW. Positions
-    ///      are gone with the queue, and a hash cannot go stale the way an index could: the
-    ///      value a caller passes is the value that is removed, so cancelling the wrong
-    ///      approval requires naming the wrong approval. An absent one reverts rather than
-    ///      passing silently, because reporting success would suggest a payload had been
-    ///      stopped when it may already have run.
-    ///
-    /// @dev IT ZEROES THE ENTRY, NOT ONE COPY OF IT. A hash approved three times is dropped
-    ///      three times over, because cancelling is what an owner reaches for when a payload
-    ///      turns out to be wrong, and a payload that is wrong is wrong in every copy.
-    ///      Re-approving is one `commit` away if only some were meant to go.
+    /// @dev AN ABSENT APPROVAL REVERTS rather than passing silently, because reporting
+    ///      success would suggest a payload had been stopped when it may already have run.
+    ///      What removing an approval means is `InboundBase._cancel`'s note.
     function cancel(bytes32 commitment_) external virtual override onlySourceTransmitter {
         _cancel(commitment_);
     }

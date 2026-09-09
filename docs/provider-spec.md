@@ -34,7 +34,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | | |
 | --- | --- |
 | [1. Terms](#1-terms) | what a provider, a binding, an account, a route and a counterpart are |
-| [2. Provider prerequisites](#2-provider-prerequisites-the-go-or-no-go-checklist) | P1-P14, the go or no-go checklist, before any code |
+| [2. Provider prerequisites](#2-provider-prerequisites-the-go-or-no-go-checklist) | P1-P15, the go or no-go checklist, before any code |
 | [3. The contract set](#3-the-contract-set) | the five or six files a binding is |
 | [4. The seams](#4-the-seams) | every abstract member to answer, and where |
 | [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
@@ -167,7 +167,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, returning the gateway's `sendId`. The default reverts `SendNotImplemented`. See [R1](#r1-send). |
+| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. The default reverts `SendNotImplemented`. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
 | `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. The default reverts `QuoteNotImplemented`. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
@@ -634,8 +634,12 @@ cost the bootstrap quote must include, which is [R2.3](#r2-quote) applied to pat
 
 ### R7. Fees and value
 
-**R7.1** Every protocol entry point that reaches `_sendMessage` is already `payable`. The
-binding reads `msg.value` and pays the provider from it.
+**R7.1 The binding is told how much it may spend, and MUST NOT read `msg.value`.**
+`_sendMessage` takes the amount as its fourth argument, and that is the number to pay the
+provider. The two were the same until the hub began taking a bootstrap fee off the top, and
+on a nested send they are not related at all: `msg.value` is zero there and the payment
+comes from the contract's own balance. A binding reading `msg.value` overpays the provider
+by the fee, or refunds the fee to the sender, or sends nothing.
 
 **R7.2** Refunding the excess is the binding's job, because only the binding knows the
 provider's refund convention. The address it refunds to is NOT the binding's choice: it
@@ -656,11 +660,12 @@ Both halves of an account declare `receive`, which on `TransmitterBase` is load-
 rather than decorative: a provider's refund is a plain value transfer, and one to a
 contract that cannot accept it reverts the send that earned it.
 
-A binding MUST NOT reach for the two shapes that look like alternatives. A refund address
-inside the attributes leaves `_sendMessage` with no correct default on a bootstrap, since
-the owner is inside the encoded envelope and the binding would have to decode `Envelope` to
-find it. A fourth argument on `_sendMessage` widens the one primitive every binding
-implements, to carry a value both call sites can already read off the stack.
+A binding MUST NOT put a refund address in the attributes instead. That leaves
+`_sendMessage` with no correct default on a bootstrap, since the owner is inside the encoded
+envelope and the binding would have to decode `Envelope` to find it. The refund address is
+the one value a binding cannot be handed, which is why it is a function on the base rather
+than an argument; the send VALUE is the opposite case, and is passed (see
+[R7.1](#r7-fees-and-value)).
 
 **R7.3** A nested send (the receiver report, sent from inside a delivery callback) has
 `msg.value == 0` and MUST be funded from the sending contract's balance. A binding whose
@@ -874,9 +879,11 @@ contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
     function _sendMessage(
         bytes memory recipient,
         bytes memory payload,
-        bytes[] memory attributes
+        bytes[] memory attributes,
+        uint256 value
     ) internal override returns (bytes32 sendId) {
-        sendId = gateway.sendMessage{value: msg.value}(recipient, payload, attributes);
+        // R7.1: pay from `value`, never from msg.value.
+        sendId = gateway.sendMessage{value: value}(recipient, payload, attributes);
         // R1: a non-zero id means the gateway has NOT sent it yet. Refuse rather than
         // report success for a message still sitting in a queue somebody else must poke.
         if (sendId != bytes32(0)) revert TwoStepGatewayUnsupported(sendId);
@@ -971,7 +978,7 @@ A binding is done when every line is true.
 - [ ] Fixed-width `abi.encode` everywhere a route is built
 
 **Value**
-- [ ] `msg.value` pays the fee, excess refunds to the owner
+- [ ] The `value` argument pays the fee, never `msg.value`, and excess refunds to the owner
 - [ ] Quote priced over the exact payload bytes, never cached, never called by the send
 - [ ] Nested send funded from balance, or the gap documented, and its quote exposed
 

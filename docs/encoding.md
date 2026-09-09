@@ -163,10 +163,10 @@ the typed array supplied here.
 The same applies on the source side. `TransmitterBase.execute` is `Call[]` only, because it
 is a direct local call with no bridge in between and therefore always targets an EVM chain.
 
-**A transmitter has no `commit` of its own**, because it holds no queue. What it has is
+**A transmitter has no `commit` of its own**, because it holds no approvals. What it has is
 `commitmentCall(receiver, commitment)`, a `pure` builder for the one element that pins a
-hash on the receiver's own chain, and `cancellationCall(receiver, index, expected)` for the
-element that withdraws one. Committing is a call, not a message kind, so a payload for a
+hash on the receiver's own chain, and `cancellationCall(receiver, commitment)` for the
+element that withdraws one. Both name the hash, so neither can go stale. Committing is a call, not a message kind, so a payload for a
 destination this chain cannot execute on is approved by carrying that element rather than by
 a second entry point here.
 
@@ -458,7 +458,7 @@ destination's vectors, not the other way round.
 | | Checked by | Needs |
 | --- | --- | --- |
 | Commitment hash, any VM | Foundry | keccak over bytes it never parses |
-| EVM wire format and decode | Foundry |: |
+| EVM wire format and decode | Foundry | nothing beyond Foundry |
 | Non-EVM decode, field by field | that VM's own suite | that toolchain |
 | Encoder/decoder round-trip | Foundry `--ffi` | target toolchain installed |
 | End to end | devnet lane per VM | deployed contracts |
