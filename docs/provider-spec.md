@@ -1,6 +1,6 @@
 # Message provider compliance
 
-What a message provider binding must implement to be a first-class transport for this
+What a message provider binding must implement to be a fully supported transport for this
 protocol, and what the provider protocol itself must be capable of before a binding is
 worth writing.
 
@@ -122,7 +122,7 @@ existing LayerZero skeleton.
 | File | Extends | Role |
 | --- | --- | --- |
 | `<P>Codec.sol` | library | The one place the provider's chain id has a Solidity type. **Only where one survives**: under ERC-7786 the route slot holds a chain identifier, so a gateway binding has no provider-native id to type and no codec. See [§10](#9-worked-skeleton-an-erc-7786-gateway-binding). |
-| `<P>Endpoint.sol` | abstract | Shared send, quote, and receive plumbing, mixed into the four below. |
+| `<P>Endpoint.sol` | abstract | The shared send, quote, and receive code, mixed into the four below. |
 | `<P>Transmitter.sol` | `TransmitterBase`, `<P>Endpoint` | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ReceiverBase`, `<P>Endpoint` | The per-user account on a spoke. Receives on path A. |
 | `<P>HubTransceiver.sol` | `HubTransceiverBase`, `<P>Endpoint` | Sends bootstrap, receives reports. |
@@ -200,7 +200,7 @@ Every abstract or virtual member a binding must answer, and where.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| no authority at all | — | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. |
+| no authority at all | n/a | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
 | `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
@@ -482,8 +482,8 @@ another's receiver.
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
 later chance.** `Roles.grantRole` is `onlyInitializing`, so after the arming call there is
-nobody a grant could come from — not the transceiver that created it, not the msig, not the
-account's own owner. A binding therefore calls `grantRole(GATEWAY_ROLE, endpoint)` from its
+nobody a grant could come from. Not the transceiver that created it, not the msig, and not
+the account's own owner. A binding therefore calls `grantRole(GATEWAY_ROLE, endpoint)` from its
 own `initialize`, ahead of `__ReceiverBase_init`, where the rest of its provider setup already
 goes. The same applies to a transmitter, and to a transceiver, whose gateways normally arrive
 in its `Deployment` instead.
@@ -732,7 +732,7 @@ chain unless noted:
 | 10 | `<P>HubTransceiver.setCounterpart(chainKey, interop)`, or `resolveCounterpart(chainKey, paramsCommitment)` where a deriver is configured | Write-once, on the hub. Most EVM chains need neither: the hub falls back to its own address. |
 | 11 | `<P>HubTransceiver.setRouting(registry, provider, minCounterpartProvenance)` | The provenance dial. |
 | 12 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
-| — | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
+| n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
 There is no `script/` directory yet ([todo §6](todo.md#6-infrastructure-none-of-it-exists)).
 The first binding writes it, and the ordering above is its specification.
@@ -800,7 +800,7 @@ Everything below is written once, against those hooks.
 | C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. |
 | C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`. |
 | C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a hub, `NotHomeOrigin` on a spoke. |
-| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) footgun, directly. |
+| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. |
 | C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. |
 | C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). |
 | C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). |
@@ -949,7 +949,7 @@ gateway address, a policy about two-step sends, and a quote the standard did not
 A binding is done when every line is true.
 
 **Contracts**
-- [ ] Five or six files under `src/protocols/<provider>/`, with shared plumbing in `<P>Endpoint`
+- [ ] Five or six files under `src/protocols/<provider>/`, with the shared code in `<P>Endpoint`
 - [ ] `_sendMessage` overridden on all four endpoints
 - [ ] `_quoteMessage` overridden on all four endpoints, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
@@ -957,7 +957,7 @@ A binding is done when every line is true.
       `_onInbound` on the transceivers
 - [ ] Inbound reverts on the transmitter
 - [ ] Initialized with the msig as `owner`, the protocol's one `Treasury` as `treasury` (hub
-      only), and every transport the deployment needs in `gateways` — none grantable afterwards
+      only), and every transport the deployment needs in `gateways`, none grantable afterwards
 - [ ] No second ownership implementation in the tree, and no grant path added
 - [ ] `_accountInitializer` overridden on both transceivers
 - [ ] Codec library and typed setters, only where a provider-native id survives

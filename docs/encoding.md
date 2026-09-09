@@ -335,7 +335,7 @@ commitment binds to a chain for free there. Off the EVM that does not hold:
 | Sui | **no** |
 
 So on the chains where the receiver address is least predictable, the chainKey also has to
-be baked in. A mainnet/devnet mixup then produces a receiver that verifies nothing
+be written in at initialization. A mainnet/devnet mixup then produces a receiver that verifies nothing
 successfully and fails only on a live message. The mitigation is the one the spoke already
 uses for the mirror-image value: `SpokeTransceiverBase.homeChainKey` is a write-once
 initializer argument checked against the identifier passed beside it
@@ -541,7 +541,7 @@ value neither side needs told. See above for the condition that would make one n
 
 **Packed, Safe `MultiSend` style**: `to(20) | value(32) | len(2) | data`. Smallest by a
 wide margin, and reads straight from calldata with no memory copy. Rejected for now: it
-needs hand-written cursor parsing, has no standard tooling, and bakes in a 20-byte address.
+needs hand-written cursor parsing, has no standard tooling, and fixes the address at 20 bytes.
 Revisit if bridge fees show up in cost modelling.
 
 Wire bytes for comparison:

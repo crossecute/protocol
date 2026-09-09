@@ -662,7 +662,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev THERE IS NO SETTER. Changing the implementation does not move receivers that
-    ///      already exist (clone bytecode has the old address baked in), so a change
+    ///      already exist (clone bytecode fixes the old address at creation), so a change
     ///      silently forks the population into two logic versions. Removing the setter
     ///      makes that a redeploy, which is what it always was.
     function test_receiverImplementationCannotBeChanged() public {
@@ -1005,8 +1005,8 @@ contract CommitFinalizeTest is Test {
     ///         that approved it.
     ///
     /// @dev WITHOUT THIS THE APPROVAL WAS PERMANENT. `finalize` is permissionless and has no
-    ///      deadline, so an outstanding bootstrap left the MOMENT it executed — and therefore
-    ///      the state its payload ran against — to whoever chose to supply the array. The
+    ///      deadline, so an outstanding bootstrap left the MOMENT it executed, and therefore
+    ///      the state its payload ran against, to whoever chose to supply the array. The
     ///      cancel is gated like `commit`: a payload this contract is already executing,
     ///      which means one that arrived from the authenticated hub.
     function test_anApprovedBootstrapCanBeWithdrawnByTheHubAndNobodyElse() public {
@@ -1166,7 +1166,7 @@ contract CommitFinalizeTest is Test {
 
     /// @dev THE OPPOSITE OF WHAT A SINGLE SLOT DID. A second approval joins the first
     ///      rather than colliding with it, so a payload waiting on a slow relayer cannot
-    ///      stop the next from being recorded — and with no ordering, cannot stop it from
+    ///      stop the next from being recorded, and with no ordering, cannot stop it from
     ///      being discharged either.
     function test_receiverHoldsSeveralApprovalsAtOnce() public {
         (MockReceiver r,) = _deployedReceiver();

@@ -91,8 +91,8 @@ flowchart LR
 ```
 
 The message carries the owner and their salt, not the transmitter, because a CREATE2 address
-cannot be derived from itself. The dashed return leg fires only where `addressesDiverge` —
-zkSync and Tron — since elsewhere the hub derived the receiver's address before the first
+cannot be derived from itself. The dashed return arrow fires only where `addressesDiverge`,
+which is zkSync and Tron. Elsewhere the hub derived the receiver's address before the first
 message left. It is sent from inside the delivery callback at the fee its own quote names, so
 an underfunded spoke reverts and takes the account creation with it: all or nothing, and
 retryable once it is funded. This runs once per chain.
@@ -252,7 +252,7 @@ Two steps, and the second is the one nothing will remind you about.
 
 2. **Write the profile's canonicity rule into `Erc7930.parseStrict`**, beside the eip155 and
    starknet cases. `chainType` is read as an opaque `uint16` and never checked against the
-   allocation table, so an unallocated value already parses and registers — it simply arrives
+   allocation table, so an unallocated value already parses and registers. It simply arrives
    with no canonicity condition attached, and both `0x00cafe` and `0xcafe` pass as references
    for the same chain and hash to two different keys. Allocating the constant does not close
    that; only the rule does. `test/UnknownChainType.t.sol` pins the current behaviour.

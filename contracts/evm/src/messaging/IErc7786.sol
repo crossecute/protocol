@@ -11,8 +11,8 @@ pragma solidity >=0.8.4;
 /// @dev IT IS VENDORED BECAUSE THE STANDARD IS A DRAFT AND THIS IS OUR ABI. `draft-` in the
 ///      upstream name is the whole argument: OpenZeppelin is free to change these signatures
 ///      when the ERC changes, and upstream doing so would silently change what this protocol
-///      promises to every integrator — an event topic, a selector, an argument order — as a
-///      side effect of a dependency bump. Holding the copy makes that a reviewed edit with a
+///      promises to every integrator, whether an event topic, a selector, or an argument
+///      order, as a side effect of a dependency bump. Holding the copy makes that a reviewed edit with a
 ///      diff, on the schedule of the people who have to migrate.
 ///
 /// @dev THERE IS NOTHING HERE TO DRIFT SEMANTICALLY. An interface is a set of selectors and

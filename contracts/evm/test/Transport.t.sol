@@ -24,7 +24,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
-///      provider's plumbing.
+///      provider's transport code.
 contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
     bytes public sentRecipient;
     bytes public sentPayload;

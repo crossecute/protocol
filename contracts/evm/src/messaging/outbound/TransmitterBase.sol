@@ -184,8 +184,8 @@ abstract contract TransmitterBase is
     /// @dev THE TWO COME APART EXACTLY ON THE CHAINS THAT REPORT. Where the address is
     ///      pre-deterministic the counterpart is recorded at dispatch, because the hub already
     ///      knows where the account will land and nothing a message does can change it, so the
-    ///      two answers agree from the first transaction. Where it is not — zkSync, Tron, and
-    ///      every non-EVM VM — the address is not known until the spoke reports it, so this
+    ///      two answers agree from the first transaction. Where it is not, meaning zkSync,
+    ///      Tron, and every non-EVM VM, the address is not known until the spoke reports it, so this
     ///      stays false until `onDestinationReceiverReported` lands and a send is refused
     ///      rather than addressed at a guess.
     function isReachable(bytes32 destinationChainKey) external view returns (bool) {
@@ -223,8 +223,8 @@ abstract contract TransmitterBase is
     ///      both "do not bootstrap again" and "you may send here". That is wrong on any chain
     ///      whose address is not pre-deterministic, where the counterpart written at dispatch
     ///      is a GUESS the report will replace, and a send made against it in the meantime is
-    ///      addressed at nothing. Splitting them lets a bootstrap be recorded — so a second
-    ///      cannot be paid for — while the destination stays unreachable until its receiver
+    ///      addressed at nothing. Splitting them lets a bootstrap be recorded, so a second
+    ///      cannot be paid for, while the destination stays unreachable until its receiver
     ///      is known.
     mapping(bytes32 destinationChainKey => bool) private _bootstrapDispatched;
 
@@ -599,7 +599,7 @@ abstract contract TransmitterBase is
         return identifier;
     }
 
-    /* ================================= plumbing ================================ */
+    /* =============================== shared code =============================== */
 
     /// @dev THE FLAG IS SET BEFORE THE TRANSCEIVER IS CALLED. That call reaches a provider
     ///      endpoint and, through it, arbitrary code, so recording first means a re-entrant

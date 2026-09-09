@@ -65,7 +65,7 @@ verbatim, so a failed withdrawal is simply not spent.
 CALL, THEN RECORD WHICH WAY IT WENT: CCIP and the OP Stack. `relayMessage` makes a
 low-level call and branches, `successfulMessages` on success and `failedMessages` on
 failure, and the failed entry is what a later replay is required to come from. Two state
-writes, and the failure is a first-class state rather than an absence.
+writes, and the failure is a recorded state of its own rather than an absence.
 
 MARK DELIVERY FIRST, RECORD EXECUTION SEPARATELY: Avalanche ICM alone, and it is the
 strongest of the three. `_markMessageReceived` writes the nonce before

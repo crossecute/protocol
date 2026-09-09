@@ -313,7 +313,7 @@ abstract contract OutboundBase is Roles {
     /// @dev IT IS HERE RATHER THAN ON THE ACCOUNT BECAUSE EVERY SENDER NEEDS IT, and a spoke
     ///      needs it most: its receiver report is sent from inside a delivery callback where
     ///      `msg.value` is zero, so it pays from its own balance, and anyone who has to fund
-    ///      that balance — or who is about to finalize a deferred bootstrap that ends in one —
+    ///      that balance, or who is about to finalize a deferred bootstrap that ends in one,
     ///      has to be able to price it first. Leaving the surface on `TransmitterBase` meant
     ///      the one contract that cannot ask for value at call time was also the one that
     ///      could not be asked what it needed.
