@@ -28,6 +28,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [3. ERC-7786](#3-erc-7786-as-a-transport) | ERC-7786 as of OpenZeppelin 5.5.0, whose `draft-IERC7786` is vendored at `src/messaging/IErc7786.sol`; `draft-InteroperableAddress` for comparison | The ERC changes. The vendored copy makes that a reviewed edit rather than a dependency bump |
 | [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
+| [6. Wormhole](#6-wormhole-core-vs-the-relayer-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
 
 ---
 
@@ -555,3 +556,103 @@ question, unlike CCIP's mixed repository.
 **Replay is already covered.** §1's matrix already records Hyperlane's dedupe
 (`deliveries[messageId]` in `Mailbox`, written before `handle()`, `already delivered`
 guarded); nothing here changes that finding.
+
+---
+
+## 6. Wormhole: Core vs. the Relayer are two different bindings
+
+Read because Wormhole is qualitatively different from the other three, and §1's replay
+matrix already flags it as one of only two outliers (with Avalanche's raw Warp precompile)
+that leave dedupe to the integrator. Worth its own section because "Wormhole" names two
+separable products with almost nothing in common at the interface level, and only one of
+them is a template-comparable addition. Source: `wormhole-foundation/wormhole`, `main`,
+commit `2df4000c`, reading `ethereum/contracts/interfaces/IWormhole.sol`; and
+`wormhole-foundation/wormhole-solidity-sdk`, `main`, commit `2cb855ea`, reading
+`src/interfaces/IWormholeRelayer.sol`.
+
+### Core (`IWormhole`): the trust-minimized primitive, and the hard case
+
+**`publishMessage` names no destination.** `publishMessage(nonce, payload,
+consistencyLevel) payable returns (sequence)` takes no target chain and no target address at
+all. It only emits `LogMessagePublished`; the guardian network observes that event
+off-chain and signs a VAA attesting to `(emitterChainId, emitterAddress, sequence, payload)`.
+Where that VAA goes, and whether it goes anywhere, is decided entirely off-protocol, by
+whoever chooses to do something with it.
+
+**There is no delivery, so there is no delivery-inclusive quote.** `messageFee()` is a flat,
+tiny anti-spam fee paid on the SOURCE chain — unrelated to destination gas. Every other
+provider surveyed here (LayerZero, CCIP, Hyperlane, and Wormhole's own Relayer below) prices
+the full round trip in one native-currency number; bare Core has nothing to ask. A binding on
+it falls back to the off-chain measurement already documented for OP Stack in
+[§2](#2-canonical-rollup-and-subnet-transports), not to a `_quoteMessage` override that
+answers on-chain.
+
+**No push callback, and therefore no caller to gate.** `parseAndVerifyVM(encodedVM) view
+returns (vm, valid, reason)` is a pure verification function. Wormhole Core never calls
+anything. A binding has to expose its own external entry point that accepts a raw VAA from
+WHOEVER submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
+no address to grant `GATEWAY_ROLE` to for this channel, because there is no fixed caller:
+authenticity comes entirely from the guardian signatures inside the VAA, checked by
+`_authenticateSender` against `vm.emitterChainId`/`vm.emitterAddress`, with nothing checking
+"who submitted this transaction" at all. That is not a gap relative to the other bindings:
+`_authenticateSender`, `_onMessage`, and `_onInbound` are already `internal`, so this
+entry point reaches the same seam CCIP and Hyperlane already reuse — it is simply the first
+candidate whose entry point has no role check in front of that seam.
+
+**No replay protection, confirmed against the full interface, not assumed.** There is no
+`delivered`/`consumed` mapping for an ordinary message anywhere in `IWormhole` —
+`governanceActionIsConsumed` exists, and it is scoped to governance actions only. A binding
+on bare Core is the first candidate in this survey to actually trigger
+[R3.5](provider-spec.md#r3-receive) ("a binding whose transport does not provide it MUST
+supply it"): it needs its own consumed-VAA-hash map, held on the binding's own receiver
+contract exactly the way a peer table or an eid table already lives on a binding rather than
+on `ReceiverBase`.
+
+**Bootstrap (path B) is the one place bare Core's permissionless-relay model is a fit rather
+than a cost.** `bootstrap` is already designed to be callable by anyone willing to pay for
+it; a permissionlessly-submittable VAA composes with that directly, no special-casing
+required.
+
+### The Relayer (`IWormholeRelayer`): the template-comparable case
+
+A separate product built on top of Core, not a mode of it. Confusingly also called
+"Wormhole" in most integration guides, which is the reason this distinction is worth
+recording rather than assuming.
+
+| Our hook | Wormhole Relayer |
+| --- | --- |
+| `_sendMessage(recipient, payload, attributes, value)` | `sendPayloadToEvm(targetChain, targetAddress, payload, receiverValue, gasLimit){value}`: an explicit destination, finally |
+| `_quoteMessage(recipient, payload, attributes)` | `quoteEVMDeliveryPrice(targetChain, receiverValue, gasLimit).nativePriceQuote`: destination-inclusive, in this chain's native currency, matching `_quoteMessage`'s contract exactly |
+| `GATEWAY_ROLE` | granted to the Relayer contract, same pattern as the other three |
+| inbound | `IWormholeReceiver.receiveWormholeMessages(payload, additionalMessages, sourceAddress, sourceChainId, deliveryHash)`: a real push callback |
+
+**Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
+(bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
+way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
+would require.
+
+**The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
+and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)
+(Phase 0 of the provider-bindings work) was built `uint256`-widened rather than sized to any
+one provider: a fourth candidate slots into the existing table with no changes to it.
+
+**The trust assumption moves, and is worth weighing on its own rather than assumed away.**
+Message AUTHENTICITY still rests on the guardian-signed VAA underneath — the Relayer does
+not weaken that. But delivery LIVENESS now also depends on a delivery-provider marketplace
+(a "default delivery provider," typically Wormhole Labs-operated, or an alternate one named
+by address) actually submitting the transaction. That is a second dependency the other three
+bindings do not add: LayerZero's executor, CCIP's off-ramp, and Hyperlane's relayer are each
+also third parties, so this is not unique to Wormhole, but it is a fact to grade the same way
+`Provenance` already grades a counterpart's address claim, not to wave through because the
+signature underneath is sound.
+
+### What this means for scope
+
+Neither variant requires changing anything in the shared base contracts. `_sendMessage`/
+`_quoteMessage` are already `virtual` per-binding overrides; `_authenticateSender`,
+`_onMessage`, and `_onInbound` are already `internal` and reusable by any provider-specific
+entry point regardless of that entry point's own gating; `Roles`/`GATEWAY_ROLE` needs no
+change either way. The Relayer binding is a template-comparable addition, the same shape as
+LZ/CCIP/Hyperlane. A bare-Core binding is real, additional, self-contained work — a
+permissionless entry point and a replay-protection map, both local to a new
+`protocols/wormhole/` binding — not a gap in what already exists.
