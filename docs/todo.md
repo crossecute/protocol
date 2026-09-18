@@ -391,6 +391,14 @@ mainnet.
   it has to land before mainnet, since it is the difference between a signer bearing gas risk
   and the protocol bearing it.
 
+  **A stale NatSpec to correct in the same pass.** `OutboundBase._quoteMessage` currently
+  says quoting inside a send is unnecessary because "a price that moved into a revert, when
+  the provider's refund already handles it." That assumption is false for all three
+  providers, per the divergence above: LZ reverts on any mismatch with nothing to refund,
+  CCIP keeps an overpayment outright, and Hyperlane routes the remainder to a hook rather
+  than back to the sender. Fix that comment when this lands, so it stops asserting a safety
+  net that does not exist.
+
 ## 6. Infrastructure: None of it exists
 
 - **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
