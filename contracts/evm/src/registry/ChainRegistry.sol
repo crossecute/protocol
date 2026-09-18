@@ -522,6 +522,16 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      still being `eip155`, so the default would read them as `Derived` and be wrong.
     ///      Declaring `Attested` makes the stronger claim unrepresentable rather than merely
     ///      discouraged, and it is what turns `requiresReceiverCallback` on for them.
+    ///
+    /// @dev A LIVE DIAL, NOT A WRITE-ONCE FACT, AND DELIBERATELY SO. Unlike a route or a
+    ///      counterpart, which name where a message goes or which contract it authenticates
+    ///      against, this names how much a CLAIM about that chain is worth, and that
+    ///      assessment can change without anything about the chain itself changing: a
+    ///      bridge proving itself over time, or a bridge just compromised, are both reasons
+    ///      to re-grade a chain the owner already declared. `test_hubProvenanceBarAppliesToInbound`
+    ///      and `test_aDerivableChainMayNotReport` exercise raising and lowering it on a live
+    ///      deployment; a write-once guard here would remove the fastest response available
+    ///      to a compromised bridge; the owner would need a redeploy to cut it off.
     function setProvenance(bytes32 chainKey, Provenance provenance) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         provenanceOf[chainKey] = provenance;

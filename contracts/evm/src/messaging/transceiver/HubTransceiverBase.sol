@@ -88,6 +88,12 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      derivation is stronger than the claim, so the claim is refused rather than
     ///      allowed to replace it.
     error ChainDoesNotReport(bytes32 chainKey);
+    /// @dev Re-pointing the registry or the provider id after they are set would let the
+    ///      owner redirect every future counterpart lookup at once, to a registry nobody
+    ///      approved. Re-declaring the SAME pair is a no-op; a DIFFERENT one reverts, the
+    ///      same shape as `setRoute` and `setCounterpart`. `minCounterpartProvenance` is
+    ///      exempt from this: see `setRouting`.
+    error RoutingAlreadySet();
 
     /// @param owner_ The configuring authority, and the only live one in the protocol: it adds
     ///        destinations and prices bootstraps, and can move no money at all. `Ownable`
@@ -188,14 +194,34 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         _setRoute(chainKey, route);
     }
 
-    /// @notice Point this transceiver at the registry, and state its provenance bar.
+    /// @notice Point this transceiver at the registry, name its provider id, and state its
+    ///         provenance bar.
+    ///
+    /// @dev THE REGISTRY AND THE PROVIDER ID ARE WRITE-ONCE, LIKE `setRoute` AND
+    ///      `setCounterpart`: repointing either would redirect every future counterpart
+    ///      lookup at once, to a registry or a provider identity nobody approved.
+    ///      Re-declaring the SAME pair is a no-op; a DIFFERENT one reverts.
+    ///
+    /// @dev `minCounterpartProvenance` IS EXEMPT, DELIBERATELY. It is the live risk dial
+    ///      documented on the field itself: raising or lowering it is how the owner reacts to
+    ///      a bridge's standing changing, without a redeploy. Locking it with the rest would
+    ///      remove the fastest response available if a bridge is compromised. It is written
+    ///      on every call, even one that only repeats the registry and provider id, so
+    ///      calling this again is the one way to change it.
     function setRouting(
         IChainRegistryRefs chainRegistry_,
         bytes32 messageProvider_,
         Provenance minCounterpartProvenance_
     ) external onlyOwner {
-        chainRegistry = chainRegistry_;
-        messageProvider = messageProvider_;
+        if (address(chainRegistry) != address(0)) {
+            if (chainRegistry != chainRegistry_ || messageProvider != messageProvider_) {
+                revert RoutingAlreadySet();
+            }
+        } else {
+            chainRegistry = chainRegistry_;
+            messageProvider = messageProvider_;
+        }
+
         minCounterpartProvenance = minCounterpartProvenance_;
         emit RoutingSet(
             address(chainRegistry_), messageProvider_, minCounterpartProvenance_

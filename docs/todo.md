@@ -187,31 +187,82 @@ mainnet.
   `onlyInitializing`, so a transceiver's gateways are fixed in its `Deployment` and cannot be
   added to later. A provider migrating its endpoint therefore forces a redeploy at a new
   address, which re-derives every account, unless the deployment named both endpoints up
-  front. Naming several is why `gateways` is an array. This is a deployment-time decision,
-  not a protocol one, and it has to be made before mainnet.
+  front. Naming several is why `gateways` is an array.
+
+  **CONFIRMED.** A LayerZero endpoint, or any other provider's gateway, is never appended
+  post-deploy; a migration is a redeploy, full stop. So `grantRole` staying `onlyInitializing`
+  is the intended shape, not a gap to design around. This is still a deployment-time
+  decision (how many endpoints to name in `Deployment` up front, e.g. to pre-empt a known
+  future migration), which needs `script/` to actually make, not a contract change.
 - **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
   when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
   write-once, add no transport, and redirect no fee. The treasury is write-once and is paid
   in the same transaction that charges it.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
-  bootstrap fee. Worth confirming that list is the intended blast radius before mainnet.
+  bootstrap fee.
+
+  **RESOLVED, PARTIALLY BY DESIGN.** `setRouting` (`HubTransceiverBase`) let the owner
+  silently repoint the registry a hub trusts and its provider id at any time, with no
+  write-once guard and no test exercising that. That half is now locked, following
+  `setRoute`/`setCounterpart`'s pattern: re-declaring the same `(registry, providerId)` pair
+  is a no-op, a different one reverts `RoutingAlreadySet`.
+
+  `minCounterpartProvenance` (also set through `setRouting`) and `ChainRegistry.setProvenance`
+  turned out to be the opposite of a gap: `test_hubProvenanceBarAppliesToInbound` and
+  `test_aDerivableChainMayNotReport` already exercise raising and lowering both live, on a
+  deployed instance, as the intended way to react to a bridge's standing changing without a
+  redeploy. Both stay freely rebindable. So the owner's list grows by exactly one entry
+  removed (repointing the registry/provider id) rather than the three originally suspected.
 - **Approvals are unordered, and a sequence has to be expressed inside the payloads.** A
   relayer holding two valid arrays chooses which lands first. Nothing stalls, which is the
   trade, but an operation that depends on order cannot rely on the approval layer for it.
-  Worth confirming that no planned operation does before mainnet.
+
+  **CONFIRMED.** No planned operation depends on approvals landing in a particular order.
+
+  **A note on privatizing execution, for when ordering matters operationally rather than
+  correctness-wise.** `commit(hash)` reveals nothing about what the array contains, only
+  `finalize(calls)` does, and `finalize` is permissionless and open to whoever holds the
+  matching array. So a team wanting to control WHEN and IN WHAT ORDER two approved
+  operations actually land can commit both hashes with no calldata published anywhere, and
+  hold the matching arrays privately, submitting `finalize` themselves in whichever order
+  they choose: an outside watcher sees two commitments and cannot construct either array
+  from the hash alone, so it cannot race the team to finalize one out of turn. This is a
+  usage pattern available today, not a protocol guarantee: it holds only as long as the
+  calldata stays off-chain and unguessable until the team submits it.
 - **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
   true from dispatch there, because the address is pre-deterministic and correct. What is
   not guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for
   someone to finalize it. Those sends fail on arrival and are retryable at the provider, so the cost is
   the fee and the wait. Closing it would mean a confirmation message on chains that need none,
   which is the trade this deliberately does not make.
+
+  **CONFIRMED.** Accepting the trade: a lost, retryable send at the cost of sending before
+  the destination is actually set up is not a security risk, only a self-inflicted ordering
+  mistake. No confirmation message added.
 - **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
   because deploy, arm, and lock are one function. It becomes a real hole if those are ever
   split.
+
+  **CONFIRMED SAFE, WITH THE MECHANISM SPELLED OUT.** `_createCrossAccount`
+  (`TransceiverBase.sol`) calls `_deployAccount` (bare proxy: no implementation, admin = the
+  transceiver) and then `upgradeInitializeAndLock` as two statements in ONE function, so
+  there is no transaction boundary between them for anyone to call the blank proxy through.
+  "Arm" and "lock" are themselves one call, not two: `CrossProxy.fallback()` runs
+  `ERC1967Utils.upgradeToAndCall(implementation, data)` (sets the implementation AND
+  delegatecalls into it with the initializer, which for a LayerZero transceiver is where
+  `__OApp_init(delegate)`, the peer, and `GATEWAY_ROLE` all have to be set, since this is the
+  only initializer call the proxy ever gets) and, immediately after, zeroes its own admin
+  slot. There is no "before LZ config" phase and no separate step after arming; LZ setup IS
+  part of arming. Stays a real hole only if deploy is ever split from arm/lock into separate
+  transactions, which nothing today does.
 - **Self-replaying payloads.** `finalize` clears an approval before executing, so a payload
   containing a self-call to `commit` with its own hash re-arms itself indefinitely.
   Owner-approved either way, so not an escalation, but "approvals are single-use" stops
   being true. Disallowing it costs extra code. Allowing it is strictly cheaper.
+
+  **CONFIRMED.** Kept allowing it: the transmitter could already re-`commit` the same hash
+  through an ordinary message any time it wants, so a self-replaying payload grants no
+  authority that did not already exist. No guard added.
 - **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
   `draft-InteroperableAddress`.** It is out of reach at the pinned version, which predates
   it, so adopting it means moving the dependency first. Two checks come before that: the
@@ -219,6 +270,11 @@ mainnet.
   Both are argued in
   [`provider-research.md`](provider-research.md#the-other-draft-worth-knowing-about). It is
   its own task with its own vectors.
+
+  **DECLINED.** Staying on the hand-rolled `Erc7930.sol`: the OZ bump this would require
+  breaks proxy inheritance (see `Roles.sol`'s note on `AccessControlEnumerableUpgradeable`
+  and the `paris`/`mcopy` collision — OZ past 5.4.0 does not compile at `paris`, which the
+  CREATE2 parity story depends on). Not worth the dependency migration.
 
   **Which provider to bind is still open, and the 7786 answer is "only if it has to be".**
   A gateway binding is thin (see the skeleton in
