@@ -358,6 +358,39 @@ mainnet.
   and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
   application layer built on top of it.
 
+- **Sending should not make a signer responsible for pricing its own message, and this needs
+  solving before mainnet even though it does not block the provider-bindings PR.** Found
+  while wiring the three bindings: the identical mistake (quote now, send later, the fee
+  moved) fails three different ways. LayerZero's stock `_payNative` requires
+  `msg.value == nativeFee` EXACTLY and reverts `NotEnoughNative` on any drift, either
+  direction. CCIP's own NatSpec says an overpayment is accepted with no refund, so padding
+  the quote for safety just burns the difference. Hyperlane's `Mailbox.dispatch` neither
+  reverts nor refunds: it sends `requiredHook` what it asks and forwards WHATEVER IS LEFT of
+  `msg.value` to the post-dispatch hook, which does not return to the sender either. No
+  single on-chain buffer is safe across all three; two of them turn "add a margin" into a
+  standing cost.
+
+  **The direction to build toward: the transmitter prices and funds the send itself, rather
+  than asking a signer to have attached the right `msg.value` in advance.** Concretely, on
+  send the transmitter calculates the provider's current fee dynamically and pays it out of
+  a pre-funded balance it holds, rather than requiring the caller's transaction to carry an
+  exact, pre-computed amount. A signer approves a PAYLOAD, not a payload-plus-a-price, and
+  never touches gas or bridging cost at all.
+
+  **This is what actually closes the staleness problem, and closes it structurally rather
+  than by padding a number.** The failure mode above exists because the fee is fixed at the
+  moment something is SIGNED, and provider pricing can move before that signature is
+  submitted and executed. Pricing at send time, from a balance that does not need the
+  signer's transaction to carry an exact value, removes the gap between when a price is
+  fixed and when it is paid — there is no longer a stale number to submit, because nothing
+  about the signature commits to one.
+
+  **Pre-production, not pre-PR.** This needs the three bindings to exist and their real fee
+  behavior to test against (this todo exists because that testing already found the
+  divergence above), so it belongs after the provider-bindings PR lands, not inside it — but
+  it has to land before mainnet, since it is the difference between a signer bearing gas risk
+  and the protocol bearing it.
+
 ## 6. Infrastructure: None of it exists
 
 - **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
