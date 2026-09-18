@@ -16,13 +16,18 @@ obligation lives in the spec and is cited from here, not the other way round. Th
 [transport replay matrix](#1-what-each-transport-guarantees-about-replay) is the evidence
 behind prerequisite P7, rules R3.5 through R3.7, and compliance tests C29 through C31; the
 [ERC-7786 analysis](#3-erc-7786-as-a-transport) is the reasoning behind the core contracts
-implementing the standard directly.
+implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
+[Hyperlane](#5-hyperlane-as-a-native-binding) sections are the reasoning behind
+`contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, the template contracts alongside
+`.../layerzero/`.
 
 | Section | Pinned to | Goes stale when |
 | --- | --- | --- |
 | [1. Transport replay](#1-what-each-transport-guarantees-about-replay) | source as read: LayerZero V2, Hyperlane, CCIP, Axelar, Wormhole core, OP `CrossDomainMessenger`, Arbitrum `AbsOutbox`, Warp `contract.go`, `TeleporterMessenger`. Arbitrum's L1→L2 retryable is ArbOS Go and remains unread | any of them changes how a delivered message is marked consumed |
 | [2. Canonical transports](#2-canonical-rollup-and-subnet-transports) | OP Stack, Arbitrum and Avalanche; the aliasing and same-address findings are from source, the latency and fee figures from documentation | a fault-proof window changes, Superchain interop ships, or ICM changes its fee model |
 | [3. ERC-7786](#3-erc-7786-as-a-transport) | ERC-7786 as of OpenZeppelin 5.5.0, whose `draft-IERC7786` is vendored at `src/messaging/IErc7786.sol`; `draft-InteroperableAddress` for comparison | The ERC changes. The vendored copy makes that a reviewed edit rather than a dependency bump |
+| [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
+| [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
 
 ---
 
@@ -397,3 +402,156 @@ accounts against exact bytes. And `Erc7930.parseStrict` enforces strictness the 
 depends on, rejecting non-minimal `eip155` references and trailing bytes; whether `parseV1`
 matches has not been checked. Neither is a reason not to do it, both are reasons it is its
 own task with its own vectors.
+
+**Declined**, separately: moving `Erc7930.sol` onto this draft would mean bumping this
+repo's pinned OpenZeppelin past 5.4.0, and that bump is the same one that breaks
+`AccessControlEnumerableUpgradeable`'s compilation at `paris` from 5.5.0 onward (see
+`Roles.sol`). The dependency the swap would need is the dependency the pin cannot survive,
+so it stays declined until the pin itself is revisited (see
+[`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look)).
+
+---
+
+## 4. CCIP as a native binding
+
+Chainlink CCIP, read the same way LayerZero was in
+[`todo.md`'s provider binding section](todo.md#2-the-provider-binding): what a real
+`contracts/evm/src/protocols/ccip/` binding would inherit, and what it owes R3.3 and R5.
+Source: `smartcontractkit/ccip`, branch `ccip-develop`, commit `171f9f0c`, reading
+`contracts/src/v0.8/ccip/applications/CCIPReceiver.sol`,
+`contracts/src/v0.8/ccip/interfaces/{IAny2EVMMessageReceiver,IRouterClient}.sol`, and
+`contracts/src/v0.8/ccip/libraries/Client.sol`.
+
+**One Router, both directions.** A chain's CCIP `Router` implements `IRouterClient`
+(`getFee(selector, message) view`, `ccipSend(selector, message) payable`) for the send side,
+and is the only contract CCIP will ever call `ccipReceive` from. One `GATEWAY_ROLE` grant
+covers both, the same as every other candidate here.
+
+**The chain identifier is a `uint64` selector, not an EVM chain id.** `destChainSelector` /
+`sourceChainSelector` are CCIP's own per-chain values. Same shape as LayerZero's `eid` and
+Hyperlane's `domain`: a native CCIP binding needs its own chainKey↔selector table, under
+[R5](provider-spec.md#5-the-route-codec), same as either of them.
+
+**The wire addresses are ABI-encoded, not raw bytes.** `Client.EVM2AnyMessage.receiver` is
+`abi.encode(address)` for an EVM destination, and `Client.Any2EVMMessage.sender` is
+`abi.decode`d the same way for an EVM source. Neither is a raw 20-byte slice, which is what
+LayerZero and a bare EVM address use; a binding's `_authenticateSender` narrowing has to
+`abi.decode`, not slice.
+
+**A native `view` quote, satisfying P9 outright.** `getFee` prices the exact message with no
+fallback needed, unlike ERC-7786 (no quote at all) or OP Stack (no quote, an off-chain
+measurement instead). `feeToken = address(0)` pays in native currency through `msg.value`,
+which is the only choice consistent with
+[P8](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist): CCIP also supports
+paying in LINK, and using it would reintroduce exactly the per-chain funding-token matrix P8
+exists to avoid.
+
+**`CCIPReceiver` carries zero storage and zero external dependency.** It holds one
+`immutable` (`i_ccipRouter`, set in the constructor — same "one constructor argument, on the
+implementation, and it does not matter" shape as LayerZero's `OAppCoreUpgradeable` endpoint:
+see [`todo.md` §2](todo.md#2-the-provider-binding)) and vendors its own tiny copy of
+`IERC165` rather than importing OpenZeppelin's. No storage-layout question, no OZ-version
+question. This is the cleanest of the three candidates to fit into this repo's proxy layout.
+
+**No R3.3-style exception needed, provided a binding skips `CCIPReceiver` itself.**
+`CCIPReceiver.ccipReceive` is gated by `onlyRouter`
+(`msg.sender == i_ccipRouter`) alone — a transport-identity check, exactly what
+`GATEWAY_ROLE` already answers — and asserts nothing about who sent the message on the
+SOURCE chain. Unlike LayerZero's `_lzReceive`, which authenticates the peer BEFORE handing
+control to the app and cannot be bypassed without forking the receive path, CCIP's own base
+contract does not check the source-chain sender at all: that is left entirely to the
+application. So a binding that implements `IAny2EVMMessageReceiver.ccipReceive` directly,
+gated by `onlyRole(GATEWAY_ROLE)`, and authenticates the source chain and sender purely
+through `_authenticateOrigin`, has exactly one origin check, in exactly one place — the rule
+`_onInbound`'s NatSpec states, with nothing to write an exception for.
+
+**Licensing is mixed, and matters for what gets vendored.** The infrastructure contracts
+this protocol only ever CALLS (`Router.sol` itself, `FeeQuoter.sol`, the on-ramp/off-ramp
+internals) are `BUSL-1.1`. The application-facing files a binding would actually vendor —
+`CCIPReceiver.sol`, `IAny2EVMMessageReceiver.sol`, `IRouterClient.sol`, `Client.sol` — are
+each individually tagged `MIT` in their own SPDX header. Worth a second look before mainnet
+regardless, the way any vendored license is, but the files this binding needs are not the
+BUSL ones.
+
+**Replay is already covered.** §1's matrix already records CCIP's dedupe
+(`s_executionStates[selector][seqNum]`, `SUCCESS` terminal, manual re-execution from
+`FAILURE`); nothing here changes that finding.
+
+---
+
+## 5. Hyperlane as a native binding
+
+Hyperlane, read the same way. What a real `contracts/evm/src/protocols/hyperlane/` binding
+would inherit, and the one finding that rules out inheriting most of it. Source:
+`hyperlane-xyz/hyperlane-monorepo`, branch `main`, commit `983831f6`, reading
+`solidity/contracts/{Mailbox.sol,PackageVersioned.sol}`,
+`solidity/contracts/client/{MailboxClient,Router}.sol`,
+`solidity/contracts/interfaces/{IMailbox,IMessageRecipient}.sol`,
+`solidity/contracts/libs/TypeCasts.sol`, and `solidity/remappings.txt`.
+
+**One Mailbox, both directions.** `dispatch`/`quoteDispatch` (send) and `process` (the
+permissionless relay call that verifies the message's ISM and then calls the recipient's
+`handle`) live on the same `Mailbox` contract. One `GATEWAY_ROLE` grant covers both.
+
+**The chain identifier is a `uint32` domain, not reliably an EVM chain id.** It conventionally
+equals the EVM chain id for EVM chains, but that is a convention, not a guarantee the
+protocol may depend on, and it is not even meaningful for a non-EVM chain. A native Hyperlane
+binding needs its own chainKey↔domain table, same as LayerZero's `eid` and CCIP's selector,
+under [R5](provider-spec.md#5-the-route-codec).
+
+**A native `view` quote.** `IMailbox.quoteDispatch(domain, recipient, body[, hookMetadata,
+hook])` prices the exact send, satisfying
+[P9](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist) outright, the same
+shape as CCIP's `getFee`.
+
+**Addresses are `bytes32`, via a pure library.** `TypeCasts.addressToBytes32` /
+`bytes32ToAddress` (alignment-preserving casts, no imports, nothing to collide with) are the
+whole of it, and safe to vendor standalone regardless of what else is.
+
+**THE FINDING THAT MATTERS MOST: `MailboxClient` and `Router` cannot be inherited into this
+repo's proxies at all, and it is not a style question.** Both bring `OwnableUpgradeable`, and
+`hyperlane-monorepo`'s own `remappings.txt` pins
+`@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-4.9.3/`.
+`MailboxClient._MailboxClient_initialize` calls `__Ownable_init()` with NO argument, which is
+OpenZeppelin 4.x's signature; this repo is pinned to 5.4.0, whose `OwnableUpgradeable` takes
+an explicit initial owner and has no zero-argument overload at all. The two versions cannot
+occupy one inheritance graph — Solidity will not compile two incompatible definitions of the
+same base reached through different import paths. This is a harder wall than the
+`draft-InteroperableAddress` OZ-bump question above: that one is blocked by a compile-target
+collision (`paris` vs `mcopy`) that in principle a version choice could still resolve; this
+one is blocked by two SHIPPED, INCOMPATIBLE major versions of the same contract, and nothing
+about how either project builds changes that.
+
+**The fix costs nothing, because the useful parts have no OZ dependency at all.**
+`IMailbox.sol`, `IMessageRecipient.sol`, `IInterchainSecurityModule.sol`, and `TypeCasts.sol`
+are plain interfaces and a pure library — no imports, no version to collide with. A real
+binding vendors those four, holds the `IMailbox` address as its OWN immutable (the same "one
+constructor argument, on the implementation" shape used everywhere else in this survey), and
+implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`
+itself, gated by `onlyRole(GATEWAY_ROLE)` rather than `MailboxClient`'s `onlyMailbox`
+modifier. Since neither `MailboxClient` nor `Router` is inherited, their `uint256[48] __GAP`
+storage reservations never enter this repo's layout at all — there is nothing to collide
+with, because there is nothing there.
+
+**Skipping `Router` is independently correct, aside from the OZ collision.** `Router.handle`
+checks an enrolled-router-per-domain mapping (`_routers`) BEFORE calling the app's own
+`_handle` — the exact shape already rejected for OpenZeppelin's `CrosschainLinked` in
+[§3](#3-erc-7786-as-a-transport): "its own gateway allowlist would replace the
+shared-transceiver routing and bypass the registry's provenance dial." A binding built
+directly on `IMessageRecipient` has no such allowlist to bypass.
+
+**No R3.3-style exception needed, PROVIDED `Router` is skipped.** `Mailbox.process`
+authenticates that a message passed its configured ISM before calling `handle` — a statement
+about the message, not about which contract sent it on the source chain. The per-domain peer
+check is `Router`'s own optional layer, not `Mailbox`'s. So a binding built directly on
+`IMessageRecipient` + `IMailbox`, authenticating solely through `_authenticateOrigin`, has
+exactly one origin check, in exactly one place, matching `_onInbound`'s stated rule — unlike
+LayerZero, where the peer check is inside `_lzReceive` itself and there is no opting out of
+it short of forking the receive path.
+
+**Licensing is uniform and clean.** Every file read here is `MIT OR Apache-2.0`. No BUSL
+question, unlike CCIP's mixed repository.
+
+**Replay is already covered.** §1's matrix already records Hyperlane's dedupe
+(`deliveries[messageId]` in `Mailbox`, written before `handle()`, `already delivered`
+guarded); nothing here changes that finding.

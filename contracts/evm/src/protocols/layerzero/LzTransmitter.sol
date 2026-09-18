@@ -40,7 +40,12 @@ contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
     }
 
     /// @notice NO GATEWAY IS GRANTED, so this transmitter sends through nothing. A real
-    ///         binding grants `GATEWAY_ROLE` to its endpoint here in `initialize`, which is
-    ///         the only moment it can: `grantRole` is `onlyInitializing`.
+    ///         binding grants `GATEWAY_ROLE` to the endpoint on `LzHubTransceiver`, and the
+    ///         transmitter itself never touches the role at all: `TransmitterBase` does not
+    ///         inherit `Roles`, because R3.1 ("the transmitter MUST reject inbound messages")
+    ///         is answered structurally here rather than by a grant. It has no
+    ///         `receiveMessage`, no `commit`, and no `GATEWAY_ROLE` to hold. If `OAppUpgradeable`
+    ///         brings an inbound entry point onto this contract when it becomes real, R3.1
+    ///         says to override it and revert, never to wire it up.
 
 }
