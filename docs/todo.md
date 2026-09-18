@@ -330,6 +330,33 @@ mainnet.
 - **Merkle-verified calls** as an opt-in policy, replacing the `(target, selector)`
   predicate. `isAllowed` defaults open, so this is an owner's restriction rather than a
   safety baseline.
+- **A fourth provider, NEAR Intents / Chain Signatures, is not ruled out but needs its own
+  research pass before it belongs anywhere near the other three.** Explored informally, not
+  source-verified the way §4/§5 of [`provider-research.md`](provider-research.md) are.
+
+  NEAR Intents itself (the `defuse`/Verifier contract plus its PoA token bridge, in
+  `near/intents`) is a swap-settlement ledger, not a message-passing transport: no
+  arbitrary-call delivery, and its one data-carrying primitive
+  (`PoaFactory.ft_deposit`'s `msg`, NEP-141's transfer-and-call) is gated to a small
+  permissioned role and only ever reaches a NEAR contract's callback. It is not a candidate
+  transport in the shape this protocol needs.
+
+  The more plausible angle is Chain Signatures itself (`v1.signer`, NEAR's MPC
+  threshold-signing contract, `crates/mpc` in the same repo), which signs an arbitrary
+  payload for a key derived from a NEAR account, for any chain its curve covers — genuinely
+  general-purpose, not restricted to token transfers. But it does not fit this protocol's
+  transceiver shape at all: there is no message delivered and no gateway to authenticate,
+  since a Chain-Signatures transaction is broadcast directly by whoever holds the signature
+  and is indistinguishable on the destination chain from any other EOA's transaction.
+  Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derived address
+  as "the account" at all — an architecture question upstream of "add a fourth binding," not
+  a peer of the LayerZero/CCIP/Hyperlane comparison.
+
+  **Explicitly not required for, and must not block, the three-provider MVP.** Recorded here
+  so it isn't rediscovered under time pressure. The next step, if ever pursued, is
+  source-verified research matching the existing provider-research.md format — of `v1.signer`
+  and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
+  application layer built on top of it.
 
 ## 6. Infrastructure: None of it exists
 
