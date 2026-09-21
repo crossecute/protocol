@@ -29,6 +29,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
 | [6. Wormhole](#6-wormhole-core-vs-the-relayer-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
+| [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`) | Optimism changes `relayMessage`'s calling convention or how `xDomainMessageSender` is scoped |
 
 ---
 
@@ -656,3 +657,78 @@ change either way. The Relayer binding is a template-comparable addition, the sa
 LZ/CCIP/Hyperlane. A bare-Core binding is real, additional, self-contained work — a
 permissionless entry point and a replay-protection map, both local to a new
 `protocols/wormhole/` binding — not a gap in what already exists.
+
+---
+
+## 7. OP Stack as a native binding
+
+[§2](#2-canonical-rollup-and-subnet-transports) already covers latency, aliasing, fees, and
+the no-fan-out property at the level of what disqualifies or constrains a canonical rollup
+bridge generally. This section is the interface-level follow-up, read the same way CCIP,
+Hyperlane, and Wormhole were: what a real `contracts/evm/src/protocols/op-stack/` binding
+would inherit, and the one thing about its shape that is not like the other four. Source:
+`ethereum-optimism/optimism`, `develop`, commit `0abfb166`, reading
+`packages/contracts-bedrock/interfaces/universal/ICrossDomainMessenger.sol`.
+
+**No chain id, and no chain-id table, because there is no fan-out to name.**
+`sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable`
+takes no destination chain at all. Each OP Stack chain has its OWN dedicated
+`L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
+messenger contract you call, not an argument to it. This is the concrete form of what §2
+already concluded — "one hub transceiver per rollup, not one for the stack" — and it means
+[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol) does not apply to
+this binding at all. A hub transceiver for a given OP Stack chain holds that chain's
+messenger address as its own immutable and never needs a second entry; deploying to another
+OP Stack chain means deploying another hub transceiver instance, not adding a row to a
+table.
+
+**No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
+function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
+returns a `uint64` GAS OVERHEAD, not a native-currency price — it still has to be combined
+with an off-chain gas price to produce a `msg.value`. This confirms §2's finding
+("no view quote... there is nothing to ask for a price") at the interface level: a binding's
+`_quoteMessage` has nothing to answer from, and uses the off-chain measurement in
+[R2.2.2](provider-spec.md#r2-quote), the same escape hatch already documented for bare
+Wormhole Core.
+
+**THE SHARP EDGE: the authenticated sender is retrieved by a callback, never carried as an
+argument, and treating it as one would be a real vulnerability rather than a style choice.**
+`relayMessage(nonce, sender, target, value, minGasLimit, message)` makes a low-level call to
+`target` with `message` as calldata — calldata that whoever called `sendMessage` on the
+ORIGIN domain chose, in full, since `sendMessage` is permissionless and anyone may target
+this protocol's receiver with it. Every other provider surveyed hands the authenticated
+origin to the callback as a value the TRANSPORT computed (LayerZero's `Origin`, Hyperlane's
+`sender`, CCIP's `message.sender`, Wormhole's `sourceAddress`). OP Stack does not: nothing
+about `message`'s own bytes is trustworthy, because the caller who published it wrote every
+byte of it themselves. The only fact the protocol actually guarantees is retrievable
+separately, by calling `xDomainMessageSender()` on the messenger — `msg.sender` from the
+called contract's own perspective — DURING the execution `relayMessage` triggers. A binding
+MUST call this itself and MUST NOT accept a "sender" as part of `message`'s own payload; an
+entry point that trusted a self-declared sender argument would let anyone impersonate this
+account's transmitter simply by encoding a claim to that effect in `message`, since nothing
+about `sendMessage` checks who is calling it or what they claim. `_authenticateSender` still
+does the real comparison against `sourceTransmitter`; what changes is where the value being
+compared comes from.
+
+**Binding at this layer is what makes aliasing someone else's problem.** §2 already notes
+`OptimismPortal` requires undoing `AddressAliasHelper`'s offset yourself
+(`AddressDerive.undoL1ToL2Alias` exists in this repo for exactly that), while
+`CrossDomainMessenger` un-aliases internally and hands back the real address through
+`xDomainMessageSender()`. Binding here, one layer up, means `AddressDerive`'s alias-undoing
+path stays unused by this binding entirely — it would only be needed by a binding built
+directly on `OptimismPortal`, which this is deliberately not.
+
+**No divergent-spoke variant, unlike the other three.** zkSync and Tron need
+`ZkSyncSpokeTransceiver`/`TronSpokeTransceiver` because their CREATE2 formulas differ from
+Ethereum's. An OP Stack chain runs standard `op-geth` and Ethereum's own CREATE2 formula, so
+it is always the parity case; there is no OP-Stack-flavoured divergence to name a contract
+for, and `OpStackDivergentSpokeTransceiver` would have nothing to override.
+
+**No OZ dependency, no storage, same clean shape as CCIP's and Wormhole's interfaces.**
+`ICrossDomainMessenger` is a plain interface with zero imports. A transmitter stays plain
+`OwnableUpgradeable`, the same conclusion reached for CCIP, Hyperlane, and Wormhole: there is
+no SDK `Ownable` here to merge with, unlike LayerZero's OApp.
+
+**Replay is already covered**, and was covered before this section existed: §1's matrix
+already records `successfulMessages`/`failedMessages` in `CrossDomainMessenger`, the
+call-then-record-which-way-it-went shape shared with CCIP.
