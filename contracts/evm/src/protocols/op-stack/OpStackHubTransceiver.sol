@@ -5,15 +5,32 @@ import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.s
 
 /// @notice The transceiver on the home chain, for ONE OP Stack destination.
 ///
-/// @dev ONE INSTANCE PER ROLLUP, NOT ONE FOR THE STACK, AND THAT IS STRUCTURAL HERE RATHER
-///      THAN A DEPLOYMENT PREFERENCE. `ICrossDomainMessenger.sendMessage(target, message,
-///      minGasLimit)` names no destination chain: each OP Stack chain has its own dedicated
-///      `L1CrossDomainMessenger` at its own L1 address, and the destination IS which
-///      messenger you call. So [`ProviderChainId`](../ProviderChainId.sol), the chain-id
-///      table every other native binding needs, DOES NOT APPLY to this one: this contract
-///      holds one messenger address as its own immutable, and reaching a second OP Stack
-///      chain means deploying a second `OpStackHubTransceiver`, not adding a row to a table.
-///      See `docs/provider-research.md#7-op-stack-as-a-native-binding`.
+/// @dev ONE INSTANCE PER ROLLUP, NOT ONE FOR THE STACK. `ICrossDomainMessenger.sendMessage
+///      (target, message, minGasLimit)` names no destination chain: each OP Stack chain has
+///      its own dedicated `L1CrossDomainMessenger` at its own L1 address, and the destination
+///      IS which messenger you call. So [`ProviderChainId`](../ProviderChainId.sol), the
+///      chain-id table every other native binding needs, DOES NOT APPLY to this one: this
+///      contract holds one messenger address as its own immutable, and reaching a second OP
+///      Stack chain means deploying a second `OpStackHubTransceiver`.
+///
+/// @dev THIS IS A TRUST-DOMAIN CHOICE, NOT AN INTERFACE LIMITATION, AND THE DISTINCTION
+///      MATTERS BEFORE SOMEONE "FIXES" IT. A `chainKey => messenger address` table, the same
+///      write-once-if-unset shape `ProviderChainId` already uses, would let one instance
+///      reach every OP Stack chain, and nothing about `sendMessage` forbids it. The reason
+///      not to: `HubTransceiverBase.messageProvider` and `minCounterpartProvenance` describe
+///      ONE trust level for everything the instance reaches, which is accurate for
+///      LayerZero, CCIP, Hyperlane, and the Wormhole Relayer because ONE validator/DVN/
+///      guardian/relayer network secures every destination that endpoint serves. It is NOT
+///      accurate here: Optimism's canonical bridge (its own fault-proof system, its own
+///      challenger set) and Base's are independent security systems that happen to run the
+///      same stack software. Reaching both from one instance would make one provenance dial
+///      describe two things that can fail independently of each other, which is exactly the
+///      distinction `Provenance` grading exists to preserve.
+///      [`provider-research.md` §2](../../../../../docs/provider-research.md#2-canonical-rollup-and-subnet-transports)
+///      already states the resulting trade: "A payload to Optimism trusts Optimism's bridge
+///      and nothing else, rather than trusting one attestation network with every
+///      destination at once," at the cost of N deployments, N `setProvenance` entries, and N
+///      sets of routes instead of one.
 ///
 /// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL, AND THAT IS WHAT ERC-7786 BOUGHT, EXACTLY
 ///      AS ON THE OTHER TEMPLATES. A gateway takes a recipient that NAMES ITS OWN CHAIN, so
