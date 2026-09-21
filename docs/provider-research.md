@@ -28,6 +28,8 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [3. ERC-7786](#3-erc-7786-as-a-transport) | ERC-7786 as of OpenZeppelin 5.5.0, whose `draft-IERC7786` is vendored at `src/messaging/IErc7786.sol`; `draft-InteroperableAddress` for comparison | The ERC changes. The vendored copy makes that a reviewed edit rather than a dependency bump |
 | [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
+| [6. Wormhole](#6-wormhole-core-vs-the-relayer-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
+| [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`) | Optimism changes `relayMessage`'s calling convention or how `xDomainMessageSender` is scoped |
 
 ---
 
@@ -555,3 +557,178 @@ question, unlike CCIP's mixed repository.
 **Replay is already covered.** §1's matrix already records Hyperlane's dedupe
 (`deliveries[messageId]` in `Mailbox`, written before `handle()`, `already delivered`
 guarded); nothing here changes that finding.
+
+---
+
+## 6. Wormhole: Core vs. the Relayer are two different bindings
+
+Read because Wormhole is qualitatively different from the other three, and §1's replay
+matrix already flags it as one of only two outliers (with Avalanche's raw Warp precompile)
+that leave dedupe to the integrator. Worth its own section because "Wormhole" names two
+separable products with almost nothing in common at the interface level, and only one of
+them is a template-comparable addition. Source: `wormhole-foundation/wormhole`, `main`,
+commit `2df4000c`, reading `ethereum/contracts/interfaces/IWormhole.sol`; and
+`wormhole-foundation/wormhole-solidity-sdk`, `main`, commit `2cb855ea`, reading
+`src/interfaces/IWormholeRelayer.sol`.
+
+### Core (`IWormhole`): the trust-minimized primitive, and the hard case
+
+**`publishMessage` names no destination.** `publishMessage(nonce, payload,
+consistencyLevel) payable returns (sequence)` takes no target chain and no target address at
+all. It only emits `LogMessagePublished`; the guardian network observes that event
+off-chain and signs a VAA attesting to `(emitterChainId, emitterAddress, sequence, payload)`.
+Where that VAA goes, and whether it goes anywhere, is decided entirely off-protocol, by
+whoever chooses to do something with it.
+
+**There is no delivery, so there is no delivery-inclusive quote.** `messageFee()` is a flat,
+tiny anti-spam fee paid on the SOURCE chain — unrelated to destination gas. Every other
+provider surveyed here (LayerZero, CCIP, Hyperlane, and Wormhole's own Relayer below) prices
+the full round trip in one native-currency number; bare Core has nothing to ask. A binding on
+it falls back to the off-chain measurement already documented for OP Stack in
+[§2](#2-canonical-rollup-and-subnet-transports), not to a `_quoteMessage` override that
+answers on-chain.
+
+**No push callback, and therefore no caller to gate.** `parseAndVerifyVM(encodedVM) view
+returns (vm, valid, reason)` is a pure verification function. Wormhole Core never calls
+anything. A binding has to expose its own external entry point that accepts a raw VAA from
+WHOEVER submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
+no address to grant `GATEWAY_ROLE` to for this channel, because there is no fixed caller:
+authenticity comes entirely from the guardian signatures inside the VAA, checked by
+`_authenticateSender` against `vm.emitterChainId`/`vm.emitterAddress`, with nothing checking
+"who submitted this transaction" at all. That is not a gap relative to the other bindings:
+`_authenticateSender`, `_onMessage`, and `_onInbound` are already `internal`, so this
+entry point reaches the same seam CCIP and Hyperlane already reuse — it is simply the first
+candidate whose entry point has no role check in front of that seam.
+
+**No replay protection, confirmed against the full interface, not assumed.** There is no
+`delivered`/`consumed` mapping for an ordinary message anywhere in `IWormhole` —
+`governanceActionIsConsumed` exists, and it is scoped to governance actions only. A binding
+on bare Core is the first candidate in this survey to actually trigger
+[R3.5](provider-spec.md#r3-receive) ("a binding whose transport does not provide it MUST
+supply it"): it needs its own consumed-VAA-hash map, held on the binding's own receiver
+contract exactly the way a peer table or an eid table already lives on a binding rather than
+on `ReceiverBase`.
+
+**Bootstrap (path B) is the one place bare Core's permissionless-relay model is a fit rather
+than a cost.** `bootstrap` is already designed to be callable by anyone willing to pay for
+it; a permissionlessly-submittable VAA composes with that directly, no special-casing
+required.
+
+### The Relayer (`IWormholeRelayer`): the template-comparable case
+
+A separate product built on top of Core, not a mode of it. Confusingly also called
+"Wormhole" in most integration guides, which is the reason this distinction is worth
+recording rather than assuming.
+
+| Our hook | Wormhole Relayer |
+| --- | --- |
+| `_sendMessage(recipient, payload, attributes, value)` | `sendPayloadToEvm(targetChain, targetAddress, payload, receiverValue, gasLimit){value}`: an explicit destination, finally |
+| `_quoteMessage(recipient, payload, attributes)` | `quoteEVMDeliveryPrice(targetChain, receiverValue, gasLimit).nativePriceQuote`: destination-inclusive, in this chain's native currency, matching `_quoteMessage`'s contract exactly |
+| `GATEWAY_ROLE` | granted to the Relayer contract, same pattern as the other three |
+| inbound | `IWormholeReceiver.receiveWormholeMessages(payload, additionalMessages, sourceAddress, sourceChainId, deliveryHash)`: a real push callback |
+
+**Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
+(bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
+way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
+would require.
+
+**The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
+and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)
+(Phase 0 of the provider-bindings work) was built `uint256`-widened rather than sized to any
+one provider: a fourth candidate slots into the existing table with no changes to it.
+
+**The trust assumption moves, and is worth weighing on its own rather than assumed away.**
+Message AUTHENTICITY still rests on the guardian-signed VAA underneath — the Relayer does
+not weaken that. But delivery LIVENESS now also depends on a delivery-provider marketplace
+(a "default delivery provider," typically Wormhole Labs-operated, or an alternate one named
+by address) actually submitting the transaction. That is a second dependency the other three
+bindings do not add: LayerZero's executor, CCIP's off-ramp, and Hyperlane's relayer are each
+also third parties, so this is not unique to Wormhole, but it is a fact to grade the same way
+`Provenance` already grades a counterpart's address claim, not to wave through because the
+signature underneath is sound.
+
+### What this means for scope
+
+Neither variant requires changing anything in the shared base contracts. `_sendMessage`/
+`_quoteMessage` are already `virtual` per-binding overrides; `_authenticateSender`,
+`_onMessage`, and `_onInbound` are already `internal` and reusable by any provider-specific
+entry point regardless of that entry point's own gating; `Roles`/`GATEWAY_ROLE` needs no
+change either way. The Relayer binding is a template-comparable addition, the same shape as
+LZ/CCIP/Hyperlane. A bare-Core binding is real, additional, self-contained work — a
+permissionless entry point and a replay-protection map, both local to a new
+`protocols/wormhole/` binding — not a gap in what already exists.
+
+---
+
+## 7. OP Stack as a native binding
+
+[§2](#2-canonical-rollup-and-subnet-transports) already covers latency, aliasing, fees, and
+the no-fan-out property at the level of what disqualifies or constrains a canonical rollup
+bridge generally. This section is the interface-level follow-up, read the same way CCIP,
+Hyperlane, and Wormhole were: what a real `contracts/evm/src/protocols/op-stack/` binding
+would inherit, and the one thing about its shape that is not like the other four. Source:
+`ethereum-optimism/optimism`, `develop`, commit `0abfb166`, reading
+`packages/contracts-bedrock/interfaces/universal/ICrossDomainMessenger.sol`.
+
+**No chain id, and no chain-id table, because there is no fan-out to name.**
+`sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable`
+takes no destination chain at all. Each OP Stack chain has its OWN dedicated
+`L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
+messenger contract you call, not an argument to it. This is the concrete form of what §2
+already concluded — "one hub transceiver per rollup, not one for the stack" — and it means
+[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol) does not apply to
+this binding at all. A hub transceiver for a given OP Stack chain holds that chain's
+messenger address as its own immutable and never needs a second entry; deploying to another
+OP Stack chain means deploying another hub transceiver instance, not adding a row to a
+table.
+
+**No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
+function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
+returns a `uint64` GAS OVERHEAD, not a native-currency price — it still has to be combined
+with an off-chain gas price to produce a `msg.value`. This confirms §2's finding
+("no view quote... there is nothing to ask for a price") at the interface level: a binding's
+`_quoteMessage` has nothing to answer from, and uses the off-chain measurement in
+[R2.2.2](provider-spec.md#r2-quote), the same escape hatch already documented for bare
+Wormhole Core.
+
+**THE SHARP EDGE: the authenticated sender is retrieved by a callback, never carried as an
+argument, and treating it as one would be a real vulnerability rather than a style choice.**
+`relayMessage(nonce, sender, target, value, minGasLimit, message)` makes a low-level call to
+`target` with `message` as calldata — calldata that whoever called `sendMessage` on the
+ORIGIN domain chose, in full, since `sendMessage` is permissionless and anyone may target
+this protocol's receiver with it. Every other provider surveyed hands the authenticated
+origin to the callback as a value the TRANSPORT computed (LayerZero's `Origin`, Hyperlane's
+`sender`, CCIP's `message.sender`, Wormhole's `sourceAddress`). OP Stack does not: nothing
+about `message`'s own bytes is trustworthy, because the caller who published it wrote every
+byte of it themselves. The only fact the protocol actually guarantees is retrievable
+separately, by calling `xDomainMessageSender()` on the messenger — `msg.sender` from the
+called contract's own perspective — DURING the execution `relayMessage` triggers. A binding
+MUST call this itself and MUST NOT accept a "sender" as part of `message`'s own payload; an
+entry point that trusted a self-declared sender argument would let anyone impersonate this
+account's transmitter simply by encoding a claim to that effect in `message`, since nothing
+about `sendMessage` checks who is calling it or what they claim. `_authenticateSender` still
+does the real comparison against `sourceTransmitter`; what changes is where the value being
+compared comes from.
+
+**Binding at this layer is what makes aliasing someone else's problem.** §2 already notes
+`OptimismPortal` requires undoing `AddressAliasHelper`'s offset yourself
+(`AddressDerive.undoL1ToL2Alias` exists in this repo for exactly that), while
+`CrossDomainMessenger` un-aliases internally and hands back the real address through
+`xDomainMessageSender()`. Binding here, one layer up, means `AddressDerive`'s alias-undoing
+path stays unused by this binding entirely — it would only be needed by a binding built
+directly on `OptimismPortal`, which this is deliberately not.
+
+**No divergent-spoke variant, unlike the other three.** zkSync and Tron need
+`ZkSyncSpokeTransceiver`/`TronSpokeTransceiver` because their CREATE2 formulas differ from
+Ethereum's. An OP Stack chain runs standard `op-geth` and Ethereum's own CREATE2 formula, so
+it is always the parity case; there is no OP-Stack-flavoured divergence to name a contract
+for, and `OpStackDivergentSpokeTransceiver` would have nothing to override.
+
+**No OZ dependency, no storage, same clean shape as CCIP's and Wormhole's interfaces.**
+`ICrossDomainMessenger` is a plain interface with zero imports. A transmitter stays plain
+`OwnableUpgradeable`, the same conclusion reached for CCIP, Hyperlane, and Wormhole: there is
+no SDK `Ownable` here to merge with, unlike LayerZero's OApp.
+
+**Replay is already covered**, and was covered before this section existed: §1's matrix
+already records `successfulMessages`/`failedMessages` in `CrossDomainMessenger`, the
+call-then-record-which-way-it-went shape shared with CCIP.
