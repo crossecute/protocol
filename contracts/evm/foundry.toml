@@ -24,4 +24,10 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Hand-copied, not submodules: none of the three has a dedicated package repo that
+    # isolates just these files. See lib/layerzero-*/contracts/.../*.sol for per-file
+    # provenance (source repo, exact commit) and docs/todo.md §2.
+    "@layerzerolabs/oapp-evm-upgradeable/=lib/layerzero-oapp-evm-upgradeable/",
+    "@layerzerolabs/oapp-evm/=lib/layerzero-oapp-evm/",
+    "@layerzerolabs/lz-evm-protocol-v2/=lib/layerzero-protocol-v2/",
 ]
