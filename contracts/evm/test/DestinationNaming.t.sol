@@ -362,7 +362,9 @@ contract DestinationNamingTest is Test {
     ///      should never have been deployed, so it fails at initialization.
     function test_homeTransceiverIsRequiredAtInitialization() public {
         LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
-        vm.expectRevert(SpokeTransceiverBase.NoHomeTransceiver.selector);
+        // LzSpokeTransceiver checks the 20-byte length itself, ahead of the base contract's
+        // own (weaker) non-empty check, since it casts this value to an address.
+        vm.expectRevert(LzSpokeTransceiver.InvalidHomeTransceiverLength.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(

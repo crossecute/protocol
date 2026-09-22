@@ -26,6 +26,13 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OAppUpgradeable {
 
     uint32 public homeEid;
 
+    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
+    ///      since a spoke's single eid bypasses that mixin entirely).
+    error ZeroHomeEid();
+    /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
+    ///      silently truncate or pad into the wrong peer.
+    error InvalidHomeTransceiverLength();
+
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
     function initialize(
@@ -37,6 +44,8 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OAppUpgradeable {
         bytes32 accountBytecodeHash_,
         uint32 homeEid_
     ) external initializer {
+        if (homeEid_ == 0) revert ZeroHomeEid();
+        if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         homeEid = homeEid_;
         __OApp_init(address(this));
         // Not `setPeer` (onlyOwner; a spoke has no Ownable) — writes the same storage.
@@ -129,6 +138,13 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OAppUpgradeable {
 
     uint32 public homeEid;
 
+    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
+    ///      since a spoke's single eid bypasses that mixin entirely).
+    error ZeroHomeEid();
+    /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
+    ///      silently truncate or pad into the wrong peer.
+    error InvalidHomeTransceiverLength();
+
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
         address[] calldata gateways,
@@ -139,6 +155,8 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OAppUpgradeable {
         bytes32 accountBytecodeHash_,
         uint32 homeEid_
     ) external initializer {
+        if (homeEid_ == 0) revert ZeroHomeEid();
+        if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         homeEid = homeEid_;
         __OApp_init(address(this));
         // Not `setPeer` (onlyOwner; a spoke has no Ownable) — writes the same storage.
