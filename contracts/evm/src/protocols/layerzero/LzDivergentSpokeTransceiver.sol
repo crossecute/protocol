@@ -194,9 +194,6 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OAppUpgradeable {
 
     error UnknownLzAttribute(bytes attribute);
 
-    /// @dev NO LOOP: there is exactly one attribute this binding understands, so there is
-    ///      exactly one slot to check. A second entry, understood or not, is refused, per
-    ///      ERC-7786's own rule that every attribute supplied MUST be understood.
     function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory) {
         if (attributes.length == 0) return "";
         if (attributes.length > 1) revert UnknownLzAttribute(attributes[1]);
