@@ -32,18 +32,19 @@ vendor_file() {
     return 1
   fi
 
-  # Provenance comment goes right after the first `pragma solidity` line, once. Every
-  # vendored file here starts `// SPDX-License-Identifier: ...` then `pragma solidity
-  # ...`, so this never lands ahead of the SPDX tag the license note is about.
+  # Provenance comment goes right after line 1, which every vendored file here starts
+  # with its own `// SPDX-License-Identifier: ...` tag -- so the comment sits ahead of
+  # `pragma solidity` and everything else, immediately under the license it is about.
   awk -v repo="$repo" -v commit="$commit" -v path="$upstream_path" -v note="$license_note" '
-    { print }
-    /^pragma solidity/ && !done {
+    NR == 1 {
+      print
       print ""
       print "// Vendored, unmodified, from " repo " @ " commit
       print "// (" path ")."
       print "// " note
-      done = 1
+      next
     }
+    { print }
   ' "$dest_path" > "$dest_path.vendor_tmp" && mv "$dest_path.vendor_tmp" "$dest_path"
 
   echo "vendored ${repo}@${commit}:${upstream_path} -> ${dest_path}"
