@@ -91,9 +91,12 @@ abstract contract ProviderReceiveSpec is Test {
     /// @notice The receiver under test, so `Delivered` can be matched to its exact emitter.
     function _receiverUnderTest() internal view virtual returns (address);
 
-    /// @notice Deliver `payload` exactly as the provider's real transport would, from the one
-    ///         source this receiver was configured to trust. MUST result in `Delivered`.
-    function _deliverFromConfiguredSource(bytes memory payload) internal virtual;
+    /// @notice Deliver a payload exactly as the provider's real transport would, from the one
+    ///         source this receiver was configured to trust. MUST result in `Delivered(0)`.
+    /// @dev No payload argument: what counts as a validly-encoded empty payload is a property
+    ///      of the destination chain's own wire format (`Payload.encodeCalls`, here), which
+    ///      the concrete suite already knows and this spec has no business choosing.
+    function _deliverFromConfiguredSource() internal virtual;
 
     /// @notice Deliver through the same call path as above, but as any source other than the
     ///         configured one. MUST revert.
@@ -110,7 +113,7 @@ abstract contract ProviderReceiveSpec is Test {
     function test_theConfiguredSourceIsAccepted() public {
         vm.expectEmit(false, false, false, true, _receiverUnderTest());
         emit Delivered(0);
-        _deliverFromConfiguredSource("");
+        _deliverFromConfiguredSource();
     }
 
     function test_anImpersonatorIsRejected() public {
