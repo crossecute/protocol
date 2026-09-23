@@ -59,8 +59,8 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
-    /// @dev Not optional: CCIP's off-ramp checks this before calling `ccipReceive`
-    ///      atomically with any token transfer. The default a plain
+    /// @dev CCIP's off-ramp checks this before calling `ccipReceive` atomically with any
+    ///      token transfer. The default a plain
     ///      `AccessControlEnumerableUpgradeable.supportsInterface` would give (false, since
     ///      it never heard of this interface) makes the off-ramp deliver silently without
     ///      ever calling `ccipReceive` — a message that looks sent and simply never

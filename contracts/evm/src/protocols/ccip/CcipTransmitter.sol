@@ -7,6 +7,7 @@ import {OwnableUpgradeable} from
 import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 
 /// @dev A transmitter has no selector table of its own: it's per-user and locked after
 ///      creation, so it reads the shared, owner-updatable table on `CcipHubTransceiver` (via
@@ -55,7 +56,7 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         uint256 value
     ) internal override returns (bytes32 sendId) {
         uint64 selector = _selectorFor(recipient);
-        Client.EVM2AnyMessage memory message = _buildMessage(recipient, payload, attributes);
+        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
         return IRouterClient(router).ccipSend{value: value}(selector, message);
     }
 
@@ -66,15 +67,11 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         returns (uint256 nativeFee)
     {
         uint64 selector = _selectorFor(recipient);
-        Client.EVM2AnyMessage memory message = _buildMessage(recipient, payload, attributes);
+        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
         return IRouterClient(router).getFee(selector, message);
     }
 
-    /// @notice One attribute: CCIP's `EVMExtraArgsV2`, as
-    ///         `abi.encodePacked(CCIP_EXTRA_ARGS_ATTRIBUTE, abi.encode(gasLimit,
-    ///         allowOutOfOrderExecution))`. Anything else is refused per ERC-7786.
-    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE =
-        bytes4(keccak256("crossecute.ccip.extraArgs"));
+    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
@@ -84,59 +81,7 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         return ICcipSelectorTable(transceiver).selectorFor(Erc7930.chainKey(recipient));
     }
 
-    /// @dev Empty `extraArgs` is a valid default (CCIP's own 200k gas limit applies), not a
-    ///      missing one.
-    function _buildMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes
-    ) internal pure returns (Client.EVM2AnyMessage memory) {
-        address receiver = address(bytes20(Erc7930.parseStrict(recipient).addr));
-        Client.EVMTokenAmount[] memory noTokens = new Client.EVMTokenAmount[](0);
-        return Client.EVM2AnyMessage({
-            receiver: abi.encode(receiver),
-            data: payload,
-            tokenAmounts: noTokens,
-            feeToken: address(0),
-            extraArgs: _extraArgsFrom(attributes)
-        });
-    }
-
-    function _extraArgsFrom(bytes[] memory attributes) internal pure returns (bytes memory) {
-        if (attributes.length == 0) return "";
-        if (attributes.length > 1) revert UnknownCcipAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length < 4) revert UnknownCcipAttribute(attribute);
-        bytes4 selector;
-        assembly {
-            selector := mload(add(attribute, 32))
-        }
-        if (selector != CCIP_EXTRA_ARGS_ATTRIBUTE) revert UnknownCcipAttribute(attribute);
-        (uint256 gasLimit, bool allowOutOfOrderExecution) = _decodeExtraArgs(attribute);
-        return Client._argsToBytes(
-            Client.EVMExtraArgsV2({
-                gasLimit: gasLimit,
-                allowOutOfOrderExecution: allowOutOfOrderExecution
-            })
-        );
-    }
-
-    error UnknownCcipAttribute(bytes attribute);
-
-    function _decodeExtraArgs(bytes memory attribute)
-        private
-        pure
-        returns (uint256 gasLimit, bool allowOutOfOrderExecution)
-    {
-        uint256 len = attribute.length - 4;
-        bytes memory encoded = new bytes(len);
-        for (uint256 i; i < len; ++i) {
-            encoded[i] = attribute[i + 4];
-        }
-        (gasLimit, allowOutOfOrderExecution) = abi.decode(encoded, (uint256, bool));
-    }
-
-    /// @notice NO GATEWAY IS GRANTED. A real binding grants `GATEWAY_ROLE` to the CCIP
-    ///         Router on `CcipHubTransceiver`; the transmitter itself has no `Roles` to
-    ///         hold it (R3.1 is answered by having no inbound entry point at all).
+    /// @notice No gateway is granted here: a real binding grants `GATEWAY_ROLE` to the CCIP
+    ///         Router on `CcipHubTransceiver`; the transmitter itself has no `Roles` to hold
+    ///         it (R3.1 is answered by having no inbound entry point at all).
 }
