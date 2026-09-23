@@ -12,6 +12,8 @@ import {Payload} from "src/messaging/Payload.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzZkSyncSpokeTransceiver} from
+    "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Origin} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
@@ -109,6 +111,33 @@ contract LzSendTest is ProviderHubSendSpec {
 
         (,, bytes memory sentPayload,, uint256 value,) = endpoint.sent(0);
         assertEq(sentPayload, payload);
+        assertEq(value, 0.01 ether);
+    }
+
+    /// @notice The bootstrap-fee case Copilot flagged on PR #6: `_bootstrapSendValue`
+    ///         returns `msg.value - fee`, so `value < msg.value` here on purpose, and the
+    ///         vendored `_payNative` default (which requires `msg.value == value` exactly)
+    ///         would revert `NotEnoughNative` on every bootstrap once a fee is configured.
+    function test_sendSpendsExactlyValueEvenWhenLessThanMsgValue() public {
+        endpoint.setFee(0.01 ether);
+        vm.deal(address(this), 1 ether);
+        hub.sendMessagePublic{value: 0.02 ether}(
+            _configuredRecipient(), "x", new bytes[](0), 0.01 ether
+        );
+
+        (,,,, uint256 value,) = endpoint.sent(0);
+        assertEq(value, 0.01 ether, "spends value, not msg.value");
+    }
+
+    /// @notice The nested-send case: msg.value is 0 (as it is inside a delivery callback,
+    ///         where a diverging spoke's receiver report is sent from its own balance), and
+    ///         `value` is still paid, drawn from the contract's pre-funded balance.
+    function test_sendSpendsFromBalanceWhenMsgValueIsZero() public {
+        endpoint.setFee(0.01 ether);
+        vm.deal(address(hub), 1 ether);
+        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
+
+        (,,,, uint256 value,) = endpoint.sent(0);
         assertEq(value, 0.01 ether);
     }
 }
@@ -226,5 +255,68 @@ contract LzInitValidationTest is Test {
                 )
             )
         );
+    }
+}
+
+/// @notice Exposes `_sendMessage` directly, the same shape as `LzHubHarness`, to test the
+///         one send a diverging spoke ever makes: its receiver report.
+contract LzZkSyncSpokeHarness is LzZkSyncSpokeTransceiver {
+    constructor(address endpoint) LzZkSyncSpokeTransceiver(endpoint) {}
+
+    function sendMessagePublic(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes,
+        uint256 value
+    ) external payable returns (bytes32) {
+        return _sendMessage(recipient, payload, attributes, value);
+    }
+}
+
+/// @notice The other Copilot-flagged gap on PR #6: `_reportReceiver` runs nested inside the
+///         `lzReceive` delivery callback, where `msg.value` is 0, and is documented
+///         (`SpokeTransceiverBase._reportReceiver`) to spend from the spoke's own balance.
+///         Without `LzZkSyncSpokeTransceiver._payNative`, this reverted `NotEnoughNative` on
+///         every zkSync/Tron account bootstrap.
+contract LzDivergentSpokePayNativeTest is Test {
+    MockLzEndpoint endpoint;
+    LzZkSyncSpokeHarness spoke;
+    bytes32 constant HASH = keccak256("zksolc-artifact");
+    uint32 constant HOME_EID = 30101;
+
+    function setUp() public {
+        endpoint = new MockLzEndpoint();
+        spoke = LzZkSyncSpokeHarness(
+            payable(
+                address(
+                    new ERC1967Proxy(
+                        address(new LzZkSyncSpokeHarness(address(endpoint))),
+                        abi.encodeCall(
+                            LzZkSyncSpokeTransceiver.initialize,
+                            (
+                                new address[](0),
+                                address(0xBEEF),
+                                ChainKey.forEvm(1),
+                                Erc7930.encodeEvmChain(1),
+                                abi.encodePacked(address(0xC0DE)),
+                                HASH,
+                                HOME_EID
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    function test_reportSpendsFromTheSpokesOwnBalance() public {
+        endpoint.setFee(0.01 ether);
+        vm.deal(address(spoke), 1 ether);
+
+        // No {value: ...}: reproduces msg.value == 0 inside the delivery callback.
+        spoke.sendMessagePublic(Erc7930.encodeEvmChain(1), "report", new bytes[](0), 0.01 ether);
+
+        (,,,, uint256 value,) = endpoint.sent(0);
+        assertEq(value, 0.01 ether);
     }
 }

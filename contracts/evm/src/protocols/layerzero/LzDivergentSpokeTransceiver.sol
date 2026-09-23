@@ -97,6 +97,16 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OAppUpgradeable {
         return fee.nativeFee;
     }
 
+    /// @dev The vendored default checks `msg.value == _nativeFee`, which breaks the one send
+    ///      this contract ever makes: `_reportReceiver` runs nested inside the `lzReceive`
+    ///      delivery callback, where `msg.value` is 0, and is documented to spend from this
+    ///      contract's own balance instead (`SpokeTransceiverBase._reportReceiver`). Without
+    ///      this override every zkSync/Tron account bootstrap reverts `NotEnoughNative`, since
+    ///      the report is unconditional once `addressesDiverge` is true.
+    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+        return _nativeFee;
+    }
+
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
 
     error UnknownLzAttribute(bytes attribute);
@@ -206,6 +216,11 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OAppUpgradeable {
         bytes memory options = _optionsFrom(attributes);
         MessagingFee memory fee = _quote(homeEid, payload, options, false);
         return fee.nativeFee;
+    }
+
+    /// @dev See `LzZkSyncSpokeTransceiver._payNative`: same nested-send fix, same reason.
+    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+        return _nativeFee;
     }
 
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));

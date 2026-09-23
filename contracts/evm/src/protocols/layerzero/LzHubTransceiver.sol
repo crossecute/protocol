@@ -72,6 +72,17 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         return fee.nativeFee;
     }
 
+    /// @dev The vendored default checks `msg.value == _nativeFee`, which breaks the bootstrap
+    ///      send the moment a bootstrap fee is configured: `_bootstrapSendValue` returns
+    ///      `msg.value - fee`, so `_nativeFee` (== that `value`) is then strictly less than
+    ///      `msg.value`, and the send reverts `NotEnoughNative` for every bootstrap. `value`
+    ///      is already the trusted, fee-adjusted amount `OutboundBase` computed; `endpoint.send`
+    ///      still reverts if this contract's balance is short, so nothing here needs a second
+    ///      check.
+    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+        return _nativeFee;
+    }
+
     /// @dev Duplicated across LZ bindings rather than shared: no common ancestor for it that
     ///      wouldn't widen `OutboundBase` for every provider.
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
