@@ -24,4 +24,9 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Hand-copied, not a submodule: smartcontractkit/ccip mixes BUSL-1.1 infrastructure
+    # with the MIT-tagged application-facing files this binding actually needs. See
+    # lib/ccip/contracts/src/v0.8/ccip/**/*.sol for per-file provenance
+    # (contracts/evm/script/vendor/ccip.sh) and docs/todo.md.
+    "@ccip/=lib/ccip/contracts/src/v0.8/ccip/",
 ]
