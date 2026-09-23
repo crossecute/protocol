@@ -327,6 +327,27 @@ mainnet.
   once Phase 7 runs, naming which files are vendored and that they are not on any update
   path.
 
+- **A vendored provider SDK's own fee-payment primitive can silently assume `msg.value ==
+  the fee`, which this protocol's nested-send contract violates by design.** Found by
+  Copilot review on PR #6, after the PR's own tests already passed: `OAppSenderUpgradeable
+  ._payNative` (vendored, unmodified) reverts `NotEnoughNative` unless `msg.value` exactly
+  equals the fee passed to `_lzSend`. `OutboundBase` documents the opposite contract for
+  every binding's `_sendMessage` — told what it may spend via `value`, must not read
+  `msg.value` — and two real call sites rely on it: `HubTransceiverBase._bootstrapSendValue`
+  returns `msg.value - fee` once a bootstrap fee is configured, and
+  `SpokeTransceiverBase._reportReceiver` sends nested inside the `lzReceive` delivery
+  callback where `msg.value` is 0, spending from the contract's own pre-funded balance.
+  Without overriding `_payNative`, every bootstrap with a nonzero fee reverted, and every
+  zkSync/Tron account bootstrap reverted unconditionally (the report is not optional once
+  `addressesDiverge` is true) — `LzHubTransceiver`/`LzZkSyncSpokeTransceiver`/
+  `LzTronSpokeTransceiver` now override it to trust `value` and let `endpoint.send` revert
+  on insufficient balance instead. **Operational consequence for Phase 7**: this class of
+  bug — a vendored SDK's payment primitive silently re-deriving "how much to spend" from
+  `msg.value` instead of accepting the protocol's own pre-computed amount — is worth
+  checking explicitly for CCIP (`feeToken`/`msg.value` handling in `ccipSend`), Hyperlane
+  (`dispatch`'s payment), and Wormhole (`sendPayloadToEvm`'s), not assumed absent just
+  because a binding's own tests pass with a zero-fee mock.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
