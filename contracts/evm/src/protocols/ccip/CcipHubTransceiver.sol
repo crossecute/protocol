@@ -142,7 +142,7 @@ contract CcipHubTransceiver is
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
-    /// @dev NOT OPTIONAL — see `CcipReceiver.supportsInterface`'s note. Same requirement
+    /// @dev Not optional — see `CcipReceiver.supportsInterface`'s note. Same requirement
     ///      here: CCIP's off-ramp checks this before calling `ccipReceive`.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId

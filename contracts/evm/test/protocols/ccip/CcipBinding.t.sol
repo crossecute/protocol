@@ -139,7 +139,7 @@ contract CcipSendTest is ProviderHubSendSpec {
 
 /// @notice CCIP's off-ramp asserts nothing about the source-chain sender (unlike
 ///         LayerZero's `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the
-///         ONLY authentication check here -- confirmed by these tests running the check
+///         only authentication check here -- confirmed by these tests running the check
 ///         ourselves rather than relying on a provider-side peer rejection.
 contract CcipReceiveTest is ProviderReceiveSpec {
     MockCcipRouter router;

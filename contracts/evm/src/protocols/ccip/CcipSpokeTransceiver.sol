@@ -125,7 +125,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
-    /// @dev NOT OPTIONAL — see `CcipReceiver.supportsInterface`'s note.
+    /// @dev Not optional — see `CcipReceiver.supportsInterface`'s note.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
             || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);

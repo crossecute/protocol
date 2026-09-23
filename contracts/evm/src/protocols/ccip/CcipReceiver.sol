@@ -44,10 +44,10 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      same reason: the ERC-7930 round trip buys nothing once the provider's own
     ///      sender is already a plain address.
     ///
-    /// @dev NO PROVIDER-SIDE CHECK RUNS BEFORE THIS. Unlike LayerZero's `lzReceive`, CCIP's
+    /// @dev No provider-side check runs before this. Unlike LayerZero's `lzReceive`, CCIP's
     ///      off-ramp asserts nothing about the source-chain sender (see
     ///      `docs/provider-research.md#4-ccip-as-a-native-binding`), so `isSourceTransmitter`
-    ///      below is the ONLY authentication check, matching `_onInbound`'s stated rule with
+    ///      below is the only authentication check, matching `_onInbound`'s stated rule with
     ///      no exception to write.
     function ccipReceive(Client.Any2EVMMessage calldata message)
         external
@@ -59,13 +59,14 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
-    /// @dev NOT OPTIONAL. CCIP's off-ramp checks this before calling `ccipReceive`
-    ///      atomically with any token transfer; if it returns false (the default a plain
-    ///      `AccessControlEnumerableUpgradeable` `supportsInterface` would give, since it
-    ///      never heard of this interface), the off-ramp delivers silently without ever
-    ///      calling `ccipReceive` — a message that looks sent and simply never arrives,
-    ///      not a revert. See `CCIPReceiver.sol`'s own comment on `supportsInterface` at
-    ///      the pinned commit (`docs/provider-research.md#4-ccip-as-a-native-binding`).
+    /// @dev Not optional: CCIP's off-ramp checks this before calling `ccipReceive`
+    ///      atomically with any token transfer. The default a plain
+    ///      `AccessControlEnumerableUpgradeable.supportsInterface` would give (false, since
+    ///      it never heard of this interface) makes the off-ramp deliver silently without
+    ///      ever calling `ccipReceive` — a message that looks sent and simply never
+    ///      arrives, not a revert. See `CCIPReceiver.sol`'s own comment on
+    ///      `supportsInterface` at the pinned commit
+    ///      (`docs/provider-research.md#4-ccip-as-a-native-binding`).
     function supportsInterface(bytes4 interfaceId)
         public
         view
