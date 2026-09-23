@@ -27,13 +27,19 @@ contract CcipHubTransceiver is
         router = router_;
     }
 
-    /// @dev No receiver implementation, because a hub never makes a receiver.
+    /// @dev No receiver implementation, because a hub never makes a receiver. Grants
+    ///      `GATEWAY_ROLE` to `router` directly rather than relying on the deployment to
+    ///      include it in `gateways`: the address is already known (immutable, set in the
+    ///      constructor), and `ccipReceive` is gated on exactly this role, so omitting it
+    ///      from `gateways` would deploy successfully and then reject every inbound message.
+    ///      `gateways` still exists for naming additional trusted endpoints up front.
     function initialize(
         address owner_,
         address treasury_,
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
+        grantRole(GATEWAY_ROLE, router);
         __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
     }
 

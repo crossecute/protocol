@@ -20,6 +20,8 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     uint64 public homeSelector;
 
     /// @param homeSelector_ CCIP's selector for the home chain.
+    /// @dev Grants `GATEWAY_ROLE` to `router` directly rather than relying on the
+    ///      deployment to include it in `gateways` — see `CcipHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -28,6 +30,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
         bytes calldata homeTransceiver_,
         uint64 homeSelector_
     ) external initializer {
+        grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
             gateways,

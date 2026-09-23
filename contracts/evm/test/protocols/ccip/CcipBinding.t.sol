@@ -11,6 +11,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 
 import {CcipHubTransceiver} from "src/protocols/ccip/CcipHubTransceiver.sol";
+import {CcipSpokeTransceiver} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
@@ -223,5 +224,50 @@ contract CcipInterfaceSupportTest is Test {
         assertTrue(hub.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
         assertTrue(hub.supportsInterface(type(IERC165).interfaceId));
         assertFalse(hub.supportsInterface(bytes4(0xdeadbeef)));
+    }
+}
+
+/// @notice The Copilot-flagged gap: `ccipReceive` is gated `onlyRole(GATEWAY_ROLE)`, and a
+///         deployment that forgot to include `router` in `gateways` would deploy
+///         successfully and then reject every inbound message. The hub/spoke initializers
+///         now grant the role to their own immutable `router` directly.
+contract CcipGatewayRoleGrantTest is Test {
+    address router = address(0xBEEF);
+
+    function test_hubGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
+        CcipHubTransceiver hub = CcipHubTransceiver(
+            address(
+                new ERC1967Proxy(
+                    address(new CcipHubTransceiver(router)),
+                    abi.encodeCall(
+                        CcipHubTransceiver.initialize,
+                        (address(this), address(0), new address[](0), address(0xBEEF))
+                    )
+                )
+            )
+        );
+        assertTrue(hub.hasRole(hub.GATEWAY_ROLE(), router));
+    }
+
+    function test_spokeGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
+        CcipSpokeTransceiver spoke = CcipSpokeTransceiver(
+            address(
+                new ERC1967Proxy(
+                    address(new CcipSpokeTransceiver(router)),
+                    abi.encodeCall(
+                        CcipSpokeTransceiver.initialize,
+                        (
+                            new address[](0),
+                            address(0xC0DE),
+                            ChainKey.forEvm(1),
+                            Erc7930.encodeEvmChain(1),
+                            abi.encodePacked(address(0xD00D)),
+                            uint64(1)
+                        )
+                    )
+                )
+            )
+        );
+        assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), router));
     }
 }

@@ -29,6 +29,8 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
+    /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
+    ///      `CcipHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -38,6 +40,7 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
+        grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
             gateways,
@@ -142,6 +145,8 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
     uint64 public homeSelector;
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
+    /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
+    ///      `CcipHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -151,6 +156,7 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
+        grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
             gateways,
