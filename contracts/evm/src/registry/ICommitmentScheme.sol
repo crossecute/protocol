@@ -27,7 +27,7 @@ interface ICommitmentScheme {
     /// @dev MUST be the exact primitive the destination's own receiver applies. A
     ///      mismatch is not a safety hole, since the destination simply never matches the
     ///      commitment, but it leaves an approval outstanding until a `cancel` crosses. It
-    ///      is verified against `test/vectors/` rather than assumed.
+    ///      MUST be verified against a documented test corpus rather than assumed.
     function hash(bytes calldata data) external view returns (bytes32);
 }
 

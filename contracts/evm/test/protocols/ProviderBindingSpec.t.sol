@@ -22,12 +22,12 @@ interface IHubSendHarness {
 }
 
 /// @title ProviderHubSendSpec
-/// @notice The properties every native provider binding's hub SEND path must satisfy,
+/// @notice The properties every native provider binding's hub send path must satisfy,
 ///         independent of which provider it is. A concrete per-provider suite (e.g.
 ///         `LzBinding.t.sol:LzSendTest`) inherits this and implements the hooks below against
 ///         its own mock provider endpoint; the test bodies run unchanged.
 ///
-/// @dev `_sendMessage`/`_quoteMessage` differ only in HOW they translate an ERC-7930
+/// @dev `_sendMessage`/`_quoteMessage` differ only in how they translate an ERC-7930
 ///      recipient into the provider's own destination id and price the send; that a
 ///      configured destination resolves correctly, an unconfigured one reverts, and the quote
 ///      matches what the send actually pays is identical across LayerZero, CCIP, Hyperlane,
@@ -72,18 +72,18 @@ abstract contract ProviderHubSendSpec is Test {
 }
 
 /// @title ProviderReceiveSpec
-/// @notice The properties every native provider binding's RECEIVE path must satisfy,
+/// @notice The properties every native provider binding's receive path must satisfy,
 ///         independent of which provider it is: the configured source is accepted, an
 ///         impersonator is rejected, an unconfigured origin is rejected, and a caller that is
 ///         not the provider's own gateway/endpoint/mailbox/router/relayer/messenger is
 ///         rejected. A concrete suite (e.g. `LzBinding.t.sol:LzReceiveTest`) inherits this and
 ///         drives its own receiver and mock through the four scenarios below.
 ///
-/// @dev HOW each scenario is triggered is provider-specific: LayerZero's peer check runs
+/// @dev How each scenario is triggered is provider-specific: LayerZero's peer check runs
 ///      inside the vendored OApp SDK before this protocol's own code sees the call, while
 ///      Hyperlane/CCIP/Wormhole/OP Stack check `GATEWAY_ROLE` in their own inbound entry
 ///      point. This spec asserts only the observable property (revert, or `Delivered`), never
-///      WHERE the check runs — that distinction is a per-provider fact worth its own comment
+///      where the check runs — that distinction is a per-provider fact worth its own comment
 ///      in the concrete suite, not something this spec can verify.
 abstract contract ProviderReceiveSpec is Test {
     event Delivered(uint256 callCount);
@@ -92,22 +92,22 @@ abstract contract ProviderReceiveSpec is Test {
     function _receiverUnderTest() internal view virtual returns (address);
 
     /// @notice Deliver a payload exactly as the provider's real transport would, from the one
-    ///         source this receiver was configured to trust. MUST result in `Delivered(0)`.
+    ///         source this receiver was configured to trust. Results in `Delivered(0)`.
     /// @dev No payload argument: what counts as a validly-encoded empty payload is a property
     ///      of the destination chain's own wire format (`Payload.encodeCalls`, here), which
     ///      the concrete suite already knows and this spec has no business choosing.
     function _deliverFromConfiguredSource() internal virtual;
 
     /// @notice Deliver through the same call path as above, but as any source other than the
-    ///         configured one. MUST revert.
+    ///         configured one. Reverts.
     function _deliverFromImpersonator() internal virtual;
 
     /// @notice Deliver as though from a real, correctly-authenticated message whose origin
-    ///         (chain/domain/eid/selector) was never configured on this receiver. MUST revert.
+    ///         (chain/domain/eid/selector) was never configured on this receiver. Reverts.
     function _deliverFromUnconfiguredOrigin() internal virtual;
 
     /// @notice Call the receiver's inbound entry point directly, bypassing the provider's own
-    ///         gateway/endpoint/mailbox/router/relayer/messenger entirely. MUST revert.
+    ///         gateway/endpoint/mailbox/router/relayer/messenger entirely. Reverts.
     function _deliverFromWrongCaller() internal virtual;
 
     function test_theConfiguredSourceIsAccepted() public {
