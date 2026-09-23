@@ -4,26 +4,14 @@ pragma solidity ^0.8.0;
 import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
     "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 
-/// @notice The spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and
-///         Tron. One concrete contract each, because the two diverge differently.
-///
-/// @dev THIS SPLIT IS PROTOCOL-LEVEL, NOT PROVIDER-LEVEL, AND NOTHING HERE CHANGES BY
-///      PROVIDER. See `LzDivergentSpokeTransceiver` for the full reasoning: divergence is two
-///      facts that have to agree (`addressesDiverge` and the prediction formula), and picking
-///      one of these two contracts at deploy time is what keeps them from being set
-///      independently and wrongly. Hyperlane's own chain-domain table is exactly as
-///      orthogonal to this as LayerZero's eid table and CCIP's selector table were: whichever
-///      provider carries the message, zkSync and Tron still need their own address
-///      arithmetic.
+/// @notice Spoke on a chain whose CREATE2 formula isn't Ethereum's: zkSync Era and Tron.
+///         Protocol-level split, not provider-level — see `LzDivergentSpokeTransceiver` for
+///         the full reasoning.
 
-/// @notice zkSync Era.
-/// @dev It overrides both seams, because zkSync diverges in the deployment mechanism as
-///      well as the address: see `ZkSyncSpokeTransceiver`.
+/// @dev Overrides both seams: zkSync diverges in deployment mechanism as well as address.
 contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver {
-    /// @param accountBytecodeHash_ `AddressDerive.hashL2Bytecode` over the ZKSOLC artifact
-    ///        for `CrossProxy`. Not `CROSS_PROXY_INIT_CODE_HASH`, which is keccak of solc's
-    ///        initcode and means nothing on Era. Getting it wrong does not misdeliver:
-    ///        every account creation reverts `AccountAddressMismatch` until it is right.
+    /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
+    ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -43,20 +31,12 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
-    /// @dev That is the honest state of a binding with no Hyperlane behind it. A real binding
-    ///      grants `GATEWAY_ROLE` to the Hyperlane Mailbox in the initializer, which is where
-    ///      the address is known; the absence fails loudly on the first message rather than
-    ///      quietly on a forged one.
-
+    /// @notice No gateway granted yet.
 }
 
-/// @notice Tron.
-/// @dev It overrides the prediction only, because Tron runs raw-initcode CREATE2 and simply
-///      derives a different address from it: see `TronSpokeTransceiver`.
+/// @dev Overrides prediction only: Tron runs raw-initcode CREATE2 with a different address.
 contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver {
-    /// @param accountBytecodeHash_ `keccak256` of TRON-solc's `CrossProxy` initcode, which
-    ///        is not solc's. See `HyperlaneZkSyncSpokeTransceiver` for why it is an argument.
+    /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -76,10 +56,5 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
-    /// @dev That is the honest state of a binding with no Hyperlane behind it. A real binding
-    ///      grants `GATEWAY_ROLE` to the Hyperlane Mailbox in the initializer, which is where
-    ///      the address is known; the absence fails loudly on the first message rather than
-    ///      quietly on a forged one.
-
+    /// @notice No gateway granted yet.
 }
