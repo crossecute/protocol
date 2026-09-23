@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// Vendored, not a submodule: see OAppCoreUpgradeable.sol in this directory for why.
-// Hand-copied from LayerZero-Labs/devtools @ 4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8,
-// packages/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol, otherwise
-// verbatim.
+// Vendored, unmodified, from LayerZero-Labs/devtools @ 4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8
+// (packages/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol).
+// @layerzerolabs/oapp-evm-upgradeable and @layerzerolabs/oapp-evm have no
+// dedicated repo of their own; this is their actual home. See docs/todo.md §2.
 
 pragma solidity ^0.8.20;
 

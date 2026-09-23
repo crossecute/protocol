@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-// Vendored, not a submodule: @layerzerolabs/oapp-evm-upgradeable has no dedicated repo of
-// its own, and its actual home (LayerZero-Labs/devtools) is a 393MB monorepo. Hand-copied
-// from LayerZero-Labs/devtools @ 4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8,
-// packages/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol, otherwise verbatim.
-// See docs/todo.md §2 and docs/provider-research.md.
+// Vendored, unmodified, from LayerZero-Labs/devtools @ 4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8
+// (packages/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol).
+// @layerzerolabs/oapp-evm-upgradeable and @layerzerolabs/oapp-evm have no
+// dedicated repo of their own; this is their actual home. See docs/todo.md §2.
 
 pragma solidity ^0.8.20;
 
