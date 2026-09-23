@@ -70,7 +70,7 @@ contract ProviderChainIdTest is Test {
     }
 
     function test_zeroChainKeyReverts() public {
-        vm.expectRevert(ProviderChainId.NoDestination.selector);
+        vm.expectRevert(ProviderChainId.NoProviderChainKey.selector);
         table.setProviderId(bytes32(0), 30184);
     }
 

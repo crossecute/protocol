@@ -64,7 +64,10 @@ abstract contract ProviderChainId {
 
     event ProviderIdSet(bytes32 indexed chainKey, uint256 providerId);
 
-    error NoDestination();
+    /// @dev Named distinctly from `OutboundBase.NoDestination` (same concept, different
+    ///      declaration): a binding that inherits both this mixin and `OutboundBase` (every
+    ///      hub transceiver does) would otherwise collide on the name.
+    error NoProviderChainKey();
     /// @dev Zero is the unset sentinel on both sides; see the contract-level note.
     error ZeroProviderId();
     /// @dev Re-pointing a chain's provider id would resolve every future send to a different
@@ -80,7 +83,7 @@ abstract contract ProviderChainId {
     ///         its own authority. See the contract-level note for why re-declaring the SAME
     ///         id is a no-op while a DIFFERENT one reverts.
     function _setProviderId(bytes32 chainKey, uint256 providerId) internal {
-        if (chainKey == bytes32(0)) revert NoDestination();
+        if (chainKey == bytes32(0)) revert NoProviderChainKey();
         if (providerId == 0) revert ZeroProviderId();
 
         uint256 existing = _providerIdOf[chainKey];
