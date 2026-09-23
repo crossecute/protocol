@@ -16,6 +16,11 @@ import {Origin} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {
+    ProviderHubSendSpec,
+    IHubSendHarness,
+    ProviderReceiveSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated eid-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -40,11 +45,16 @@ contract LzHubHarness is LzHubTransceiver {
     }
 }
 
-contract LzSendTest is Test {
+/// @notice The eid-resolution/quote/unconfigured-destination properties are
+///         `ProviderHubSendSpec`'s; this contract only supplies LayerZero's own mock and, in
+///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
+///         cover (the message bytes and value reach the endpoint unchanged).
+contract LzSendTest is ProviderHubSendSpec {
     MockLzEndpoint endpoint;
     LzHubHarness hub;
     address msig = address(0x5165);
     bytes32 baseKey;
+    uint32 constant BASE_EID = 30184;
 
     function setUp() public {
         endpoint = new MockLzEndpoint();
@@ -61,46 +71,53 @@ contract LzSendTest is Test {
                 )
             )
         );
+        harness = IHubSendHarness(address(hub));
+
         vm.startPrank(msig);
         baseKey = ChainKey.forEvm(8453);
-        hub.setEid(baseKey, 30184);
-        hub.setPeer(30184, bytes32(uint256(uint160(address(0xB45E)))));
+        hub.setEid(baseKey, BASE_EID);
+        hub.setPeer(BASE_EID, bytes32(uint256(uint160(address(0xB45E)))));
         vm.stopPrank();
     }
 
-    function test_sendResolvesTheEidFromTheRecipientsChain() public {
+    function _configuredRecipient() internal pure override returns (bytes memory) {
+        return Erc7930.encodeEvm(8453, address(0xC0DE));
+    }
+
+    function _unconfiguredRecipient() internal pure override returns (bytes memory) {
+        return Erc7930.encodeEvm(1, address(0xC0DE));
+    }
+
+    function _setProviderFee(uint256 fee) internal override {
+        endpoint.setFee(fee);
+    }
+
+    function _assertLastSendTargetedConfiguredDestination() internal view override {
+        assertEq(endpoint.sentLength(), 1);
+        (uint32 dstEid,,,,,) = endpoint.sent(0);
+        assertEq(dstEid, BASE_EID);
+    }
+
+    function test_sendForwardsThePayloadAndValueUnchanged() public {
         endpoint.setFee(0.01 ether);
-        bytes memory recipient = Erc7930.encodeEvm(8453, address(0xC0DE));
         bytes memory payload = "payload";
 
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(recipient, payload, new bytes[](0), 0.01 ether);
+        hub.sendMessagePublic{value: 0.01 ether}(
+            _configuredRecipient(), payload, new bytes[](0), 0.01 ether
+        );
 
-        assertEq(endpoint.sentLength(), 1);
-        (uint32 dstEid,, bytes memory sentPayload,, uint256 value,) = endpoint.sent(0);
-        assertEq(dstEid, 30184);
+        (,, bytes memory sentPayload,, uint256 value,) = endpoint.sent(0);
         assertEq(sentPayload, payload);
         assertEq(value, 0.01 ether);
     }
-
-    function test_quoteMatchesWhatSendWouldPay() public {
-        endpoint.setFee(0.02 ether);
-        bytes memory recipient = Erc7930.encodeEvm(8453, address(0xC0DE));
-        assertEq(hub.quoteMessagePublic(recipient, "x"), 0.02 ether);
-    }
-
-    function test_sendRevertsForAChainWithNoEid() public {
-        bytes memory recipient = Erc7930.encodeEvm(1, address(0xC0DE));
-        vm.expectRevert();
-        hub.sendMessagePublic(recipient, "x", new bytes[](0), 0);
-    }
 }
 
-/// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender before our
-///         code runs.
-contract LzReceiveTest is Test {
-    event Delivered(uint256 callCount);
-
+/// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender inside the
+///         vendored OApp SDK, before `_lzReceive` — and therefore this protocol's own code —
+///         ever runs. `ProviderReceiveSpec` fixes the four properties this must satisfy;
+///         where each is enforced is LayerZero-specific and documented on the hooks below.
+contract LzReceiveTest is ProviderReceiveSpec {
     MockLzEndpoint endpoint;
     LzReceiver receiver;
     address sourceTransmitter = address(0xABCD);
@@ -127,32 +144,34 @@ contract LzReceiveTest is Test {
         return Origin({srcEid: eid, sender: bytes32(uint256(uint160(sender))), nonce: 1});
     }
 
-    function test_theRightSenderIsAccepted() public {
+    function _receiverUnderTest() internal view override returns (address) {
+        return address(receiver);
+    }
+
+    function _deliverFromConfiguredSource() internal override {
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         vm.prank(address(endpoint));
-        vm.expectEmit(false, false, false, true, address(receiver));
-        emit Delivered(0);
         receiver.lzReceive(
             _origin(sourceTransmitter, HOME_EID), bytes32(0), payload, address(0), ""
         );
     }
 
-    function test_anImpersonatorIsRejectedByLayerZeroItself_notByOurCode() public {
+    /// @dev OApp's own `OnlyPeer`, ahead of `_lzReceive`.
+    function _deliverFromImpersonator() internal override {
         vm.prank(address(endpoint));
-        vm.expectRevert(); // OApp's own OnlyPeer, before _lzReceive runs
         receiver.lzReceive(_origin(address(0xBAD), HOME_EID), bytes32(0), "", address(0), "");
     }
 
-    function test_anUnconfiguredEidIsRejected() public {
+    /// @dev OApp's own `NoPeer`.
+    function _deliverFromUnconfiguredOrigin() internal override {
         vm.prank(address(endpoint));
-        vm.expectRevert(); // OApp's own NoPeer
         receiver.lzReceive(
             _origin(sourceTransmitter, HOME_EID + 1), bytes32(0), "", address(0), ""
         );
     }
 
-    function test_anythingButTheEndpointIsRejected() public {
-        vm.expectRevert();
+    /// @dev OApp's own `OnlyEndpoint`: no `vm.prank`, so the caller is this test contract.
+    function _deliverFromWrongCaller() internal override {
         receiver.lzReceive(_origin(sourceTransmitter, HOME_EID), bytes32(0), "", address(0), "");
     }
 }
