@@ -35,6 +35,9 @@ vendor_file() {
   # Provenance comment goes right after line 1, which every vendored file here starts
   # with its own `// SPDX-License-Identifier: ...` tag -- so the comment sits ahead of
   # `pragma solidity` and everything else, immediately under the license it is about.
+  # Guarantees exactly one blank line after the comment regardless of whether the
+  # upstream file already had one there (some do, some go straight to `pragma`), by
+  # inserting its own and then dropping a now-redundant blank line 2 if there was one.
   awk -v repo="$repo" -v commit="$commit" -v path="$upstream_path" -v note="$license_note" '
     NR == 1 {
       print
@@ -42,9 +45,12 @@ vendor_file() {
       print "// Vendored, unmodified, from " repo " @ " commit
       print "// (" path ")."
       print "// " note
+      print ""
+      skip_blank = 1
       next
     }
-    { print }
+    skip_blank && $0 == "" { skip_blank = 0; next }
+    { skip_blank = 0; print }
   ' "$dest_path" > "$dest_path.vendor_tmp" && mv "$dest_path.vendor_tmp" "$dest_path"
 
   echo "vendored ${repo}@${commit}:${upstream_path} -> ${dest_path}"
