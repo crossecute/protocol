@@ -54,6 +54,12 @@ abstract contract ProviderHubSendSpec is Test {
     ///         `MockLzEndpoint.sent(0).dstEid`). This is where the translation is checked.
     function _assertLastSendTargetedConfiguredDestination() internal view virtual;
 
+    /// @notice The quote expected when the provider mock charges `providerFee`. The provider's
+    ///         fee by default; a provider with no native fee (OP Stack) overrides it to zero.
+    function _expectedQuoteFor(uint256 providerFee) internal view virtual returns (uint256) {
+        return providerFee;
+    }
+
     function test_sendResolvesTheConfiguredDestination() public {
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         _assertLastSendTargetedConfiguredDestination();
@@ -62,7 +68,7 @@ abstract contract ProviderHubSendSpec is Test {
     function test_quoteMatchesWhatSendWouldPay() public {
         uint256 fee = 0.02 ether;
         _setProviderFee(fee);
-        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), fee);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), _expectedQuoteFor(fee));
     }
 
     function test_sendRevertsForAnUnconfiguredDestination() public {
