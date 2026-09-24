@@ -60,7 +60,7 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
         uint256 value
     ) internal override returns (bytes32 sendId) {
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -132,7 +132,7 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
         uint256 value
     ) internal override returns (bytes32 sendId) {
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

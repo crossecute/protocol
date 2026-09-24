@@ -8,7 +8,9 @@ import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 /// @notice `EVM2AnyMessage` construction and extraArgs attribute parsing, identical across
 ///         every CCIP sender (`CcipTransmitter`, `CcipHubTransceiver`, `CcipSpokeTransceiver`,
 ///         `CcipZkSyncSpokeTransceiver`, `CcipTronSpokeTransceiver`). Keeping one copy means
-///         a future fix to it can't diverge silently between callers.
+///         a future fix to it can't diverge silently between callers. Those senders discard
+///         `ccipSend`'s message id and return a zero sendId, ERC-7786's "sent" (see
+///         `ProviderHubSendSpec`); the id is in the on-ramp's send event.
 library CcipMessage {
     bytes4 internal constant EXTRA_ARGS_ATTRIBUTE = bytes4(keccak256("crossecute.ccip.extraArgs"));
 

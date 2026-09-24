@@ -57,7 +57,7 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
     ) internal override returns (bytes32 sendId) {
         uint64 selector = _selectorFor(recipient);
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).ccipSend{value: value}(selector, message);
+        IRouterClient(router).ccipSend{value: value}(selector, message);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

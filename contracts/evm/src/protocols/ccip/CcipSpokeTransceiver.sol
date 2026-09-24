@@ -55,7 +55,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
         uint256 value
     ) internal override returns (bytes32 sendId) {
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

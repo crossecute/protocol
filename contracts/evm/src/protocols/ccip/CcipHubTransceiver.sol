@@ -70,7 +70,7 @@ contract CcipHubTransceiver is
     ) internal override returns (bytes32 sendId) {
         uint64 selector = uint64(_providerIdFor(Erc7930.chainKey(recipient)));
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).ccipSend{value: value}(selector, message);
+        IRouterClient(router).ccipSend{value: value}(selector, message);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
