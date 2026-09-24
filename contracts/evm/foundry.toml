@@ -24,4 +24,7 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Hand-copied, not a submodule: one import-free interface from the optimism monorepo.
+    # See contracts/evm/script/vendor/op-stack.sh.
+    "@optimism/=lib/optimism/packages/contracts-bedrock/",
 ]

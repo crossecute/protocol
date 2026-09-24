@@ -291,6 +291,24 @@ mainnet.
   nothing extra to verify, so accepting it is defensible, but it should be a written
   exception in the binding's NatSpec (provider-spec R3.3) rather than an omission.
 
+- **OP Stack binding, Phase 6 PR.** Inbound sender is `xDomainMessageSender()` read from the
+  messenger during the relay, never anything in the delivered calldata (which the
+  origin-side `sendMessage` caller writes in full); pinned by
+  `OpStackBinding.t.sol:test_aSenderClaimedInsideTheMessageIsIgnored`. No R3.3 exception.
+  Three decisions worth a second look:
+  - The quote is zero, not `QuoteNotImplemented` as `provider-research.md` §7 and PR #5's
+    plan assumed. L1->L2 deposits pay by burning gas in the sending transaction
+    (`ResourceMetering`), L2->L1 pays nothing at the source, and `sendMessage`'s `msg.value`
+    is bridged to the target rather than spent. So `value` must be zero (the binding
+    reverts otherwise), and zero is the exact native cost, which is also what R2.2.2's
+    balance-delta measurement would return. The real cost is the caller's own gas.
+  - The destination is which messenger is called, so the hub and every transmitter it
+    creates refuse any recipient not on `messengerChainKey`. Without that, a route to another
+    chain would be delivered to the same address on this messenger's chain.
+  - `minGasLimit` defaults to 200,000 when no attribute is given. Underestimating is
+    recoverable (the messenger records a failed relay and anyone can replay it with more
+    gas), but it is not measured against bootstrap.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
