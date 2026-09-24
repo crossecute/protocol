@@ -3,14 +3,18 @@ pragma solidity ^0.8.0;
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
-import {IWormholeReceiver} from "@wormhole-sdk/interfaces/IWormholeRelayer.sol";
+import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 /// @notice Transceiver on every non-home chain.
-contract WormholeSpokeTransceiver is SpokeTransceiverBase, IWormholeReceiver {
-    address public immutable relayer;
+contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
+    address public immutable coreBridge;
+    address public immutable quoterRouter;
+    address public immutable quoter;
 
-    constructor(address relayer_) {
-        relayer = relayer_;
+    constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        coreBridge = coreBridge_;
+        quoterRouter = quoterRouter_;
+        quoter = quoter_;
     }
 
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
@@ -18,10 +22,10 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IWormholeReceiver {
 
     /// @dev Zero is `ProviderChainId`'s unset sentinel, mirrored here.
     error ZeroHomeWormholeChain();
-    error UnexpectedSourceChain(uint16 sourceChain);
+    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param homeWormholeChain_ Wormhole's chain id for the home chain.
-    /// @dev Grants `GATEWAY_ROLE` to `relayer` directly — see
+    /// @dev Grants `GATEWAY_ROLE` to `coreBridge` directly — see
     ///      `WormholeHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
@@ -32,7 +36,7 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IWormholeReceiver {
         uint16 homeWormholeChain_
     ) external initializer {
         if (homeWormholeChain_ == 0) revert ZeroHomeWormholeChain();
-        grantRole(GATEWAY_ROLE, relayer);
+        grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(
             gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false
@@ -48,7 +52,7 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IWormholeReceiver {
         override
         returns (bytes32 sendId)
     {
-        return WormholeMessage.send(relayer, homeWormholeChain, recipient, payload, attributes, value, _refundTo());
+        return WormholeMessage.send(_route(), recipient, payload, attributes, value, _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
@@ -57,25 +61,28 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IWormholeReceiver {
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(relayer, homeWormholeChain, recipient, attributes);
+        return WormholeMessage.quote(_route(), recipient, attributes, _refundTo());
+    }
+
+    function _route() internal view returns (WormholeMessage.Route memory) {
+        return WormholeMessage.Route(coreBridge, quoterRouter, quoter, homeWormholeChain);
     }
 
     bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;
 
     /* ================================= receiving =================================== */
 
-    /// @dev `sourceChain` is checked against `homeWormholeChain` so a sender at the hub's
+    /// @dev The emitter chain is checked against `homeWormholeChain` so a contract at the hub's
     ///      address on any other chain is not accepted as the hub; `_authenticateOrigin` (via
-    ///      `_onInbound`) then checks the sender itself.
-    function receiveWormholeMessages(
-        bytes calldata payload,
-        bytes[] calldata additionalMessages,
-        bytes32 sourceAddress,
-        uint16 sourceChain,
-        bytes32 /* deliveryHash */
-    ) external payable override onlyRole(GATEWAY_ROLE) {
-        WormholeMessage.requireNoAdditionalMessages(additionalMessages);
-        if (sourceChain != homeWormholeChain) revert UnexpectedSourceChain(sourceChain);
-        _onInbound(homeRoute(), abi.encodePacked(WormholeMessage.senderOf(sourceAddress)), payload);
+    ///      `_onInbound`) then checks the emitter itself.
+    function executeVAAv1(bytes calldata multiSigVaa) external payable override {
+        (uint16 emitterChain, address emitter, bytes calldata payload) =
+            WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
+        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
+    }
+
+    function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
+        return WormholeMessage.consumed(vaaHash);
     }
 }

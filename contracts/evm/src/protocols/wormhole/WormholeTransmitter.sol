@@ -14,17 +14,20 @@ interface IWormholeChainTable {
 }
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
-/// @dev Sender-only: no `receiveWormholeMessages`, so R3.1 is answered by absence rather than
-///      a guard. Targets the Relayer, not bare Core, which names no destination and prices no
-///      delivery (see `docs/provider-research.md#6-wormhole-core-vs-the-relayer-two-different-bindings`).
+/// @dev Sender-only: no `executeVAAv1`, so R3.1 is answered by absence rather than a guard.
+///      It is the Wormhole emitter its receivers authenticate.
 contract WormholeTransmitter is TransmitterBase, OwnableUpgradeable {
-    /// @notice Wormhole Relayer on this chain. Set on the implementation; safe because the
-    ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
-    ///         so this never moves a derived account address.
-    address public immutable relayer;
+    /// @notice Core bridge, Executor quoter router, and relay provider's quoter on this chain.
+    ///         Set on the implementation; safe because the implementation address lives in the
+    ///         proxy's ERC-1967 slot, not its initcode, so these never move a derived address.
+    address public immutable coreBridge;
+    address public immutable quoterRouter;
+    address public immutable quoter;
 
-    constructor(address relayer_) {
-        relayer = relayer_;
+    constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        coreBridge = coreBridge_;
+        quoterRouter = quoterRouter_;
+        quoter = quoter_;
     }
 
     function initialize(address owner_, address transceiver_, bytes32 salt_) external initializer {
@@ -45,10 +48,7 @@ contract WormholeTransmitter is TransmitterBase, OwnableUpgradeable {
         override
         returns (bytes32 sendId)
     {
-        return
-            WormholeMessage.send(
-                relayer, _wormholeChainFor(recipient), recipient, payload, attributes, value, _refundTo()
-            );
+        return WormholeMessage.send(_route(recipient), recipient, payload, attributes, value, _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
@@ -57,7 +57,7 @@ contract WormholeTransmitter is TransmitterBase, OwnableUpgradeable {
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(relayer, _wormholeChainFor(recipient), recipient, attributes);
+        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo());
     }
 
     bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;
@@ -66,7 +66,8 @@ contract WormholeTransmitter is TransmitterBase, OwnableUpgradeable {
         return selector == WORMHOLE_GAS_LIMIT_ATTRIBUTE;
     }
 
-    function _wormholeChainFor(bytes memory recipient) internal view returns (uint16) {
-        return IWormholeChainTable(transceiver).wormholeChainFor(Erc7930.chainKey(recipient));
+    function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {
+        uint16 targetChain = IWormholeChainTable(transceiver).wormholeChainFor(Erc7930.chainKey(recipient));
+        return WormholeMessage.Route(coreBridge, quoterRouter, quoter, targetChain);
     }
 }

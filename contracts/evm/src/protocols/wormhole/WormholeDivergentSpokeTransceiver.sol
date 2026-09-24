@@ -6,7 +6,7 @@ import {
     TronSpokeTransceiver
 } from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
-import {IWormholeReceiver} from "@wormhole-sdk/interfaces/IWormholeRelayer.sol";
+import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 /// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
 ///         Wormhole wiring in both is identical to `WormholeSpokeTransceiver`'s, repeated
@@ -14,17 +14,21 @@ import {IWormholeReceiver} from "@wormhole-sdk/interfaces/IWormholeRelayer.sol";
 
 /// @dev Overrides both `predictCrossAccount` and `_deployAccount`: zkSync diverges in the
 ///      deployment mechanism as well as the address.
-contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IWormholeReceiver {
-    address public immutable relayer;
+contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IVaaV1Receiver {
+    address public immutable coreBridge;
+    address public immutable quoterRouter;
+    address public immutable quoter;
 
-    constructor(address relayer_) {
-        relayer = relayer_;
+    constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        coreBridge = coreBridge_;
+        quoterRouter = quoterRouter_;
+        quoter = quoter_;
     }
 
     uint16 public homeWormholeChain;
 
     error ZeroHomeWormholeChain();
-    error UnexpectedSourceChain(uint16 sourceChain);
+    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
@@ -38,7 +42,7 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IWormholeRece
         uint16 homeWormholeChain_
     ) external initializer {
         if (homeWormholeChain_ == 0) revert ZeroHomeWormholeChain();
-        grantRole(GATEWAY_ROLE, relayer);
+        grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(
             gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true
@@ -51,7 +55,7 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IWormholeRece
         override
         returns (bytes32 sendId)
     {
-        return WormholeMessage.send(relayer, homeWormholeChain, recipient, payload, attributes, value, _refundTo());
+        return WormholeMessage.send(_route(), recipient, payload, attributes, value, _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
@@ -60,37 +64,44 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IWormholeRece
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(relayer, homeWormholeChain, recipient, attributes);
+        return WormholeMessage.quote(_route(), recipient, attributes, _refundTo());
+    }
+
+    function _route() internal view returns (WormholeMessage.Route memory) {
+        return WormholeMessage.Route(coreBridge, quoterRouter, quoter, homeWormholeChain);
     }
 
     bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;
 
-    function receiveWormholeMessages(
-        bytes calldata payload,
-        bytes[] calldata additionalMessages,
-        bytes32 sourceAddress,
-        uint16 sourceChain,
-        bytes32 /* deliveryHash */
-    ) external payable override onlyRole(GATEWAY_ROLE) {
-        WormholeMessage.requireNoAdditionalMessages(additionalMessages);
-        if (sourceChain != homeWormholeChain) revert UnexpectedSourceChain(sourceChain);
-        _onInbound(homeRoute(), abi.encodePacked(WormholeMessage.senderOf(sourceAddress)), payload);
+    function executeVAAv1(bytes calldata multiSigVaa) external payable override {
+        (uint16 emitterChain, address emitter, bytes calldata payload) =
+            WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
+        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
+    }
+
+    function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
+        return WormholeMessage.consumed(vaaHash);
     }
 }
 
 /// @dev Overrides `predictCrossAccount` only: Tron runs raw-initcode CREATE2 with a
 ///      different derived address, no different deployment mechanism.
-contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IWormholeReceiver {
-    address public immutable relayer;
+contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IVaaV1Receiver {
+    address public immutable coreBridge;
+    address public immutable quoterRouter;
+    address public immutable quoter;
 
-    constructor(address relayer_) {
-        relayer = relayer_;
+    constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        coreBridge = coreBridge_;
+        quoterRouter = quoterRouter_;
+        quoter = quoter_;
     }
 
     uint16 public homeWormholeChain;
 
     error ZeroHomeWormholeChain();
-    error UnexpectedSourceChain(uint16 sourceChain);
+    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
@@ -103,7 +114,7 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IWormholeReceiver
         uint16 homeWormholeChain_
     ) external initializer {
         if (homeWormholeChain_ == 0) revert ZeroHomeWormholeChain();
-        grantRole(GATEWAY_ROLE, relayer);
+        grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(
             gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true
@@ -116,7 +127,7 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IWormholeReceiver
         override
         returns (bytes32 sendId)
     {
-        return WormholeMessage.send(relayer, homeWormholeChain, recipient, payload, attributes, value, _refundTo());
+        return WormholeMessage.send(_route(), recipient, payload, attributes, value, _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
@@ -125,20 +136,23 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IWormholeReceiver
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(relayer, homeWormholeChain, recipient, attributes);
+        return WormholeMessage.quote(_route(), recipient, attributes, _refundTo());
+    }
+
+    function _route() internal view returns (WormholeMessage.Route memory) {
+        return WormholeMessage.Route(coreBridge, quoterRouter, quoter, homeWormholeChain);
     }
 
     bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;
 
-    function receiveWormholeMessages(
-        bytes calldata payload,
-        bytes[] calldata additionalMessages,
-        bytes32 sourceAddress,
-        uint16 sourceChain,
-        bytes32 /* deliveryHash */
-    ) external payable override onlyRole(GATEWAY_ROLE) {
-        WormholeMessage.requireNoAdditionalMessages(additionalMessages);
-        if (sourceChain != homeWormholeChain) revert UnexpectedSourceChain(sourceChain);
-        _onInbound(homeRoute(), abi.encodePacked(WormholeMessage.senderOf(sourceAddress)), payload);
+    function executeVAAv1(bytes calldata multiSigVaa) external payable override {
+        (uint16 emitterChain, address emitter, bytes calldata payload) =
+            WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
+        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
+    }
+
+    function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
+        return WormholeMessage.consumed(vaaHash);
     }
 }

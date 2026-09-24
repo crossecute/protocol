@@ -24,7 +24,7 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    # Hand-copied, not a submodule: the binding needs one import-free interface file, not
-    # the SDK's helpers. See contracts/evm/script/vendor/wormhole.sh.
+    # Hand-copied, not a submodule: the binding needs three import-free files (Core and
+    # Executor interfaces), not the SDK's helpers. See contracts/evm/script/vendor/wormhole.sh.
     "@wormhole-sdk/=lib/wormhole-solidity-sdk/src/",
 ]
