@@ -8,7 +8,7 @@ import {OAppCoreUpgradeable} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {MessagingFee, MessagingReceipt} from
+import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
@@ -62,9 +62,7 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
     ) internal override returns (bytes32 sendId) {
         uint32 dstEid = _eidFor(recipient);
         bytes memory options = _optionsFrom(attributes);
-        MessagingReceipt memory receipt =
-            _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
-        return receipt.guid;
+        _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

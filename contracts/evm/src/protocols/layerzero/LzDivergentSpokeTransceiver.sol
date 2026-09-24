@@ -9,7 +9,7 @@ import {OAppUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {OAppCoreUpgradeable} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
-import {MessagingFee, MessagingReceipt} from
+import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
@@ -82,9 +82,7 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, OAppUpgradeable {
         uint256 value
     ) internal override returns (bytes32 sendId) {
         bytes memory options = _optionsFrom(attributes);
-        MessagingReceipt memory receipt =
-            _lzSend(homeEid, payload, options, MessagingFee(value, 0), _refundTo());
-        return receipt.guid;
+        _lzSend(homeEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
@@ -187,9 +185,7 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, OAppUpgradeable {
         uint256 value
     ) internal override returns (bytes32 sendId) {
         bytes memory options = _optionsFrom(attributes);
-        MessagingReceipt memory receipt =
-            _lzSend(homeEid, payload, options, MessagingFee(value, 0), _refundTo());
-        return receipt.guid;
+        _lzSend(homeEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
