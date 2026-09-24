@@ -61,7 +61,8 @@ library WormholeMessage {
 
     /// @dev `value` covers Core's message fee plus the Executor's price. The router refunds any
     ///      excess over its quote to `refundTo` (`OutboundBase._refundTo()`) and reverts
-    ///      `Underpaid` below it. The returned id is the Core sequence.
+    ///      `Underpaid` below it. Returns zero, ERC-7786's "sent" (see `ProviderHubSendSpec`);
+    ///      the Core sequence is in `LogMessagePublished`.
     function send(
         Route memory route,
         bytes memory recipient,
@@ -77,7 +78,7 @@ library WormholeMessage {
             0, abi.encodePacked(route.targetChain, target, payload), CONSISTENCY_FINALIZED
         );
         _requestExecution(route, target, refundTo, sequence, gasLimitFrom(attributes), value - messageFee);
-        return bytes32(uint256(sequence));
+        return bytes32(0);
     }
 
     /// @dev Split out of `send` for stack depth under the legacy (non-IR) pipeline.
