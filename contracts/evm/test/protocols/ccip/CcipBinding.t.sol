@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -17,31 +18,22 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {
-    ProviderHubSendSpec,
-    IHubSendHarness,
-    ProviderReceiveSpec
-} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
 contract CcipHubHarness is CcipHubTransceiver {
     constructor(address router) CcipHubTransceiver(router) {}
 
-    function sendMessagePublic(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) external payable returns (bytes32) {
+    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        external
+        payable
+        returns (bytes32)
+    {
         return _sendMessage(recipient, payload, attributes, value);
     }
 
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload)
-        external
-        view
-        returns (uint256)
-    {
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
         return _quoteMessage(recipient, payload, new bytes[](0));
     }
 }
@@ -62,17 +54,14 @@ contract CcipSendTest is ProviderHubSendSpec {
     function setUp() public {
         router = new MockCcipRouter();
         hub = CcipHubHarness(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(new CcipHubHarness(address(router))),
                         abi.encodeCall(
-                            CcipHubTransceiver.initialize,
-                            (msig, address(0), new address[](0), address(0xBEEF))
+                            CcipHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
                         )
                     )
-                )
-            )
+                ))
         );
         harness = IHubSendHarness(address(hub));
 
@@ -111,29 +100,39 @@ contract CcipSendTest is ProviderHubSendSpec {
         bytes memory payload = "payload";
 
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(
-            _configuredRecipient(), payload, new bytes[](0), 0.01 ether
-        );
+        hub.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
 
         (,, bytes memory sentPayload,,, uint256 value) = router.sent(0);
         assertEq(sentPayload, payload);
         assertEq(value, 0.01 ether);
     }
 
+    /// @dev A malformed first attribute is reported even when an extra follows it.
+    function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
+        bytes[] memory attrs = new bytes[](2);
+        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), abi.encode(uint256(1), true));
+        attrs[1] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(1), true));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
+        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
+
+    /// @dev Previously a short body failed inside `abi.decode` and a long one was truncated.
+    function test_extraArgsOfTheWrongLengthAreRefused() public {
+        bytes[] memory attrs = new bytes[](1);
+        attrs[0] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), uint256(1));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
+        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
+
     function test_extraArgsAttributeBecomesEVMExtraArgsV2() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(
-            hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(500_000), true)
-        );
+        attrs[0] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(500_000), true));
 
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
 
         (,,,, bytes memory extraArgs,) = router.sent(0);
         assertEq(
-            extraArgs,
-            Client._argsToBytes(
-                Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true})
-            )
+            extraArgs, Client._argsToBytes(Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
         );
     }
 }
@@ -150,24 +149,16 @@ contract CcipReceiveTest is ProviderReceiveSpec {
     function setUp() public {
         router = new MockCcipRouter();
         receiver = CcipReceiver(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(new CcipReceiver(address(router))),
-                        abi.encodeCall(
-                            CcipReceiver.initialize, (sourceTransmitter, new Call[](0))
-                        )
+                        abi.encodeCall(CcipReceiver.initialize, (sourceTransmitter, new Call[](0)))
                     )
-                )
-            )
+                ))
         );
     }
 
-    function _message(address sender, bytes memory data)
-        internal
-        pure
-        returns (Client.Any2EVMMessage memory)
-    {
+    function _message(address sender, bytes memory data) internal pure returns (Client.Any2EVMMessage memory) {
         return Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: 1,
@@ -240,8 +231,7 @@ contract CcipGatewayRoleGrantTest is Test {
                 new ERC1967Proxy(
                     address(new CcipHubTransceiver(router)),
                     abi.encodeCall(
-                        CcipHubTransceiver.initialize,
-                        (address(this), address(0), new address[](0), address(0xBEEF))
+                        CcipHubTransceiver.initialize, (address(this), address(0), new address[](0), address(0xBEEF))
                     )
                 )
             )
