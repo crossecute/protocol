@@ -526,7 +526,9 @@ about how either project builds changes that.
 
 **The fix costs nothing, because the useful parts have no OZ dependency at all.**
 `IMailbox.sol`, `IMessageRecipient.sol`, `IInterchainSecurityModule.sol`, and `TypeCasts.sol`
-are plain interfaces and a pure library — no imports, no version to collide with. A real
+are plain interfaces and a pure library — no OpenZeppelin imports, no version to collide
+with. (`IMailbox` imports `IPostDispatchHook`, itself a plain interface, so the vendored set
+is five files, plus `StandardHookMetadata` for the refund address; see `todo.md` §4.) A real
 binding vendors those four, holds the `IMailbox` address as its OWN immutable (the same "one
 constructor argument, on the implementation" shape used everywhere else in this survey), and
 implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`

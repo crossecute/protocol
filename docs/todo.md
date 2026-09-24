@@ -291,6 +291,34 @@ mainnet.
   nothing extra to verify, so accepting it is defensible, but it should be a written
   exception in the binding's NatSpec (provider-spec R3.3) rather than an omission.
 
+  Confirmed for Hyperlane (Phase 4 PR): no exception needed. `HyperlaneReceiver`/
+  `HyperlaneHubTransceiver`/`HyperlaneSpokeTransceiver` implement
+  `IMessageRecipient.handle` directly (no `MailboxClient`/`Router`), and `Mailbox.process`
+  verifies the ISM, not the source-chain sender. The spokes additionally check
+  `origin == homeDomain`, so a contract at the hub's address on some other domain is not
+  taken for the hub; the hub maps `origin` through its domain table. The receiver, like
+  `CcipReceiver`, checks the sender address only. `CcipSpokeTransceiver` does not compare
+  `sourceChainSelector` to `homeSelector` the way the Hyperlane spoke compares domains;
+  worth deciding for Phase 7 whether it should.
+
+- **Hyperlane inbound security is whatever the Mailbox's default ISM is.** No Hyperlane
+  contract here implements `interchainSecurityModule()`, so `Mailbox.recipientIsm` returns
+  `defaultIsm`, which the Mailbox owner can replace at any time (`setDefaultIsm`). This is
+  the same class of trust as LayerZero's default DVN config. Pinning a specific ISM would
+  need a setter or an initializer argument on every receiving contract; not done here.
+
+- **Hyperlane's refund and gas defaults both assume the dispatcher is the payer.** Found
+  wiring Phase 4. The IGP and ProtocolFee hooks refund overpayment to
+  `metadata.refundAddress`, which defaults to the contract that called `dispatch`. A hub or
+  spoke has no `receive`, so with empty metadata any overpaid send reverts. Every sender
+  now passes StandardHookMetadata with `refundAddress = _refundTo()`
+  (`HyperlaneMessage.hookMetadata`, pinned by
+  `HyperlaneBinding.t.sol:test_overpaymentIsRefundedToTheCallerNotTheHub`). Because the
+  refund field sits after `gasLimit` in that encoding, the binding now writes the IGP's
+  default gas limit (50,000) explicitly when no attribute is given. That default is
+  probably too low for a bootstrap and for `_reportReceiver`, which always sends with no
+  attributes. Needs a measured per-path default before mainnet.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
@@ -364,11 +392,12 @@ mainnet.
   moved) fails three different ways. LayerZero's stock `_payNative` requires
   `msg.value == nativeFee` EXACTLY and reverts `NotEnoughNative` on any drift, either
   direction. CCIP's own NatSpec says an overpayment is accepted with no refund, so padding
-  the quote for safety just burns the difference. Hyperlane's `Mailbox.dispatch` neither
-  reverts nor refunds: it sends `requiredHook` what it asks and forwards WHATEVER IS LEFT of
-  `msg.value` to the post-dispatch hook, which does not return to the sender either. No
-  single on-chain buffer is safe across all three; two of them turn "add a margin" into a
-  standing cost.
+  the quote for safety just burns the difference. Hyperlane's `Mailbox.dispatch` sends
+  `requiredHook` what it asks and forwards the rest of `msg.value` to the post-dispatch
+  hook; the IGP and ProtocolFee hooks refund their overpayment to `metadata.refundAddress`
+  (which the binding sets to `_refundTo()`, see §4), but any other hook the Mailbox owner
+  configures may keep it. No single on-chain buffer is safe across all three; at least one
+  of them turns "add a margin" into a standing cost.
 
   **The direction to build toward: the transmitter prices and funds the send itself, rather
   than asking a signer to have attached the right `msg.value` in advance.** Concretely, on
@@ -395,8 +424,8 @@ mainnet.
   says quoting inside a send is unnecessary because "a price that moved into a revert, when
   the provider's refund already handles it." That assumption is false for all three
   providers, per the divergence above: LZ reverts on any mismatch with nothing to refund,
-  CCIP keeps an overpayment outright, and Hyperlane routes the remainder to a hook rather
-  than back to the sender. Fix that comment when this lands, so it stops asserting a safety
+  CCIP keeps an overpayment outright, and Hyperlane's refund depends on which hook the
+  Mailbox owner has configured. Fix that comment when this lands, so it stops asserting a safety
   net that does not exist.
 
 ## 6. Infrastructure: None of it exists

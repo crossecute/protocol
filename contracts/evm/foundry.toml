@@ -24,4 +24,8 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,
+    # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free
+    # interfaces and libraries are vendored (contracts/evm/script/vendor/hyperlane.sh).
+    "@hyperlane/=lib/hyperlane/solidity/contracts/",
 ]
