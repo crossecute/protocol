@@ -86,11 +86,6 @@ contract OpStackSendTest is ProviderHubSendSpec {
         assertEq(messenger.sent(0).value, 0);
     }
 
-    function test_sendIdIsTheMessengerNonce() public {
-        assertEq(hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0), bytes32(0));
-        assertEq(hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0), bytes32(uint256(1)));
-    }
-
     function test_minGasLimitDefaultsAndFollowsTheAttribute() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(900_000));

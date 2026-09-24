@@ -32,7 +32,8 @@ library OpStackMessage {
     /// @param messengerChainKey The one chain `messenger` reaches. The destination is which
     ///        messenger is called, not an argument to it, so a recipient on any other chain
     ///        would otherwise be delivered to the same address on this one.
-    /// @return The messenger's nonce for this message.
+    /// @return Zero, ERC-7786's "sent" (see `ProviderHubSendSpec`); the messenger's nonce is in
+    ///         its `SentMessage` event.
     function send(
         address messenger,
         bytes32 messengerChainKey,
@@ -42,12 +43,11 @@ library OpStackMessage {
         uint256 value
     ) internal returns (bytes32) {
         address target = _check(messengerChainKey, recipient, value);
-        uint256 nonce = ICrossDomainMessenger(messenger).messageNonce();
         ICrossDomainMessenger(messenger)
             .sendMessage(
                 target, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload)), minGasLimitFrom(attributes)
             );
-        return bytes32(nonce);
+        return bytes32(0);
     }
 
     /// @dev Zero, after the same checks `send` applies, so it reverts wherever the send would.
