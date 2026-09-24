@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -126,10 +127,19 @@ contract OpStackSendTest is ProviderHubSendSpec {
         hub.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
     }
 
+    /// @dev A malformed first attribute is reported even when an extra follows it.
+    function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
+        bytes[] memory attrs = new bytes[](2);
+        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
+        attrs[1] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(1));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
+        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
+
     function test_minGasLimitAboveUint32IsRefused() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
-        vm.expectRevert(abi.encodeWithSelector(OpStackMessage.UnknownOpStackAttribute.selector, attrs[0]));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 

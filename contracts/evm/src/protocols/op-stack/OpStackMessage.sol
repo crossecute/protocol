@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {ICrossDomainMessenger} from "@optimism/interfaces/universal/ICrossDomainMessenger.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
 /// @notice The inbound entry point every OP Stack binding contract exposes. `sendMessage`
 ///         delivers `abi.encodeCall(receiveOpStackMessage, (payload))` as the target's calldata.
@@ -27,7 +28,6 @@ library OpStackMessage {
     error OpStackValueNotSupported(uint256 value);
     error NotThisMessengersChain(bytes32 chainKey, bytes32 messengerChainKey);
     error UnsupportedOpStackRecipient(bytes addr);
-    error UnknownOpStackAttribute(bytes attribute);
 
     /// @param messengerChainKey The one chain `messenger` reaches. The destination is which
     ///        messenger is called, not an argument to it, so a recipient on any other chain
@@ -82,19 +82,8 @@ library OpStackMessage {
     ///         `abi.encodePacked(MIN_GAS_LIMIT_ATTRIBUTE, abi.encode(minGasLimit))`, at most
     ///         `type(uint32).max`. Anything else is refused per ERC-7786.
     function minGasLimitFrom(bytes[] memory attributes) internal pure returns (uint32) {
-        if (attributes.length == 0) return DEFAULT_MIN_GAS_LIMIT;
-        if (attributes.length > 1) revert UnknownOpStackAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length != 36) revert UnknownOpStackAttribute(attribute);
-        bytes4 selector;
-        uint256 minGasLimit;
-        assembly {
-            selector := mload(add(attribute, 32))
-            minGasLimit := mload(add(attribute, 36))
-        }
-        if (selector != MIN_GAS_LIMIT_ATTRIBUTE || minGasLimit > type(uint32).max) {
-            revert UnknownOpStackAttribute(attribute);
-        }
-        return uint32(minGasLimit);
+        return uint32(
+            ProviderAttribute.uintValue(attributes, MIN_GAS_LIMIT_ATTRIBUTE, type(uint32).max, DEFAULT_MIN_GAS_LIMIT)
+        );
     }
 }
