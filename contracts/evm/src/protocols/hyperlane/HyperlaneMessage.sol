@@ -5,6 +5,7 @@ import {IMailbox} from "@hyperlane/interfaces/IMailbox.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
 /// @notice Recipient narrowing, hook metadata, and the `dispatch`/`quoteDispatch` calls,
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
@@ -19,7 +20,6 @@ library HyperlaneMessage {
     ///      the provider's default.
     uint256 internal constant DEFAULT_GAS_LIMIT = 50_000;
 
-    error UnknownHyperlaneAttribute(bytes attribute);
     error UnsupportedHyperlaneRecipient(bytes addr);
 
     function dispatch(
@@ -68,17 +68,6 @@ library HyperlaneMessage {
     ///         `abi.encodePacked(GAS_LIMIT_ATTRIBUTE, abi.encode(gasLimit))`. Anything else
     ///         is refused per ERC-7786.
     function gasLimitFrom(bytes[] memory attributes) internal pure returns (uint256) {
-        if (attributes.length == 0) return DEFAULT_GAS_LIMIT;
-        if (attributes.length > 1) revert UnknownHyperlaneAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length != 36) revert UnknownHyperlaneAttribute(attribute);
-        bytes4 selector;
-        uint256 gasLimit;
-        assembly {
-            selector := mload(add(attribute, 32))
-            gasLimit := mload(add(attribute, 36))
-        }
-        if (selector != GAS_LIMIT_ATTRIBUTE) revert UnknownHyperlaneAttribute(attribute);
-        return gasLimit;
+        return ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint256).max, DEFAULT_GAS_LIMIT);
     }
 }
