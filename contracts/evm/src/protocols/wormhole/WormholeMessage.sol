@@ -5,6 +5,7 @@ import {ICoreBridge, CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.so
 import {IExecutorQuoterRouter} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
 /// @notice Send, quote, and inbound verification for every Wormhole binding contract, over
 ///         Core `publishMessage` plus Executor delivery (the Standard Relayer is deprecated).
@@ -39,7 +40,6 @@ library WormholeMessage {
     bytes32 private constant CONSUMED_SLOT =
         keccak256(abi.encode(uint256(keccak256("crossecute.wormhole.consumed")) - 1)) & ~bytes32(uint256(0xff));
 
-    error UnknownWormholeAttribute(bytes attribute);
     error UnsupportedWormholeRecipient(bytes addr);
     error UnsupportedWormholeSender(bytes32 emitterAddress);
     error InsufficientWormholeValue(uint256 value, uint256 messageFee);
@@ -140,20 +140,8 @@ library WormholeMessage {
     ///         `abi.encodePacked(GAS_LIMIT_ATTRIBUTE, abi.encode(gasLimit))`, at most
     ///         `type(uint128).max`. Anything else is refused per ERC-7786.
     function gasLimitFrom(bytes[] memory attributes) internal pure returns (uint128) {
-        if (attributes.length == 0) return uint128(DEFAULT_GAS_LIMIT);
-        if (attributes.length > 1) revert UnknownWormholeAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length != 36) revert UnknownWormholeAttribute(attribute);
-        bytes4 selector;
-        uint256 gasLimit;
-        assembly {
-            selector := mload(add(attribute, 32))
-            gasLimit := mload(add(attribute, 36))
-        }
-        if (selector != GAS_LIMIT_ATTRIBUTE || gasLimit > type(uint128).max) {
-            revert UnknownWormholeAttribute(attribute);
-        }
-        return uint128(gasLimit);
+        return
+            uint128(ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint128).max, DEFAULT_GAS_LIMIT));
     }
 
     /* ================================= receiving ================================== */
