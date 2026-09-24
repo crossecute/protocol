@@ -11,6 +11,7 @@ import {OwnableUpgradeable} from
 import {MessagingFee, MessagingReceipt} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
 /// @dev A transmitter has no eid table of its own: it's per-user and locked after creation,
 ///      so it reads the shared, owner-updatable table on `LzHubTransceiver` (via
@@ -92,26 +93,7 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
 
     /// @dev Empty options is a valid default (LZ's executor applies its own gas limit), not
     ///      a missing one.
-    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory) {
-        if (attributes.length == 0) return "";
-        if (attributes.length > 1) revert UnknownLzAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length < 4) revert UnknownLzAttribute(attribute);
-        bytes4 selector;
-        assembly {
-            selector := mload(add(attribute, 32))
-        }
-        if (selector != LZ_OPTIONS_ATTRIBUTE) revert UnknownLzAttribute(attribute);
-        return _sliceFrom4(attribute);
-    }
-
-    error UnknownLzAttribute(bytes attribute);
-
-    function _sliceFrom4(bytes memory data) private pure returns (bytes memory out) {
-        uint256 len = data.length - 4;
-        out = new bytes(len);
-        for (uint256 i; i < len; ++i) {
-            out[i] = data[i + 4];
-        }
+    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory options) {
+        (, options) = ProviderAttribute.body(attributes, LZ_OPTIONS_ATTRIBUTE, 0);
     }
 }

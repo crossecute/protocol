@@ -10,6 +10,7 @@ import {OAppCoreUpgradeable} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {MessagingFee, MessagingReceipt} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -83,28 +84,12 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         return _nativeFee;
     }
 
-    /// @dev Duplicated across LZ bindings rather than shared: no common ancestor for it that
-    ///      wouldn't widen `OutboundBase` for every provider.
+    /// @dev The constant is duplicated across LZ bindings (no common ancestor that wouldn't
+    ///      widen `OutboundBase` for every provider); the parsing is `ProviderAttribute`.
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
 
-    error UnknownLzAttribute(bytes attribute);
-
-    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory) {
-        if (attributes.length == 0) return "";
-        if (attributes.length > 1) revert UnknownLzAttribute(attributes[1]);
-        bytes memory attribute = attributes[0];
-        if (attribute.length < 4) revert UnknownLzAttribute(attribute);
-        bytes4 selector;
-        assembly {
-            selector := mload(add(attribute, 32))
-        }
-        if (selector != LZ_OPTIONS_ATTRIBUTE) revert UnknownLzAttribute(attribute);
-        uint256 optLen = attribute.length - 4;
-        bytes memory out = new bytes(optLen);
-        for (uint256 j; j < optLen; ++j) {
-            out[j] = attribute[j + 4];
-        }
-        return out;
+    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory options) {
+        (, options) = ProviderAttribute.body(attributes, LZ_OPTIONS_ATTRIBUTE, 0);
     }
 
     /* ================================= receiving =================================== */
