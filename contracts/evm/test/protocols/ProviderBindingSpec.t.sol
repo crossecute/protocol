@@ -71,6 +71,15 @@ abstract contract ProviderHubSendSpec is Test {
         assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), _expectedQuoteFor(fee));
     }
 
+    /// @dev ERC-7786: a gateway returns zero once the message is sent, and a non-zero id means a
+    ///      further gateway-specific step is required. `TransmitterBase.sendMessage` emits
+    ///      `MessageSent` with zero and returns this value, so a native binding returning its
+    ///      provider's own message id would contradict its own event. The provider's id stays
+    ///      available in the provider's events.
+    function test_aCompletedSendReturnsZero() public {
+        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
+    }
+
     function test_sendRevertsForAnUnconfiguredDestination() public {
         vm.expectRevert();
         harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
