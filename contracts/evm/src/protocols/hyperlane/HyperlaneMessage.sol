@@ -22,6 +22,8 @@ library HyperlaneMessage {
 
     error UnsupportedHyperlaneRecipient(bytes addr);
 
+    /// @dev Returns zero, ERC-7786's "sent" (see `ProviderHubSendSpec`); the Mailbox's message id
+    ///      is in its `DispatchId` event.
     function dispatch(
         address mailbox,
         uint32 domain,
@@ -31,9 +33,10 @@ library HyperlaneMessage {
         uint256 value,
         address refundTo
     ) internal returns (bytes32) {
-        return IMailbox(mailbox).dispatch{value: value}(
+        IMailbox(mailbox).dispatch{value: value}(
             domain, recipientOf(recipient), payload, hookMetadata(attributes, refundTo)
         );
+        return bytes32(0);
     }
 
     function quote(
