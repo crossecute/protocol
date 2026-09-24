@@ -630,7 +630,11 @@ recording rather than assuming.
 **Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
 (bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
 way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
-would require.
+would require. (Checked against the implementation for Phase 5: `executeDelivery` refuses a hash
+already in `deliverySuccessBlock`; a failed delivery can be retried. A reverting
+`receiveWormholeMessages` does not revert the delivery transaction. The implementation was
+read at `wormhole-foundation/wormhole` `932a2e0a2c`, the parent of the commit that deleted
+it from that repo.)
 
 **The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
 and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)

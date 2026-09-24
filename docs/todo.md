@@ -291,6 +291,23 @@ mainnet.
   nothing extra to verify, so accepting it is defensible, but it should be a written
   exception in the binding's NatSpec (provider-spec R3.3) rather than an omission.
 
+- **Wormhole (Relayer) binding, Phase 5 PR.** No R3.3 exception: the Relayer verifies the
+  delivery VAA and that its emitter is a registered Relayer, nothing about the source-chain
+  sender, so `isSourceTransmitter`/`_authenticateOrigin` is the only sender check. Spokes
+  also require `sourceChain == homeWormholeChain`. Three decisions worth a second look:
+  - `sendPayloadToEvm` reverts `InvalidMsgValue` unless paid its quote exactly and never
+    refunds source-side overpayment, so `WormholeMessage.send` re-quotes, pays the quote,
+    and refunds the rest of `value` to `_refundTo()` itself. That is a quote on the send
+    path, which `OutboundBase._quoteMessage`'s NatSpec says nothing does; it is needed here
+    because the provider refuses the alternative.
+  - The Relayer requires a gas limit and has no default; the binding uses 200,000 when no
+    attribute is given. Not measured against bootstrap or `_reportReceiver`.
+  - Unused destination gas is refunded to the recipient on the target chain. A receiver
+    (account) keeps it; a transceiver has no `receive`, so the Relayer's refund call fails and
+    the delivery provider keeps it, as it would with no refund address.
+  The Relayer contracts were deleted from `wormhole-foundation/wormhole` on 2026-01-21
+  (`ddaf88c344`, "relayer: rm"); the behavior above was read at its parent, `932a2e0a2c`.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
@@ -364,7 +381,8 @@ mainnet.
   moved) fails three different ways. LayerZero's stock `_payNative` requires
   `msg.value == nativeFee` EXACTLY and reverts `NotEnoughNative` on any drift, either
   direction. CCIP's own NatSpec says an overpayment is accepted with no refund, so padding
-  the quote for safety just burns the difference. Hyperlane's `Mailbox.dispatch` neither
+  the quote for safety just burns the difference. Wormhole's Relayer reverts on any mismatch, like
+  LayerZero; its binding pays the quote and refunds the rest itself (§4). Hyperlane's `Mailbox.dispatch` neither
   reverts nor refunds: it sends `requiredHook` what it asks and forwards WHATEVER IS LEFT of
   `msg.value` to the post-dispatch hook, which does not return to the sender either. No
   single on-chain buffer is safe across all three; two of them turn "add a margin" into a
