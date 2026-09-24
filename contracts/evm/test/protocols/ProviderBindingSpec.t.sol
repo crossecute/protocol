@@ -75,8 +75,10 @@ abstract contract ProviderHubSendSpec is Test {
     ///      further gateway-specific step is required. `TransmitterBase.sendMessage` emits
     ///      `MessageSent` with zero and returns this value, so a native binding returning its
     ///      provider's own message id would contradict its own event. The provider's id stays
-    ///      available in the provider's events.
+    ///      available in the provider's events. Checks a second send too: a provider counter
+    ///      (a nonce or sequence) starts at zero and would pass on the first alone.
     function test_aCompletedSendReturnsZero() public {
+        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
         assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
     }
 
