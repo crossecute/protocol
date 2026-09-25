@@ -36,4 +36,9 @@ remappings = [
     # lib/ccip/contracts/src/v0.8/ccip/**/*.sol for per-file provenance
     # (contracts/evm/script/vendor/ccip.sh) and docs/todo.md.
     "@ccip/=lib/ccip/contracts/src/v0.8/ccip/",
+
+    # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,
+    # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free
+    # interfaces and libraries are vendored (contracts/evm/script/vendor/hyperlane.sh).
+    "@hyperlane/=lib/hyperlane/solidity/contracts/",
 ]
