@@ -12,7 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {HyperlaneHubTransceiver} from "src/protocols/hyperlane/HyperlaneHubTransceiver.sol";
-import {HyperlaneSpokeTransceiver} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
+import {HyperlaneSpokeTransceiver, HyperlaneSpokeBase} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
 import {
     HyperlaneZkSyncSpokeTransceiver,
     HyperlaneTronSpokeTransceiver
@@ -272,7 +272,7 @@ contract HyperlaneTransceiverReceiveTest is Test {
 
     function test_spokeRejectsZeroHomeDomain() public {
         HyperlaneSpokeTransceiver impl = new HyperlaneSpokeTransceiver(address(mailbox));
-        vm.expectRevert(HyperlaneSpokeTransceiver.ZeroHomeDomain.selector);
+        vm.expectRevert(HyperlaneSpokeBase.ZeroHomeDomain.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(

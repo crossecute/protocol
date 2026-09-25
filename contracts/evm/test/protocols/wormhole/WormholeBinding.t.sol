@@ -12,7 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
-import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
+import {WormholeSpokeTransceiver, WormholeSpokeBase} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
 import {
     WormholeZkSyncSpokeTransceiver,
     WormholeTronSpokeTransceiver
@@ -379,7 +379,7 @@ contract WormholeTransceiverReceiveTest is Test {
 
     function test_spokeRejectsZeroHomeWormholeChain() public {
         address impl = address(new WormholeSpokeTransceiver(address(core), address(0), address(0)));
-        vm.expectRevert(WormholeSpokeTransceiver.ZeroHomeWormholeChain.selector);
+        vm.expectRevert(WormholeSpokeBase.ZeroHomeWormholeChain.selector);
         new ERC1967Proxy(impl, _spokeInit(0));
     }
 

@@ -6,8 +6,10 @@ import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
-/// @notice Transceiver on every non-home chain.
-contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
+/// @notice Wormhole wiring shared by every spoke variant (this file's, and the zkSync/Tron
+///         ones in `WormholeDivergentSpokeTransceiver.sol`), which differ only in address
+///         derivation.
+abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     address public immutable coreBridge;
     address public immutable quoterRouter;
     address public immutable quoter;
@@ -27,19 +29,20 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
     /// @param homeWormholeChain_ Wormhole's chain id for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `coreBridge` directly — see
     ///      `WormholeHubTransceiver.initialize`.
-    function initialize(
+    function __WormholeSpoke_init(
         address[] calldata gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_,
+        bool addressesDiverge_,
         uint16 homeWormholeChain_
-    ) external initializer {
+    ) internal onlyInitializing {
         if (homeWormholeChain_ == 0) revert ZeroHomeWormholeChain();
         grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
         );
     }
 
@@ -49,6 +52,7 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
     ///      `homeChainKey`, so `homeWormholeChain` is always the right destination.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
+        virtual
         override
         returns (bytes32 sendId)
     {
@@ -58,6 +62,7 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
         internal
         view
+        virtual
         override
         returns (uint256 nativeFee)
     {
@@ -82,5 +87,25 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
         return WormholeMessage.consumed(vaaHash);
+    }
+}
+
+/// @notice Transceiver on every non-home chain whose addresses match Ethereum's.
+contract WormholeSpokeTransceiver is WormholeSpokeBase {
+    constructor(address coreBridge_, address quoterRouter_, address quoter_)
+        WormholeSpokeBase(coreBridge_, quoterRouter_, quoter_)
+    {}
+
+    function initialize(
+        address[] calldata gateways,
+        address receiverImplementation_,
+        bytes32 homeChainKey_,
+        bytes calldata homeChainIdentifier_,
+        bytes calldata homeTransceiver_,
+        uint16 homeWormholeChain_
+    ) external initializer {
+        __WormholeSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeWormholeChain_
+        );
     }
 }

@@ -9,8 +9,9 @@ import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
-/// @notice Transceiver on every non-home chain.
-contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
+/// @notice CCIP wiring shared by every spoke variant (this file's, and the zkSync/Tron ones in
+///         `CcipDivergentSpokeTransceiver.sol`), which differ only in address derivation.
+abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     address public immutable router;
 
     constructor(address router_) {
@@ -23,14 +24,15 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     /// @param homeSelector_ CCIP's selector for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `router` directly rather than relying on the
     ///      deployment to include it in `gateways` — see `CcipHubTransceiver.initialize`.
-    function initialize(
+    function __CcipSpoke_init(
         address[] calldata gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
         bytes calldata homeTransceiver_,
+        bool addressesDiverge_,
         uint64 homeSelector_
-    ) external initializer {
+    ) internal onlyInitializing {
         grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
@@ -39,7 +41,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            false
+            addressesDiverge_
         );
     }
 
@@ -54,7 +56,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value
-    ) internal override returns (bytes32 sendId) {
+    ) internal virtual override returns (bytes32 sendId) {
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
         IRouterClient(router).ccipSend{value: value}(homeSelector, message);
     }
@@ -62,6 +64,7 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
+        virtual
         override
         returns (uint256 nativeFee)
     {
@@ -87,8 +90,26 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
     /// @dev See `CcipReceiver.supportsInterface`'s note: CCIP's off-ramp checks this before
     ///      calling `ccipReceive`, and answering false makes it deliver silently.
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
             || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+    }
+}
+
+/// @notice Transceiver on every non-home chain whose addresses match Ethereum's.
+contract CcipSpokeTransceiver is CcipSpokeBase {
+    constructor(address router_) CcipSpokeBase(router_) {}
+
+    function initialize(
+        address[] calldata gateways,
+        address receiverImplementation_,
+        bytes32 homeChainKey_,
+        bytes calldata homeChainIdentifier_,
+        bytes calldata homeTransceiver_,
+        uint64 homeSelector_
+    ) external initializer {
+        __CcipSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeSelector_
+        );
     }
 }

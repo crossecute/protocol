@@ -12,7 +12,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -364,7 +364,7 @@ contract DestinationNamingTest is Test {
         LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
         // LzSpokeTransceiver checks the 20-byte length itself, ahead of the base contract's
         // own (weaker) non-empty check, since it casts this value to an address.
-        vm.expectRevert(LzSpokeTransceiver.InvalidHomeTransceiverLength.selector);
+        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(

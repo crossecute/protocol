@@ -1,31 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {
-    ZkSyncSpokeTransceiver,
-    TronSpokeTransceiver
-} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
-import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
-import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
-import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
+    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {HyperlaneSpokeBase} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
 
-/// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
-///         Hyperlane wiring in both is identical to `HyperlaneSpokeTransceiver`'s, repeated
-///         rather than shared since the two have no common concrete base to hold it.
+/// @dev The overrides below only name both bases, as Solidity requires where each supplies an
+///      implementation; `super` resolves to `HyperlaneSpokeBase` for Hyperlane's functions and
+///      to the zkSync/Tron base for address derivation.
 
-/// @dev Overrides both `predictCrossAccount` and `_deployAccount`: zkSync diverges in the
-///      deployment mechanism as well as the address.
-contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IMessageRecipient {
-    address public immutable mailbox;
-
-    constructor(address mailbox_) {
-        mailbox = mailbox_;
-    }
-
-    uint32 public homeDomain;
-
-    error ZeroHomeDomain();
+/// @notice `HyperlaneSpokeBase` on zkSync Era: zkSync's address derivation and deployment.
+contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, HyperlaneSpokeBase {
+    constructor(address mailbox_) HyperlaneSpokeBase(mailbox_) {}
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
@@ -38,57 +26,46 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IMessageReci
         bytes32 accountBytecodeHash_,
         uint32 homeDomain_
     ) external initializer {
-        if (homeDomain_ == 0) revert ZeroHomeDomain();
-        grantRole(GATEWAY_ROLE, mailbox);
-        homeDomain = homeDomain_;
-        __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true
+        __HyperlaneSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeDomain_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
+    function predictCrossAccount(address owner, bytes32 salt)
+        public
+        view
+        override(TransceiverBase, ZkSyncSpokeTransceiver)
+        returns (address)
+    {
+        return super.predictCrossAccount(owner, salt);
+    }
+
+    function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncSpokeTransceiver) returns (address) {
+        return super._deployAccount(salt);
+    }
+
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
-        override
-        returns (bytes32 sendId)
+        override(OutboundBase, HyperlaneSpokeBase)
+        returns (bytes32)
     {
-        return HyperlaneMessage.dispatch(mailbox, homeDomain, recipient, payload, attributes, value, _refundTo());
+        return super._sendMessage(recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        override
-        returns (uint256 nativeFee)
+        override(OutboundBase, HyperlaneSpokeBase)
+        returns (uint256)
     {
-        return HyperlaneMessage.quote(mailbox, homeDomain, recipient, payload, attributes, _refundTo());
-    }
-
-    bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
-
-    function handle(uint32 origin, bytes32 sender, bytes calldata message)
-        external
-        payable
-        override
-        onlyRole(GATEWAY_ROLE)
-    {
-        ProviderOrigin.requireHome(origin, homeDomain);
-        _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
+        return super._quoteMessage(recipient, payload, attributes);
     }
 }
 
-/// @dev Overrides `predictCrossAccount` only: Tron runs raw-initcode CREATE2 with a
-///      different derived address, no different deployment mechanism.
-contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, IMessageRecipient {
-    address public immutable mailbox;
-
-    constructor(address mailbox_) {
-        mailbox = mailbox_;
-    }
-
-    uint32 public homeDomain;
-
-    error ZeroHomeDomain();
+/// @notice `HyperlaneSpokeBase` on Tron: Tron's address derivation only.
+contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, HyperlaneSpokeBase {
+    constructor(address mailbox_) HyperlaneSpokeBase(mailbox_) {}
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
@@ -100,41 +77,35 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, IMessageRecipien
         bytes32 accountBytecodeHash_,
         uint32 homeDomain_
     ) external initializer {
-        if (homeDomain_ == 0) revert ZeroHomeDomain();
-        grantRole(GATEWAY_ROLE, mailbox);
-        homeDomain = homeDomain_;
-        __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true
+        __HyperlaneSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeDomain_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
+    function predictCrossAccount(address owner, bytes32 salt)
+        public
+        view
+        override(TransceiverBase, TronSpokeTransceiver)
+        returns (address)
+    {
+        return super.predictCrossAccount(owner, salt);
+    }
+
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
-        override
-        returns (bytes32 sendId)
+        override(OutboundBase, HyperlaneSpokeBase)
+        returns (bytes32)
     {
-        return HyperlaneMessage.dispatch(mailbox, homeDomain, recipient, payload, attributes, value, _refundTo());
+        return super._sendMessage(recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        override
-        returns (uint256 nativeFee)
+        override(OutboundBase, HyperlaneSpokeBase)
+        returns (uint256)
     {
-        return HyperlaneMessage.quote(mailbox, homeDomain, recipient, payload, attributes, _refundTo());
-    }
-
-    bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
-
-    function handle(uint32 origin, bytes32 sender, bytes calldata message)
-        external
-        payable
-        override
-        onlyRole(GATEWAY_ROLE)
-    {
-        ProviderOrigin.requireHome(origin, homeDomain);
-        _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
+        return super._quoteMessage(recipient, payload, attributes);
     }
 }

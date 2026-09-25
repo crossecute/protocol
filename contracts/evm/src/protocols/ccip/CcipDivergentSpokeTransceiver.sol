@@ -3,35 +3,22 @@ pragma solidity ^0.8.0;
 
 import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
     "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
-import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {AccessControlEnumerableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import {CcipSpokeBase} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
 
-/// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
-///         One concrete contract each, chosen at deploy time (see
-///         `DivergentSpokeTransceiver.sol`); CCIP wiring in both is identical to
-///         `CcipSpokeTransceiver`'s, repeated rather than shared since the two diverge from
-///         each other in `predictCrossAccount`/`_deployAccount` and have no common concrete
-///         base to hold it.
+/// @dev The overrides below only name both bases, as Solidity requires where each supplies an
+///      implementation; `super` resolves to `CcipSpokeBase` for CCIP's functions and to the
+///      zkSync/Tron base for address derivation.
 
-/// @dev Overrides both `predictCrossAccount` and `_deployAccount`: zkSync diverges in the
-///      deployment mechanism as well as the address.
-contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageReceiver {
-    address public immutable router;
-
-    constructor(address router_) {
-        router = router_;
-    }
-
-    uint64 public homeSelector;
+/// @notice `CcipSpokeBase` on zkSync Era: zkSync's address derivation and deployment.
+contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
+    constructor(address router_) CcipSpokeBase(router_) {}
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
-    /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
-    ///      `CcipHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -41,70 +28,53 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
-        grantRole(GATEWAY_ROLE, router);
-        homeSelector = homeSelector_;
-        __SpokeTransceiverBase_init(
-            gateways,
-            receiverImplementation_,
-            homeChainKey_,
-            homeChainIdentifier_,
-            homeTransceiver_,
-            true
+        __CcipSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeSelector_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+    function predictCrossAccount(address owner, bytes32 salt)
+        public
+        view
+        override(TransceiverBase, ZkSyncSpokeTransceiver)
+        returns (address)
+    {
+        return super.predictCrossAccount(owner, salt);
+    }
+
+    function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncSpokeTransceiver) returns (address) {
+        return super._deployAccount(salt);
+    }
+
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override(OutboundBase, CcipSpokeBase)
+        returns (bytes32)
+    {
+        return super._sendMessage(recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        override
-        returns (uint256 nativeFee)
+        override(OutboundBase, CcipSpokeBase)
+        returns (uint256)
     {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).getFee(homeSelector, message);
+        return super._quoteMessage(recipient, payload, attributes);
     }
 
-    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
-
-    function ccipReceive(Client.Any2EVMMessage calldata message)
-        external
-        onlyRole(GATEWAY_ROLE)
-    {
-        ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
-        address senderAddr = abi.decode(message.sender, (address));
-        _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
+        returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 }
 
-/// @dev Overrides `predictCrossAccount` only: Tron runs raw-initcode CREATE2 with a
-///      different derived address, no different deployment mechanism.
-contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiver {
-    address public immutable router;
-
-    constructor(address router_) {
-        router = router_;
-    }
-
-    uint64 public homeSelector;
+/// @notice `CcipSpokeBase` on Tron: Tron's address derivation only.
+contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
+    constructor(address router_) CcipSpokeBase(router_) {}
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
-    /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
-    ///      `CcipHubTransceiver.initialize`.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -114,52 +84,40 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
-        grantRole(GATEWAY_ROLE, router);
-        homeSelector = homeSelector_;
-        __SpokeTransceiverBase_init(
-            gateways,
-            receiverImplementation_,
-            homeChainKey_,
-            homeChainIdentifier_,
-            homeTransceiver_,
-            true
+        __CcipSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeSelector_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+    function predictCrossAccount(address owner, bytes32 salt)
+        public
+        view
+        override(TransceiverBase, TronSpokeTransceiver)
+        returns (address)
+    {
+        return super.predictCrossAccount(owner, salt);
+    }
+
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override(OutboundBase, CcipSpokeBase)
+        returns (bytes32)
+    {
+        return super._sendMessage(recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        override
-        returns (uint256 nativeFee)
+        override(OutboundBase, CcipSpokeBase)
+        returns (uint256)
     {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).getFee(homeSelector, message);
+        return super._quoteMessage(recipient, payload, attributes);
     }
 
-    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
-
-    function ccipReceive(Client.Any2EVMMessage calldata message)
-        external
-        onlyRole(GATEWAY_ROLE)
-    {
-        ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
-        address senderAddr = abi.decode(message.sender, (address));
-        _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
+        returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 }

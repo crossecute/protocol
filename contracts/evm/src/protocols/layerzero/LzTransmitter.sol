@@ -11,7 +11,7 @@ import {OwnableUpgradeable} from
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @dev A transmitter has no eid table of its own: it's per-user and locked after creation,
 ///      so it reads the shared, owner-updatable table on `LzHubTransceiver` (via
@@ -61,7 +61,7 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
         uint256 value
     ) internal override returns (bytes32 sendId) {
         uint32 dstEid = _eidFor(recipient);
-        bytes memory options = _optionsFrom(attributes);
+        bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
 
@@ -72,14 +72,13 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
         returns (uint256 nativeFee)
     {
         uint32 dstEid = _eidFor(recipient);
-        bytes memory options = _optionsFrom(attributes);
+        bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);
         return fee.nativeFee;
     }
 
-    /// @notice One attribute: LZ execution options, as `abi.encodePacked(LZ_OPTIONS_ATTRIBUTE,
-    ///         rawOptionsBytes)`. Anything else is refused per ERC-7786.
-    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
+    /// @notice One attribute, `LzMessage.OPTIONS_ATTRIBUTE`. Anything else is refused per ERC-7786.
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == LZ_OPTIONS_ATTRIBUTE;
@@ -87,11 +86,5 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
 
     function _eidFor(bytes memory recipient) internal view returns (uint32) {
         return ILzEidTable(transceiver).eidFor(Erc7930.chainKey(recipient));
-    }
-
-    /// @dev Empty options is a valid default (LZ's executor applies its own gas limit), not
-    ///      a missing one.
-    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory options) {
-        (, options) = ProviderAttribute.body(attributes, LZ_OPTIONS_ATTRIBUTE, 0);
     }
 }

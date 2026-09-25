@@ -12,7 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {LzZkSyncSpokeTransceiver} from
     "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Origin} from
@@ -235,7 +235,7 @@ contract LzInitValidationTest is Test {
 
     function test_spokeRejectsZeroHomeEid() public {
         address impl = address(new LzSpokeTransceiver(ENDPOINT));
-        vm.expectRevert(LzSpokeTransceiver.ZeroHomeEid.selector);
+        vm.expectRevert(LzSpokeBase.ZeroHomeEid.selector);
         new ERC1967Proxy(
             impl,
             abi.encodeCall(
@@ -254,7 +254,7 @@ contract LzInitValidationTest is Test {
 
     function test_spokeRejectsAMissizedHomeTransceiver() public {
         address impl = address(new LzSpokeTransceiver(ENDPOINT));
-        vm.expectRevert(LzSpokeTransceiver.InvalidHomeTransceiverLength.selector);
+        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
         new ERC1967Proxy(
             impl,
             abi.encodeCall(
@@ -290,7 +290,7 @@ contract LzZkSyncSpokeHarness is LzZkSyncSpokeTransceiver {
 /// @notice The other Copilot-flagged gap on PR #6: `_reportReceiver` runs nested inside the
 ///         `lzReceive` delivery callback, where `msg.value` is 0, and is documented
 ///         (`SpokeTransceiverBase._reportReceiver`) to spend from the spoke's own balance.
-///         Without `LzZkSyncSpokeTransceiver._payNative`, this reverted `NotEnoughNative` on
+///         Without `LzSpokeBase._payNative`, this reverted `NotEnoughNative` on
 ///         every zkSync/Tron account bootstrap.
 contract LzDivergentSpokePayNativeTest is Test {
     MockLzEndpoint endpoint;

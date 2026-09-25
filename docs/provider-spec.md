@@ -122,11 +122,11 @@ A binding is five or six files under `src/protocols/<provider>/`, plus a
 
 | File | Extends | Role |
 | --- | --- | --- |
-| `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the three sending contracts. Absent where the SDK is inherited and already is that shared code (LayerZero's OApp). |
+| `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the three sending contracts. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
 | `<P>Transmitter.sol` | `TransmitterBase` | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ReceiverBase` | The per-user account on a spoke. Receives on path A. |
 | `<P>HubTransceiver.sol` | `HubTransceiverBase`, `ProviderChainId` | Sends bootstrap, receives reports. `ProviderChainId` only where a provider-native chain id survives; under ERC-7786 a gateway binding has none. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
-| `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase` | Receives bootstrap, sends the report. Holds the home chain's native id as one initializer value. |
+| `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase` | Receives bootstrap, sends the report. Holds the home chain's native id as one initializer value. The provider's wiring is an abstract `<P>SpokeBase` in the same file, which the zkSync/Tron variants inherit alongside `ZkSyncSpokeTransceiver`/`TronSpokeTransceiver`. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
 only the two accounts:

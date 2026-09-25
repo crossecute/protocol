@@ -8,7 +8,7 @@ import {OAppUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -53,7 +53,7 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         uint256 value
     ) internal override returns (bytes32 sendId) {
         uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
-        bytes memory options = _optionsFrom(attributes);
+        bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
 
@@ -64,7 +64,7 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         returns (uint256 nativeFee)
     {
         uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
-        bytes memory options = _optionsFrom(attributes);
+        bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);
         return fee.nativeFee;
     }
@@ -80,13 +80,7 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         return _nativeFee;
     }
 
-    /// @dev The constant is duplicated across LZ bindings (no common ancestor that wouldn't
-    ///      widen `OutboundBase` for every provider); the parsing is `ProviderAttribute`.
-    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
-
-    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory options) {
-        (, options) = ProviderAttribute.body(attributes, LZ_OPTIONS_ATTRIBUTE, 0);
-    }
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     /* ================================= receiving =================================== */
 
