@@ -44,6 +44,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
     {
         if (homeEid == 0) revert ZeroHomeEid();
         __OAppReceiver_init(address(this));
+        grantRole(GATEWAY_ROLE, address(endpoint));
         _getOAppCoreStorage().peers[homeEid] = bytes32(uint256(uint160(sourceTransmitter_)));
         emit PeerSet(homeEid, bytes32(uint256(uint160(sourceTransmitter_))));
         __ReceiverBase_init(sourceTransmitter_, calls);
@@ -54,6 +55,8 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
     ///      set once). Narrows via `isSourceTransmitter` rather than `_authenticateSender`,
     ///      since `_origin.sender` is already a plain address and the ERC-7930 round trip
     ///      buys nothing here.
+    /// @dev `lzReceive` already pins `msg.sender` to `endpoint`; the role check is what lets
+    ///      `revokeGateway(endpoint)` disconnect LayerZero, which the peer check alone never would.
     function _lzReceive(
         Origin calldata _origin,
         bytes32, /* _guid */
@@ -61,6 +64,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         address, /* _executor */
         bytes calldata /* _extraData */
     ) internal override {
+        _checkRole(GATEWAY_ROLE);
         address sender = address(uint160(uint256(_origin.sender)));
         if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
         _onMessage(_message);

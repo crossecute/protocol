@@ -172,6 +172,10 @@ contract CcipReceiveTest is ProviderReceiveSpec {
         return address(receiver);
     }
 
+    function _gateway() internal view override returns (address) {
+        return address(router);
+    }
+
     function _deliverFromConfiguredSource() internal override {
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         vm.prank(address(router));

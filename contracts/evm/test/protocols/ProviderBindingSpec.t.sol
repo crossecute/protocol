@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -127,6 +128,9 @@ abstract contract ProviderReceiveSpec is Test {
     ///         gateway/endpoint/mailbox/router/relayer/messenger entirely. Reverts.
     function _deliverFromWrongCaller() internal virtual;
 
+    /// @notice The address this receiver's initializer granted `GATEWAY_ROLE`.
+    function _gateway() internal view virtual returns (address);
+
     function test_theConfiguredSourceIsAccepted() public {
         vm.expectEmit(false, false, false, true, _receiverUnderTest());
         emit Delivered(0);
@@ -146,5 +150,15 @@ abstract contract ProviderReceiveSpec is Test {
     function test_anythingButTheProvidersOwnGatewayIsRejected() public {
         vm.expectRevert();
         _deliverFromWrongCaller();
+    }
+
+    /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut
+    ///      delivery even where the provider authenticates before this protocol's code runs.
+    function test_aRevokedGatewayCannotDeliver() public {
+        ReceiverBase receiver = ReceiverBase(payable(_receiverUnderTest()));
+        vm.prank(receiver.sourceTransmitter());
+        receiver.revokeGateway(_gateway());
+        vm.expectRevert();
+        _deliverFromConfiguredSource();
     }
 }

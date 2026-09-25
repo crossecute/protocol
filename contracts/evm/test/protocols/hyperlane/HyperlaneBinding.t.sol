@@ -178,6 +178,10 @@ contract HyperlaneReceiveTest is ProviderReceiveSpec {
         return address(receiver);
     }
 
+    function _gateway() internal view override returns (address) {
+        return address(mailbox);
+    }
+
     function _deliverFromConfiguredSource() internal override {
         vm.prank(address(mailbox));
         receiver.handle(8453, TypeCasts.addressToBytes32(sourceTransmitter), Payload.encodeCalls(new Call[](0)));

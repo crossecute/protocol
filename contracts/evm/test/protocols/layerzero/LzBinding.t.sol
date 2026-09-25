@@ -187,6 +187,10 @@ contract LzReceiveTest is ProviderReceiveSpec {
         return address(receiver);
     }
 
+    function _gateway() internal view override returns (address) {
+        return address(endpoint);
+    }
+
     function _deliverFromConfiguredSource() internal override {
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         vm.prank(address(endpoint));

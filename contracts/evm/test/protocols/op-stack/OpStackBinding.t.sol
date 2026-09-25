@@ -173,6 +173,10 @@ contract OpStackReceiveTest is ProviderReceiveSpec {
         return address(receiver);
     }
 
+    function _gateway() internal view override returns (address) {
+        return address(messenger);
+    }
+
     function _deliverFromConfiguredSource() internal override {
         messenger.relay(sourceTransmitter, address(receiver), _entry(Payload.encodeCalls(new Call[](0))));
     }

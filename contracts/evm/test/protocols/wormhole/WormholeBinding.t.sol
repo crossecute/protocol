@@ -234,6 +234,10 @@ contract WormholeReceiveTest is ProviderReceiveSpec {
         return address(receiver);
     }
 
+    function _gateway() internal view override returns (address) {
+        return address(core);
+    }
+
     function _deliverFromConfiguredSource() internal override {
         vm.prank(address(0xE1EC));
         receiver.executeVAAv1(_validVaa(0));
