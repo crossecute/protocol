@@ -8,6 +8,7 @@ import {
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
 ///         Hyperlane wiring in both is identical to `HyperlaneSpokeTransceiver`'s, repeated
@@ -25,7 +26,6 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IMessageReci
     uint32 public homeDomain;
 
     error ZeroHomeDomain();
-    error UnexpectedOrigin(uint32 origin);
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
@@ -72,7 +72,7 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IMessageReci
         override
         onlyRole(GATEWAY_ROLE)
     {
-        if (origin != homeDomain) revert UnexpectedOrigin(origin);
+        ProviderOrigin.requireHome(origin, homeDomain);
         _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
     }
 }
@@ -89,7 +89,6 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, IMessageRecipien
     uint32 public homeDomain;
 
     error ZeroHomeDomain();
-    error UnexpectedOrigin(uint32 origin);
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
@@ -135,7 +134,7 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, IMessageRecipien
         override
         onlyRole(GATEWAY_ROLE)
     {
-        if (origin != homeDomain) revert UnexpectedOrigin(origin);
+        ProviderOrigin.requireHome(origin, homeDomain);
         _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
     }
 }

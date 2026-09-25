@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -160,5 +161,31 @@ abstract contract ProviderReceiveSpec is Test {
         receiver.revokeGateway(_gateway());
         vm.expectRevert();
         _deliverFromConfiguredSource();
+    }
+}
+
+/// @title ProviderSpokeOriginSpec
+/// @notice Every spoke variant (base, zkSync, Tron) of a binding whose provider reports the
+///         origin chain refuses the hub's own address from any chain but home.
+/// @dev LayerZero is not held to this: its per-eid peer refuses the delivery inside OApp.
+///      OP Stack has no origin to report: one messenger connects exactly two chains.
+abstract contract ProviderSpokeOriginSpec is Test {
+    /// @notice Deploys each spoke variant with the same home.
+    function _spokes() internal virtual returns (address[] memory);
+
+    /// @notice The provider's id for a chain that is not home.
+    function _otherOrigin() internal view virtual returns (uint256);
+
+    /// @notice Deliver an empty message to `spoke`, through the provider's own gateway, with the
+    ///         hub's address as sender and `origin` as the reported source chain.
+    function _deliverFromHubOn(address spoke, uint256 origin) internal virtual;
+
+    function test_everySpokeVariantRefusesTheHubFromAnotherOrigin() public {
+        address[] memory spokes = _spokes();
+        assertEq(spokes.length, 3);
+        for (uint256 i; i < spokes.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(ProviderOrigin.UnexpectedOrigin.selector, _otherOrigin()));
+            _deliverFromHubOn(spokes[i], _otherOrigin());
+        }
     }
 }

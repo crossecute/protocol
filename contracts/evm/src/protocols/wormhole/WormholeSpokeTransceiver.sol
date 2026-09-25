@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Transceiver on every non-home chain.
 contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
@@ -22,7 +23,6 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
 
     /// @dev Zero is `ProviderChainId`'s unset sentinel, mirrored here.
     error ZeroHomeWormholeChain();
-    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param homeWormholeChain_ Wormhole's chain id for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `coreBridge` directly — see
@@ -72,13 +72,11 @@ contract WormholeSpokeTransceiver is SpokeTransceiverBase, IVaaV1Receiver {
 
     /* ================================= receiving =================================== */
 
-    /// @dev The emitter chain is checked against `homeWormholeChain` so a contract at the hub's
-    ///      address on any other chain is not accepted as the hub; `_authenticateOrigin` (via
-    ///      `_onInbound`) then checks the emitter itself.
+    /// @dev Emitter chain per `ProviderOrigin`; `_authenticateOrigin` checks the emitter.
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        ProviderOrigin.requireHome(emitterChain, homeWormholeChain);
         _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
     }
 

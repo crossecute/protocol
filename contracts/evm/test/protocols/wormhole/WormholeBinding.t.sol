@@ -13,6 +13,10 @@ import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
 import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
+import {
+    WormholeZkSyncSpokeTransceiver,
+    WormholeTronSpokeTransceiver
+} from "src/protocols/wormhole/WormholeDivergentSpokeTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
@@ -20,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -379,13 +383,6 @@ contract WormholeTransceiverReceiveTest is Test {
         new ERC1967Proxy(impl, _spokeInit(0));
     }
 
-    /// @dev The hub's own address, emitting from any chain but home, is not the hub.
-    function test_spokeRejectsTheHubsAddressFromAnotherChain() public {
-        bytes memory vaa = _vaa(1, 5, homeTransceiver, 0, _envelope(HERE, address(spoke), ""));
-        vm.expectRevert(abi.encodeWithSelector(WormholeSpokeTransceiver.UnexpectedEmitterChain.selector, 5));
-        spoke.executeVAAv1(vaa);
-    }
-
     function test_spokeRejectsANonHubEmitterFromHome() public {
         bytes memory vaa = _vaa(1, HOME, address(0xBAD), 0, _envelope(HERE, address(spoke), ""));
         vm.expectRevert();
@@ -411,5 +408,53 @@ contract WormholeTransceiverReceiveTest is Test {
         bytes memory vaa = _vaa(1, 5, address(0xC0DE), 0, _envelope(HERE, address(hub), ""));
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.InvalidVaa.selector, "VM signature invalid"));
         hub.executeVAAv1(vaa);
+    }
+}
+
+contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
+    uint16 constant HOME = 2;
+    uint16 constant HERE = 30;
+    MockWormholeCore core = new MockWormholeCore(HERE);
+    address hub = address(0xD00D);
+
+    function _spokes() internal override returns (address[] memory spokes) {
+        bytes memory hubBytes = abi.encodePacked(hub);
+        spokes = new address[](3);
+        spokes[0] = address(
+            new ERC1967Proxy(
+                address(new WormholeSpokeTransceiver(address(core), address(0), address(0))),
+                abi.encodeCall(
+                    WormholeSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME)
+                )
+            )
+        );
+        spokes[1] = address(
+            new ERC1967Proxy(
+                address(new WormholeZkSyncSpokeTransceiver(address(core), address(0), address(0))),
+                abi.encodeCall(
+                    WormholeZkSyncSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME)
+                )
+            )
+        );
+        spokes[2] = address(
+            new ERC1967Proxy(
+                address(new WormholeTronSpokeTransceiver(address(core), address(0), address(0))),
+                abi.encodeCall(
+                    WormholeTronSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME)
+                )
+            )
+        );
+    }
+
+    function _otherOrigin() internal pure override returns (uint256) {
+        return 5;
+    }
+
+    /// @dev Addressed to `spoke` on this chain, so only the emitter chain is wrong.
+    function _deliverFromHubOn(address spoke, uint256 origin) internal override {
+        WormholeSpokeTransceiver(spoke).executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
     }
 }

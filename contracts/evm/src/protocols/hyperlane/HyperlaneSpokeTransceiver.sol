@@ -5,6 +5,7 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Transceiver on every non-home chain.
 contract HyperlaneSpokeTransceiver is SpokeTransceiverBase, IMessageRecipient {
@@ -19,7 +20,6 @@ contract HyperlaneSpokeTransceiver is SpokeTransceiverBase, IMessageRecipient {
 
     /// @dev Zero is `ProviderChainId`'s unset sentinel, mirrored here.
     error ZeroHomeDomain();
-    error UnexpectedOrigin(uint32 origin);
 
     /// @param homeDomain_ Hyperlane's domain for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `mailbox` directly — see
@@ -65,16 +65,15 @@ contract HyperlaneSpokeTransceiver is SpokeTransceiverBase, IMessageRecipient {
 
     /* ================================= receiving =================================== */
 
-    /// @dev `origin` is checked against `homeDomain` so a sender at the hub's address on any
-    ///      other chain is not accepted as the hub; `_authenticateOrigin` (via `_onInbound`)
-    ///      then checks the sender itself. See `HyperlaneHubTransceiver.handle`.
+    /// @dev Origin domain per `ProviderOrigin`; `_authenticateOrigin` checks the sender. See
+    ///      `HyperlaneHubTransceiver.handle`.
     function handle(uint32 origin, bytes32 sender, bytes calldata message)
         external
         payable
         override
         onlyRole(GATEWAY_ROLE)
     {
-        if (origin != homeDomain) revert UnexpectedOrigin(origin);
+        ProviderOrigin.requireHome(origin, homeDomain);
         _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
     }
 }

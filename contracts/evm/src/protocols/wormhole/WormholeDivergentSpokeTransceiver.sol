@@ -7,6 +7,7 @@ import {
 } from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
 ///         Wormhole wiring in both is identical to `WormholeSpokeTransceiver`'s, repeated
@@ -28,7 +29,6 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IVaaV1Receive
     uint16 public homeWormholeChain;
 
     error ZeroHomeWormholeChain();
-    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
@@ -76,7 +76,7 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IVaaV1Receive
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        ProviderOrigin.requireHome(emitterChain, homeWormholeChain);
         _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
     }
 
@@ -101,7 +101,6 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IVaaV1Receiver {
     uint16 public homeWormholeChain;
 
     error ZeroHomeWormholeChain();
-    error UnexpectedEmitterChain(uint16 emitterChain);
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
@@ -148,7 +147,7 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, IVaaV1Receiver {
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        if (emitterChain != homeWormholeChain) revert UnexpectedEmitterChain(emitterChain);
+        ProviderOrigin.requireHome(emitterChain, homeWormholeChain);
         _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
     }
 

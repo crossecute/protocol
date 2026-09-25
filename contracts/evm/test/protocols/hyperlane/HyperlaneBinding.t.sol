@@ -13,13 +13,18 @@ import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {HyperlaneHubTransceiver} from "src/protocols/hyperlane/HyperlaneHubTransceiver.sol";
 import {HyperlaneSpokeTransceiver} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
+import {
+    HyperlaneZkSyncSpokeTransceiver,
+    HyperlaneTronSpokeTransceiver
+} from "src/protocols/hyperlane/HyperlaneDivergentSpokeTransceiver.sol";
+import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -284,13 +289,6 @@ contract HyperlaneTransceiverReceiveTest is Test {
         );
     }
 
-    /// @dev The hub's own address, delivered from any domain but home, is not the hub.
-    function test_spokeRejectsTheHubsAddressFromAnotherOrigin() public {
-        vm.prank(address(mailbox));
-        vm.expectRevert(abi.encodeWithSelector(HyperlaneSpokeTransceiver.UnexpectedOrigin.selector, 2));
-        spoke.handle(2, TypeCasts.addressToBytes32(homeTransceiver), "");
-    }
-
     function test_spokeRejectsANonHubSenderFromHome() public {
         vm.prank(address(mailbox));
         vm.expectRevert();
@@ -311,5 +309,52 @@ contract HyperlaneTransceiverReceiveTest is Test {
     function test_hubRejectsAnyCallerButTheMailbox() public {
         vm.expectRevert();
         hub.handle(1, TypeCasts.addressToBytes32(address(0xC0DE)), "");
+    }
+}
+
+contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
+    MockHyperlaneMailbox mailbox = new MockHyperlaneMailbox();
+    address hub = address(0xD00D);
+    uint32 constant HOME_DOMAIN = 1;
+
+    function _spokes() internal override returns (address[] memory spokes) {
+        bytes memory hubBytes = abi.encodePacked(hub);
+        spokes = new address[](3);
+        spokes[0] = address(
+            new ERC1967Proxy(
+                address(new HyperlaneSpokeTransceiver(address(mailbox))),
+                abi.encodeCall(
+                    HyperlaneSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME_DOMAIN)
+                )
+            )
+        );
+        spokes[1] = address(
+            new ERC1967Proxy(
+                address(new HyperlaneZkSyncSpokeTransceiver(address(mailbox))),
+                abi.encodeCall(
+                    HyperlaneZkSyncSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_DOMAIN)
+                )
+            )
+        );
+        spokes[2] = address(
+            new ERC1967Proxy(
+                address(new HyperlaneTronSpokeTransceiver(address(mailbox))),
+                abi.encodeCall(
+                    HyperlaneTronSpokeTransceiver.initialize,
+                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_DOMAIN)
+                )
+            )
+        );
+    }
+
+    function _otherOrigin() internal pure override returns (uint256) {
+        return 2;
+    }
+
+    function _deliverFromHubOn(address spoke, uint256 origin) internal override {
+        vm.prank(address(mailbox));
+        IMessageRecipient(spoke).handle(uint32(origin), TypeCasts.addressToBytes32(hub), "");
     }
 }

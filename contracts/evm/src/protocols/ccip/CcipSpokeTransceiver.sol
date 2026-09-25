@@ -7,6 +7,7 @@ import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Transceiver on every non-home chain.
 contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
@@ -18,8 +19,6 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
 
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint64 public homeSelector;
-
-    error UnexpectedSourceChain(uint64 sourceChainSelector);
 
     /// @param homeSelector_ CCIP's selector for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `router` directly rather than relying on the
@@ -74,16 +73,13 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
 
     /* ================================= receiving =================================== */
 
-    /// @dev A spoke has one valid origin, and `route` is `homeRoute()` directly, so the
-    ///      selector check is what stops the hub's address on another chain passing as the hub.
-    ///      CCIP's off-ramp asserts nothing about the sender; `_authenticateOrigin` checks it.
+    /// @dev Origin chain per `ProviderOrigin`. CCIP's off-ramp asserts nothing about the sender;
+    ///      `_authenticateOrigin` checks it.
     function ccipReceive(Client.Any2EVMMessage calldata message)
         external
         onlyRole(GATEWAY_ROLE)
     {
-        if (message.sourceChainSelector != homeSelector) {
-            revert UnexpectedSourceChain(message.sourceChainSelector);
-        }
+        ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }

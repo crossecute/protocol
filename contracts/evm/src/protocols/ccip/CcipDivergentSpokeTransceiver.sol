@@ -8,6 +8,7 @@ import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice Spoke on a chain whose CREATE2 formula is not Ethereum's: zkSync Era and Tron.
 ///         One concrete contract each, chosen at deploy time (see
@@ -26,8 +27,6 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
     }
 
     uint64 public homeSelector;
-
-    error UnexpectedSourceChain(uint64 sourceChainSelector);
 
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
@@ -81,9 +80,7 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
         external
         onlyRole(GATEWAY_ROLE)
     {
-        if (message.sourceChainSelector != homeSelector) {
-            revert UnexpectedSourceChain(message.sourceChainSelector);
-        }
+        ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }
@@ -104,8 +101,6 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
     }
 
     uint64 public homeSelector;
-
-    error UnexpectedSourceChain(uint64 sourceChainSelector);
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
@@ -158,9 +153,7 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
         external
         onlyRole(GATEWAY_ROLE)
     {
-        if (message.sourceChainSelector != homeSelector) {
-            revert UnexpectedSourceChain(message.sourceChainSelector);
-        }
+        ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }

@@ -980,7 +980,8 @@ A binding is done when every line is true.
 - [ ] `_accountInitializer` overridden wherever an account's initializer needs provider
       arguments the base shape does not carry
 - [ ] `ProviderChainId` and a typed setter on the hub, only where a provider-native id survives
-- [ ] A spoke refuses every origin chain but home before calling `_onInbound`
+- [ ] A spoke refuses every origin chain but home through `ProviderOrigin.requireHome` before
+      calling `_onInbound`, held by `ProviderSpokeOriginSpec`
 
 **Byte forms**
 - [ ] Route produced by one codec function in both directions
