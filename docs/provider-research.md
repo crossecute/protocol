@@ -632,7 +632,11 @@ recording rather than assuming.
 **Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
 (bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
 way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
-would require.
+would require. (Checked against the implementation for Phase 5: `executeDelivery` refuses a hash
+already in `deliverySuccessBlock`; a failed delivery can be retried. A reverting
+`receiveWormholeMessages` does not revert the delivery transaction. The implementation was
+read at `wormhole-foundation/wormhole` `932a2e0a2c`, the parent of the commit that deleted
+it from that repo.)
 
 **The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
 and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)
@@ -648,6 +652,29 @@ bindings do not add: LayerZero's executor, CCIP's off-ramp, and Hyperlane's rela
 also third parties, so this is not unique to Wormhole, but it is a fact to grade the same way
 `Provenance` already grades a counterpart's address claim, not to wave through because the
 signature underneath is sound.
+
+### Update (Phase 5): the Standard Relayer is deprecated; the binding uses Core + Executor
+
+Wormhole now marks the Standard Relayer deprecated and points integrators to the Executor
+framework (`wormhole-docs`, `protocol/infrastructure/relayers/relayer.md` and
+`executor-vs-sr.md`; Relayer source removed from the core repo in
+wormhole-foundation/wormhole#4644, "deprecated generic relayer"). No sunset date was found.
+The binding therefore takes the Core path above, with the Executor for delivery:
+
+| Our hook | Wormhole Core + Executor |
+| --- | --- |
+| `_sendMessage` | `ICoreBridge.publishMessage{messageFee}` then `IExecutorQuoterRouter.requestExecution{rest}`; the router refunds its overpayment to `refundAddr` |
+| `_quoteMessage` | `messageFee() + IExecutorQuoterRouter.quoteExecution(...)`, a `view` (wormhole-solidity-sdk#118, Feb 2026) |
+| inbound | `IVaaV1Receiver.executeVAAv1(vaa)`, permissionless; verified via `parseAndVerifyVM` |
+| replay | the binding's own consumed-hash set, as the Core section above anticipated |
+
+Two facts the Relayer used to cover: a VAA names no destination, so the binding prefixes the
+payload with `(targetChain, targetAddress)` and checks both; and `GATEWAY_ROLE` has no caller
+to name, so it is granted to the Core bridge and checked by membership. Sources:
+`wormhole-solidity-sdk @ 2cb855ea` (`interfaces/ICoreBridge.sol`, `interfaces/IExecutor.sol`,
+`Executor/Request.sol`, `Executor/Integration.sol`) and
+`wormholelabs-xyz/example-messaging-executor @ 55f94274` (`ExecutorQuoterRouter.sol`,
+`Executor.sol`).
 
 ### What this means for scope
 

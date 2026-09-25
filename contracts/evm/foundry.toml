@@ -41,4 +41,8 @@ remappings = [
     # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free
     # interfaces and libraries are vendored (contracts/evm/script/vendor/hyperlane.sh).
     "@hyperlane/=lib/hyperlane/solidity/contracts/",
+
+    # Hand-copied, not a submodule: the binding needs three import-free files (Core and
+    # Executor interfaces), not the SDK's helpers. See contracts/evm/script/vendor/wormhole.sh.
+    "@wormhole-sdk/=lib/wormhole-solidity-sdk/src/",
 ]

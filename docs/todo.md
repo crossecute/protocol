@@ -404,6 +404,27 @@ mainnet.
   probably too low for a bootstrap and for `_reportReceiver`, which always sends with no
   attributes. Needs a measured per-path default before mainnet.
 
+- **Wormhole binding, Phase 5 PR: Core + Executor, not the Standard Relayer.** Wormhole has
+  deprecated the Standard Relayer (docs warning, migration guide `executor-vs-sr.md`; source
+  removed in wormhole-foundation/wormhole#4644), so the binding publishes through Core and
+  requests delivery through `ExecutorQuoterRouter`. What that moves onto this binding:
+  - Inbound is permissionless. `executeVAAv1` verifies the VAA through Core's
+    `parseAndVerifyVM`; guardian signatures authenticate the emitter. `GATEWAY_ROLE` is held
+    by the Core bridge address and checked by membership rather than `msg.sender`, so
+    `revokeGateway(coreBridge)` still disconnects Wormhole from an account.
+  - Replay protection is the binding's own (R3.5): a consumed-VAA-hash set in an ERC-7201
+    slot in `WormholeMessage`.
+  - A VAA carries no destination. Receivers share one address across parity chains and
+    trust the same transmitter, so the published payload is prefixed with
+    `(targetChain, targetAddress)` and both are checked on arrival. Without it, one VAA would
+    execute on every parity chain's receiver.
+  - The quoter (relay provider) is an implementation-level immutable. Delivery liveness does
+    not depend on it: anyone can submit a VAA to `executeVAAv1`.
+  - The Executor requires a gas limit; the binding uses 200,000 when no attribute is given.
+    Not measured against bootstrap or `_reportReceiver`.
+  - Core requires its message fee exactly; the binding pays that and sends the rest to the
+    router, which refunds its own overpayment to `_refundTo()`.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
@@ -483,6 +504,13 @@ mainnet.
   (which the binding sets to `_refundTo()`, see §4), but any other hook the Mailbox owner
   configures may keep it. No single on-chain buffer is safe across all three; at least one
   of them turns "add a margin" into a standing cost.
+
+  the quote for safety just burns the difference. Wormhole's Executor quoter router refunds overpayment
+  to the refund address, like Hyperlane's IGP. Hyperlane's `Mailbox.dispatch` neither
+  reverts nor refunds: it sends `requiredHook` what it asks and forwards WHATEVER IS LEFT of
+  `msg.value` to the post-dispatch hook, which does not return to the sender either. No
+  single on-chain buffer is safe across all three; two of them turn "add a margin" into a
+  standing cost.
 
   **The direction to build toward: the transmitter prices and funds the send itself, rather
   than asking a signer to have attached the right `msg.value` in advance.** Concretely, on
