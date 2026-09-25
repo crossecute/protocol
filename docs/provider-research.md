@@ -30,6 +30,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
 | [6. Wormhole](#6-wormhole-core-vs-the-relayer-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
 | [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`) | Optimism changes `relayMessage`'s calling convention or how `xDomainMessageSender` is scoped |
+| [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace, its peer check, or `_payNative`'s `msg.value` rule |
 
 ---
 
@@ -388,7 +389,7 @@ on either side.
 3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
    requires nothing about replay, so [R3.5](provider-spec.md#r3-receive) stays a per-gateway question rather
    than being answered by the standard. Note the `receiveId` is free where our own channels
-   carry no id; see [`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look) for why
+   carry no id; see [`todo.md`](todo.md#2-decisions-taken-that-deserve-a-second-look) for why
    we concluded none was needed.
 
 ### The other draft worth knowing about
@@ -410,14 +411,14 @@ repo's pinned OpenZeppelin past 5.4.0, and that bump is the same one that breaks
 `AccessControlEnumerableUpgradeable`'s compilation at `paris` from 5.5.0 onward (see
 `Roles.sol`). The dependency the swap would need is the dependency the pin cannot survive,
 so it stays declined until the pin itself is revisited (see
-[`todo.md`](todo.md#4-decisions-taken-that-deserve-a-second-look)).
+[`todo.md`](todo.md#2-decisions-taken-that-deserve-a-second-look)).
 
 ---
 
 ## 4. CCIP as a native binding
 
 Chainlink CCIP, read the same way LayerZero was in
-[`todo.md`'s provider binding section](todo.md#2-the-provider-binding): what a real
+[§8](#8-layerzero-as-a-native-binding): what a real
 `contracts/evm/src/protocols/ccip/` binding would inherit, and what it owes R3.3 and R5.
 Source: `smartcontractkit/ccip`, branch `ccip-develop`, commit `171f9f0c`, reading
 `contracts/src/v0.8/ccip/applications/CCIPReceiver.sol`,
@@ -451,7 +452,7 @@ exists to avoid.
 **`CCIPReceiver` carries zero storage and zero external dependency.** It holds one
 `immutable` (`i_ccipRouter`, set in the constructor — same "one constructor argument, on the
 implementation, and it does not matter" shape as LayerZero's `OAppCoreUpgradeable` endpoint:
-see [`todo.md` §2](todo.md#2-the-provider-binding)) and vendors its own tiny copy of
+see [§8](#8-layerzero-as-a-native-binding)) and vendors its own tiny copy of
 `IERC165` rather than importing OpenZeppelin's. No storage-layout question, no OZ-version
 question. This is the cleanest of the three candidates to fit into this repo's proxy layout.
 
@@ -529,7 +530,7 @@ about how either project builds changes that.
 are plain interfaces and a pure library — no OpenZeppelin imports, no version to collide
 with. (`IMailbox` imports `IPostDispatchHook`, itself a plain interface, and
 `StandardHookMetadata` carries the refund address, so the vendored set is six files; see
-`todo.md` §4.) A real binding vendors those six, holds the `IMailbox` address as its OWN immutable (the same "one
+`todo.md` §2.) A real binding vendors those six, holds the `IMailbox` address as its OWN immutable (the same "one
 constructor argument, on the implementation" shape used everywhere else in this survey), and
 implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`
 itself, gated by `onlyRole(GATEWAY_ROLE)` rather than `MailboxClient`'s `onlyMailbox`
@@ -769,3 +770,99 @@ no SDK `Ownable` here to merge with, unlike LayerZero's OApp.
 **Replay is already covered**, and was covered before this section existed: §1's matrix
 already records `successfulMessages`/`failedMessages` in `CrossDomainMessenger`, the
 call-then-record-which-way-it-went shape shared with CCIP.
+
+---
+
+## 8. LayerZero as a native binding
+
+The first binding, and the one the others were read against. Built as
+`contracts/evm/src/protocols/layerzero/` on the vendored files below; the per-file commits
+are in `contracts/evm/script/vendor/layerzero.sh`.
+
+### What was found in the package
+
+Verified against `@layerzerolabs/oapp-evm-upgradeable@0.1.3` (it imports interfaces from
+`@layerzerolabs/oapp-evm`, 0.4.1 at the time of checking). Both are vendored under
+`contracts/evm/lib/`.
+
+```solidity
+abstract contract OAppCoreUpgradeable is IOAppCore, OwnableUpgradeable {
+    ILayerZeroEndpointV2 public immutable endpoint;
+    constructor(address _endpoint) { endpoint = ILayerZeroEndpointV2(_endpoint); }
+    function __OAppCore_init(address _delegate) internal onlyInitializing {
+        if (_delegate == address(0)) revert InvalidDelegate();
+        endpoint.setDelegate(_delegate);
+    }
+}
+
+abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradeable {
+    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {}
+    function __OApp_init(address _delegate) internal onlyInitializing {
+        __OAppCore_init(_delegate);
+        __OAppReceiver_init_unchained();
+        __OAppSender_init_unchained();
+    }
+}
+```
+
+**One constructor argument, and it does not matter.** It is on the *implementation*, and an
+implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
+initcode, so `CrossProxy` stays argument-free and no derived address moves. The endpoint
+being an `immutable` is correct rather than merely tolerable: every account on a chain uses
+the same endpoint, which is exactly what an implementation-level immutable expresses.
+
+**It fits our layout without collisions.** `OAppCoreUpgradeable` keeps its peer mapping in
+ERC-7201 namespaced storage (`OAPP_CORE_STORAGE_LOCATION`), as do `OAppOptionsType3`,
+`PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `accountSalt`,
+or the approval map however our layout changes, which also removes the storage-gap
+question for accounts specifically.
+
+**`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
+is not initialized here on purpose. It should be initialized in the child contract to
+accommodate the different version of Ownable."* Since it derives OZ's `OwnableUpgradeable`,
+the same one `LzTransmitter` uses today, `__Ownable_init(owner)` plus `__OApp_init(delegate)`
+composes rather than collides, and `TransmitterBase`'s ownership seam means the base is
+unaffected either way.
+
+### Where each seam attaches
+
+The hooks are ERC-7786-shaped now, so a NATIVE LayerZero binding has one translation the
+old table did not: the recipient arrives as an ERC-7930 envelope and the eid has to come
+back out of it, rather than out of a route lookup.
+
+| Our hook | LayerZero |
+| --- | --- |
+| `_sendMessage(recipient, payload, attributes)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
+| `_quoteMessage(recipient, payload, attributes)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
+| `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
+| `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
+| `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
+| `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
+| the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are ONE owner rather than two authorities. A binding must not add a third |
+| `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
+
+**A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
+protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
+native LayerZero binding keeps its own chainKey→eid mapping under R5, where a gateway
+binding keeps none.
+
+**The peer value is `counterpartOn(chainKey)`, not `address(this)`.** The two agree wherever
+Ethereum's CREATE2 formula holds, which made the shortcut tempting; they differ on zkSync and
+Tron, where deriving the peer names an address holding no receiver. One entry per
+destination, read from the table rather than computed.
+
+### Two consequences, both settled
+
+- **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`, and the delegate is
+  `address(this)`.** Settled: inside `upgradeInitializeAndLock`'s delegatecall that is the
+  ACCOUNT, so each account is its own delegate and no other party can reconfigure it. The
+  cost is that every account creation touches the endpoint, which is real gas on the
+  bootstrap path and the concrete form of "peers and any send-side security configuration
+  are per-user rather than shared". Recorded as R6.4 in the spec, which generalises it: any
+  provider-side authority over an account is the account.
+- **OApp authenticates inbound before our code runs.** `lzReceive` does
+  `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
+  `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
+  the R3.3 exception, taken in each LayerZero contract's NatSpec: for a 1:1 pairing there is
+  nothing extra to verify. The receiver checks `GATEWAY_ROLE` on top, so `revokeGateway` still
+  disconnects LayerZero.

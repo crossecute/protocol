@@ -26,7 +26,7 @@ remappings = [
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
     # Hand-copied, not submodules: none of the three has a dedicated package repo that
     # isolates just these files. See lib/layerzero-*/contracts/.../*.sol for per-file
-    # provenance (source repo, exact commit) and docs/todo.md §2.
+    # provenance (source repo, exact commit) and docs/provider-research.md §8.
     "@layerzerolabs/oapp-evm-upgradeable/=lib/layerzero-oapp-evm-upgradeable/",
     "@layerzerolabs/oapp-evm/=lib/layerzero-oapp-evm/",
     "@layerzerolabs/lz-evm-protocol-v2/=lib/layerzero-protocol-v2/",
@@ -34,7 +34,7 @@ remappings = [
     # Hand-copied, not a submodule: smartcontractkit/ccip mixes BUSL-1.1 infrastructure
     # with the MIT-tagged application-facing files this binding actually needs. See
     # lib/ccip/contracts/src/v0.8/ccip/**/*.sol for per-file provenance
-    # (contracts/evm/script/vendor/ccip.sh) and docs/todo.md.
+    # (contracts/evm/script/vendor/ccip.sh) and docs/provider-research.md §4.
     "@ccip/=lib/ccip/contracts/src/v0.8/ccip/",
 
     # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,

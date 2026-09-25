@@ -22,7 +22,7 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 ///      `AddressDerive`'s formula exactly, that the bytecode hash is write-once, and that a
 ///      mismatch is refused by `_createCrossAccount`'s guard rather than arming nothing.
 ///      What remains is deploying one account on Era and on Shasta and comparing: see
-///      [todo](../../../../../../docs/todo.md#3-blockers-on-specific-paths).
+///      [todo](../../../../../../docs/todo.md#1-blockers-on-specific-paths).
 ///
 /// @dev THE ZKSYNC SIDE COMPILES, CHECKED RATHER THAN ASSUMED. zksolc 1.5.17 over era-solc
 ///      0.8.28-1.0.2 builds `CrossProxy` and every contract a spoke needs, under both

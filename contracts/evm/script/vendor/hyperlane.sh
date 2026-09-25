@@ -4,8 +4,8 @@
 # Usage: contracts/evm/script/vendor/hyperlane.sh
 #
 # Bumping the pinned commit: edit COMMIT below, re-run, and diff the result before
-# committing. Update the citation in docs/provider-research.md and docs/todo.md to
-# match, since both name this exact commit.
+# committing. Update the citation in docs/provider-research.md to
+# match, since it names this exact commit.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 source contracts/evm/script/vendor/lib.sh

@@ -29,7 +29,7 @@ pragma solidity ^0.8.0;
 ///      the same property `OutboundBase._chainKeyOfRoute` enforces for routes.
 ///
 /// @dev Zero is the unset sentinel on both sides; no provider in scope ever names a live
-///      chain 0 (verified in `docs/provider-research.md` §§4-5 and `docs/todo.md` §2).
+///      chain 0 (verified in `docs/provider-research.md` §§4-5 and `docs/provider-research.md` §8).
 ///
 /// @dev Internal and ungated, like every other setter on `OutboundBase`: the inheriting hub
 ///      transceiver wraps `_setProviderId` in its own authority.

@@ -257,6 +257,55 @@ Then, per destination, add what the chain needs:
 - an `IRefValidator`, if the envelope cannot express its value ranges
 - a `setProvenance` grade below `Derived`, if its addresses cannot be recomputed here at all
 
+## Message providers
+
+Five native bindings live under `src/protocols/`. Each is held to
+[`docs/provider-spec.md`](docs/provider-spec.md). Where they differ is in who delivers a
+message and what authenticates it:
+
+| Provider | Inbound entry point | Sender authenticated by | Replay refused by |
+| --- | --- | --- | --- |
+| LayerZero | `lzReceive`, from the endpoint | the vendored OApp's peer check, then `GATEWAY_ROLE` and the source transmitter | the endpoint |
+| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter; a spoke also checks `homeSelector` | the off-ramp |
+| Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter; a spoke also checks `homeDomain` | the Mailbox |
+| Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
+| OP Stack | `receiveOpStackMessage`, from the messenger | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
+
+What an operator or integrator has to know:
+
+- **Transports are fixed at initialization, and a disconnect is permanent.** `grantRole` is
+  `onlyInitializing`, so a provider that migrates its endpoint means redeploying the
+  transceiver unless the `Deployment` named both endpoints up front. On an account,
+  `revokeGateway` only subtracts. A receiver that drops its transport has no way to
+  reconnect, and because `CrossProxy` arms once it cannot be redeployed at that address, so
+  that owner's account on that chain stops receiving for good. This is deliberate: a
+  re-grant path would be a fallback-override surface.
+- **Provider ids named at deploy cannot be corrected.** A spoke's home eid, selector,
+  domain, or Wormhole chain, a LayerZero receiver's or spoke's peer, and each entry in a
+  hub's id table are write-once. Fixing a wrong one means a redeploy.
+- **LayerZero's inbound check is partly in vendored code.** Auditing it means reading
+  `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
+  `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
+  checks in this repo's own code. Each LayerZero account is its own OApp delegate.
+- **Provider-side security configuration is the provider's default.** No contract here sets
+  a LayerZero DVN or library configuration, or a Hyperlane `interchainSecurityModule()`. So
+  the Mailbox owner's replaceable `defaultIsm` and LayerZero's default configuration decide
+  what counts as a verified message.
+- **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
+  true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
+  calling `ccipReceive`. The message is lost silently rather than reverted.
+  `CcipInterfaceSupportTest` pins the override, so any inheritance change to the CCIP
+  contracts has to keep it.
+- **Wormhole delivery is permissionless.** Anyone may submit a VAA, and liveness does not
+  depend on the Executor quoter, which is an implementation immutable.
+- **OP Stack sends carry no value and cost only gas.** The quote is zero, and a nonzero
+  `value` reverts, because `sendMessage` would bridge it rather than spend it. There is one
+  `OpStackHubTransceiver` per OP Stack chain, and it refuses recipients on any other chain.
+- **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
+  pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
+  security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
+  deployed contract, since transceivers and accounts lock on initialization.
+
 ## Assumptions
 
 - All contracts are created through Arachnid's CREATE2 factory with a salt: `0x4e59..`
@@ -305,15 +354,13 @@ Then, per destination, add what the chain needs:
 ## Status
 
 The EVM side is built and tested: account creation, the approval map, cancellation,
-execution, per-destination commitment schemes, and both message paths end to end in-process.
+execution, per-destination commitment schemes, both message paths end to end in-process,
+and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 355 passing
+cd contracts/evm && forge test        # 506 passing
 ```
 
-**Nothing crosses a real bridge yet.** `_sendMessage` reverts `SendNotImplemented` and
-`_quoteMessage` reverts `QuoteNotImplemented` until a protocol binding overrides them, and
-`LzReceiver` grants `GATEWAY_ROLE` to nobody, so a receiver accepts nothing. No provider
-is bound: `LzTransmitter` and friends are structure without an SDK behind them. That is the
-next thing to build, and every remaining path waits on it.
+**Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
+provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).
