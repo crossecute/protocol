@@ -517,8 +517,8 @@ documented.** LayerZero's `lzReceive` checks `msg.sender == endpoint` and then
 `peer[srcEid] == origin.sender` before `_lzReceive` is reached. For a 1:1 pairing there is
 nothing extra to verify, so this is defensible, but it contradicts the rule stated in
 `TransceiverBase._onInbound` and MUST appear as a written exception in the binding's NatSpec
-rather than as an omission. This is [todo §2](todo.md#2-decisions-taken-that-deserve-a-second-look),
-still open.
+rather than as an omission. LayerZero is the only binding that takes it (see
+[the research half](provider-research.md#8-layerzero-as-a-native-binding)).
 
 **R3.4** The receiver's funnel is `_onMessage`, which is `nonReentrant` and executes on
 arrival. The binding MUST NOT decode the payload itself: `Payload.decodeCalls` happens
@@ -583,8 +583,8 @@ Solana pubkey cast down to 20 bytes is a forgery primitive, not a formatting bug
 
 **R4.4** A spoke's `_homeTransceiver` is written once at initialization with no setter. The
 deployment MUST pass it in the same byte form the binding will produce inbound. There is no
-way to fix a mistake here: see [todo §2](todo.md#2-decisions-taken-that-deserve-a-second-look)
-on write-once having no recovery path.
+way to fix a mistake here but a redeploy: see the README's
+[Message providers](../README.md#message-providers).
 
 ### R5. The route codec
 
@@ -746,8 +746,9 @@ chain unless noted:
 | 12 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
 | n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
-There is no `script/` directory yet ([todo §4](todo.md#4-infrastructure-none-of-it-exists)).
-The first binding writes it, and the ordering above is its specification.
+There are no deploy scripts yet; `script/` holds only the vendoring drivers
+([todo §4](todo.md#4-infrastructure-none-of-it-exists)). The ordering above is their
+specification.
 
 ---
 

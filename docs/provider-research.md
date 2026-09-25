@@ -389,8 +389,7 @@ on either side.
 3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
    requires nothing about replay, so [R3.5](provider-spec.md#r3-receive) stays a per-gateway question rather
    than being answered by the standard. Note the `receiveId` is free where our own channels
-   carry no id; see [`todo.md`](todo.md#2-decisions-taken-that-deserve-a-second-look) for why
-   we concluded none was needed.
+   carry no id; see `InboundBase.receiveMessage` for why we concluded none was needed.
 
 ### The other draft worth knowing about
 
@@ -530,7 +529,7 @@ about how either project builds changes that.
 are plain interfaces and a pure library — no OpenZeppelin imports, no version to collide
 with. (`IMailbox` imports `IPostDispatchHook`, itself a plain interface, and
 `StandardHookMetadata` carries the refund address, so the vendored set is six files; see
-`todo.md` §2.) A real binding vendors those six, holds the `IMailbox` address as its OWN immutable (the same "one
+`contracts/evm/script/vendor/hyperlane.sh`.) A real binding vendors those six, holds the `IMailbox` address as its OWN immutable (the same "one
 constructor argument, on the implementation" shape used everywhere else in this survey), and
 implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`
 itself, gated by `onlyRole(GATEWAY_ROLE)` rather than `MailboxClient`'s `onlyMailbox`

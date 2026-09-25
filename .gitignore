@@ -3,9 +3,9 @@ contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/broadcast/
 
-# Dependencies are vendored under contracts/evm/lib/ deliberately: CREATE2 parity depends
-# on byte-identical initcode, so the exact dependency bytes are load-bearing rather than a
-# convenience. See docs/todo.md if converting them to submodules.
+# contracts/evm/lib/ is committed deliberately: CREATE2 parity depends on byte-identical
+# initcode, so the exact dependency bytes are load-bearing. forge-std and OZ are pinned
+# submodules (docs/todo.md §4); provider SDK files are vendored by contracts/evm/script/vendor/.
 
 # Secrets and local environment
 .env

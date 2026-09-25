@@ -184,7 +184,8 @@ mainnet.
   load-bearing rather than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
   `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
   fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
-  being wrong is a redeploy rather than a loss. See §1.
+  being wrong is a redeploy rather than a loss. See §1. zkSync Era's override
+  (`ZkSyncSpokeTransceiver`) is unverified the same way and needs the same one-account check.
 - **The home chain is a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
   takes its home chainKey, the provider's route to it, and the hub's address as
   write-once initializer arguments. Two things follow, and both are worth deciding rather
