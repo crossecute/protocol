@@ -291,6 +291,63 @@ mainnet.
   nothing extra to verify, so accepting it is defensible, but it should be a written
   exception in the binding's NatSpec (provider-spec R3.3) rather than an omission.
 
+  **CONFIRMED FOR LAYERZERO** (PR #6). `LzReceiver`/`LzHubTransceiver`/`LzSpokeTransceiver`
+  take the R3.3 exception: `lzReceive`'s `OnlyPeer`/`OnlyEndpoint` checks run inside the
+  vendored OApp SDK, before `_lzReceive` — and so before `_onMessage`/`_onInbound` — ever
+  runs. Written into NatSpec and confirmed by test (a wrong sender is rejected by
+  LayerZero's own peer check; our code never sees it). **Operational consequence for
+  Phase 7**: LayerZero is the one binding where "what actually authenticates a delivery"
+  requires reviewing vendored, third-party files (`OAppCoreUpgradeable`/
+  `OAppReceiverUpgradeable`) alongside this repo's own — an auditor reviewing only
+  `src/protocols/layerzero/` would miss where the check actually lives. CCIP/Hyperlane/
+  Wormhole/OP Stack are expected to check `GATEWAY_ROLE` in code this repo owns directly
+  instead (see Phases 3–6), so this asymmetry is specific to LayerZero and worth a README
+  line once Phase 7 runs.
+
+- **A LayerZero receiver/spoke's peer is fixed for life, with no setter at all.** Found
+  wiring PR #6: OApp's `setPeer` is `onlyOwner`, but `LzReceiver`, `LzSpokeTransceiver`, and
+  their zkSync/Tron variants have no `Ownable` — calling `setPeer` from their own
+  initializer would have reverted unconditionally (`OwnableUnauthorizedAccount`) on every
+  deployment. Fixed by writing OApp's peer storage directly inside the one-shot
+  initializer, which closes the bug but also means these four contracts have no owner-facing
+  entry point to repoint that peer afterward, ever. Same "no recovery path but a redeploy"
+  property `_setRoute`/`_setCounterpart` already accept elsewhere in the protocol — but
+  here it fell out of the fix rather than being a chosen constraint, so it is worth
+  confirming that is the intended shape (rather than, say, an owner-gated repoint being
+  wanted on the account side specifically) before mainnet, and worth a README line either
+  way: a LayerZero destination or home-hub address named at deploy time cannot be corrected
+  without redeploying the account.
+
+- **Vendored provider SDKs have no update mechanism.** Hand-copying LayerZero's OApp
+  contracts (Phase 1's choice, PR #6) keeps every byte reviewable and needs no dedicated
+  package repo, but there is no `forge update`/`npm update` path if LayerZero ships a
+  security patch to `OAppCoreUpgradeable`/`OAppReceiverUpgradeable`: someone has to notice
+  it upstream, diff it, and manually re-vendor. Applies to whichever of CCIP's/Hyperlane's
+  files end up hand-copied too (Phase 1, still undecided). Worth an operational README note
+  once Phase 7 runs, naming which files are vendored and that they are not on any update
+  path.
+
+- **A vendored provider SDK's own fee-payment primitive can silently assume `msg.value ==
+  the fee`, which this protocol's nested-send contract violates by design.** Found by
+  Copilot review on PR #6, after the PR's own tests already passed: `OAppSenderUpgradeable
+  ._payNative` (vendored, unmodified) reverts `NotEnoughNative` unless `msg.value` exactly
+  equals the fee passed to `_lzSend`. `OutboundBase` documents the opposite contract for
+  every binding's `_sendMessage` — told what it may spend via `value`, must not read
+  `msg.value` — and two real call sites rely on it: `HubTransceiverBase._bootstrapSendValue`
+  returns `msg.value - fee` once a bootstrap fee is configured, and
+  `SpokeTransceiverBase._reportReceiver` sends nested inside the `lzReceive` delivery
+  callback where `msg.value` is 0, spending from the contract's own pre-funded balance.
+  Without overriding `_payNative`, every bootstrap with a nonzero fee reverted, and every
+  zkSync/Tron account bootstrap reverted unconditionally (the report is not optional once
+  `addressesDiverge` is true) — `LzHubTransceiver`/`LzZkSyncSpokeTransceiver`/
+  `LzTronSpokeTransceiver` now override it to trust `value` and let `endpoint.send` revert
+  on insufficient balance instead. **Operational consequence for Phase 7**: this class of
+  bug — a vendored SDK's payment primitive silently re-deriving "how much to spend" from
+  `msg.value` instead of accepting the protocol's own pre-computed amount — is worth
+  checking explicitly for CCIP (`feeToken`/`msg.value` handling in `ccipSend`), Hyperlane
+  (`dispatch`'s payment), and Wormhole (`sendPayloadToEvm`'s), not assumed absent just
+  because a binding's own tests pass with a zero-fee mock.
+
 ## 5. Smaller open questions
 
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking

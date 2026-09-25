@@ -156,13 +156,14 @@ contract RolesTest is Test {
         assertFalse(transmitter.hasRole(gatewayRole, IMPOSTOR));
     }
 
-    /// @dev EVERY SHIPPED LAYERZERO CONTRACT TRUSTS NOBODY, because no SDK is bound and so
-    ///      nothing was granted. That is the honest default: a base that guessed an endpoint
-    ///      address would be worse than one that accepts nothing, and it means the absence
-    ///      fails loudly on the first message rather than quietly on a forged one.
+    /// @dev EVERY FRESHLY DEPLOYED LAYERZERO IMPLEMENTATION TRUSTS NOBODY, because
+    ///      `GATEWAY_ROLE` is only ever granted inside `initialize`, which nothing has called
+    ///      on a bare implementation. That is the honest default regardless of which endpoint
+    ///      it was constructed with: the absence fails loudly on the first message rather
+    ///      than quietly on a forged one.
     function testFuzz_theUnboundContractsTrustNobody(address anyone) public {
-        LzReceiver r = new LzReceiver();
-        LzTransmitter t = new LzTransmitter();
+        LzReceiver r = new LzReceiver(address(0xE1D0));
+        LzTransmitter t = new LzTransmitter(address(0xE1D0));
         assertFalse(r.hasRole(r.GATEWAY_ROLE(), anyone));
         assertFalse(t.hasRole(t.GATEWAY_ROLE(), anyone));
     }

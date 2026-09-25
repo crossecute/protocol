@@ -1,36 +1,111 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {OAppUpgradeable, Origin} from
+    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
+import {OAppCoreUpgradeable} from
+    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {MessagingFee} from
+    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 
-/// @notice The transceiver on the home chain. One instance, administered by the crossecute
-///         msig, shared by every user's transmitter.
-///
-/// @dev IT CARRIES NO PROVIDER VOCABULARY AT ALL, AND THAT IS WHAT ERC-7786 BOUGHT. A
-///      gateway takes a recipient that NAMES ITS OWN CHAIN, so there is nothing to translate
-///      and the route slot holds that chain's ERC-7930 identifier, which `setRoute` is
-///      already typed for. A native SDK binding would need a codec and a chainKey table of
-///      its own, since `_lzSend` still takes a `uint32`.
-///
-/// @dev Does NOT inherit a transmitter. A transceiver is shared infrastructure the msig
-///      administers and a transmitter is per-user, owned by its user; merging them would give
-///      one contract two authorities over the same entry points.
-contract LzHubTransceiver is HubTransceiverBase {
-    /// @dev NO RECEIVER IMPLEMENTATION, because a hub never makes a receiver. The
-    ///      manufacturing half lives on the spoke; see `TransceiverBase`.
+/// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
+///         user's transmitter.
+/// @dev Inherits the combined `OAppUpgradeable` (unlike `LzTransmitter`/`LzReceiver`): a hub
+///      both sends bootstraps and receives diverging spokes' receiver reports.
+contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainId {
+    constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
+
     function initialize(
         address owner_,
         address treasury_,
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
+        __OApp_init(address(this)); // delegate = self, R6.4
         __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
     }
 
-    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
-    /// @dev That is the honest state of a binding with no LayerZero behind it. A real binding
-    ///      grants `GATEWAY_ROLE` to its endpoint in the initializer, which is where the
-    ///      address is known; the absence fails loudly on the first message rather than
-    ///      quietly on a forged one.
+    /* ============================== the eid table =============================== */
 
+    event EidSet(bytes32 indexed chainKey, uint32 eid);
+
+    /// @dev Write-once-if-unset (`ProviderChainId`'s shape). Adding a spoke also needs
+    ///      `setPeer` (inherited, `onlyOwner`) for its transceiver address.
+    function setEid(bytes32 chainKey, uint32 eid) external onlyOwner {
+        _setProviderId(chainKey, eid);
+        emit EidSet(chainKey, eid);
+    }
+
+    /// @notice Called externally by every `LzTransmitter` this hub created; see
+    ///         `ILzEidTable` there.
+    function eidFor(bytes32 chainKey) external view returns (uint32) {
+        return uint32(_providerIdFor(chainKey));
+    }
+
+    /* ================================== sending =================================== */
+
+    function _sendMessage(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes,
+        uint256 value
+    ) internal override returns (bytes32 sendId) {
+        uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        bytes memory options = _optionsFrom(attributes);
+        _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
+    }
+
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+        internal
+        view
+        override
+        returns (uint256 nativeFee)
+    {
+        uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        bytes memory options = _optionsFrom(attributes);
+        MessagingFee memory fee = _quote(dstEid, payload, options, false);
+        return fee.nativeFee;
+    }
+
+    /// @dev The vendored default checks `msg.value == _nativeFee`, which breaks the bootstrap
+    ///      send the moment a bootstrap fee is configured: `_bootstrapSendValue` returns
+    ///      `msg.value - fee`, so `_nativeFee` (== that `value`) is then strictly less than
+    ///      `msg.value`, and the send reverts `NotEnoughNative` for every bootstrap. `value`
+    ///      is already the trusted, fee-adjusted amount `OutboundBase` computed; `endpoint.send`
+    ///      still reverts if this contract's balance is short, so nothing here needs a second
+    ///      check.
+    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+        return _nativeFee;
+    }
+
+    /// @dev The constant is duplicated across LZ bindings (no common ancestor that wouldn't
+    ///      widen `OutboundBase` for every provider); the parsing is `ProviderAttribute`.
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
+
+    function _optionsFrom(bytes[] memory attributes) internal pure returns (bytes memory options) {
+        (, options) = ProviderAttribute.body(attributes, LZ_OPTIONS_ATTRIBUTE, 0);
+    }
+
+    /* ================================= receiving =================================== */
+
+    /// @dev R3.3 exception, hub's half — see `LzReceiver._lzReceive`. Each spoke has its own
+    ///      peer entry (msig-set), so this stays 1:1 per source chain despite N spokes total.
+    ///      Translates into `_onInbound`, not `_authenticateSender`, since the hub's inbound
+    ///      path is registry-backed (N origins); `_authenticateOrigin` runs unmodified.
+    function _lzReceive(
+        Origin calldata _origin,
+        bytes32, /* _guid */
+        bytes calldata _message,
+        address, /* _executor */
+        bytes calldata /* _extraData */
+    ) internal override {
+        bytes32 chainKey = _chainKeyOfProvider(_origin.srcEid);
+        bytes memory route = routeFor(chainKey);
+        bytes memory sender = abi.encodePacked(address(uint160(uint256(_origin.sender))));
+        _onInbound(route, sender, _message);
+    }
 }
