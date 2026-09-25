@@ -27,6 +27,8 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
 
     uint64 public homeSelector;
 
+    error UnexpectedSourceChain(uint64 sourceChainSelector);
+
     /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
     /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
@@ -79,6 +81,9 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, IAny2EVMMessageRe
         external
         onlyRole(GATEWAY_ROLE)
     {
+        if (message.sourceChainSelector != homeSelector) {
+            revert UnexpectedSourceChain(message.sourceChainSelector);
+        }
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }
@@ -99,6 +104,8 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
     }
 
     uint64 public homeSelector;
+
+    error UnexpectedSourceChain(uint64 sourceChainSelector);
 
     /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
     /// @dev Grants `GATEWAY_ROLE` to `router` directly — see
@@ -151,6 +158,9 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, IAny2EVMMessageReceiv
         external
         onlyRole(GATEWAY_ROLE)
     {
+        if (message.sourceChainSelector != homeSelector) {
+            revert UnexpectedSourceChain(message.sourceChainSelector);
+        }
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }

@@ -13,6 +13,10 @@ import {Payload} from "src/messaging/Payload.sol";
 
 import {CcipHubTransceiver} from "src/protocols/ccip/CcipHubTransceiver.sol";
 import {CcipSpokeTransceiver} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
+import {
+    CcipZkSyncSpokeTransceiver,
+    CcipTronSpokeTransceiver
+} from "src/protocols/ccip/CcipDivergentSpokeTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
@@ -263,5 +267,102 @@ contract CcipGatewayRoleGrantTest is Test {
             )
         );
         assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), router));
+    }
+}
+
+/// @notice A spoke passes `homeRoute()` to `_onInbound` itself, so a message from any other
+///         selector must be refused before that, even from the hub's own address.
+contract CcipSpokeSourceChainTest is Test {
+    address router = address(0xBEEF);
+    address hub = address(0xD00D);
+    uint64 constant HOME_SELECTOR = 5009297550715157269;
+    uint64 constant OTHER_SELECTOR = 4949039107694359620;
+
+    function _fromHubOn(uint64 selector) internal view returns (Client.Any2EVMMessage memory) {
+        return Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: selector,
+            sender: abi.encode(hub),
+            data: "",
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+    }
+
+    function _proxy(address impl, bytes memory init) internal returns (address) {
+        return address(new ERC1967Proxy(impl, init));
+    }
+
+    function test_spokeRejectsTheHubsAddressFromAnotherChain() public {
+        CcipSpokeTransceiver spoke = CcipSpokeTransceiver(
+            _proxy(
+                address(new CcipSpokeTransceiver(router)),
+                abi.encodeCall(
+                    CcipSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        abi.encodePacked(hub),
+                        HOME_SELECTOR
+                    )
+                )
+            )
+        );
+        vm.prank(router);
+        vm.expectRevert(
+            abi.encodeWithSelector(CcipSpokeTransceiver.UnexpectedSourceChain.selector, OTHER_SELECTOR)
+        );
+        spoke.ccipReceive(_fromHubOn(OTHER_SELECTOR));
+    }
+
+    function test_zkSyncSpokeRejectsTheHubsAddressFromAnotherChain() public {
+        CcipZkSyncSpokeTransceiver spoke = CcipZkSyncSpokeTransceiver(
+            _proxy(
+                address(new CcipZkSyncSpokeTransceiver(router)),
+                abi.encodeCall(
+                    CcipZkSyncSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        abi.encodePacked(hub),
+                        bytes32(uint256(1)),
+                        HOME_SELECTOR
+                    )
+                )
+            )
+        );
+        vm.prank(router);
+        vm.expectRevert(
+            abi.encodeWithSelector(CcipZkSyncSpokeTransceiver.UnexpectedSourceChain.selector, OTHER_SELECTOR)
+        );
+        spoke.ccipReceive(_fromHubOn(OTHER_SELECTOR));
+    }
+
+    function test_tronSpokeRejectsTheHubsAddressFromAnotherChain() public {
+        CcipTronSpokeTransceiver spoke = CcipTronSpokeTransceiver(
+            _proxy(
+                address(new CcipTronSpokeTransceiver(router)),
+                abi.encodeCall(
+                    CcipTronSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        abi.encodePacked(hub),
+                        bytes32(uint256(1)),
+                        HOME_SELECTOR
+                    )
+                )
+            )
+        );
+        vm.prank(router);
+        vm.expectRevert(
+            abi.encodeWithSelector(CcipTronSpokeTransceiver.UnexpectedSourceChain.selector, OTHER_SELECTOR)
+        );
+        spoke.ccipReceive(_fromHubOn(OTHER_SELECTOR));
     }
 }

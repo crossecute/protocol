@@ -19,6 +19,8 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint64 public homeSelector;
 
+    error UnexpectedSourceChain(uint64 sourceChainSelector);
+
     /// @param homeSelector_ CCIP's selector for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `router` directly rather than relying on the
     ///      deployment to include it in `gateways` — see `CcipHubTransceiver.initialize`.
@@ -72,13 +74,16 @@ contract CcipSpokeTransceiver is SpokeTransceiverBase, IAny2EVMMessageReceiver {
 
     /* ================================= receiving =================================== */
 
-    /// @dev A spoke has one valid origin; CCIP's off-ramp asserts nothing about the
-    ///      source-chain sender itself, so `_authenticateOrigin` (reached through
-    ///      `_onInbound`) is the only check. `route` is `homeRoute()` directly.
+    /// @dev A spoke has one valid origin, and `route` is `homeRoute()` directly, so the
+    ///      selector check is what stops the hub's address on another chain passing as the hub.
+    ///      CCIP's off-ramp asserts nothing about the sender; `_authenticateOrigin` checks it.
     function ccipReceive(Client.Any2EVMMessage calldata message)
         external
         onlyRole(GATEWAY_ROLE)
     {
+        if (message.sourceChainSelector != homeSelector) {
+            revert UnexpectedSourceChain(message.sourceChainSelector);
+        }
         address senderAddr = abi.decode(message.sender, (address));
         _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
     }
