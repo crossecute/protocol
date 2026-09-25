@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 
 /// @notice Minimal Router surface the bindings actually call: `getFee`, `ccipSend`. Inbound

@@ -24,8 +24,8 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
 
     /// @dev `ReceiverBase.initialize` carries no `gateways` array of its own (unlike a
     ///      transceiver's `__TransceiverBase_init`, a receiver is per-user and its gateway
-    ///      is fixed infrastructure, not a per-account choice), so a real binding grants
-    ///      `GATEWAY_ROLE` here, before `__ReceiverBase_init`. `grantRole` is
+    ///      is fixed infrastructure, not a per-account choice), so `GATEWAY_ROLE` is granted
+    ///      here, before `__ReceiverBase_init`. `grantRole` is
     ///      `onlyInitializing`, so this initializer is the only window it ever gets.
     function initialize(address sourceTransmitter_, Call[] calldata calls)
         external

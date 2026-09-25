@@ -81,7 +81,6 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         return ICcipSelectorTable(transceiver).selectorFor(Erc7930.chainKey(recipient));
     }
 
-    /// @notice No gateway is granted here: a real binding grants `GATEWAY_ROLE` to the CCIP
-    ///         Router on `CcipHubTransceiver`; the transmitter itself has no `Roles` to hold
-    ///         it (R3.1 is answered by having no inbound entry point at all).
+    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the hub,
+    ///         spokes, and receivers; the transmitter has no inbound entry point (R3.1).
 }

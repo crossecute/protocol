@@ -18,8 +18,9 @@ behind prerequisite P7, rules R3.5 through R3.7, and compliance tests C29 throug
 [ERC-7786 analysis](#3-erc-7786-as-a-transport) is the reasoning behind the core contracts
 implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 [Hyperlane](#5-hyperlane-as-a-native-binding) sections are the reasoning behind
-`contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, the template contracts alongside
-`.../layerzero/`.
+`contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, and [§6](#6-wormhole-core-vs-the-relayer-two-different-bindings),
+[§7](#7-op-stack-as-a-native-binding), and [§8](#8-layerzero-as-a-native-binding) the same for
+`.../wormhole/`, `.../op-stack/`, and `.../layerzero/`.
 
 | Section | Pinned to | Goes stale when |
 | --- | --- | --- |

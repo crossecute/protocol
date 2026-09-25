@@ -255,7 +255,7 @@ mainnet.
   fixed and when it is paid — there is no longer a stale number to submit, because nothing
   about the signature commits to one.
 
-  **Pre-production, not pre-PR.** This needs the three bindings to exist and their real fee
+  **Pre-production, not pre-PR.** This needs the bindings to exist and their real fee
   behavior to test against (this todo exists because that testing already found the
   divergence above), so it belongs after the provider-bindings PR lands, not inside it — but
   it has to land before mainnet, since it is the difference between a signer bearing gas risk

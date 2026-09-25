@@ -6,8 +6,6 @@ import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OAppUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
-import {OAppCoreUpgradeable} from
-    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
