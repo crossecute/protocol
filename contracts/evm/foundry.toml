@@ -45,4 +45,8 @@ remappings = [
     # Hand-copied, not a submodule: the binding needs three import-free files (Core and
     # Executor interfaces), not the SDK's helpers. See contracts/evm/script/vendor/wormhole.sh.
     "@wormhole-sdk/=lib/wormhole-solidity-sdk/src/",
+
+    # Hand-copied, not a submodule: one import-free interface from the optimism monorepo.
+    # See contracts/evm/script/vendor/op-stack.sh.
+    "@optimism/=lib/optimism/packages/contracts-bedrock/",
 ]

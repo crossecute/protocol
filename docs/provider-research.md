@@ -720,6 +720,14 @@ with an off-chain gas price to produce a `msg.value`. This confirms §2's findin
 [R2.2.2](provider-spec.md#r2-quote), the same escape hatch already documented for bare
 Wormhole Core.
 
+**Correction (Phase 6): the native quote is zero, not missing.** Checked against
+`CrossDomainMessenger.sendMessage` and `ResourceMetering` at the same commit: a deposit's L2
+gas is paid by burning L1 gas in the sending transaction, and `sendMessage` forwards
+`msg.value` to the target as bridged ETH (`relayMessage` calls the target with `_value`).
+Nothing is charged in `msg.value`, so the binding requires zero value and quotes zero, which
+is what the R2.2.2 balance-delta measurement would report. `baseGas` remains the only
+price-shaped function, and it prices gas, not currency.
+
 **THE SHARP EDGE: the authenticated sender is retrieved by a callback, never carried as an
 argument, and treating it as one would be a real vulnerability rather than a style choice.**
 `relayMessage(nonce, sender, target, value, minGasLimit, message)` makes a low-level call to

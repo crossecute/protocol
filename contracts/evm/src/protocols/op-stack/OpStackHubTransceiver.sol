@@ -2,43 +2,72 @@
 pragma solidity ^0.8.0;
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
-/// @notice Transceiver on the home chain, for ONE OP Stack destination.
-/// @dev `sendMessage(target, message, minGasLimit)` names no destination chain — each OP
-///      Stack chain has its own dedicated `L1CrossDomainMessenger`, so the destination IS
-///      which messenger you call. `ProviderChainId` does not apply here; this contract holds
-///      one messenger address as its own immutable, and reaching a second chain means
-///      deploying a second `OpStackHubTransceiver`.
+/// @notice Transceiver on the home chain, for one OP Stack chain.
+/// @dev `sendMessage` names no destination chain: each OP Stack chain has its own messenger,
+///      so the destination is which messenger is called. `ProviderChainId` does not apply;
+///      reaching a second OP Stack chain means deploying a second instance.
 ///
-/// @dev THIS IS A TRUST-DOMAIN CHOICE, NOT AN INTERFACE LIMITATION. A `chainKey => messenger
-///      address` table would let one instance reach every OP Stack chain — nothing in
-///      `sendMessage` forbids it. The reason not to: `messageProvider`/
-///      `minCounterpartProvenance` describe ONE trust level for everything an instance
-///      reaches, accurate for LZ/CCIP/Hyperlane/Wormhole (one validator/DVN/guardian/relayer
-///      network secures every destination) but NOT here — Optimism's and Base's canonical
-///      bridges are independent security systems that happen to run the same stack software.
-///      One instance reaching both would make one provenance dial describe two things that
-///      fail independently. Cost: N deployments, N `setProvenance` entries, N routes instead
-///      of one. See `provider-research.md` §2.
-///
-/// @dev One messenger address serves both directions (`sendMessage` and the caller of
-///      `relayMessage`), so `GATEWAY_ROLE` names one address.
-///
-/// @dev No on-chain quote: `ICrossDomainMessenger` has no `quote`-shaped function.
-///      `_quoteMessage` falls back to the off-chain measurement in R2.2.2.
-contract OpStackHubTransceiver is HubTransceiverBase {
+/// @dev One instance per chain is a trust-domain choice, not an interface limitation.
+///      `messageProvider`/`minCounterpartProvenance` describe one trust level for everything
+///      an instance reaches; Optimism's and Base's canonical bridges run the same software but
+///      fail independently, so one instance reaching both would make one provenance dial
+///      describe two things. See `provider-research.md` §2.
+contract OpStackHubTransceiver is HubTransceiverBase, IOpStackRecipient {
+    /// @notice The messenger on this chain paired with the one OP Stack chain this instance
+    ///         reaches, and that chain's chainKey. Set on the implementation, not the proxy:
+    ///         harmless, since neither affects a derived account address.
+    address public immutable messenger;
+    bytes32 public immutable messengerChainKey;
+
+    constructor(address messenger_, bytes32 messengerChainKey_) {
+        messenger = messenger_;
+        messengerChainKey = messengerChainKey_;
+    }
+
+    /// @dev Grants `GATEWAY_ROLE` to `messenger` directly: `receiveOpStackMessage` is gated on
+    ///      exactly this role, so leaving it to `gateways` would allow a deployment that
+    ///      rejects every inbound message.
     function initialize(
         address owner_,
         address treasury_,
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
+        grantRole(GATEWAY_ROLE, messenger);
         __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
     }
 
-    /// @notice No gateway granted yet. A real binding grants `GATEWAY_ROLE` to the
-    ///         `L1CrossDomainMessenger` for this rollup in the initializer.
-    /// @dev The hub side rarely receives (the return leg only fires where
-    ///      `addressesDiverge`, false for standard `op-geth` CREATE2). Where it does, see
-    ///      `OpStackReceiver`'s note on `xDomainMessageSender()`.
+    /* ================================== sending =================================== */
+
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32 sendId)
+    {
+        return OpStackMessage.send(messenger, messengerChainKey, recipient, payload, attributes, value);
+    }
+
+    /// @dev Zero: see `OpStackMessage`.
+    function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
+        internal
+        view
+        override
+        returns (uint256 nativeFee)
+    {
+        return OpStackMessage.quote(messengerChainKey, recipient, attributes);
+    }
+
+    bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
+
+    /* ================================= receiving =================================== */
+
+    /// @dev The messenger relays only from `messengerChainKey`, so that is the route. The
+    ///      sender is `xDomainMessageSender()` (see `OpStackMessage.sender`), and
+    ///      `_authenticateOrigin` (via `_onInbound`) is the only sender check: no R3.3
+    ///      exception.
+    function receiveOpStackMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
+        _onInbound(routeFor(messengerChainKey), abi.encodePacked(OpStackMessage.sender()), payload);
+    }
 }
