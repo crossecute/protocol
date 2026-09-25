@@ -304,6 +304,18 @@ mainnet.
   instead (see Phases 3–6), so this asymmetry is specific to LayerZero and worth a README
   line once Phase 7 runs.
 
+  **CONFIRMED FOR CCIP** (Phase 3 PR). No exception needed, and no vendored SDK in the
+  loop at all: `CcipReceiver`/`CcipHubTransceiver`/`CcipSpokeTransceiver` implement
+  `IAny2EVMMessageReceiver.ccipReceive` directly rather than inheriting Chainlink's
+  `CCIPReceiver`, and CCIP's off-ramp asserts nothing about the source-chain sender —
+  `isSourceTransmitter`/`_authenticateOrigin` is the only check, matching `_onInbound`'s
+  rule exactly. **Operational consequence**: the CCIP receiver binding tracks no
+  per-origin state at all (no eid/domain/selector table the way LayerZero's peer or
+  Hyperlane's enrolled router would be), so it has exactly one rejection path for every
+  non-source-transmitter sender, regardless of claimed origin chain — simpler than
+  LayerZero's binding, not a gap (`test/protocols/ccip/CcipBinding.t.sol` documents this
+  directly on the hook that would otherwise test a distinct "unconfigured origin" case).
+
 - **A LayerZero receiver/spoke's peer is fixed for life, with no setter at all.** Found
   wiring PR #6: OApp's `setPeer` is `onlyOwner`, but `LzReceiver`, `LzSpokeTransceiver`, and
   their zkSync/Tron variants have no `Ownable` — calling `setPeer` from their own
@@ -347,6 +359,22 @@ mainnet.
   checking explicitly for CCIP (`feeToken`/`msg.value` handling in `ccipSend`), Hyperlane
   (`dispatch`'s payment), and Wormhole (`sendPayloadToEvm`'s), not assumed absent just
   because a binding's own tests pass with a zero-fee mock.
+
+- **CCIP's off-ramp will silently skip `ccipReceive` if `supportsInterface` answers
+  wrong.** Found wiring Phase 3: unlike `onlyRouter`, this isn't documented in the
+  interfaces this binding vendors — it's in `CCIPReceiver.sol`'s own comment at the
+  pinned commit, which this binding does NOT inherit (see the note above), so nothing
+  forces a binding to notice it needs `supportsInterface` at all. If a receiving contract
+  either lacks `supportsInterface` or answers false for
+  `type(IAny2EVMMessageReceiver).interfaceId`, CCIP's off-ramp does not revert: it treats
+  the message as accepted, transfers any tokens, and never calls `ccipReceive` at all — a
+  message that looks sent and simply never arrives. `CcipReceiver`/`CcipHubTransceiver`/
+  `CcipSpokeTransceiver` all override `supportsInterface` to answer true for
+  `IAny2EVMMessageReceiver` and `IERC165`, pinned by
+  `test/protocols/ccip/CcipBinding.t.sol:CcipInterfaceSupportTest`. Worth a README line:
+  any FUTURE change to this binding's inheritance (e.g. adding another interface, or
+  refactoring `Roles`) that drops or shadows this override reintroduces a silent,
+  untested failure mode rather than a revert.
 
 ## 5. Smaller open questions
 
