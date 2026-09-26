@@ -74,14 +74,13 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value
-    ) internal virtual override returns (bytes32 sendId) {
+    ) internal override returns (bytes32 sendId) {
         _lzSend(homeEid, payload, LzMessage.options(attributes), MessagingFee(value, 0), _refundTo());
     }
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        virtual
         override
         returns (uint256 nativeFee)
     {

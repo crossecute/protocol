@@ -17,12 +17,12 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
+import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
@@ -102,7 +102,7 @@ contract RevertingReceiver is ReceiverBase {
 }
 
 /// @dev Exposes the self-call `commit` and the implementation setter for testing.
-contract MockTransceiver is SpokeTransceiverBase {
+contract MockTransceiver is UnsendableSpoke {
     function initialize(address owner_, address receiverImplementation_)
         external
         initializer
@@ -136,7 +136,7 @@ contract MockTransceiver is SpokeTransceiverBase {
 ///      two roles are named at initialization and ungrantable afterwards. If this gates
 ///      correctly, configuring is `Ownable` and the roles confer nothing, which is the split
 ///      the design turns on.
-contract MsigTransceiver is HubTransceiverBase {
+contract MsigTransceiver is UnsendableHub {
     function initialize(
         address owner_,
         address treasury_,

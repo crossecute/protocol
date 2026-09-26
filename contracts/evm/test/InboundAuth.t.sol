@@ -11,16 +11,15 @@ import {OwnableUpgradeable} from
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {ChainType} from "src/addressing/ChainType.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {UnsendableHub, UnsendableSpoke, UnsendableTransmitter} from "test/Unsendable.sol";
 
 contract MockReceiver is ReceiverBase {
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
@@ -44,7 +43,7 @@ contract MockReceiver is ReceiverBase {
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
 /// @dev A transmitter with an inert send, so an account can be stood up on a destination
 ///      without a provider behind it. A report has to land on a real account now.
-contract Transmitter is TransmitterBase, OwnableUpgradeable {
+contract Transmitter is UnsendableTransmitter, OwnableUpgradeable {
     function initialize(address owner_, address transceiver_, bytes32 salt_)
         external
         initializer
@@ -78,7 +77,7 @@ contract Transmitter is TransmitterBase, OwnableUpgradeable {
 
 }
 
-contract Hub is HubTransceiverBase {
+contract Hub is UnsendableHub {
     function initialize(address owner_, address impl) external initializer {
         __HubTransceiverBase_init(owner_, address(0), new address[](0), impl);
     }
@@ -106,7 +105,7 @@ contract Hub is HubTransceiverBase {
 
 }
 
-contract Spoke is SpokeTransceiverBase {
+contract Spoke is UnsendableSpoke {
     function initialize(address owner_, address impl, bytes calldata home)
         external
         initializer

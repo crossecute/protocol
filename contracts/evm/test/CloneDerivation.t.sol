@@ -18,9 +18,8 @@ import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol
 import {LzZkSyncSpokeTransceiver, LzTronSpokeTransceiver} from
     "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {UnsendableTransceiver} from "test/Unsendable.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -134,7 +133,7 @@ contract CloneDerivationTest is Test {
 ///      are `eip155`, so nothing about the chain type separates them, and only the spoke
 ///      itself knows. Both seams must be overridden together, and this is what happens when
 ///      they are not.
-contract DivergingFormulaTransceiver is TransceiverBase {
+contract DivergingFormulaTransceiver is UnsendableTransceiver {
     address private _impl;
     /// Stands in for a chain-specific derivation: any answer other than Ethereum's.
     bool public overridePrediction;

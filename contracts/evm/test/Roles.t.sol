@@ -18,6 +18,7 @@ import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {UnsendableTransmitter} from "test/Unsendable.sol";
 
 /// @dev An account names its transport in the call that arms it, which is the only moment
 ///      anything can: `GATEWAY` has no role admin, so no grant ever succeeds. Granting ahead of
@@ -34,7 +35,7 @@ contract RoleReceiver is ReceiverBase {
     }
 }
 
-contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
+contract RoleTransmitter is UnsendableTransmitter, OwnableUpgradeable {
     function initializeWith(address owner_, address transceiver_, address gateway_)
         external
         initializer

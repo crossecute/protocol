@@ -170,8 +170,8 @@ the transmitter and both transceivers.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. The default reverts `SendNotImplemented`. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
-| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. The default reverts `QuoteNotImplemented`. See [R2](#r2-quote). |
+| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. There is no default: a contract that omits it does not compile. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
+| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. There is no default; a provider that cannot quote on-chain overrides it to revert `QuoteNotImplemented`. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
 ### 4.2 Required on the transmitter

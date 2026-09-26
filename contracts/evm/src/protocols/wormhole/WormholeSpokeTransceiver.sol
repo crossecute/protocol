@@ -52,7 +52,6 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     ///      `homeChainKey`, so `homeWormholeChain` is always the right destination.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
-        virtual
         override
         returns (bytes32 sendId)
     {
@@ -62,7 +61,6 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
         internal
         view
-        virtual
         override
         returns (uint256 nativeFee)
     {

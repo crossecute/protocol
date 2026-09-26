@@ -10,14 +10,14 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {UnsendableHub} from "test/Unsendable.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
-contract Hub is HubTransceiverBase {
+contract Hub is UnsendableHub {
     function initialize(address owner_) external initializer {
         // Through the hub's own initializer, because that is where the owner is set. The
         // implementation only has to be non-zero: these suites never create an account.

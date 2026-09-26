@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -16,8 +14,9 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {UnsendableHub} from "test/Unsendable.sol";
 
-contract Hub is HubTransceiverBase {
+contract Hub is UnsendableHub {
     function initialize(address owner_) external initializer {
         // Through the hub's own initializer, because that is where the owner is set. The
         // implementation only has to be non-zero: these suites never create an account.

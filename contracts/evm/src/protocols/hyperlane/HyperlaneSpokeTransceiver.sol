@@ -49,7 +49,6 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
     ///      `homeChainKey`, so `homeDomain` is always the right destination.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
-        virtual
         override
         returns (bytes32 sendId)
     {
@@ -59,7 +58,6 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        virtual
         override
         returns (uint256 nativeFee)
     {

@@ -359,7 +359,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 504 passing
+cd contracts/evm && forge test        # 502 passing
 ```
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its

@@ -77,11 +77,8 @@ abstract contract OutboundBase is Roles {
     error RouteInUse(bytes32 routeKey);
     error UnknownRoute();
     error NoCounterpartFor(bytes32 chainKey);
-    /// @dev The `_sendMessage` default. A protocol that forgets to implement it fails loudly
-    ///      on the first message rather than reporting success for one that never left.
-    error SendNotImplemented();
-    /// @dev The `_quoteMessage` default. Silently returning zero would be indistinguishable
-    ///      from a free message, and the first thing anyone would do is send exactly that.
+    /// @dev For a binding whose provider cannot quote on-chain (P9). Returning zero instead
+    ///      would be indistinguishable from a free message.
     error QuoteNotImplemented();
 
     /* ================================== routing ================================ */
@@ -239,7 +236,8 @@ abstract contract OutboundBase is Roles {
         return msg.sender;
     }
 
-    /// @notice Put the payload on the wire. Implemented per protocol.
+    /// @notice Put the payload on the wire. Implemented per protocol, with no default: a
+    ///         concrete contract that forgets it does not compile.
     ///
     /// @dev ONE PRIMITIVE FOR EVERY CHANNEL: a payload to an account, a bootstrap to a spoke
     ///      transceiver, and a receiver report home are all `bytes` to an interoperable
@@ -270,9 +268,7 @@ abstract contract OutboundBase is Roles {
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value
-    ) internal virtual returns (bytes32 sendId) {
-        revert SendNotImplemented();
-    }
+    ) internal virtual returns (bytes32 sendId);
 
     /// @notice What `_sendMessage` would cost, in THIS chain's native currency.
     ///
@@ -304,9 +300,7 @@ abstract contract OutboundBase is Roles {
         bytes memory recipient,
         bytes memory payload,
         bytes[] memory attributes
-    ) internal view virtual returns (uint256 nativeFee) {
-        revert QuoteNotImplemented();
-    }
+    ) internal view virtual returns (uint256 nativeFee);
 
     /// @notice What sending `payload` to `recipient` would cost, in this chain's native
     ///         currency.
@@ -325,8 +319,8 @@ abstract contract OutboundBase is Roles {
     ///      refuse reports the operation ready when it is not.
     ///
     /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own addition alongside it. A
-    ///      gateway that cannot answer leaves `_quoteMessage` reverting `QuoteNotImplemented`,
-    ///      with the off-chain measurement documented in its place.
+    ///      gateway that cannot answer implements `_quoteMessage` as a `QuoteNotImplemented`
+    ///      revert, with the off-chain measurement documented in its place.
     function quoteMessage(
         bytes calldata recipient,
         bytes calldata payload,

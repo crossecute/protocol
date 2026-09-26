@@ -484,8 +484,8 @@ abstract contract TransmitterBase is
     ///      and payload once, prices them, and sends the same three arguments with the answer
     ///      attached; anything that changes the price is an argument to both, which is what
     ///      stops the two drifting. ERC-7786 defines no quote, so this is the protocol's own,
-    ///      and a gateway that cannot answer leaves `_quoteMessage` reverting
-    ///      `QuoteNotImplemented` with the off-chain measurement documented in its place.
+    ///      and a gateway that cannot answer implements `_quoteMessage` as a
+    ///      `QuoteNotImplemented` revert, with the off-chain measurement documented in its place.
     ///
     /// @dev IT CARRIES THE SAME GATES THE SEND DOES, because a quote that succeeded for a
     ///      message the send would refuse reports the operation ready when it is not. It is
