@@ -27,14 +27,12 @@ contract WormholeReceiver is ReceiverBase, IVaaV1Receiver {
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
 
-    /// @dev Guardian signatures authenticate the emitter; `isSourceTransmitter` is the only
-    ///      sender check, so no R3.3 exception. Narrows via `isSourceTransmitter` rather than
-    ///      `_authenticateSender` for the same reason as `CcipReceiver`.
+    /// @dev Guardian signatures authenticate the emitter; `_onMessageFrom` is the only sender
+    ///      check, so no R3.3 exception.
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        if (!isSourceTransmitter(emitter)) revert NotSourceTransmitter();
-        _onMessage(payload);
+        _onMessageFrom(emitter, payload);
     }
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {

@@ -82,8 +82,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         onlyRole(GATEWAY_ROLE)
     {
         ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
-        address senderAddr = abi.decode(message.sender, (address));
-        _onInbound(homeRoute(), abi.encodePacked(senderAddr), message.data);
+        _onHomeInbound(abi.decode(message.sender, (address)), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

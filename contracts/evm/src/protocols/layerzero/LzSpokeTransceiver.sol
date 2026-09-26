@@ -108,8 +108,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         address, /* _executor */
         bytes calldata /* _extraData */
     ) internal override {
-        bytes memory sender = abi.encodePacked(address(uint160(uint256(_origin.sender))));
-        _onInbound(homeRoute(), sender, _message);
+        _onHomeInbound(address(uint160(uint256(_origin.sender))), _message);
     }
 }
 

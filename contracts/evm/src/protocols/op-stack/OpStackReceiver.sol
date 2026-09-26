@@ -25,10 +25,9 @@ contract OpStackReceiver is ReceiverBase, IOpStackRecipient {
     }
 
     /// @dev The sender is `xDomainMessageSender()`, never anything in `payload`: see
-    ///      `OpStackMessage.sender`. No R3.3 exception; `isSourceTransmitter` is the only
+    ///      `OpStackMessage.sender`. No R3.3 exception; `_onMessageFrom` is the only
     ///      sender check.
     function receiveOpStackMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
-        if (!isSourceTransmitter(OpStackMessage.sender())) revert NotSourceTransmitter();
-        _onMessage(payload);
+        _onMessageFrom(OpStackMessage.sender(), payload);
     }
 }

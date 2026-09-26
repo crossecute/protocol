@@ -96,6 +96,16 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
         return account != address(0) && account == sourceTransmitter;
     }
 
+    /// @notice Deliver `payload` if `sender`, as the provider reported it, is this receiver's
+    ///         transmitter.
+    /// @dev For bindings whose provider reports the sender as a plain address.
+    ///      `_authenticateSender` takes an ERC-7930 envelope in calldata, which a decoded
+    ///      address cannot bind to, and the round trip would check nothing more.
+    function _onMessageFrom(address sender, bytes calldata payload) internal {
+        if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
+        _onMessage(payload);
+    }
+
     /// @notice Who may drive this receiver: its transmitter, and the payload itself.
     ///
     /// @dev THE TRANSCEIVER IS NOT ON THIS LIST, AND ITS ABSENCE IS THE POINT. It created

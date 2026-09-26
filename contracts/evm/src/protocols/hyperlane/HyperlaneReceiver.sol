@@ -32,10 +32,7 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
     }
 
     /// @dev `Mailbox.process` verifies the message against its ISM, not which contract sent
-    ///      it, so `isSourceTransmitter` is the only sender check: no R3.3 exception. Narrows
-    ///      via `isSourceTransmitter` rather than `_authenticateSender`, which takes an
-    ///      ERC-7930 `bytes calldata` that a decoded `bytes32` cannot bind to (same as
-    ///      `CcipReceiver`).
+    ///      it, so `_onMessageFrom` is the only sender check: no R3.3 exception.
     function handle(
         uint32,
         /* origin */
@@ -47,9 +44,6 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
         override
         onlyRole(GATEWAY_ROLE)
     {
-        if (!isSourceTransmitter(TypeCasts.bytes32ToAddress(sender))) {
-            revert NotSourceTransmitter();
-        }
-        _onMessage(message);
+        _onMessageFrom(TypeCasts.bytes32ToAddress(sender), message);
     }
 }

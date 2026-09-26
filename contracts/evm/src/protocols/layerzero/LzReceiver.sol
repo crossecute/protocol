@@ -52,9 +52,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
 
     /// @dev R3.3 exception: `lzReceive` (not overridden) authenticates via `endpoint`+`peers`
     ///      before this runs, ahead of our own check. Defensible for a 1:1 pairing (one peer,
-    ///      set once). Narrows via `isSourceTransmitter` rather than `_authenticateSender`,
-    ///      since `_origin.sender` is already a plain address and the ERC-7930 round trip
-    ///      buys nothing here.
+    ///      set once).
     /// @dev `lzReceive` already pins `msg.sender` to `endpoint`; the role check is what lets
     ///      `revokeGateway(endpoint)` disconnect LayerZero, which the peer check alone never would.
     function _lzReceive(
@@ -65,8 +63,6 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         bytes calldata /* _extraData */
     ) internal override {
         _checkRole(GATEWAY_ROLE);
-        address sender = address(uint160(uint256(_origin.sender)));
-        if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
-        _onMessage(_message);
+        _onMessageFrom(address(uint160(uint256(_origin.sender))), _message);
     }
 }

@@ -62,6 +62,6 @@ contract OpStackSpokeTransceiver is SpokeTransceiverBase, IOpStackRecipient {
     /// @dev The sender is `xDomainMessageSender()` (see `OpStackMessage.sender`), checked
     ///      against the hub by `_authenticateOrigin` via `_onInbound`.
     function receiveOpStackMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
-        _onInbound(homeRoute(), abi.encodePacked(OpStackMessage.sender()), payload);
+        _onHomeInbound(OpStackMessage.sender(), payload);
     }
 }

@@ -77,7 +77,7 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
         onlyRole(GATEWAY_ROLE)
     {
         ProviderOrigin.requireHome(origin, homeDomain);
-        _onInbound(homeRoute(), abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
+        _onHomeInbound(TypeCasts.bytes32ToAddress(sender), message);
     }
 }
 

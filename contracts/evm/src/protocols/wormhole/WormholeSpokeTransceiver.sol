@@ -80,7 +80,7 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
         ProviderOrigin.requireHome(emitterChain, homeWormholeChain);
-        _onInbound(homeRoute(), abi.encodePacked(emitter), payload);
+        _onHomeInbound(emitter, payload);
     }
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {

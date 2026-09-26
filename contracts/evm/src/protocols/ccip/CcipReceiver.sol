@@ -36,26 +36,16 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
 
-    /// @dev `_authenticateSender` is `bytes calldata` and expects an ERC-7930 envelope;
-    ///      `message.sender` is `abi.encode(address)`, CCIP's own width, which cannot be
-    ///      passed to it (an internal `calldata` parameter cannot bind to a synthesized
-    ///      value) and would fail `Erc7930.parseStrict` even if it could. Narrows via
-    ///      `isSourceTransmitter` instead, the same shape as LayerZero's receiver, for the
-    ///      same reason: the ERC-7930 round trip buys nothing once the provider's own
-    ///      sender is already a plain address.
-    ///
     /// @dev No provider-side check runs before this. Unlike LayerZero's `lzReceive`, CCIP's
     ///      off-ramp asserts nothing about the source-chain sender (see
-    ///      `docs/provider-research.md#4-ccip-as-a-native-binding`), so `isSourceTransmitter`
+    ///      `docs/provider-research.md#4-ccip-as-a-native-binding`), so `_onMessageFrom`
     ///      below is the only authentication check, matching `_onInbound`'s stated rule with
     ///      no exception to write.
     function ccipReceive(Client.Any2EVMMessage calldata message)
         external
         onlyRole(GATEWAY_ROLE)
     {
-        address sender = abi.decode(message.sender, (address));
-        if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
-        _onMessage(message.data);
+        _onMessageFrom(abi.decode(message.sender, (address)), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
