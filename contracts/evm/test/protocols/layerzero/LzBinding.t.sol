@@ -24,9 +24,13 @@ import {
     IHubSendHarness,
     ProviderWideSenderSpec,
     ProviderPayloadPricedSpec,
-    ProviderRefundSpec
+    ProviderRefundSpec,
+    ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated eid-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -364,5 +368,24 @@ contract LzDivergentSpokePayNativeTest is Test {
 
         (,,,, uint256 value,) = endpoint.sent(0);
         assertEq(value, 0.01 ether);
+    }
+}
+
+contract LzTransmitterInboundTest is ProviderTransmitterSpec {
+    MockLzEndpoint endpoint = new MockLzEndpoint();
+
+    function _transmitter() internal override returns (address) {
+        return address(new ERC1967Proxy(address(new LzTransmitter(address(endpoint))), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+    }
+
+    function _deliveringGateway() internal view override returns (address) {
+        return address(endpoint);
+    }
+
+    function _deliveryCall() internal pure override returns (bytes memory) {
+        return abi.encodeCall(
+            ILayerZeroReceiver.lzReceive,
+            (Origin({srcEid: 30101, sender: bytes32(uint256(0xABCD)), nonce: 1}), bytes32(0), "", address(0), "")
+        );
     }
 }

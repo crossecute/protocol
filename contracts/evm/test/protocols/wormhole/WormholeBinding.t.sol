@@ -24,8 +24,11 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -488,5 +491,22 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
     /// @dev Addressed to `spoke` on this chain, so only the emitter chain is wrong.
     function _deliverFromHubOn(address spoke, uint256 origin) internal override {
         WormholeSpokeTransceiver(spoke).executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
+    }
+}
+
+contract WormholeTransmitterInboundTest is ProviderTransmitterSpec {
+    address core = address(0xBEEF);
+
+    function _transmitter() internal override returns (address) {
+        return address(new ERC1967Proxy(address(new WormholeTransmitter(core, address(0), address(0))), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+    }
+
+    /// @dev Delivery is permissionless: anyone may submit a VAA.
+    function _deliveringGateway() internal pure override returns (address) {
+        return address(0xCAFE);
+    }
+
+    function _deliveryCall() internal pure override returns (bytes memory) {
+        return abi.encodeCall(IVaaV1Receiver.executeVAAv1, (_vaa(1, 2, address(0xABCD), 0, "")));
     }
 }

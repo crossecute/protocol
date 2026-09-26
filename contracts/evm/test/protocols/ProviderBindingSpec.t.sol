@@ -207,6 +207,26 @@ abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
     }
 }
 
+/// @title ProviderTransmitterSpec
+/// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
+///         called by the provider's own gateway, finds nothing to run.
+abstract contract ProviderTransmitterSpec is Test {
+    /// @notice A transmitter behind a proxy, initialized.
+    function _transmitter() internal virtual returns (address);
+
+    /// @notice The provider's delivery callback, encoded as its gateway would call it.
+    function _deliveryCall() internal view virtual returns (bytes memory);
+
+    function _deliveringGateway() internal view virtual returns (address);
+
+    function test_inboundToATransmitterReverts() public {
+        address transmitter = _transmitter();
+        vm.prank(_deliveringGateway());
+        (bool ok,) = transmitter.call(_deliveryCall());
+        assertFalse(ok);
+    }
+}
+
 /// @title ProviderReceiveSpec
 /// @notice The properties every native provider binding's receive path must satisfy,
 ///         independent of which provider it is: the configured source is accepted, an

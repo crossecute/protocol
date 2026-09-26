@@ -22,7 +22,9 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -353,6 +355,31 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
                 data: "",
                 destTokenAmounts: new Client.EVMTokenAmount[](0)
             })
+        );
+    }
+}
+
+contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
+    address router = address(0xBEEF);
+
+    function _transmitter() internal override returns (address) {
+        return address(new ERC1967Proxy(address(new CcipTransmitter(router)), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+    }
+
+    function _deliveringGateway() internal view override returns (address) {
+        return router;
+    }
+
+    function _deliveryCall() internal pure override returns (bytes memory) {
+        return abi.encodeCall(
+            IAny2EVMMessageReceiver.ccipReceive,
+            (Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: 1,
+                sender: abi.encode(address(0xABCD)),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            }))
         );
     }
 }
