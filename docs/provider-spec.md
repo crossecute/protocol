@@ -779,68 +779,62 @@ Collected, because each of these is individually tempting.
 
 ## 8. The compliance suite
 
-A binding is compliant when it passes `test/compliance/ProviderCompliance.t.sol`, an
-abstract test contract that every binding inherits and parameterizes with its own four
-contracts. Not built. The five bindings instead share
-`test/protocols/ProviderBindingSpec.t.sol`, which covers part of the table below;
-[`todo.md`](todo.md#4-infrastructure) maps the rest.
+A binding is compliant when it passes the shared specs in
+`test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract a binding's
+suite inherits and parameterizes through `virtual` hooks: how its provider delivers, what its
+mocks were paid, which revert it expects. Properties that hold for only some providers are
+mixins applied only to those, rather than flags:
 
-The abstract harness declares:
-
-```solidity
-abstract contract ProviderCompliance is Test {
-    function deployHub() internal virtual returns (address);
-    function deploySpoke(bytes32 homeChainKey, bytes memory homeRoute, bytes memory hub)
-        internal virtual returns (address);
-    function encodeRoute(uint256 nativeId) internal virtual returns (bytes memory);
-    function deliverToTransceiver(address to, bytes memory route, bytes memory sender, bytes memory body)
-        internal virtual;
-    /// @dev An account is an `IERC7786Recipient`, so its delivery carries a full ERC-7930
-    ///      sender envelope rather than a separate route: `receiveMessage` splits it.
-    function deliverToAccount(address to, bytes memory sender, bytes memory payload)
-        internal virtual;
-    /// @dev The fee the mocked provider will charge, so a quote can be asserted against a
-    ///      known number rather than against itself.
-    function setProviderFee(uint256 nativeFee) internal virtual;
-}
-```
-
-The `deliver*` hooks are how a binding hands the harness its own provider's callback shape.
-Everything below is written once, against those hooks.
-
-| # | Test | Asserts |
+| Spec | Applies to | Covers |
 | --- | --- | --- |
-| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. |
-| C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. |
-| C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. |
-| C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. |
-| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`. |
-| C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a hub, `NotHomeOrigin` on a spoke. |
-| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. |
-| C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. |
-| C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). |
-| C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). |
-| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. |
-| C12 | `quote_isTakenOverTheExactPayloadBytes` | Two payloads of different lengths quote differently, and the longer one's quote matches a send of the longer one. [R2.3](#r2-quote). |
-| C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). |
-| C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). |
-| C15 | `quote_bootstrapDoesNotRequireTheCallerToBeTheAccount` | The quote is callable before the account exists. [R2](#r2-quote). |
-| C16 | `quote_underfundedSendReverts` | Sending less than the quote fails rather than half-delivering. |
-| C17 | `bootstrap_createsTheAccountAtThePredictedAddress` | `predictCrossAccount` on the hub equals the deployed address on the spoke. |
-| C18 | `bootstrap_accountIsProviderConfiguredBeforeThePayloadRuns` | A payload whose first call sends must succeed. |
-| C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar is applied to the first message to a chain. |
-| C20 | `bootstrap_forSomebodyElsesAccountReverts` | `NotTheAccount`. |
-| C21 | `parity_accountInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). |
-| C22 | `parity_hubAndSpokeProxiesShareInitcode` | The claim that puts hub and spokes at one address. |
-| C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. |
-| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Write every base field, read them all back. |
-| C25 | `fees_excessRefundsToTheOwnerNotTheTransceiver` | [R7.2](#r7-fees-and-value). |
-| C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. |
-| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. |
-| C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). |
-| C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. |
-| C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. |
-| C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). |
+| `ProviderHubSendSpec` | all five | C1, C2, C13, C14 |
+| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26 |
+| `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12 |
+| `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
+| `ProviderIdTableSpec` | the four hubs with an id table | C1 (transmitter lookup), C5 (hub), C28 |
+| `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
+| `ProviderTransmitterSpec` | all five | C9 |
+| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18 |
+| `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
+| `ProviderTransceiverInboundSpec` | all five | C4, C6, C7 (hub and spoke) |
+| `ProviderSpokeOriginSpec` | CCIP, Hyperlane, Wormhole | C5 (spoke) |
+
+Protocol-level properties no binding can change are covered once, by the core tests named
+below. The column says where each line is held.
+
+| # | Property | Asserts | Covered by |
+| --- | --- | --- | --- |
+| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. | `ProviderHubSendSpec`; transmitter lookup `ProviderIdTableSpec` |
+| C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. | `ProviderHubSendSpec` |
+| C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. | core `Transport.t.sol` `test_aRecipientThatIsNotThisAccountIsRefused` |
+| C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec` |
+| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`. | `ProviderIdTableSpec` (hub), `ProviderSpokeOriginSpec` (spoke), `ProviderReceiveSpec` (account) |
+| C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a hub, `NotHomeOrigin` on a spoke. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec` |
+| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. | `ProviderTransceiverInboundSpec` (asserts the chain key authentication accepted) |
+| C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. | core `DestinationNaming.t.sol`: the route is the chain identifier and the chainKey its hash |
+| C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). | `ProviderTransmitterSpec` |
+| C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). | `ProviderWideSenderSpec` |
+| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §4](todo.md#4-infrastructure)) |
+| C12 | `quote_isTakenOverTheExactPayloadBytes` | Two payloads of different lengths quote differently, and the longer one's quote matches a send of the longer one. [R2.3](#r2-quote). | `ProviderPayloadPricedSpec` |
+| C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). | `ProviderHubSendSpec` |
+| C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). | `ProviderHubSendSpec` |
+| C15 | `quote_bootstrapDoesNotRequireTheCallerToBeTheAccount` | The quote is callable before the account exists. [R2](#r2-quote). | core `Transport.t.sol` `test_bootstrapQuoteDoesNotRequireTheCallerToBeTheAccount` |
+| C16 | `quote_underfundedSendReverts` | Sending less than the quote fails rather than half-delivering. | `ProviderFeeSpec` |
+| C17 | `bootstrap_createsTheAccountAtThePredictedAddress` | `predictCrossAccount` on the hub equals the deployed address on the spoke. | core `CommitFinalize.t.sol` `test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment` |
+| C18 | `bootstrap_accountIsProviderConfiguredBeforeThePayloadRuns` | A payload whose first call sends must succeed. | `ProviderReceiveSpec` |
+| C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar is applied to the first message to a chain. | core `CounterpartRouting.t.sol` `test_counterpartBelowProvenanceBarIsRefused` |
+| C20 | `bootstrap_forSomebodyElsesAccountReverts` | `NotTheAccount`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheAccount` |
+| C21 | `parity_accountInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
+| C22 | `parity_hubAndSpokeProxiesShareInitcode` | The claim that puts hub and spokes at one address. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
+| C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
+| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Write every base field, read them all back. | Not tested. Layouts are fixed by inheritance order and the vendored SDK storage is ERC-7201 ([todo §4](todo.md#4-infrastructure)) |
+| C25 | `fees_excessRefundsToTheOwnerNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec`. CCIP keeps an overpayment; OP Stack takes no value |
+| C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
+| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `CommitFinalize.t.sol` `test_initializingLocksUpgrades` |
+| C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). | core setters (`DestinationNaming.t.sol`, `SaltedDeployment.t.sol`, `ProviderChainId.t.sol`); the binding's typed setter `ProviderIdTableSpec` |
+| C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. | Wormhole, which owns replay: `test_aReplayedVaaIsRejected`. Others: the transport's, fork test not built |
+| C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |
+| C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerAccount`. Others: fork test not built |
 
 **C11, C29 and C30 want FORK tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness
@@ -1003,4 +997,4 @@ A binding is done when every line is true.
 - [ ] Every SDK-side authentication documented as a written exception
 - [ ] No new setter for any write-once value
 - [ ] `script/` deploys in the order of [§6](#6-configuration-a-compliant-deployment-performs)
-- [ ] `ProviderCompliance.t.sol` C1 through C31 pass
+- [ ] The §8 specs that apply to it pass, with the binding's suite inheriting each one

@@ -301,13 +301,12 @@ mainnet.
   [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
   `accountInitCodeHash` assertion (R8.4), and how many gateways each `Deployment` names, since
   a transceiver's gateways cannot be added to later.
-- **No `ProviderCompliance.t.sol`.** The spec's C1 to C31 harness was never built. The five
-  bindings share `test/protocols/ProviderBindingSpec.t.sol` instead, which holds every one of
-  them to C1 and C2 (the send resolves the configured destination and reverts for an
-  unconfigured one), C5 and C6 (unconfigured origin, impersonator), a quote equal to the
-  mock's fee toward C11, and rejection of a wrong caller or a revoked gateway. Everything
-  else is covered only in some bindings' own suites or not at all, and C29 to C31 only for
-  Wormhole, the one binding that owns replay.
+- **The compliance suite has three gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
+  says where every line is held). C24, no storage-slot collision, is not tested: layouts are
+  fixed by inheritance order and the vendored SDK storage is ERC-7201, and a `forge inspect`
+  layout snapshot in CI would pin it. C21's script-side assertion waits on the deploy
+  scripts. C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's
+  own replay (C29 to C31) is already tested, since the binding owns it.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, C29, and
   C30 test the transport rather than the binding, so until they run against each provider's
   real deployment, P7 and P9 remain documented assumptions.
