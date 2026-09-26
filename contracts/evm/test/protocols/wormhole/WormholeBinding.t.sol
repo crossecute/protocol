@@ -314,6 +314,35 @@ contract WormholeReceiveTest is ProviderWideSenderSpec {
         receiver.executeVAAv1(vaa);
     }
 
+    /// @dev C30: the consumed mark rolls back with a delivery that reverts, so the same VAA
+    ///      succeeds once the cause is fixed rather than being lost.
+    function test_aFailedDeliveryIsStillRetryable() public {
+        Switch sw = new Switch();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(sw), value: 0, data: abi.encodeCall(Switch.run, ())});
+        bytes memory vaa =
+            _vaa(1, HOME, sourceTransmitter, 0, _envelope(HERE, address(receiver), Payload.encodeCalls(calls)));
+
+        vm.expectRevert();
+        receiver.executeVAAv1(vaa);
+        sw.fix();
+        receiver.executeVAAv1(vaa);
+        assertTrue(sw.ran());
+    }
+
+    /// @dev C31: each account keeps its own consumed set, so one consuming its message does not
+    ///      stop another receiving its own with the same source and sequence.
+    function test_theDedupeIsPerAccount() public {
+        WormholeReceiver other = WormholeReceiver(payable(_deployReceiver(new Call[](0))));
+        bytes memory first = _validVaa(0);
+        receiver.executeVAAv1(first);
+        (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(first);
+        assertFalse(other.vaaConsumed(v.hash));
+        other.executeVAAv1(
+            _vaa(1, HOME, sourceTransmitter, 0, _envelope(HERE, address(other), Payload.encodeCalls(new Call[](0))))
+        );
+    }
+
     /// @dev Receivers share one address across parity chains; a VAA for another chain must not
     ///      run here.
     function test_aVaaForAnotherChainIsRejected() public {
@@ -594,5 +623,20 @@ contract WormholeTransceiverInboundTest is ProviderTransceiverInboundSpec {
 
     function _deliverToSpoke(address sender) internal override {
         WormholeSpokeTransceiver(payable(spoke)).executeVAAv1(_vaa(1, HOME, sender, 0, _envelope(SPOKE, spoke, "")));
+    }
+}
+
+/// @dev A payload target that fails until fixed, for C30.
+contract Switch {
+    bool public broken = true;
+    bool public ran;
+
+    function fix() external {
+        broken = false;
+    }
+
+    function run() external {
+        require(!broken, "broken");
+        ran = true;
     }
 }
