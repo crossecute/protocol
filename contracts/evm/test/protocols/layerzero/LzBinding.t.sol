@@ -23,7 +23,8 @@ import {
     ProviderIdTableSpec,
     IHubSendHarness,
     ProviderWideSenderSpec,
-    ProviderPayloadPricedSpec
+    ProviderPayloadPricedSpec,
+    ProviderRefundSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
@@ -54,7 +55,7 @@ contract LzHubHarness is LzHubTransceiver {
 ///         `ProviderHubSendSpec`'s; this contract only supplies LayerZero's own mock and, in
 ///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
 ///         cover (the message bytes and value reach the endpoint unchanged).
-contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec {
+contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
     MockLzEndpoint endpoint;
     LzHubHarness hub;
     address msig = address(0x5165);
@@ -163,6 +164,11 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec {
 
     function _setProviderFeePerByte(uint256 perByte) internal override {
         endpoint.setFeePerByte(perByte);
+    }
+
+
+    function _lastRefundAddress() internal view override returns (address refundAddress) {
+        (,,,,, refundAddress) = endpoint.sent(endpoint.sentLength() - 1);
     }
 
 }

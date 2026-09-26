@@ -23,7 +23,7 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
@@ -44,7 +44,7 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
+contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneHubHarness hub;
     address msig = address(0x5165);
@@ -162,6 +162,11 @@ contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Pro
 
     function _setProviderFeePerByte(uint256 perByte) internal override {
         mailbox.setFeePerByte(perByte);
+    }
+
+
+    function _lastRefundAddress() internal view override returns (address) {
+        return mailbox.sent(mailbox.sentLength() - 1).refundTo;
     }
 
 }

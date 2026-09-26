@@ -12,6 +12,7 @@ contract MockHyperlaneMailbox {
         bytes body;
         bytes metadata;
         uint256 value;
+        address refundTo;
     }
 
     Sent[] internal _sent;
@@ -46,9 +47,9 @@ contract MockHyperlaneMailbox {
     {
         uint256 required = quoteDispatch(destinationDomain, recipientAddress, body, metadata);
         require(msg.value >= required, "insufficient fee");
-        _sent.push(Sent(destinationDomain, recipientAddress, body, metadata, msg.value));
+        address refundTo = metadata.length >= 86 ? address(bytes20(metadata[66:86])) : msg.sender;
+        _sent.push(Sent(destinationDomain, recipientAddress, body, metadata, msg.value, refundTo));
         if (msg.value > required) {
-            address refundTo = metadata.length >= 86 ? address(bytes20(metadata[66:86])) : msg.sender;
             (bool ok,) = refundTo.call{value: msg.value - required}("");
             require(ok, "refund failed");
         }

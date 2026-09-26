@@ -24,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
@@ -81,7 +81,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderFeeSpec {
+contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec {
     uint256 constant CORE_MESSAGE_FEE = 1 gwei;
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
@@ -221,6 +221,11 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Prov
 
     function _lastPaid() internal view override returns (uint256) {
         return core.published(core.publishedLength() - 1).value + router.requests(router.requestsLength() - 1).paid;
+    }
+
+
+    function _lastRefundAddress() internal view override returns (address) {
+        return router.requests(router.requestsLength() - 1).refundAddr;
     }
 
 }

@@ -143,6 +143,24 @@ abstract contract ProviderFeeSpec is ProviderHubSendSpec {
     }
 }
 
+/// @title ProviderRefundSpec
+/// @notice C25 (R7.2): an overpayment is refunded to the caller, never to the sending contract.
+///         For providers that refund (LayerZero, Hyperlane, Wormhole); CCIP keeps overpayment.
+abstract contract ProviderRefundSpec is ProviderFeeSpec {
+    /// @notice The refund address the provider was given for the last send.
+    function _lastRefundAddress() internal view virtual returns (address);
+
+    function test_excessRefundsToTheCallerNotTheSender() public {
+        _setProviderFee(0.02 ether);
+        uint256 overpaid = 2 * harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        address caller = makeAddr("caller");
+        vm.deal(caller, overpaid);
+        vm.prank(caller);
+        harness.sendMessagePublic{value: overpaid}(_configuredRecipient(), "payload", new bytes[](0), overpaid);
+        assertEq(_lastRefundAddress(), caller);
+    }
+}
+
 /// @title ProviderPayloadPricedSpec
 /// @notice C12 (R2.3), for providers that price by payload length (LayerZero, CCIP, Hyperlane;
 ///         Wormhole's Executor and OP Stack do not).
