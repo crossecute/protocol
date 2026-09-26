@@ -22,7 +22,7 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -48,7 +48,7 @@ contract CcipHubHarness is CcipHubTransceiver {
 ///         table, CCIP has no provider-side destination-address concept at all, so the
 ///         recipient's address half (unused by LayerZero) is exactly what becomes
 ///         `EVM2AnyMessage.receiver` here.
-contract CcipSendTest is ProviderIdTableSpec {
+contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
     MockCcipRouter router;
     CcipHubHarness hub;
     address msig = address(0x5165);

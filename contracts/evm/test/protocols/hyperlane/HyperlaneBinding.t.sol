@@ -19,12 +19,11 @@ import {
 } from "src/protocols/hyperlane/HyperlaneDivergentSpokeTransceiver.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
-import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -44,7 +43,7 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is ProviderIdTableSpec {
+contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneHubHarness hub;
     address msig = address(0x5165);
@@ -150,13 +149,6 @@ contract HyperlaneSendTest is ProviderIdTableSpec {
         attrs[0] = abi.encodePacked(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), uint128(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-    }
-
-    function test_nonEvmWidthRecipientIsRefused() public {
-        bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
-        bytes memory recipient = Erc7930.encode(Erc7930.CT_EIP155, Erc7930.minimalBigEndian(8453), wide);
-        vm.expectRevert(abi.encodeWithSelector(HyperlaneMessage.UnsupportedHyperlaneRecipient.selector, wide));
-        hub.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 
     function test_supportedAttributeIsTheGasLimit() public view {

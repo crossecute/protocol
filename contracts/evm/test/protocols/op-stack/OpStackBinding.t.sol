@@ -17,7 +17,7 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -37,7 +37,7 @@ contract OpStackHubHarness is OpStackHubTransceiver {
     }
 }
 
-contract OpStackSendTest is ProviderHubSendSpec {
+contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
     MockCrossDomainMessenger messenger;
     OpStackHubHarness hub;
     uint256 constant BASE = 8453;
@@ -136,13 +136,6 @@ contract OpStackSendTest is ProviderHubSendSpec {
         attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-    }
-
-    function test_nonEvmWidthRecipientIsRefused() public {
-        bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
-        bytes memory recipient = Erc7930.encode(Erc7930.CT_EIP155, Erc7930.minimalBigEndian(BASE), wide);
-        vm.expectRevert(abi.encodeWithSelector(OpStackMessage.UnsupportedOpStackRecipient.selector, wide));
-        hub.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 }
 

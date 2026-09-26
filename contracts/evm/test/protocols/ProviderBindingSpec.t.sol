@@ -6,6 +6,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
@@ -106,6 +107,19 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
         );
         providerIdOf(address(harness), _unconfiguredRecipient());
+    }
+}
+
+/// @title ProviderEvmRecipientSpec
+/// @notice For bindings that deliver to the recipient's address as an EVM address: a recipient
+///         whose address is not 20 bytes is refused rather than truncated into another one.
+abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
+    function test_aNonEvmWidthRecipientIsRefused() public {
+        bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
+        bytes memory recipient =
+            Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
+        vm.expectRevert(abi.encodeWithSelector(ProviderRecipient.UnsupportedRecipient.selector, wide));
+        harness.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 }
 

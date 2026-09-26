@@ -24,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -73,7 +73,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-contract WormholeSendTest is ProviderIdTableSpec {
+contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
     WormholeHubHarness hub;
@@ -201,13 +201,6 @@ contract WormholeSendTest is ProviderIdTableSpec {
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-    }
-
-    function test_nonEvmWidthRecipientIsRefused() public {
-        bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
-        bytes memory recipient = Erc7930.encode(Erc7930.CT_EIP155, Erc7930.minimalBigEndian(8453), wide);
-        vm.expectRevert(abi.encodeWithSelector(WormholeMessage.UnsupportedWormholeRecipient.selector, wide));
-        hub.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 }
 

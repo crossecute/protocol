@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {IMailbox} from "@hyperlane/interfaces/IMailbox.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
+import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
 
 /// @notice Recipient narrowing, hook metadata, and the `dispatch`/`quoteDispatch` calls,
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
@@ -19,8 +19,6 @@ library HyperlaneMessage {
     ///      refund target also sets a gas limit, and omitting the attribute must still mean
     ///      the provider's default.
     uint256 internal constant DEFAULT_GAS_LIMIT = 50_000;
-
-    error UnsupportedHyperlaneRecipient(bytes addr);
 
     /// @dev Returns zero, ERC-7786's "sent" (see `ProviderHubSendSpec`); the Mailbox's message id
     ///      is in its `DispatchId` event.
@@ -51,12 +49,8 @@ library HyperlaneMessage {
             .quoteDispatch(domain, recipientOf(recipient), payload, hookMetadata(attributes, refundTo));
     }
 
-    /// @dev EVM recipients only: anything but 20 bytes would be silently truncated or padded
-    ///      by the cast into a different `bytes32` recipient.
     function recipientOf(bytes memory recipient) internal pure returns (bytes32) {
-        bytes memory addr = Erc7930.parseStrict(recipient).addr;
-        if (addr.length != 20) revert UnsupportedHyperlaneRecipient(addr);
-        return TypeCasts.addressToBytes32(address(bytes20(addr)));
+        return TypeCasts.addressToBytes32(ProviderRecipient.evmAddress(recipient));
     }
 
     /// @dev Without an explicit `refundAddress`, the IGP and ProtocolFee hooks refund

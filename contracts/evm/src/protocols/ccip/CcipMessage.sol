@@ -3,8 +3,8 @@ pragma solidity ^0.8.0;
 
 import {Client} from "@ccip/libraries/Client.sol";
 import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
+import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
 
 /// @notice Send, quote, and `EVM2AnyMessage` construction for every CCIP sender (transmitter,
 ///         hub, and each spoke variant). The id `ccipSend` returns is discarded: senders
@@ -39,7 +39,7 @@ library CcipMessage {
         pure
         returns (Client.EVM2AnyMessage memory)
     {
-        address receiver = address(bytes20(Erc7930.parseStrict(recipient).addr));
+        address receiver = ProviderRecipient.evmAddress(recipient);
         Client.EVMTokenAmount[] memory noTokens = new Client.EVMTokenAmount[](0);
         return Client.EVM2AnyMessage({
             receiver: abi.encode(receiver),

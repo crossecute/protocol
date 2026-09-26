@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {ICoreBridge, CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 import {IExecutorQuoterRouter} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
+import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
 
 /// @notice Send, quote, and inbound verification for every Wormhole binding contract, over
 ///         Core `publishMessage` plus Executor delivery (the Standard Relayer is deprecated).
@@ -40,7 +40,6 @@ library WormholeMessage {
     bytes32 private constant CONSUMED_SLOT =
         keccak256(abi.encode(uint256(keccak256("crossecute.wormhole.consumed")) - 1)) & ~bytes32(uint256(0xff));
 
-    error UnsupportedWormholeRecipient(bytes addr);
     error UnsupportedWormholeSender(bytes32 emitterAddress);
     error InsufficientWormholeValue(uint256 value, uint256 messageFee);
     error WormholeGatewayRevoked();
@@ -130,11 +129,8 @@ library WormholeMessage {
         return abi.encodePacked(RELAY_INSTRUCTION_GAS, gasLimit, uint128(0));
     }
 
-    /// @dev EVM recipients only: anything but 20 bytes would be silently truncated or padded.
     function recipientOf(bytes memory recipient) internal pure returns (bytes32) {
-        bytes memory addr = Erc7930.parseStrict(recipient).addr;
-        if (addr.length != 20) revert UnsupportedWormholeRecipient(addr);
-        return bytes32(uint256(uint160(bytes20(addr))));
+        return bytes32(uint256(uint160(ProviderRecipient.evmAddress(recipient))));
     }
 
     /// @notice One attribute: the destination gas limit, as
