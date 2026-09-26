@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {OAppSenderUpgradeable} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppSenderUpgradeable.sol";
 import {OAppCoreUpgradeable} from
@@ -23,7 +23,7 @@ interface ILzEidTable {
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
 ///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
-contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
+contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
     /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
     ///        because the implementation address lives in the proxy's ERC-1967 slot, not its
     ///        initcode, so this never moves a derived account address.
@@ -34,6 +34,7 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
     ///      `onlyOwner`, unlike `grantRole`'s `onlyInitializing`) the first time it needs one.
     function initialize(address owner_, address transceiver_, bytes32 salt_)
         external
+        override
         initializer
     {
         __Ownable_init(owner_);
@@ -42,12 +43,8 @@ contract LzTransmitter is TransmitterBase, OAppSenderUpgradeable {
         __TransmitterBase_init(owner_, transceiver_, salt_);
     }
 
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
+    function _checkOwner() internal view override(OwnableTransmitter, OwnableUpgradeable) {
+        super._checkOwner();
     }
 
     /// @dev `recipient`'s address half is unused: LayerZero delivers to whatever `setPeer`

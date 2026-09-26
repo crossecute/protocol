@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 
 /// @dev What a transmitter reads from the `OpStackHubTransceiver` that created it: the one
@@ -17,19 +16,7 @@ interface IOpStackMessengerSource {
 ///      guard. Binds to `ICrossDomainMessenger`, not `OptimismPortal`: the messenger un-aliases
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See
 ///      `docs/provider-research.md#7-op-stack-as-a-native-binding`.
-contract OpStackTransmitter is TransmitterBase, OwnableUpgradeable {
-    function initialize(address owner_, address transceiver_, bytes32 salt_) external initializer {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
+contract OpStackTransmitter is OwnableTransmitter {
 
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal

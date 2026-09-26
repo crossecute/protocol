@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @notice For harnesses that exercise everything but the transport: `OutboundBase`'s two
 ///         provider seams, as reverts. One per base, because a mixin beside the base would
@@ -57,7 +57,7 @@ abstract contract UnsendableSpoke is SpokeTransceiverBase {
     }
 }
 
-abstract contract UnsendableTransmitter is TransmitterBase {
+abstract contract UnsendableTransmitter is OwnableTransmitter {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         virtual

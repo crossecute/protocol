@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 
@@ -18,7 +17,7 @@ interface IHyperlaneDomainTable {
 ///      guard. Plain `OwnableUpgradeable`, not Hyperlane's `MailboxClient`, which pins OZ
 ///      4.9.3's zero-arg `__Ownable_init()` (see
 ///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`).
-contract HyperlaneTransmitter is TransmitterBase, OwnableUpgradeable {
+contract HyperlaneTransmitter is OwnableTransmitter {
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
     ///         so this never moves a derived account address.
@@ -26,19 +25,6 @@ contract HyperlaneTransmitter is TransmitterBase, OwnableUpgradeable {
 
     constructor(address mailbox_) {
         mailbox = mailbox_;
-    }
-
-    function initialize(address owner_, address transceiver_, bytes32 salt_) external initializer {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
     }
 
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)

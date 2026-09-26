@@ -88,9 +88,10 @@ interface IAccountTransceiver {
 ///      the same collision the seam exists to avoid, one level down. `TransceiverBase`
 ///      sidesteps it by declaring no ownership at all, leaving `Ownable` to
 ///      `HubTransceiverBase`. Concrete contracts answer `_owner` and
-///      `_checkOwner` from whatever authority they already have; `LzTransmitter` uses
-///      `OwnableUpgradeable`, which also exposes `renounceOwnership`, and renouncing bricks
-///      the transmitter since every entry point here is owner-gated.
+///      `_checkOwner` from whatever authority they already have; every binding does so
+///      through `OwnableTransmitter`. Its `OwnableUpgradeable` also exposes
+///      `renounceOwnership`, and renouncing bricks the transmitter since every entry point
+///      here is owner-gated.
 ///
 /// @dev IT HOLDS NO REGISTRY POINTER AND NO ROUTES. The chainKey derivation is pure, and the
 ///      hub does the directory lookup once, on the home chain. Keeping that dependency on

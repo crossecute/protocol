@@ -2,8 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IAccessControlEnumerable} from
     "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
@@ -12,7 +10,6 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 import {Roles} from "src/messaging/Roles.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -35,22 +32,13 @@ contract RoleReceiver is ReceiverBase {
     }
 }
 
-contract RoleTransmitter is UnsendableTransmitter, OwnableUpgradeable {
+contract RoleTransmitter is UnsendableTransmitter {
     function initializeWith(address owner_, address transceiver_, address gateway_)
         external
         initializer
     {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, bytes32(0));
+        __OwnableTransmitter_init(owner_, transceiver_, bytes32(0));
         grantRole(GATEWAY_ROLE, gateway_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
     }
 
     /// @dev Stands in for what a binding's `_sendMessage` does before it calls out.

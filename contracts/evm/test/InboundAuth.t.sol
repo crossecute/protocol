@@ -5,8 +5,6 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -18,7 +16,6 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {UnsendableHub, UnsendableSpoke, UnsendableTransmitter} from "test/Unsendable.sol";
 
 contract MockReceiver is ReceiverBase {
@@ -43,22 +40,7 @@ contract MockReceiver is ReceiverBase {
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
 /// @dev A transmitter with an inert send, so an account can be stood up on a destination
 ///      without a provider behind it. A report has to land on a real account now.
-contract Transmitter is UnsendableTransmitter, OwnableUpgradeable {
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
+contract Transmitter is UnsendableTransmitter {
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal

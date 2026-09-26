@@ -186,7 +186,7 @@ src/
   schemes/        Keccak, Sha256, Blake2b                   pluggable, per chainKey
   messaging/      Commitment, Call, Payload, Envelope, Executor, Roles
                   IErc7786                                  vendored, ERC-7786's two
-    outbound/     OutboundBase -> TransmitterBase
+    outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
     inbound/      InboundBase -> ReceiverBase           what both halves RECEIVE with
     transceiver/  TransceiverBase -> Hub
       spoke/      SpokeTransceiverBase -> zkSync / Tron

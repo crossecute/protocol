@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 
 import {Vm} from "forge-std/Vm.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {TransmitterBase, IAccountTransceiver} from
     "src/messaging/outbound/TransmitterBase.sol";
@@ -20,30 +18,15 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
-contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
+contract MockTransmitter is OwnableTransmitter {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
     uint256 public sentValue;
-
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
 
     bytes[] public sentAttributes;
     address public sentRefund;

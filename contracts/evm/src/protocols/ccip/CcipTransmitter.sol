@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 
@@ -17,7 +15,7 @@ interface ICcipSelectorTable {
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
 ///      absence rather than a guard.
-contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
+contract CcipTransmitter is OwnableTransmitter {
     /// @notice CCIP Router on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its
     ///         initcode, so this never moves a derived account address.
@@ -25,22 +23,6 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
 
     constructor(address router_) {
         router = router_;
-    }
-
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
     }
 
     /// @dev `recipient`'s address half IS used, unlike LayerZero's peer table: CCIP has no
