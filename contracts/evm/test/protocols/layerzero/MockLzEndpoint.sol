@@ -26,21 +26,33 @@ contract MockLzEndpoint {
     mapping(address => address) public delegateOf;
 
     MessagingFee public fee;
+    uint256 public feePerByte;
+
+    /// @dev EndpointV2 refuses a send paying less than the quote, as this does.
+    error InsufficientFee(uint256 required, uint256 supplied);
 
     function setFee(uint256 nativeFee) external {
         fee = MessagingFee(nativeFee, 0);
+    }
+
+    function setFeePerByte(uint256 perByte) external {
+        feePerByte = perByte;
+    }
+
+    function _priced(bytes calldata message) internal view returns (MessagingFee memory) {
+        return MessagingFee(fee.nativeFee + feePerByte * message.length, 0);
     }
 
     function sentLength() external view returns (uint256) {
         return sent.length;
     }
 
-    function quote(MessagingParams calldata, /* _params */ address /* _sender */ )
+    function quote(MessagingParams calldata _params, address /* _sender */ )
         external
         view
         returns (MessagingFee memory)
     {
-        return fee;
+        return _priced(_params.message);
     }
 
     function send(MessagingParams calldata _params, address _refundAddress)
@@ -48,6 +60,8 @@ contract MockLzEndpoint {
         payable
         returns (MessagingReceipt memory receipt)
     {
+        MessagingFee memory required = _priced(_params.message);
+        if (msg.value < required.nativeFee) revert InsufficientFee(required.nativeFee, msg.value);
         sent.push(
             Sent({
                 dstEid: _params.dstEid,
@@ -61,7 +75,7 @@ contract MockLzEndpoint {
         return MessagingReceipt({
             guid: keccak256(abi.encode(sent.length, _params.dstEid, _params.message)),
             nonce: uint64(sent.length),
-            fee: fee
+            fee: required
         });
     }
 

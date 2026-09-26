@@ -23,7 +23,7 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
@@ -44,7 +44,7 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
+contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneHubHarness hub;
     address msig = address(0x5165);
@@ -155,6 +155,15 @@ contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
     function test_supportedAttributeIsTheGasLimit() public view {
         assertEq(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), bytes4(keccak256("crossecute.hyperlane.gasLimit")));
     }
+
+    function _lastPaid() internal view override returns (uint256) {
+        return mailbox.sent(mailbox.sentLength() - 1).value;
+    }
+
+    function _setProviderFeePerByte(uint256 perByte) internal override {
+        mailbox.setFeePerByte(perByte);
+    }
+
 }
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so

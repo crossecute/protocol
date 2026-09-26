@@ -24,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
@@ -81,7 +81,8 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
+contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderFeeSpec {
+    uint256 constant CORE_MESSAGE_FEE = 1 gwei;
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
     WormholeHubHarness hub;
@@ -123,6 +124,7 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
 
     function _setProviderFee(uint256 fee) internal override {
         router.setFee(fee);
+        core.setMessageFee(CORE_MESSAGE_FEE);
     }
 
     function _assertLastSendTargetedConfiguredDestination() internal view override {
@@ -210,6 +212,17 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
+
+    /// @dev Core's message fee plus what the Executor router kept (it refunds the rest).
+    /// @dev Core's message fee is paid alongside the Executor's, so the quote carries both.
+    function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
+        return providerFee + CORE_MESSAGE_FEE;
+    }
+
+    function _lastPaid() internal view override returns (uint256) {
+        return core.published(core.publishedLength() - 1).value + router.requests(router.requestsLength() - 1).paid;
+    }
+
 }
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate

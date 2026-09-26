@@ -92,6 +92,72 @@ abstract contract ProviderHubSendSpec is Test {
         vm.expectRevert();
         harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
     }
+
+    /// @dev C13 (R2.5): a quote that succeeded where the send reverts reports a message as
+    ///      sendable when it is not.
+    function test_quoteRevertsWhereTheSendWould() public {
+        vm.expectRevert();
+        harness.quoteMessagePublic(_unconfiguredRecipient(), "x");
+    }
+
+    /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
+    function test_quoteIsView() public view {
+        (bool ok,) = address(harness).staticcall(
+            abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x"))
+        );
+        assertTrue(ok);
+    }
+}
+
+/// @title ProviderFeeSpec
+/// @notice For providers that charge a native fee at the source (all but OP Stack): what the
+///         quote names is what the send pays, from `value`, and paying less is refused.
+abstract contract ProviderFeeSpec is ProviderHubSendSpec {
+    /// @notice What the provider's mocks were paid, in total, for the last send.
+    function _lastPaid() internal view virtual returns (uint256);
+
+    /// @dev C11 against the mock; the real endpoint's C11 is a fork test (`docs/todo.md` §4).
+    function test_quoteEqualsWhatTheSendActuallyConsumes() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        harness.sendMessagePublic{value: q}(_configuredRecipient(), "payload", new bytes[](0), q);
+        assertEq(_lastPaid(), q);
+    }
+
+    /// @dev C16.
+    function test_anUnderfundedSendReverts() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        vm.expectRevert();
+        harness.sendMessagePublic{value: q - 1}(_configuredRecipient(), "payload", new bytes[](0), q - 1);
+    }
+
+    /// @dev C26 (R7.1, R7.3): a nested send arrives with `msg.value == 0` and pays from the
+    ///      contract's balance, so the binding must spend `value`, never `msg.value`.
+    function test_aSendIsPaidFromValueNotMsgValue() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        vm.deal(address(harness), q);
+        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), q);
+        assertEq(_lastPaid(), q);
+    }
+}
+
+/// @title ProviderPayloadPricedSpec
+/// @notice C12 (R2.3), for providers that price by payload length (LayerZero, CCIP, Hyperlane;
+///         Wormhole's Executor and OP Stack do not).
+abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
+    function _setProviderFeePerByte(uint256 perByte) internal virtual;
+
+    function test_quoteIsTakenOverTheExactPayloadBytes() public {
+        _setProviderFeePerByte(1 gwei);
+        bytes memory longer = "a longer payload than the other one";
+        uint256 short = harness.quoteMessagePublic(_configuredRecipient(), "x");
+        uint256 long = harness.quoteMessagePublic(_configuredRecipient(), longer);
+        assertGt(long, short);
+        harness.sendMessagePublic{value: long}(_configuredRecipient(), longer, new bytes[](0), long);
+        assertEq(_lastPaid(), long);
+    }
 }
 
 /// @title ProviderIdTableSpec

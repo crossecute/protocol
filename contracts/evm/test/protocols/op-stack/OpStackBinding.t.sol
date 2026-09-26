@@ -113,7 +113,7 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
         hub.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
     }
 
-    function test_quoteRevertsWhereTheSendWould() public {
+    function test_quoteRevertsForAnotherMessengersChain() public {
         vm.expectRevert(
             abi.encodeWithSelector(
                 OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(BASE)

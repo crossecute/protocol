@@ -22,7 +22,8 @@ import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {
     ProviderIdTableSpec,
     IHubSendHarness,
-    ProviderWideSenderSpec
+    ProviderWideSenderSpec,
+    ProviderPayloadPricedSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
@@ -53,7 +54,7 @@ contract LzHubHarness is LzHubTransceiver {
 ///         `ProviderHubSendSpec`'s; this contract only supplies LayerZero's own mock and, in
 ///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
 ///         cover (the message bytes and value reach the endpoint unchanged).
-contract LzSendTest is ProviderIdTableSpec {
+contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec {
     MockLzEndpoint endpoint;
     LzHubHarness hub;
     address msig = address(0x5165);
@@ -155,6 +156,15 @@ contract LzSendTest is ProviderIdTableSpec {
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
+
+    function _lastPaid() internal view override returns (uint256 value) {
+        (,,,, value,) = endpoint.sent(endpoint.sentLength() - 1);
+    }
+
+    function _setProviderFeePerByte(uint256 perByte) internal override {
+        endpoint.setFeePerByte(perByte);
+    }
+
 }
 
 /// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender inside the

@@ -29,8 +29,14 @@ contract MockHyperlaneMailbox {
         return _sent[i];
     }
 
-    function quoteDispatch(uint32, bytes32, bytes calldata, bytes calldata) external view returns (uint256) {
-        return fee;
+    uint256 public feePerByte;
+
+    function setFeePerByte(uint256 perByte) external {
+        feePerByte = perByte;
+    }
+
+    function quoteDispatch(uint32, bytes32, bytes calldata body, bytes calldata) public view returns (uint256) {
+        return fee + feePerByte * body.length;
     }
 
     function dispatch(uint32 destinationDomain, bytes32 recipientAddress, bytes calldata body, bytes calldata metadata)
@@ -38,11 +44,12 @@ contract MockHyperlaneMailbox {
         payable
         returns (bytes32)
     {
-        require(msg.value >= fee, "insufficient fee");
+        uint256 required = quoteDispatch(destinationDomain, recipientAddress, body, metadata);
+        require(msg.value >= required, "insufficient fee");
         _sent.push(Sent(destinationDomain, recipientAddress, body, metadata, msg.value));
-        if (msg.value > fee) {
+        if (msg.value > required) {
             address refundTo = metadata.length >= 86 ? address(bytes20(metadata[66:86])) : msg.sender;
-            (bool ok,) = refundTo.call{value: msg.value - fee}("");
+            (bool ok,) = refundTo.call{value: msg.value - required}("");
             require(ok, "refund failed");
         }
         return keccak256(abi.encode(_sent.length, destinationDomain, body));
