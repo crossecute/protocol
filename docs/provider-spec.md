@@ -748,7 +748,7 @@ chain unless noted:
 | n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
 There are no deploy scripts yet; `script/` holds only the vendoring drivers
-([todo §4](todo.md#4-infrastructure-none-of-it-exists)). The ordering above is their
+([todo §4](todo.md#4-infrastructure)). The ordering above is their
 specification.
 
 ---
@@ -783,7 +783,7 @@ A binding is compliant when it passes `test/compliance/ProviderCompliance.t.sol`
 abstract test contract that every binding inherits and parameterizes with its own four
 contracts. Not built. The five bindings instead share
 `test/protocols/ProviderBindingSpec.t.sol`, which covers part of the table below;
-[`todo.md`](todo.md#4-infrastructure-none-of-it-exists) maps the rest.
+[`todo.md`](todo.md#4-infrastructure) maps the rest.
 
 The abstract harness declares:
 
@@ -861,7 +861,7 @@ message it ever carries.
 
 The suite is separate from and does not replace `test/vectors/`, which covers the
 commitment half and is
-[load-bearing for the scheme plugins](todo.md#4-infrastructure-none-of-it-exists).
+[load-bearing for the scheme plugins](todo.md#4-infrastructure).
 
 ---
 

@@ -269,7 +269,7 @@ mainnet.
   Mailbox owner has configured. Fix that comment when this lands, so it stops asserting a safety
   net that does not exist.
 
-## 4. Infrastructure: None of it exists
+## 4. Infrastructure
 
 - **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
   recorded as an exact commit rather than a branch, because CREATE2 parity depends on
@@ -311,7 +311,9 @@ mainnet.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, C29, and
   C30 test the transport rather than the binding, so until they run against each provider's
   real deployment, P7 and P9 remain documented assumptions.
-- **No CI.** No `.github/`.
+- **CI enforces build and test only** (`.github/workflows/test.yml`). Formatting and lint are
+  not checked: `forge fmt --check` fails across the repo, and `forge lint` has no config
+  saying which rules are errors. Each needs its own pass before CI can enforce it.
 - **No `test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where
