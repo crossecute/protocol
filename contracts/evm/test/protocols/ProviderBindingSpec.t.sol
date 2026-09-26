@@ -187,12 +187,36 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
     /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
     function _configuredProviderId() internal view virtual returns (uint256);
 
+    /// @notice Call the hub's typed setter, as its owner.
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
+
+    /// @notice Deliver to the hub through the provider's own path, from an origin id never set.
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal virtual;
+
+    /// @notice The exact revert for that delivery.
+    function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
+
     function test_transmittersReadTheConfiguredIdFromTheHub() public {
         assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
         vm.expectRevert(
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
         );
         providerIdOf(address(harness), _unconfiguredRecipient());
+    }
+
+    /// @dev C28 for the one setter a binding adds: repointing a chain's id would silently
+    ///      redirect its future sends.
+    function test_theTypedSetterIsWriteOnce() public {
+        bytes32 chainKey = Erc7930.chainKey(_configuredRecipient());
+        _setProviderIdAsOwner(chainKey, _configuredProviderId());
+        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.ProviderIdAlreadySet.selector, chainKey));
+        _setProviderIdAsOwner(chainKey, _configuredProviderId() + 1);
+    }
+
+    /// @dev C5, hub side: a delivery whose origin the table does not map is refused.
+    function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
+        vm.expectRevert(_unmappedOriginRevert(999));
+        _deliverToHubFromUnmappedOrigin(999);
     }
 }
 

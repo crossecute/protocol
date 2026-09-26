@@ -226,9 +226,23 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Prov
         return core.published(core.publishedLength() - 1).value + router.requests(router.requestsLength() - 1).paid;
     }
 
-
     function _lastRefundAddress() internal view override returns (address) {
         return router.requests(router.requestsLength() - 1).refundAddr;
+    }
+
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
+        vm.prank(msig);
+        hub.setWormholeChain(chainKey, uint16(providerId));
+    }
+
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+        hub.executeVAAv1(
+            _vaa(1, uint16(providerId), address(0xC0DE), 0, _envelope(HOME_WORMHOLE_CHAIN, address(hub), ""))
+        );
+    }
+
+    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
     }
 
 }
@@ -430,12 +444,6 @@ contract WormholeTransceiverReceiveTest is Test {
             abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), _universal(address(spoke)))
         );
         spoke.executeVAAv1(vaa);
-    }
-
-    function test_hubRejectsAnUnmappedEmitterChain() public {
-        bytes memory vaa = _vaa(1, 999, address(0xC0DE), 0, _envelope(HERE, address(hub), ""));
-        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, uint256(999)));
-        hub.executeVAAv1(vaa);
     }
 
     function test_hubRejectsAnInvalidVaa() public {

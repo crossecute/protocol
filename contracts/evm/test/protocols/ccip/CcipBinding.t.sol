@@ -25,6 +25,7 @@ import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -152,6 +153,29 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Provider
 
     function _setProviderFeePerByte(uint256 perByte) internal override {
         router.setFeePerByte(perByte);
+    }
+
+
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
+        vm.prank(msig);
+        hub.setSelector(chainKey, uint64(providerId));
+    }
+
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+        vm.prank(address(router));
+        hub.ccipReceive(
+            Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: uint64(providerId),
+                sender: abi.encode(address(0xC0DE)),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            })
+        );
+    }
+
+    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
     }
 
 }

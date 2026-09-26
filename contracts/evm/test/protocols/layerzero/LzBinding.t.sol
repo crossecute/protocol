@@ -175,6 +175,24 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
         (,,,,, refundAddress) = endpoint.sent(endpoint.sentLength() - 1);
     }
 
+
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
+        vm.prank(msig);
+        hub.setEid(chainKey, uint32(providerId));
+    }
+
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+        vm.prank(address(endpoint));
+        hub.lzReceive(
+            Origin({srcEid: uint32(providerId), sender: bytes32(uint256(0xC0DE)), nonce: 1}), bytes32(0), "", address(0), ""
+        );
+    }
+
+    /// @dev OApp refuses an eid with no peer before the binding's table is consulted.
+    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IOAppCore.NoPeer.selector, uint32(providerId));
+    }
+
 }
 
 /// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender inside the

@@ -166,9 +166,22 @@ contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Pro
         mailbox.setFeePerByte(perByte);
     }
 
-
     function _lastRefundAddress() internal view override returns (address) {
         return mailbox.sent(mailbox.sentLength() - 1).refundTo;
+    }
+
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
+        vm.prank(msig);
+        hub.setDomain(chainKey, uint32(providerId));
+    }
+
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+        vm.prank(address(mailbox));
+        hub.handle(uint32(providerId), TypeCasts.addressToBytes32(address(0xC0DE)), "");
+    }
+
+    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
     }
 
 }
@@ -220,7 +233,6 @@ contract HyperlaneReceiveTest is ProviderWideSenderSpec {
     function _deliverFromWrongCaller() internal override {
         receiver.handle(8453, TypeCasts.addressToBytes32(sourceTransmitter), "");
     }
-
 
     function test_receiverGrantsTheMailboxTheGatewayRole() public view {
         assertTrue(receiver.hasRole(receiver.GATEWAY_ROLE(), address(mailbox)));
@@ -314,12 +326,6 @@ contract HyperlaneTransceiverReceiveTest is Test {
     function test_spokeRejectsAnyCallerButTheMailbox() public {
         vm.expectRevert();
         spoke.handle(HOME_DOMAIN, TypeCasts.addressToBytes32(homeTransceiver), "");
-    }
-
-    function test_hubRejectsAnUnmappedOrigin() public {
-        vm.prank(address(mailbox));
-        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, uint256(999)));
-        hub.handle(999, TypeCasts.addressToBytes32(address(0xC0DE)), "");
     }
 
     function test_hubRejectsAnyCallerButTheMailbox() public {
