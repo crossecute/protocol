@@ -489,7 +489,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @inheritdoc TransceiverBase
     /// @dev A hub receives receiver reports and nothing else. Commitments travel the other
     ///      way, because transmitters live on the home chain.
-    function _handleInbound(bytes32 chainKey, bytes calldata message) internal override {
+    function _handleInbound(bytes32 chainKey, bytes calldata message) internal virtual override {
         (address owner, bytes32 salt, bytes memory interop) =
             Envelope.decodeReceiverReport(message);
         this.onDestinationReceiver(chainKey, owner, salt, interop);

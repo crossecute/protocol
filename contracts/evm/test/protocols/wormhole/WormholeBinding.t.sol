@@ -24,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -516,5 +516,83 @@ contract WormholeTransmitterInboundTest is ProviderTransmitterSpec {
 
     function _deliveryCall() internal pure override returns (bytes memory) {
         return abi.encodeCall(IVaaV1Receiver.executeVAAv1, (_vaa(1, 2, address(0xABCD), 0, "")));
+    }
+}
+
+contract WormholeInboundHubHarness is WormholeHubTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address c) WormholeHubTransceiver(c, address(0), address(0)) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract WormholeInboundSpokeHarness is WormholeSpokeTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address c) WormholeSpokeTransceiver(c, address(0), address(0)) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract WormholeTransceiverInboundTest is ProviderTransceiverInboundSpec {
+    uint16 constant HOME = 2;
+    uint16 constant SPOKE = 30;
+    /// @dev Each side verifies VAAs against its own chain's Core.
+    MockWormholeCore homeCore = new MockWormholeCore(HOME);
+    MockWormholeCore spokeCore = new MockWormholeCore(SPOKE);
+    address msig = address(0x5165);
+    address hub;
+    address spoke;
+
+    function setUp() public {
+        hub = address(
+            new ERC1967Proxy(
+                address(new WormholeInboundHubHarness(address(homeCore))),
+                abi.encodeCall(WormholeHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        vm.prank(msig);
+        WormholeHubTransceiver(payable(hub)).setWormholeChain(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE);
+        spoke = address(
+            new ERC1967Proxy(
+                address(new WormholeInboundSpokeHarness(address(spokeCore))),
+                abi.encodeCall(
+                    WormholeSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(HOME_CHAIN_ID),
+                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                        abi.encodePacked(HUB_TRANSCEIVER),
+                        HOME
+                    )
+                )
+            )
+        );
+    }
+
+    function _hub() internal view override returns (address) {
+        return hub;
+    }
+
+    function _hubOwner() internal view override returns (address) {
+        return msig;
+    }
+
+    function _spoke() internal view override returns (address) {
+        return spoke;
+    }
+
+    function _deliverToHub(address sender) internal override {
+        WormholeHubTransceiver(payable(hub)).executeVAAv1(_vaa(1, SPOKE, sender, 0, _envelope(HOME, hub, "")));
+    }
+
+    function _deliverToSpoke(address sender) internal override {
+        WormholeSpokeTransceiver(payable(spoke)).executeVAAv1(_vaa(1, HOME, sender, 0, _envelope(SPOKE, spoke, "")));
     }
 }

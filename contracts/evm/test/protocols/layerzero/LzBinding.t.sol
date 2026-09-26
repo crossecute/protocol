@@ -25,7 +25,8 @@ import {
     ProviderWideSenderSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransceiverInboundSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
@@ -400,5 +401,100 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec {
             ILayerZeroReceiver.lzReceive,
             (Origin({srcEid: 30101, sender: bytes32(uint256(0xABCD)), nonce: 1}), bytes32(0), "", address(0), "")
         );
+    }
+}
+
+contract LzInboundHubHarness is LzHubTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address e) LzHubTransceiver(e) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract LzInboundSpokeHarness is LzSpokeTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address e) LzSpokeTransceiver(e) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec {
+    MockLzEndpoint endpoint = new MockLzEndpoint();
+    address msig = address(0x5165);
+    uint32 constant SPOKE_EID = 30184;
+    uint32 constant HOME_EID = 30101;
+    address hub;
+    address spoke;
+
+    function setUp() public {
+        hub = address(
+            new ERC1967Proxy(
+                address(new LzInboundHubHarness(address(endpoint))),
+                abi.encodeCall(LzHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        vm.prank(msig);
+        LzHubTransceiver(payable(hub)).setEid(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE_EID);
+        spoke = address(
+            new ERC1967Proxy(
+                address(new LzInboundSpokeHarness(address(endpoint))),
+                abi.encodeCall(
+                    LzSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(HOME_CHAIN_ID),
+                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                        abi.encodePacked(HUB_TRANSCEIVER),
+                        HOME_EID
+                    )
+                )
+            )
+        );
+    }
+
+    function _hub() internal view override returns (address) {
+        return hub;
+    }
+
+    function _hubOwner() internal view override returns (address) {
+        return msig;
+    }
+
+    function _spoke() internal view override returns (address) {
+        return spoke;
+    }
+
+    function _configureProviderPeer() internal override {
+        vm.prank(msig);
+        LzHubTransceiver(payable(hub)).setPeer(SPOKE_EID, bytes32(uint256(uint160(SPOKE_TRANSCEIVER))));
+    }
+
+    function _deliverToHub(address sender) internal override {
+        vm.prank(address(endpoint));
+        LzHubTransceiver(payable(hub)).lzReceive(
+            Origin({srcEid: SPOKE_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}), bytes32(0), "", address(0), ""
+        );
+    }
+
+    function _deliverToSpoke(address sender) internal override {
+        vm.prank(address(endpoint));
+        LzSpokeTransceiver(payable(spoke)).lzReceive(
+            Origin({srcEid: HOME_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}), bytes32(0), "", address(0), ""
+        );
+    }
+
+    function _hubWrongSenderRevert(bytes32, address sender) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, SPOKE_EID, bytes32(uint256(uint160(sender))));
+    }
+
+    function _spokeWrongSenderRevert(address sender) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, HOME_EID, bytes32(uint256(uint160(sender))));
     }
 }

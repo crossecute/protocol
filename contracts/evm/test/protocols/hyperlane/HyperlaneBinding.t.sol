@@ -23,7 +23,7 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -394,5 +394,83 @@ contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec {
 
     function _deliveryCall() internal pure override returns (bytes memory) {
         return abi.encodeCall(IMessageRecipient.handle, (8453, bytes32(uint256(0xABCD)), ""));
+    }
+}
+
+contract HyperlaneInboundHubHarness is HyperlaneHubTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address m) HyperlaneHubTransceiver(m) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract HyperlaneInboundSpokeHarness is HyperlaneSpokeTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address m) HyperlaneSpokeTransceiver(m) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract HyperlaneTransceiverInboundTest is ProviderTransceiverInboundSpec {
+    address mailbox = address(0xBEEF);
+    address msig = address(0x5165);
+    uint32 constant SPOKE_DOMAIN = 8453;
+    uint32 constant HOME_DOMAIN = 1;
+    address hub;
+    address spoke;
+
+    function setUp() public {
+        hub = address(
+            new ERC1967Proxy(
+                address(new HyperlaneInboundHubHarness(mailbox)),
+                abi.encodeCall(HyperlaneHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        vm.prank(msig);
+        HyperlaneHubTransceiver(payable(hub)).setDomain(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE_DOMAIN);
+        spoke = address(
+            new ERC1967Proxy(
+                address(new HyperlaneInboundSpokeHarness(mailbox)),
+                abi.encodeCall(
+                    HyperlaneSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(HOME_CHAIN_ID),
+                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                        abi.encodePacked(HUB_TRANSCEIVER),
+                        HOME_DOMAIN
+                    )
+                )
+            )
+        );
+    }
+
+    function _hub() internal view override returns (address) {
+        return hub;
+    }
+
+    function _hubOwner() internal view override returns (address) {
+        return msig;
+    }
+
+    function _spoke() internal view override returns (address) {
+        return spoke;
+    }
+
+    function _deliverToHub(address sender) internal override {
+        vm.prank(mailbox);
+        HyperlaneHubTransceiver(payable(hub)).handle(SPOKE_DOMAIN, TypeCasts.addressToBytes32(sender), "");
+    }
+
+    function _deliverToSpoke(address sender) internal override {
+        vm.prank(mailbox);
+        HyperlaneSpokeTransceiver(payable(spoke)).handle(HOME_DOMAIN, TypeCasts.addressToBytes32(sender), "");
     }
 }

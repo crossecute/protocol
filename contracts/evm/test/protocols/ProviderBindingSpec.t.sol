@@ -10,6 +10,13 @@ import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -369,6 +376,90 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
         bytes32 wide = bytes32(uint256(uint160(source)) | (uint256(1) << 200));
         vm.expectRevert(_wideSenderRevert(wide));
         _deliverFromWideSender(wide);
+    }
+}
+
+/// @title ProviderTransceiverInboundSpec
+/// @notice C4, C6, C7 for transceivers: the route and sender bytes a binding hands `_onInbound`
+///         authenticate the configured counterpart exactly, and nothing else on that chain.
+/// @dev The harnesses override `_handleInbound` to emit `InboundHandled`, so what is asserted is
+///      the chain the base's own authentication accepted, not a stand-in for it.
+abstract contract ProviderTransceiverInboundSpec is Test {
+    event InboundHandled(bytes32 chainKey);
+
+    uint256 internal constant HOME_CHAIN_ID = 1;
+    uint256 internal constant SPOKE_CHAIN_ID = 8453;
+    /// @dev The spoke's counterpart as the hub records it, and the hub as the spoke records it.
+    address internal constant SPOKE_TRANSCEIVER = address(0xC0DE);
+    address internal constant HUB_TRANSCEIVER = address(0xD00D);
+
+    /// @notice A hub harness, owned by `_hubOwner()`, whose id table maps `SPOKE_CHAIN_ID`.
+    function _hub() internal view virtual returns (address);
+    function _hubOwner() internal view virtual returns (address);
+
+    /// @notice A spoke harness homed on `HOME_CHAIN_ID`, with `HUB_TRANSCEIVER` as its hub.
+    function _spoke() internal view virtual returns (address);
+
+    /// @notice Deliver to the hub through the provider's own path, from `SPOKE_CHAIN_ID`.
+    function _deliverToHub(address sender) internal virtual;
+
+    /// @notice Deliver to the spoke through the provider's own path, from home.
+    function _deliverToSpoke(address sender) internal virtual;
+
+    /// @notice Provider-side configuration the hub needs to accept `SPOKE_TRANSCEIVER` (a
+    ///         LayerZero peer). None by default.
+    function _configureProviderPeer() internal virtual {}
+
+    /// @notice The revert for a wrong sender. The base's own by default; LayerZero's peer check
+    ///         refuses it first (its R3.3 exception).
+    function _hubWrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
+    }
+
+    function _spokeWrongSenderRevert(address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(SpokeTransceiverBase.NotHomeOrigin.selector);
+    }
+
+    function _wireHub() internal returns (bytes32 chainKey) {
+        address owner = _hubOwner();
+        ChainRegistry registry = ChainRegistry(
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
+        );
+        HubTransceiverBase hub = HubTransceiverBase(payable(_hub()));
+        vm.startPrank(owner);
+        bytes32 provider = registry.addMessageProvider("under-test");
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        registry.setLocalTransceiver(provider, address(hub));
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
+        registry.setProvenance(chainKey, Provenance.Attested);
+        hub.setCounterpart(chainKey, Erc7930.encodeEvm(SPOKE_CHAIN_ID, SPOKE_TRANSCEIVER));
+        hub.setRoute(chainKey, Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
+        vm.stopPrank();
+        _configureProviderPeer();
+    }
+
+    function test_hubAcceptsItsCounterpartThroughTheBinding() public {
+        bytes32 chainKey = _wireHub();
+        vm.expectEmit(true, true, true, true, _hub());
+        emit InboundHandled(chainKey);
+        _deliverToHub(SPOKE_TRANSCEIVER);
+    }
+
+    function test_hubRefusesAnotherSenderOnTheCounterpartsChain() public {
+        bytes32 chainKey = _wireHub();
+        vm.expectRevert(_hubWrongSenderRevert(chainKey, address(0xBAD)));
+        _deliverToHub(address(0xBAD));
+    }
+
+    function test_spokeAcceptsItsHubThroughTheBinding() public {
+        vm.expectEmit(true, true, true, true, _spoke());
+        emit InboundHandled(ChainKey.forEvm(HOME_CHAIN_ID));
+        _deliverToSpoke(HUB_TRANSCEIVER);
+    }
+
+    function test_spokeRefusesAnotherSenderFromHome() public {
+        vm.expectRevert(_spokeWrongSenderRevert(address(0xBAD)));
+        _deliverToSpoke(address(0xBAD));
     }
 }
 

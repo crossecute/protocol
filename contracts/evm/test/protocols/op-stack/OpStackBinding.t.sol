@@ -17,7 +17,7 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderEvmRecipientSpec, ProviderTransmitterSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderEvmRecipientSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
@@ -292,5 +292,78 @@ contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
 
     function _deliveryCall() internal pure override returns (bytes memory) {
         return abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (""));
+    }
+}
+
+contract OpStackInboundHubHarness is OpStackHubTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address m, bytes32 k) OpStackHubTransceiver(m, k) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract OpStackInboundSpokeHarness is OpStackSpokeTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address m) OpStackSpokeTransceiver(m) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract OpStackTransceiverInboundTest is ProviderTransceiverInboundSpec {
+    /// @dev One messenger per pair of chains: the hub's reaches `SPOKE_CHAIN_ID`, the spoke's home.
+    MockCrossDomainMessenger hubMessenger = new MockCrossDomainMessenger();
+    MockCrossDomainMessenger spokeMessenger = new MockCrossDomainMessenger();
+    address msig = address(0x5165);
+    address hub;
+    address spoke;
+
+    function setUp() public {
+        hub = address(
+            new ERC1967Proxy(
+                address(new OpStackInboundHubHarness(address(hubMessenger), ChainKey.forEvm(SPOKE_CHAIN_ID))),
+                abi.encodeCall(OpStackHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        spoke = address(
+            new ERC1967Proxy(
+                address(new OpStackInboundSpokeHarness(address(spokeMessenger))),
+                abi.encodeCall(
+                    OpStackSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(HOME_CHAIN_ID),
+                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                        abi.encodePacked(HUB_TRANSCEIVER)
+                    )
+                )
+            )
+        );
+    }
+
+    function _hub() internal view override returns (address) {
+        return hub;
+    }
+
+    function _hubOwner() internal view override returns (address) {
+        return msig;
+    }
+
+    function _spoke() internal view override returns (address) {
+        return spoke;
+    }
+
+    function _deliverToHub(address sender) internal override {
+        hubMessenger.relay(sender, hub, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
+    }
+
+    function _deliverToSpoke(address sender) internal override {
+        spokeMessenger.relay(sender, spoke, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
     }
 }
