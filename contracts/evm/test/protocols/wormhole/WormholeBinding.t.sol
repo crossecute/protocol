@@ -24,7 +24,8 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -54,6 +55,13 @@ function _vaa(uint8 sigCount, uint16 emitterChain, address emitter, uint64 seque
     pure
     returns (bytes memory)
 {
+    return _vaa(sigCount, emitterChain, _universal(emitter), sequence, payload);
+}
+
+function _vaa(uint8 sigCount, uint16 emitterChain, bytes32 emitter, uint64 sequence, bytes memory payload)
+    pure
+    returns (bytes memory)
+{
     return abi.encodePacked(
         uint8(1),
         uint32(0),
@@ -62,7 +70,7 @@ function _vaa(uint8 sigCount, uint16 emitterChain, address emitter, uint64 seque
         uint32(1_700_000_000),
         uint32(0),
         emitterChain,
-        _universal(emitter),
+        emitter,
         sequence,
         uint8(1),
         payload
@@ -206,7 +214,7 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate
 ///         the emitter, and `isSourceTransmitter` is the only sender check.
-contract WormholeReceiveTest is ProviderReceiveSpec {
+contract WormholeReceiveTest is ProviderWideSenderSpec {
     MockWormholeCore core;
     WormholeReceiver receiver;
     address sourceTransmitter = address(0xABCD);
@@ -323,6 +331,15 @@ contract WormholeReceiveTest is ProviderReceiveSpec {
     function test_receiverGrantsTheCoreBridgeTheGatewayRole() public view {
         assertTrue(receiver.hasRole(receiver.GATEWAY_ROLE(), address(core)));
     }
+
+    function _deliverFromWideSender(bytes32 wide) internal override {
+        receiver.executeVAAv1(_vaa(1, HOME, wide, 0, _envelope(HERE, address(receiver), Payload.encodeCalls(new Call[](0)))));
+    }
+
+    function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderAddress.UnsupportedSender.selector, wide);
+    }
+
 }
 
 contract WormholeTransceiverReceiveTest is Test {

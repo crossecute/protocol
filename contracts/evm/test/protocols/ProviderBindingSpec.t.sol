@@ -6,7 +6,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
@@ -118,7 +118,7 @@ abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
         bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
         bytes memory recipient =
             Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
-        vm.expectRevert(abi.encodeWithSelector(ProviderRecipient.UnsupportedRecipient.selector, wide));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAddress.UnsupportedRecipient.selector, wide));
         harness.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 }
@@ -194,6 +194,25 @@ abstract contract ProviderReceiveSpec is Test {
         receiver.revokeGateway(_gateway());
         vm.expectRevert();
         _deliverFromConfiguredSource();
+    }
+}
+
+/// @title ProviderWideSenderSpec
+/// @notice C10 (R4.3): a provider-reported sender wider than 20 bytes, whose low 20 bytes are
+///         the configured source, is refused rather than truncated into it. For providers that
+///         report the sender in more than 20 bytes (all but OP Stack).
+abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
+    /// @notice Deliver through the provider's own path, from `wide`, as its gateway would.
+    function _deliverFromWideSender(bytes32 wide) internal virtual;
+
+    /// @notice The exact revert expected, so the test cannot pass by failing for another reason.
+    function _wideSenderRevert(bytes32 wide) internal view virtual returns (bytes memory);
+
+    function test_aWideSenderIsRejectedNotTruncated() public {
+        address source = ReceiverBase(payable(_receiverUnderTest())).sourceTransmitter();
+        bytes32 wide = bytes32(uint256(uint160(source)) | (uint256(1) << 200));
+        vm.expectRevert(_wideSenderRevert(wide));
+        _deliverFromWideSender(wide);
     }
 }
 

@@ -22,7 +22,7 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -149,7 +149,7 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
 ///         LayerZero's `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the
 ///         only authentication check here -- confirmed by these tests running the check
 ///         ourselves rather than relying on a provider-side peer rejection.
-contract CcipReceiveTest is ProviderReceiveSpec {
+contract CcipReceiveTest is ProviderWideSenderSpec {
     MockCcipRouter router;
     CcipReceiver receiver;
     address sourceTransmitter = address(0xABCD);
@@ -209,6 +209,25 @@ contract CcipReceiveTest is ProviderReceiveSpec {
     function _deliverFromWrongCaller() internal override {
         receiver.ccipReceive(_message(sourceTransmitter, ""));
     }
+
+    function _deliverFromWideSender(bytes32 wide) internal override {
+        vm.prank(address(router));
+        receiver.ccipReceive(
+            Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: 1,
+                sender: abi.encode(wide),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            })
+        );
+    }
+
+    /// @dev `abi.decode(sender, (address))` validates the high bytes and reverts without data.
+    function _wideSenderRevert(bytes32) internal pure override returns (bytes memory) {
+        return "";
+    }
+
 }
 
 /// @notice The Copilot-adjacent gap this binding has to get right on its own: CCIP's

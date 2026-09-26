@@ -22,8 +22,9 @@ import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {
     ProviderIdTableSpec,
     IHubSendHarness,
-    ProviderReceiveSpec
+    ProviderWideSenderSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated eid-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -160,7 +161,7 @@ contract LzSendTest is ProviderIdTableSpec {
 ///         vendored OApp SDK, before `_lzReceive` — and therefore this protocol's own code —
 ///         ever runs. `ProviderReceiveSpec` fixes the four properties this must satisfy;
 ///         where each is enforced is LayerZero-specific and documented on the hooks below.
-contract LzReceiveTest is ProviderReceiveSpec {
+contract LzReceiveTest is ProviderWideSenderSpec {
     MockLzEndpoint endpoint;
     LzReceiver receiver;
     address sourceTransmitter = address(0xABCD);
@@ -221,6 +222,17 @@ contract LzReceiveTest is ProviderReceiveSpec {
     function _deliverFromWrongCaller() internal override {
         receiver.lzReceive(_origin(sourceTransmitter, HOME_EID), bytes32(0), "", address(0), "");
     }
+
+    function _deliverFromWideSender(bytes32 wide) internal override {
+        vm.prank(address(endpoint));
+        receiver.lzReceive(Origin({srcEid: HOME_EID, sender: wide, nonce: 1}), bytes32(0), "", address(0), "");
+    }
+
+    /// @dev OApp's own peer check, which compares all 32 bytes, refuses it first.
+    function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, HOME_EID, wide);
+    }
+
 }
 
 /// @notice The Copilot-flagged gap: a zero eid or a mis-sized `homeTransceiver_` must not

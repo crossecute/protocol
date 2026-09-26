@@ -23,7 +23,8 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -158,7 +159,7 @@ contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so
 ///         `isSourceTransmitter` inside `handle` is the only sender check.
-contract HyperlaneReceiveTest is ProviderReceiveSpec {
+contract HyperlaneReceiveTest is ProviderWideSenderSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneReceiver receiver;
     address sourceTransmitter = address(0xABCD);
@@ -204,17 +205,20 @@ contract HyperlaneReceiveTest is ProviderReceiveSpec {
         receiver.handle(8453, TypeCasts.addressToBytes32(sourceTransmitter), "");
     }
 
-    /// @dev High bits set: must not be truncated into an address that happens to match.
-    function test_senderWiderThan20BytesIsRejected() public {
-        bytes32 wide = bytes32(uint256(uint160(sourceTransmitter)) | (uint256(1) << 200));
-        vm.prank(address(mailbox));
-        vm.expectRevert("TypeCasts: bytes32ToAddress overflow");
-        receiver.handle(8453, wide, "");
-    }
 
     function test_receiverGrantsTheMailboxTheGatewayRole() public view {
         assertTrue(receiver.hasRole(receiver.GATEWAY_ROLE(), address(mailbox)));
     }
+
+    function _deliverFromWideSender(bytes32 wide) internal override {
+        vm.prank(address(mailbox));
+        receiver.handle(8453, wide, "");
+    }
+
+    function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderAddress.UnsupportedSender.selector, wide);
+    }
+
 }
 
 contract HyperlaneTransceiverReceiveTest is Test {

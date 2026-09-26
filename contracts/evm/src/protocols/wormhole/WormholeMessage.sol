@@ -5,7 +5,7 @@ import {ICoreBridge, CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.so
 import {IExecutorQuoterRouter} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Send, quote, and inbound verification for every Wormhole binding contract, over
 ///         Core `publishMessage` plus Executor delivery (the Standard Relayer is deprecated).
@@ -40,7 +40,6 @@ library WormholeMessage {
     bytes32 private constant CONSUMED_SLOT =
         keccak256(abi.encode(uint256(keccak256("crossecute.wormhole.consumed")) - 1)) & ~bytes32(uint256(0xff));
 
-    error UnsupportedWormholeSender(bytes32 emitterAddress);
     error InsufficientWormholeValue(uint256 value, uint256 messageFee);
     error WormholeGatewayRevoked();
     error InvalidVaa(string reason);
@@ -130,7 +129,7 @@ library WormholeMessage {
     }
 
     function recipientOf(bytes memory recipient) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(ProviderRecipient.evmAddress(recipient))));
+        return bytes32(uint256(uint160(ProviderAddress.evmRecipient(recipient))));
     }
 
     /// @notice One attribute: the destination gas limit, as
@@ -178,7 +177,7 @@ library WormholeMessage {
         ) revert WrongDestination(targetChain, targetAddress);
 
         _consume(vm.hash);
-        return (vm.emitterChainId, senderOf(vm.emitterAddress), payload[ENVELOPE_HEADER_SIZE:]);
+        return (vm.emitterChainId, ProviderAddress.evmSender(vm.emitterAddress), payload[ENVELOPE_HEADER_SIZE:]);
     }
 
     function _payloadOf(bytes calldata vaa) private pure returns (bytes calldata) {
@@ -188,12 +187,6 @@ library WormholeMessage {
         return vaa[start:];
     }
 
-    /// @dev Wormhole-format addresses are left-padded; nonzero high bytes are not an EVM
-    ///      emitter and must not be truncated into one.
-    function senderOf(bytes32 emitterAddress) internal pure returns (address) {
-        if (uint256(emitterAddress) > type(uint160).max) revert UnsupportedWormholeSender(emitterAddress);
-        return address(uint160(uint256(emitterAddress)));
-    }
 
     function consumed(bytes32 vaaHash) internal view returns (bool) {
         return _consumedSet()[vaaHash];

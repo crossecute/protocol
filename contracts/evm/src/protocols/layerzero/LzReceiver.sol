@@ -7,6 +7,7 @@ import {OAppReceiverUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {OAppCoreUpgradeable} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @dev Extends the base two-arg shape with the eid `sourceTransmitter` lives behind, so its
 ///      peer can be set in the same locked initializer call.
@@ -63,6 +64,6 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         bytes calldata /* _extraData */
     ) internal override {
         _checkRole(GATEWAY_ROLE);
-        _onMessageFrom(address(uint160(uint256(_origin.sender))), _message);
+        _onMessageFrom(ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

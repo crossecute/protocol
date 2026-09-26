@@ -7,6 +7,7 @@ import {OAppUpgradeable, Origin} from
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -86,6 +87,6 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
         address, /* _executor */
         bytes calldata /* _extraData */
     ) internal override {
-        _onProviderInbound(_origin.srcEid, address(uint160(uint256(_origin.sender))), _message);
+        _onProviderInbound(_origin.srcEid, ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

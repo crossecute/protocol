@@ -5,7 +5,7 @@ import {IMailbox} from "@hyperlane/interfaces/IMailbox.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Recipient narrowing, hook metadata, and the `dispatch`/`quoteDispatch` calls,
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
@@ -50,7 +50,7 @@ library HyperlaneMessage {
     }
 
     function recipientOf(bytes memory recipient) internal pure returns (bytes32) {
-        return TypeCasts.addressToBytes32(ProviderRecipient.evmAddress(recipient));
+        return TypeCasts.addressToBytes32(ProviderAddress.evmRecipient(recipient));
     }
 
     /// @dev Without an explicit `refundAddress`, the IGP and ProtocolFee hooks refund
