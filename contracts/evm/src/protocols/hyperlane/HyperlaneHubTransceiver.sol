@@ -35,18 +35,9 @@ contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
 
     /* ============================== the domain table ============================== */
 
-    event DomainSet(bytes32 indexed chainKey, uint32 domain);
-
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
     function setDomain(bytes32 chainKey, uint32 domain) external onlyOwner {
         _setProviderId(chainKey, domain);
-        emit DomainSet(chainKey, domain);
-    }
-
-    /// @notice Called externally by every `HyperlaneTransmitter` this hub created; see
-    ///         `IHyperlaneDomainTable` there.
-    function domainFor(bytes32 chainKey) external view returns (uint32) {
-        return uint32(_providerIdFor(chainKey));
     }
 
     /* ================================== sending =================================== */

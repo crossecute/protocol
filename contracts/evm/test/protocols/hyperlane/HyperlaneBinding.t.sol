@@ -24,7 +24,7 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -44,7 +44,7 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is ProviderHubSendSpec {
+contract HyperlaneSendTest is ProviderIdTableSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneHubHarness hub;
     address msig = address(0x5165);
@@ -74,6 +74,10 @@ contract HyperlaneSendTest is ProviderHubSendSpec {
 
     function _unconfiguredRecipient() internal pure override returns (bytes memory) {
         return Erc7930.encodeEvm(1, address(0xC0DE));
+    }
+
+    function _configuredProviderId() internal pure override returns (uint256) {
+        return BASE_DOMAIN;
     }
 
     function _setProviderFee(uint256 fee) internal override {

@@ -2,15 +2,8 @@
 pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-
-/// @dev A transmitter has no selector table of its own: it's per-user and locked after
-///      creation, so it reads the shared, owner-updatable table on `CcipHubTransceiver` (via
-///      `TransmitterBase.transceiver`) live, on every send.
-interface ICcipSelectorTable {
-    function selectorFor(bytes32 chainKey) external view returns (uint64);
-}
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
@@ -35,7 +28,7 @@ contract CcipTransmitter is OwnableTransmitter {
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        CcipMessage.send(router, _selectorFor(recipient), recipient, payload, attributes, value);
+        CcipMessage.send(router, uint64(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -44,17 +37,13 @@ contract CcipTransmitter is OwnableTransmitter {
         override
         returns (uint256 nativeFee)
     {
-        return CcipMessage.quote(router, _selectorFor(recipient), recipient, payload, attributes);
+        return CcipMessage.quote(router, uint64(providerIdOf(transceiver, recipient)), recipient, payload, attributes);
     }
 
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
-    }
-
-    function _selectorFor(bytes memory recipient) internal view returns (uint64) {
-        return ICcipSelectorTable(transceiver).selectorFor(Erc7930.chainKey(recipient));
     }
 
     /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the hub,

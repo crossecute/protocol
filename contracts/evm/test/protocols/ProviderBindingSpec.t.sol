@@ -4,6 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -87,6 +90,22 @@ abstract contract ProviderHubSendSpec is Test {
     function test_sendRevertsForAnUnconfiguredDestination() public {
         vm.expectRevert();
         harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
+    }
+}
+
+/// @title ProviderIdTableSpec
+/// @notice For hubs with a provider id table: what every transmitter reads on each send, through
+///         the same `providerIdOf` it calls.
+abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
+    /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
+    function _configuredProviderId() internal view virtual returns (uint256);
+
+    function test_transmittersReadTheConfiguredIdFromTheHub() public {
+        assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
+        vm.expectRevert(
+            abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
+        );
+        providerIdOf(address(harness), _unconfiguredRecipient());
     }
 }
 

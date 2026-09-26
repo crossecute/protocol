@@ -36,18 +36,9 @@ contract WormholeHubTransceiver is ProviderHubTransceiver, IVaaV1Receiver {
 
     /* ============================ the chain-id table ============================= */
 
-    event WormholeChainSet(bytes32 indexed chainKey, uint16 wormholeChain);
-
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
     function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external onlyOwner {
         _setProviderId(chainKey, wormholeChain);
-        emit WormholeChainSet(chainKey, wormholeChain);
-    }
-
-    /// @notice Called externally by every `WormholeTransmitter` this hub created; see
-    ///         `IWormholeChainTable` there.
-    function wormholeChainFor(bytes32 chainKey) external view returns (uint16) {
-        return uint16(_providerIdFor(chainKey));
     }
 
     /* ================================== sending =================================== */

@@ -2,15 +2,8 @@
 pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
-
-/// @dev A transmitter has no chain-id table of its own: it's per-user and locked after
-///      creation, so it reads the shared, owner-updatable table on `WormholeHubTransceiver`
-///      (via `TransmitterBase.transceiver`) live, on every send.
-interface IWormholeChainTable {
-    function wormholeChainFor(bytes32 chainKey) external view returns (uint16);
-}
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `executeVAAv1`, so R3.1 is answered by absence rather than a guard.
@@ -53,7 +46,7 @@ contract WormholeTransmitter is OwnableTransmitter {
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {
-        uint16 targetChain = IWormholeChainTable(transceiver).wormholeChainFor(Erc7930.chainKey(recipient));
+        uint16 targetChain = uint16(providerIdOf(transceiver, recipient));
         return WormholeMessage.Route(coreBridge, quoterRouter, quoter, targetChain);
     }
 }

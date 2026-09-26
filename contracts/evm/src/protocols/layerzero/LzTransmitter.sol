@@ -10,15 +10,8 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-
-/// @dev A transmitter has no eid table of its own: it's per-user and locked after creation,
-///      so it reads the shared, owner-updatable table on `LzHubTransceiver` (via
-///      `TransmitterBase.transceiver`) live, on every send.
-interface ILzEidTable {
-    function eidFor(bytes32 chainKey) external view returns (uint32);
-}
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
@@ -57,7 +50,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        uint32 dstEid = _eidFor(recipient);
+        uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
@@ -68,7 +61,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
         override
         returns (uint256 nativeFee)
     {
-        uint32 dstEid = _eidFor(recipient);
+        uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
         bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);
         return fee.nativeFee;
@@ -79,9 +72,5 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == LZ_OPTIONS_ATTRIBUTE;
-    }
-
-    function _eidFor(bytes memory recipient) internal view returns (uint32) {
-        return ILzEidTable(transceiver).eidFor(Erc7930.chainKey(recipient));
     }
 }

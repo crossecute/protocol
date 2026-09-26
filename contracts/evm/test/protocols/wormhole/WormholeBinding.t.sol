@@ -24,7 +24,7 @@ import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
@@ -73,7 +73,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-contract WormholeSendTest is ProviderHubSendSpec {
+contract WormholeSendTest is ProviderIdTableSpec {
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
     WormholeHubHarness hub;
@@ -107,6 +107,10 @@ contract WormholeSendTest is ProviderHubSendSpec {
 
     function _unconfiguredRecipient() internal pure override returns (bytes memory) {
         return Erc7930.encodeEvm(1, address(0xC0DE));
+    }
+
+    function _configuredProviderId() internal pure override returns (uint256) {
+        return BASE_WORMHOLE_CHAIN;
     }
 
     function _setProviderFee(uint256 fee) internal override {

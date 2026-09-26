@@ -600,8 +600,9 @@ value of its own.
 typed setter over `ProviderChainId`, and the one fixed value a spoke or an SDK peer entry
 holds. It MUST NOT appear in any base contract or in the registry.
 
-**R5.3** `ProviderChainId` stores ids as `uint256`, write-once and injective both ways; the
-typed setter narrows on the way in and out.
+**R5.3** `ProviderChainId` stores ids as `uint256`, write-once and injective both ways. The
+typed setter bounds an id on the way in; readers get `uint256` from `providerIdFor` and
+narrow it to the provider's type themselves.
 
 ### R6. Account initialization
 

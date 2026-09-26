@@ -27,19 +27,10 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
 
     /* ============================== the eid table =============================== */
 
-    event EidSet(bytes32 indexed chainKey, uint32 eid);
-
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape). Adding a spoke also needs
     ///      `setPeer` (inherited, `onlyOwner`) for its transceiver address.
     function setEid(bytes32 chainKey, uint32 eid) external onlyOwner {
         _setProviderId(chainKey, eid);
-        emit EidSet(chainKey, eid);
-    }
-
-    /// @notice Called externally by every `LzTransmitter` this hub created; see
-    ///         `ILzEidTable` there.
-    function eidFor(bytes32 chainKey) external view returns (uint32) {
-        return uint32(_providerIdFor(chainKey));
     }
 
     /* ================================== sending =================================== */

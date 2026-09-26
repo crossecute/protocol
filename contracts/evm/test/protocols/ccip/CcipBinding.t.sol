@@ -22,7 +22,7 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -48,7 +48,7 @@ contract CcipHubHarness is CcipHubTransceiver {
 ///         table, CCIP has no provider-side destination-address concept at all, so the
 ///         recipient's address half (unused by LayerZero) is exactly what becomes
 ///         `EVM2AnyMessage.receiver` here.
-contract CcipSendTest is ProviderHubSendSpec {
+contract CcipSendTest is ProviderIdTableSpec {
     MockCcipRouter router;
     CcipHubHarness hub;
     address msig = address(0x5165);
@@ -81,6 +81,10 @@ contract CcipSendTest is ProviderHubSendSpec {
 
     function _unconfiguredRecipient() internal pure override returns (bytes memory) {
         return Erc7930.encodeEvm(1, address(0xC0DE));
+    }
+
+    function _configuredProviderId() internal pure override returns (uint256) {
+        return BASE_SELECTOR;
     }
 
     function _setProviderFee(uint256 fee) internal override {

@@ -20,7 +20,7 @@ import {Origin} from
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {
-    ProviderHubSendSpec,
+    ProviderIdTableSpec,
     IHubSendHarness,
     ProviderReceiveSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
@@ -52,7 +52,7 @@ contract LzHubHarness is LzHubTransceiver {
 ///         `ProviderHubSendSpec`'s; this contract only supplies LayerZero's own mock and, in
 ///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
 ///         cover (the message bytes and value reach the endpoint unchanged).
-contract LzSendTest is ProviderHubSendSpec {
+contract LzSendTest is ProviderIdTableSpec {
     MockLzEndpoint endpoint;
     LzHubHarness hub;
     address msig = address(0x5165);
@@ -89,6 +89,10 @@ contract LzSendTest is ProviderHubSendSpec {
 
     function _unconfiguredRecipient() internal pure override returns (bytes memory) {
         return Erc7930.encodeEvm(1, address(0xC0DE));
+    }
+
+    function _configuredProviderId() internal pure override returns (uint256) {
+        return BASE_EID;
     }
 
     function _setProviderFee(uint256 fee) internal override {

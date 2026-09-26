@@ -38,18 +38,9 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
 
     /* ============================ the selector table ============================= */
 
-    event SelectorSet(bytes32 indexed chainKey, uint64 selector);
-
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
     function setSelector(bytes32 chainKey, uint64 selector) external onlyOwner {
         _setProviderId(chainKey, selector);
-        emit SelectorSet(chainKey, selector);
-    }
-
-    /// @notice Called externally by every `CcipTransmitter` this hub created; see
-    ///         `ICcipSelectorTable` there.
-    function selectorFor(bytes32 chainKey) external view returns (uint64) {
-        return uint64(_providerIdFor(chainKey));
     }
 
     /* ================================== sending =================================== */

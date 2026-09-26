@@ -16,8 +16,8 @@ pragma solidity ^0.8.0;
 ///      binding does not inherit this contract.
 ///
 /// @dev Storage is `uint256` so one mapping backs every provider's narrower id type; each
-///      binding's own typed setter (`setEid`, `setSelector`, `setDomain`) narrows on the way
-///      in and out.
+///      binding's typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`)
+///      bounds it on the way in, and readers narrow it back.
 ///
 /// @dev Write-once-if-unset, same shape as `OutboundBase._setRoute`: re-declaring the same id
 ///      is a no-op, a different one reverts, since repointing would silently redirect future
