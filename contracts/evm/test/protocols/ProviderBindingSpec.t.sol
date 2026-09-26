@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {Call} from "src/messaging/Call.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
@@ -227,6 +229,18 @@ abstract contract ProviderTransmitterSpec is Test {
     }
 }
 
+/// @notice Called from a receiver's bootstrap payload: fails unless the receiver already
+///         lets `gateway` deliver.
+contract ProviderConfiguredProbe {
+    bytes32 constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
+
+    error GatewayNotYetConfigured(address gateway);
+
+    function requireGateway(address gateway) external view {
+        if (!IAccessControl(msg.sender).hasRole(GATEWAY_ROLE, gateway)) revert GatewayNotYetConfigured(gateway);
+    }
+}
+
 /// @title ProviderReceiveSpec
 /// @notice The properties every native provider binding's receive path must satisfy,
 ///         independent of which provider it is: the configured source is accepted, an
@@ -269,6 +283,10 @@ abstract contract ProviderReceiveSpec is Test {
     /// @notice The address this receiver's initializer granted `GATEWAY_ROLE`.
     function _gateway() internal view virtual returns (address);
 
+    /// @notice A new receiver behind a proxy whose initializer runs `calls` as its bootstrap
+    ///         payload.
+    function _deployReceiver(Call[] memory calls) internal virtual returns (address);
+
     function test_theConfiguredSourceIsAccepted() public {
         vm.expectEmit(false, false, false, true, _receiverUnderTest());
         emit Delivered(0);
@@ -288,6 +306,16 @@ abstract contract ProviderReceiveSpec is Test {
     function test_anythingButTheProvidersOwnGatewayIsRejected() public {
         vm.expectRevert();
         _deliverFromWrongCaller();
+    }
+
+    /// @dev C18: the bootstrap payload runs inside the receiver's one initializer call, so the
+    ///      provider must already be configured when it does, or a first call that relies on
+    ///      it fails with no second chance.
+    function test_theProviderIsConfiguredBeforeTheBootstrapPayloadRuns() public {
+        ProviderConfiguredProbe probe = new ProviderConfiguredProbe();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(probe), value: 0, data: abi.encodeCall(probe.requireGateway, (_gateway()))});
+        _deployReceiver(calls);
     }
 
     /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut

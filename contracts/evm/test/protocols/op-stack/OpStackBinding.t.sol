@@ -150,14 +150,14 @@ contract OpStackReceiveTest is ProviderReceiveSpec {
 
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
-        receiver = OpStackReceiver(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new OpStackReceiver(address(messenger))),
-                        abi.encodeCall(OpStackReceiver.initialize, (sourceTransmitter, new Call[](0)))
-                    )
-                ))
-        );
+        receiver = OpStackReceiver(payable(_deployReceiver(new Call[](0))));
+    }
+
+    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
+    ///      constructor has no code yet, so a payload calling back into it would see none.
+    function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
+        proxy = address(new ERC1967Proxy(address(new OpStackReceiver(address(messenger))), ""));
+        OpStackReceiver(payable(proxy)).initialize(sourceTransmitter, calls);
     }
 
     function _entry(bytes memory payload) internal pure returns (bytes memory) {

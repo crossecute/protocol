@@ -189,19 +189,14 @@ contract LzReceiveTest is ProviderWideSenderSpec {
 
     function setUp() public {
         endpoint = new MockLzEndpoint();
-        receiver = LzReceiver(
-            payable(
-                address(
-                    new ERC1967Proxy(
-                        address(new LzReceiver(address(endpoint))),
-                        abi.encodeCall(
-                            ILzReceiverInit.initialize,
-                            (sourceTransmitter, new Call[](0), HOME_EID)
-                        )
-                    )
-                )
-            )
-        );
+        receiver = LzReceiver(payable(_deployReceiver(new Call[](0))));
+    }
+
+    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
+    ///      constructor has no code yet, so a payload calling back into it would see none.
+    function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
+        proxy = address(new ERC1967Proxy(address(new LzReceiver(address(endpoint))), ""));
+        ILzReceiverInit(proxy).initialize(sourceTransmitter, calls, HOME_EID);
     }
 
     function _origin(address sender, uint32 eid) internal pure returns (Origin memory) {

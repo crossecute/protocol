@@ -182,14 +182,14 @@ contract HyperlaneReceiveTest is ProviderWideSenderSpec {
 
     function setUp() public {
         mailbox = new MockHyperlaneMailbox();
-        receiver = HyperlaneReceiver(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new HyperlaneReceiver(address(mailbox))),
-                        abi.encodeCall(HyperlaneReceiver.initialize, (sourceTransmitter, new Call[](0)))
-                    )
-                ))
-        );
+        receiver = HyperlaneReceiver(payable(_deployReceiver(new Call[](0))));
+    }
+
+    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
+    ///      constructor has no code yet, so a payload calling back into it would see none.
+    function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
+        proxy = address(new ERC1967Proxy(address(new HyperlaneReceiver(address(mailbox))), ""));
+        HyperlaneReceiver(payable(proxy)).initialize(sourceTransmitter, calls);
     }
 
     function _receiverUnderTest() internal view override returns (address) {
