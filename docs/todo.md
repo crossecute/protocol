@@ -275,7 +275,9 @@ mainnet.
   recorded as an exact commit rather than a branch, because CREATE2 parity depends on
   byte-identical initcode and a floating dependency would move every account address on the
   next `--remote`. `git submodule update --init` is enough. The nested submodules OZ carries
-  for its own test suite are not needed, and `--recursive` only costs time.
+  for its own test suite are not needed, and `--recursive` only costs time. The same
+  commits are also in `contracts/evm/foundry.lock`, which `forge update` keeps in step; a
+  bump made with `git` alone has to update it by hand.
 
   **What this gives up against vendoring is availability, not exactness.** A gitlink is as
   precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag
@@ -307,9 +309,9 @@ mainnet.
   layout snapshot in CI would pin it. C21's script-side assertion waits on the deploy
   scripts. C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's
   own replay (C29 to C31) is already tested, since the binding owns it.
-- **No fork tests.** Every binding is tested against a mock of its provider. C11, C29, and
-  C30 test the transport rather than the binding, so until they run against each provider's
-  real deployment, P7 and P9 remain documented assumptions.
+- **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
+  C31 for every provider but Wormhole, test the transport rather than the binding, so until
+  they run against each provider's real deployment, P7 and P9 remain documented assumptions.
 - **CI enforces build and test only** (`.github/workflows/test.yml`). Formatting and lint are
   not checked: `forge fmt --check` fails across the repo, and `forge lint` has no config
   saying which rules are errors. Each needs its own pass before CI can enforce it.
