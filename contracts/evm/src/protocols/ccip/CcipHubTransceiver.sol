@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
@@ -15,11 +13,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @dev One Router address serves both directions (`ccipSend`/`getFee` and inbound
 ///      `ccipReceive`), so `GATEWAY_ROLE` names one address, not two. See
 ///      `docs/provider-research.md#4-ccip-as-a-native-binding`.
-contract CcipHubTransceiver is
-    HubTransceiverBase,
-    ProviderChainId,
-    IAny2EVMMessageReceiver
-{
+contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     /// @notice CCIP Router on this chain. Set on the implementation, not the proxy:
     ///         harmless, since it never affects a derived account address.
     address public immutable router;
@@ -40,8 +34,7 @@ contract CcipHubTransceiver is
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
-        grantRole(GATEWAY_ROLE, router);
-        __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
+        __ProviderHub_init(owner_, treasury_, gateways, transmitterImplementation_, router);
     }
 
     /* ============================ the selector table ============================= */
@@ -68,7 +61,7 @@ contract CcipHubTransceiver is
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        uint64 selector = uint64(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint64 selector = uint64(_providerIdOf(recipient));
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
         IRouterClient(router).ccipSend{value: value}(selector, message);
     }
@@ -79,7 +72,7 @@ contract CcipHubTransceiver is
         override
         returns (uint256 nativeFee)
     {
-        uint64 selector = uint64(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint64 selector = uint64(_providerIdOf(recipient));
         Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
         return IRouterClient(router).getFee(selector, message);
     }
@@ -96,10 +89,7 @@ contract CcipHubTransceiver is
         external
         onlyRole(GATEWAY_ROLE)
     {
-        bytes32 chainKey = _chainKeyOfProvider(message.sourceChainSelector);
-        bytes memory route = routeFor(chainKey);
-        address senderAddr = abi.decode(message.sender, (address));
-        _onInbound(route, abi.encodePacked(senderAddr), message.data);
+        _onProviderInbound(message.sourceChainSelector, abi.decode(message.sender, (address)), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

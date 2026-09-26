@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
@@ -14,7 +12,7 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 ///      so `GATEWAY_ROLE` names one address. A Hyperlane domain is conventionally the EVM
 ///      chain id but not guaranteed to be, hence the domain table. See
 ///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`.
-contract HyperlaneHubTransceiver is HubTransceiverBase, ProviderChainId, IMessageRecipient {
+contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation, not the proxy:
     ///         harmless, since it never affects a derived account address.
     address public immutable mailbox;
@@ -32,8 +30,7 @@ contract HyperlaneHubTransceiver is HubTransceiverBase, ProviderChainId, IMessag
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
-        grantRole(GATEWAY_ROLE, mailbox);
-        __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
+        __ProviderHub_init(owner_, treasury_, gateways, transmitterImplementation_, mailbox);
     }
 
     /* ============================== the domain table ============================== */
@@ -59,7 +56,7 @@ contract HyperlaneHubTransceiver is HubTransceiverBase, ProviderChainId, IMessag
         override
         returns (bytes32 sendId)
     {
-        uint32 domain = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint32 domain = uint32(_providerIdOf(recipient));
         return HyperlaneMessage.dispatch(mailbox, domain, recipient, payload, attributes, value, _refundTo());
     }
 
@@ -69,7 +66,7 @@ contract HyperlaneHubTransceiver is HubTransceiverBase, ProviderChainId, IMessag
         override
         returns (uint256 nativeFee)
     {
-        uint32 domain = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint32 domain = uint32(_providerIdOf(recipient));
         return HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo());
     }
 
@@ -86,7 +83,6 @@ contract HyperlaneHubTransceiver is HubTransceiverBase, ProviderChainId, IMessag
         override
         onlyRole(GATEWAY_ROLE)
     {
-        bytes memory route = routeFor(_chainKeyOfProvider(origin));
-        _onInbound(route, abi.encodePacked(TypeCasts.bytes32ToAddress(sender)), message);
+        _onProviderInbound(origin, TypeCasts.bytes32ToAddress(sender), message);
     }
 }

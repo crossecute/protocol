@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {OAppUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {MessagingFee} from
@@ -14,7 +12,7 @@ import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 ///         user's transmitter.
 /// @dev Inherits the combined `OAppUpgradeable` (unlike `LzTransmitter`/`LzReceiver`): a hub
 ///      both sends bootstraps and receives diverging spokes' receiver reports.
-contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainId {
+contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
 
     function initialize(
@@ -52,7 +50,7 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
     }
@@ -63,7 +61,7 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         override
         returns (uint256 nativeFee)
     {
-        uint32 dstEid = uint32(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);
         return fee.nativeFee;
@@ -95,9 +93,6 @@ contract LzHubTransceiver is HubTransceiverBase, OAppUpgradeable, ProviderChainI
         address, /* _executor */
         bytes calldata /* _extraData */
     ) internal override {
-        bytes32 chainKey = _chainKeyOfProvider(_origin.srcEid);
-        bytes memory route = routeFor(chainKey);
-        bytes memory sender = abi.encodePacked(address(uint160(uint256(_origin.sender))));
-        _onInbound(route, sender, _message);
+        _onProviderInbound(_origin.srcEid, address(uint160(uint256(_origin.sender))), _message);
     }
 }

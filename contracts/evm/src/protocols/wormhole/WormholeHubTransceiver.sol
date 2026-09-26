@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
@@ -11,7 +9,7 @@ import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 ///         user's transmitter.
 /// @dev The Wormhole chain id is its own `uint16` enumeration, not an EVM chain id, hence the
 ///      table. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-two-different-bindings`.
-contract WormholeHubTransceiver is HubTransceiverBase, ProviderChainId, IVaaV1Receiver {
+contract WormholeHubTransceiver is ProviderHubTransceiver, IVaaV1Receiver {
     /// @notice Core bridge, Executor quoter router, and relay provider's quoter on this chain.
     ///         Set on the implementation, not the proxy: harmless, since they never affect a
     ///         derived account address.
@@ -33,8 +31,7 @@ contract WormholeHubTransceiver is HubTransceiverBase, ProviderChainId, IVaaV1Re
         address[] calldata gateways,
         address transmitterImplementation_
     ) external initializer {
-        grantRole(GATEWAY_ROLE, coreBridge);
-        __HubTransceiverBase_init(owner_, treasury_, gateways, transmitterImplementation_);
+        __ProviderHub_init(owner_, treasury_, gateways, transmitterImplementation_, coreBridge);
     }
 
     /* ============================ the chain-id table ============================= */
@@ -73,7 +70,7 @@ contract WormholeHubTransceiver is HubTransceiverBase, ProviderChainId, IVaaV1Re
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {
-        uint16 targetChain = uint16(_providerIdFor(Erc7930.chainKey(recipient)));
+        uint16 targetChain = uint16(_providerIdOf(recipient));
         return WormholeMessage.Route(coreBridge, quoterRouter, quoter, targetChain);
     }
 
@@ -87,8 +84,7 @@ contract WormholeHubTransceiver is HubTransceiverBase, ProviderChainId, IVaaV1Re
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        bytes memory route = routeFor(_chainKeyOfProvider(emitterChain));
-        _onInbound(route, abi.encodePacked(emitter), payload);
+        _onProviderInbound(emitterChain, emitter, payload);
     }
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
