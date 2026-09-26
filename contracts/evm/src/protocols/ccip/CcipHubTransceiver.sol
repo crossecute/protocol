@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -61,9 +60,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        uint64 selector = uint64(_providerIdOf(recipient));
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        IRouterClient(router).ccipSend{value: value}(selector, message);
+        CcipMessage.send(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -72,9 +69,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
         override
         returns (uint256 nativeFee)
     {
-        uint64 selector = uint64(_providerIdOf(recipient));
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).getFee(selector, message);
+        return CcipMessage.quote(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes);
     }
 
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;

@@ -4,8 +4,6 @@ pragma solidity ^0.8.0;
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
-import {Client} from "@ccip/libraries/Client.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 
@@ -55,9 +53,7 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        uint64 selector = _selectorFor(recipient);
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        IRouterClient(router).ccipSend{value: value}(selector, message);
+        CcipMessage.send(router, _selectorFor(recipient), recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -66,9 +62,7 @@ contract CcipTransmitter is TransmitterBase, OwnableUpgradeable {
         override
         returns (uint256 nativeFee)
     {
-        uint64 selector = _selectorFor(recipient);
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).getFee(selector, message);
+        return CcipMessage.quote(router, _selectorFor(recipient), recipient, payload, attributes);
     }
 
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;

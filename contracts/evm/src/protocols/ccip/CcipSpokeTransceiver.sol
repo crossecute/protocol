@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -57,8 +56,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         bytes[] memory attributes,
         uint256 value
     ) internal override returns (bytes32 sendId) {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        IRouterClient(router).ccipSend{value: value}(homeSelector, message);
+        CcipMessage.send(router, homeSelector, recipient, payload, attributes, value);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -67,8 +65,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         override
         returns (uint256 nativeFee)
     {
-        Client.EVM2AnyMessage memory message = CcipMessage.build(recipient, payload, attributes);
-        return IRouterClient(router).getFee(homeSelector, message);
+        return CcipMessage.quote(router, homeSelector, recipient, payload, attributes);
     }
 
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
