@@ -36,12 +36,21 @@ contract MockCcipRouter {
         return (s.destChainSelector, s.receiver, s.data, s.feeToken, s.extraArgs, s.value);
     }
 
-    function getFee(uint64, /* destinationChainSelector */ Client.EVM2AnyMessage memory /* message */)
-        external
+    uint256 public feePerByte;
+
+    /// @dev The Router refuses a send paying less than `getFee`, as this does.
+    error InsufficientFeeTokenAmount();
+
+    function setFeePerByte(uint256 perByte) external {
+        feePerByte = perByte;
+    }
+
+    function getFee(uint64, /* destinationChainSelector */ Client.EVM2AnyMessage memory message)
+        public
         view
         returns (uint256)
     {
-        return fee;
+        return fee + feePerByte * message.data.length;
     }
 
     function ccipSend(uint64 destinationChainSelector, Client.EVM2AnyMessage calldata message)
@@ -49,6 +58,7 @@ contract MockCcipRouter {
         payable
         returns (bytes32)
     {
+        if (msg.value < getFee(destinationChainSelector, message)) revert InsufficientFeeTokenAmount();
         _sent.push(
             Sent({
                 destChainSelector: destinationChainSelector,

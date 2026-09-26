@@ -207,7 +207,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @inheritdoc TransceiverBase
     /// @dev A spoke receives bootstrap messages and nothing else. The chainKey is discarded:
     ///      it is `homeChainKey` or `_authenticateOrigin` already reverted.
-    function _handleInbound(bytes32, bytes calldata message) internal override {
+    function _handleInbound(bytes32, bytes calldata message) internal virtual override {
         (address owner, bytes32 salt, Call[] memory calls) =
             Envelope.decodeBootstrap(message);
         this.bootstrapInbound(owner, salt, calls);

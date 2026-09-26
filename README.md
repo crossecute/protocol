@@ -359,8 +359,10 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 507 passing
+cd contracts/evm && forge test        # 576 passing
 ```
+
+CI runs the same build and tests on every pull request (`.github/workflows/test.yml`).
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).

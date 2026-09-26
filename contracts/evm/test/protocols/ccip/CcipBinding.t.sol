@@ -22,7 +22,10 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderReceiveSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
 ///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
@@ -48,7 +51,7 @@ contract CcipHubHarness is CcipHubTransceiver {
 ///         table, CCIP has no provider-side destination-address concept at all, so the
 ///         recipient's address half (unused by LayerZero) is exactly what becomes
 ///         `EVM2AnyMessage.receiver` here.
-contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
+contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
     MockCcipRouter router;
     CcipHubHarness hub;
     address msig = address(0x5165);
@@ -143,27 +146,59 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec {
             extraArgs, Client._argsToBytes(Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
         );
     }
+
+    function _lastPaid() internal view override returns (uint256 value) {
+        (,,,,, value) = router.sent(router.sentLength() - 1);
+    }
+
+    function _setProviderFeePerByte(uint256 perByte) internal override {
+        router.setFeePerByte(perByte);
+    }
+
+
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
+        vm.prank(msig);
+        hub.setSelector(chainKey, uint64(providerId));
+    }
+
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+        vm.prank(address(router));
+        hub.ccipReceive(
+            Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: uint64(providerId),
+                sender: abi.encode(address(0xC0DE)),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            })
+        );
+    }
+
+    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
+    }
+
 }
 
 /// @notice CCIP's off-ramp asserts nothing about the source-chain sender (unlike
 ///         LayerZero's `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the
 ///         only authentication check here -- confirmed by these tests running the check
 ///         ourselves rather than relying on a provider-side peer rejection.
-contract CcipReceiveTest is ProviderReceiveSpec {
+contract CcipReceiveTest is ProviderWideSenderSpec {
     MockCcipRouter router;
     CcipReceiver receiver;
     address sourceTransmitter = address(0xABCD);
 
     function setUp() public {
         router = new MockCcipRouter();
-        receiver = CcipReceiver(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new CcipReceiver(address(router))),
-                        abi.encodeCall(CcipReceiver.initialize, (sourceTransmitter, new Call[](0)))
-                    )
-                ))
-        );
+        receiver = CcipReceiver(payable(_deployReceiver(new Call[](0))));
+    }
+
+    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
+    ///      constructor has no code yet, so a payload calling back into it would see none.
+    function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
+        proxy = address(new ERC1967Proxy(address(new CcipReceiver(address(router))), ""));
+        CcipReceiver(payable(proxy)).initialize(sourceTransmitter, calls);
     }
 
     function _message(address sender, bytes memory data) internal pure returns (Client.Any2EVMMessage memory) {
@@ -209,6 +244,25 @@ contract CcipReceiveTest is ProviderReceiveSpec {
     function _deliverFromWrongCaller() internal override {
         receiver.ccipReceive(_message(sourceTransmitter, ""));
     }
+
+    function _deliverFromWideSender(bytes32 wide) internal override {
+        vm.prank(address(router));
+        receiver.ccipReceive(
+            Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: 1,
+                sender: abi.encode(wide),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            })
+        );
+    }
+
+    /// @dev `abi.decode(sender, (address))` validates the high bytes and reverts without data.
+    function _wideSenderRevert(bytes32) internal pure override returns (bytes memory) {
+        return "";
+    }
+
 }
 
 /// @notice The Copilot-adjacent gap this binding has to get right on its own: CCIP's
@@ -326,5 +380,118 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
                 destTokenAmounts: new Client.EVMTokenAmount[](0)
             })
         );
+    }
+}
+
+contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
+    address router = address(0xBEEF);
+
+    function _transmitter() internal override returns (address) {
+        return address(new ERC1967Proxy(address(new CcipTransmitter(router)), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+    }
+
+    function _deliveringGateway() internal view override returns (address) {
+        return router;
+    }
+
+    function _deliveryCall() internal pure override returns (bytes memory) {
+        return abi.encodeCall(
+            IAny2EVMMessageReceiver.ccipReceive,
+            (Client.Any2EVMMessage({
+                messageId: bytes32(0),
+                sourceChainSelector: 1,
+                sender: abi.encode(address(0xABCD)),
+                data: "",
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            }))
+        );
+    }
+}
+
+contract CcipInboundHubHarness is CcipHubTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address r) CcipHubTransceiver(r) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract CcipInboundSpokeHarness is CcipSpokeTransceiver {
+    event InboundHandled(bytes32 chainKey);
+
+    constructor(address r) CcipSpokeTransceiver(r) {}
+
+    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
+        emit InboundHandled(chainKey);
+    }
+}
+
+contract CcipTransceiverInboundTest is ProviderTransceiverInboundSpec {
+    address router = address(0xBEEF);
+    address msig = address(0x5165);
+    uint64 constant SPOKE_SELECTOR = 15_971_525_489_660_198_786;
+    uint64 constant HOME_SELECTOR = 5_009_297_550_715_157_269;
+    address hub;
+    address spoke;
+
+    function setUp() public {
+        hub = address(
+            new ERC1967Proxy(
+                address(new CcipInboundHubHarness(router)),
+                abi.encodeCall(CcipHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        vm.prank(msig);
+        CcipHubTransceiver(payable(hub)).setSelector(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE_SELECTOR);
+        spoke = address(
+            new ERC1967Proxy(
+                address(new CcipInboundSpokeHarness(router)),
+                abi.encodeCall(
+                    CcipSpokeTransceiver.initialize,
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(HOME_CHAIN_ID),
+                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                        abi.encodePacked(HUB_TRANSCEIVER),
+                        HOME_SELECTOR
+                    )
+                )
+            )
+        );
+    }
+
+    function _hub() internal view override returns (address) {
+        return hub;
+    }
+
+    function _hubOwner() internal view override returns (address) {
+        return msig;
+    }
+
+    function _spoke() internal view override returns (address) {
+        return spoke;
+    }
+
+    function _message(uint64 selector, address sender) internal pure returns (Client.Any2EVMMessage memory) {
+        return Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: selector,
+            sender: abi.encode(sender),
+            data: "",
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+    }
+
+    function _deliverToHub(address sender) internal override {
+        vm.prank(router);
+        CcipHubTransceiver(payable(hub)).ccipReceive(_message(SPOKE_SELECTOR, sender));
+    }
+
+    function _deliverToSpoke(address sender) internal override {
+        vm.prank(router);
+        CcipSpokeTransceiver(payable(spoke)).ccipReceive(_message(HOME_SELECTOR, sender));
     }
 }

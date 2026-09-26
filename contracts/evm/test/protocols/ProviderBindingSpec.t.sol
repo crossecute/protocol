@@ -3,11 +3,20 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {Call} from "src/messaging/Call.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -92,6 +101,90 @@ abstract contract ProviderHubSendSpec is Test {
         vm.expectRevert();
         harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
     }
+
+    /// @dev C13 (R2.5): a quote that succeeded where the send reverts reports a message as
+    ///      sendable when it is not.
+    function test_quoteRevertsWhereTheSendWould() public {
+        vm.expectRevert();
+        harness.quoteMessagePublic(_unconfiguredRecipient(), "x");
+    }
+
+    /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
+    function test_quoteIsView() public view {
+        (bool ok,) = address(harness).staticcall(
+            abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x"))
+        );
+        assertTrue(ok);
+    }
+}
+
+/// @title ProviderFeeSpec
+/// @notice For providers that charge a native fee at the source (all but OP Stack): what the
+///         quote names is what the send pays, from `value`, and paying less is refused.
+abstract contract ProviderFeeSpec is ProviderHubSendSpec {
+    /// @notice What the provider's mocks were paid, in total, for the last send.
+    function _lastPaid() internal view virtual returns (uint256);
+
+    /// @dev C11 against the mock; the real endpoint's C11 is a fork test (`docs/todo.md` §4).
+    function test_quoteEqualsWhatTheSendActuallyConsumes() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        harness.sendMessagePublic{value: q}(_configuredRecipient(), "payload", new bytes[](0), q);
+        assertEq(_lastPaid(), q);
+    }
+
+    /// @dev C16.
+    function test_anUnderfundedSendReverts() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        vm.expectRevert();
+        harness.sendMessagePublic{value: q - 1}(_configuredRecipient(), "payload", new bytes[](0), q - 1);
+    }
+
+    /// @dev C26 (R7.1, R7.3): a nested send arrives with `msg.value == 0` and pays from the
+    ///      contract's balance, so the binding must spend `value`, never `msg.value`.
+    function test_aSendIsPaidFromValueNotMsgValue() public {
+        _setProviderFee(0.02 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        vm.deal(address(harness), q);
+        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), q);
+        assertEq(_lastPaid(), q);
+    }
+}
+
+/// @title ProviderRefundSpec
+/// @notice C25 (R7.2): an overpayment is refunded to the caller, never to the sending contract.
+///         For providers that refund (LayerZero, Hyperlane, Wormhole); CCIP keeps overpayment.
+abstract contract ProviderRefundSpec is ProviderFeeSpec {
+    /// @notice The refund address the provider was given for the last send.
+    function _lastRefundAddress() internal view virtual returns (address);
+
+    function test_excessRefundsToTheCallerNotTheSender() public {
+        _setProviderFee(0.02 ether);
+        uint256 overpaid = 2 * harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        address caller = makeAddr("caller");
+        vm.deal(caller, overpaid);
+        vm.prank(caller);
+        harness.sendMessagePublic{value: overpaid}(_configuredRecipient(), "payload", new bytes[](0), overpaid);
+        assertEq(_lastRefundAddress(), caller);
+    }
+}
+
+/// @title ProviderPayloadPricedSpec
+/// @notice C12 (R2.3), for providers that price by payload length (LayerZero, CCIP, Hyperlane;
+///         Wormhole's Executor and OP Stack do not).
+abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
+    function _setProviderFeePerByte(uint256 perByte) internal virtual;
+
+    function test_quoteIsTakenOverTheExactPayloadBytes() public {
+        _setProviderFeePerByte(1 gwei);
+        bytes memory longer = "a longer payload than the other one";
+        uint256 short = harness.quoteMessagePublic(_configuredRecipient(), "x");
+        uint256 long = harness.quoteMessagePublic(_configuredRecipient(), longer);
+        assertGt(long, short);
+        harness.sendMessagePublic{value: long}(_configuredRecipient(), longer, new bytes[](0), long);
+        assertEq(_lastPaid(), long);
+    }
 }
 
 /// @title ProviderIdTableSpec
@@ -101,12 +194,36 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
     /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
     function _configuredProviderId() internal view virtual returns (uint256);
 
+    /// @notice Call the hub's typed setter, as its owner.
+    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
+
+    /// @notice Deliver to the hub through the provider's own path, from an origin id never set.
+    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal virtual;
+
+    /// @notice The exact revert for that delivery.
+    function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
+
     function test_transmittersReadTheConfiguredIdFromTheHub() public {
         assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
         vm.expectRevert(
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
         );
         providerIdOf(address(harness), _unconfiguredRecipient());
+    }
+
+    /// @dev C28 for the one setter a binding adds: repointing a chain's id would silently
+    ///      redirect its future sends.
+    function test_theTypedSetterIsWriteOnce() public {
+        bytes32 chainKey = Erc7930.chainKey(_configuredRecipient());
+        _setProviderIdAsOwner(chainKey, _configuredProviderId());
+        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.ProviderIdAlreadySet.selector, chainKey));
+        _setProviderIdAsOwner(chainKey, _configuredProviderId() + 1);
+    }
+
+    /// @dev C5, hub side: a delivery whose origin the table does not map is refused.
+    function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
+        vm.expectRevert(_unmappedOriginRevert(999));
+        _deliverToHubFromUnmappedOrigin(999);
     }
 }
 
@@ -118,8 +235,40 @@ abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
         bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
         bytes memory recipient =
             Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
-        vm.expectRevert(abi.encodeWithSelector(ProviderRecipient.UnsupportedRecipient.selector, wide));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAddress.UnsupportedRecipient.selector, wide));
         harness.sendMessagePublic(recipient, "x", new bytes[](0), 0);
+    }
+}
+
+/// @title ProviderTransmitterSpec
+/// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
+///         called by the provider's own gateway, finds nothing to run.
+abstract contract ProviderTransmitterSpec is Test {
+    /// @notice A transmitter behind a proxy, initialized.
+    function _transmitter() internal virtual returns (address);
+
+    /// @notice The provider's delivery callback, encoded as its gateway would call it.
+    function _deliveryCall() internal view virtual returns (bytes memory);
+
+    function _deliveringGateway() internal view virtual returns (address);
+
+    function test_inboundToATransmitterReverts() public {
+        address transmitter = _transmitter();
+        vm.prank(_deliveringGateway());
+        (bool ok,) = transmitter.call(_deliveryCall());
+        assertFalse(ok);
+    }
+}
+
+/// @notice Called from a receiver's bootstrap payload: fails unless the receiver already
+///         lets `gateway` deliver.
+contract ProviderConfiguredProbe {
+    bytes32 constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
+
+    error GatewayNotYetConfigured(address gateway);
+
+    function requireGateway(address gateway) external view {
+        if (!IAccessControl(msg.sender).hasRole(GATEWAY_ROLE, gateway)) revert GatewayNotYetConfigured(gateway);
     }
 }
 
@@ -165,6 +314,10 @@ abstract contract ProviderReceiveSpec is Test {
     /// @notice The address this receiver's initializer granted `GATEWAY_ROLE`.
     function _gateway() internal view virtual returns (address);
 
+    /// @notice A new receiver behind a proxy whose initializer runs `calls` as its bootstrap
+    ///         payload.
+    function _deployReceiver(Call[] memory calls) internal virtual returns (address);
+
     function test_theConfiguredSourceIsAccepted() public {
         vm.expectEmit(false, false, false, true, _receiverUnderTest());
         emit Delivered(0);
@@ -186,6 +339,16 @@ abstract contract ProviderReceiveSpec is Test {
         _deliverFromWrongCaller();
     }
 
+    /// @dev C18: the bootstrap payload runs inside the receiver's one initializer call, so the
+    ///      provider must already be configured when it does, or a first call that relies on
+    ///      it fails with no second chance.
+    function test_theProviderIsConfiguredBeforeTheBootstrapPayloadRuns() public {
+        ProviderConfiguredProbe probe = new ProviderConfiguredProbe();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(probe), value: 0, data: abi.encodeCall(probe.requireGateway, (_gateway()))});
+        _deployReceiver(calls);
+    }
+
     /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut
     ///      delivery even where the provider authenticates before this protocol's code runs.
     function test_aRevokedGatewayCannotDeliver() public {
@@ -194,6 +357,109 @@ abstract contract ProviderReceiveSpec is Test {
         receiver.revokeGateway(_gateway());
         vm.expectRevert();
         _deliverFromConfiguredSource();
+    }
+}
+
+/// @title ProviderWideSenderSpec
+/// @notice C10 (R4.3): a provider-reported sender wider than 20 bytes, whose low 20 bytes are
+///         the configured source, is refused rather than truncated into it. For providers that
+///         report the sender in more than 20 bytes (all but OP Stack).
+abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
+    /// @notice Deliver through the provider's own path, from `wide`, as its gateway would.
+    function _deliverFromWideSender(bytes32 wide) internal virtual;
+
+    /// @notice The exact revert expected, so the test cannot pass by failing for another reason.
+    function _wideSenderRevert(bytes32 wide) internal view virtual returns (bytes memory);
+
+    function test_aWideSenderIsRejectedNotTruncated() public {
+        address source = ReceiverBase(payable(_receiverUnderTest())).sourceTransmitter();
+        bytes32 wide = bytes32(uint256(uint160(source)) | (uint256(1) << 200));
+        vm.expectRevert(_wideSenderRevert(wide));
+        _deliverFromWideSender(wide);
+    }
+}
+
+/// @title ProviderTransceiverInboundSpec
+/// @notice C4, C6, C7 for transceivers: the route and sender bytes a binding hands `_onInbound`
+///         authenticate the configured counterpart exactly, and nothing else on that chain.
+/// @dev The harnesses override `_handleInbound` to emit `InboundHandled`, so what is asserted is
+///      the chain the base's own authentication accepted, not a stand-in for it.
+abstract contract ProviderTransceiverInboundSpec is Test {
+    event InboundHandled(bytes32 chainKey);
+
+    uint256 internal constant HOME_CHAIN_ID = 1;
+    uint256 internal constant SPOKE_CHAIN_ID = 8453;
+    /// @dev The spoke's counterpart as the hub records it, and the hub as the spoke records it.
+    address internal constant SPOKE_TRANSCEIVER = address(0xC0DE);
+    address internal constant HUB_TRANSCEIVER = address(0xD00D);
+
+    /// @notice A hub harness, owned by `_hubOwner()`, whose id table maps `SPOKE_CHAIN_ID`.
+    function _hub() internal view virtual returns (address);
+    function _hubOwner() internal view virtual returns (address);
+
+    /// @notice A spoke harness homed on `HOME_CHAIN_ID`, with `HUB_TRANSCEIVER` as its hub.
+    function _spoke() internal view virtual returns (address);
+
+    /// @notice Deliver to the hub through the provider's own path, from `SPOKE_CHAIN_ID`.
+    function _deliverToHub(address sender) internal virtual;
+
+    /// @notice Deliver to the spoke through the provider's own path, from home.
+    function _deliverToSpoke(address sender) internal virtual;
+
+    /// @notice Provider-side configuration the hub needs to accept `SPOKE_TRANSCEIVER` (a
+    ///         LayerZero peer). None by default.
+    function _configureProviderPeer() internal virtual {}
+
+    /// @notice The revert for a wrong sender. The base's own by default; LayerZero's peer check
+    ///         refuses it first (its R3.3 exception).
+    function _hubWrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
+    }
+
+    function _spokeWrongSenderRevert(address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(SpokeTransceiverBase.NotHomeOrigin.selector);
+    }
+
+    function _wireHub() internal returns (bytes32 chainKey) {
+        address owner = _hubOwner();
+        ChainRegistry registry = ChainRegistry(
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
+        );
+        HubTransceiverBase hub = HubTransceiverBase(payable(_hub()));
+        vm.startPrank(owner);
+        bytes32 provider = registry.addMessageProvider("under-test");
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        registry.setLocalTransceiver(provider, address(hub));
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
+        registry.setProvenance(chainKey, Provenance.Attested);
+        hub.setCounterpart(chainKey, Erc7930.encodeEvm(SPOKE_CHAIN_ID, SPOKE_TRANSCEIVER));
+        hub.setRoute(chainKey, Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
+        vm.stopPrank();
+        _configureProviderPeer();
+    }
+
+    function test_hubAcceptsItsCounterpartThroughTheBinding() public {
+        bytes32 chainKey = _wireHub();
+        vm.expectEmit(true, true, true, true, _hub());
+        emit InboundHandled(chainKey);
+        _deliverToHub(SPOKE_TRANSCEIVER);
+    }
+
+    function test_hubRefusesAnotherSenderOnTheCounterpartsChain() public {
+        bytes32 chainKey = _wireHub();
+        vm.expectRevert(_hubWrongSenderRevert(chainKey, address(0xBAD)));
+        _deliverToHub(address(0xBAD));
+    }
+
+    function test_spokeAcceptsItsHubThroughTheBinding() public {
+        vm.expectEmit(true, true, true, true, _spoke());
+        emit InboundHandled(ChainKey.forEvm(HOME_CHAIN_ID));
+        _deliverToSpoke(HUB_TRANSCEIVER);
+    }
+
+    function test_spokeRefusesAnotherSenderFromHome() public {
+        vm.expectRevert(_spokeWrongSenderRevert(address(0xBAD)));
+        _deliverToSpoke(address(0xBAD));
     }
 }
 

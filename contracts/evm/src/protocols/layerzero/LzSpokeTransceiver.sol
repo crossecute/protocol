@@ -9,6 +9,7 @@ import {OAppUpgradeable, Origin} from
     "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {MessagingFee} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice LayerZero wiring shared by every spoke variant (this file's, and the zkSync/Tron
 ///         ones in `LzDivergentSpokeTransceiver.sol`), which differ only in address derivation.
@@ -108,7 +109,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         address, /* _executor */
         bytes calldata /* _extraData */
     ) internal override {
-        _onHomeInbound(address(uint160(uint256(_origin.sender))), _message);
+        _onHomeInbound(ProviderAddress.evmSender(_origin.sender), _message);
     }
 }
 
