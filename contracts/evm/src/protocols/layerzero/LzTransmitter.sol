@@ -1,51 +1,76 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {OAppSenderUpgradeable} from
+    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppSenderUpgradeable.sol";
+import {OAppCoreUpgradeable} from
+    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {MessagingFee} from
+    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
 
-/// @notice The per-user transmitter on the home chain, created by
-///         `HubTransceiverBase.createTransmitter`.
-///
-/// @dev IT IS STRUCTURE WITHOUT AN SDK BEHIND IT. No LayerZero code is inherited and
-///      `_sendMessage` still reverts `SendNotImplemented`; what exists is the ownership seam
-///      answered and nothing else. See `docs/provider-spec.md` for what a real binding owes.
-contract LzTransmitter is TransmitterBase, OwnableUpgradeable {
+/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
+///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
+contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
+    /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
+    ///        because the implementation address lives in the proxy's ERC-1967 slot, not its
+    ///        initcode, so this never moves a derived account address.
+    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {}
+
+    /// @dev No peer set here: peers are per-destination, and a one-shot initializer cannot
+    ///      know every chain this account will ever reach. The owner calls `setPeer` (plain
+    ///      `onlyOwner`, unlike `grantRole`'s `onlyInitializing`) the first time it needs one.
     function initialize(address owner_, address transceiver_, bytes32 salt_)
         external
+        override
         initializer
     {
-        // `__Ownable_init` rejects the zero owner itself, with `OwnableInvalidOwner`.
         __Ownable_init(owner_);
+        // Delegate = self: R6.4, any provider-side authority over an account is the account.
+        __OAppSender_init(address(this));
         __TransmitterBase_init(owner_, transceiver_, salt_);
     }
 
-    /// @notice Where `TransmitterBase`'s ownership requirement is satisfied.
-    ///
-    /// @dev THE SEAM, and the same one `LzHubTransceiver` uses for `isAdmin`. When this
-    ///      becomes an actual OApp the inheritance list gains `OAppUpgradeable` and these two
-    ///      bodies answer from OApp's own `Ownable` instead, one line each; nothing in
-    ///      `TransmitterBase` changes, because it never had an opinion about ownership.
-    function _owner() internal view override returns (address) {
-        return owner();
+    function _checkOwner() internal view override(OwnableTransmitter, OwnableUpgradeable) {
+        super._checkOwner();
     }
 
-    function _checkOwner()
+    /// @dev `recipient`'s address half is unused: LayerZero delivers to whatever `setPeer`
+    ///      recorded for the eid, not to an address in the payload. Value is exact, not
+    ///      `msg.value` (`OutboundBase` widens the primitive for this); `_payNative` reverts
+    ///      on any mismatch.
+    function _sendMessage(
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes,
+        uint256 value
+    ) internal override returns (bytes32 sendId) {
+        uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
+        bytes memory options = LzMessage.options(attributes);
+        _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
+    }
+
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
-        override(TransmitterBase, OwnableUpgradeable)
+        override
+        returns (uint256 nativeFee)
     {
-        OwnableUpgradeable._checkOwner();
+        uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
+        bytes memory options = LzMessage.options(attributes);
+        MessagingFee memory fee = _quote(dstEid, payload, options, false);
+        return fee.nativeFee;
     }
 
-    /// @notice NO GATEWAY IS GRANTED, so this transmitter sends through nothing. A real
-    ///         binding grants `GATEWAY_ROLE` to the endpoint on `LzHubTransceiver`, and the
-    ///         transmitter itself never touches the role at all: `TransmitterBase` does not
-    ///         inherit `Roles`, because R3.1 ("the transmitter MUST reject inbound messages")
-    ///         is answered structurally here rather than by a grant. It has no
-    ///         `receiveMessage`, no `commit`, and no `GATEWAY_ROLE` to hold. If `OAppUpgradeable`
-    ///         brings an inbound entry point onto this contract when it becomes real, R3.1
-    ///         says to override it and revert, never to wire it up.
+    /// @notice One attribute, `LzMessage.OPTIONS_ATTRIBUTE`. Anything else is refused per ERC-7786.
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
+    function supportsAttribute(bytes4 selector) external pure override returns (bool) {
+        return selector == LZ_OPTIONS_ATTRIBUTE;
+    }
 }

@@ -2,8 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IAccessControlEnumerable} from
     "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
@@ -12,12 +10,12 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 import {Roles} from "src/messaging/Roles.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {UnsendableTransmitter} from "test/Unsendable.sol";
 
 /// @dev An account names its transport in the call that arms it, which is the only moment
 ///      anything can: `GATEWAY` has no role admin, so no grant ever succeeds. Granting ahead of
@@ -34,22 +32,13 @@ contract RoleReceiver is ReceiverBase {
     }
 }
 
-contract RoleTransmitter is TransmitterBase, OwnableUpgradeable {
+contract RoleTransmitter is UnsendableTransmitter {
     function initializeWith(address owner_, address transceiver_, address gateway_)
         external
         initializer
     {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, bytes32(0));
+        __OwnableTransmitter_init(owner_, transceiver_, bytes32(0));
         grantRole(GATEWAY_ROLE, gateway_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
     }
 
     /// @dev Stands in for what a binding's `_sendMessage` does before it calls out.
@@ -156,13 +145,14 @@ contract RolesTest is Test {
         assertFalse(transmitter.hasRole(gatewayRole, IMPOSTOR));
     }
 
-    /// @dev EVERY SHIPPED LAYERZERO CONTRACT TRUSTS NOBODY, because no SDK is bound and so
-    ///      nothing was granted. That is the honest default: a base that guessed an endpoint
-    ///      address would be worse than one that accepts nothing, and it means the absence
-    ///      fails loudly on the first message rather than quietly on a forged one.
+    /// @dev EVERY FRESHLY DEPLOYED LAYERZERO IMPLEMENTATION TRUSTS NOBODY, because
+    ///      `GATEWAY_ROLE` is only ever granted inside `initialize`, which nothing has called
+    ///      on a bare implementation. That is the honest default regardless of which endpoint
+    ///      it was constructed with: the absence fails loudly on the first message rather
+    ///      than quietly on a forged one.
     function testFuzz_theUnboundContractsTrustNobody(address anyone) public {
-        LzReceiver r = new LzReceiver();
-        LzTransmitter t = new LzTransmitter();
+        LzReceiver r = new LzReceiver(address(0xE1D0));
+        LzTransmitter t = new LzTransmitter(address(0xE1D0));
         assertFalse(r.hasRole(r.GATEWAY_ROLE(), anyone));
         assertFalse(t.hasRole(t.GATEWAY_ROLE(), anyone));
     }

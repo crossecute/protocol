@@ -25,7 +25,8 @@ rules below narrowed with it;
 standard gives up in exchange.
 
 Nothing here is LayerZero-specific. LayerZero is used for worked examples because it is the
-first binding, and its findings are recorded in [`todo.md`](todo.md#2-the-provider-binding).
+first binding, and its findings are recorded in
+[`provider-research.md`](provider-research.md#8-layerzero-as-a-native-binding).
 
 Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
@@ -93,7 +94,7 @@ account up on however good the transport is.
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
-| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#3-blockers-on-specific-paths) stays blocked on a second provider. |
+| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#1-blockers-on-specific-paths) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 | **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the RELAYER'S SIGNING KEY, not for any contract. |
 
@@ -116,17 +117,16 @@ but Axelar's are `view`.
 
 ## 3. The contract set
 
-A binding is five or six files under `src/protocols/<provider>/`. Naming follows the
-existing LayerZero skeleton.
+A binding is five or six files under `src/protocols/<provider>/`, plus a
+`<P>DivergentSpokeTransceiver.sol` where the provider reaches zkSync or Tron.
 
 | File | Extends | Role |
 | --- | --- | --- |
-| `<P>Codec.sol` | library | The one place the provider's chain id has a Solidity type. **Only where one survives**: under ERC-7786 the route slot holds a chain identifier, so a gateway binding has no provider-native id to type and no codec. See [§10](#9-worked-skeleton-an-erc-7786-gateway-binding). |
-| `<P>Endpoint.sol` | abstract | The shared send, quote, and receive code, mixed into the four below. |
-| `<P>Transmitter.sol` | `TransmitterBase`, `<P>Endpoint` | The per-user account at home. Sends on path A. |
-| `<P>Receiver.sol` | `ReceiverBase`, `<P>Endpoint` | The per-user account on a spoke. Receives on path A. |
-| `<P>HubTransceiver.sol` | `HubTransceiverBase`, `<P>Endpoint` | Sends bootstrap, receives reports. |
-| `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase`, `<P>Endpoint` | Receives bootstrap, sends the report. |
+| `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the three sending contracts. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
+| `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
+| `<P>Receiver.sol` | `ReceiverBase` | The per-user account on a spoke. Receives on path A. |
+| `<P>HubTransceiver.sol` | `ProviderHubTransceiver` (`HubTransceiverBase` + `ProviderChainId`) | Sends bootstrap, receives reports. `ProviderHubTransceiver` only where a provider-native chain id survives; under ERC-7786 a gateway binding has none. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
+| `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase` | Receives bootstrap, sends the report. Holds the home chain's native id as one initializer value. The provider's wiring is an abstract `<P>SpokeBase` in the same file, which the zkSync/Tron variants inherit alongside `ZkSyncSpokeTransceiver`/`TronSpokeTransceiver`. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
 only the two accounts:
@@ -151,11 +151,11 @@ flowchart LR
 Four contracts, one gateway, and the same two seams on every one of them: `_sendMessage`
 outbound and the SDK's callback inbound.
 
-**`<P>Endpoint` is not optional structure, it is the deduplication that keeps the four in
+**`<P>Message` is not optional structure, it is the deduplication that keeps the four in
 agreement.** Fee handling, attribute decoding, the recipient byte form, and the sender byte
 form must be identical across all four. Otherwise authentication silently diverges between
 path A and path B, and a quote stops predicting its own send. Writing them once is what
-makes that structural. It declares no storage of its own beyond what the SDK brings.
+makes that structural. It declares no storage of its own, except where it owns replay (R3.5), in an ERC-7201 slot.
 
 ---
 
@@ -165,10 +165,13 @@ Every abstract or virtual member a binding must answer, and where.
 
 ### 4.1 Required on all four contracts
 
+The receiver does not inherit `OutboundBase` and never sends, so the first two rows bind
+the transmitter and both transceivers.
+
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. The default reverts `SendNotImplemented`. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
-| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. The default reverts `QuoteNotImplemented`. See [R2](#r2-quote). |
+| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. There is no default: a contract that omits it does not compile. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
+| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. There is no default; a provider that cannot quote on-chain overrides it to revert `QuoteNotImplemented`. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
 ### 4.2 Required on the transmitter
@@ -385,7 +388,7 @@ arguments.
 divergence between `_quoteMessage` and `_sendMessage` is a quote that prices a different
 message than the one that goes out. In practice this means both call one shared internal
 helper for recipient construction and one for attribute decoding, which is
-[§3](#3-the-contract-set)'s argument for `<P>Endpoint` restated.
+[§3](#3-the-contract-set)'s argument for `<P>Message` restated.
 
 **R2.5 It MUST revert exactly where the send would.** An unconfigured route, an
 unroutable destination, or a counterpart below the provenance bar MUST fail the quote too.
@@ -514,8 +517,8 @@ documented.** LayerZero's `lzReceive` checks `msg.sender == endpoint` and then
 `peer[srcEid] == origin.sender` before `_lzReceive` is reached. For a 1:1 pairing there is
 nothing extra to verify, so this is defensible, but it contradicts the rule stated in
 `TransceiverBase._onInbound` and MUST appear as a written exception in the binding's NatSpec
-rather than as an omission. This is [todo §4](todo.md#4-decisions-taken-that-deserve-a-second-look),
-still open.
+rather than as an omission. LayerZero is the only binding that takes it (see
+[the research half](provider-research.md#8-layerzero-as-a-native-binding)).
 
 **R3.4** The receiver's funnel is `_onMessage`, which is `nonReentrant` and executes on
 arrival. The binding MUST NOT decode the payload itself: `Payload.decodeCalls` happens
@@ -535,7 +538,7 @@ every message after the first takes.
 Most candidate transports guarantee it, and there the binding does nothing. The exceptions
 are the raw signature primitives, Wormhole's core layer and Avalanche's Warp precompile,
 which prove a message was authorised and stop there. On either, a binding MUST dedupe inside
-`<P>Endpoint` before reaching `_onMessage`, keyed on whatever that transport makes unique
+`<P>Message` before reaching `_onMessage`, keyed on whatever that transport makes unique
 per message: Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`. See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
 for what each provider actually does.
 
@@ -580,8 +583,8 @@ Solana pubkey cast down to 20 bytes is a forgery primitive, not a formatting bug
 
 **R4.4** A spoke's `_homeTransceiver` is written once at initialization with no setter. The
 deployment MUST pass it in the same byte form the binding will produce inbound. There is no
-way to fix a mistake here: see [todo §4](todo.md#4-decisions-taken-that-deserve-a-second-look)
-on write-once having no recovery path.
+way to fix a mistake here but a redeploy: see the README's
+[Message providers](../README.md#message-providers).
 
 ### R5. The route codec
 
@@ -593,11 +596,13 @@ silently reinterpret. Under ERC-7786 the route holds a chain's ERC-7930 identifi
 than a provider id, so this rule now binds only where a binding keeps a provider-native
 value of its own.
 
-**R5.2** The provider's native type MUST appear in exactly two places: the codec library
-and the typed setters that wrap it. It MUST NOT appear in any base contract, in the
-registry, or in an account's storage.
+**R5.2** The provider's native type MUST appear only in the binding's own files: the hub's
+typed setter over `ProviderChainId`, and the one fixed value a spoke or an SDK peer entry
+holds. It MUST NOT appear in any base contract or in the registry.
 
-**R5.3** The codec MUST be a pure library with no storage and no owner.
+**R5.3** `ProviderChainId` stores ids as `uint256`, write-once and injective both ways. The
+typed setter bounds an id on the way in; readers get `uint256` from `providerIdFor` and
+narrow it to the provider's type themselves.
 
 ### R6. Account initialization
 
@@ -671,7 +676,7 @@ than an argument; the send VALUE is the opposite case, and is passed (see
 `msg.value == 0` and MUST be funded from the sending contract's balance. A binding whose
 provider cannot do this MUST say so and the report path MUST fall back to a separately
 funded transaction. This is the top blocker on the report path in
-[todo §3](todo.md#3-blockers-on-specific-paths).
+[todo §1](todo.md#1-blockers-on-specific-paths).
 
 **R7.4** `bootstrap` forwards the whole `msg.value` to the transceiver. A binding MUST NOT
 retain a remainder there.
@@ -690,7 +695,7 @@ per-chain endpoint address is exactly what an implementation-level immutable is 
 
 **R8.2** The SDK's storage MUST be ERC-7201 namespaced, or the binding MUST pin the
 inheritance order and document the resulting layout. There are no storage gaps anywhere in
-this codebase ([todo §5](todo.md#5-smaller-open-questions)), so a binding that appends
+this codebase ([todo §3](todo.md#3-smaller-open-questions)), so a binding that appends
 sequential slots to a base freezes that base's layout.
 
 **R8.3** The binding MUST NOT change `CROSS_PROXY_INIT_CODE_HASH`, and MUST NOT change
@@ -742,8 +747,9 @@ chain unless noted:
 | 12 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
 | n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
-There is no `script/` directory yet ([todo §6](todo.md#6-infrastructure-none-of-it-exists)).
-The first binding writes it, and the ordering above is its specification.
+There are no deploy scripts yet; `script/` holds only the vendoring drivers
+([todo §4](todo.md#4-infrastructure-none-of-it-exists)). The ordering above is their
+specification.
 
 ---
 
@@ -775,7 +781,9 @@ Collected, because each of these is individually tempting.
 
 A binding is compliant when it passes `test/compliance/ProviderCompliance.t.sol`, an
 abstract test contract that every binding inherits and parameterizes with its own four
-contracts. This does not exist yet and is part of the first binding's work.
+contracts. Not built. The five bindings instead share
+`test/protocols/ProviderBindingSpec.t.sol`, which covers part of the table below;
+[`todo.md`](todo.md#4-infrastructure-none-of-it-exists) maps the rest.
 
 The abstract harness declares:
 
@@ -853,7 +861,7 @@ message it ever carries.
 
 The suite is separate from and does not replace `test/vectors/`, which covers the
 commitment half and is
-[load-bearing for the scheme plugins](todo.md#6-infrastructure-none-of-it-exists).
+[load-bearing for the scheme plugins](todo.md#4-infrastructure-none-of-it-exists).
 
 ---
 
@@ -959,9 +967,10 @@ gateway address, a policy about two-step sends, and a quote the standard did not
 A binding is done when every line is true.
 
 **Contracts**
-- [ ] Five or six files under `src/protocols/<provider>/`, with the shared code in `<P>Endpoint`
-- [ ] `_sendMessage` overridden on all four endpoints
-- [ ] `_quoteMessage` overridden on all four endpoints, `view`, sharing the send's resolver
+- [ ] Five or six files under `src/protocols/<provider>/`, with the shared code in `<P>Message`
+      or the inherited SDK
+- [ ] `_sendMessage` overridden on the transmitter and both transceivers
+- [ ] `_quoteMessage` overridden on the same three, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
 - [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
       `_onInbound` on the transceivers
@@ -969,8 +978,11 @@ A binding is done when every line is true.
 - [ ] Initialized with the msig as `owner`, the protocol's one `Treasury` as `treasury` (hub
       only), and every transport the deployment needs in `gateways`, none grantable afterwards
 - [ ] No second ownership implementation in the tree, and no grant path added
-- [ ] `_accountInitializer` overridden on both transceivers
-- [ ] Codec library and typed setters, only where a provider-native id survives
+- [ ] `_accountInitializer` overridden wherever an account's initializer needs provider
+      arguments the base shape does not carry
+- [ ] `ProviderChainId` and a typed setter on the hub, only where a provider-native id survives
+- [ ] A spoke refuses every origin chain but home through `ProviderOrigin.requireHome` before
+      calling `_onInbound`, held by `ProviderSpokeOriginSpec`
 
 **Byte forms**
 - [ ] Route produced by one codec function in both directions

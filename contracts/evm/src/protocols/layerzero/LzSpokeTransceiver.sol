@@ -1,55 +1,131 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {Call} from "src/messaging/Call.sol";
+import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {OAppUpgradeable, Origin} from
+    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
+import {MessagingFee} from
+    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
-/// @notice The transceiver on every chain that is not the home chain.
-///
-/// @dev THE ENTIRE ROUTING LAYER IS THREE WRITE-ONCE VALUES: `homeChainKey`, `homeRoute()`
-///      holding that chain's ERC-7930 identifier, and `homeTransceiver()` holding the hub's
-///      address. No registry to read, no table to maintain, no destination to choose.
-///
-/// @dev THE ROUTE IS THE CHAIN IDENTIFIER, NOT A PROVIDER'S ID FOR IT, which makes
-///      `keccak256(homeRoute()) == homeChainKey` true by construction rather than by
-///      configuration, and is what an ERC-7786 recipient is built from.
-contract LzSpokeTransceiver is SpokeTransceiverBase {
-    /// @param homeChainKey_ keccak256 of the home chain's ERC-7930 chain identifier.
-    /// @param homeChainIdentifier_ That identifier itself. It is passed rather than derived
-    ///        because a chainKey is a hash and cannot be reversed, and it is checked
-    ///        against `homeChainKey_` so the pair cannot disagree.
-    /// @param homeTransceiver_ The hub, in this chain's address format. Fixed for the life
-    ///        of the contract: there is no setter, by design.
-    /// @dev THIS IS THE PARITY SPOKE, AND IT DOES NOT TAKE THE DIVERGENCE FLAG. It inherits
-    ///      `TransceiverBase.predictCrossAccount`, which is Ethereum's CREATE2 formula and
-    ///      exactly what the hub recomputes, so accounts here do NOT diverge and the flag is
-    ///      `false` by construction rather than by configuration.
-    ///
-    ///      Taking it as an argument allowed the one state that cannot be right: `true` with
-    ///      Ethereum's arithmetic, which reports addresses home that the hub could already
-    ///      derive, and downgrades a `Derived` fact to an `Attested` one for nothing. A
-    ///      chain that really diverges needs different arithmetic as well as the flag, so it
-    ///      gets `LzZkSyncSpokeTransceiver` or `LzTronSpokeTransceiver` instead.
+/// @notice LayerZero wiring shared by every spoke variant (this file's, and the zkSync/Tron
+///         ones in `LzDivergentSpokeTransceiver.sol`), which differ only in address derivation.
+/// @dev Both halves of OApp: sends the receiver report home (diverging spokes) and receives
+///      every bootstrap.
+abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
+    constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
+
+    /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
+    uint32 public homeEid;
+
+    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
+    ///      since a spoke's single eid bypasses that mixin entirely).
+    error ZeroHomeEid();
+    /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
+    ///      silently truncate or pad into the wrong peer.
+    error InvalidHomeTransceiverLength();
+
+    /// @param homeEid_ LayerZero's id for the home chain. Written directly to OApp peer
+    ///        storage here (not via `setPeer`, which is `onlyOwner` — this contract has no
+    ///        `Ownable`), since this initializer is the only window it ever gets.
+    function __LzSpoke_init(
+        address[] calldata gateways,
+        address receiverImplementation_,
+        bytes32 homeChainKey_,
+        bytes calldata homeChainIdentifier_,
+        bytes calldata homeTransceiver_,
+        bool addressesDiverge_,
+        uint32 homeEid_
+    ) internal onlyInitializing {
+        if (homeEid_ == 0) revert ZeroHomeEid();
+        if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
+        homeEid = homeEid_;
+        __OApp_init(address(this)); // delegate = self, R6.4
+        bytes32 peer = bytes32(uint256(uint160(address(bytes20(homeTransceiver_)))));
+        _getOAppCoreStorage().peers[homeEid_] = peer;
+        emit PeerSet(homeEid_, peer);
+        __SpokeTransceiverBase_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
+        );
+    }
+
+    /* ============================ receiver manufacture =========================== */
+
+    /// @dev Adds `homeEid` to the base two-arg shape so `LzReceiver` can set its peer in the
+    ///      same locked call.
+    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
+        internal
+        view
+        virtual
+        override
+        returns (bytes memory)
+    {
+        return abi.encodeCall(ILzReceiverInit.initialize, (predictCrossAccount(owner, salt), calls, homeEid));
+    }
+
+    /* ================================== sending =================================== */
+
+    /// @dev No chainKey resolution: `_routeTo`/`_counterpartOn` already refuse every key but
+    ///      `homeChainKey`, so `homeEid` is always the right destination.
+    function _sendMessage(
+        bytes memory, /* recipient */
+        bytes memory payload,
+        bytes[] memory attributes,
+        uint256 value
+    ) internal override returns (bytes32 sendId) {
+        _lzSend(homeEid, payload, LzMessage.options(attributes), MessagingFee(value, 0), _refundTo());
+    }
+
+    function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
+        internal
+        view
+        override
+        returns (uint256 nativeFee)
+    {
+        return _quote(homeEid, payload, LzMessage.options(attributes), false).nativeFee;
+    }
+
+    /// @dev The vendored default requires `msg.value == _nativeFee`, but a spoke's only send is
+    ///      `_reportReceiver`, nested in the delivery callback at `msg.value == 0` and paid from
+    ///      this contract's balance. `endpoint.send` still reverts if that balance is short.
+    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+        return _nativeFee;
+    }
+
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
+
+    /* ================================= receiving =================================== */
+
+    /// @dev R3.3 exception, spoke's half — see `LzReceiver._lzReceive`. `route` is
+    ///      `homeRoute()` directly: a spoke has one valid origin, and LayerZero's own peer
+    ///      check already constrains `_origin.srcEid` to `homeEid`.
+    function _lzReceive(
+        Origin calldata _origin,
+        bytes32, /* _guid */
+        bytes calldata _message,
+        address, /* _executor */
+        bytes calldata /* _extraData */
+    ) internal override {
+        _onHomeInbound(address(uint160(uint256(_origin.sender))), _message);
+    }
+}
+
+/// @notice Transceiver on every non-home chain whose addresses match Ethereum's.
+contract LzSpokeTransceiver is LzSpokeBase {
+    constructor(address _endpoint) LzSpokeBase(_endpoint) {}
+
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
         bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_
+        bytes calldata homeTransceiver_,
+        uint32 homeEid_
     ) external initializer {
-        __SpokeTransceiverBase_init(
-            gateways,
-            receiverImplementation_,
-            homeChainKey_,
-            homeChainIdentifier_,
-            homeTransceiver_,
-            false
+        __LzSpoke_init(
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeEid_
         );
     }
-
-    /// @notice NO GATEWAY IS GRANTED, so this contract accepts and sends through nothing.
-    /// @dev That is the honest state of a binding with no LayerZero behind it. A real binding
-    ///      grants `GATEWAY_ROLE` to its endpoint in the initializer, which is where the
-    ///      address is known; the absence fails loudly on the first message rather than
-    ///      quietly on a forged one.
-
 }

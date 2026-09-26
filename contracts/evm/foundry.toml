@@ -24,4 +24,29 @@ remappings = [
     "src/=src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    # Hand-copied, not submodules: none of the three has a dedicated package repo that
+    # isolates just these files. See lib/layerzero-*/contracts/.../*.sol for per-file
+    # provenance (source repo, exact commit) and docs/provider-research.md §8.
+    "@layerzerolabs/oapp-evm-upgradeable/=lib/layerzero-oapp-evm-upgradeable/",
+    "@layerzerolabs/oapp-evm/=lib/layerzero-oapp-evm/",
+    "@layerzerolabs/lz-evm-protocol-v2/=lib/layerzero-protocol-v2/",
+
+    # Hand-copied, not a submodule: smartcontractkit/ccip mixes BUSL-1.1 infrastructure
+    # with the MIT-tagged application-facing files this binding actually needs. See
+    # lib/ccip/contracts/src/v0.8/ccip/**/*.sol for per-file provenance
+    # (contracts/evm/script/vendor/ccip.sh) and docs/provider-research.md §4.
+    "@ccip/=lib/ccip/contracts/src/v0.8/ccip/",
+
+    # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,
+    # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free
+    # interfaces and libraries are vendored (contracts/evm/script/vendor/hyperlane.sh).
+    "@hyperlane/=lib/hyperlane/solidity/contracts/",
+
+    # Hand-copied, not a submodule: the binding needs three import-free files (Core and
+    # Executor interfaces), not the SDK's helpers. See contracts/evm/script/vendor/wormhole.sh.
+    "@wormhole-sdk/=lib/wormhole-solidity-sdk/src/",
+
+    # Hand-copied, not a submodule: one import-free interface from the optimism monorepo.
+    # See contracts/evm/script/vendor/op-stack.sh.
+    "@optimism/=lib/optimism/packages/contracts-bedrock/",
 ]

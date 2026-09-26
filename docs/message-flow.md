@@ -5,10 +5,10 @@ The two paths a message takes, the wire formats, and how the contracts fit toget
 **Status.** Both paths are built end to end in-process: `_sendMessage`, `sendMessage` /
 `bootstrap`, the quote surface, the inbound funnel, and the reentrancy guard. The send and
 receive surfaces are ERC-7786's: `TransmitterBase` is an `IERC7786GatewaySource` and
-`ReceiverBase` an `IERC7786Recipient`. What is missing is a **message provider binding**.
-`_sendMessage` reverts `SendNotImplemented` and `_quoteMessage` reverts
-`QuoteNotImplemented` by default, so nothing crosses a real bridge yet. What a binding must
-implement is in [`provider-spec.md`](provider-spec.md).
+`ReceiverBase` an `IERC7786Recipient`. Native bindings for LayerZero, CCIP, Hyperlane,
+Wormhole, and OP Stack live under `src/protocols/`, tested against mocks of each provider;
+nothing has crossed a real bridge yet. What a binding must implement is in
+[`provider-spec.md`](provider-spec.md).
 
 **Where the reasoning lives.** Each design decision is argued in the contract that
 implements it. This file says what the pieces are and how they connect; for why any of it

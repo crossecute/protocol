@@ -2,6 +2,12 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -54,6 +60,12 @@ abstract contract ProviderHubSendSpec is Test {
     ///         `MockLzEndpoint.sent(0).dstEid`). This is where the translation is checked.
     function _assertLastSendTargetedConfiguredDestination() internal view virtual;
 
+    /// @notice The quote expected when the provider mock charges `providerFee`. The provider's
+    ///         fee by default; a provider with no native fee (OP Stack) overrides it to zero.
+    function _expectedQuoteFor(uint256 providerFee) internal view virtual returns (uint256) {
+        return providerFee;
+    }
+
     function test_sendResolvesTheConfiguredDestination() public {
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         _assertLastSendTargetedConfiguredDestination();
@@ -62,12 +74,52 @@ abstract contract ProviderHubSendSpec is Test {
     function test_quoteMatchesWhatSendWouldPay() public {
         uint256 fee = 0.02 ether;
         _setProviderFee(fee);
-        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), fee);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), _expectedQuoteFor(fee));
+    }
+
+    /// @dev ERC-7786: a gateway returns zero once the message is sent, and a non-zero id means a
+    ///      further gateway-specific step is required. `TransmitterBase.sendMessage` emits
+    ///      `MessageSent` with zero and returns this value, so a native binding returning its
+    ///      provider's own message id would contradict its own event. The provider's id stays
+    ///      available in the provider's events. Checks a second send too: a provider counter
+    ///      (a nonce or sequence) starts at zero and would pass on the first alone.
+    function test_aCompletedSendReturnsZero() public {
+        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
+        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
     }
 
     function test_sendRevertsForAnUnconfiguredDestination() public {
         vm.expectRevert();
         harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
+    }
+}
+
+/// @title ProviderIdTableSpec
+/// @notice For hubs with a provider id table: what every transmitter reads on each send, through
+///         the same `providerIdOf` it calls.
+abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
+    /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
+    function _configuredProviderId() internal view virtual returns (uint256);
+
+    function test_transmittersReadTheConfiguredIdFromTheHub() public {
+        assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
+        vm.expectRevert(
+            abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
+        );
+        providerIdOf(address(harness), _unconfiguredRecipient());
+    }
+}
+
+/// @title ProviderEvmRecipientSpec
+/// @notice For bindings that deliver to the recipient's address as an EVM address: a recipient
+///         whose address is not 20 bytes is refused rather than truncated into another one.
+abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
+    function test_aNonEvmWidthRecipientIsRefused() public {
+        bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
+        bytes memory recipient =
+            Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
+        vm.expectRevert(abi.encodeWithSelector(ProviderRecipient.UnsupportedRecipient.selector, wide));
+        harness.sendMessagePublic(recipient, "x", new bytes[](0), 0);
     }
 }
 
@@ -110,6 +162,9 @@ abstract contract ProviderReceiveSpec is Test {
     ///         gateway/endpoint/mailbox/router/relayer/messenger entirely. Reverts.
     function _deliverFromWrongCaller() internal virtual;
 
+    /// @notice The address this receiver's initializer granted `GATEWAY_ROLE`.
+    function _gateway() internal view virtual returns (address);
+
     function test_theConfiguredSourceIsAccepted() public {
         vm.expectEmit(false, false, false, true, _receiverUnderTest());
         emit Delivered(0);
@@ -129,5 +184,41 @@ abstract contract ProviderReceiveSpec is Test {
     function test_anythingButTheProvidersOwnGatewayIsRejected() public {
         vm.expectRevert();
         _deliverFromWrongCaller();
+    }
+
+    /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut
+    ///      delivery even where the provider authenticates before this protocol's code runs.
+    function test_aRevokedGatewayCannotDeliver() public {
+        ReceiverBase receiver = ReceiverBase(payable(_receiverUnderTest()));
+        vm.prank(receiver.sourceTransmitter());
+        receiver.revokeGateway(_gateway());
+        vm.expectRevert();
+        _deliverFromConfiguredSource();
+    }
+}
+
+/// @title ProviderSpokeOriginSpec
+/// @notice Every spoke variant (base, zkSync, Tron) of a binding whose provider reports the
+///         origin chain refuses the hub's own address from any chain but home.
+/// @dev LayerZero is not held to this: its per-eid peer refuses the delivery inside OApp.
+///      OP Stack has no origin to report: one messenger connects exactly two chains.
+abstract contract ProviderSpokeOriginSpec is Test {
+    /// @notice Deploys each spoke variant with the same home.
+    function _spokes() internal virtual returns (address[] memory);
+
+    /// @notice The provider's id for a chain that is not home.
+    function _otherOrigin() internal view virtual returns (uint256);
+
+    /// @notice Deliver an empty message to `spoke`, through the provider's own gateway, with the
+    ///         hub's address as sender and `origin` as the reported source chain.
+    function _deliverFromHubOn(address spoke, uint256 origin) internal virtual;
+
+    function test_everySpokeVariantRefusesTheHubFromAnotherOrigin() public {
+        address[] memory spokes = _spokes();
+        assertEq(spokes.length, 3);
+        for (uint256 i; i < spokes.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(ProviderOrigin.UnexpectedOrigin.selector, _otherOrigin()));
+            _deliverFromHubOn(spokes[i], _otherOrigin());
+        }
     }
 }

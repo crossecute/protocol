@@ -4,17 +4,13 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 
 import {Vm} from "forge-std/Vm.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {TransmitterBase, IAccountTransceiver} from
     "src/messaging/outbound/TransmitterBase.sol";
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IERC7786GatewaySource} from
     "src/messaging/IErc7786.sol";
-import {ReceiverBase, ICommitFinalize} from "src/messaging/inbound/ReceiverBase.sol";
+import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -22,30 +18,15 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
-contract MockTransmitter is TransmitterBase, OwnableUpgradeable {
+contract MockTransmitter is OwnableTransmitter {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
     uint256 public sentValue;
-
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
 
     bytes[] public sentAttributes;
     address public sentRefund;
@@ -732,46 +713,7 @@ contract TransportTest is Test {
         return _calls();
     }
 
-    /* ================================ the default ============================== */
-
-    /// @dev A protocol that forgets to implement sending fails loudly on the first
-    ///      message rather than reporting success for a payload that never left.
-    function test_theDefaultSendReverts() public {
-        BareTransmitter bare = _bareAccount();
-
-        vm.prank(owner);
-        vm.expectRevert(OutboundBase.SendNotImplemented.selector);
-        bare.sendMessage(Erc7930.encodeEvm(DEST, address(bare)), Payload.encodeCalls(_calls()), NONE);
-    }
-
-    /// @dev A transmitter with no `_sendMessage`, standing at the address its transceiver
-    ///      derives and already bootstrapped on DEST, so a send reaches the default body
-    ///      rather than stopping at the bootstrap gate. Bootstrap itself never touches
-    ///      `_sendMessage`: it is the transceiver that sends.
-    function _bareAccount() internal returns (BareTransmitter bare) {
-        MockTransceiver t = new MockTransceiver();
-        t.initialize(address(this), address(new BareTransmitter()));
-
-        address at = t.predictCrossAccount(owner, bytes32(0));
-        vm.etch(at, address(new BareTransmitter()).code);
-        bare = BareTransmitter(payable(at));
-        bare.initialize(owner, address(t), bytes32(0));
-
-        vm.prank(owner);
-        bare.bootstrap(DEST, new Call[](0), new bytes[](0));
-    }
-
     /* ================================== quote ================================== */
-
-    /// @dev THE SAME ARGUMENT AS `SendNotImplemented`, in the direction that matters more.
-    ///      A quote that returned zero would be indistinguishable from a free message, and
-    ///      the first thing anyone does with the answer is send exactly that much.
-    function test_theDefaultQuoteReverts() public {
-        BareTransmitter bare = _bareAccount();
-
-        vm.expectRevert(OutboundBase.QuoteNotImplemented.selector);
-        bare.quoteMessage(Erc7930.encodeEvm(DEST, address(bare)), Payload.encodeCalls(_calls()), NONE);
-    }
 
     /// @dev THE QUOTE PRICES THE EXACT BYTES THE SEND PUTS ON THE WIRE. Asserted against
     ///      the payload the send actually recorded, so a quote built from a second,
@@ -1108,32 +1050,6 @@ contract TransportTest is Test {
         calls[0] =
             Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.hit, (1))});
     }
-}
-
-/// @dev No `_sendMessage` override, to exercise the default.
-contract BareTransmitter is TransmitterBase, OwnableUpgradeable {
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
-
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
 }
 
 /// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so an account's

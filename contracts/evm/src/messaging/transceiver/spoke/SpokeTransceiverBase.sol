@@ -159,6 +159,12 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      approved by whoever signs the initialization rather than read out of a deploy
     ///      script afterwards, which is the same guarantee a source literal gave and the only
     ///      one available once the home chain is a choice rather than a constant.
+    /// @notice `_onInbound` from home, for a binding that has already checked the delivery's
+    ///         origin chain (`ProviderOrigin`) and reports the sender as a plain address.
+    function _onHomeInbound(address sender, bytes calldata message) internal {
+        _onInbound(homeRoute(), abi.encodePacked(sender), message);
+    }
+
     function homeRoute() public view returns (bytes memory) {
         return routeFor(homeChainKey);
     }

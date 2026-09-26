@@ -7,9 +7,6 @@ import {OwnableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {Roles} from "src/messaging/Roles.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -17,34 +14,19 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {ICancel, ICommitFinalize} from "src/messaging/inbound/InboundBase.sol";
+import {ICommitFinalize} from "src/messaging/inbound/InboundBase.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
 ///      without a provider behind it.
-contract Transmitter is TransmitterBase, OwnableUpgradeable {
-    function initialize(address owner_, address transceiver_, bytes32 salt_)
-        external
-        initializer
-    {
-        __Ownable_init(owner_);
-        __TransmitterBase_init(owner_, transceiver_, salt_);
-    }
-
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
-    function _checkOwner() internal view override(TransmitterBase, OwnableUpgradeable) {
-        OwnableUpgradeable._checkOwner();
-    }
+contract Transmitter is OwnableTransmitter {
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal

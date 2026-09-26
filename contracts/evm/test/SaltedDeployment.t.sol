@@ -5,20 +5,17 @@ import {Test} from "forge-std/Test.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {ChainRegistry, ProviderDeployment} from "src/registry/ChainRegistry.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
 
 /// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
 contract MiniFactory {
@@ -56,7 +53,7 @@ contract MiniTransmitter {
 }
 
 /// @dev A hub deployed from the SAME initcode as the spoke, so both land on one address.
-contract HubForAccounts is HubTransceiverBase {
+contract HubForAccounts is UnsendableHub {
     function initialize(address owner_, address impl) external initializer {
         __HubTransceiverBase_init(owner_, address(0), new address[](0), impl);
     }
@@ -71,7 +68,7 @@ contract HubForAccounts is HubTransceiverBase {
 
 /// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
 ///      `createReceiver` to call at all.
-contract SaltedTransceiver is SpokeTransceiverBase {
+contract SaltedTransceiver is UnsendableSpoke {
     function initialize(address owner_, address impl) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),

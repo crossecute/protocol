@@ -12,10 +12,11 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
 ///         a chainKey across the protocol, and the provider's own id only at the edge.
@@ -30,6 +31,8 @@ contract DestinationNamingTest is Test {
 
     address msig = address(0x5165);
     bytes32 provider;
+
+    address ENDPOINT = address(new MockLzEndpoint());
 
     /// @dev The route slot holds a chain's ERC-7930 identifier now, not a provider's id
     ///      for it: an ERC-7786 recipient names its own chain, so there is nothing left to
@@ -46,11 +49,11 @@ contract DestinationNamingTest is Test {
                 )
             )
         );
-        address recvImpl = address(new LzReceiver());
+        address recvImpl = address(new LzReceiver(ENDPOINT));
         hub = LzHubTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new LzHubTransceiver()),
+                    address(new LzHubTransceiver(ENDPOINT)),
                     abi.encodeCall(
                         LzHubTransceiver.initialize,
                         (msig, address(0), new address[](0), address(new MockTransmitterImpl()))
@@ -63,7 +66,7 @@ contract DestinationNamingTest is Test {
         spoke = LzSpokeTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new LzSpokeTransceiver()),
+                    address(new LzSpokeTransceiver(ENDPOINT)),
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
@@ -71,7 +74,8 @@ contract DestinationNamingTest is Test {
                             recvImpl,
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(address(hub))
+                            abi.encodePacked(address(hub)),
+                            uint32(1)
                         )
                     )
                 )
@@ -129,15 +133,16 @@ contract DestinationNamingTest is Test {
         LzSpokeTransceiver arbSpoke = LzSpokeTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new LzSpokeTransceiver()),
+                    address(new LzSpokeTransceiver(ENDPOINT)),
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
                         (
                             new address[](0),
-                            address(new LzReceiver()),
+                            address(new LzReceiver(ENDPOINT)),
                             ChainKey.forEvm(42161),
                             Erc7930.encodeEvmChain(42161),
-                            abi.encodePacked(arbHub)
+                            abi.encodePacked(arbHub),
+                            uint32(2)
                         )
                     )
                 )
@@ -347,7 +352,8 @@ contract DestinationNamingTest is Test {
             address(0xBEEF),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xBAD))
+            abi.encodePacked(address(0xBAD)),
+            uint32(1)
         );
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)), "unchanged");
     }
@@ -355,8 +361,10 @@ contract DestinationNamingTest is Test {
     /// @dev A spoke with no counterpart is not a half-configured spoke, it is one that
     ///      should never have been deployed, so it fails at initialization.
     function test_homeTransceiverIsRequiredAtInitialization() public {
-        LzSpokeTransceiver impl = new LzSpokeTransceiver();
-        vm.expectRevert(SpokeTransceiverBase.NoHomeTransceiver.selector);
+        LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
+        // LzSpokeTransceiver checks the 20-byte length itself, ahead of the base contract's
+        // own (weaker) non-empty check, since it casts this value to an address.
+        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
@@ -366,7 +374,8 @@ contract DestinationNamingTest is Test {
                     address(0xBEEF),
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
-                    bytes("")
+                    bytes(""),
+                    uint32(1)
                 )
             )
         );

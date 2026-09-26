@@ -18,8 +18,8 @@ import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol
 import {LzZkSyncSpokeTransceiver, LzTronSpokeTransceiver} from
     "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {UnsendableTransceiver} from "test/Unsendable.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -133,7 +133,7 @@ contract CloneDerivationTest is Test {
 ///      are `eip155`, so nothing about the chain type separates them, and only the spoke
 ///      itself knows. Both seams must be overridden together, and this is what happens when
 ///      they are not.
-contract DivergingFormulaTransceiver is TransceiverBase {
+contract DivergingFormulaTransceiver is UnsendableTransceiver {
     address private _impl;
     /// Stands in for a chain-specific derivation: any answer other than Ethereum's.
     bool public overridePrediction;
@@ -249,12 +249,16 @@ contract MinimalAccount {
 ///      these exercise the initializer a deployment actually calls: a stand-in that
 ///      reimplemented it could pass while the real one was never wired to anything.
 contract ZkSpoke is LzZkSyncSpokeTransceiver {
+    constructor(address _endpoint) LzZkSyncSpokeTransceiver(_endpoint) {}
+
     function create(address o, bytes32 s) external returns (address) {
         return _createCrossAccount(o, s, new Call[](0));
     }
 }
 
 contract TronSpoke is LzTronSpokeTransceiver {
+    constructor(address _endpoint) LzTronSpokeTransceiver(_endpoint) {}
+
     function create(address o, bytes32 s) external returns (address) {
         return _createCrossAccount(o, s, new Call[](0));
     }
@@ -271,28 +275,31 @@ contract DivergentSpokeTest is Test {
     bytes32 constant HASH = keccak256("zksolc-or-tronsolc-artifact");
     bytes32 constant SALT = bytes32(0);
     address constant HUB = address(0xC0FFEE);
+    address ENDPOINT = address(new MockLzEndpoint());
 
     function _zk() internal returns (ZkSpoke s) {
-        s = new ZkSpoke();
+        s = new ZkSpoke(ENDPOINT);
         s.initialize(
             new address[](0),
             address(new MinimalAccount()),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(HUB),
-            HASH
+            HASH,
+            uint32(1)
         );
     }
 
     function _tron() internal returns (TronSpoke s) {
-        s = new TronSpoke();
+        s = new TronSpoke(ENDPOINT);
         s.initialize(
             new address[](0),
             address(new MinimalAccount()),
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(HUB),
-            HASH
+            HASH,
+            uint32(1)
         );
     }
 
@@ -361,14 +368,14 @@ contract DivergentSpokeTest is Test {
         bytes memory hub = abi.encodePacked(HUB);
         bytes32 homeKey = ChainKey.forEvm(1);
 
-        ZkSpoke s = new ZkSpoke();
+        ZkSpoke s = new ZkSpoke(ENDPOINT);
         vm.expectRevert(DivergentSpokeTransceiver.ZeroAccountBytecodeHash.selector);
-        s.initialize(new address[](0), impl, homeKey, homeId, hub, bytes32(0));
+        s.initialize(new address[](0), impl, homeKey, homeId, hub, bytes32(0), uint32(1));
 
         ZkSpoke ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(new address[](0), impl, homeKey, homeId, hub, keccak256("other"));
+        ok.initialize(new address[](0), impl, homeKey, homeId, hub, keccak256("other"), uint32(1));
     }
 }
 
@@ -449,6 +456,7 @@ contract AddressAliasTest is Test {
 contract DivergenceIsNotConfigurableTest is Test {
     address owner = address(0xA11CE);
     bytes32 constant HASH = keccak256("artifact");
+    address ENDPOINT = address(new MockLzEndpoint());
 
     function _args() internal returns (address, bytes32, bytes memory, bytes memory) {
         return (
@@ -461,8 +469,8 @@ contract DivergenceIsNotConfigurableTest is Test {
 
     function test_theParitySpokeAlwaysReportsNoDivergence() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
-        LzSpokeTransceiver s = new LzSpokeTransceiver();
-        s.initialize(new address[](0), impl, k, id, hub);
+        LzSpokeTransceiver s = new LzSpokeTransceiver(ENDPOINT);
+        s.initialize(new address[](0), impl, k, id, hub, uint32(1));
 
         assertFalse(s.addressesDiverge(), "not settable, and false");
         assertEq(
@@ -479,10 +487,10 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_theDivergentSpokesAlwaysReportDivergence() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
 
-        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
-        zk.initialize(new address[](0), impl, k, id, hub, HASH);
-        LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver();
-        tron.initialize(new address[](0), impl, k, id, hub, HASH);
+        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
+        zk.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
+        LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver(ENDPOINT);
+        tron.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
 
         assertTrue(zk.addressesDiverge(), "not settable, and true");
         assertTrue(tron.addressesDiverge());
@@ -500,8 +508,8 @@ contract DivergenceIsNotConfigurableTest is Test {
     ///      acquire it later: the initializer refuses zero, which is the only way in.
     function test_thereIsNoSetterForTheBytecodeHash() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
-        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver();
-        zk.initialize(new address[](0), impl, k, id, hub, HASH);
+        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
+        zk.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
 
         (bool ok,) = address(zk).call(
             abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other"))
