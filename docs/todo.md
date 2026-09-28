@@ -12,6 +12,16 @@ this file is the gap between that design and the tree.
 
 ## 1. Blockers on specific paths
 
+- **A receiver on zkSync or Tron authenticates the wrong transmitter address.** The spoke
+  arms each receiver with `sourceTransmitter = predictCrossAccount(owner, salt)`
+  (`SpokeTransceiverBase._accountInitializer`, and `LzSpokeBase`'s override). On a
+  divergent spoke that is the chain's own formula over the spoke's address, which is the
+  receiver's own address, not the home transmitter's Ethereum CREATE2 address. So every
+  path-A message from the home transmitter would fail `_authenticateSender` there. Found
+  by reading, not by a test: Forge cannot run the divergent formulas, and account creation
+  on a divergent spoke fails closed in this suite. The likely fix is to derive the
+  transmitter from `homeTransceiver()` with Ethereum's formula, with a test that sets a
+  divergent spoke's prediction apart from its deployment.
 - **Funding a diverging spoke, and getting the money there.** The report fires from inside
   the destination's inbound callback, where `msg.value` is zero, so it is paid from the
   spoke's own balance and a dry one reverts the bootstrap with it. That revert is deliberate
@@ -164,6 +174,12 @@ mainnet.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
+- **Removing a chain does not clear its declared provenance.** `ChainRegistry.removeChainKey`
+  deletes the identifier but not `provenanceOf`, and `provenanceFor` returns a declared
+  grade before it looks at the identifier. So a removed chain that had been declared keeps
+  its grade, and a hub that already recorded its counterpart keeps sending there; only an
+  undeclared chain fails closed. Either clear `provenanceOf` on removal or check membership
+  in `provenanceFor`.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 - **What else a self-call may reach.** Today `commit` / `cancel` / `finalize` / `execute`.
