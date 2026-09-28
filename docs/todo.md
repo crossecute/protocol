@@ -12,16 +12,6 @@ this file is the gap between that design and the tree.
 
 ## 1. Blockers on specific paths
 
-- **A receiver on zkSync or Tron authenticates the wrong transmitter address** ([#13](https://github.com/crossecute/protocol/issues/13)). The spoke
-  arms each receiver with `sourceTransmitter = predictCrossAccount(owner, salt)`
-  (`SpokeTransceiverBase._accountInitializer`, and `LzSpokeBase`'s override). On a
-  divergent spoke that is the chain's own formula over the spoke's address, which is the
-  receiver's own address, not the home transmitter's Ethereum CREATE2 address. So every
-  path-A message from the home transmitter would fail `_authenticateSender` there. Found
-  by reading, not by a test: Forge cannot run the divergent formulas, and account creation
-  on a divergent spoke fails closed in this suite. The likely fix is to derive the
-  transmitter from `homeTransceiver()` with Ethereum's formula, with a test that sets a
-  divergent spoke's prediction apart from its deployment.
 - **Funding a diverging spoke, and getting the money there.** The report fires from inside
   the destination's inbound callback, where `msg.value` is zero, so it is paid from the
   spoke's own balance and a dry one reverts the bootstrap with it. That revert is deliberate

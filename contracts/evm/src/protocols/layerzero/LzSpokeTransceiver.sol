@@ -54,7 +54,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ILzReceiverInit.initialize, (predictCrossAccount(owner, salt), calls, homeEid));
+        return abi.encodeCall(ILzReceiverInit.initialize, (homeTransmitterOf(owner, salt), calls, homeEid));
     }
 
     /* ================================== sending =================================== */

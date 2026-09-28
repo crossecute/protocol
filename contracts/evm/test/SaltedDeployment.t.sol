@@ -14,6 +14,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
 
 /// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
@@ -72,7 +74,7 @@ contract SaltedTransceiver is UnsendableSpoke {
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xB0BB1E)),
+            abi.encodePacked(address(this)), // parity: the hub shares this address
             false
         );
     }
@@ -433,5 +435,55 @@ contract SaltedDeploymentTest is Test {
         r.setCreate2Factory(chainKey, address(factory));
         r.setProviderDeployment(provider, salt, initCodeHash, keccak256("receiver"));
         vm.stopPrank();
+    }
+}
+
+/// @dev A spoke on a chain whose address formula differs from Ethereum's, as zkSync's and
+///      Tron's do, emulated on Forge's EVM by transforming the salt in both seams.
+contract DivergingSaltedTransceiver is SaltedTransceiver {
+    function predictCrossAccount(address owner_, bytes32 salt) public view override returns (address) {
+        return Create2.computeAddress(_diverge(accountSalt(owner_, salt)), CROSS_PROXY_INIT_CODE_HASH, address(this));
+    }
+
+    function _deployAccount(bytes32 salt) internal override returns (address) {
+        return Create2.deploy(0, _diverge(salt), type(CrossProxy).creationCode);
+    }
+
+    function _diverge(bytes32 salt) private pure returns (bytes32) {
+        return keccak256(abi.encode(salt, "diverge"));
+    }
+}
+
+/// @dev Where the receiver's address is not its transmitter's, it must authenticate the
+///      transmitter at home rather than itself (#13).
+contract DivergentReceiverAuthTest is Test {
+    address ownerOf = address(0x7A11);
+    DivergingSaltedTransceiver t;
+    ReceiverBase receiver;
+    address homeTransmitter;
+
+    function setUp() public {
+        t = new DivergingSaltedTransceiver();
+        t.initialize(address(this), address(new SaltedReceiver()));
+        receiver = ReceiverBase(payable(t.bootstrapFor(ownerOf)));
+        // The hub deploys with Ethereum's CREATE2; this fixture's hub shares the spoke's address.
+        homeTransmitter =
+            Create2.computeAddress(t.accountSalt(ownerOf, bytes32(0)), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
+    }
+
+    function test_theReceiverAuthenticatesTheHomeTransmitter() public view {
+        assertTrue(address(receiver) != homeTransmitter, "the addresses diverge");
+        assertEq(receiver.sourceTransmitter(), homeTransmitter);
+        assertEq(t.homeTransmitterOf(ownerOf, bytes32(0)), homeTransmitter);
+    }
+
+    function test_aMessageFromTheHomeTransmitterIsAccepted() public {
+        receiver.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, homeTransmitter), Payload.encodeCalls(new Call[](0)));
+    }
+
+    function test_aMessageFromTheReceiversOwnAddressIsRefused() public {
+        bytes memory sender = Erc7930.encodeEvm(1, address(receiver));
+        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, sender));
+        receiver.receiveMessage(bytes32(0), sender, Payload.encodeCalls(new Call[](0)));
     }
 }
