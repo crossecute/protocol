@@ -98,7 +98,7 @@ contract DestinationNamingTest is Test {
     }
 
     /// @dev An account envelope reduces to its chain, so every address on a chain yields
-    ///      one key and `submitTo` accepts either form.
+    ///      one key and `ChainKey.fromIdentifier` accepts either form.
     function test_chainKeyIsStableAcrossAddressesOnAChain() public pure {
         bytes memory acct = Erc7930.encodeEvm(8453, address(0xBEEF));
         assertEq(ChainKey.fromIdentifier(acct), ChainKey.forEvm(8453));

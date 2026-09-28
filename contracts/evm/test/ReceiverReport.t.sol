@@ -190,9 +190,8 @@ contract ReceiverReportTest is Test {
         );
     }
 
-    /// @dev IT NAMES THE PAIR, NOT THE ADDRESS ALONE. `(owner, salt)` is what an account
-    ///      is; the hub derives the registry slot from it plus the origin it already
-    ///      authenticated, which is why no request id is needed.
+    /// @dev The report names `(owner, salt)`, not the address alone: the hub derives the
+    ///      account from it plus the authenticated origin, so no request id is needed.
     function test_theReportCarriesThePairTheHubKeysOn() public {
         ReportingSpoke s = _spoke(true);
 

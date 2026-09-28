@@ -48,8 +48,7 @@ contract MockReceiver is ReceiverBase {
     }
 }
 
-/// @dev A stand-in transmitter that answers `owner()`, which is how `createReceiver`
-///      identifies who may stand a receiver up.
+/// @dev A stand-in transmitter that answers `owner()`.
 contract OwnedTransmitter {
     address public owner;
 

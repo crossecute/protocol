@@ -64,8 +64,7 @@ contract HubForAccounts is UnsendableHub {
     }
 }
 
-/// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
-///      `createReceiver` to call at all.
+/// @dev A spoke, because only a spoke makes receivers; a hub has no `bootstrapInbound`.
 contract SaltedTransceiver is UnsendableSpoke {
     function initialize(address owner_, address impl) external initializer {
         __SpokeTransceiverBase_init(
@@ -91,8 +90,7 @@ contract SaltedTransceiver is UnsendableSpoke {
     }
 }
 
-/// @dev A transmitter that answers `owner()`, which is how `createReceiver` decides who
-///      may stand a receiver up.
+/// @dev A stand-in transmitter that answers `owner()`.
 contract OwnedTransmitter {
     address public owner;
 

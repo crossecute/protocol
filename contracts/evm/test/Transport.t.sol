@@ -291,9 +291,8 @@ contract TransportTest is Test {
         assertTrue(found, "MessageSent is mandatory for a gateway source");
     }
 
-    /// @dev PATH B IS NOT A GATEWAY SOURCE, so it emits its own record, and names the pair
-    ///      rather than hashing it: `(chainKey, owner, salt)` is what an account is, and
-    ///      what the return leg's registry slot is keyed by.
+    /// @dev Path B is not a gateway source, so it emits its own record naming
+    ///      `(chainKey, owner, salt)`, which identifies the account.
     function test_bootstrapEmitsItsOwnRecord() public {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
@@ -831,9 +830,9 @@ contract TransportTest is Test {
         assertFalse(transmitter.isBootstrappedOn(10), "and nothing else moved");
     }
 
-    /// @dev THE GATE IS ON THE CHAINKEY, NOT ON THE SPELLING OF IT. `send(8453)` and
-    ///      `sendTo(<eip155:8453 envelope>)` name one destination, so bootstrapping through
-    ///      either satisfies both.
+    /// @dev The send gate is keyed by chainKey, not by entry point: `bootstrap(8453, ...)` and
+    ///      `bootstrapTo(<eip155:8453>, ...)` name one destination, and either opens
+    ///      `sendMessage` to any recipient there.
     function test_theGateIsKeyedByChainNotByEntryPoint() public {
         vm.prank(owner);
         _sendCalls(DEST, _calls());
@@ -981,7 +980,7 @@ contract DivergingDestinationTest is Test {
     address owner = address(0xA11CE);
     uint256 constant ZKSYNC = 324;
     /// Where the spoke actually created the receiver, reported home under
-    /// `addressesDiverge` and readable from the registry's `receiverSlot`.
+    /// `addressesDiverge` and recorded as the transmitter's counterpart.
     bytes constant DIVERGED = hex"00000000000000000000000000000000deadbeef";
 
     function setUp() public {
