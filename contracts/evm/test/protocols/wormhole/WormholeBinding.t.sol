@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -12,7 +11,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
-import {WormholeSpokeTransceiver, WormholeSpokeBase} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
+import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
 import {
     WormholeZkSyncSpokeTransceiver,
     WormholeTronSpokeTransceiver
@@ -33,7 +32,8 @@ import {
     ProviderFeeSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransceiverInboundSpec,
+    ProviderHomeIdSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
@@ -416,7 +416,7 @@ contract WormholeReceiveTest is ProviderWideSenderSpec {
     }
 }
 
-contract WormholeTransceiverReceiveTest is Test {
+contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
     MockWormholeCore core;
     WormholeSpokeTransceiver spoke;
     WormholeHubTransceiver hub;
@@ -465,10 +465,9 @@ contract WormholeTransceiverReceiveTest is Test {
         assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), address(core)));
     }
 
-    function test_spokeRejectsZeroHomeWormholeChain() public {
-        address impl = address(new WormholeSpokeTransceiver(address(core), address(0), address(0)));
-        vm.expectRevert(WormholeSpokeBase.ZeroHomeWormholeChain.selector);
-        new ERC1967Proxy(impl, _spokeInit(0));
+    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
+        return
+            (address(new WormholeSpokeTransceiver(address(core), address(0), address(0))), _spokeInit(uint16(homeId)));
     }
 
     function test_spokeRejectsANonHubEmitterFromHome() public {

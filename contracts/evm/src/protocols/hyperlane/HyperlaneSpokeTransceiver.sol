@@ -20,9 +20,6 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint32 public homeDomain;
 
-    /// @dev Zero is `ProviderChainId`'s unset sentinel, mirrored here.
-    error ZeroHomeDomain();
-
     /// @param homeDomain_ Hyperlane's domain for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `mailbox` directly — see
     ///      `HyperlaneHubTransceiver.initialize`.
@@ -35,7 +32,7 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
         bool addressesDiverge_,
         uint32 homeDomain_
     ) internal onlyInitializing {
-        if (homeDomain_ == 0) revert ZeroHomeDomain();
+        ProviderOrigin.requireHomeSet(homeDomain_);
         grantRole(GATEWAY_ROLE, mailbox);
         homeDomain = homeDomain_;
         __SpokeTransceiverBase_init(

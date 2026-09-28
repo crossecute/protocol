@@ -23,9 +23,6 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint16 public homeWormholeChain;
 
-    /// @dev Zero is `ProviderChainId`'s unset sentinel, mirrored here.
-    error ZeroHomeWormholeChain();
-
     /// @param homeWormholeChain_ Wormhole's chain id for the home chain.
     /// @dev Grants `GATEWAY_ROLE` to `coreBridge` directly — see
     ///      `WormholeHubTransceiver.initialize`.
@@ -38,7 +35,7 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
         bool addressesDiverge_,
         uint16 homeWormholeChain_
     ) internal onlyInitializing {
-        if (homeWormholeChain_ == 0) revert ZeroHomeWormholeChain();
+        ProviderOrigin.requireHomeSet(homeWormholeChain_);
         grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(

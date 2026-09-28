@@ -798,6 +798,7 @@ mixins applied only to those, rather than flags:
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
 | `ProviderTransceiverInboundSpec` | all five | C4, C6, C7, C24 (hub and spoke) |
 | `ProviderSpokeOriginSpec` | CCIP, Hyperlane, Wormhole | C5 (spoke) |
+| `ProviderHomeIdSpec` | LayerZero, Hyperlane, Wormhole | A spoke refuses a zero home id |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.

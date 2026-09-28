@@ -504,3 +504,17 @@ abstract contract ProviderSpokeOriginSpec is Test {
         }
     }
 }
+
+/// @title ProviderHomeIdSpec
+/// @notice A spoke refuses a zero home id, which no provider assigns to a live chain.
+/// @dev For every binding whose spoke is homed by a provider-native id (all but OP Stack).
+abstract contract ProviderHomeIdSpec is Test {
+    /// @notice A spoke implementation, and initializer calldata homing it at `homeId`.
+    function _spokeHomedAt(uint256 homeId) internal virtual returns (address impl, bytes memory init);
+
+    function test_aSpokeRefusesAZeroHomeId() public {
+        (address impl, bytes memory init) = _spokeHomedAt(0);
+        vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
+        new ERC1967Proxy(impl, init);
+    }
+}

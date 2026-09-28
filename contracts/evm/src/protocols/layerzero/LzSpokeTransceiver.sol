@@ -8,6 +8,7 @@ import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @notice LayerZero wiring shared by every spoke variant (this file's, and the zkSync/Tron
 ///         ones in `LzDivergentSpokeTransceiver.sol`), which differ only in address derivation.
@@ -19,9 +20,6 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint32 public homeEid;
 
-    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
-    ///      since a spoke's single eid bypasses that mixin entirely).
-    error ZeroHomeEid();
     /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
     ///      silently truncate or pad into the wrong peer.
     error InvalidHomeTransceiverLength();
@@ -38,7 +36,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         bool addressesDiverge_,
         uint32 homeEid_
     ) internal onlyInitializing {
-        if (homeEid_ == 0) revert ZeroHomeEid();
+        ProviderOrigin.requireHomeSet(homeEid_);
         if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         homeEid = homeEid_;
         __OApp_init(address(this)); // delegate = self, R6.4

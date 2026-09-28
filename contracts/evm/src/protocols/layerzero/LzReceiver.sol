@@ -9,6 +9,7 @@ import {
 } from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 
 /// @dev Extends the base two-arg shape with the eid `sourceTransmitter` lives behind, so its
 ///      peer can be set in the same locked initializer call.
@@ -30,10 +31,6 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         revert UseLzInitializer();
     }
 
-    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
-    ///      since a receiver's single eid bypasses that mixin entirely).
-    error ZeroHomeEid();
-
     /// @dev Provider setup before `__ReceiverBase_init`, per its own note (needs to run
     ///      before `_execute`). `setPeer` is written directly to storage, not called: it's
     ///      `onlyOwner` and this contract has no `Ownable` — this initializer is the only
@@ -43,7 +40,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         override
         initializer
     {
-        if (homeEid == 0) revert ZeroHomeEid();
+        ProviderOrigin.requireHomeSet(homeEid);
         __OAppReceiver_init(address(this));
         grantRole(GATEWAY_ROLE, address(endpoint));
         _getOAppCoreStorage().peers[homeEid] = bytes32(uint256(uint160(sourceTransmitter_)));

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -12,7 +11,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {HyperlaneHubTransceiver} from "src/protocols/hyperlane/HyperlaneHubTransceiver.sol";
-import {HyperlaneSpokeTransceiver, HyperlaneSpokeBase} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
+import {HyperlaneSpokeTransceiver} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
 import {
     HyperlaneZkSyncSpokeTransceiver,
     HyperlaneTronSpokeTransceiver
@@ -32,7 +31,8 @@ import {
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransceiverInboundSpec,
+    ProviderHomeIdSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
@@ -262,7 +262,7 @@ contract HyperlaneReceiveTest is ProviderWideSenderSpec {
     }
 }
 
-contract HyperlaneTransceiverReceiveTest is Test {
+contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
     MockHyperlaneMailbox mailbox;
     HyperlaneSpokeTransceiver spoke;
     HyperlaneHubTransceiver hub;
@@ -311,11 +311,9 @@ contract HyperlaneTransceiverReceiveTest is Test {
         assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), address(mailbox)));
     }
 
-    function test_spokeRejectsZeroHomeDomain() public {
-        HyperlaneSpokeTransceiver impl = new HyperlaneSpokeTransceiver(address(mailbox));
-        vm.expectRevert(HyperlaneSpokeBase.ZeroHomeDomain.selector);
-        new ERC1967Proxy(
-            address(impl),
+    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
+        return (
+            address(new HyperlaneSpokeTransceiver(address(mailbox))),
             abi.encodeCall(
                 HyperlaneSpokeTransceiver.initialize,
                 (
@@ -324,7 +322,7 @@ contract HyperlaneTransceiverReceiveTest is Test {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(homeTransceiver),
-                    uint32(0)
+                    uint32(homeId)
                 )
             )
         );
