@@ -5,6 +5,7 @@ import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
+import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @notice Per-user account on a non-home chain.
@@ -38,7 +39,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      below is the only authentication check, matching `_onInbound`'s stated rule with
     ///      no exception to write.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
-        _onMessageFrom(abi.decode(message.sender, (address)), message.data);
+        _onMessageFrom(CcipMessage.sender(message), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
