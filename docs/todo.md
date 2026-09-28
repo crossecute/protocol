@@ -156,7 +156,8 @@ mainnet.
   CREATE2 parity story depends on). Not worth the dependency migration.
 
 - **A LayerZero receiver's or spoke's peer has no setter.** OApp's `setPeer` is `onlyOwner`
-  and these contracts have no `Ownable`, so the peer is written once in the initializer. It
+  and these contracts never initialize an owner, so `LzHomePeer` writes the peer once in the
+  initializer. It
   fell out of that fix rather than being chosen: confirm it is wanted, rather than an
   owner-gated repoint on the account side, before mainnet.
 - **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000

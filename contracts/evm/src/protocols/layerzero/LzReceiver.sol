@@ -9,7 +9,7 @@ import {
 } from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 
 /// @dev Extends the base two-arg shape with the eid `sourceTransmitter` lives behind, so its
 ///      peer can be set in the same locked initializer call.
@@ -20,7 +20,7 @@ interface ILzReceiverInit {
 /// @notice Per-user account on a non-home chain.
 /// @dev Receiver-only: inherits `OAppReceiverUpgradeable`, not the combined `OAppUpgradeable`
 ///      — this contract never sends via LayerZero.
-contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
+contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzReceiverInit {
     constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {}
 
     /// @dev Refused, not just unused: it would skip OApp setup entirely, permanently
@@ -31,20 +31,15 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         revert UseLzInitializer();
     }
 
-    /// @dev Provider setup before `__ReceiverBase_init`, per its own note (needs to run
-    ///      before `_execute`). `setPeer` is written directly to storage, not called: it's
-    ///      `onlyOwner` and this contract has no `Ownable` — this initializer is the only
-    ///      window peer configuration ever gets.
+    /// @dev Provider setup runs before `__ReceiverBase_init`, which executes the payload.
     function initialize(address sourceTransmitter_, Call[] calldata calls, uint32 homeEid)
         external
         override
         initializer
     {
-        ProviderOrigin.requireHomeSet(homeEid);
         __OAppReceiver_init(address(this));
         grantRole(GATEWAY_ROLE, address(endpoint));
-        _getOAppCoreStorage().peers[homeEid] = bytes32(uint256(uint160(sourceTransmitter_)));
-        emit PeerSet(homeEid, bytes32(uint256(uint160(sourceTransmitter_))));
+        _initHomePeer(homeEid, sourceTransmitter_);
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
 
