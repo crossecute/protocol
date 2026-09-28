@@ -303,12 +303,12 @@ mainnet.
   [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
   `accountInitCodeHash` assertion (R8.4), and how many gateways each `Deployment` names, since
   a transceiver's gateways cannot be added to later.
-- **The compliance suite has three gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
-  says where every line is held). C24, no storage-slot collision, is not tested: layouts are
-  fixed by inheritance order and the vendored SDK storage is ERC-7201, and a `forge inspect`
-  layout snapshot in CI would pin it. C21's script-side assertion waits on the deploy
-  scripts. C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's
-  own replay (C29 to C31) is already tested, since the binding owns it.
+- **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
+  says where every line is held). C21's script-side assertion waits on the deploy scripts.
+  C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
+  (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
+  collision inside a single call, so two fields an initializer sets together are covered
+  only by the suites that read them back.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.

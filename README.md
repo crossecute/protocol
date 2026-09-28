@@ -359,7 +359,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 576 passing
+cd contracts/evm && forge test        # 589 passing
 ```
 
 CI runs the same build and tests on every pull request (`.github/workflows/test.yml`).

@@ -794,9 +794,9 @@ mixins applied only to those, rather than flags:
 | `ProviderIdTableSpec` | the four hubs with an id table | C1 (transmitter lookup), C5 (hub), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all five | C9 |
-| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18 |
+| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account) |
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
-| `ProviderTransceiverInboundSpec` | all five | C4, C6, C7 (hub and spoke) |
+| `ProviderTransceiverInboundSpec` | all five | C4, C6, C7, C24 (hub and spoke) |
 | `ProviderSpokeOriginSpec` | CCIP, Hyperlane, Wormhole | C5 (spoke) |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
@@ -827,7 +827,7 @@ below. The column says where each line is held.
 | C21 | `parity_accountInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
 | C22 | `parity_hubAndSpokeProxiesShareInitcode` | The claim that puts hub and spokes at one address. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
-| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Write every base field, read them all back. | Not tested. Layouts are fixed by inheritance order and the vendored SDK storage is ERC-7201 ([todo §4](todo.md#4-infrastructure)) |
+| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
 | C25 | `fees_excessRefundsToTheOwnerNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec`. CCIP keeps an overpayment; OP Stack takes no value |
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
 | C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `CommitFinalize.t.sol` `test_initializingLocksUpgrades` |

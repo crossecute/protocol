@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -352,6 +353,15 @@ abstract contract ProviderReceiveSpec is Test {
         vm.expectRevert();
         _deliverFromConfiguredSource();
     }
+
+    /// @dev C24 for the account, which holds the provider's delivery state beside its own.
+    function test_aDeliveryWritesOverNoOtherField() public {
+        vm.startStateDiffRecording();
+        _deliverFromConfiguredSource();
+        address[] memory accounts = new address[](1);
+        accounts[0] = _receiverUnderTest();
+        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+    }
 }
 
 /// @title ProviderWideSenderSpec
@@ -454,6 +464,18 @@ abstract contract ProviderTransceiverInboundSpec is Test {
     function test_spokeRefusesAnotherSenderFromHome() public {
         vm.expectRevert(_spokeWrongSenderRevert(address(0xBAD)));
         _deliverToSpoke(address(0xBAD));
+    }
+
+    /// @dev C24 over the hub's configuration after `initialize` and a delivery to each side.
+    function test_noWriteLandsOnAnotherField() public {
+        vm.startStateDiffRecording();
+        _wireHub();
+        _deliverToHub(SPOKE_TRANSCEIVER);
+        _deliverToSpoke(HUB_TRANSCEIVER);
+        address[] memory accounts = new address[](2);
+        accounts[0] = _hub();
+        accounts[1] = _spoke();
+        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
     }
 }
 
