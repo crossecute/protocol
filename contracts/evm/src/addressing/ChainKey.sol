@@ -7,23 +7,13 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @notice The protocol's single name for a destination: keccak256 of the canonical
 ///         ERC-7930 chain identifier.
 ///
-/// @dev THE POINT IS THAT NOBODY HAS TO STORE ONE. A chainKey reads like an opaque hash,
-///      which makes it look like configuration a caller must be handed. For eip155 it is
-///      not: the ERC-7930 chain identifier is a pure function of the chain id, so the
-///      source derives the destination's key from the plain `uint256` a signer already
-///      recognizes, and the destination derives its own from `block.chainid`. Neither end
-///      reads storage, and no developer ever passes a hash around.
+/// @dev For eip155 nobody stores one: the source derives the destination's key from its
+///      `uint256` chain id and the destination derives its own from `block.chainid`.
 ///
-/// @dev WHY THIS AND NOT THE RAW CHAIN ID. Naming a destination has to serve two consumers
-///      that want different things:
-///
-///        1. The COMMITMENT DOMAIN, folded into `Commitment.hashCalls` and recomputed by the
-///           receiver on the far side. It must be derivable there with zero configuration.
-///        2. The ROUTING KEY every table in the protocol is indexed by: routes on a
-///           transceiver, counterparts and receiver slots in the registry.
-///
-///      A raw `uint256` chain id serves (1) only on EVM destinations. A chainKey serves both
-///      on every VM, and reduces to a `uint256` for the eip155 case a signer recognizes.
+/// @dev It is both the commitment domain, folded into `Commitment.hashCalls` and recomputed
+///      by the receiver with no configuration, and the key every routing table is indexed by
+///      (routes and counterparts on a transceiver, chain data in the registry). A raw chain
+///      id would serve the first only on EVM destinations.
 library ChainKey {
     /// @notice The key for an eip155 chain. Pure: no storage, no registry, no round trip.
     function forEvm(uint256 chainId) internal pure returns (bytes32) {
