@@ -11,8 +11,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      test-only comparison, because on an EVM destination the registry can resolve
 ///      locally and skip the round trip entirely.
 ///
-/// @dev Scope. Everything here bottoms out in `keccak256` (native), `sha256` (0x02),
-///      or `sha256` (0x02). Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
+/// @dev Scope. Everything here bottoms out in `keccak256` (native) or `sha256` (0x02).
+///      Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
 ///      EraVM does not support that precompile and rejects any unit importing it, which a
 ///      zkSync spoke needs this file for. Sui lives in SuiDerive.sol because BLAKE2b needs the
 ///      0x09 precompile, which forces `view` rather than `pure`.
