@@ -29,7 +29,9 @@ the old fact. Before committing such a change:
    and the old claim's own wording (`SendNotImplemented`, "placeholder", "template", "not
    wired", "three bindings", a test count). Search `docs/`, `README.md`, NatSpec in `src/`
    and `test/`, `script/`, the provenance headers of vendored files under `lib/`,
-   `foundry.toml`, `.gitignore`, and the tracking PR's description.
+   `foundry.toml`, `.gitignore`, and the tracking PR's description. A stale claim need not
+   mention what changed: also grep for what the docs said was true before ("no CI", "the
+   only record", which tests exist).
 2. Open every hit and confirm the target still says what the citation claims. An anchor that
    resolves is not enough: a renumbered section can resolve to text that no longer contains
    the cited item. If the item was deleted, repoint the citation to where the fact now lives
