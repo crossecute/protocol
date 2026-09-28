@@ -100,7 +100,6 @@ contract ChainRegistry is OwnableUpgradeable {
         bytes32 indexed messageProvider, bytes32 salt, bytes32 transceiverInitCodeHash, bytes32 accountInitCodeHash
     );
     event Create2FactorySet(bytes32 indexed chainKey, address factory);
-    event QualifierSet(bytes32 indexed transceiverId, bytes32 qualifierHash);
     event DeriverSet(bytes32 indexed chainKey, address deriver);
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
