@@ -3,26 +3,15 @@ pragma solidity >=0.8.4;
 
 /// @title IErc7786
 /// @notice ERC-7786's two interfaces, vendored: the send surface `TransmitterBase` implements
-///         and the receive surface `ReceiverBase` implements.
+///         and the receive surface `InboundBase` implements.
 ///
-/// @dev COPIED FROM `@openzeppelin/contracts/interfaces/draft-IERC7786.sol` AT v5.5.0, BYTE
-///      FOR BYTE IN THE PARTS THAT MATTER. Only the doc comments and the file name differ.
+/// @dev Copied from `@openzeppelin/contracts/interfaces/draft-IERC7786.sol` at v5.5.0;
+///      only this header and the file name differ. Vendored because the ERC is a draft and
+///      these selectors and the event topic are this protocol's ABI: an upstream change becomes
+///      a reviewed edit rather than a side effect of a dependency bump.
 ///
-/// @dev IT IS VENDORED BECAUSE THE STANDARD IS A DRAFT AND THIS IS OUR ABI. `draft-` in the
-///      upstream name is the whole argument: OpenZeppelin is free to change these signatures
-///      when the ERC changes, and upstream doing so would silently change what this protocol
-///      promises to every integrator, whether an event topic, a selector, or an argument
-///      order, as a side effect of a dependency bump. Holding the copy makes that a
-///      reviewed edit with a diff, on the schedule of the people who have to migrate.
-///
-/// @dev THERE IS NOTHING HERE TO DRIFT SEMANTICALLY. An interface is a set of selectors and
-///      one event topic; it carries no logic that could fall behind upstream's. What it can
-///      do is disagree, which is exactly the thing worth noticing rather than inheriting.
-///
-/// @dev WHAT IT COSTS: a contract taking one of these types from OpenZeppelin and one from
-///      here has two distinct types with the same shape, and Solidity will not convert
-///      between them. Integrators SHOULD import from here, and a binding whose SDK hands back
-///      OpenZeppelin's variant casts through the address.
+/// @dev OpenZeppelin's types and these are distinct to Solidity. Integrators import from
+///      here; a binding whose SDK returns OpenZeppelin's variant casts through the address.
 
 /// @dev Interface for ERC-7786 source gateways.
 interface IERC7786GatewaySource {

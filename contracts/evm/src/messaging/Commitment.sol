@@ -7,47 +7,37 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 
 /// @notice The hash a destination computes its commitments with.
 ///
-/// @dev THE FOLD IS FIXED; ONLY THE PRIMITIVE VARIES. This is a deliberate narrowing, and
-///      the cost is worth stating. A fully VM-native commitment would be TON's cell hash or
-///      Starknet's `poseidon_hash_span` over a felt array. Neither is a byte-oriented fold,
-///      and neither could the hub reproduce to show a signer what they are approving.
-///      Holding the fold fixed keeps both sides able to compute one value. The price is
-///      that a non-EVM receiver implements a byte fold rather than its idiomatic digest.
+/// @dev The fold is fixed and only the primitive varies, so the hub can reproduce any
+///      destination's commitment for a signer. The cost is that a non-EVM receiver implements
+///      a byte fold rather than its native digest (TON's cell hash, Starknet's
+///      `poseidon_hash_span`).
 ///
-/// @dev keccak256 IS THE ONLY ONE AN EVM RECEIVER EVER USES. The rest exist for the source
-///      side, where the hub builds a commitment a *different* VM will recompute.
+/// @dev An EVM receiver only ever uses keccak256; the others are for the hub building a
+///      commitment another VM will recompute.
 enum Scheme {
     /// EVM. The opcode.
     Keccak256,
     /// TON. `sha256` is an EVM builtin, so this stays computable on both sides.
     Sha256,
-    /// Cardano. EIP-152 precompile 0x09: see `Blake2b256`. This is the member that
-    /// forces every dispatching function to `view` rather than `pure`.
+    /// Cardano. EIP-152 precompile 0x09: see `Blake2b256`. The reason dispatching
+    /// functions are `view` rather than `pure`.
     Blake2b256Scheme,
-    /// Starknet. DECLARED, NOT IMPLEMENTED HERE. Poseidon over the Starknet field needs the
-    /// exact round constants and MDS matrix, and one wrong constant produces a silently
-    /// wrong digest, so it is not written from memory. Until it is ported and checked
-    /// against `test/vectors/starknet.json`, a Starknet commitment is computed off-chain
-    /// and carried in an element that calls that receiver's own `commit`.
+    /// Starknet. Declared, not implemented: Poseidon needs the exact round constants and MDS
+    /// matrix, checked against vectors (`docs/todo.md` §1). Until then a Starknet commitment
+    /// is computed off-chain and carried in an element calling that receiver's `commit`.
     Poseidon
 }
 
 /// @title Commitment
 /// @notice The commitment over a call array, bound to exactly one destination.
 ///
-/// @dev THE DOMAIN IS A CHAINKEY, NOT A CHAIN ID. Receivers sit at deterministic addresses
-///      across chains, which is precisely where a cross-chain replay works, so the domain
-///      has to be folded in. It is `ChainKey` rather than `block.chainid` because the
-///      destination is not always an EVM chain: a Sui or Solana receiver has no `uint256`
-///      chain id, but every chain has an ERC-7930 identifier. The EVM case still derives it
-///      from `block.chainid`, so nothing on the destination has to be configured.
+/// @dev Seeded with the destination's chainKey, since accounts share addresses across chains
+///      and a commitment must not replay between them. A chainKey rather than a chain id
+///      because non-EVM chains have none; on the EVM it still derives from `block.chainid`.
 ///
-/// @dev IT IS DEFINED OVER OPAQUE ELEMENTS, WHICH IS WHAT KEEPS IT PORTABLE. The fold never
-///      looks inside an element, so nothing here needs to understand a Solana instruction or
-///      a Move entry function and there is no Borsh or BCS anywhere in Solidity. The typed
-///      overload is a convenience layered on top, not a second scheme: `Calls.encode`
-///      produces exactly the element the opaque path carries, so both spellings of one
-///      payload produce one hash.
+/// @dev Defined over opaque elements, which it never looks inside, so no VM's call format is
+///      parsed in Solidity. The typed overloads produce the same hash, since `Calls.encode`
+///      yields exactly the opaque element.
 library Commitment {
     /// @dev The scheme has no implementation on this chain, so a commitment for it must be
     ///      computed off-chain and approved as a digest.
@@ -59,14 +49,9 @@ library Commitment {
     }
 
     /// @notice The same value, from typed calls.
-    ///
-    /// @dev Equal to the opaque overload applied to `Calls.encodeAll(calls)`, element for
-    ///      element, and asserted in `test/PayloadEncoding.t.sol` rather than assumed: if the
-    ///      two ever diverge, a payload approved in one form silently stops matching in the
-    ///      other, and it fails only on a live message.
-    ///
-    /// @dev EVERY ARRAY PARAMETER HERE IS `memory`, because Solidity will not overload on
-    ///      data location and a `calldata` twin would need a different name.
+    /// @dev Equal to the opaque overload over `Calls.encodeAll(calls)`, asserted in
+    ///      `test/PayloadEncoding.t.sol`. Array parameters are `memory` throughout because
+    ///      Solidity will not overload on data location.
     function hashCalls(bytes32 destinationChainKey, Call[] memory calls) internal pure returns (bytes32 hashed) {
         hashed = _seed(destinationChainKey);
         uint256 len = calls.length;
@@ -75,11 +60,10 @@ library Commitment {
         }
     }
 
-    /// @notice CANONICAL. The hash a receiver on `destinationChainKey` requires, over the
+    /// @notice Canonical: the hash a receiver on `destinationChainKey` requires, over the
     ///         portable opaque elements.
-    /// @dev The source calls this with the DESTINATION's key. Passing the local one
-    ///      produces a commitment nothing on the far side can ever match, and it fails
-    ///      only on a live message.
+    /// @dev The source passes the destination's key; the local one yields a commitment the
+    ///      far side never matches.
     function hashCalls(bytes32 destinationChainKey, bytes[] memory elements) internal pure returns (bytes32 hashed) {
         hashed = _seed(destinationChainKey);
         uint256 len = elements.length;
@@ -95,16 +79,8 @@ library Commitment {
     /* ============================ non-EVM destinations =========================== */
 
     /// @notice The commitment a destination using `scheme` will require.
-    ///
-    /// @dev FOR THE SOURCE SIDE ONLY. An EVM receiver always uses keccak256, so the
-    ///      overloads above are what it calls and they stay `pure`. This exists because the
-    ///      hub builds commitments for chains that hash differently, and building one with
-    ///      the wrong scheme fails only on a live message.
-    ///
-    /// @dev `view`, NOT `pure`, FOR ONE MEMBER: `Blake2b256` reaches the EIP-152 precompile
-    ///      through `staticcall`, which Solidity forbids inside `pure`. `IVmDeriver` already
-    ///      pays the same tax. It costs nothing where it matters, since these are read
-    ///      through `eth_call` when a signer checks a payload.
+    /// @dev Source side only; EVM receivers use the keccak overloads above. `view` for
+    ///      `Blake2b256`'s precompile `staticcall`, read through `eth_call` by a signer.
     function hashCalls(Scheme scheme, bytes32 destinationChainKey, bytes[] memory elements)
         internal
         view
@@ -118,15 +94,8 @@ library Commitment {
     }
 
     /// @notice The same value, from typed calls.
-    ///
-    /// @dev IT DELEGATES RATHER THAN REPEATING THE FOLD. `Calls.encodeAll` produces exactly
-    ///      the elements the overload above folds. "Both spellings of one payload produce one
-    ///      hash" is therefore structural, not a property two copies of a loop happen to
-    ///      share.
-    ///
-    /// @dev THE ARRAY COPY IS FREE WHERE THIS RUNS. The keccak overloads avoid materializing
-    ///      elements because they are on the gas-paying `finalize` path. A
-    ///      scheme-parameterized commitment is only ever read through `eth_call`.
+    /// @dev Delegates to the opaque overload over `Calls.encodeAll`, so both spellings share
+    ///      one fold.
     function hashCalls(Scheme scheme, bytes32 destinationChainKey, Call[] memory calls)
         internal
         view
@@ -135,19 +104,15 @@ library Commitment {
         return hashCalls(scheme, destinationChainKey, Calls.encodeAll(calls));
     }
 
-    /// @notice Whether this chain can compute `scheme` at all.
-    /// @dev Lets a caller check before building a payload, rather than discovering it in a
-    ///      revert. False only for `Poseidon` today.
+    /// @notice Whether this chain can compute `scheme` at all. False only for `Poseidon`.
     function isComputable(Scheme scheme) internal pure returns (bool) {
         return scheme != Scheme.Poseidon;
     }
 
     /* ================================== internals =============================== */
 
-    /// @dev An empty array hashes to the seed alone, which is non-zero and therefore a
-    ///      valid commitment. `execute` refuses an empty payload because nothing else
-    ///      establishes intent there; `finalize` does not, because the commitment is the
-    ///      intent.
+    /// @dev An empty array hashes to the seed alone, which is non-zero and so a valid
+    ///      commitment: `finalize` accepts one, `execute` refuses one (`docs/todo.md` §3).
     function _seed(bytes32 destinationChainKey) private pure returns (bytes32) {
         return keccak256(abi.encode(destinationChainKey));
     }
@@ -156,9 +121,8 @@ library Commitment {
         return keccak256(abi.encodePacked(acc, elementHash));
     }
 
-    /// @dev A scheme with no implementation here reverts rather than falling back. A
-    ///      silent fallback to keccak256 would hand back a well-formed commitment that the
-    ///      destination can never match, and it would fail only on a live message.
+    /// @dev Reverts for a scheme with no implementation here rather than falling back to a
+    ///      keccak256 digest the destination could never match.
     function _hash(Scheme scheme, bytes memory data) private view returns (bytes32) {
         if (scheme == Scheme.Keccak256) return keccak256(data);
         if (scheme == Scheme.Sha256) return sha256(data);

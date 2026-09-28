@@ -7,31 +7,16 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @title Payload
 /// @notice The wire encoding of a call array, in the one shape its destination speaks.
 ///
-/// @dev THE FORM FOLLOWS THE DESTINATION, NOT THE MESSAGE. An EVM destination always
-///      receives `Call[]`; every other VM always receives opaque `bytes[]`, whose elements
-///      are that chain's own call encoding. The choice is a property of where the message
-///      is going, which the sender knows before it builds anything and the receiver knows
-///      at compile time.
+/// @dev An EVM destination receives `Call[]`; every other VM receives opaque `bytes[]` in its
+///      own call encoding. The sender picks by destination and the receiver decodes the one
+///      shape its VM implies, so there is no form tag.
 ///
-/// @dev WHICH IS WHY THERE IS NO FORM TAG. The sender picks by destination and the
-///      receiver decodes the single shape its own VM implies, so a tag would carry a value
-///      both sides already hold. That is exactly the field `Envelope` refuses to declare,
-///      for the same reason: every channel carries one shape, so nothing needs to say
-///      which.
+/// @dev That relies on no path sending opaque elements to an EVM receiver, not on
+///      `abi.decode` rejecting the wrong shape. A path that could (a transmitter on a spoke, a
+///      destination accepting both) needs the tag back.
 ///
-///      That is a STRUCTURAL guarantee rather than a decoder one, and the distinction
-///      matters. `abi.decode` of the wrong shape happens to revert for these two layouts,
-///      but that is a property of how they collide, not a promise the ABI decoder makes.
-///      What actually prevents a misread is that no path exists which sends opaque
-///      elements to an EVM receiver. If one is ever added (a transmitter running on a
-///      spoke, a destination that accepts both), the tag has to come back, because at that
-///      point the direction stops determining the shape. This comment is the tripwire.
-///
-/// @dev THE COMMITMENT IS UNAFFECTED EITHER WAY. `Commitment` folds `keccak256(element)`
-///      one element at a time and never sees the array framing, and `Calls.encode` produces
-///      exactly the element the opaque form carries. So the two encodings of one payload
-///      commit to one hash, an approval computed over portable `bytes[]` is discharged by
-///      the typed array, and the wire format can change without invalidating a commitment.
+/// @dev Both forms of one payload commit to one hash: `Commitment` folds per-element hashes
+///      and `Calls.encode` produces exactly the opaque element.
 library Payload {
     /* ============================== EVM destinations ============================ */
 
@@ -40,10 +25,8 @@ library Payload {
         return abi.encode(calls);
     }
 
-    /// @notice Decode a payload that arrived on an EVM chain.
-    /// @dev Reverts on anything that is not `Call[]`, which is the correct outcome here:
-    ///      an element this receiver cannot decode is one it cannot execute, and the
-    ///      commitment approves the array as a unit.
+    /// @notice Decode a payload that arrived on an EVM chain. Reverts on anything that is not
+    ///         `Call[]`.
     function decodeCalls(bytes calldata wire) internal pure returns (Call[] memory) {
         return abi.decode(wire, (Call[]));
     }
@@ -51,9 +34,9 @@ library Payload {
     /* ============================ non-EVM destinations ========================== */
 
     /// @notice Wire bytes for a destination whose calls this chain cannot express.
-    /// @dev The elements are that VM's own call encoding: a Solana instruction with its
-    ///      account list, a Starknet `(to, selector, calldata)`, an Aptos entry function.
-    ///      Nothing here parses one, and nothing here needs to.
+    /// @dev Each element is that VM's own call encoding (a Solana instruction with its
+    ///      accounts, a Starknet `(to, selector, calldata)`, an Aptos entry function), unparsed
+    ///      here.
     function encodeElements(bytes[] memory elements) internal pure returns (bytes memory) {
         return abi.encode(elements);
     }
@@ -65,13 +48,8 @@ library Payload {
     /* ================================ selection ================================= */
 
     /// @notice Whether a destination takes the typed form.
-    ///
-    /// @dev IT TAKES THE IDENTIFIER, NOT THE CHAINKEY, because a chainKey is
-    ///      `keccak256(identifier)` and a hash cannot be asked what chain type it came from.
-    ///      Anywhere the form still has to be chosen, the envelope is in hand:
-    ///      `TransmitterBase.bootstrap(uint256, ...)` is `eip155` by construction and
-    ///      `bootstrapTo(bytes, ...)` has the envelope as its argument. `sendMessage` does
-    ///      not choose, because its payload arrives already built.
+    /// @dev Takes the identifier, not the chainKey, which is a hash and cannot be asked its
+    ///      chain type.
     function isTypedDestination(bytes memory chainIdentifier) internal pure returns (bool) {
         return Erc7930.parseStrict(chainIdentifier).chainType == Erc7930.CT_EIP155;
     }
