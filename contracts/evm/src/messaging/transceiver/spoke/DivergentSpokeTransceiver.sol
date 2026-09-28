@@ -34,7 +34,7 @@ abstract contract DivergentSpokeTransceiver is SpokeTransceiverBase {
     error ZeroAccountBytecodeHash();
 
     /// @param accountBytecodeHash_ For zkSync, `AddressDerive.hashL2Bytecode` over the
-    ///        zksolc artifact for `CrossProxy`. For Tron, `keccak256` of TRON-solc's
+    ///        zksolc artifact for `CrossProxy`. For Tron, `keccak256` of Tron-solc's
     ///        `CrossProxy` initcode. Getting it wrong does not misdeliver: every account
     ///        creation on this spoke reverts `AccountAddressMismatch` until it is right.
     function __DivergentSpoke_init(bytes32 accountBytecodeHash_) internal onlyInitializing {
@@ -45,7 +45,7 @@ abstract contract DivergentSpokeTransceiver is SpokeTransceiverBase {
 }
 
 /// @title ZkSyncSpokeTransceiver
-/// @notice A spoke on zkSync Era, which diverges in BOTH seams.
+/// @notice A spoke on zkSync Era, which diverges in both seams.
 ///
 /// @dev The address: `zksyncCreate2` folds `keccak256("zksyncCreate2")`, the padded sender,
 ///      the salt, the EraVM versioned bytecode hash, and the constructor-input hash, which is

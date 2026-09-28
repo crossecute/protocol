@@ -17,7 +17,7 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 enum Scheme {
     /// EVM. The opcode.
     Keccak256,
-    /// TON. `sha256` is an EVM builtin, so this stays computable on both sides.
+    /// Ton. `sha256` is an EVM builtin, so this stays computable on both sides.
     Sha256,
     /// Cardano. EIP-152 precompile 0x09: see `Blake2b256`. The reason dispatching
     /// functions are `view` rather than `pure`.
@@ -43,7 +43,7 @@ library Commitment {
     ///      computed off-chain and approved as a digest.
     error SchemeNotComputable(Scheme scheme);
 
-    /// @notice The hash a receiver on THIS chain will require, for typed calls.
+    /// @notice The hash a receiver on this chain will require, for typed calls.
     function hashCalls(Call[] memory calls) internal view returns (bytes32) {
         return hashCalls(ChainKey.local(), calls);
     }

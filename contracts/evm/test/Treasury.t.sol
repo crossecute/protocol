@@ -68,7 +68,7 @@ contract TreasuryTest is Test {
         vm.deal(address(treasury), 10 ether);
     }
 
-    /// @dev THE HUB FORWARDS A BOOTSTRAP FEE WITH A PLAIN VALUE TRANSFER, so a treasury that
+    /// @dev The hub forwards a bootstrap fee with a plain value transfer, so a treasury that
     ///      could not receive one would revert every bootstrap that charges a fee.
     function test_itAcceptsAPlainTransfer() public {
         (bool ok,) = address(treasury).call{value: 1 ether}("");
@@ -105,7 +105,7 @@ contract TreasuryTest is Test {
         assertEq(t.balanceOf(address(treasury)), 60);
     }
 
-    /// @dev THE REASON FOR `SafeERC20`. A bare `transfer` on a token that returns nothing
+    /// @dev The reason for `SafeERC20`. A bare `transfer` on a token that returns nothing
     ///      reverts on a call that succeeded, which would strand exactly the tokens most
     ///      likely to be in a treasury.
     function test_aTokenThatReturnsNothingStillMoves() public {
@@ -132,7 +132,7 @@ contract TreasuryTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev A RECIPIENT THAT REVERTS CARRIES ITS REASON OUT, rather than arriving as a bare
+    /// @dev A recipient that reverts carries its reason out, rather than arriving as a bare
     ///      false that says nothing about which recipient refused or why.
     function test_aFailedNativeTransferReverts() public {
         address rejector = address(new Rejector());

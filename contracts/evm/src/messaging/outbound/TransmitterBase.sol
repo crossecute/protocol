@@ -459,7 +459,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     /* ================================= execute ================================= */
 
-    /// @notice Run a payload on THIS chain, with no bridge and no commitment.
+    /// @notice Run a payload on this chain, with no bridge and no commitment.
     ///
     /// @dev Runs the calls itself: a transmitter and its receivers share one address, so there
     ///      is no receiver at home. Both ends share `Executor`'s loop, policy check, and

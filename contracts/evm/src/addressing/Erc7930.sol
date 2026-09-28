@@ -18,15 +18,15 @@ import {ChainType} from "src/addressing/ChainType.sol";
 ///      address are all the same shape. The envelope carries the length, so no bespoke
 ///      Form/kind discriminant is needed.
 ///
-/// @dev CANONICITY IS THE WHOLE GAME HERE. ERC-7930's own Security Considerations warn
+/// @dev Canonicity is the whole game here. ERC-7930's own Security Considerations warn
 ///      implementers using these as mapping keys to check each CAIP-350 profile for
 ///      non-canonical encodings. Two byte strings that mean the same address but differ
 ///      by one byte hash to different keys: a silent split-brain in any registry.
-///      This library therefore REJECTS non-minimal chain references (`0x0001` for
+///      This library therefore rejects non-minimal chain references (`0x0001` for
 ///      chain 1 is invalid; `0x01` is the only valid form) and rejects trailing bytes.
 ///      Never accept a raw interop blob from a remote caller without `parseStrict`.
 ///
-/// @dev THE RULES ARE PER PROFILE, AND A CHAIN TYPE WITH NO RULE IS ACCEPTED. `chainType`
+/// @dev The rules are per profile, and a chain type with no rule is accepted. `chainType`
 ///      is read as an opaque `uint16` and never checked against `ChainType.sol`, so an
 ///      unallocated value parses and registers. It simply arrives with no canonicity
 ///      condition attached: both `0x00cafe` and `0xcafe` would pass as chain references
@@ -45,13 +45,13 @@ library Erc7930 {
     uint16 internal constant CT_SOLANA = ChainType.SOLANA;
     uint16 internal constant CT_STARKNET = ChainType.STARKNET;
 
-    /// @dev Starknet chain references are the UTF-8 chain ID string, NOT an integer:
+    /// @dev Starknet chain references are the UTF-8 chain ID string, not an integer:
     ///      "SN_MAIN" is 7 bytes, "SN_SEPOLIA" is 10. Do not reuse the eip155 minimal
     ///      big-endian rule here: it would reject every valid Starknet reference.
     bytes internal constant SN_MAIN = hex"534e5f4d41494e"; // "SN_MAIN"
 
     /// @dev Starknet addresses are 32-byte field elements, zero-padded. Unlike eip155,
-    ///      leading zeros are REQUIRED, so minimality must not be enforced on them.
+    ///      leading zeros are required, so minimality must not be enforced on them.
     uint256 internal constant STARKNET_ADDRESS_BYTES = 32;
 
     error BadVersion();
@@ -72,7 +72,7 @@ library Erc7930 {
     /* ================================ encoding ================================ */
 
     /// @notice Build an interoperable address from parts.
-    /// @dev `chainRef` MUST already be minimally encoded per its CAIP-350 profile.
+    /// @dev `chainRef` must already be minimally encoded per its CAIP-350 profile.
     ///      Use `encodeEvm` for eip155 rather than encoding the chain id by hand.
     function encode(uint16 chainType, bytes memory chainRef, bytes memory addr) internal pure returns (bytes memory) {
         if (chainRef.length > 255 || addr.length > 255) revert BadLength();
@@ -81,7 +81,7 @@ library Erc7930 {
     }
 
     /// @notice eip155 interoperable address. ChainReference is the chain id as a
-    ///         MINIMAL big-endian integer: chain 1 -> 0x01, Base (8453) -> 0x2105.
+    ///         Minimal big-endian integer: chain 1 -> 0x01, Base (8453) -> 0x2105.
     function encodeEvm(uint256 chainId, address a) internal pure returns (bytes memory) {
         return encode(CT_EIP155, minimalBigEndian(chainId), abi.encodePacked(a));
     }
@@ -127,7 +127,7 @@ library Erc7930 {
         }
 
         // starknet: the opposite rule. Addresses are fixed-width 32-byte field
-        // elements WITH leading zeros, so width is the canonicity condition here.
+        // elements with leading zeros, so width is the canonicity condition here.
         // The value-range check (< ADDR_BOUND) is not a structural property and lives
         // in StarknetDerive, wired in as a per-chain validator.
         if (io.chainType == CT_STARKNET && aLen != 0) {
@@ -194,14 +194,14 @@ library Erc7930 {
     ///         rule: chain 1 is `0x01`, Base (8453) is `0x2105`, and a leading zero byte
     ///         is invalid.
     ///
-    /// @dev IT LIVES HERE BECAUSE IT IS AN ENCODING RULE, NOT A DERIVATION. Putting it in
+    /// @dev It lives here because it is an encoding rule, not a derivation. Putting it in
     ///      the address-derivation library would make `addressing` import `derivation`
     ///      while every deriver imports `addressing` back: a cycle between the two
     ///      folders over one integer helper. Canonicity is this library's
     ///      responsibility, so the rule that decides it belongs next to `parseStrict`,
     ///      which is what rejects violations of it.
     ///
-    /// @dev `AddressDerive` USES IT TOO, for the RLP nonce in a CREATE derivation. That
+    /// @dev `AddressDerive` uses it too, for the RLP nonce in a CREATE derivation. That
     ///      is a different rule reached by the same encoding, and it had its own private
     ///      copy of this body until the two were merged here. `derivation` imports
     ///      `addressing`, which is the direction this comment always said was open.

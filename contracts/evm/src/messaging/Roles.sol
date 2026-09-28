@@ -25,7 +25,7 @@ abstract contract Roles is AccessControlEnumerableUpgradeable {
     /// @dev Namespaced so a provider SDK's own role of the same name cannot share its members.
     bytes32 public constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
 
-    /// @notice Grant a role. THE ONLY GRANT PATH, AND IT CLOSES WHEN INITIALIZATION DOES.
+    /// @notice Grant a role. The only grant path, and it closes when initialization does.
     ///
     /// @dev `onlyInitializing` replaces OZ's admin gate. No role has an admin, so after arming
     ///      no caller can add a member: not the owner, the msig, the creating transceiver, or a

@@ -4,31 +4,31 @@ pragma solidity ^0.8.20;
 /// @title StarknetDerive
 /// @notice What can and cannot be computed about Starknet from the EVM.
 ///
-/// @dev CONSTANTS ARE SOURCED, NOT RECALLED. All values below come from
+/// @dev Constants are sourced, not recalled. All values below come from
 ///      starkware-libs/cairo-lang:
 ///        - starknet/definitions/constants.py :: L2_ADDRESS_UPPER_BOUND
 ///        - starknet/public/abi.py            :: ADDR_BOUND, MASK_250, starknet_keccak
 ///        - starknet/core/os/contract_address/contract_address.py
 ///
-/// @dev WHAT IS DERIVABLE HERE
+/// @dev What is derivable here
 ///        - `starknetKeccak` / `selector`: masked keccak256. Native opcode, ~free.
 ///          This is how Starknet entry-point selectors are computed, so a payload
-///          targeting a Starknet function CAN commit to its selector on-chain.
+///          targeting a Starknet function can commit to its selector on-chain.
 ///        - Range validation of addresses, class hashes, and felts.
 ///
-/// @dev WHAT IS NOT
+/// @dev What is not
 ///        Contract addresses. The derivation is a Pedersen hash chain:
-///            raw = H(H(H(H(H(0, PREFIX), deployer), salt), classHash), ctorHash), 5)
+///            raw = H(H(H(H(H(0, prefix), deployer), salt), classHash), ctorHash), 5)
 ///            address = raw mod L2_ADDRESS_UPPER_BOUND
-///        where PREFIX is the felt encoding of the ASCII "STARKNET_CONTRACT_ADDRESS"
+///        where prefix is the felt encoding of the ASCII "STARKNET_CONTRACT_ADDRESS"
 ///        and H is Pedersen over the STARK curve.
 ///
 ///        Pedersen is not merely expensive here, it is structurally awkward: it needs
-///        roughly 500 precomputed curve points (~32KB), which exceeds EIP-170 outright,
+///        roughly 500 precomputed curve points (~32kb), which exceeds EIP-170 outright,
 ///        so a real implementation means SSTORE2-chunked tables plus projective EC
 ///        arithmetic over a 252-bit prime, at 1e5-1e6 gas with a silent-failure mode.
 ///
-///        RECOMMENDATION: do not build it. The payoff is upgrading Starknet from
+///        Recommendation: do not build it. The payoff is upgrading Starknet from
 ///        `Attested` to `Derived`, and the address can be recorded from a signed payload
 ///        instead, where the grade states the weaker guarantee rather than hiding it.
 library StarknetDerive {

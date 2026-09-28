@@ -30,9 +30,9 @@ contract Target {
     }
 }
 
-/// @dev Uses the CONCRETE `_execute` (no override), with an openable allowlist.
+/// @dev Uses the concrete `_execute` (no override), with an openable allowlist.
 contract PolicyReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -51,7 +51,7 @@ contract PolicyReceiver is ReceiverBase {
 
 /// @dev A receiver that implements no policy at all, to check the open default.
 contract SilentReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -82,7 +82,7 @@ contract ExecutionTest is Test {
 
     /* ================================ allowlist ================================ */
 
-    /// @dev THE DEFAULT ALLOWS EVERYTHING, AND THAT IS NOT A MISSING CHECK. A receiver is
+    /// @dev The default allows everything, and that is not a missing check. A receiver is
     ///      a full-power account answering to one owner, the same way a Safe is: anything
     ///      that can deliver an authenticated message to it can already make it do
     ///      anything. A `(target, selector)` gate was never what stood between a forged
@@ -98,7 +98,7 @@ contract ExecutionTest is Test {
         assertEq(t.pings(), 1, "no policy is an open policy, not a closed one");
     }
 
-    /// @dev The gate that actually protects a receiver is on the CALLER, and it is
+    /// @dev The gate that actually protects a receiver is on the caller, and it is
     ///      unaffected by the policy being open.
     function test_anOpenPolicyStillGatesTheCaller() public {
         SilentReceiver s = new SilentReceiver();
@@ -150,7 +150,7 @@ contract ExecutionTest is Test {
 
     /* ================================== value ================================== */
 
-    /// @dev The value is INSIDE the committed element, so the approval covers how much
+    /// @dev The value is inside the committed element, so the approval covers how much
     ///      each target receives: a payload cannot be re-priced at execution time.
     function test_valueComesFromTheCommittedElement() public {
         r.allow(address(t), Target.ping.selector);
@@ -187,7 +187,7 @@ contract ExecutionTest is Test {
 
     /* ============================== all or nothing ============================= */
 
-    /// @dev The commitment approves the array as a UNIT, and `finalize` has already
+    /// @dev The commitment approves the array as a unit, and `finalize` has already
     ///      cleared it by the time execution runs, so a partial success would discharge
     ///      an approval that was never satisfied, unrepeatably.
     function test_oneFailureRevertsTheWholeBatch() public {
@@ -211,7 +211,7 @@ contract ExecutionTest is Test {
     }
 
     /// @dev The index and the original reason both survive. The array is approved as a
-    ///      unit, so knowing WHICH element failed is the difference between a diagnosable
+    ///      unit, so knowing which element failed is the difference between a diagnosable
     ///      payload and a rejected one.
     function test_failureCarriesTheIndexAndTheReason() public {
         r.allow(address(t), Target.nope.selector);

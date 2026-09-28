@@ -189,7 +189,7 @@ abstract contract OutboundBase is Roles {
         virtual
         returns (bytes32 sendId);
 
-    /// @notice What `_sendMessage` would cost, in THIS chain's native currency.
+    /// @notice What `_sendMessage` would cost, in this chain's native currency.
     ///
     /// @dev ERC-7786 defines no quote. It is `view` so it can be `eth_call`ed before the send,
     ///      and takes the built `payload` and the send's arguments, since providers price the

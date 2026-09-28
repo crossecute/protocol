@@ -39,7 +39,7 @@ contract Transmitter is OwnableTransmitter {
         return 0;
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -47,7 +47,7 @@ contract Transmitter is OwnableTransmitter {
 }
 
 contract Receiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -62,7 +62,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
     uint256 public sentValue;
     uint256 public sentCount;
 
-    /// @dev Off by default: a report on a parity chain is the case that must NOT happen,
+    /// @dev Off by default: a report on a parity chain is the case that must not happen,
     ///      so making it the default means a test asserting silence cannot pass by
     ///      forgetting to configure something.
     bool public sendReverts;
@@ -85,7 +85,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
 
     error NoBalanceForTheReport();
 
-    /// @dev A PROVIDER THAT CHARGES, so the report is priced rather than handed the whole
+    /// @dev A provider that charges, so the report is priced rather than handed the whole
     ///      balance. `_reportReceiver` quotes this and sends exactly it.
     uint256 public reportFee;
 
@@ -119,7 +119,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
         this.bootstrapInbound(owner, salt, calls);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -145,7 +145,7 @@ contract ReceiverReportTest is Test {
 
     /* ============================== the parity case ============================ */
 
-    /// @dev THE COMMON CASE SENDS NOTHING. On a chain sharing Ethereum's CREATE2 formula
+    /// @dev The common case sends nothing. On a chain sharing Ethereum's CREATE2 formula
     ///      the hub computed this address before the first message ever left, so a report
     ///      would spend a message to restate a derivation it already holds.
     function test_aParityChainReportsNothing() public {
@@ -157,7 +157,7 @@ contract ReceiverReportTest is Test {
         assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0, "but the account exists");
     }
 
-    /// @dev And it would be a DOWNGRADE, not merely waste. A derivation is `Derived`;
+    /// @dev And it would be a downgrade, not merely waste. A derivation is `Derived`;
     ///      anything arriving over a bridge is graded `Attested`, which is strictly less.
     function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
         ReportingSpoke s = _spoke(false);
@@ -170,7 +170,7 @@ contract ReceiverReportTest is Test {
 
     /* ============================ the diverging case =========================== */
 
-    /// @dev WHERE THE HUB CANNOT DERIVE IT, THE SPOKE SAYS SO. One message per account
+    /// @dev Where the hub cannot derive it, the spoke says so. One message per account
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
         ReportingSpoke s = _spoke(true);
@@ -220,7 +220,7 @@ contract ReceiverReportTest is Test {
 
     /* ================================= funding ================================= */
 
-    /// @dev A DRY SPOKE TAKES THE WHOLE BOOTSTRAP DOWN, AND THAT IS THE CORRECT SHAPE.
+    /// @dev A dry spoke takes the whole bootstrap down, and that is the correct shape.
     ///      The send is nested inside a delivery callback where `msg.value` is zero, so it
     ///      is paid from this contract's balance. Swallowing the failure would create an
     ///      account here that the home chain could never address: `CrossProxy` arms
@@ -240,7 +240,7 @@ contract ReceiverReportTest is Test {
 
     /// @notice The report is priced, not handed the balance.
     ///
-    /// @dev IT USED TO SEND `address(this).balance`, which told the provider "take what you
+    /// @dev It used to send `address(this).balance`, which told the provider "take what you
     ///      like" and left a spoke unable to hold a float for anything else. Quoting first
     ///      means the provider charges what it charges and the rest stays put, which is what
     ///      lets one spoke fund many reports.
@@ -255,7 +255,7 @@ contract ReceiverReportTest is Test {
         assertEq(address(s).balance, 5 ether, "and the float is untouched by the accounting");
     }
 
-    /// @dev THE HELPER IS WHAT MAKES THE QUOTE REACHABLE. The payload is built inside a
+    /// @dev The helper is what makes the quote reachable. The payload is built inside a
     ///      delivery callback from the envelope layout, this chain's id, and the address the
     ///      account will land at; without a view producing those exact bytes, anyone funding
     ///      a spoke would be pricing a guess.
@@ -304,7 +304,7 @@ contract ReceiverReportTest is Test {
 
     /* ================================ the flag ================================= */
 
-    /// @dev WRITE-ONCE, LIKE EVERY OTHER HOME VALUE ON A SPOKE. Flipping it later would
+    /// @dev Write-once, like every other home value on a spoke. Flipping it later would
     ///      either start restating derivations the hub holds, or stop reporting addresses
     ///      it cannot derive, and the second is silent.
     function test_theFlagHasNoSetter() public {
@@ -334,7 +334,7 @@ contract ReceiverReportTest is Test {
 /* ========================================================================== */
 
 /// @dev The home side: a real hub, a real registry, and nothing hand-built. Everything
-///      below feeds the spoke's ACTUAL wire bytes into it.
+///      below feeds the spoke's actual wire bytes into it.
 contract Hub is HubTransceiverBase {
     function initialize(address owner_, address treasury_, address transmitterImplementation_) external initializer {
         __HubTransceiverBase_init(owner_, treasury_, new address[](0), transmitterImplementation_);
@@ -352,7 +352,7 @@ contract Hub is HubTransceiverBase {
         return bytes32(0);
     }
 
-    /// @dev Priced per byte, like every real provider, so the surcharge is visibly ON TOP
+    /// @dev Priced per byte, like every real provider, so the surcharge is visibly on top
     ///      of a message price rather than standing in for one.
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
         internal
@@ -369,14 +369,14 @@ contract Hub is HubTransceiverBase {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
-/// @notice The report crossing BOTH halves. Every other test of this path builds the
+/// @notice The report crossing both halves. Every other test of this path builds the
 ///         message by hand on one side or the other, which cannot catch the two sides
 ///         drifting apart. An encoder change on the spoke, and a decoder that still
 ///         expects the old shape, would leave both files green.
@@ -392,7 +392,7 @@ contract ReceiverReportRoundTripTest is Test {
     bytes32 provider;
     bytes32 spokeKey;
 
-    /// @dev A chain the hub CANNOT derive addresses on, because that is the only kind that
+    /// @dev A chain the hub cannot derive addresses on, because that is the only kind that
     ///      may report. It is `eip155` and capped below `Derived`, which is exactly the
     ///      zkSync and Tron shape: nothing about the chain type separates it from Base, and
     ///      the cap is what records that its CREATE2 formula differs.
@@ -405,7 +405,7 @@ contract ReceiverReportRoundTripTest is Test {
         );
 
         hub = new Hub();
-        // The msig owns the hub AND is the treasury it may pay: one address here, two
+        // The msig owns the hub and is the treasury it may pay: one address here, two
         // facts, and the tests below separate them.
         hub.initialize(msig, msig, address(new Transmitter()));
         spoke = new ReportingSpoke();
@@ -423,7 +423,7 @@ contract ReceiverReportRoundTripTest is Test {
         hub.setRoute(spokeKey, Erc7930.encodeEvmChain(SPOKE_CHAIN));
         vm.stopPrank();
 
-        // The account the report is ABOUT. It has to exist and to have been stood up on the
+        // The account the report is about. It has to exist and to have been stood up on the
         // spoke, because that is what gives it a counterpart slot for that chain.
         vm.startPrank(owner);
         account = Transmitter(payable(hub.createTransmitter(SALT)));
@@ -440,9 +440,9 @@ contract ReceiverReportRoundTripTest is Test {
 
     /* ======================== bootstrapped vs reachable ======================== */
 
-    /// @notice REGRESSION: a chain that reports is NOT sendable until it has reported.
+    /// @notice Regression: a chain that reports is not sendable until it has reported.
     ///
-    /// @dev THE GAP THIS CLOSES. `bootstrap` used to record a counterpart at dispatch on every
+    /// @dev The gap this closes. `bootstrap` used to record a counterpart at dispatch on every
     ///      chain, and on a reporting chain that value was a guess: `address(this)`, which is
     ///      exactly what `recipientOn` builds. So a send made before the report landed matched
     ///      the guess, passed the recipient check, and was addressed at an address holding no
@@ -471,7 +471,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
     }
 
-    /// @dev AND A SECOND BOOTSTRAP IS STILL REFUSED IN THE MEANTIME. The dispatch record is
+    /// @dev And a second bootstrap is still refused in the meantime. The dispatch record is
     ///      what prevents that, which is why it had to become a fact of its own rather than
     ///      being read off the counterpart table.
     function test_aSecondBootstrapIsRefusedWhileTheReportIsOutstanding() public {
@@ -484,13 +484,13 @@ contract ReceiverReportRoundTripTest is Test {
 
     /* ===================== what an executed payload may call ==================== */
 
-    /// @notice REGRESSION: a spoke on one chain cannot report an address on another, and the
+    /// @notice Regression: a spoke on one chain cannot report an address on another, and the
     ///         `Call[]` path is not a way around that.
     ///
-    /// @dev THE ESCALATION THIS CLOSES. `onDestinationReceiver` is self-call gated and takes
+    /// @dev The escalation this closes. `onDestinationReceiver` is self-call gated and takes
     ///      its `chainKey` as an argument, which the envelope path fills from
     ///      `_authenticateOrigin`. Once a transceiver executed arrays, an authenticated spoke
-    ///      could send a payload that called it directly with ANY chainKey, pinning an
+    ///      could send a payload that called it directly with any chainKey, pinning an
     ///      account's receiver on a chain it has nothing to do with. That is write-once, and
     ///      so unrecoverable. `test_aChainCannotReportAnAddressOnAnotherChain` covers the
     ///      envelope path and passed throughout; only this covers the way around it.
@@ -527,7 +527,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertFalse(account.isReachable(otherKey), "nothing was recorded, so no chain got to speak for another");
     }
 
-    /// @notice REGRESSION: an executed payload cannot move the transceiver's balance.
+    /// @notice Regression: an executed payload cannot move the transceiver's balance.
     /// @dev A `Call` carries value, so an unconstrained `_execute` let an authenticated
     ///      counterpart send the transceiver's balance anywhere. A hub holds provider refunds
     ///      and a spoke the float that pays for its reports, so there is still a balance to
@@ -546,7 +546,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertEq(address(hub).balance, 5 ether, "and the fee balance is intact");
     }
 
-    /// @dev THE ALLOWLIST IS TWO ENTRIES, NOT ZERO. The payload the deferred path actually
+    /// @dev The allowlist is two entries, not zero. The payload the deferred path actually
     ///      sends still lands.
     function test_anExecutedPayloadMayStillApproveAHash() public {
         Call[] memory calls = new Call[](1);
@@ -559,7 +559,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertTrue(hub.isCommitted(keccak256("deferred")));
     }
 
-    /// @dev THE WHOLE POINT OF THE FILE. The spoke creates an account and puts a report on
+    /// @dev The whole point of the file. The spoke creates an account and puts a report on
     ///      the wire; those exact bytes go into the hub; the account answers with the
     ///      address the spoke actually created. No `Envelope.encode*` in the assertion.
     function test_theSpokesBytesDecodeOnTheHub() public {
@@ -576,7 +576,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertEq(hub.destinationReceiverOn(spokeKey, owner, SALT), abi.encodePacked(created));
     }
 
-    /// @dev AND IT REACHES THE SEND PATH, which is the reason the report moved off the
+    /// @dev And it reaches the send path, which is the reason the report moved off the
     ///      registry. The recorded address is the one `sendMessage` will accept, so a chain
     ///      whose receiver cannot be derived is addressable once its report lands, and was
     ///      not before.
@@ -592,7 +592,7 @@ contract ReceiverReportRoundTripTest is Test {
         account.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev A replayed report is refused by the ACCOUNT now, not by the registry slot.
+    /// @dev A replayed report is refused by the account now, not by the registry slot.
     function test_aReplayedReportIsRefused() public {
         bytes memory produced = _report();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
@@ -601,7 +601,7 @@ contract ReceiverReportRoundTripTest is Test {
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
-    /// @dev AND THERE IS NO OVERRIDE, NOT EVEN THE OWNER'S. An account's peer decides where
+    /// @dev And there is no override, not even the owner's. An account's peer decides where
     ///      a payload lands, so it is the one value the protocol will not let anyone choose
     ///      after the fact. A wrong report is permanent for that destination, which costs
     ///      only the chain whose spoke was already compromised to produce it.
@@ -622,7 +622,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
     }
 
-    /// @dev A CHAIN THE HUB CAN DERIVE MAY NOT REPORT. Its own derivation is `Derived` and a
+    /// @dev A chain the hub can derive may not report. Its own derivation is `Derived` and a
     ///      claim over a bridge is weaker, so accepting one would let a remote chain replace
     ///      a stronger fact with a poorer one. The registry answers which chains may.
     function test_aDerivableChainMayNotReport() public {
@@ -635,7 +635,7 @@ contract ReceiverReportRoundTripTest is Test {
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
-    /// @dev A CHAIN MAY ONLY REPORT ADDRESSES ON ITSELF. An ERC-7930 envelope names its own
+    /// @dev A chain may only report addresses on itself. An ERC-7930 envelope names its own
     ///      chain, and the account is keyed by the origin the hub authenticated; without
     ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
@@ -657,14 +657,14 @@ contract ReceiverReportRoundTripTest is Test {
         vm.expectRevert();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
 
-        // Nothing was recorded, which on a REPORTING chain is the state before the report:
+        // Nothing was recorded, which on a reporting chain is the state before the report:
         // the account is bootstrapped there and not yet reachable.
         assertTrue(account.isBootstrapped(spokeKey));
         assertFalse(account.isReachable(spokeKey));
         assertFalse(account.isReceiverPinned(spokeKey));
     }
 
-    /// @dev ONLY THE ACCOUNT'S OWN TRANSCEIVER MAY REPORT TO IT. The hub is trusted for this
+    /// @dev Only the account's own transceiver may report to it. The hub is trusted for this
     ///      one call because it authenticated the origin; anyone else calling directly is
     ///      not, and the account says so itself rather than relying on the hub being the
     ///      only party that knows the function exists.
@@ -676,7 +676,7 @@ contract ReceiverReportRoundTripTest is Test {
 
 /// @notice The bootstrap fee, which pays for the return leg on the chains that have one.
 ///
-/// @dev IT IS NOT A BRIDGE FOR THE MONEY. The fee accrues on the home chain in the home
+/// @dev It is not a bridge for the money. The fee accrues on the home chain in the home
 ///      currency; the spoke needs the destination's currency on the destination. What it
 ///      buys is that the funding is recovered from the accounts that create the obligation
 ///      rather than subsidised, and the msig moves it across out of band.
@@ -725,7 +725,7 @@ contract BootstrapFeeTest is Test {
         vm.deal(owner, 10 ether);
     }
 
-    /// @dev A PARITY DESTINATION PAYS NOTHING. It sends no report and creates no obligation,
+    /// @dev A parity destination pays nothing. It sends no report and creates no obligation,
     ///      so charging it would tax the common case to fund the rare one.
     function test_aParityDestinationIsNotCharged() public {
         assertEq(hub.bootstrapFee(parityKey), 0);
@@ -734,7 +734,7 @@ contract BootstrapFeeTest is Test {
         assertEq(treasury.balance, 0);
     }
 
-    /// @dev THE FEE MOVES IN THE TRANSACTION THAT CHARGES IT. Nothing accrues on the hub, so
+    /// @dev The fee moves in the transaction that charges it. Nothing accrues on the hub, so
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
@@ -755,7 +755,7 @@ contract BootstrapFeeTest is Test {
         assertEq(msig.balance, FEE);
     }
 
-    /// @dev UNDERPAYING REVERTS RATHER THAN EATING THE PROVIDER'S PAYMENT. The alternative
+    /// @dev Underpaying reverts rather than eating the provider's payment. The alternative
     ///      is a bootstrap that dispatches with a shortfall taken out of the message fee and
     ///      fails on arrival, after the signers have committed.
     function test_underpayingTheFeeReverts() public {
@@ -764,7 +764,7 @@ contract BootstrapFeeTest is Test {
         account.bootstrap{value: FEE - 1}(DIVERGING, new Call[](0), new bytes[](0));
     }
 
-    /// @dev THE QUOTE CARRIES IT, or it is worse than no quote: a caller would fund the send
+    /// @dev The quote carries it, or it is worse than no quote: a caller would fund the send
     ///      exactly and the bootstrap would revert with the signers already committed.
     function test_theQuoteIncludesTheFee() public view {
         uint256 withFee = hub.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
@@ -773,7 +773,7 @@ contract BootstrapFeeTest is Test {
         assertGt(withoutFee, 0, "and the message still costs something");
     }
 
-    /// @dev THE BINDING IS TOLD WHAT IS LEFT, not `msg.value`. Reading `msg.value` would
+    /// @dev The binding is told what is left, not `msg.value`. Reading `msg.value` would
     ///      overpay the provider by the fee, or refund the fee to the sender.
     function test_theBindingSeesTheValueMinusTheFee() public {
         vm.prank(owner);
@@ -786,7 +786,7 @@ contract BootstrapFeeTest is Test {
         hub.setBootstrapFee(divergingKey, 1);
     }
 
-    /// @dev THE TREASURY IS WRITE-ONCE AND THE HUB HAS NO WITHDRAWAL. Together those remove
+    /// @dev The treasury is write-once and the hub has no withdrawal. Together those remove
     ///      the operation a compromised owner would have reached for: there is no accrued
     ///      balance, no destination to name, and no setter to repoint.
     function test_thereIsNoWithdrawalAndNoWayToRepointTheTreasury() public {
@@ -799,8 +799,8 @@ contract BootstrapFeeTest is Test {
         assertFalse(set);
     }
 
-    /// @dev A REVERTING TREASURY FAILS THE BOOTSTRAP RATHER THAN SILENTLY UNDER-PAYING THE
-    ///      PROVIDER. The fee is taken off the top, so a payment that did not happen would
+    /// @dev A reverting treasury fails the bootstrap rather than silently under-paying the
+    ///      Provider. The fee is taken off the top, so a payment that did not happen would
     ///      otherwise leave the message dispatched with the shortfall coming out of it.
     function test_aTreasuryThatRefusesPaymentFailsTheBootstrap() public {
         Hub h = new Hub();

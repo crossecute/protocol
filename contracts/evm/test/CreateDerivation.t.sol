@@ -19,14 +19,14 @@ contract CreateHarness {
 /// @notice Covers `AddressDerive.create`, and specifically the RLP nonce encoding, which
 ///         had no test of any kind.
 ///
-/// @dev THE UNTESTED BRANCH WAS THE INTERESTING ONE. `create3` is the only production
+/// @dev The untested branch was the interesting one. `create3` is the only production
 ///      caller and it passes a hardcoded nonce of 1, so the `nonce <= 0x7f` arm was the
 ///      only one anything exercised. The arm above it is the one that reaches for a
 ///      minimal big-endian encoder, which is exactly the code that was merged with
 ///      `Erc7930.minimalBigEndian` rather than kept as a private second copy: an
 ///      unverified merge of two byte-identical bodies is still an unverified merge.
 ///
-/// @dev THE EXPECTED VALUES ARE NOT COMPUTED HERE. They come from `cast compute-address`,
+/// @dev The expected values are not computed here. They come from `cast compute-address`,
 ///      an independent implementation in another language, so this asserts agreement with
 ///      Ethereum rather than agreement with itself.
 contract CreateDerivationTest is Test {
@@ -45,7 +45,7 @@ contract CreateDerivationTest is Test {
         assertEq(h.create(DEPLOYER, 127), 0x06d9a77f5E4b311Bae8D559DB9CDB4dF94104aA0, "127");
     }
 
-    /// @dev THE MERGED ENCODER'S ARM. Every nonce here is length-prefixed and encoded
+    /// @dev The merged encoder's arm. Every nonce here is length-prefixed and encoded
     ///      through `Erc7930.minimalBigEndian`, across one, two, three, and four bytes.
     function test_longNoncesUseTheSharedEncoder() public view {
         assertEq(h.create(DEPLOYER, 128), 0x08e190dcB7b73F5fcDAbb43e102215c83659A76D, "128");

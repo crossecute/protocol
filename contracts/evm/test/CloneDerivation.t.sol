@@ -29,7 +29,7 @@ contract Impl {
     }
 }
 
-/// @notice Predicting a RECEIVER address on a destination chain. Receivers are EIP-1167
+/// @notice Predicting a receiver address on a destination chain. Receivers are EIP-1167
 ///         clones, so this is what closes the gap between "we know where the transceiver
 ///         is" and "we know where the receiver will be".
 contract CloneDerivationTest is Test {
@@ -41,7 +41,7 @@ contract CloneDerivationTest is Test {
         impl = new Impl();
     }
 
-    /// @dev THE LOAD-BEARING CHECK. The 55-byte EIP-1167 layout is hardcoded in
+    /// @dev The load-bearing check. The 55-byte EIP-1167 layout is hardcoded in
     ///      `AddressDerive.cloneInitCodeHash`. If OpenZeppelin's proxy bytecode ever differs
     ///      from it (including a future optimized variant) every predicted receiver
     ///      address is silently wrong. So it is checked against OZ, not against itself.
@@ -135,7 +135,7 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
     function predictCrossAccount(address owner, bytes32 salt) public view override returns (address) {
         if (!overridePrediction) return super.predictCrossAccount(owner, salt);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
-        // Tron's prefix. `_deployAccount` is deliberately NOT overridden to match.
+        // Tron's prefix. `_deployAccount` is deliberately not overridden to match.
         return address(uint160(uint256(keccak256(abi.encode("other", owner, salt)))));
     }
 
@@ -164,7 +164,7 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         return bytes32(0);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -188,7 +188,7 @@ contract DivergingFormulaTest is Test {
         assertTrue(predicted.code.length != 0, "armed");
     }
 
-    /// @dev OVERRIDING ONE SEAM AND NOT THE OTHER IS CAUGHT BY NAME. Before the guard this
+    /// @dev Overriding one seam and not the other is caught by name. Before the guard this
     ///      reverted anyway, but only because arming a codeless address trips Solidity's
     ///      `extcodesize` check, which carries no reason data at all.
     function test_aHalfOverriddenDerivationIsRefusedByName() public {
@@ -225,7 +225,7 @@ contract MinimalAccount {
     function initialize() external {}
 }
 
-/// @dev THE SHIPPED CONTRACTS, with one function added. Everything about initialization,
+/// @dev The shipped contracts, with one function added. Everything about initialization,
 ///      the divergence flag and the bytecode hash is inherited rather than restated, so
 ///      these exercise the initializer a deployment actually calls: a stand-in that
 ///      reimplemented it could pass while the real one was never wired to anything.
@@ -245,8 +245,8 @@ contract TronSpoke is LzTronSpokeTransceiver {
     }
 }
 
-/// @dev What this suite CAN establish about a diverging spoke, running on an Ethereum EVM:
-///      that each override reproduces `AddressDerive`'s formula exactly, that it does NOT
+/// @dev What this suite can establish about a diverging spoke, running on an Ethereum EVM:
+///      that each override reproduces `AddressDerive`'s formula exactly, that it does not
 ///      reproduce Ethereum's, and that the guard refuses rather than arming nothing. What
 ///      it cannot establish is that the target chain's own deployer agrees, which is an
 ///      on-chain check against Era and Shasta.
@@ -310,7 +310,7 @@ contract DivergentSpokeTest is Test {
         assertTrue(z.predictCrossAccount(owner, SALT) != t.predictCrossAccount(owner, SALT), "and from each other");
     }
 
-    /// @dev ON AN ETHEREUM EVM BOTH FAIL CLOSED, which is the property that makes shipping
+    /// @dev On an Ethereum EVM both fail closed, which is the property that makes shipping
     ///      them before the on-chain check safe. The deployer here uses Ethereum's formula,
     ///      the prediction does not, and the guard names both halves.
     function test_bothFailClosedOnAnEthereumEvm() public {
@@ -325,8 +325,8 @@ contract DivergentSpokeTest is Test {
         z.create(owner, SALT);
     }
 
-    /// @dev EVERY ARGUMENT IS BUILT BEFORE THE CHEATCODE. `vm.expectRevert` applies to the
-    ///      NEXT CALL, and `new MinimalAccount()` is a call: left inline it consumes the
+    /// @dev Every argument is built before the cheatcode. `vm.expectRevert` applies to the
+    ///      next call, and `new MinimalAccount()` is a call: left inline it consumes the
     ///      expectation and the test fails on the wrong line. The same trap catches
     ///      `vm.prank`, and it is silent whenever the pranked call happens to succeed.
     function test_theBytecodeHashIsWriteOnceAndNonZero() public {
@@ -349,7 +349,7 @@ contract DivergentSpokeTest is Test {
 /// @notice L1 -> L2 sender aliasing, which Arbitrum, zkSync Era and the OP Stack's
 ///         `OptimismPortal` all apply with the same constant.
 ///
-/// @dev THE ROUND TRIP IS THE EASY HALF. What these pin is the two properties that make the
+/// @dev The round trip is the easy half. What these pin is the two properties that make the
 ///      undo direction dangerous to use: it wraps, so it cannot tell whether it was needed,
 ///      and it is not an involution, so applying it in the wrong direction is silent.
 contract AddressAliasTest is Test {
@@ -367,7 +367,7 @@ contract AddressAliasTest is Test {
         assertEq(AddressDerive.applyL1ToL2Alias(AddressDerive.undoL1ToL2Alias(l1)), l1);
     }
 
-    /// @dev IT WRAPS, WHICH IS WHY THERE IS NO "WAS THIS ALIASED" PREDICATE. Undoing an
+    /// @dev It wraps, which is why there is no "was this aliased" predicate. Undoing an
     ///      alias that was never applied returns a perfectly well-formed address rather than
     ///      reverting, so a binding that gets the direction wrong authenticates against a
     ///      value belonging to nobody and simply never matches.
@@ -379,7 +379,7 @@ contract AddressAliasTest is Test {
         assertEq(AddressDerive.applyL1ToL2Alias(wrong), raw);
     }
 
-    /// @dev EXACTLY ONE INPUT UNDOES TO ZERO, and it is the offset itself. Found by fuzzing
+    /// @dev Exactly one input undoes to zero, and it is the offset itself. Found by fuzzing
     ///      an assertion that no input did. It is worth pinning because it is the whole
     ///      extent of what a zero check on the result would buy: one address out of 2^160,
     ///      which is not a defence against getting the direction wrong.
@@ -393,7 +393,7 @@ contract AddressAliasTest is Test {
         assertTrue(AddressDerive.undoL1ToL2Alias(raw) != address(0));
     }
 
-    /// @dev AND IT IS NOT AN INVOLUTION, so applying the same direction twice does not
+    /// @dev And it is not an involution, so applying the same direction twice does not
     ///      cancel. This is what a symmetric binding would do to the L2 -> L1 path, where
     ///      the sender arrives unaliased.
     function testFuzz_applyingTwiceIsNotIdentity(address l1) public pure {
@@ -401,8 +401,8 @@ contract AddressAliasTest is Test {
         assertTrue(twice != l1, "double-aliasing is a different address");
     }
 
-    /// @dev THE CASE A BINDING ACTUALLY FACES. A transmitter at T on the home chain reaches
-    ///      an L2 receiver as T + OFFSET; `ReceiverBase` compares against `sourceTransmitter`,
+    /// @dev The case a binding actually faces. A transmitter at T on the home chain reaches
+    ///      an L2 receiver as T + offset; `ReceiverBase` compares against `sourceTransmitter`,
     ///      which is T, so the binding must undo before handing the sender over.
     function testFuzz_itRecoversWhatReceiverBaseCompares(address transmitter) public pure {
         address asSeenOnL2 = AddressDerive.applyL1ToL2Alias(transmitter);
@@ -411,7 +411,7 @@ contract AddressAliasTest is Test {
     }
 }
 
-/// @dev THE FLAG AND THE FORMULA CANNOT DISAGREE, because neither is an argument any more.
+/// @dev The flag and the formula cannot disagree, because neither is an argument any more.
 ///      A spoke that reported divergence while deriving addresses Ethereum's way, or the
 ///      reverse, was the one state that cannot be right; picking the contract picks both.
 contract DivergenceIsNotConfigurableTest is Test {

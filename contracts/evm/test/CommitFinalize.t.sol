@@ -25,7 +25,7 @@ import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -33,7 +33,7 @@ contract MockReceiver is ReceiverBase {
 
     bytes[] public executed;
 
-    /// @dev Records AND performs. A bootstrap payload's self-call to `commit` only works
+    /// @dev Records and performs. A bootstrap payload's self-call to `commit` only works
     ///      if the receiver really executes, so recording alone would test nothing.
     ///      `isAllowed` is inherited open, which is the base default.
     function _execute(Call[] memory calls) internal override {
@@ -57,7 +57,7 @@ contract OwnedTransmitter {
     }
 }
 
-/// @dev A flag the CLONE can see. Clone storage starts empty and is never written by
+/// @dev A flag the clone can see. Clone storage starts empty and is never written by
 ///      the test, so the switch is reached through an immutable in the implementation:
 ///      immutables live in the implementation's bytecode, which is exactly what an
 ///      EIP-1167 clone delegatecalls into.
@@ -71,7 +71,7 @@ contract Switchboard {
 
 /// @dev A receiver whose payload can be made to fail, to exercise atomic delivery.
 contract RevertingReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -118,14 +118,14 @@ contract MockTransceiver is UnsendableSpoke {
         this.bootstrapInbound(transmitter, bytes32(0), calls);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
-/// @dev A transceiver that adds NO authority of its own: the owner is the base's, and the
+/// @dev A transceiver that adds no authority of its own: the owner is the base's, and the
 ///      two roles are named at initialization and ungrantable afterwards. If this gates
 ///      correctly, configuring is `Ownable` and the roles confer nothing, which is the split
 ///      the design turns on.
@@ -139,7 +139,7 @@ contract MsigTransceiver is UnsendableHub {
         __HubTransceiverBase_init(owner_, treasury_, gateways_, receiverImplementation_);
     }
 
-    /// @dev NO BLANKET GATEWAY ANSWER HERE, unlike the other harnesses in this file. These
+    /// @dev No blanket gateway answer here, unlike the other harnesses in this file. These
     ///      tests read the member list itself, and OZ's `_grantRole` is a no-op when `hasRole`
     ///      already says yes, so an override that trusted every gateway would leave the list
     ///      empty and the tests measuring nothing.
@@ -191,11 +191,11 @@ contract CommitFinalizeTest is Test {
 
     /// @dev Just the arrival half: the receiver exists and holds the commitment.
     ///
-    /// @dev THE TRANSCEIVER NEVER COMMITS, so an approval reaches the receiver one of two
+    /// @dev The transceiver never commits, so an approval reaches the receiver one of two
     ///      ways: inside the bootstrap payload as a self-call (see `_deferred`), or from
     ///      the source transmitter directly. This uses the second, because bootstrap
     ///      happens once per transmitter and most of these tests need several approvals.
-    /// @dev THE PEER IS THE ACCOUNT ADDRESS, NOT THE OWNER. An owner's transmitter and
+    /// @dev The peer is the account address, not the owner. An owner's transmitter and
     ///      their receivers share one address, so the contract this receiver answers to
     ///      sits at exactly the address the receiver occupies here.
     function _arrive(address owner_, Call[] memory calls) internal returns (MockReceiver r) {
@@ -218,7 +218,7 @@ contract CommitFinalizeTest is Test {
         boot[0] = Call({target: receiver, value: 0, data: abi.encodeCall(ICommitFinalize.commit, (commitment))});
     }
 
-    /// @dev THE POINT OF THE PATH. No commit, no hash, no second transaction: the caller
+    /// @dev The point of the path. No commit, no hash, no second transaction: the caller
     ///      already verified upstream, so the receiver takes its word.
     function test_executeRunsCallsWithNoCommitmentAtAll() public {
         MockReceiver r = _liveReceiver();
@@ -250,7 +250,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.executedCount(), 3);
     }
 
-    /// @dev THE TRANSCEIVER IS REFUSED, AND THAT IS THE WHOLE POINT OF THE GATE. It
+    /// @dev The transceiver is refused, and that is the whole point of the gate. It
     ///      created this receiver and it initialized it; letting it drive one afterwards
     ///      would make it a standing authority over every receiver it had ever created,
     ///      on the chain where it is also the contract that authenticates every inbound
@@ -273,7 +273,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.executedCount(), 3);
     }
 
-    /// @dev THE AUTHORITY ARGUMENT, made concrete. Anyone who may `execute` could already
+    /// @dev The authority argument, made concrete. Anyone who may `execute` could already
     ///      commit any hash and let anyone finalize it, so the short path grants nothing
     ///      the long path did not. The two gates are deliberately the same set.
     function test_executeGrantsNothingCommitDoesNot() public {
@@ -347,7 +347,7 @@ contract CommitFinalizeTest is Test {
         bare.execute(_calls());
     }
 
-    /// @dev A transceiver has no level up to inherit a check from: it IS the check. It
+    /// @dev A transceiver has no level up to inherit a check from: it is the check. It
     ///      does not inherit `ReceiverBase`, so `execute` is not merely refused, it is
     ///      absent from the ABI. Absence beats a revert: there is no function to reach, so
     ///      no future change to a committer predicate can expose one.
@@ -359,7 +359,7 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== transceiver =============================== */
 
-    /// @dev THERE IS NO PUBLIC CREATION PATH ON A SPOKE. An account here exists because a
+    /// @dev There is no public creation path on a spoke. An account here exists because a
     ///      bootstrap message arrived, and nothing else. An open one would let anyone
     ///      deploy an owner's account empty, one transaction ahead of their bootstrap, and
     ///      permanently deny it: `CrossProxy` arms exactly once.
@@ -390,7 +390,7 @@ contract CommitFinalizeTest is Test {
         t.bootstrapInbound(transmitter, bytes32(0), new Call[](0));
     }
 
-    /// @dev THE TRANSCEIVER HAS NO WAY TO REACH A RECEIVER AFTER CREATING IT. Bootstrap is
+    /// @dev The transceiver has no way to reach a receiver after creating it. Bootstrap is
     ///      for a chain with no receiver; a second one has nowhere to deliver its payload,
     ///      because `initialize` is single-shot and nothing else here talks to a receiver.
     function test_bootstrapRefusesAnExistingReceiver() public {
@@ -403,7 +403,7 @@ contract CommitFinalizeTest is Test {
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
     }
 
-    /// @dev THE COMMITMENT IS WHAT MANUFACTURES THE RECEIVER. Arrival creates the clone
+    /// @dev The commitment is what manufactures the receiver. Arrival creates the clone
     ///      at its counterfactual address and hands it the hash in one step; the array is
     ///      supplied later, by anyone.
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
@@ -471,7 +471,7 @@ contract CommitFinalizeTest is Test {
         r.finalize(tampered);
     }
 
-    /// @dev THE TRANSCEIVER NEVER EXECUTES AND NEVER HOLDS. Arrival hands the commitment
+    /// @dev The transceiver never executes and never holds. Arrival hands the commitment
     ///      to the receiver and returns; the array shows up in a separate transaction, from
     ///      whoever has it, and runs in the receiver's own context behind its selector
     ///      policy.
@@ -487,7 +487,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev CREATION AND THE PAYLOAD ARE ONE TRANSACTION. The clone is created and its
+    /// @dev Creation and the payload are one transaction. The clone is created and its
     ///      payload runs inside `initialize`, so there is no window in which a receiver
     ///      exists with its transmitter set and its payload unperformed, and no second
     ///      call from the transceiver, which has no way to reach a receiver afterwards.
@@ -510,7 +510,7 @@ contract CommitFinalizeTest is Test {
         assertEq(inits, 1);
     }
 
-    /// @dev A FAILING PAYLOAD NEVER TOUCHES THE TRANSCEIVER. Arrival only pins a hash,
+    /// @dev A failing payload never touches the transceiver. Arrival only pins a hash,
     ///      so it cannot fail on the payload's behalf. Execution fails later, at the
     ///      receiver, leaving the approval pinned there for anyone to retry, and the
     ///      transceiver, which is shared by every transmitter, was never involved.
@@ -594,7 +594,7 @@ contract CommitFinalizeTest is Test {
         r.finalize(calls);
     }
 
-    /// @dev The implementation is required AT INITIALIZATION, not discovered missing on
+    /// @dev The implementation is required at initialization, not discovered missing on
     ///      the first delivery. A transceiver that cannot produce receivers is not a
     ///      half-configured transceiver, it is one that should never have been deployed.
     function test_receiverImplementationIsRequiredAtInitialization() public {
@@ -611,7 +611,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(ok, "no clone initializer on a transceiver");
     }
 
-    /// @dev THERE IS NO SETTER. Changing the implementation does not move receivers that
+    /// @dev There is no setter. Changing the implementation does not move receivers that
     ///      already exist (clone bytecode fixes the old address at creation), so a change
     ///      silently forks the population into two logic versions. Removing the setter
     ///      makes that a redeploy, which is what it always was.
@@ -627,7 +627,7 @@ contract CommitFinalizeTest is Test {
         assertEq(t.receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev THE TRANSCEIVER ARRIVES LOCKED. Initializing is what locks it, so there is no
+    /// @dev The transceiver arrives locked. Initializing is what locks it, so there is no
     ///      window between "the real logic is in place" and "nobody can replace it", and no
     ///      operator step that can be forgotten. Exercised behind a real proxy, since UUPS
     ///      refuses upgrades outside one.
@@ -653,7 +653,7 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== authorization ============================= */
 
-    /// @dev CONFIGURING IS THE OWNER'S, AND ONLY THE OWNER'S. The one role names transports
+    /// @dev Configuring is the owner's, and only the owner's. The one role names transports
     ///      and can call nothing, which is what makes it safe for the set to be permanent.
     function test_theConfiguringAuthorityIsTheOwner() public {
         MsigTransceiver m = _msigTransceiver();
@@ -669,7 +669,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(m.upgradesLocked());
     }
 
-    /// @dev THE MEMBERSHIP IS WHATEVER THE INITIALIZER SAID, FOR LIFE. The role has no role
+    /// @dev The membership is whatever the initializer said, for life. The role has no role
     ///      admin and `DEFAULT_ADMIN_ROLE` is never granted, so `grantRole` has no caller that
     ///      can succeed: not the owner, not the msig, not a gateway.
     function test_theRoleCannotBeGrantedAfterInitialization() public {
@@ -689,7 +689,7 @@ contract CommitFinalizeTest is Test {
         m.grantRole(gatewayRole, address(0xBADBAD));
     }
 
-    /// @dev A TRANSCEIVER'S TRANSPORTS ARE FIXED IN BOTH DIRECTIONS, which is the asymmetry
+    /// @dev A transceiver's transports are fixed in both directions, which is the asymmetry
     ///      against an account. It is shared by every owner on its chain, so dropping a
     ///      gateway here would take every account's bootstrap path with it; an account's is
     ///      one owner's to drop, and `ReceiverBase.revokeGateway` is where that lives.
@@ -707,7 +707,7 @@ contract CommitFinalizeTest is Test {
         assertEq(m.getRoleMembers(gatewayRole).length, 1, "still exactly what it was given");
     }
 
-    /// @dev THE TREASURY IS AN ADDRESS THE DEPLOYMENT NAMED, AND THERE IS NO WAY TO MOVE IT.
+    /// @dev The treasury is an address the deployment named, and there is no way to move it.
     ///      Fees leave in the transaction that charges them, so there is no accrued balance to
     ///      direct, no `withdrawFees` to gate, and no setter for a compromised owner to reach.
     function test_theTreasuryIsFixedAndThereIsNoWithdrawal() public {
@@ -721,7 +721,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(set, "and no setter");
     }
 
-    /// @dev A FEE WITH NOWHERE TO GO IS REFUSED WHERE IT IS SET, not where it is charged:
+    /// @dev A fee with nowhere to go is refused where it is set, not where it is charged:
     ///      the mistake surfaces at configuration time rather than burning the fee inside
     ///      somebody's bootstrap.
     function test_aFeeCannotBeSetWithoutATreasury() public {
@@ -746,7 +746,7 @@ contract CommitFinalizeTest is Test {
 
     /* ======================== isolation between senders ======================= */
 
-    /// @dev AN ACCOUNT'S APPROVALS LIVE IN THE ACCOUNT, AND ISOLATION IS STRUCTURAL. There
+    /// @dev An account's approvals live in the account, and isolation is structural. There
     ///      is exactly one receiver per transmitter, because the CREATE2 salt is the
     ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
     ///      wrong. The transceiver holds approvals of its own now, but they are bootstraps
@@ -813,7 +813,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(RevertingReceiver(payable(poisoned)).isCommitted(hashOf(stuck)));
     }
 
-    /// @dev Even when two senders commit to the IDENTICAL array, discharging one leaves
+    /// @dev Even when two senders commit to the identical array, discharging one leaves
     ///      the other pending. They are different contracts, not two entries in a table.
     function test_identicalPayloadsAreStillSeparateApprovals() public {
         Call[] memory calls = _calls();
@@ -848,9 +848,9 @@ contract CommitFinalizeTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev The single-slot entry points cannot say WHOSE commitment they mean, and the
+    /// @dev The single-slot entry points cannot say whose commitment they mean, and the
     ///      transceiver has no commitments to mean. Neither was ever inherited.
-    /// @dev A TRANSCEIVER COMMITS AND FINALIZES, AND CANCELS NEITHER ITS OWN NOR ANYBODY'S.
+    /// @dev A transceiver commits and finalizes, and cancels neither its own nor anybody's.
     ///      `commit` admits only a payload this contract is already executing, so no caller
     ///      can approve work on the contract every account's bootstrap goes through. There
     ///      is no `cancel` at all: an entry point that removed an approval on a shared
@@ -869,9 +869,9 @@ contract CommitFinalizeTest is Test {
 
     /* ========================== bootstrap, deferred =========================== */
 
-    /// @notice A bootstrap that arrives as an APPROVAL, and is paid for by somebody else.
+    /// @notice A bootstrap that arrives as an approval, and is paid for by somebody else.
     ///
-    /// @dev THE MESSAGE THAT CANNOT PAY FOR ITSELF. Every other payload in the protocol lands
+    /// @dev The message that cannot pay for itself. Every other payload in the protocol lands
     ///      in an account that already exists and whose owner chose to send it. A bootstrap
     ///      lands where there is no account yet, inside a delivery callback, and standing an
     ///      account up plus running its first payload is the most expensive thing this
@@ -879,7 +879,7 @@ contract CommitFinalizeTest is Test {
     ///      the gas of one `commit`, and whoever wants the account to exist supplies the array
     ///      afterwards and pays for the deployment.
     ///
-    /// @dev NOTHING ON THE WIRE SAYS WHICH IT IS. The hub sends a payload either way;
+    /// @dev Nothing on the wire says which it is. The hub sends a payload either way;
     ///      `commit` is a call in it, exactly as it is for an account. That is the same rule
     ///      the receiver follows, now applied to the one contract that has to receive on
     ///      behalf of an account that does not exist.
@@ -923,11 +923,11 @@ contract CommitFinalizeTest is Test {
         assertEq(t.pendingCount(), 0, "the approval is spent");
     }
 
-    /// @notice REGRESSION: an approved bootstrap can be withdrawn, and only by the authority
+    /// @notice Regression: an approved bootstrap can be withdrawn, and only by the authority
     ///         that approved it.
     ///
-    /// @dev WITHOUT THIS THE APPROVAL WAS PERMANENT. `finalize` is permissionless and has no
-    ///      deadline, so an outstanding bootstrap left the MOMENT it executed, and therefore
+    /// @dev Without this the approval was permanent. `finalize` is permissionless and has no
+    ///      deadline, so an outstanding bootstrap left the moment it executed, and therefore
     ///      the state its payload ran against, to whoever chose to supply the array. The
     ///      cancel is gated like `commit`: a payload this contract is already executing,
     ///      which means one that arrived from the authenticated hub.
@@ -967,7 +967,7 @@ contract CommitFinalizeTest is Test {
         t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(0xB0BB1E)), Payload.encodeCalls(calls));
     }
 
-    /// @dev The approval is over the WHOLE bootstrap, so a finalizer cannot stand up a
+    /// @dev The approval is over the whole bootstrap, so a finalizer cannot stand up a
     ///      different account, or the same one carrying a different payload.
     function test_aDeferredBootstrapCannotBeRedirected() public {
         Call[] memory boot = new Call[](1);
@@ -1017,7 +1017,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(r.isSourceTransmitter(address(0)));
     }
 
-    /// @dev ONE PREDICATE, ONE CALLER. The transmitter is the only party that may drive a
+    /// @dev One predicate, one caller. The transmitter is the only party that may drive a
     ///      receiver, and the transceiver that created it is not on the list: its whole
     ///      relationship with a receiver is the initializer it already spent.
     function test_theTransmitterIsTheOnlyAuthority() public {
@@ -1028,7 +1028,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(r.isSourceTransmitter(address(0)));
     }
 
-    /// @dev THE DEFERRED PAYLOAD STILL WORKS, and this is why: a receiver and its
+    /// @dev The deferred payload still works, and this is why: a receiver and its
     ///      transmitter share one address, so the self-call an approving payload makes to
     ///      its own `commit` arrives as the source transmitter. If those two addresses
     ///      ever diverge, this assertion is what fails first.
@@ -1066,7 +1066,7 @@ contract CommitFinalizeTest is Test {
         assertEq(r.executedCount(), 3, "2 on delivery + 1 through commit/finalize");
     }
 
-    /// @dev THE OPPOSITE OF WHAT A SINGLE SLOT DID. A second approval joins the first
+    /// @dev The opposite of what a single slot did. A second approval joins the first
     ///      rather than colliding with it, so a payload waiting on a slow relayer cannot
     ///      stop the next from being recorded, and with no ordering, cannot stop it from
     ///      being discharged either.
@@ -1114,7 +1114,7 @@ contract CommitFinalizeTest is Test {
         r.initialize(address(0xDEAD), new Call[](0));
     }
 
-    /// @dev THE CHAIN-BINDING IS THE RECEIVER'S ALONE NOW. The transceiver has no array
+    /// @dev The chain-binding is the receiver's alone now. The transceiver has no array
     ///      to hash, so a commitment built for the wrong destination is accepted on
     ///      arrival, sits looking valid, and fails when someone tries to spend it. The
     ///      check moved later; it did not disappear.

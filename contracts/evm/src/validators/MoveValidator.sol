@@ -8,7 +8,7 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 /// @title MoveValidator
 /// @notice Per-chain validator for Move references.
 /// @dev Enforces the fixed 32-byte address width. Move addresses have a short display
-///      form (`0x1` and the zero-padded 32-byte form are the SAME address, AIP-40),
+///      form (`0x1` and the zero-padded 32-byte form are the same address, aip-40),
 ///      which has caused real production bugs. Accepting a short form here would give
 ///      one address two distinct registry keys, so anything but 32 bytes is rejected.
 contract MoveValidator is IRefValidator {

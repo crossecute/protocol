@@ -21,7 +21,7 @@ library SuiDerive {
 
     /* --------------------------- intent scopes ---------------------------- */
     // crates/shared-crypto/src/intent.rs :: HashingIntentScope
-    // NOTE: these are 0xf0/0xf1, NOT 0/1. Assuming a zero-based enum here silently
+    // Note: these are 0xf0/0xf1, not 0/1. Assuming a zero-based enum here silently
     // produces well-formed but wrong object IDs.
     uint8 internal constant SCOPE_CHILD_OBJECT_ID = 0xf0;
     uint8 internal constant SCOPE_REGULAR_OBJECT_ID = 0xf1;
@@ -73,9 +73,9 @@ library SuiDerive {
     ///      blake2b256( 0xf1 ‖ txDigest ‖ le64(creationNum) ), truncated to 32 bytes
     ///      (already 32, so the truncation is a no-op).
     ///
-    ///      This is derivable but NOT counterfactual: `txDigest` does not exist until
+    ///      This is derivable but not counterfactual: `txDigest` does not exist until
     ///      the transaction is built and signed, and `creationNum` depends on how many
-    ///      IDs that transaction already created. Use it to VERIFY an object ID
+    ///      IDs that transaction already created. Use it to verify an object ID
     ///      reported back by the destination, not to predict one in advance.
     function deriveObjectId(bytes32 txDigest, uint64 creationNum) internal view returns (bytes32) {
         return Blake2b256.hash(abi.encodePacked(SCOPE_REGULAR_OBJECT_ID, txDigest, _le64(creationNum)));

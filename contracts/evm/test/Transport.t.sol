@@ -60,7 +60,7 @@ contract MockTransmitter is OwnableTransmitter {
         return payload.length * WEI_PER_BYTE + attributes.length;
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -69,7 +69,7 @@ contract MockTransmitter is OwnableTransmitter {
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
 contract MockReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -119,7 +119,7 @@ contract MockTransceiver is TransceiverBase {
     }
 
     /// @dev Records the raw payload. Which decoder applies is a property of the
-    ///      DESTINATION, so the test picks it: a real spoke knows its own VM.
+    ///      Destination, so the test picks it: a real spoke knows its own VM.
     bytes[] public sentAttributes;
 
     function attributeCount() external view returns (uint256) {
@@ -151,7 +151,7 @@ contract MockTransceiver is TransceiverBase {
         return payload.length * WEI_PER_BYTE;
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -175,10 +175,10 @@ contract TransportTest is Test {
     uint256 constant DEST = 8453;
     bytes32 constant SALT = keccak256("acct");
 
-    /// @dev THE ACCOUNT SITS AT THE ADDRESS ITS TRANSCEIVER DERIVES FOR IT, because
+    /// @dev The account sits at the address its transceiver derives for it, because
     ///      `bootstrap` refuses any caller that is not that address. Sending now requires
     ///      the destination to have been bootstrapped, so the fixture performs the real
-    ///      sequence rather than reaching into storage: stand the account up on DEST, then
+    ///      sequence rather than reaching into storage: stand the account up on dest, then
     ///      send to it.
     function setUp() public {
         hub = new MockTransceiver();
@@ -246,7 +246,7 @@ contract TransportTest is Test {
 
     /* ============================ path A: the payload ========================== */
 
-    /// @dev THE WIRE CARRIES THE PAYLOAD, NOT A COMMITMENT. A call array is executed on
+    /// @dev The wire carries the payload, not a commitment. A call array is executed on
     ///      arrival; there is no digest and no second step unless the payload asks for one.
     function test_sendPutsTheCallArrayOnTheWire() public {
         Call[] memory calls = _calls();
@@ -267,7 +267,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentValue(), 0.3 ether);
     }
 
-    /// @dev ERC-7786 REQUIRES `MessageSent`, AND IT SUPERSEDED OUR OWN EVENT. `Dispatched`
+    /// @dev ERC-7786 requires `MessageSent`, and it superseded our own event. `Dispatched`
     ///      carried two hashes; this carries the recipient, the payload, the value, and the
     ///      attributes, so there is nothing left for a second event to add.
     function test_theSendEmitsTheStandardEvent() public {
@@ -366,7 +366,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev AN ACCOUNT'S PEER IS ITSELF, AND THE RECIPIENT IS CHECKED AGAINST THAT. Taking
+    /// @dev An account's peer is itself, and the recipient is checked against that. Taking
     ///      the destination as an argument reopened something that used to be structural,
     ///      so a recipient naming anything else on an EVM chain is refused here rather than
     ///      arriving at a contract that is not this account's receiver.
@@ -378,7 +378,7 @@ contract TransportTest is Test {
         transmitter.sendMessage(notUs, Payload.encodeCalls(_calls()), NONE);
     }
 
-    /// @dev THE CHECK BINDS ON EVM AND ONLY THERE, DELIBERATELY. On a non-EVM chain the
+    /// @dev The check binds on EVM and only there, deliberately. On a non-EVM chain the
     ///      account is not a 20-byte address and is not derivable from here, so there is
     ///      nothing to compare against; the same is true on zkSync and Tron, which is what
     ///      `addressesDiverge` names from the other end. The recipient is the caller's to
@@ -396,7 +396,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentRecipient(), _solRecipient(sol), "the recorded receiver, exactly");
     }
 
-    /// @dev THE CHECK IS UNIVERSAL NOW, WHICH IT COULD NOT BE WHILE IT WAS DERIVED. A
+    /// @dev The check is universal now, which it could not be while it was derived. A
     ///      derived check had to be skipped wherever the account's address is not
     ///      `address(this)`, which left every non-EVM recipient unchecked. Comparing against
     ///      the recorded receiver binds on every chain, so the 32-byte pubkey of somebody
@@ -414,7 +414,7 @@ contract TransportTest is Test {
         transmitter.sendMessage(impostor, payload, NONE);
     }
 
-    /// @dev THE PAIRING CHECK IS GONE, AND THIS IS WHERE THAT IS RECORDED. The six
+    /// @dev The pairing check is gone, and this is where that is recorded. The six
     ///      overloads knew whether they held `Call[]` or `bytes[]`, so a typed payload
     ///      bound for a non-EVM chain and an opaque one bound for an EVM chain were both
     ///      refused before they cost a fee. `bytes payload` cannot be asked which it is, so
@@ -444,7 +444,7 @@ contract TransportTest is Test {
 
     /* ============================ path A: arrival ============================== */
 
-    /// @dev END TO END. The payload the transmitter put on the wire is the payload the
+    /// @dev End to end. The payload the transmitter put on the wire is the payload the
     ///      receiver runs: no commitment, no second transaction.
     function test_aSentPayloadExecutesOnArrival() public {
         Call[] memory calls = _calls();
@@ -459,7 +459,7 @@ contract TransportTest is Test {
         assertEq(sink.total(), 3, "the array crossed and ran");
     }
 
-    /// @dev DEFERRING IS THE SAME PATH. A payload whose one element calls the receiver's
+    /// @dev Deferring is the same path. A payload whose one element calls the receiver's
     ///      own `commit` pins a hash instead of running anything; anyone supplies the
     ///      matching array later. Nothing on the wire distinguishes the two.
     function test_aDeferredPayloadPinsAHashInsteadOfRunning() public {
@@ -528,7 +528,7 @@ contract TransportTest is Test {
 
     /* ========================= path B: the two forms =========================== */
 
-    /// @dev A NON-EVM CHAIN NEEDS ITS OWN BOOTSTRAP, because it needs its own payload
+    /// @dev A non-EVM chain needs its own bootstrap, because it needs its own payload
     ///      form. The account is stood up the same way; what differs is what it is handed.
     function test_bootstrapToCarriesOpaqueElementsToANonEvmChain() public {
         (MockTransceiver t, MockTransmitter acct) = _account();
@@ -547,7 +547,7 @@ contract TransportTest is Test {
         assertEq(got[0], hex"0102030405", "and the elements crossed untouched");
     }
 
-    /// @dev THE PAIRING IS ENFORCED WHERE THE CHAIN TYPE IS KNOWN. Downstream everything
+    /// @dev The pairing is enforced where the chain type is known. Downstream everything
     ///      speaks chainKeys, which are hashes and cannot be asked what chain type they
     ///      came from, so this is the last point that could catch it.
     function test_typedBootstrapIsRefusedForANonEvmChain() public {
@@ -595,7 +595,7 @@ contract TransportTest is Test {
 
     /* =============================== the authority ============================= */
 
-    /// @dev THE BASE HAS NO OWNERSHIP OF ITS OWN. It states the requirement (`_owner` and
+    /// @dev The base has no ownership of its own. It states the requirement (`_owner` and
     ///      `_checkOwner`), and the concrete contract answers from whatever authority it
     ///      already has. That is what lets an account inherit a provider SDK that brings
     ///      its own `Ownable` without two ownership systems living in one contract.
@@ -621,7 +621,7 @@ contract TransportTest is Test {
 
     /* ================================= preview ================================= */
 
-    /// @dev THE TRANSMITTER PREVIEWS EVM DESTINATIONS AND NOTHING ELSE. The portable
+    /// @dev The transmitter previews EVM destinations and nothing else. The portable
     ///      overload that took a `Scheme` is gone: a preview frozen with the account can
     ///      only answer for primitives that existed when the account was created, so
     ///      non-EVM destinations are previewed through `ChainRegistry.commitmentFor`
@@ -666,7 +666,7 @@ contract TransportTest is Test {
 
     /* ================================== quote ================================== */
 
-    /// @dev THE QUOTE PRICES THE EXACT BYTES THE SEND PUTS ON THE WIRE. Asserted against
+    /// @dev The quote prices the exact bytes the send puts on the wire. Asserted against
     ///      the payload the send actually recorded, so a quote built from a second,
     ///      drifting encoder fails here rather than in production.
     function test_quotePricesTheExactPayloadTheSendCarries() public {
@@ -680,7 +680,7 @@ contract TransportTest is Test {
         assertEq(quoted, transmitter.sentPayload().length * transmitter.WEI_PER_BYTE(), "priced the bytes that left");
     }
 
-    /// @dev A LONGER PAYLOAD COSTS MORE, which is the property a caller is relying on. A
+    /// @dev A longer payload costs more, which is the property a caller is relying on. A
     ///      quote that ignored its argument would return one number for both.
     function test_quoteTracksThePayloadSize() public view {
         uint256 small = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_oneCall()), NONE);
@@ -688,14 +688,14 @@ contract TransportTest is Test {
         assertGt(large, small, "two calls cost more than one");
     }
 
-    /// @dev THE OPTIONS ARE MOST OF WHAT A QUOTE PRICES, so they are an argument to it.
+    /// @dev The options are most of what a quote prices, so they are an argument to it.
     function test_quoteReflectsProviderData() public view {
         uint256 bare = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
         uint256 withOptions = transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
         assertGt(withOptions, bare);
     }
 
-    /// @dev IT IS A VIEW, WHICH IS THE WHOLE POINT OF IT. The only way a quote is ever
+    /// @dev It is a view, which is the whole point of it. The only way a quote is ever
     ///      used is an `eth_call` before the send, so a mutable one is not a quote.
     function test_quoteIsStaticallyCallable() public view {
         (bool ok, bytes memory ret) = address(transmitter)
@@ -708,14 +708,14 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev UNGATED, UNLIKE THE SEND IT PRICES. A signer reviewing a payload before the
+    /// @dev Ungated, unlike the send it prices. A signer reviewing a payload before the
     ///      owner submits it has to be able to call this.
     function test_quoteIsNotOwnerGated() public {
         vm.prank(address(0xDEAD));
         transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
     }
 
-    /// @dev THE BOOTSTRAP QUOTE ASKS THE TRANSCEIVER, because the transceiver is what
+    /// @dev The bootstrap quote asks the transceiver, because the transceiver is what
     ///      sends path B. The two mocks price at different rates, so an answer computed
     ///      locally would not match.
     function test_bootstrapQuoteDelegatesToTheTransceiver() public {
@@ -735,8 +735,8 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev A QUOTE IS TAKEN BEFORE THE ACCOUNT IT PRICES EXISTS, so it cannot carry
-    ///      `bootstrap`'s "you must BE the account" check. There is nothing to protect on
+    /// @dev A quote is taken before the account it prices exists, so it cannot carry
+    ///      `bootstrap`'s "you must be the account" check. There is nothing to protect on
     ///      a view that spends nothing.
     function test_bootstrapQuoteDoesNotRequireTheCallerToBeTheAccount() public {
         MockTransceiver t = new MockTransceiver();
@@ -747,7 +747,7 @@ contract TransportTest is Test {
         assertGt(quoted, 0);
     }
 
-    /// @dev A RECEIVER HAS NO QUOTE SURFACE, AND THAT IS STRUCTURAL RATHER THAN GATED. It
+    /// @dev A receiver has no quote surface, and that is structural rather than gated. It
     ///      does not inherit `OutboundBase` at all, so there is no seam to leave
     ///      unimplemented and no selector to reach: a receiver never sends, so pricing a
     ///      send from one would be pricing a message that has no path.
@@ -762,7 +762,7 @@ contract TransportTest is Test {
 
     /* ================================== refund ================================= */
 
-    /// @dev THE PARTY WHO OVERPAID IS THE PARTY WHO GETS IT BACK. On path A the sender is
+    /// @dev The party who overpaid is the party who gets it back. On path A the sender is
     ///      the owner, because `send` is owner-gated, so the remainder goes to the wallet
     ///      that signed and funded the message.
     function test_pathARefundsToTheOwner() public {
@@ -772,7 +772,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentRefund(), owner);
     }
 
-    /// @dev ON PATH B IT IS THE ACCOUNT, AND NEVER THE TRANSCEIVER. This is the one this
+    /// @dev On path B it is the account, and never the transceiver. This is the one this
     ///      has to get right: a shared transceiver refunding to itself would pool every
     ///      user's excess into infrastructure with no per-user way out. `bootstrap` refuses
     ///      any caller that is not the account, so the transceiver cannot be its own
@@ -788,7 +788,7 @@ contract TransportTest is Test {
         assertTrue(t.bootRefund() != address(t), "never the shared transceiver");
     }
 
-    /// @dev A REFUND IS A PLAIN VALUE TRANSFER, so the account has to be able to take one.
+    /// @dev A refund is a plain value transfer, so the account has to be able to take one.
     ///      Without `receive` on the transmitter the refund reverts and takes the bootstrap
     ///      with it, which is the one message that cannot be retried cheaply.
     function test_theAccountCanReceiveARefund() public {
@@ -802,7 +802,7 @@ contract TransportTest is Test {
 
     /* ============================== the bootstrap gate ========================= */
 
-    /// @dev A SEND TO A CHAIN THIS ACCOUNT IS NOT ON HAS NOTHING TO ARRIVE AT. The peer
+    /// @dev A send to a chain this account is not on has nothing to arrive at. The peer
     ///      address holds no code there, so the payload fails on delivery with the fee
     ///      already spent. Refusing locally turns a paid-for failure into a free one.
     function test_sendToAnUnbootstrappedDestinationReverts() public {
@@ -839,7 +839,7 @@ contract TransportTest is Test {
         assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
     }
 
-    /// @dev A SECOND BOOTSTRAP CANNOT DELIVER ITS PAYLOAD ANYWAY. `CrossProxy` arms exactly
+    /// @dev A second bootstrap cannot deliver its payload anyway. `CrossProxy` arms exactly
     ///      once and the receiver's `initialize` is single-shot, so it would burn a fee to
     ///      revert on arrival.
     function test_rebootstrappingIsRefused() public {
@@ -857,7 +857,7 @@ contract TransportTest is Test {
         transmitter.bootstrapTo(identifier, _calls(), NONE);
     }
 
-    /// @dev THE TWO BUILDERS NAME ONE CHAIN, which is what lets a caller pick an entry point
+    /// @dev The two builders name one chain, which is what lets a caller pick an entry point
     ///      on ergonomics rather than on reach. `chainIdentifierFor` is `bootstrapTo`'s
     ///      argument and `recipientOn` is `sendMessage`'s, and the second is the first with
     ///      this account's address appended, so a destination reached by either spelling
@@ -880,7 +880,7 @@ contract TransportTest is Test {
         assertEq(Erc7930.parseStrict(identifier).addr.length, 0);
     }
 
-    /// @dev THE QUOTES CARRY THE SAME GATE, both ways round. A quote that succeeded where
+    /// @dev The quotes carry the same gate, both ways round. A quote that succeeded where
     ///      its send would fail reports the operation ready when it is not.
     function test_theQuotesRevertWhereTheirSendsWould() public {
         uint256 other = 42161;
@@ -901,7 +901,7 @@ contract TransportTest is Test {
         assertGt(transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE), 0, "after");
     }
 
-    /// @dev THE FLAG RECORDS A DISPATCH, NOT A DELIVERY, and it is set BEFORE the
+    /// @dev The flag records a dispatch, not a delivery, and it is set before the
     ///      transceiver is called so a re-entrant second bootstrap meets it. If the
     ///      dispatch reverts the whole transaction unwinds and the flag goes with it.
     function test_aFailedBootstrapLeavesNothingRecorded() public {
@@ -931,7 +931,7 @@ contract TransportTest is Test {
 
     /* ============================ the account's view =========================== */
 
-    /// @dev AN ACCOUNT HOLDS ONE TRANSCEIVER ADDRESS AND ONE INTERFACE OVER IT. `routeTo`
+    /// @dev An account holds one transceiver address and one interface over it. `routeTo`
     ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on a
     ///      second type. It answers for a destination the account has not bootstrapped,
     ///      which is the one thing its own table cannot do: that table is written by
@@ -947,7 +947,7 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev AN ACCOUNT RECORDS ITS OWN DESTINATIONS RATHER THAN BEING CONFIGURED WITH THEM,
+    /// @dev An account records its own destinations rather than being configured with them,
     ///      which is the property the old "an account holds no route table" test was really
     ///      protecting. It does hold one now, but every row is written by `bootstrap` from
     ///      the identifier the caller already supplied: there is no admin surface on the
@@ -970,7 +970,7 @@ contract TransportTest is Test {
 }
 
 /// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so an account's
-///      address there is NOT the one it occupies at home. That is the case the whole
+///      address there is not the one it occupies at home. That is the case the whole
 ///      counterpart table exists for: a derived peer is wrong on exactly these chains, and
 ///      being `eip155` they cannot be excluded by chain type the way a non-EVM chain is.
 contract DivergingDestinationTest is Test {
@@ -995,7 +995,7 @@ contract DivergingDestinationTest is Test {
         transmitter.bootstrap(ZKSYNC, new Call[](0), new bytes[](0));
     }
 
-    /// @dev BOOTSTRAP RECORDS A PRESUMPTION, and on a diverging chain it is wrong. Refusing
+    /// @dev Bootstrap records a presumption, and on a diverging chain it is wrong. Refusing
     ///      the send is correct: the address holds no receiver, so the message would be paid
     ///      for and fail on arrival.
     function test_beforeCorrectionTheDivergedReceiverIsUnreachable() public {
@@ -1007,7 +1007,7 @@ contract DivergingDestinationTest is Test {
         transmitter.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev AND AFTER IT, THE REAL RECEIVER IS ADDRESSABLE. This is what the old derived
+    /// @dev And after it, the real receiver is addressable. This is what the old derived
     ///      check made impossible: it enforced `address(this)` on every `eip155` chain, so
     ///      the only accepted recipient on zkSync was an address holding no code and the
     ///      real one could never be named.

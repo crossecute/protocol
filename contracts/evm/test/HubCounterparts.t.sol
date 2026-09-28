@@ -23,7 +23,7 @@ contract Hub is UnsendableHub {
         __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -32,9 +32,9 @@ contract Hub is UnsendableHub {
 
 /// @notice The counterpart directory after it moved off the registry.
 ///
-/// @dev THE SPLIT IS THE POINT, AND IT IS ONE LINE. The hub holds WHERE a counterpart is,
+/// @dev The split is the point, and it is one line. The hub holds where a counterpart is,
 ///      because that is per provider, and two providers put two transceivers on one chain.
-///      The registry holds WHAT A CLAIM ABOUT THAT CHAIN IS WORTH, because that is the same
+///      The registry holds what a claim about that chain is worth, because that is the same
 ///      question for every provider, and two hubs must not answer it differently.
 contract HubCounterpartsTest is Test {
     ChainRegistry registry;
@@ -80,7 +80,7 @@ contract HubCounterpartsTest is Test {
         assertEq(uint8(registry.provenanceFor(suiChainKey)), uint8(Provenance.Attested));
     }
 
-    /// @dev TWO PROVIDERS, TWO ADDRESSES, ONE GRADE. That is the whole reason the two halves
+    /// @dev Two providers, two addresses, one grade. That is the whole reason the two halves
     ///      live where they do: a second hub records its own transceiver on the same chain
     ///      without displacing the first, and neither can decide the chain is worth more
     ///      than the registry says.
@@ -120,7 +120,7 @@ contract HubCounterpartsTest is Test {
         hub.setCounterpart(suiChainKey, suiInterop);
     }
 
-    /// @dev THE VALIDATOR STAYED ON THE REGISTRY WHEN THE STORAGE LEFT, because what makes
+    /// @dev The validator stayed on the registry when the storage left, because what makes
     ///      an address well-formed is a property of the chain. One validator per chain
     ///      serves every provider's hub rather than each carrying its own copy.
     function test_theChainsValidatorStillRuns() public {
@@ -141,7 +141,7 @@ contract HubCounterpartsTest is Test {
 
     /* ============================== Move qualifiers ============================= */
 
-    /// @dev THE QUALIFIER FOLLOWS THE COUNTERPART, because it qualifies one: a Move call
+    /// @dev The qualifier follows the counterpart, because it qualifies one: a Move call
     ///      target is `address::module::function`, and the address alone does not name it.
     function test_aQualifierAttachesToACounterpart() public {
         Move.MoveQualifier memory q = _qualifier();
@@ -172,7 +172,7 @@ contract HubCounterpartsTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Re-setting the SAME qualifier is a no-op; a DIFFERENT one reverts, because
+    /// @dev Re-setting the same qualifier is a no-op; a different one reverts, because
     ///      re-pointing a live call target is the same operation as re-pointing the address.
     function test_theQualifierIsIdempotentButNotRepointable() public {
         Move.MoveQualifier memory q = _qualifier();

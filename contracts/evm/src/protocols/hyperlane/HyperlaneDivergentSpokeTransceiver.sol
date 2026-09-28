@@ -15,7 +15,7 @@ import {HyperlaneSpokeBase} from "src/protocols/hyperlane/HyperlaneSpokeTranscei
 contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, HyperlaneSpokeBase {
     constructor(address mailbox_) HyperlaneSpokeBase(mailbox_) {}
 
-    /// @param accountBytecodeHash_ ZKSOLC artifact hash for `CrossProxy`, not
+    /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
     function initialize(
         address[] calldata gateways,
@@ -50,7 +50,7 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, HyperlaneSpo
 contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, HyperlaneSpokeBase {
     constructor(address mailbox_) HyperlaneSpokeBase(mailbox_) {}
 
-    /// @param accountBytecodeHash_ TRON-solc's `CrossProxy` initcode hash, not solc's.
+    /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
         address[] calldata gateways,
         address receiverImplementation_,

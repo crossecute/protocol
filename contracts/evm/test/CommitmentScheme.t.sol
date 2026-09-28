@@ -104,7 +104,7 @@ contract CommitmentSchemeTest is Test {
     /* ============================ the primitives agree ========================== */
 
     /// @dev A one-element fold, computed by hand against the primitive itself. This is
-    ///      what pins the fold STRUCTURE (seed over the chainKey, then
+    ///      what pins the fold structure (seed over the chainKey, then
     ///      `H(acc ‖ H(element))`), rather than only asserting internal consistency.
     function test_theSha256FoldMatchesAHandComputation() public view {
         bytes[] memory elements = new bytes[](1);
@@ -134,7 +134,7 @@ contract CommitmentSchemeTest is Test {
 
     /* =============================== not computable ============================= */
 
-    /// @dev POSEIDON IS DECLARED AND NOT IMPLEMENTED, and it must revert rather than fall
+    /// @dev Poseidon is declared and not implemented, and it must revert rather than fall
     ///      back. A silent fallback to keccak would hand back a well-formed commitment
     ///      that a Starknet receiver can never match, and it would fail only on a live
     ///      message.

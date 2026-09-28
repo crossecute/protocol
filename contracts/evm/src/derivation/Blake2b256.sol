@@ -8,18 +8,18 @@ pragma solidity ^0.8.20;
 ///      supplies the parameter block, the message padding, the byte-offset counters, and
 ///      the final-block flag around it.
 ///
-///      ENDIANNESS. EIP-152 takes and returns the state `h` and message `m` as
+///      Endianness. EIP-152 takes and returns the state `h` and message `m` as
 ///      little-endian 64-bit words. Because we carry `h` as opaque 64 raw bytes and pass
 ///      message blocks through verbatim, no word swapping is ever needed: only the
 ///      parameter-block XOR and the `t` counter are written in explicit little-endian.
 ///      This is the single most common source of wrong BLAKE2b ports; it is avoided here
 ///      rather than handled.
 ///
-///      MUTABILITY. Functions here are `view`, not `pure`. Solidity forbids `staticcall`
+///      Mutability. Functions here are `view`, not `pure`. Solidity forbids `staticcall`
 ///      inside `pure`, and there is no `blake2b` builtin the way there is for `sha256`
 ///      and `ripemd160`. Callers that need `pure` cannot use this; pass the digest in.
 ///
-///      GAS. The precompile costs 1 gas per round, 12 rounds per 128-byte block, so the
+///      Gas. The precompile costs 1 gas per round, 12 rounds per 128-byte block, so the
 ///      compression itself is free in practice. Cost is dominated by memory and the
 ///      staticcall overhead: measured at roughly 3k gas for a single-block input.
 library Blake2b256 {
@@ -49,7 +49,7 @@ library Blake2b256 {
             for (uint256 i; i < nBlocks; ++i) {
                 bool last = (i == nBlocks - 1);
                 uint256 offset = i * BLOCK_SIZE;
-                // Counter is bytes compressed so far INCLUDING this block. For the
+                // Counter is bytes compressed so far including this block. For the
                 // final block that is the true message length, not a padded length.
                 uint64 t = uint64(last ? len : offset + BLOCK_SIZE);
                 h = _compress(h, _blockAt(input, offset, len), t, last);

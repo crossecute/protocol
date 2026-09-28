@@ -16,7 +16,7 @@ import {Blake2bScheme} from "src/schemes/Blake2bScheme.sol";
 
 /* ============================ the simulated new chain ========================== */
 
-/// @notice A primitive with NO MEMBER IN `Scheme`, which is the entire point of it.
+/// @notice A primitive with no member in `Scheme`, which is the entire point of it.
 ///         Bitcoin's hash256 (sha256 applied twice) standing in for whatever a chain
 ///         onboarded after every live transmitter was compiled turns out to hash with.
 /// @dev Chosen because it is real, plausible as a destination's choice, and computable
@@ -27,10 +27,10 @@ contract Sha256dScheme is ICommitmentScheme {
     }
 }
 
-/// @notice Stands in for a real Poseidon port. IT IS NOT POSEIDON and must never be
+/// @notice Stands in for a real Poseidon port. It is not Poseidon and must never be
 ///         registered against a live Starknet chainKey.
 /// @dev It exists to prove one thing: that `Scheme.Poseidon` reverting
-///      `SchemeNotComputable` on every frozen transmitter is a gap the SEAM closes,
+///      `SchemeNotComputable` on every frozen transmitter is a gap the seam closes,
 ///      independently of anyone having written the round constants yet.
 contract NotReallyPoseidonScheme is ICommitmentScheme {
     function hash(bytes calldata data) external pure override returns (bytes32) {
@@ -40,7 +40,7 @@ contract NotReallyPoseidonScheme is ICommitmentScheme {
 
 /// @notice Returns a constant, ignoring its input entirely.
 /// @dev The adversary the interface is shaped against. It can corrupt its own digest and
-///      nothing else: the fold stays in the registry, so the commitment's STRUCTURE is
+///      nothing else: the fold stays in the registry, so the commitment's structure is
 ///      not a plugin's to choose.
 contract ConstantScheme is ICommitmentScheme {
     bytes32 constant C = bytes32(uint256(0xC0FFEE));
@@ -65,7 +65,7 @@ contract LibraryHarness {
 }
 
 /// @notice Covers the claim that a chain onboarded later, hashing in a way nobody had
-///         written when the live accounts were compiled, is PREVIEWABLE without touching
+///         written when the live accounts were compiled, is previewable without touching
 ///         a single frozen contract.
 ///
 /// @dev The seam only earns its place if it reproduces the frozen fold exactly. A preview
@@ -127,7 +127,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /* ================== the seam reproduces the frozen fold =================== */
 
-    /// @dev THE LOAD-BEARING ASSERTION. `ReceiverBase` enforces with the keccak fold
+    /// @dev The load-bearing assertion. `ReceiverBase` enforces with the keccak fold
     ///      compiled into it and can never be changed. If the plugin path disagrees here,
     ///      every preview it ever produces is a lie, and it fails only on a live message.
     function test_pluginPathReproducesTheFrozenEvmPath() public view {
@@ -167,10 +167,10 @@ contract CommitmentSchemePluginTest is Test {
         assertTrue(got != bytes32(0));
     }
 
-    /// @dev THE CAPABILITY MOVED, IT WAS NOT DROPPED. `TransmitterBase` used to answer
+    /// @dev The capability moved, it was not dropped. `TransmitterBase` used to answer
     ///      this shape through `commitmentForChain(bytes, Scheme, bytes[])`, which was
     ///      removed because a preview frozen with the account can only ever name
-    ///      primitives that already existed. For a destination the enum DOES cover, the
+    ///      primitives that already existed. For a destination the enum does cover, the
     ///      registry returns the identical value, so nothing a signer could ask before
     ///      has become unanswerable, it is asked somewhere that can still learn.
     function test_theRegistryAnswersTheShapeTheTransmitterNoLongerDoes() public {
@@ -191,7 +191,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /* ======================= onboarding a NEW primitive ======================= */
 
-    /// @dev THE WHOLE POINT. A chain whose hash has no `Scheme` member, on a chain type
+    /// @dev The whole point. A chain whose hash has no `Scheme` member, on a chain type
     ///      with no `ChainType` constant, becomes previewable with one owner transaction.
     ///      No account is redeployed, no frozen bytecode is consulted, and every chain
     ///      already wired keeps answering exactly as before.
@@ -253,7 +253,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /* ============================ the fold is not the plugin's ================= */
 
-    /// @dev A plugin that ignores its input entirely still cannot choose the SHAPE of the
+    /// @dev A plugin that ignores its input entirely still cannot choose the shape of the
     ///      commitment: the registry seeds with the chainKey and folds per element, so
     ///      the result is the fold applied to that constant rather than the constant.
     ///      That is what makes a swappable plugin bounded: the worst case is a digest

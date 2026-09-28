@@ -31,7 +31,7 @@ contract MiniFactory {
 }
 
 contract SaltedReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -51,13 +51,13 @@ contract MiniTransmitter {
     }
 }
 
-/// @dev A hub deployed from the SAME initcode as the spoke, so both land on one address.
+/// @dev A hub deployed from the same initcode as the spoke, so both land on one address.
 contract HubForAccounts is UnsendableHub {
     function initialize(address owner_, address impl) external initializer {
         __HubTransceiverBase_init(owner_, address(0), new address[](0), impl);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -83,7 +83,7 @@ contract SaltedTransceiver is UnsendableSpoke {
         return predictCrossAccount(owner_, bytes32(0));
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -124,7 +124,7 @@ contract SaltedDeploymentTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev ONE CONSTANT, INDEPENDENT OF THE IMPLEMENTATION. `CrossProxy` takes no
+    /// @dev One constant, independent of the implementation. `CrossProxy` takes no
     ///      constructor arguments, so every account (transmitter or receiver, on any
     ///      chain) deploys from this exact byte string. That independence is what lets
     ///      two accounts with different logic share an address; an EIP-1167 clone bakes
@@ -140,7 +140,7 @@ contract SaltedDeploymentTest is Test {
 
     /* ============================== the whole chain ============================= */
 
-    /// @dev THE LOAD-BEARING TEST. Ethereum predicts the transceiver from a recorded salt,
+    /// @dev The load-bearing test. Ethereum predicts the transceiver from a recorded salt,
     ///      the transceiver is then actually deployed at that address, it creates a
     ///      receiver, and the receiver lands where Ethereum said it would: all without
     ///      either contract existing when the prediction was made.
@@ -208,7 +208,7 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev THE GOAL, END TO END. The transceiver itself is an `CrossProxy`, deployed
+    /// @dev The goal, end to end. The transceiver itself is an `CrossProxy`, deployed
     ///      from one initcode at one salt, so the hub on Ethereum and the spoke on Base
     ///      are the same address, and they differ only in the logic each is armed with.
     ///      An owner's account then derives from that shared address, so their transmitter
@@ -237,7 +237,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.revertToState(world);
 
-        // ---- Ethereum: the hub arms the SAME address with transmitter logic ----
+        // ---- Ethereum: the hub arms the same address with transmitter logic ----
         address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         factory.arm(
             hubAt,
@@ -252,7 +252,7 @@ contract SaltedDeploymentTest is Test {
         assertEq(MiniTransmitter(transmitter).owner(), ownerOf, "and it is theirs");
     }
 
-    /// @dev THE SALT BUYS MORE THAN ONE ACCOUNT PER OWNER (one per purpose, per
+    /// @dev The salt buys more than one account per owner (one per purpose, per
     ///      counterparty, per mandate), and each keeps the one-address-everywhere property
     ///      independently.
     function test_oneOwnerCanHoldSeveralAccounts() public {
@@ -274,7 +274,7 @@ contract SaltedDeploymentTest is Test {
         assertEq(b, registry.predictCrossAccount(arb, provider, ownerOf, keccak256("ops")));
     }
 
-    /// @dev ONE OWNER'S SALT CANNOT REACH ANOTHER OWNER'S ACCOUNT. The pair is hashed, so
+    /// @dev One owner's salt cannot reach another owner's account. The pair is hashed, so
     ///      there is no choice of salt that lands on somebody else's address.
     function testFuzz_theOwnerIsAlwaysPartOfTheSalt(address ownerA, address ownerB, bytes32 saltA, bytes32 saltB)
         public
@@ -318,7 +318,7 @@ contract SaltedDeploymentTest is Test {
 
     /* ================================== mining ================================= */
 
-    /// @dev THE REASON THE SALT IS STORED AT ALL. A transceiver's address is fixed for the
+    /// @dev The reason the salt is stored at all. A transceiver's address is fixed for the
     ///      life of the protocol and appears in calldata forever after: peer tables,
     ///      payload targets, every receiver derived from it. Calldata zero bytes cost 4 gas
     ///      against 16, so a salt ground for leading zeros is a permanent discount.
@@ -377,7 +377,7 @@ contract SaltedDeploymentTest is Test {
         registry.predictTransceiver(sol, provider);
     }
 
-    /// @dev WRITE-ONCE, because changing it moves every address derived from it: the
+    /// @dev Write-once, because changing it moves every address derived from it: the
     ///      transceiver on every chain and every receiver under all of them.
     function test_theRecordCannotBeRepointed() public {
         _record(keccak256("initcode"), keccak256("receiver"));
@@ -403,7 +403,7 @@ contract SaltedDeploymentTest is Test {
 
     /* ========================= the recorded derivation ========================= */
 
-    /// @dev A RECORDED DEPLOYMENT STATES ITS INPUTS RATHER THAN ASSUMING PARITY. The hub's
+    /// @dev A recorded deployment states its inputs rather than assuming parity. The hub's
     ///      own fallback (its own address, on a chain graded `Derived`) reaches the same
     ///      answer by assuming the remote deployment matches the local one. This reaches it
     ///      by arithmetic over a factory, salt, and initcode hash that sat in the signed

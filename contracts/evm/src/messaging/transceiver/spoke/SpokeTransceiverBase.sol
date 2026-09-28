@@ -31,7 +31,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      versions by creation time.
     address public receiverImplementation;
 
-    /// Whether an account's address on THIS chain differs from the one the hub derives for
+    /// Whether an account's address on this chain differs from the one the hub derives for
     /// it. When true, every account created here is reported home.
     ///
     /// @dev Stated here because the hub cannot tell: it recomputes Ethereum's CREATE2, which is
@@ -61,7 +61,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev Home chainKey, route, transceiver, and receiver implementation are written once
     ///      with no setter. There is no treasury: a spoke charges nothing and holds only the
     ///      float for its reports.
-    /// @param addressesDiverge_ True only where an account's address here is NOT the one the
+    /// @param addressesDiverge_ True only where an account's address here is not the one the
     ///        hub derives: zkSync and Tron among EVM chains.
     function __SpokeTransceiverBase_init(
         address[] memory gateways,
@@ -94,7 +94,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         __TransceiverBase_init(gateways);
     }
 
-    /// @notice The hub transceiver, in THIS chain's address format.
+    /// @notice The hub transceiver, in this chain's address format.
     /// @dev `OutboundBase`'s counterpart on `homeChainKey`, written in the initializer and
     ///      never again: the spoke exposes no `_setCounterpart` path. Stored rather than
     ///      derived, since a spoke has no registry.

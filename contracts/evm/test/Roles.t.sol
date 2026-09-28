@@ -47,7 +47,7 @@ contract RoleHarness is Roles {
         }
     }
 
-    /// @dev Stands in for the gated entry point a RECEIVER exposes; the harness leaves it
+    /// @dev Stands in for the gated entry point a receiver exposes; the harness leaves it
     ///      ungated, because what is under test is the membership bookkeeping rather than who
     ///      may reach it.
     function revokeGateway(address gateway) external {
@@ -63,11 +63,11 @@ contract RoleHarness is Roles {
 
 /// @notice The two roles, and the shape of the answer.
 ///
-/// @dev THE POINT OF ONE ROLE FOR BOTH DIRECTIONS is that a contract accepting deliveries from
+/// @dev The point of one role for both directions is that a contract accepting deliveries from
 ///      one address while sending through another would be trusting two transports and
 ///      authenticating against one, and only a message from the second would ever reveal it.
 ///
-/// @dev AND NEITHER ROLE IS AN AUTHORITY. `TREASURY` names where fees may go and `GATEWAY`
+/// @dev And neither role is an authority. `TREASURY` names where fees may go and `GATEWAY`
 ///      names which transports are real; neither can call anything, and neither can be
 ///      granted after the initializer that named it.
 contract RolesTest is Test {
@@ -97,7 +97,7 @@ contract RolesTest is Test {
 
     /* ================================ both directions =============================== */
 
-    /// @dev THE INBOUND HALF: one of the two checks standing in front of an `external` entry
+    /// @dev The inbound half: one of the two checks standing in front of an `external` entry
     ///      point, and the reason the role sits on the receiver at all.
     function test_aReceiverRefusesADeliveryFromAnyoneElse() public {
         bytes memory sender = Erc7930.encodeEvm(1, address(0xB0B));
@@ -118,7 +118,7 @@ contract RolesTest is Test {
         receiver.receiveMessage(bytes32(0), sender, payload);
     }
 
-    /// @dev THE OUTBOUND HALF. The base cannot perform it for a binding, since only the
+    /// @dev The outbound half. The base cannot perform it for a binding, since only the
     ///      binding knows which address it is about to reach, but it reads the same role, so a
     ///      binding that checks before sending cannot drift from what its receiver enforces.
     function test_theOutboundHalfAsksTheSameRole() public {
@@ -135,7 +135,7 @@ contract RolesTest is Test {
         assertFalse(transmitter.hasRole(gatewayRole, IMPOSTOR));
     }
 
-    /// @dev EVERY FRESHLY DEPLOYED LAYERZERO IMPLEMENTATION TRUSTS NOBODY, because
+    /// @dev Every freshly deployed LayerZero implementation trusts nobody, because
     ///      `GATEWAY_ROLE` is only ever granted inside `initialize`, which nothing has called
     ///      on a bare implementation. That is the honest default regardless of which endpoint
     ///      it was constructed with: the absence fails loudly on the first message rather
@@ -149,7 +149,7 @@ contract RolesTest is Test {
 
     /* ========================== nothing can be granted ============================== */
 
-    /// @dev AN ACCOUNT'S TRANSPORT IS FROZEN THE MOMENT IT IS ARMED, and not because a slot
+    /// @dev An account's transport is frozen the moment it is armed, and not because a slot
     ///      refuses a second write: `GATEWAY` has no role admin, so it defaults to
     ///      `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. There is no
     ///      caller a grant could come from. Not the transceiver that created it, not the msig,
@@ -168,7 +168,7 @@ contract RolesTest is Test {
 
     /* ================================= the role graph =============================== */
 
-    /// @dev NEITHER ROLE HAS AN ADMIN, WHICH IS WHY THE GRANT PATH IS THE WINDOW INSTEAD.
+    /// @dev Neither role has an admin, which is why the grant path is the window instead.
     ///      Each falls back to `DEFAULT_ADMIN_ROLE`, and that is granted to nobody here or
     ///      anywhere else, so a role-gated `grantRole` could never have succeeded at all. The
     ///      membership the initializer stated is the membership for life.
@@ -179,7 +179,7 @@ contract RolesTest is Test {
         assertEq(h.getRoleMemberCount(h.DEFAULT_ADMIN_ROLE()), 0, "and nobody holds it");
     }
 
-    /// @dev THE INITIALIZER IS THE ONLY MOMENT. A set of gateways goes in, and afterwards no
+    /// @dev The initializer is the only moment. A set of gateways goes in, and afterwards no
     ///      caller can add one, not the one that deployed it, and not a member of the role.
     function test_theInitializerIsTheOnlyGrantThatEverHappens() public {
         RoleHarness h = _harness();
@@ -194,7 +194,7 @@ contract RolesTest is Test {
         }
     }
 
-    /// @dev REVOKING SURVIVES, AND ONLY THROUGH AN ENTRY POINT A CONTRACT CHOOSES TO EXPOSE.
+    /// @dev Revoking survives, and only through an entry point a contract chooses to expose.
     ///      A receiver exposes `revokeGateway` behind `onlySourceTransmitter`; a transceiver
     ///      exposes nothing at all. The inherited `revokeRole` remains unusable either way,
     ///      since that is the path with no valid caller.
@@ -215,7 +215,7 @@ contract RolesTest is Test {
         h.grantRole(gatewayRole, GATEWAY);
     }
 
-    /// @dev A ZERO IS SKIPPED RATHER THAN GRANTED. `address(0)` holding the role would make
+    /// @dev A zero is skipped rather than granted. `address(0)` holding the role would make
     ///      `hasRole(GATEWAY_ROLE, address(0))` true, and a delivery from an address the
     ///      protocol never named would then authenticate.
     function test_zeroAddressesAreNeverMembers() public {
@@ -239,7 +239,7 @@ contract RolesTest is Test {
 
     /* ============================ an account may drop one =========================== */
 
-    /// @dev A RECEIVER CAN DROP ITS TRANSPORT AND CANNOT REPLACE IT. That is the one
+    /// @dev A receiver can drop its transport and cannot replace it. That is the one
     ///      membership change surviving initialization anywhere in the protocol, and the
     ///      direction is deliberate: a gateway that can deliver can forge, so going deaf is
     ///      the recoverable failure and a compromised transport driving the account is not.
@@ -260,7 +260,7 @@ contract RolesTest is Test {
         receiver.grantRole(gatewayRole, GATEWAY);
     }
 
-    /// @dev A TRANSCEIVER HAS NO SUCH ENTRY POINT, because it is shared by every owner on its
+    /// @dev A transceiver has no such entry point, because it is shared by every owner on its
     ///      chain. Pinned here because the asymmetry is easy to erase by adding one line.
     function test_theGrantWindowClosesWithInitialization() public {
         RoleHarness h = _harness();
@@ -277,7 +277,7 @@ contract RolesTest is Test {
 
     /* ================================= enumeration ================================== */
 
-    /// @dev THE SET IS WHAT AN OPERATOR ACTUALLY WANTS. A predicate answers only about an
+    /// @dev The set is what an operator actually wants. A predicate answers only about an
     ///      address already suspected, so a deployment could carry a gateway nobody thought to
     ///      ask about; the member list makes it visible.
     function test_theMemberListSurvivesTheInitializerAndRevokes() public {
@@ -295,7 +295,7 @@ contract RolesTest is Test {
         h.initialize(gateways);
         assertEq(h.getRoleMemberCount(gatewayRole), 3);
 
-        // Revoking from the MIDDLE is the case swap-and-pop gets wrong if the index bookkeeping
+        // Revoking from the middle is the case swap-and-pop gets wrong if the index bookkeeping
         // is off: the tail moves into the hole and must be findable there afterwards.
         h.revokeGateway(b);
         address[] memory left = h.getRoleMembers(gatewayRole);

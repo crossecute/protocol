@@ -25,7 +25,7 @@ contract WidthValidator is IRefValidator {
 
 /// @notice Whether the registry accepts a ChainType it has never heard of.
 ///
-/// @dev `ChainType.sol` is an ALLOCATION TABLE, not an enum. Every value is a plain
+/// @dev `ChainType.sol` is an allocation table, not an enum. Every value is a plain
 ///      `uint16` and nothing validates against the set, so the question is not whether an
 ///      unknown type parses (it does), but which parts of the registry still work and
 ///      which quietly do not.
@@ -57,7 +57,7 @@ contract UnknownChainTypeTest is Test {
 
     /* ================================ what works =============================== */
 
-    /// @dev THE ENVELOPE IS THE ONLY GATE, AND IT DOES NOT KNOW THE TABLE. `parseStrict`
+    /// @dev The envelope is the only gate, and it does not know the table. `parseStrict`
     ///      reads the chain type as an opaque `uint16`; it never checks it against
     ///      `ChainType.sol`.
     function test_anUndefinedChainTypeRegisters() public {
@@ -71,7 +71,7 @@ contract UnknownChainTypeTest is Test {
 
     /// @dev The directory is chain-type-agnostic: a chain nothing here has ever heard of
     ///      can be registered and graded, because grading is about how well an address can
-    ///      be KNOWN rather than about what the address means.
+    ///      be known rather than about what the address means.
     function test_theDirectoryWorksForAnUndefinedChainType() public {
         vm.startPrank(owner);
         bytes32 chainKey = registry.addChainKey(chainId);
@@ -85,7 +85,7 @@ contract UnknownChainTypeTest is Test {
         );
     }
 
-    /// @dev AN UNKNOWN CHAIN TYPE HAS NO DEFAULT GRADE, and that is the safe direction. An
+    /// @dev An unknown chain type has no default grade, and that is the safe direction. An
     ///      undeclared `eip155` chain reads as `Derived`, because every EVM chain but zkSync
     ///      and Tron shares Ethereum's formula; anything else reads as `Unresolved`, which
     ///      no bar accepts, so it must be stated rather than guessed.
@@ -128,7 +128,7 @@ contract UnknownChainTypeTest is Test {
         assertTrue(registry.requiresReceiverCallback(chainKey));
     }
 
-    /// @dev THE UNIFORM DERIVATION IS CLOSED, and this is the one place a new chain type
+    /// @dev The uniform derivation is closed, and this is the one place a new chain type
     ///      needs code rather than configuration. `supportsScheme` is a fixed dispatch, so
     ///      the stock deriver rejects every scheme for a type it does not know.
     function test_theStockDeriverSupportsNoSchemeForAnUndefinedChainType() public {
@@ -147,11 +147,11 @@ contract UnknownChainTypeTest is Test {
 
     /* ================================ the hazard =============================== */
 
-    /// @dev THE REAL GAP, AND IT IS SILENT. `parseStrict` carries canonicity rules only
+    /// @dev The real gap, and it is silent. `parseStrict` carries canonicity rules only
     ///      for the profiles it knows: minimal chain references for `eip155`, fixed
-    ///      32-byte addresses for `starknet`. An unregistered chain type gets NO rule, so
+    ///      32-byte addresses for `starknet`. An unregistered chain type gets no rule, so
     ///      two encodings of what a human would call one address both parse, both are
-    ///      "canonical", and they hash to DIFFERENT keys.
+    ///      "canonical", and they hash to different keys.
     ///
     ///      That is precisely the split-brain the registry's whole canonicity argument
     ///      exists to prevent, and adding a `ChainType` constant does not close it: the
