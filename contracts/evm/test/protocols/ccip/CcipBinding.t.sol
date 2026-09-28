@@ -30,7 +30,8 @@ import {
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransceiverInboundSpec,
+    ProviderHomeIdSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -334,10 +335,27 @@ contract CcipGatewayRoleGrantTest is Test {
     }
 }
 
-contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
+contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
     address router = address(0xBEEF);
     address hub = address(0xD00D);
     uint64 constant HOME_SELECTOR = 5009297550715157269;
+
+    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
+        return (
+            address(new CcipSpokeTransceiver(router)),
+            abi.encodeCall(
+                CcipSpokeTransceiver.initialize,
+                (
+                    new address[](0),
+                    address(0xC0DE),
+                    ChainKey.forEvm(1),
+                    Erc7930.encodeEvmChain(1),
+                    abi.encodePacked(hub),
+                    uint64(homeId)
+                )
+            )
+        );
+    }
 
     function _spokes() internal override returns (address[] memory spokes) {
         bytes memory hubBytes = abi.encodePacked(hub);

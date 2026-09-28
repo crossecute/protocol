@@ -32,6 +32,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         bool addressesDiverge_,
         uint64 homeSelector_
     ) internal onlyInitializing {
+        ProviderOrigin.requireHomeSet(homeSelector_);
         grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
