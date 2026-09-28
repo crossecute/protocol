@@ -175,12 +175,6 @@ mainnet.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
-- **Removing a chain does not clear its declared provenance** ([#14](https://github.com/crossecute/protocol/issues/14)). `ChainRegistry.removeChainKey`
-  deletes the identifier but not `provenanceOf`, and `provenanceFor` returns a declared
-  grade before it looks at the identifier. So a removed chain that had been declared keeps
-  its grade, and a hub that already recorded its counterpart keeps sending there; only an
-  undeclared chain fails closed. Either clear `provenanceOf` on removal or check membership
-  in `provenanceFor`.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 - **What else a self-call may reach.** Today `commit` / `cancel` / `finalize` / `execute`.

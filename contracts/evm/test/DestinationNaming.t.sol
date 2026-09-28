@@ -208,22 +208,35 @@ contract DestinationNamingTest is Test {
         hub.routeTo(key);
     }
 
-    /// @dev Removing a chain fails its hub closed rather than orphaning it. The registry no
-    ///      longer holds counterparts, so it cannot refuse on their behalf; what it can do is
-    ///      stop grading the chain, and `provenanceFor` then reverts `UnknownChainKey`, which
-    ///      no bar accepts. The hub keeps its stored address and simply will not send.
-    function test_removingAChainFailsItsHubClosed() public {
+    /// @dev Removal stops onboarding, not accounts: the hub keeps the counterpart it has, and
+    ///      the chain accepts no new counterpart until it is added back.
+    function test_removingAChainStopsOnboardingButNotItsHub() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        registry.setProvenance(key, Provenance.Derived);
         hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
-        assertEq(hub.counterpartOn(key), abi.encodePacked(address(0xC0DE)));
 
+        registry.removeChainKey(key);
+
+        assertFalse(registry.hasChainKey(key));
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived), "the declared grade stays");
+        assertEq(hub.counterpartOn(key), abi.encodePacked(address(0xC0DE)), "the hub still resolves it");
+
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        registry.validateLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        registry.setProvenance(key, Provenance.Attested);
+        vm.stopPrank();
+    }
+
+    /// @dev An undeclared chain keeps its derived default after removal too.
+    function test_aRemovedUndeclaredChainKeepsItsDefaultGrade() public {
+        vm.startPrank(msig);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         registry.removeChainKey(key);
         vm.stopPrank();
 
-        assertFalse(registry.hasChainKey(key));
-        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        hub.counterpartOn(key);
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived));
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable

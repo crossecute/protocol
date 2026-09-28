@@ -153,15 +153,15 @@ contract ChainRegistry is OwnableUpgradeable {
         }
     }
 
-    /// @notice Drop a chain.
-    /// @dev Cannot see hubs' counterparts. Where the chain's provenance was undeclared,
-    ///      `provenanceFor` then reverts `UnknownChainKey` and hubs fail closed; a declared
-    ///      `provenanceOf` is not cleared, so it keeps answering (`docs/todo.md` §3).
+    /// @notice Drop a chain from the directory.
+    /// @dev Stops onboarding only: `validateLocation` requires membership, so no hub can
+    ///      record a new counterpart there. Its identifier and grade stay, so hubs keep
+    ///      bootstrapping to it and accepting its reports; removal must not strand accounts.
+    ///      Cutting a chain off is `setProvenance`.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
 
         _chainKeys.remove(chainKey);
-        delete _chainIdentifier[chainKey];
         emit ChainKeyRemoved(chainKey);
     }
 
@@ -290,7 +290,8 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice What an address claim about `chainKey` is worth, with the default applied.
     /// @dev An undeclared `eip155` chain reads as `Derived`, right for every EVM chain but
     ///      zkSync and Tron, which are declared. An undeclared chain of any other type reads as
-    ///      `Unresolved`, the lowest grade.
+    ///      `Unresolved`, the lowest grade. Answers for a removed chain; reverts only for one
+    ///      never registered.
     function provenanceFor(bytes32 chainKey) public view returns (Provenance) {
         Provenance declared = provenanceOf[chainKey];
         if (declared != Provenance.Unresolved) return declared;
