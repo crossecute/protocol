@@ -7,7 +7,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
 import {Commitment, Scheme} from "src/messaging/Commitment.sol";
-import {Blake2b256} from "src/derivation/Blake2b256.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 

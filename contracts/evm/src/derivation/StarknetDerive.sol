@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Erc7930} from "src/addressing/Erc7930.sol";
-
 /// @title StarknetDerive
 /// @notice What can and cannot be computed about Starknet from the EVM.
 ///

@@ -312,9 +312,12 @@ mainnet.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.
-- **CI enforces build and test only** (`.github/workflows/test.yml`). Formatting and lint are
-  not checked: `forge fmt --check` fails across the repo, and `forge lint` has no config
-  saying which rules are errors. Each needs its own pass before CI can enforce it.
+- **CI's lint gate excludes the detector heuristics** (`.github/workflows/test.yml`). It runs
+  `forge fmt --check` and `forge lint -D notes`, but `foundry.toml` excludes the heuristics
+  that currently fire across `src/` and `test/` (`unsafe-typecast`, `reentrancy-events`,
+  `arbitrary-send-eth`, `encode-packed-collision`, and the rest of that group) rather than
+  enforcing them. Each needs a site-by-site review, with a fix or an inline suppression, before it
+  comes off the list.
 - **No `test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where

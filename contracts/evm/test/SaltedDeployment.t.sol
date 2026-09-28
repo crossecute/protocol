@@ -14,7 +14,6 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
 
 /// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.

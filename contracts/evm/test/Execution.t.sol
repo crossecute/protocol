@@ -6,7 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
-import {Call, Calls} from "src/messaging/Call.sol";
+import {Call} from "src/messaging/Call.sol";
 
 /// @dev Records what it was called with, and can be made to fail.
 contract Target {

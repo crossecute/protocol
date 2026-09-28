@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
 

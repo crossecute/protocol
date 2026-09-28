@@ -7,7 +7,6 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {IVmDeriver} from "src/derivation/VmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {Move} from "src/addressing/Move.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -167,7 +166,6 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /* ================================== errors ================================= */
 
-    error NotTransceiver();
     /// @dev A route, once declared, is fixed. Re-pointing it is a redeploy.
     error AlreadySet();
     error NoCounterpart();
@@ -179,12 +177,9 @@ contract ChainRegistry is OwnableUpgradeable {
     error UnknownChainKey();
     error UnknownMessageProvider();
     error EmptyName();
-    error QualifierMismatch();
-    error NoQualifier();
     error NoDeriver();
     error NoDeriveParams();
     error DeriverChainMismatch();
-    error ParamsCommitmentMismatch();
     error SchemeNotSupported();
     /// @dev No primitive registered for this chain, so nothing here can say what its
     ///      receiver will require. Reverting beats returning a keccak digest the
