@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
-import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -74,6 +74,6 @@ contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
         override
         onlyRole(GATEWAY_ROLE)
     {
-        _onProviderInbound(origin, TypeCasts.bytes32ToAddress(sender), message);
+        _onProviderInbound(origin, ProviderAddress.evmSender(sender), message);
     }
 }

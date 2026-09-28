@@ -3,16 +3,17 @@ pragma solidity ^0.8.20;
 
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {OAppReceiverUpgradeable, Origin} from
-    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
-import {OAppCoreUpgradeable} from
-    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {
+    OAppReceiverUpgradeable,
+    Origin
+} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
+import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @dev Extends the base two-arg shape with the eid `sourceTransmitter` lives behind, so its
 ///      peer can be set in the same locked initializer call.
 interface ILzReceiverInit {
-    function initialize(address sourceTransmitter, Call[] calldata calls, uint32 homeEid)
-        external;
+    function initialize(address sourceTransmitter, Call[] calldata calls, uint32 homeEid) external;
 }
 
 /// @notice Per-user account on a non-home chain.
@@ -61,8 +62,11 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, ILzReceiverInit {
         bytes calldata _message,
         address, /* _executor */
         bytes calldata /* _extraData */
-    ) internal override {
+    )
+        internal
+        override
+    {
         _checkRole(GATEWAY_ROLE);
-        _onMessageFrom(address(uint160(uint256(_origin.sender))), _message);
+        _onMessageFrom(ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

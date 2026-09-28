@@ -3,8 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -27,7 +26,6 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
 ///      without a provider behind it.
 contract Transmitter is OwnableTransmitter {
-
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
@@ -37,12 +35,7 @@ contract Transmitter is OwnableTransmitter {
         return bytes32(0);
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
-        internal
-        pure
-        override
-        returns (uint256)
-    {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal pure override returns (uint256) {
         return 0;
     }
 
@@ -51,7 +44,6 @@ contract Transmitter is OwnableTransmitter {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract Receiver is ReceiverBase {
@@ -75,10 +67,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address owner_, address impl, bool addressesDiverge_)
-        external
-        initializer
-    {
+    function initialize(address owner_, address impl, bool addressesDiverge_) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,
@@ -104,21 +93,11 @@ contract ReportingSpoke is SpokeTransceiverBase {
         reportFee = v;
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
-        internal
-        view
-        override
-        returns (uint256)
-    {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal view override returns (uint256) {
         return reportFee;
     }
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory,
-        uint256 value
-    )
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory, uint256 value)
         internal
         override
         returns (bytes32)
@@ -145,7 +124,6 @@ contract ReportingSpoke is SpokeTransceiverBase {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @notice The return leg: which chains report where their receiver landed, and which
@@ -176,9 +154,7 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 0, "no message left the spoke");
-        assertTrue(
-            s.predictCrossAccount(owner, SALT).code.length != 0, "but the account exists"
-        );
+        assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0, "but the account exists");
     }
 
     /// @dev And it would be a DOWNGRADE, not merely waste. A derivation is `Derived`;
@@ -203,20 +179,14 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1, "one report");
-        assertEq(
-            ChainKey.fromIdentifier(s.sentRecipient()),
-            s.homeChainKey(),
-            "addressed home"
-        );
+        assertEq(ChainKey.fromIdentifier(s.sentRecipient()), s.homeChainKey(), "addressed home");
 
         (address gotOwner, bytes32 gotSalt, bytes memory interop) =
             abi.decode(s.sentPayload(), (address, bytes32, bytes));
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);
         assertEq(
-            interop,
-            Erc7930.encodeEvm(block.chainid, created),
-            "canonical ERC-7930 for the receiver on THIS chain"
+            interop, Erc7930.encodeEvm(block.chainid, created), "canonical ERC-7930 for the receiver on THIS chain"
         );
     }
 
@@ -227,15 +197,12 @@ contract ReceiverReportTest is Test {
         ReportingSpoke s = _spoke(true);
 
         s.inbound(owner, SALT, new Call[](0));
-        (address a, bytes32 b,) =
-            abi.decode(s.sentPayload(), (address, bytes32, bytes));
+        (address a, bytes32 b,) = abi.decode(s.sentPayload(), (address, bytes32, bytes));
 
         assertEq(
             keccak256(s.sentPayload()),
             keccak256(
-                Envelope.encodeReceiverReport(
-                    a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b))
-                )
+                Envelope.encodeReceiverReport(a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b)))
             )
         );
     }
@@ -268,9 +235,7 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            s.predictCrossAccount(owner, SALT).code.length,
-            0,
-            "no account, so the bootstrap can be retried once funded"
+            s.predictCrossAccount(owner, SALT).code.length, 0, "no account, so the bootstrap can be retried once funded"
         );
     }
 
@@ -346,9 +311,7 @@ contract ReceiverReportTest is Test {
     function test_theFlagHasNoSetter() public {
         ReportingSpoke s = _spoke(false);
 
-        (bool ok,) = address(s).call(
-            abi.encodeWithSignature("setAddressesDiverge(bool)", true)
-        );
+        (bool ok,) = address(s).call(abi.encodeWithSignature("setAddressesDiverge(bool)", true));
         assertFalse(ok, "no such function");
         assertFalse(s.addressesDiverge());
     }
@@ -369,20 +332,13 @@ contract ReceiverReportTest is Test {
     }
 }
 
-
 /* ========================================================================== */
 
 /// @dev The home side: a real hub, a real registry, and nothing hand-built. Everything
 ///      below feeds the spoke's ACTUAL wire bytes into it.
 contract Hub is HubTransceiverBase {
-    function initialize(
-        address owner_,
-        address treasury_,
-        address transmitterImplementation_
-    ) external initializer {
-        __HubTransceiverBase_init(
-            owner_, treasury_, new address[](0), transmitterImplementation_
-        );
+    function initialize(address owner_, address treasury_, address transmitterImplementation_) external initializer {
+        __HubTransceiverBase_init(owner_, treasury_, new address[](0), transmitterImplementation_);
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -410,9 +366,7 @@ contract Hub is HubTransceiverBase {
 
     /// @dev Stands in for a provider adapter: translates a callback into the three
     ///      arguments `_onInbound` takes, and does nothing else.
-    function arrive(bytes memory route, bytes memory sender, bytes calldata message)
-        external
-    {
+    function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
     }
 
@@ -421,7 +375,6 @@ contract Hub is HubTransceiverBase {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @notice The report crossing BOTH halves. Every other test of this path builds the
@@ -449,12 +402,7 @@ contract ReceiverReportRoundTripTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (msig))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
 
         hub = new Hub();
@@ -467,9 +415,7 @@ contract ReceiverReportRoundTripTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(hub));
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         spokeKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN));
         // Graded `Attested`: the hub cannot recompute an address there, which is both why
         // a report is needed and why the report is worth only the bridge that carried it.
@@ -513,18 +459,14 @@ contract ReceiverReportRoundTripTest is Test {
         bytes memory payload = account.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, spokeKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, spokeKey));
         account.sendMessage(recipient, payload, new bytes[](0));
 
         // The report lands, and only then does the destination become sendable, at the
         // address the spoke actually created, not at the guess.
         bytes memory produced = _report();
         address created = spoke.predictCrossAccount(owner, SALT);
-        hub.arrive(
-            Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced
-        );
+        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
         assertTrue(account.isReachable(spokeKey), "now it is");
         assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
@@ -537,9 +479,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertFalse(account.isReachable(spokeKey));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, spokeKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, spokeKey));
         account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
     }
 
@@ -580,21 +520,12 @@ contract ReceiverReportRoundTripTest is Test {
         // Refused before the call is made, not by the callee: the allowlist is the check.
         vm.expectRevert(
             abi.encodeWithSelector(
-                Executor.SelectorNotAllowed.selector,
-                address(hub),
-                HubTransceiverBase.onDestinationReceiver.selector
+                Executor.SelectorNotAllowed.selector, address(hub), HubTransceiverBase.onDestinationReceiver.selector
             )
         );
-        hub.receiveMessage(
-            bytes32(0),
-            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
-            Payload.encodeCalls(calls)
-        );
+        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
 
-        assertFalse(
-            account.isReachable(otherKey),
-            "nothing was recorded, so no chain got to speak for another"
-        );
+        assertFalse(account.isReachable(otherKey), "nothing was recorded, so no chain got to speak for another");
     }
 
     /// @notice REGRESSION: an executed payload cannot move the transceiver's balance.
@@ -610,11 +541,7 @@ contract ReceiverReportRoundTripTest is Test {
         calls[0] = Call({target: thief, value: 5 ether, data: ""});
 
         vm.expectRevert();
-        hub.receiveMessage(
-            bytes32(0),
-            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
-            Payload.encodeCalls(calls)
-        );
+        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
 
         assertEq(thief.balance, 0, "nothing left");
         assertEq(address(hub).balance, 5 ether, "and the fee balance is intact");
@@ -625,16 +552,10 @@ contract ReceiverReportRoundTripTest is Test {
     function test_anExecutedPayloadMayStillApproveAHash() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({
-            target: address(hub),
-            value: 0,
-            data: abi.encodeCall(ICommitFinalize.commit, (keccak256("deferred")))
+            target: address(hub), value: 0, data: abi.encodeCall(ICommitFinalize.commit, (keccak256("deferred")))
         });
 
-        hub.receiveMessage(
-            bytes32(0),
-            Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
-            Payload.encodeCalls(calls)
-        );
+        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
 
         assertTrue(hub.isCommitted(keccak256("deferred")));
     }
@@ -677,11 +598,7 @@ contract ReceiverReportRoundTripTest is Test {
         bytes memory produced = _report();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.ReceiverAlreadyReported.selector, spokeKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.ReceiverAlreadyReported.selector, spokeKey));
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
@@ -696,13 +613,12 @@ contract ReceiverReportRoundTripTest is Test {
         address created = spoke.predictCrossAccount(owner, SALT);
         assertTrue(account.isReceiverPinned(spokeKey));
 
-        (bool ok,) = address(account).call(
-            abi.encodeWithSignature(
-                "setDestinationReceiver(bytes32,bytes)",
-                spokeKey,
-                abi.encodePacked(address(0xC0FFEE))
-            )
-        );
+        (bool ok,) = address(account)
+            .call(
+                abi.encodeWithSignature(
+                    "setDestinationReceiver(bytes32,bytes)", spokeKey, abi.encodePacked(address(0xC0FFEE))
+                )
+            );
         assertFalse(ok, "no owner override exists");
         assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
     }
@@ -716,11 +632,7 @@ contract ReceiverReportRoundTripTest is Test {
         assertFalse(registry.requiresReceiverCallback(spokeKey));
 
         bytes memory produced = _report();
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.ChainDoesNotReport.selector, spokeKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ChainDoesNotReport.selector, spokeKey));
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
     }
 
@@ -731,14 +643,9 @@ contract ReceiverReportRoundTripTest is Test {
         vm.prank(msig);
         bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        bytes memory elsewhere =
-            abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
+        bytes memory elsewhere = abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.ReportedChainMismatch.selector, spokeKey, otherKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ReportedChainMismatch.selector, spokeKey, otherKey));
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
     }
 
@@ -747,8 +654,7 @@ contract ReceiverReportRoundTripTest is Test {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        bytes memory elsewhere =
-            abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
+        bytes memory elsewhere = abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
 
@@ -764,9 +670,7 @@ contract ReceiverReportRoundTripTest is Test {
     ///      not, and the account says so itself rather than relying on the hub being the
     ///      only party that knows the function exists.
     function test_nobodyElseCanReportToTheAccount() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this)));
         account.onDestinationReceiverReported(spokeKey, abi.encodePacked(address(0xBAD)));
     }
 }
@@ -796,12 +700,7 @@ contract BootstrapFeeTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (msig))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
         hub = new Hub();
         // One treasury for the protocol, named at deployment and never moved.
@@ -811,9 +710,7 @@ contract BootstrapFeeTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(hub));
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING));
         parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY));
         registry.setProvenance(divergingKey, Provenance.Attested);
@@ -864,23 +761,15 @@ contract BootstrapFeeTest is Test {
     ///      fails on arrival, after the signers have committed.
     function test_underpayingTheFeeReverts() public {
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
         account.bootstrap{value: FEE - 1}(DIVERGING, new Call[](0), new bytes[](0));
     }
 
     /// @dev THE QUOTE CARRIES IT, or it is worse than no quote: a caller would fund the send
     ///      exactly and the bootstrap would revert with the signers already committed.
     function test_theQuoteIncludesTheFee() public view {
-        uint256 withFee = hub.quoteBootstrap(
-            divergingKey, owner, SALT, new Call[](0), new bytes[](0)
-        );
-        uint256 withoutFee = hub.quoteBootstrap(
-            parityKey, owner, SALT, new Call[](0), new bytes[](0)
-        );
+        uint256 withFee = hub.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
+        uint256 withoutFee = hub.quoteBootstrap(parityKey, owner, SALT, new Call[](0), new bytes[](0));
         assertEq(withFee - withoutFee, FEE, "exactly the surcharge, on top of the message");
         assertGt(withoutFee, 0, "and the message still costs something");
     }
@@ -894,11 +783,7 @@ contract BootstrapFeeTest is Test {
     }
 
     function test_onlyTheOwnerSetsTheFee() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
         hub.setBootstrapFee(divergingKey, 1);
     }
 
@@ -908,12 +793,10 @@ contract BootstrapFeeTest is Test {
     function test_thereIsNoWithdrawalAndNoWayToRepointTheTreasury() public {
         assertEq(hub.treasury(), treasury);
 
-        (bool withdrew,) =
-            address(hub).call(abi.encodeWithSignature("withdrawFees(address)", msig));
+        (bool withdrew,) = address(hub).call(abi.encodeWithSignature("withdrawFees(address)", msig));
         assertFalse(withdrew);
 
-        (bool set,) =
-            address(hub).call(abi.encodeWithSignature("setTreasury(address)", msig));
+        (bool set,) = address(hub).call(abi.encodeWithSignature("setTreasury(address)", msig));
         assertFalse(set);
     }
 
@@ -938,11 +821,7 @@ contract BootstrapFeeTest is Test {
         Transmitter a = Transmitter(payable(h.createTransmitter(SALT)));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.FeeTransferFailed.selector, rejecting, FEE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.FeeTransferFailed.selector, rejecting, FEE));
         a.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
     }
 }

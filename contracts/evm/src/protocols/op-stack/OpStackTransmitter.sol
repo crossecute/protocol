@@ -17,7 +17,6 @@ interface IOpStackMessengerSource {
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See
 ///      `docs/provider-research.md#7-op-stack-as-a-native-binding`.
 contract OpStackTransmitter is OwnableTransmitter {
-
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {AccessControlEnumerableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
-import {AccessControlUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {
+    AccessControlEnumerableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title Roles

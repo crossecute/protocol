@@ -49,10 +49,7 @@ abstract contract DivergentSpokeTransceiver is SpokeTransceiverBase {
     ///        zksolc artifact for `CrossProxy`. For Tron, `keccak256` of TRON-solc's
     ///        `CrossProxy` initcode. Getting it wrong does not misdeliver: every account
     ///        creation on this spoke reverts `AccountAddressMismatch` until it is right.
-    function __DivergentSpoke_init(bytes32 accountBytecodeHash_)
-        internal
-        onlyInitializing
-    {
+    function __DivergentSpoke_init(bytes32 accountBytecodeHash_) internal onlyInitializing {
         if (accountBytecodeHash_ == bytes32(0)) revert ZeroAccountBytecodeHash();
         accountBytecodeHash = accountBytecodeHash_;
         emit AccountBytecodeHashSet(accountBytecodeHash_);
@@ -89,28 +86,14 @@ abstract contract ZkSyncSpokeTransceiver is DivergentSpokeTransceiver {
     bytes32 internal constant EMPTY_CONSTRUCTOR_INPUT_HASH = keccak256("");
 
     /// @inheritdoc TransceiverBase
-    function predictCrossAccount(address owner, bytes32 salt)
-        public
-        view
-        virtual
-        override
-        returns (address)
-    {
+    function predictCrossAccount(address owner, bytes32 salt) public view virtual override returns (address) {
         return AddressDerive.zksyncCreate2(
-            address(this),
-            accountSalt(owner, salt),
-            accountBytecodeHash,
-            EMPTY_CONSTRUCTOR_INPUT_HASH
+            address(this), accountSalt(owner, salt), accountBytecodeHash, EMPTY_CONSTRUCTOR_INPUT_HASH
         );
     }
 
     /// @inheritdoc TransceiverBase
-    function _deployAccount(bytes32 salt)
-        internal
-        virtual
-        override
-        returns (address)
-    {
+    function _deployAccount(bytes32 salt) internal virtual override returns (address) {
         return address(new CrossProxy{salt: salt}());
     }
 }
@@ -131,15 +114,7 @@ abstract contract ZkSyncSpokeTransceiver is DivergentSpokeTransceiver {
 ///      stands, and only the prediction moves.
 abstract contract TronSpokeTransceiver is DivergentSpokeTransceiver {
     /// @inheritdoc TransceiverBase
-    function predictCrossAccount(address owner, bytes32 salt)
-        public
-        view
-        virtual
-        override
-        returns (address)
-    {
-        return AddressDerive.tronCreate2(
-            address(this), accountSalt(owner, salt), accountBytecodeHash
-        );
+    function predictCrossAccount(address owner, bytes32 salt) public view virtual override returns (address) {
+        return AddressDerive.tronCreate2(address(this), accountSalt(owner, salt), accountBytecodeHash);
     }
 }

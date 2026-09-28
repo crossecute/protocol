@@ -9,8 +9,7 @@ import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/Inbou
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @title TransceiverBase
 /// @notice Authentication, routing, manufacture, and the upgrade lock: the half that is
@@ -68,13 +67,7 @@ import {UUPSUpgradeable} from
 ///      known before the first message, unchanged after the thousandth. Nothing about the
 ///      payload is in the salt, which would mint a new receiver per message and throw away
 ///      the state a receiver accumulates.
-abstract contract TransceiverBase is
-    Initializable,
-    OutboundBase,
-    InboundBase,
-    ICancel,
-    UUPSUpgradeable
-{
+abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, ICancel, UUPSUpgradeable {
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
@@ -86,16 +79,13 @@ abstract contract TransceiverBase is
     ///      derives addresses differently does not consume this value at all, and one that
     ///      also compiles differently (zkSync, whose deploy input is a zksolc artifact hash
     ///      rather than EVM initcode) has no relationship to it. See `predictCrossAccount`.
-    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH =
-        keccak256(type(CrossProxy).creationCode);
+    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
 
     event UpgradesLocked();
     /// @dev Owner and account are indexed; the salt rides in the data. Three indexed fields
     ///      would exhaust the topic budget for a value nobody filters on: an indexer wants
     ///      "this owner's accounts" or "this address", not "everyone who chose salt 7".
-    event CrossAccountCreated(
-        address indexed owner, address indexed account, bytes32 salt
-    );
+    event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt);
 
     error UpgradesAreLocked();
     error ZeroOwner();
@@ -147,15 +137,8 @@ abstract contract TransceiverBase is
     ///      MUST override this and `_deployAccount` together. Overriding one alone is caught
     ///      rather than trusted: `_createCrossAccount` compares what it deployed against what
     ///      this returned. See that function for what a chain-specific spoke owes.
-    function predictCrossAccount(address owner, bytes32 salt)
-        public
-        view
-        virtual
-        returns (address)
-    {
-        return Create2.computeAddress(
-            accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(this)
-        );
+    function predictCrossAccount(address owner, bytes32 salt) public view virtual returns (address) {
+        return Create2.computeAddress(accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
@@ -193,10 +176,7 @@ abstract contract TransceiverBase is
     ///      check reverts with no reason data. `AccountAddressMismatch` names which half is
     ///      wrong, which is the difference between a diagnosable spoke and an inexplicable
     ///      one.
-    function _createCrossAccount(address owner, bytes32 salt, Call[] memory calls)
-        internal
-        returns (address account)
-    {
+    function _createCrossAccount(address owner, bytes32 salt, Call[] memory calls) internal returns (address account) {
         if (owner == address(0)) revert ZeroOwner();
 
         address implementation = _accountImplementation();
@@ -208,9 +188,7 @@ abstract contract TransceiverBase is
         address deployed = _deployAccount(accountSalt(owner, salt));
         if (deployed != account) revert AccountAddressMismatch(account, deployed);
 
-        ICrossProxy(account).upgradeInitializeAndLock(
-            implementation, _accountInitializer(owner, salt, calls)
-        );
+        ICrossProxy(account).upgradeInitializeAndLock(implementation, _accountInitializer(owner, salt, calls));
 
         emit CrossAccountCreated(owner, account, salt);
     }
@@ -299,9 +277,7 @@ abstract contract TransceiverBase is
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
         return _quoteMessage(
-            _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, calls),
-            attributes
+            _recipientOn(destinationChainKey), Envelope.encodeBootstrap(owner, salt, calls), attributes
         ) + _bootstrapSurcharge(destinationChainKey);
     }
 
@@ -315,9 +291,7 @@ abstract contract TransceiverBase is
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
         return _quoteMessage(
-            _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, elements),
-            attributes
+            _recipientOn(destinationChainKey), Envelope.encodeBootstrapElements(owner, salt, elements), attributes
         ) + _bootstrapSurcharge(destinationChainKey);
     }
 
@@ -397,10 +371,7 @@ abstract contract TransceiverBase is
     ///      a memory array rather than loose arguments because the divergent spokes'
     ///      initializers sit near the stack limit, which `paris` without via-IR makes a real
     ///      constraint rather than a style question.
-    function __TransceiverBase_init(address[] memory gateways)
-        internal
-        onlyInitializing
-    {
+    function __TransceiverBase_init(address[] memory gateways) internal onlyInitializing {
         for (uint256 i; i < gateways.length; ++i) {
             if (gateways[i] != address(0)) {
                 grantRole(GATEWAY_ROLE, gateways[i]);
@@ -464,9 +435,7 @@ abstract contract TransceiverBase is
     ///      `_authenticateOrigin`, so `receiveMessage` and a binding's own inbound callback
     ///      reach the same check rather than two that could drift.
     function _authenticateSender(bytes calldata sender) internal view override {
-        _authenticateOrigin(
-            Erc7930.toChainIdentifier(sender), Erc7930.parseStrict(sender).addr
-        );
+        _authenticateOrigin(Erc7930.toChainIdentifier(sender), Erc7930.parseStrict(sender).addr);
     }
 
     /// @notice Whether `chainKey` reports its receiver address back rather than having it
@@ -509,18 +478,10 @@ abstract contract TransceiverBase is
     ///      Anything else a transceiver needs to be told arrives as an envelope through
     ///      `_onInbound`, where the argument comes from the authenticated origin rather than
     ///      from the payload.
-    function isAllowed(address target, bytes4 selector)
-        public
-        view
-        virtual
-        override
-        returns (bool)
-    {
-        return target == address(this)
-            && (
-                selector == ICommitFinalize.commit.selector
-                    || selector == ICancel.cancel.selector
-            );
+    function isAllowed(address target, bytes4 selector) public view virtual override returns (bool) {
+        return
+            target == address(this)
+                && (selector == ICommitFinalize.commit.selector || selector == ICancel.cancel.selector);
     }
 
     /// @notice Withdraw an approval this transceiver is holding.
@@ -556,9 +517,7 @@ abstract contract TransceiverBase is
     /// @param route   How the source chain is named, as the provider reported it.
     /// @param sender  The counterpart's address on that chain, in that chain's own format.
     /// @param message The body: see `Envelope`.
-    function _onInbound(bytes memory route, bytes memory sender, bytes calldata message)
-        internal
-    {
+    function _onInbound(bytes memory route, bytes memory sender, bytes calldata message) internal {
         bytes32 chainKey = _authenticateOrigin(route, sender);
         _handleInbound(chainKey, message);
     }

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
-import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user account on a non-home chain.
 /// @dev Implements `IMessageRecipient.handle` directly, gated `onlyRole(GATEWAY_ROLE)`,
@@ -44,6 +44,6 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
         override
         onlyRole(GATEWAY_ROLE)
     {
-        _onMessageFrom(TypeCasts.bytes32ToAddress(sender), message);
+        _onMessageFrom(ProviderAddress.evmSender(sender), message);
     }
 }

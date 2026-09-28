@@ -41,6 +41,10 @@ contract MockWormholeCore {
         overridePayload = true;
     }
 
+    function publishedLength() external view returns (uint256) {
+        return _published.length;
+    }
+
     function published(uint256 i) external view returns (Published memory) {
         return _published[i];
     }

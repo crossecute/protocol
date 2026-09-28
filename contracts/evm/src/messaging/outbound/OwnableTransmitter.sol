@@ -12,10 +12,7 @@ abstract contract OwnableTransmitter is TransmitterBase, OwnableUpgradeable {
         __OwnableTransmitter_init(owner_, transceiver_, salt_);
     }
 
-    function __OwnableTransmitter_init(address owner_, address transceiver_, bytes32 salt_)
-        internal
-        onlyInitializing
-    {
+    function __OwnableTransmitter_init(address owner_, address transceiver_, bytes32 salt_) internal onlyInitializing {
         __Ownable_init(owner_);
         __TransmitterBase_init(owner_, transceiver_, salt_);
     }

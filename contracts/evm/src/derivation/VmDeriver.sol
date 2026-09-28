@@ -151,38 +151,28 @@ contract VmDeriver is IVmDeriver {
     ///      keyed on the pair and not on either half alone: the registry pins the exact
     ///      scheme per chainKey, so a zkSync chainKey cannot be resolved with Ethereum's
     ///      formula just because both are eip155.
-    function supportsScheme(uint16 chainType, uint8 scheme)
-        public
-        pure
-        override
-        returns (bool)
-    {
+    function supportsScheme(uint16 chainType, uint8 scheme) public pure override returns (bool) {
         Scheme s = Scheme(scheme);
 
         if (chainType == ChainType.EIP155) {
             return s == Scheme.EvmCreate2 || s == Scheme.EvmCreate3 || s == Scheme.EvmCreate
-                || s == Scheme.ZkSyncCreate2 || s == Scheme.ZkSyncCreate
-                || s == Scheme.TronCreate2 || s == Scheme.EvmClone
-                || s == Scheme.TronClone;
+                || s == Scheme.ZkSyncCreate2 || s == Scheme.ZkSyncCreate || s == Scheme.TronCreate2
+                || s == Scheme.EvmClone || s == Scheme.TronClone;
         }
         if (chainType == ChainType.SOLANA) {
-            return s == Scheme.SolanaPda || s == Scheme.SolanaAta
-                || s == Scheme.SolanaCreateWithSeed;
+            return s == Scheme.SolanaPda || s == Scheme.SolanaAta || s == Scheme.SolanaCreateWithSeed;
         }
         if (chainType == ChainType.BIP122) {
-            return s == Scheme.BitcoinP2wpkh || s == Scheme.BitcoinP2wsh
-                || s == Scheme.BitcoinP2sh;
+            return s == Scheme.BitcoinP2wpkh || s == Scheme.BitcoinP2wsh || s == Scheme.BitcoinP2sh;
         }
         if (chainType == ChainType.COSMOS) {
             return s == Scheme.CosmosInstantiate2;
         }
         if (chainType == ChainType.NEAR) {
-            return s == Scheme.NearDeterministic || s == Scheme.NearEthImplicit
-                || s == Scheme.NearImplicit;
+            return s == Scheme.NearDeterministic || s == Scheme.NearEthImplicit || s == Scheme.NearImplicit;
         }
         if (chainType == ChainType.SUI) {
-            return s == Scheme.SuiAddress || s == Scheme.SuiMultisig
-                || s == Scheme.SuiObjectId;
+            return s == Scheme.SuiAddress || s == Scheme.SuiMultisig || s == Scheme.SuiObjectId;
         }
         // ChainType.APTOS and ChainType.STARKNET are deliberately absent.
         return false;
@@ -195,8 +185,7 @@ contract VmDeriver is IVmDeriver {
     function _derive(Scheme s, bytes memory p) private view returns (bytes memory) {
         /* ---------------------------------- EVM --------------------------------- */
         if (s == Scheme.EvmCreate2) {
-            (address deployer, bytes32 salt, bytes32 initCodeHash) =
-                abi.decode(p, (address, bytes32, bytes32));
+            (address deployer, bytes32 salt, bytes32 initCodeHash) = abi.decode(p, (address, bytes32, bytes32));
             return abi.encodePacked(AddressDerive.create2(deployer, salt, initCodeHash));
         }
         if (s == Scheme.EvmCreate3) {
@@ -215,17 +204,13 @@ contract VmDeriver is IVmDeriver {
         // zksolc, so it is derived with `ZkSyncCreate2` using that proxy's versioned
         // bytecode hash: no separate scheme, because it is not a clone in this sense.
         if (s == Scheme.EvmClone) {
-            (address deployer, address implementation, bytes32 salt) =
-                abi.decode(p, (address, address, bytes32));
+            (address deployer, address implementation, bytes32 salt) = abi.decode(p, (address, address, bytes32));
             return abi.encodePacked(AddressDerive.clone2(deployer, implementation, salt));
         }
         if (s == Scheme.TronClone) {
-            (address deployer, address implementation, bytes32 salt) =
-                abi.decode(p, (address, address, bytes32));
+            (address deployer, address implementation, bytes32 salt) = abi.decode(p, (address, address, bytes32));
             return abi.encodePacked(
-                AddressDerive.tronCreate2(
-                    deployer, salt, AddressDerive.cloneInitCodeHash(implementation)
-                )
+                AddressDerive.tronCreate2(deployer, salt, AddressDerive.cloneInitCodeHash(implementation))
             );
         }
 
@@ -233,9 +218,7 @@ contract VmDeriver is IVmDeriver {
         if (s == Scheme.ZkSyncCreate2) {
             (address sender, bytes32 salt, bytes32 bytecodeHash, bytes32 ctorInputHash) =
                 abi.decode(p, (address, bytes32, bytes32, bytes32));
-            return abi.encodePacked(
-                AddressDerive.zksyncCreate2(sender, salt, bytecodeHash, ctorInputHash)
-            );
+            return abi.encodePacked(AddressDerive.zksyncCreate2(sender, salt, bytecodeHash, ctorInputHash));
         }
         if (s == Scheme.ZkSyncCreate) {
             (address sender, uint256 nonce) = abi.decode(p, (address, uint256));
@@ -244,20 +227,14 @@ contract VmDeriver is IVmDeriver {
 
         /* --------------------------------- Tron --------------------------------- */
         if (s == Scheme.TronCreate2) {
-            (address deployer, bytes32 salt, bytes32 initCodeHash) =
-                abi.decode(p, (address, bytes32, bytes32));
+            (address deployer, bytes32 salt, bytes32 initCodeHash) = abi.decode(p, (address, bytes32, bytes32));
             return abi.encodePacked(AddressDerive.tronCreate2(deployer, salt, initCodeHash));
         }
 
         /* -------------------------------- Cosmos -------------------------------- */
         if (s == Scheme.CosmosInstantiate2) {
-            (
-                bytes32 checksum,
-                bytes memory creator,
-                bytes memory salt,
-                bytes memory initMsg,
-                uint8 addrLen
-            ) = abi.decode(p, (bytes32, bytes, bytes, bytes, uint8));
+            (bytes32 checksum, bytes memory creator, bytes memory salt, bytes memory initMsg, uint8 addrLen) =
+                abi.decode(p, (bytes32, bytes, bytes, bytes, uint8));
             bytes32 full = AddressDerive.cosmosInstantiate2(checksum, creator, salt, initMsg);
             // Canonical ADR-028 is 32 bytes. Forked wasmd chains that use 20 for
             // Ethereum-ecosystem compatibility (Injective) truncate. Only set addrLen
@@ -274,29 +251,19 @@ contract VmDeriver is IVmDeriver {
 
         /* -------------------------------- Solana -------------------------------- */
         if (s == Scheme.SolanaPda) {
-            (bytes[] memory seeds, uint8 bump, bytes32 programId) =
-                abi.decode(p, (bytes[], uint8, bytes32));
-            return abi.encodePacked(
-                AddressDerive.solanaCreateProgramAddress(seeds, bump, programId)
-            );
+            (bytes[] memory seeds, uint8 bump, bytes32 programId) = abi.decode(p, (bytes[], uint8, bytes32));
+            return abi.encodePacked(AddressDerive.solanaCreateProgramAddress(seeds, bump, programId));
         }
         if (s == Scheme.SolanaAta) {
-            (
-                bytes32 owner,
-                bytes32 mint,
-                bytes32 tokenProgram,
-                bytes32 ataProgram,
-                uint8 bump
-            ) = abi.decode(p, (bytes32, bytes32, bytes32, bytes32, uint8));
-            return abi.encodePacked(
-                AddressDerive.solanaAssociatedTokenAccount(
-                    owner, mint, tokenProgram, ataProgram, bump
-                )
-            );
+            (bytes32 owner, bytes32 mint, bytes32 tokenProgram, bytes32 ataProgram, uint8 bump) =
+                abi.decode(p, (bytes32, bytes32, bytes32, bytes32, uint8));
+            return
+                abi.encodePacked(
+                    AddressDerive.solanaAssociatedTokenAccount(owner, mint, tokenProgram, ataProgram, bump)
+                );
         }
         if (s == Scheme.SolanaCreateWithSeed) {
-            (bytes32 base, bytes memory seed, bytes32 programId) =
-                abi.decode(p, (bytes32, bytes, bytes32));
+            (bytes32 base, bytes memory seed, bytes32 programId) = abi.decode(p, (bytes32, bytes, bytes32));
             return abi.encodePacked(AddressDerive.solanaCreateWithSeed(base, seed, programId));
         }
 
@@ -336,15 +303,9 @@ contract VmDeriver is IVmDeriver {
             return abi.encodePacked(SuiDerive.addressFromPubkey(flag, pubkey));
         }
         if (s == Scheme.SuiMultisig) {
-            (
-                uint16 threshold,
-                uint8[] memory flags,
-                bytes[] memory pubkeys,
-                uint8[] memory weights
-            ) = abi.decode(p, (uint16, uint8[], bytes[], uint8[]));
-            return abi.encodePacked(
-                SuiDerive.addressFromMultisig(threshold, flags, pubkeys, weights)
-            );
+            (uint16 threshold, uint8[] memory flags, bytes[] memory pubkeys, uint8[] memory weights) =
+                abi.decode(p, (uint16, uint8[], bytes[], uint8[]));
+            return abi.encodePacked(SuiDerive.addressFromMultisig(threshold, flags, pubkeys, weights));
         }
         if (s == Scheme.SuiObjectId) {
             // Derivable but NOT counterfactual: txDigest does not exist until the

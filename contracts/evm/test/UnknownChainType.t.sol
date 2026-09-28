@@ -44,12 +44,7 @@ contract UnknownChainTypeTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
         );
         chainId = Erc7930.encodeChainId(CT_UNKNOWN, hex"cafe");
         account = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"0011223344556677");
@@ -139,9 +134,7 @@ contract UnknownChainTypeTest is Test {
     function test_theStockDeriverSupportsNoSchemeForAnUndefinedChainType() public {
         VmDeriver d = new VmDeriver();
         for (uint8 scheme; scheme < 20; ++scheme) {
-            assertFalse(
-                d.supportsScheme(CT_UNKNOWN, scheme), "no scheme is legal for an unknown VM"
-            );
+            assertFalse(d.supportsScheme(CT_UNKNOWN, scheme), "no scheme is legal for an unknown VM");
         }
 
         vm.startPrank(owner);

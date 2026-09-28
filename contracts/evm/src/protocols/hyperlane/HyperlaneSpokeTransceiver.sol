@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
-import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Hyperlane wiring shared by every spoke variant (this file's, and the zkSync/Tron
 ///         ones in `HyperlaneDivergentSpokeTransceiver.sol`), which differ only in address
@@ -77,7 +77,7 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
         onlyRole(GATEWAY_ROLE)
     {
         ProviderOrigin.requireHome(origin, homeDomain);
-        _onHomeInbound(TypeCasts.bytes32ToAddress(sender), message);
+        _onHomeInbound(ProviderAddress.evmSender(sender), message);
     }
 }
 

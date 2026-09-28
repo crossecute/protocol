@@ -50,3 +50,50 @@ remappings = [
     # See contracts/evm/script/vendor/op-stack.sh.
     "@optimism/=lib/optimism/packages/contracts-bedrock/",
 ]
+
+# CI runs `forge fmt --check`. Forge's defaults, which most of the tree already followed.
+# `lib/` is vendored upstream source, kept byte-identical to its recorded provenance.
+[fmt]
+ignore = ["lib/**"]
+
+# CI runs `forge lint -D notes`, so any finding from a rule not excluded here fails it.
+[lint]
+ignore = ["lib/**"]
+exclude_lints = [
+    # Conventions this tree does not follow. Renaming public immutables or the OZ-style
+    # `__X_init` initializers would change the ABI.
+    "screaming-snake-case-immutable",
+    "mixed-case-function",
+    "mixed-case-variable",
+    "multi-contract-file",
+    "literal-instead-of-constant",
+    "named-struct-fields",
+    "internal-function-used-once",
+    "missing-inheritance",
+    "cyclomatic-complexity",
+    "too-many-digits",
+    # Each file states the lowest version it compiles under; `solc_version` pins the build.
+    "pragma-inconsistent",
+    # Suggestions whose fix changes bytecode.
+    "asm-keccak256",
+    "custom-errors",
+    "event-fields",
+    "inline-assembly",
+    "low-level-calls",
+    "unwrapped-modifier-logic",
+    "non-reentrant-not-first",
+    # Heuristics with hits across src/ and test/ that have not been reviewed site by site
+    # (docs/todo.md §4). Each is enforced once its hits are fixed or suppressed inline.
+    "unsafe-typecast",
+    "reentrancy-events",
+    "missing-zero-check",
+    "uninitialized-local",
+    "require-revert-in-loop",
+    "calls-loop",
+    "arbitrary-send-eth",
+    "unused-return",
+    "encode-packed-collision",
+    "boolean-cst",
+    "locked-ether",
+    "empty-block",
+]

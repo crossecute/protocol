@@ -41,7 +41,6 @@ contract MockReceiver is ReceiverBase {
 /// @dev A transmitter with an inert send, so an account can be stood up on a destination
 ///      without a provider behind it. A report has to land on a real account now.
 contract Transmitter is UnsendableTransmitter {
-
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
@@ -56,7 +55,6 @@ contract Transmitter is UnsendableTransmitter {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract Hub is UnsendableHub {
@@ -73,9 +71,7 @@ contract Hub is UnsendableHub {
         return bytes32(0);
     }
 
-    function arrive(bytes memory route, bytes memory sender, bytes calldata message)
-        external
-    {
+    function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
     }
 
@@ -84,24 +80,14 @@ contract Hub is UnsendableHub {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract Spoke is UnsendableSpoke {
-    function initialize(address owner_, address impl, bytes calldata home)
-        external
-        initializer
-    {
-        __SpokeTransceiverBase_init(
-            new address[](0),
-            impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false
-        );
+    function initialize(address owner_, address impl, bytes calldata home) external initializer {
+        __SpokeTransceiverBase_init(new address[](0), impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false);
     }
 
-
-    function arrive(bytes memory route, bytes memory sender, bytes calldata message)
-        external
-    {
+    function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
     }
 
@@ -110,7 +96,6 @@ contract Spoke is UnsendableSpoke {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract InboundAuthTest is Test {
@@ -127,12 +112,7 @@ contract InboundAuthTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (msig))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
         address impl = address(new MockReceiver());
         hub = new Hub();
@@ -142,9 +122,7 @@ contract InboundAuthTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         registry.setLocalTransceiver(provider, address(hub));
         vm.stopPrank();
     }
@@ -178,22 +156,16 @@ contract InboundAuthTest is Test {
     /// @dev There is no setter by which a spoke could be made to accept a second origin.
     ///      The set of chains that can drive it is fixed at deployment.
     function test_spokeOriginCannotBeWidenedByAnyone() public {
-        (bool a,) = address(spoke).call(
-            abi.encodeWithSignature("setHomeTransceiver(bytes)", HOME_SENDER)
-        );
+        (bool a,) = address(spoke).call(abi.encodeWithSignature("setHomeTransceiver(bytes)", HOME_SENDER));
         assertFalse(a);
-        (bool b,) = address(spoke).call(
-            abi.encodeWithSignature("setRouting(address,bytes32,uint8)", address(0), bytes32(0), 0)
-        );
+        (bool b,) =
+            address(spoke).call(abi.encodeWithSignature("setRouting(address,bytes32,uint8)", address(0), bytes32(0), 0));
         assertFalse(b, "a spoke has no routing to set either");
     }
 
     /* =================================== hub =================================== */
 
-    function _wireSpokeChain(uint32, uint256 chainId, address counterpart)
-        internal
-        returns (bytes32 chainKey)
-    {
+    function _wireSpokeChain(uint32, uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId));
         // A chain that reports is one this contract cannot derive an account on: `eip155`
@@ -240,8 +212,7 @@ contract InboundAuthTest is Test {
     }
 
     function test_hubRejectsAnUnknownRoute() public {
-        bytes memory m =
-            Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
+        bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
         vm.expectRevert(OutboundBase.UnknownRoute.selector);
         hub.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
     }
@@ -250,12 +221,9 @@ contract InboundAuthTest is Test {
     ///      contract on a registered chain could report receiver addresses.
     function test_hubRejectsAKnownRouteFromTheWrongSender() public {
         bytes32 baseKey = _wireSpokeChain(30184, 8453, address(0xC0DE));
-        bytes memory m =
-            Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
+        bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey));
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
@@ -279,24 +247,18 @@ contract InboundAuthTest is Test {
         _standUpAccount(8453);
 
         // At the weakest bar the message is accepted.
-        bytes memory report = Envelope.encodeReceiverReport(
-            transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
-        );
+        bytes memory report =
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
 
         // Raise it, and the same well-formed message from the same contract is refused.
         vm.prank(msig);
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
-        );
-        bytes memory report2 = Envelope.encodeReceiverReport(
-            transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF))
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
+        bytes memory report2 =
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector,
-                chainKey,
-                Provenance.Attested
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Attested
             )
         );
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
@@ -315,15 +277,11 @@ contract InboundAuthTest is Test {
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xC0DE)), wrongWay);
     }
 
-    function testFuzz_bootstrapEnvelopeRoundTrips(address t_, address target, bytes memory data)
-        public
-        view
-    {
+    function testFuzz_bootstrapEnvelopeRoundTrips(address t_, address target, bytes memory data) public view {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: target, value: 3, data: data});
 
-        (address gotT,, Call[] memory got) =
-            this.peekBootstrap(Envelope.encodeBootstrap(t_, bytes32(0), calls));
+        (address gotT,, Call[] memory got) = this.peekBootstrap(Envelope.encodeBootstrap(t_, bytes32(0), calls));
 
         assertEq(gotT, t_);
         assertEq(got.length, 1);
@@ -332,11 +290,7 @@ contract InboundAuthTest is Test {
         assertEq(got[0].data, data);
     }
 
-    function peekBootstrap(bytes calldata m)
-        external
-        pure
-        returns (address, bytes32, Call[] memory)
-    {
+    function peekBootstrap(bytes calldata m) external pure returns (address, bytes32, Call[] memory) {
         return Envelope.decodeBootstrap(m);
     }
 

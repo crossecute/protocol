@@ -34,15 +34,10 @@ library SuiDerive {
     /// @param flag One of the FLAG_* constants.
     /// @param pubkey Raw public key bytes. Ed25519 is 32; secp256k1/r1 are 33
     ///        (SEC1 compressed). Length is checked where it is fixed.
-    function addressFromPubkey(uint8 flag, bytes memory pubkey)
-        internal
-        view
-        returns (bytes32)
-    {
+    function addressFromPubkey(uint8 flag, bytes memory pubkey) internal view returns (bytes32) {
         if (flag == FLAG_ED25519) {
             if (pubkey.length != 32) revert LengthMismatch();
-        } else if (flag == FLAG_SECP256K1 || flag == FLAG_SECP256R1 || flag == FLAG_PASSKEY)
-        {
+        } else if (flag == FLAG_SECP256K1 || flag == FLAG_SECP256R1 || flag == FLAG_PASSKEY) {
             if (pubkey.length != 33) revert LengthMismatch();
         } else if (flag != FLAG_ZKLOGIN) {
             // MultiSig has its own constructor; BLS is not a valid user address.
@@ -58,12 +53,11 @@ library SuiDerive {
     /// @param flags Per-member scheme flags.
     /// @param pubkeys Per-member raw public keys, same order as `flags`.
     /// @param weights Per-member weights, same order.
-    function addressFromMultisig(
-        uint16 threshold,
-        uint8[] memory flags,
-        bytes[] memory pubkeys,
-        uint8[] memory weights
-    ) internal view returns (bytes32) {
+    function addressFromMultisig(uint16 threshold, uint8[] memory flags, bytes[] memory pubkeys, uint8[] memory weights)
+        internal
+        view
+        returns (bytes32)
+    {
         uint256 n = flags.length;
         if (pubkeys.length != n || weights.length != n) revert LengthMismatch();
 
@@ -83,25 +77,13 @@ library SuiDerive {
     ///      the transaction is built and signed, and `creationNum` depends on how many
     ///      IDs that transaction already created. Use it to VERIFY an object ID
     ///      reported back by the destination, not to predict one in advance.
-    function deriveObjectId(bytes32 txDigest, uint64 creationNum)
-        internal
-        view
-        returns (bytes32)
-    {
-        return Blake2b256.hash(
-            abi.encodePacked(SCOPE_REGULAR_OBJECT_ID, txDigest, _le64(creationNum))
-        );
+    function deriveObjectId(bytes32 txDigest, uint64 creationNum) internal view returns (bytes32) {
+        return Blake2b256.hash(abi.encodePacked(SCOPE_REGULAR_OBJECT_ID, txDigest, _le64(creationNum)));
     }
 
     /// @notice Dynamic-field / child object ID variant.
-    function deriveChildObjectId(bytes32 txDigest, uint64 creationNum)
-        internal
-        view
-        returns (bytes32)
-    {
-        return Blake2b256.hash(
-            abi.encodePacked(SCOPE_CHILD_OBJECT_ID, txDigest, _le64(creationNum))
-        );
+    function deriveChildObjectId(bytes32 txDigest, uint64 creationNum) internal view returns (bytes32) {
+        return Blake2b256.hash(abi.encodePacked(SCOPE_CHILD_OBJECT_ID, txDigest, _le64(creationNum)));
     }
 
     function _le16(uint16 x) private pure returns (bytes2) {

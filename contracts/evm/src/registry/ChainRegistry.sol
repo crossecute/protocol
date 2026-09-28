@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {IVmDeriver} from "src/derivation/VmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {Move} from "src/addressing/Move.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -74,8 +72,7 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /// @notice Arachnid's deterministic deployment proxy, at the same address on every
     ///         standard EVM chain. The default for `create2Factory`.
-    address internal constant ARACHNID_FACTORY =
-        0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address internal constant ARACHNID_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /* ================================= storage ================================= */
 
@@ -157,10 +154,7 @@ contract ChainRegistry is OwnableUpgradeable {
     event MessageProviderRemoved(bytes32 indexed messageProvider);
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
     event ProviderDeploymentSet(
-        bytes32 indexed messageProvider,
-        bytes32 salt,
-        bytes32 transceiverInitCodeHash,
-        bytes32 accountInitCodeHash
+        bytes32 indexed messageProvider, bytes32 salt, bytes32 transceiverInitCodeHash, bytes32 accountInitCodeHash
     );
     event Create2FactorySet(bytes32 indexed chainKey, address factory);
     event QualifierSet(bytes32 indexed transceiverId, bytes32 qualifierHash);
@@ -172,7 +166,6 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /* ================================== errors ================================= */
 
-    error NotTransceiver();
     /// @dev A route, once declared, is fixed. Re-pointing it is a redeploy.
     error AlreadySet();
     error NoCounterpart();
@@ -184,12 +177,9 @@ contract ChainRegistry is OwnableUpgradeable {
     error UnknownChainKey();
     error UnknownMessageProvider();
     error EmptyName();
-    error QualifierMismatch();
-    error NoQualifier();
     error NoDeriver();
     error NoDeriveParams();
     error DeriverChainMismatch();
-    error ParamsCommitmentMismatch();
     error SchemeNotSupported();
     /// @dev No primitive registered for this chain, so nothing here can say what its
     ///      receiver will require. Reverting beats returning a keccak digest the
@@ -216,11 +206,7 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      before it becomes a permanent mapping key.
     /// @param identifier ERC-7930 bytes. An account envelope is accepted and reduced to
     ///                   its chain identifier form.
-    function addChainKey(bytes calldata identifier)
-        external
-        onlyOwner
-        returns (bytes32 chainKey)
-    {
+    function addChainKey(bytes calldata identifier) external onlyOwner returns (bytes32 chainKey) {
         bytes memory canonical = Erc7930.toChainIdentifier(identifier);
         chainKey = keccak256(canonical);
         if (_chainKeys.add(chainKey)) {
@@ -243,11 +229,7 @@ contract ChainRegistry is OwnableUpgradeable {
     }
 
     /// @notice Register a message provider by name; the key is keccak256 of the name.
-    function addMessageProvider(string calldata name)
-        external
-        onlyOwner
-        returns (bytes32 messageProvider)
-    {
+    function addMessageProvider(string calldata name) external onlyOwner returns (bytes32 messageProvider) {
         if (bytes(name).length == 0) revert EmptyName();
         messageProvider = keccak256(bytes(name));
         if (_messageProviders.add(messageProvider)) {
@@ -272,10 +254,7 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      proxy initcode and salt and so land together wherever Ethereum's CREATE2 formula
     ///      holds. Pass the zero address to retire a provider, which also removes the
     ///      default counterpart it backed.
-    function setLocalTransceiver(bytes32 messageProvider, address transceiver_)
-        external
-        onlyOwner
-    {
+    function setLocalTransceiver(bytes32 messageProvider, address transceiver_) external onlyOwner {
         if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
 
         address prev = localTransceiver[messageProvider];
@@ -304,7 +283,9 @@ contract ChainRegistry is OwnableUpgradeable {
         bytes32 transceiverInitCodeHash,
         bytes32 accountInitCodeHash
     ) external onlyOwner {
-        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
+        if (!_messageProviders.contains(messageProvider)) {
+            revert UnknownMessageProvider();
+        }
         if (salt == bytes32(0)) revert ZeroSalt();
         if (transceiverInitCodeHash == bytes32(0) || accountInitCodeHash == bytes32(0)) {
             revert ZeroInitCodeHash();
@@ -320,13 +301,9 @@ contract ChainRegistry is OwnableUpgradeable {
         }
 
         _deployment[messageProvider] = ProviderDeployment({
-            salt: salt,
-            transceiverInitCodeHash: transceiverInitCodeHash,
-            accountInitCodeHash: accountInitCodeHash
+            salt: salt, transceiverInitCodeHash: transceiverInitCodeHash, accountInitCodeHash: accountInitCodeHash
         });
-        emit ProviderDeploymentSet(
-            messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash
-        );
+        emit ProviderDeploymentSet(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
     }
 
     /// @notice The CREATE2 factory to derive against on one chain.
@@ -341,11 +318,7 @@ contract ChainRegistry is OwnableUpgradeable {
         emit Create2FactorySet(chainKey, factory);
     }
 
-    function providerDeployment(bytes32 messageProvider)
-        external
-        view
-        returns (ProviderDeployment memory)
-    {
+    function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
         return _deployment[messageProvider];
     }
 
@@ -362,17 +335,11 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      sense. The factory, salt, and initcode hash were all in the signed calldata that
     ///      recorded them, and this is arithmetic over them, not a local address assumed to
     ///      match the remote one.
-    function predictTransceiver(bytes32 chainKey, bytes32 messageProvider)
-        public
-        view
-        returns (address)
-    {
+    function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
         _requireEvmDerivable(chainKey);
-        return AddressDerive.create2(
-            create2Factory(chainKey), d.salt, d.transceiverInitCodeHash
-        );
+        return AddressDerive.create2(create2Factory(chainKey), d.salt, d.transceiverInitCodeHash);
     }
 
     /// @notice Where an owner's account lands on `chainKey`, before it exists.
@@ -385,19 +352,16 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      TRIPWIRE: the salt must match `TransceiverBase.accountSalt`. It is written out
     ///      rather than imported because this contract is on the home chain and that one is
     ///      on the destination; `test/SaltedDeployment.t.sol` asserts the two agree.
-    function predictCrossAccount(
-        bytes32 chainKey,
-        bytes32 messageProvider,
-        address owner,
-        bytes32 salt
-    ) external view returns (address) {
+    function predictCrossAccount(bytes32 chainKey, bytes32 messageProvider, address owner, bytes32 salt)
+        external
+        view
+        returns (address)
+    {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
-        return AddressDerive.create2(
-            transceiver, keccak256(abi.encode(owner, salt)), d.accountInitCodeHash
-        );
+        return AddressDerive.create2(transceiver, keccak256(abi.encode(owner, salt)), d.accountInitCodeHash);
     }
 
     /// @dev The two conditions under which a plain CREATE2 derivation is honest here:
@@ -426,9 +390,8 @@ contract ChainRegistry is OwnableUpgradeable {
 
         bytes memory identifier = _chainIdentifier[chainKey];
         if (identifier.length == 0) revert UnknownChainKey();
-        return Erc7930.parseStrict(identifier).chainType == Erc7930.CT_EIP155
-            ? Provenance.Derived
-            : Provenance.Unresolved;
+        return
+            Erc7930.parseStrict(identifier).chainType == Erc7930.CT_EIP155 ? Provenance.Derived : Provenance.Unresolved;
     }
 
     /// @notice Whether accounts on `chainKey` must report their own address home.
@@ -487,10 +450,7 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      be. Passing the zero address unregisters, which makes `commitmentFor` revert
     ///      rather than answer: a signer who cannot get an answer computes one, where a
     ///      signer given a wrong answer approves it.
-    function setCommitmentScheme(bytes32 chainKey, ICommitmentScheme scheme)
-        external
-        onlyOwner
-    {
+    function setCommitmentScheme(bytes32 chainKey, ICommitmentScheme scheme) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         commitmentSchemeOf[chainKey] = scheme;
         emit CommitmentSchemeSet(chainKey, address(scheme));
@@ -505,11 +465,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev NOTHING ON-CHAIN CALLS THIS, AND NOTHING MAY. A commitment is enforced by the
     ///      destination's receiver against its own frozen fold, never against a mutable
     ///      lookup here. This is read through `eth_call` by a signer checking a payload.
-    function commitmentFor(bytes32 chainKey, bytes[] calldata elements)
-        external
-        view
-        returns (bytes32)
-    {
+    function commitmentFor(bytes32 chainKey, bytes[] calldata elements) external view returns (bytes32) {
         ICommitmentScheme scheme = commitmentSchemeOf[chainKey];
         if (address(scheme) == address(0)) revert NoCommitmentScheme();
         return SchemeFold.hashCalls(scheme, chainKey, elements);
@@ -573,11 +529,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev The chainKey re-check is load-bearing: a deriver is external code, and
     ///      without it a wrong or hostile one could return an envelope for a DIFFERENT
     ///      registered chain and have `_store` accept it into this chain's route.
-    function expectedTransceiver(bytes32 chainKey)
-        public
-        view
-        returns (bytes memory interop)
-    {
+    function expectedTransceiver(bytes32 chainKey) public view returns (bytes memory interop) {
         IVmDeriver d = deriverOf[chainKey];
         if (address(d) == address(0)) revert NoDeriver();
         bytes memory params = _deriveParams[chainKey];
@@ -590,11 +542,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Every destination at once: the expected transceiver on each registered chain.
     /// @dev Chains with no deriver or no params yield empty `interops[i]` rather than
     ///      reverting, since one unconfigured chain must not blind the view of the others.
-    function expectedTransceivers()
-        external
-        view
-        returns (bytes32[] memory keys, bytes[] memory interops)
-    {
+    function expectedTransceivers() external view returns (bytes32[] memory keys, bytes[] memory interops) {
         keys = _chainKeys.values();
         uint256 n = keys.length;
         interops = new bytes[](n);
@@ -655,11 +603,7 @@ contract ChainRegistry is OwnableUpgradeable {
         return _messageProviders.contains(messageProvider);
     }
 
-    function messageProviderName(bytes32 messageProvider)
-        external
-        view
-        returns (string memory)
-    {
+    function messageProviderName(bytes32 messageProvider) external view returns (string memory) {
         if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
         return _messageProviderName[messageProvider];
     }

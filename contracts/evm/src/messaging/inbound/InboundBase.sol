@@ -2,8 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {ReentrancyGuardUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -58,13 +57,7 @@ interface ICancel {
 /// @dev EXECUTION IS UNORDERED, and `_commitments` is a count rather than a set: see the
 ///      storage comment below. Both properties are the same on either inheritor, which is
 ///      most of the argument for the base existing at all.
-abstract contract InboundBase is
-    Executor,
-    Roles,
-    ReentrancyGuardUpgradeable,
-    ICommitFinalize,
-    IERC7786Recipient
-{
+abstract contract InboundBase is Executor, Roles, ReentrancyGuardUpgradeable, ICommitFinalize, IERC7786Recipient {
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     /// @notice The outstanding approvals: commitment => how many times it may still be
@@ -120,12 +113,7 @@ abstract contract InboundBase is
     /// @dev The same hash may be approved twice: two identical payloads are two separate
     ///      approvals, and each needs its own `finalize`. That is what the count is for.
     /// @return approvals How many times this hash may now be finalized.
-    function commit(bytes32 commitment_)
-        external
-        virtual
-        override
-        returns (uint256 approvals)
-    {
+    function commit(bytes32 commitment_) external virtual override returns (uint256 approvals) {
         _checkCommitter();
         if (commitment_ == bytes32(0)) revert ZeroCommitment();
 

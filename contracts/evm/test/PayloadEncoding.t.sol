@@ -56,19 +56,11 @@ contract PayloadHarness {
         return Payload.isTypedDestination(identifier);
     }
 
-    function hashElements(bytes32 chainKey, bytes[] calldata elements)
-        external
-        pure
-        returns (bytes32)
-    {
+    function hashElements(bytes32 chainKey, bytes[] calldata elements) external pure returns (bytes32) {
         return Commitment.hashCalls(chainKey, elements);
     }
 
-    function hashCalls(bytes32 chainKey, Call[] calldata calls)
-        external
-        pure
-        returns (bytes32)
-    {
+    function hashCalls(bytes32 chainKey, Call[] calldata calls) external pure returns (bytes32) {
         return Commitment.hashCalls(chainKey, calls);
     }
 }
@@ -126,9 +118,7 @@ contract PayloadEncodingTest is Test {
         bytes memory typedWire = Payload.encodeCalls(calls);
         bytes memory opaqueWire = Payload.encodeElements(Calls.encodeAll(calls));
 
-        assertTrue(
-            keccak256(typedWire) != keccak256(opaqueWire), "the blobs are not identical"
-        );
+        assertTrue(keccak256(typedWire) != keccak256(opaqueWire), "the blobs are not identical");
         assertEq(
             harness.hashCalls(DEST, calls),
             harness.hashElements(DEST, Calls.encodeAll(calls)),
@@ -145,21 +135,13 @@ contract PayloadEncodingTest is Test {
         Call memory c = Call({target: address(0xBEEF), value: 1, data: hex"deadbeef"});
 
         assertTrue(
-            keccak256(abi.encode(c)) != keccak256(Calls.encode(c)),
-            "the two differ, which is why Calls.encode exists"
+            keccak256(abi.encode(c)) != keccak256(Calls.encode(c)), "the two differ, which is why Calls.encode exists"
         );
-        assertEq(
-            Calls.hash(c),
-            keccak256(abi.encode(c.target, c.value, c.data)),
-            "hash must equal the field encoding"
-        );
+        assertEq(Calls.hash(c), keccak256(abi.encode(c.target, c.value, c.data)), "hash must equal the field encoding");
         assertEq(Calls.hash(c), keccak256(Calls.encode(c)), "hash equals keccak of encode");
     }
 
-    function testFuzz_elementRoundTrips(address target, uint256 value, bytes memory data)
-        public
-        pure
-    {
+    function testFuzz_elementRoundTrips(address target, uint256 value, bytes memory data) public pure {
         Call memory c = Call({target: target, value: value, data: data});
         Call memory back = Calls.decode(Calls.encode(c));
 
@@ -197,21 +179,12 @@ contract PayloadEncodingTest is Test {
     /// sides know which before a byte is written, so a field saying so would carry a value
     /// each already holds: the same reason `Envelope` has no message-type field.
     function test_theFormIsDecidedByTheDestination() public view {
-        assertTrue(
-            harness.isTypedDestination(Erc7930.encodeEvmChain(8453)),
-            "an EVM destination takes typed calls"
-        );
+        assertTrue(harness.isTypedDestination(Erc7930.encodeEvmChain(8453)), "an EVM destination takes typed calls");
         assertFalse(
-            harness.isTypedDestination(
-                Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708")
-            ),
+            harness.isTypedDestination(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708")),
             "everything else takes opaque elements"
         );
-        assertFalse(
-            harness.isTypedDestination(
-                Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"))
-            )
-        );
+        assertFalse(harness.isTypedDestination(Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"))));
     }
 
     /// @dev THE REASON THE TAG COULD GO, STATED AS A TEST RATHER THAN A COMMENT. Feeding a
@@ -245,8 +218,7 @@ contract PayloadEncodingTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
 
-        bytes[] memory roundTripped =
-            harness.decodeElements(Payload.encodeElements(elements));
+        bytes[] memory roundTripped = harness.decodeElements(Payload.encodeElements(elements));
 
         assertEq(
             harness.hashElements(DEST, roundTripped),
@@ -266,8 +238,7 @@ contract PayloadEncodingTest is Test {
         Call[] memory calls = _sinkCalls();
 
         // Built the way portable tooling builds it: over opaque elements.
-        bytes32 commitment =
-            Commitment.hashCalls(ChainKey.local(), Calls.encodeAll(calls));
+        bytes32 commitment = Commitment.hashCalls(ChainKey.local(), Calls.encodeAll(calls));
 
         OpenReceiver r = new OpenReceiver();
         r.initialize(address(this), new Call[](0));
@@ -281,11 +252,7 @@ contract PayloadEncodingTest is Test {
     /// `msg.value`: the approval covers how much the target receives.
     function test_theTypedPathSpendsTheCommittedValue() public {
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({
-            target: address(sink),
-            value: 1 ether,
-            data: abi.encodeCall(Sink.poke, (1))
-        });
+        calls[0] = Call({target: address(sink), value: 1 ether, data: abi.encodeCall(Sink.poke, (1))});
 
         OpenReceiver r = new OpenReceiver();
         r.initialize(address(this), new Call[](0));
@@ -314,14 +281,10 @@ contract PayloadEncodingTest is Test {
         OpenReceiver r = new OpenReceiver();
         r.initialize(address(this), new Call[](0));
 
-        (bool ok,) = address(r).call(
-            abi.encodeWithSignature("execute(bytes[])", Calls.encodeAll(_sinkCalls()))
-        );
+        (bool ok,) = address(r).call(abi.encodeWithSignature("execute(bytes[])", Calls.encodeAll(_sinkCalls())));
         assertFalse(ok, "there is no execute(bytes[])");
 
-        (ok,) = address(r).call(
-            abi.encodeWithSignature("finalize(bytes[])", Calls.encodeAll(_sinkCalls()))
-        );
+        (ok,) = address(r).call(abi.encodeWithSignature("finalize(bytes[])", Calls.encodeAll(_sinkCalls())));
         assertFalse(ok, "there is no finalize(bytes[])");
     }
 
@@ -329,25 +292,13 @@ contract PayloadEncodingTest is Test {
 
     function _calls() internal view returns (Call[] memory calls) {
         calls = new Call[](2);
-        calls[0] = Call({
-            target: address(sink),
-            value: 0,
-            data: abi.encodeCall(Sink.poke, (1))
-        });
+        calls[0] = Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.poke, (1))});
         calls[1] = Call({target: address(0xC0FFEE), value: 7, data: hex""});
     }
 
     function _sinkCalls() internal view returns (Call[] memory calls) {
         calls = new Call[](2);
-        calls[0] = Call({
-            target: address(sink),
-            value: 0,
-            data: abi.encodeCall(Sink.poke, (1))
-        });
-        calls[1] = Call({
-            target: address(sink),
-            value: 0,
-            data: abi.encodeCall(Sink.poke, (2))
-        });
+        calls[0] = Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.poke, (1))});
+        calls[1] = Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.poke, (2))});
     }
 }

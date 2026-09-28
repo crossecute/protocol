@@ -3,8 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {IAccessControlEnumerable} from
-    "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
+import {IAccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol";
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
@@ -22,21 +21,14 @@ import {UnsendableTransmitter} from "test/Unsendable.sol";
 ///      `__ReceiverBase_init` is the documented shape. A binding's provider setup goes in
 ///      front of the bootstrap payload, and this is that setup.
 contract RoleReceiver is ReceiverBase {
-    function initializeWith(
-        address transmitter_,
-        address gateway_,
-        Call[] calldata calls
-    ) external initializer {
+    function initializeWith(address transmitter_, address gateway_, Call[] calldata calls) external initializer {
         grantRole(GATEWAY_ROLE, gateway_);
         __ReceiverBase_init(transmitter_, calls);
     }
 }
 
 contract RoleTransmitter is UnsendableTransmitter {
-    function initializeWith(address owner_, address transceiver_, address gateway_)
-        external
-        initializer
-    {
+    function initializeWith(address owner_, address transceiver_, address gateway_) external initializer {
         __OwnableTransmitter_init(owner_, transceiver_, bytes32(0));
         grantRole(GATEWAY_ROLE, gateway_);
     }
@@ -100,9 +92,7 @@ contract RolesTest is Test {
     }
 
     function _unauthorized(address who, bytes32 role) internal pure returns (bytes memory) {
-        return abi.encodeWithSelector(
-            IAccessControl.AccessControlUnauthorizedAccount.selector, who, role
-        );
+        return abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, who, role);
     }
 
     /* ================================ both directions =============================== */
@@ -165,11 +155,7 @@ contract RolesTest is Test {
     ///      caller a grant could come from. Not the transceiver that created it, not the msig,
     ///      not the account's own owner.
     function test_nothingCanAddAGatewayToAnAccount() public {
-        assertEq(
-            receiver.getRoleMemberCount(receiver.DEFAULT_ADMIN_ROLE()),
-            0,
-            "and nothing holds what administers it"
-        );
+        assertEq(receiver.getRoleMemberCount(receiver.DEFAULT_ADMIN_ROLE()), 0, "and nothing holds what administers it");
 
         address[3] memory tryers = [receiver.parentTransceiver(), msig, address(0xB0B)];
         for (uint256 i; i < tryers.length; i++) {
@@ -205,7 +191,6 @@ contract RolesTest is Test {
             vm.prank(tryers[i]);
             vm.expectRevert(Initializable.NotInitializing.selector);
             h.grantRole(gatewayRole, IMPOSTOR);
-
         }
     }
 

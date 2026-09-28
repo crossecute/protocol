@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
-    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {
+    ZkSyncSpokeTransceiver,
+    TronSpokeTransceiver
+} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HyperlaneSpokeBase} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
 

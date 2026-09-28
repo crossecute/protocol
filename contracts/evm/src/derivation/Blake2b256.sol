@@ -26,15 +26,8 @@ library Blake2b256 {
     /// @dev BLAKE2b IV, little-endian bytes, with h[0] already XORed by the parameter
     ///      block 0x01010020 (fanout=1, depth=1, key length=0, digest length=32).
     ///      0x6a09e667f3bcc908 ^ 0x01010020 == 0x6a09e667f2bdc928.
-    bytes private constant IV_PARAM =
-        hex"28c9bdf267e6096a"
-        hex"3ba7ca8485ae67bb"
-        hex"2bf894fe72f36e3c"
-        hex"f1361d5f3af54fa5"
-        hex"d182e6ad7f520e51"
-        hex"1f6c3e2b8c68059b"
-        hex"6bbd41fbabd9831f"
-        hex"79217e1319cde05b";
+    bytes private constant IV_PARAM = hex"28c9bdf267e6096a" hex"3ba7ca8485ae67bb" hex"2bf894fe72f36e3c"
+        hex"f1361d5f3af54fa5" hex"d182e6ad7f520e51" hex"1f6c3e2b8c68059b" hex"6bbd41fbabd9831f" hex"79217e1319cde05b";
 
     uint32 private constant ROUNDS = 12;
     uint256 private constant BLOCK_SIZE = 128;
@@ -73,11 +66,7 @@ library Blake2b256 {
 
     /// @dev Extracts a 128-byte block starting at `offset`, zero-padded if the message
     ///      ends early. Zero padding is part of the BLAKE2b spec, not an artifact.
-    function _blockAt(bytes memory input, uint256 offset, uint256 len)
-        private
-        pure
-        returns (bytes memory blk)
-    {
+    function _blockAt(bytes memory input, uint256 offset, uint256 len) private pure returns (bytes memory blk) {
         blk = new bytes(BLOCK_SIZE);
         uint256 n = len - offset;
         if (n > BLOCK_SIZE) n = BLOCK_SIZE;
@@ -93,11 +82,7 @@ library Blake2b256 {
     ///        m     128  bytes, 16 little-endian uint64
     ///        t      16  bytes, t0 then t1, each little-endian uint64
     ///        f       1  byte,  0x01 on the final block
-    function _compress(bytes memory h, bytes memory blk, uint64 t0, bool last)
-        private
-        view
-        returns (bytes memory out)
-    {
+    function _compress(bytes memory h, bytes memory blk, uint64 t0, bool last) private view returns (bytes memory out) {
         bytes memory input = abi.encodePacked(
             ROUNDS, // 4, big-endian by abi.encodePacked
             h, // 64

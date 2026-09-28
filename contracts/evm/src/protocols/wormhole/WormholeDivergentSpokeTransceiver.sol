@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
-    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {
+    ZkSyncSpokeTransceiver,
+    TronSpokeTransceiver
+} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {WormholeSpokeBase} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
 
@@ -27,7 +29,13 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
         uint16 homeWormholeChain_
     ) external initializer {
         __WormholeSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeWormholeChain_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            true,
+            homeWormholeChain_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
@@ -63,7 +71,13 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
         uint16 homeWormholeChain_
     ) external initializer {
         __WormholeSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeWormholeChain_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            true,
+            homeWormholeChain_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }

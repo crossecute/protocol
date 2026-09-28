@@ -58,11 +58,11 @@ library SchemeFold {
     ///
     /// @dev AN EMPTY ARRAY HASHES TO THE SEED ALONE, matching `Commitment`. Non-zero, and
     ///      therefore a valid commitment.
-    function hashCalls(
-        ICommitmentScheme scheme,
-        bytes32 destinationChainKey,
-        bytes[] memory elements
-    ) internal view returns (bytes32 hashed) {
+    function hashCalls(ICommitmentScheme scheme, bytes32 destinationChainKey, bytes[] memory elements)
+        internal
+        view
+        returns (bytes32 hashed)
+    {
         hashed = scheme.hash(abi.encode(destinationChainKey));
         uint256 len = elements.length;
         for (uint256 i = 0; i < len; i++) {

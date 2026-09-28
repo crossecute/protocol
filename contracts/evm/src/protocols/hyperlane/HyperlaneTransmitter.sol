@@ -25,10 +25,9 @@ contract HyperlaneTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
-        return
-            HyperlaneMessage.dispatch(
-                mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value, _refundTo()
-            );
+        return HyperlaneMessage.dispatch(
+            mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value, _refundTo()
+        );
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -37,7 +36,9 @@ contract HyperlaneTransmitter is OwnableTransmitter {
         override
         returns (uint256 nativeFee)
     {
-        return HyperlaneMessage.quote(mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, _refundTo());
+        return HyperlaneMessage.quote(
+            mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, _refundTo()
+        );
     }
 
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;

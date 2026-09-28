@@ -9,7 +9,6 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
@@ -42,12 +41,7 @@ contract DestinationNamingTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (msig))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
         address recvImpl = address(new LzReceiver(ENDPOINT));
         hub = LzHubTransceiver(
@@ -84,9 +78,7 @@ contract DestinationNamingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
         vm.stopPrank();
     }
 
@@ -155,22 +147,16 @@ contract DestinationNamingTest is Test {
         assertEq(arbSpoke.counterpartOn(ChainKey.forEvm(42161)), abi.encodePacked(arbHub));
 
         // And Ethereum is now just another chain it refuses to talk to.
-        vm.expectRevert(
-            abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, ChainKey.forEvm(1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, ChainKey.forEvm(1)));
         arbSpoke.counterpartOn(ChainKey.forEvm(1));
     }
 
     /// @dev The home values are write-once with no setters, whichever chain they name.
     function test_theHomeCannotBeRepointedOnAnyChain() public {
-        (bool a,) = address(spoke).call(
-            abi.encodeWithSignature("setHomeChainKey(bytes32)", bytes32(uint256(1)))
-        );
+        (bool a,) = address(spoke).call(abi.encodeWithSignature("setHomeChainKey(bytes32)", bytes32(uint256(1))));
         assertFalse(a, "no setHomeChainKey");
 
-        (bool b,) = address(spoke).call(
-            abi.encodeWithSignature("setHomeRoute(bytes)", Erc7930.encodeEvmChain(1))
-        );
+        (bool b,) = address(spoke).call(abi.encodeWithSignature("setHomeRoute(bytes)", Erc7930.encodeEvmChain(1)));
         assertFalse(b, "no setHomeRoute");
     }
 
@@ -198,11 +184,7 @@ contract DestinationNamingTest is Test {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OutboundBase.RouteInUse.selector, keccak256(BASE_ROUTE)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteInUse.selector, keccak256(BASE_ROUTE)));
         hub.setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
         assertEq(hub.chainKeyOfRoute(BASE_ROUTE), baseKey);
@@ -222,9 +204,7 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         vm.stopPrank();
-        vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key));
         hub.routeTo(key);
     }
 
@@ -255,9 +235,7 @@ contract DestinationNamingTest is Test {
         vm.stopPrank();
 
         assertEq(hub.counterpartOn(key).length, 20, "counterpart resolves");
-        vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key));
         hub.routeTo(key);
     }
 
@@ -273,9 +251,7 @@ contract DestinationNamingTest is Test {
         bytes32 baseKey = _wireBase();
 
         vm.prank(msig);
-        vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.RouteAlreadySet.selector, baseKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteAlreadySet.selector, baseKey));
         hub.setRoute(baseKey, ARB_ROUTE);
 
         assertEq(hub.routeTo(baseKey), BASE_ROUTE, "unchanged");
@@ -286,16 +262,12 @@ contract DestinationNamingTest is Test {
     ///      misroute a payload, which on the execute-on-arrival path means it runs on the
     ///      wrong chain, with no commitment binding the destination.
     function test_theRegistryHoldsNoRoutes() public {
-        (bool a,) = address(registry).call(
-            abi.encodeWithSignature(
-                "setProviderRoute(bytes32,bytes32,bytes)", bytes32(0), bytes32(0), ""
-            )
-        );
+        (bool a,) = address(registry)
+            .call(abi.encodeWithSignature("setProviderRoute(bytes32,bytes32,bytes)", bytes32(0), bytes32(0), ""));
         assertFalse(a, "no setProviderRoute");
 
-        (bool b,) = address(registry).staticcall(
-            abi.encodeWithSignature("providerRoute(bytes32,bytes32)", bytes32(0), bytes32(0))
-        );
+        (bool b,) = address(registry)
+            .staticcall(abi.encodeWithSignature("providerRoute(bytes32,bytes32)", bytes32(0), bytes32(0)));
         assertFalse(b, "and no reader for one");
     }
 
@@ -310,21 +282,15 @@ contract DestinationNamingTest is Test {
         assertEq(spoke.routeTo(spoke.homeChainKey()), Erc7930.encodeEvmChain(1));
 
         bytes32 baseKey = ChainKey.forEvm(8453);
-        vm.expectRevert(
-            abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, baseKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, baseKey));
         spoke.counterpartOn(baseKey);
     }
 
     /// @dev A spoke cannot be configured into talking to another spoke. Nothing to set,
     ///      so nothing to compromise.
     function test_spokeHasNoSetterForASecondDestination() public {
-        bytes32 solKey = ChainKey.fromIdentifier(
-            Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708")
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, solKey)
-        );
+        bytes32 solKey = ChainKey.fromIdentifier(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
+        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotHome.selector, solKey));
         spoke.routeTo(solKey);
     }
 
@@ -336,11 +302,8 @@ contract DestinationNamingTest is Test {
     function test_homeTransceiverHasNoSetterAtAll() public {
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)));
 
-        (bool a,) = address(spoke).call(
-            abi.encodeWithSignature(
-                "setHomeTransceiver(bytes)", abi.encodePacked(address(0xBAD))
-            )
-        );
+        (bool a,) =
+            address(spoke).call(abi.encodeWithSignature("setHomeTransceiver(bytes)", abi.encodePacked(address(0xBAD))));
         assertFalse(a, "no setter on the ABI");
         (bool b,) = address(spoke).call(abi.encodeWithSignature("lockHome()"));
         assertFalse(b, "and nothing to lock");
@@ -369,19 +332,10 @@ contract DestinationNamingTest is Test {
             address(impl),
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
-                (
-                    new address[](0),
-                    address(0xBEEF),
-                    ChainKey.forEvm(1),
-                    Erc7930.encodeEvmChain(1),
-                    bytes(""),
-                    uint32(1)
-                )
+                (new address[](0), address(0xBEEF), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), bytes(""), uint32(1))
             )
         );
     }
-
-
 
     /* ================================= codec =================================== */
 
@@ -417,9 +371,6 @@ contract DestinationNamingTest is Test {
     ///      without being maintained.
     function testFuzz_aChainIdentifierRoundTripsToItsKey(uint256 chainId) public pure {
         vm.assume(chainId != 0);
-        assertEq(
-            ChainKey.fromIdentifier(Erc7930.encodeEvmChain(chainId)),
-            ChainKey.forEvm(chainId)
-        );
+        assertEq(ChainKey.fromIdentifier(Erc7930.encodeEvmChain(chainId)), ChainKey.forEvm(chainId));
     }
 }

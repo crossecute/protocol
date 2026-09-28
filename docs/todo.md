@@ -269,13 +269,15 @@ mainnet.
   Mailbox owner has configured. Fix that comment when this lands, so it stops asserting a safety
   net that does not exist.
 
-## 4. Infrastructure: None of it exists
+## 4. Infrastructure
 
 - **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
   recorded as an exact commit rather than a branch, because CREATE2 parity depends on
   byte-identical initcode and a floating dependency would move every account address on the
   next `--remote`. `git submodule update --init` is enough. The nested submodules OZ carries
-  for its own test suite are not needed, and `--recursive` only costs time.
+  for its own test suite are not needed, and `--recursive` only costs time. The same
+  commits are also in `contracts/evm/foundry.lock`, which `forge update` keeps in step; a
+  bump made with `git` alone has to update it by hand.
 
   **What this gives up against vendoring is availability, not exactness.** A gitlink is as
   precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag
@@ -301,17 +303,21 @@ mainnet.
   [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
   `accountInitCodeHash` assertion (R8.4), and how many gateways each `Deployment` names, since
   a transceiver's gateways cannot be added to later.
-- **No `ProviderCompliance.t.sol`.** The spec's C1 to C31 harness was never built. The five
-  bindings share `test/protocols/ProviderBindingSpec.t.sol` instead, which holds every one of
-  them to C1 and C2 (the send resolves the configured destination and reverts for an
-  unconfigured one), C5 and C6 (unconfigured origin, impersonator), a quote equal to the
-  mock's fee toward C11, and rejection of a wrong caller or a revoked gateway. Everything
-  else is covered only in some bindings' own suites or not at all, and C29 to C31 only for
-  Wormhole, the one binding that owns replay.
-- **No fork tests.** Every binding is tested against a mock of its provider. C11, C29, and
-  C30 test the transport rather than the binding, so until they run against each provider's
-  real deployment, P7 and P9 remain documented assumptions.
-- **No CI.** No `.github/`.
+- **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
+  says where every line is held). C21's script-side assertion waits on the deploy scripts.
+  C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
+  (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
+  collision inside a single call, so two fields an initializer sets together are covered
+  only by the suites that read them back.
+- **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
+  C31 for every provider but Wormhole, test the transport rather than the binding, so until
+  they run against each provider's real deployment, P7 and P9 remain documented assumptions.
+- **CI's lint gate excludes the detector heuristics** (`.github/workflows/test.yml`). It runs
+  `forge fmt --check` and `forge lint -D notes`, but `foundry.toml` excludes the heuristics
+  that currently fire across `src/` and `test/` (`unsafe-typecast`, `reentrancy-events`,
+  `arbitrary-send-eth`, `encode-packed-collision`, and the rest of that group) rather than
+  enforcing them. Each needs a site-by-site review, with a fix or an inline suppression, before it
+  comes off the list.
 - **No `test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where

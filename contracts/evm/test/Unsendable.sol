@@ -22,7 +22,13 @@ abstract contract UnsendableTransceiver is TransceiverBase {
         revert Unsent();
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal view virtual override returns (uint256) {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
         revert Unsent();
     }
 }
@@ -37,7 +43,13 @@ abstract contract UnsendableHub is HubTransceiverBase {
         revert Unsent();
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal view virtual override returns (uint256) {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
         revert Unsent();
     }
 }
@@ -52,7 +64,13 @@ abstract contract UnsendableSpoke is SpokeTransceiverBase {
         revert Unsent();
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal view virtual override returns (uint256) {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
         revert Unsent();
     }
 }
@@ -67,7 +85,13 @@ abstract contract UnsendableTransmitter is OwnableTransmitter {
         revert Unsent();
     }
 
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal view virtual override returns (uint256) {
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
         revert Unsent();
     }
 }

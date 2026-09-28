@@ -10,27 +10,15 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 /// @dev External surface so `calldata` parameters are genuine calldata and reverts can be
 ///      caught the way a caller would see them.
 contract SchemeHarness {
-    function hashElements(Scheme scheme, bytes32 chainKey, bytes[] memory elements)
-        external
-        view
-        returns (bytes32)
-    {
+    function hashElements(Scheme scheme, bytes32 chainKey, bytes[] memory elements) external view returns (bytes32) {
         return Commitment.hashCalls(scheme, chainKey, elements);
     }
 
-    function hashCalls(Scheme scheme, bytes32 chainKey, Call[] memory calls)
-        external
-        view
-        returns (bytes32)
-    {
+    function hashCalls(Scheme scheme, bytes32 chainKey, Call[] memory calls) external view returns (bytes32) {
         return Commitment.hashCalls(scheme, chainKey, calls);
     }
 
-    function keccakElements(bytes32 chainKey, bytes[] calldata elements)
-        external
-        pure
-        returns (bytes32)
-    {
+    function keccakElements(bytes32 chainKey, bytes[] calldata elements) external pure returns (bytes32) {
         return Commitment.hashCalls(chainKey, elements);
     }
 
@@ -59,24 +47,20 @@ contract CommitmentSchemeTest is Test {
         bytes[] memory elements = Calls.encodeAll(_calls());
 
         assertEq(
-            h.hashElements(Scheme.Keccak256, DEST, elements),
-            h.keccakElements(DEST, elements),
-            "one scheme, one value"
+            h.hashElements(Scheme.Keccak256, DEST, elements), h.keccakElements(DEST, elements), "one scheme, one value"
         );
     }
 
     /// @dev The typed/opaque equivalence has to survive the scheme parameter too.
-    function testFuzz_typedAndOpaqueAgreeUnderEveryComputableScheme(
-        address target,
-        uint256 value,
-        bytes memory data
-    ) public view {
+    function testFuzz_typedAndOpaqueAgreeUnderEveryComputableScheme(address target, uint256 value, bytes memory data)
+        public
+        view
+    {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: target, value: value, data: data});
         bytes[] memory elements = Calls.encodeAll(calls);
 
-        Scheme[3] memory schemes =
-            [Scheme.Keccak256, Scheme.Sha256, Scheme.Blake2b256Scheme];
+        Scheme[3] memory schemes = [Scheme.Keccak256, Scheme.Sha256, Scheme.Blake2b256Scheme];
 
         for (uint256 i; i < schemes.length; ++i) {
             assertEq(
@@ -111,13 +95,9 @@ contract CommitmentSchemeTest is Test {
         Call[] memory calls = _calls();
         bytes32 other = keccak256("some.other.chain");
 
+        assertTrue(h.hashCalls(Scheme.Sha256, DEST, calls) != h.hashCalls(Scheme.Sha256, other, calls));
         assertTrue(
-            h.hashCalls(Scheme.Sha256, DEST, calls)
-                != h.hashCalls(Scheme.Sha256, other, calls)
-        );
-        assertTrue(
-            h.hashCalls(Scheme.Blake2b256Scheme, DEST, calls)
-                != h.hashCalls(Scheme.Blake2b256Scheme, other, calls)
+            h.hashCalls(Scheme.Blake2b256Scheme, DEST, calls) != h.hashCalls(Scheme.Blake2b256Scheme, other, calls)
         );
     }
 
@@ -130,9 +110,7 @@ contract CommitmentSchemeTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"c0ffee";
 
-        bytes32 expected = sha256(
-            abi.encodePacked(sha256(abi.encode(DEST)), sha256(elements[0]))
-        );
+        bytes32 expected = sha256(abi.encodePacked(sha256(abi.encode(DEST)), sha256(elements[0])));
         assertEq(h.hashElements(Scheme.Sha256, DEST, elements), expected);
     }
 
@@ -140,11 +118,8 @@ contract CommitmentSchemeTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"c0ffee";
 
-        bytes32 expected = Blake2b256.hash(
-            abi.encodePacked(
-                Blake2b256.hash(abi.encode(DEST)), Blake2b256.hash(elements[0])
-            )
-        );
+        bytes32 expected =
+            Blake2b256.hash(abi.encodePacked(Blake2b256.hash(abi.encode(DEST)), Blake2b256.hash(elements[0])));
         assertEq(h.hashElements(Scheme.Blake2b256Scheme, DEST, elements), expected);
     }
 
@@ -166,14 +141,10 @@ contract CommitmentSchemeTest is Test {
     function test_anUnimplementedSchemeRevertsRatherThanFallingBack() public {
         Call[] memory calls = _calls();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon));
         h.hashCalls(Scheme.Poseidon, DEST, calls);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon));
         h.hashElements(Scheme.Poseidon, DEST, Calls.encodeAll(calls));
     }
 

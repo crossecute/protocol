@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {ICrossDomainMessenger} from "@optimism/interfaces/universal/ICrossDomainMessenger.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {ProviderRecipient} from "src/protocols/ProviderRecipient.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice The inbound entry point every OP Stack binding contract exposes. `sendMessage`
 ///         delivers `abi.encodeCall(receiveOpStackMessage, (payload))` as the target's calldata.
@@ -73,7 +73,7 @@ library OpStackMessage {
         if (value != 0) revert OpStackValueNotSupported(value);
         bytes32 chainKey = Erc7930.chainKey(recipient);
         if (chainKey != messengerChainKey) revert NotThisMessengersChain(chainKey, messengerChainKey);
-        return ProviderRecipient.evmAddress(recipient);
+        return ProviderAddress.evmRecipient(recipient);
     }
 
     /// @notice One attribute: the target's minimum gas, as
