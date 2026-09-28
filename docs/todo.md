@@ -12,7 +12,7 @@ this file is the gap between that design and the tree.
 
 ## 1. Blockers on specific paths
 
-- **A receiver on zkSync or Tron authenticates the wrong transmitter address.** The spoke
+- **A receiver on zkSync or Tron authenticates the wrong transmitter address** ([#13](https://github.com/crossecute/protocol/issues/13)). The spoke
   arms each receiver with `sourceTransmitter = predictCrossAccount(owner, salt)`
   (`SpokeTransceiverBase._accountInitializer`, and `LzSpokeBase`'s override). On a
   divergent spoke that is the chain's own formula over the spoke's address, which is the
@@ -175,7 +175,7 @@ mainnet.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
-- **Removing a chain does not clear its declared provenance.** `ChainRegistry.removeChainKey`
+- **Removing a chain does not clear its declared provenance** ([#14](https://github.com/crossecute/protocol/issues/14)). `ChainRegistry.removeChainKey`
   deletes the identifier but not `provenanceOf`, and `provenanceFor` returns a declared
   grade before it looks at the identifier. So a removed chain that had been declared keeps
   its grade, and a hub that already recorded its counterpart keeps sending there; only an
