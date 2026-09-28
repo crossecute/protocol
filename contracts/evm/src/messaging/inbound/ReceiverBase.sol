@@ -2,8 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ReentrancyGuardUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
 
@@ -141,12 +140,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev The default entry point, for a protocol binding that needs nothing of its own at
     ///      creation. One that does declares its own and sequences its setup ahead of the
     ///      internal initializer; see below for why the split is the only shape that works.
-    function initialize(address sourceTransmitter_, Call[] calldata calls)
-        external
-        virtual
-        override
-        initializer
-    {
+    function initialize(address sourceTransmitter_, Call[] calldata calls) external virtual override initializer {
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
 
@@ -171,10 +165,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///      LAST, and never `super.initialize`.
     ///
     /// @dev THIS IS THE TRANSCEIVER'S ONLY REACH INTO A RECEIVER, AND IT ENDS HERE.
-    function __ReceiverBase_init(address sourceTransmitter_, Call[] calldata calls)
-        internal
-        onlyInitializing
-    {
+    function __ReceiverBase_init(address sourceTransmitter_, Call[] calldata calls) internal onlyInitializing {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 
         // First, so the guard is live before the payload at the end of this function runs.
@@ -247,13 +238,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     /// @dev IT DOES NOT TOUCH A PENDING COMMITMENT. A hash pinned by `commit` stays pinned
     ///      and still requires its own `finalize`. Consuming it here would let an unrelated
     ///      array silently discharge an approval made over a different one.
-    function execute(Call[] calldata calls)
-        external
-        payable
-        virtual
-        onlySourceTransmitter
-        nonReentrant
-    {
+    function execute(Call[] calldata calls) external payable virtual onlySourceTransmitter nonReentrant {
         if (calls.length == 0) revert EmptyExecution();
         emit ReceiverExecuted(msg.sender, calls.length);
         _execute(calls);
@@ -265,11 +250,7 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
 
     /// @notice Split a canonical opaque element into its target, value, and calldata.
     /// @dev Delegates to `Calls` so the layout is defined in exactly one place.
-    function _decodeCall(bytes calldata call)
-        internal
-        pure
-        returns (address target, uint256 value, bytes memory data)
-    {
+    function _decodeCall(bytes calldata call) internal pure returns (address target, uint256 value, bytes memory data) {
         Call memory c = Calls.decode(call);
         return (c.target, c.value, c.data);
     }
@@ -306,5 +287,4 @@ abstract contract ReceiverBase is Initializable, InboundBase, IReceiverInit {
     ///      balance that is already here. The address is deterministic and fundable before
     ///      the receiver exists, which makes a shortfall "top it up and retry".
     receive() external payable {}
-
 }

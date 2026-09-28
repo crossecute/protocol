@@ -12,11 +12,12 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DivergentSpokeTransceiver} from
-    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {DivergentSpokeTransceiver} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
-import {LzZkSyncSpokeTransceiver, LzTronSpokeTransceiver} from
-    "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
+import {
+    LzZkSyncSpokeTransceiver,
+    LzTronSpokeTransceiver
+} from "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {UnsendableTransceiver} from "test/Unsendable.sol";
@@ -46,8 +47,7 @@ contract CloneDerivationTest is Test {
     ///      address is silently wrong. So it is checked against OZ, not against itself.
     function test_cloneInitCodeHashMatchesOpenZeppelin() public {
         bytes32 salt = keccak256("transmitter-x");
-        address ozPredicted =
-            Clones.predictDeterministicAddress(address(impl), salt, address(this));
+        address ozPredicted = Clones.predictDeterministicAddress(address(impl), salt, address(this));
         address ours = AddressDerive.clone2(address(this), address(impl), salt);
         assertEq(ours, ozPredicted, "clone initcode layout must match OZ");
     }
@@ -66,12 +66,8 @@ contract CloneDerivationTest is Test {
         address destReceiverImpl = address(0xBEEF);
         bytes32 salt = keccak256(abi.encode(address(0x7A11))); // receiverSalt(transmitter)
 
-        bytes memory params = abi.encode(
-            VmDeriver.Scheme.EvmClone,
-            abi.encode(destTransceiver, destReceiverImpl, salt)
-        );
-        bytes memory interop =
-            deriver.deriveAddress(Erc7930.encodeEvmChain(8453), params);
+        bytes memory params = abi.encode(VmDeriver.Scheme.EvmClone, abi.encode(destTransceiver, destReceiverImpl, salt));
+        bytes memory interop = deriver.deriveAddress(Erc7930.encodeEvmChain(8453), params);
 
         assertEq(
             Erc7930.toAddress(Erc7930.parseStrict(interop)),
@@ -88,23 +84,17 @@ contract CloneDerivationTest is Test {
         bytes memory inner = abi.encode(destTransceiver, destReceiverImpl, salt);
         bytes memory tronChain = Erc7930.encodeEvmChain(728126428);
 
-        bytes memory evmOut = deriver.deriveAddress(
-            Erc7930.encodeEvmChain(1), abi.encode(VmDeriver.Scheme.EvmClone, inner)
-        );
-        bytes memory tronOut = deriver.deriveAddress(
-            tronChain, abi.encode(VmDeriver.Scheme.TronClone, inner)
-        );
+        bytes memory evmOut =
+            deriver.deriveAddress(Erc7930.encodeEvmChain(1), abi.encode(VmDeriver.Scheme.EvmClone, inner));
+        bytes memory tronOut = deriver.deriveAddress(tronChain, abi.encode(VmDeriver.Scheme.TronClone, inner));
 
         assertTrue(
-            Erc7930.toAddress(Erc7930.parseStrict(evmOut))
-                != Erc7930.toAddress(Erc7930.parseStrict(tronOut)),
+            Erc7930.toAddress(Erc7930.parseStrict(evmOut)) != Erc7930.toAddress(Erc7930.parseStrict(tronOut)),
             "0x41 vs 0xff must produce different addresses"
         );
         assertEq(
             Erc7930.toAddress(Erc7930.parseStrict(tronOut)),
-            AddressDerive.tronCreate2(
-                destTransceiver, salt, AddressDerive.cloneInitCodeHash(destReceiverImpl)
-            )
+            AddressDerive.tronCreate2(destTransceiver, salt, AddressDerive.cloneInitCodeHash(destReceiverImpl))
         );
     }
 
@@ -116,16 +106,11 @@ contract CloneDerivationTest is Test {
         assertTrue(deriver.supportsScheme(ChainType.EIP155, uint8(VmDeriver.Scheme.TronClone)));
         assertFalse(deriver.supportsScheme(ChainType.SOLANA, uint8(VmDeriver.Scheme.EvmClone)));
         assertFalse(deriver.supportsScheme(ChainType.SUI, uint8(VmDeriver.Scheme.EvmClone)));
-        assertFalse(
-            deriver.supportsScheme(ChainType.STARKNET, uint8(VmDeriver.Scheme.EvmClone))
-        );
+        assertFalse(deriver.supportsScheme(ChainType.STARKNET, uint8(VmDeriver.Scheme.EvmClone)));
     }
 
     function test_cloneInitCodeHashIsExposed() public view {
-        assertEq(
-            deriver.cloneInitCodeHash(address(impl)),
-            AddressDerive.cloneInitCodeHash(address(impl))
-        );
+        assertEq(deriver.cloneInitCodeHash(address(impl)), AddressDerive.cloneInitCodeHash(address(impl)));
     }
 }
 
@@ -147,12 +132,7 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         overridePrediction = v;
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
-        public
-        view
-        override
-        returns (address)
-    {
+    function predictCrossAccount(address owner, bytes32 salt) public view override returns (address) {
         if (!overridePrediction) return super.predictCrossAccount(owner, salt);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
         // Tron's prefix. `_deployAccount` is deliberately NOT overridden to match.
@@ -163,25 +143,32 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         return _createCrossAccount(owner, salt, new Call[](0));
     }
 
-    function _accountImplementation() internal view override returns (address) { return _impl; }
-    function _accountInitializer(address, bytes32, Call[] memory)
-        internal pure override returns (bytes memory) { return ""; }
+    function _accountImplementation() internal view override returns (address) {
+        return _impl;
+    }
+
+    function _accountInitializer(address, bytes32, Call[] memory) internal pure override returns (bytes memory) {
+        return "";
+    }
+
     function _counterpartOn(bytes32) internal pure override returns (bytes memory) {
         return abi.encodePacked(address(0xC0DE));
     }
+
     function _routeTo(bytes32) internal pure override returns (bytes memory) {
         return Erc7930.encodeEvmChain(8453);
     }
     function _handleInbound(bytes32, bytes calldata) internal override {}
-    function _authenticateOrigin(bytes memory, bytes memory)
-        internal pure override returns (bytes32) { return bytes32(0); }
+
+    function _authenticateOrigin(bytes memory, bytes memory) internal pure override returns (bytes32) {
+        return bytes32(0);
+    }
 
     /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract DivergingFormulaTest is Test {
@@ -208,16 +195,12 @@ contract DivergingFormulaTest is Test {
         t.setOverridePrediction(true);
         address predicted = t.predictCrossAccount(owner, bytes32(0));
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0))),
-            t.CROSS_PROXY_INIT_CODE_HASH(),
-            address(t)
+            keccak256(abi.encode(owner, bytes32(0))), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
         assertTrue(predicted != wouldDeployTo, "the two formulas disagree, by construction");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                TransceiverBase.AccountAddressMismatch.selector, predicted, wouldDeployTo
-            )
+            abi.encodeWithSelector(TransceiverBase.AccountAddressMismatch.selector, predicted, wouldDeployTo)
         );
         t.create(owner, bytes32(0));
     }
@@ -227,9 +210,7 @@ contract DivergingFormulaTest is Test {
     function test_aMismatchLeavesNothingBehind() public {
         t.setOverridePrediction(true);
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0))),
-            t.CROSS_PROXY_INIT_CODE_HASH(),
-            address(t)
+            keccak256(abi.encode(owner, bytes32(0))), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
 
         vm.expectRevert();
@@ -308,37 +289,25 @@ contract DivergentSpokeTest is Test {
         ZkSpoke s = _zk();
         assertEq(
             s.predictCrossAccount(o, salt),
-            AddressDerive.zksyncCreate2(
-                address(s), s.accountSalt(o, salt), HASH, keccak256("")
-            )
+            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt), HASH, keccak256(""))
         );
     }
 
     function testFuzz_tronReproducesTheTronFormula(address o, bytes32 salt) public {
         vm.assume(o != address(0));
         TronSpoke s = _tron();
-        assertEq(
-            s.predictCrossAccount(o, salt),
-            AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt), HASH)
-        );
+        assertEq(s.predictCrossAccount(o, salt), AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt), HASH));
     }
 
     /// @dev The whole point: neither answers what Ethereum's formula would.
     function test_neitherMatchesEthereum() public {
         ZkSpoke z = _zk();
         TronSpoke t = _tron();
-        address ethZ = Create2.computeAddress(
-            z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
-        );
-        address ethT = Create2.computeAddress(
-            t.accountSalt(owner, SALT), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
-        );
+        address ethZ = Create2.computeAddress(z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z));
+        address ethT = Create2.computeAddress(t.accountSalt(owner, SALT), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
         assertTrue(z.predictCrossAccount(owner, SALT) != ethZ, "zkSync diverges");
         assertTrue(t.predictCrossAccount(owner, SALT) != ethT, "Tron diverges");
-        assertTrue(
-            z.predictCrossAccount(owner, SALT) != t.predictCrossAccount(owner, SALT),
-            "and from each other"
-        );
+        assertTrue(z.predictCrossAccount(owner, SALT) != t.predictCrossAccount(owner, SALT), "and from each other");
     }
 
     /// @dev ON AN ETHEREUM EVM BOTH FAIL CLOSED, which is the property that makes shipping
@@ -350,9 +319,7 @@ contract DivergentSpokeTest is Test {
             abi.encodeWithSelector(
                 TransceiverBase.AccountAddressMismatch.selector,
                 z.predictCrossAccount(owner, SALT),
-                Create2.computeAddress(
-                    z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
-                )
+                Create2.computeAddress(z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z))
             )
         );
         z.create(owner, SALT);
@@ -391,9 +358,7 @@ contract AddressAliasTest is Test {
 
     function test_theOffsetIsArbitrums() public pure {
         assertEq(
-            AddressDerive.applyL1ToL2Alias(address(0)),
-            address(ARBITRUM_OFFSET),
-            "same constant as AddressAliasHelper"
+            AddressDerive.applyL1ToL2Alias(address(0)), address(ARBITRUM_OFFSET), "same constant as AddressAliasHelper"
         );
     }
 
@@ -419,11 +384,7 @@ contract AddressAliasTest is Test {
     ///      extent of what a zero check on the result would buy: one address out of 2^160,
     ///      which is not a defence against getting the direction wrong.
     function test_onlyTheOffsetItselfUndoesToZero() public pure {
-        assertEq(
-            AddressDerive.undoL1ToL2Alias(address(ARBITRUM_OFFSET)),
-            address(0),
-            "the one case"
-        );
+        assertEq(AddressDerive.undoL1ToL2Alias(address(ARBITRUM_OFFSET)), address(0), "the one case");
         assertTrue(AddressDerive.undoL1ToL2Alias(address(1)) != address(0));
     }
 
@@ -475,11 +436,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         assertFalse(s.addressesDiverge(), "not settable, and false");
         assertEq(
             s.predictCrossAccount(owner, bytes32(0)),
-            Create2.computeAddress(
-                s.accountSalt(owner, bytes32(0)),
-                s.CROSS_PROXY_INIT_CODE_HASH(),
-                address(s)
-            ),
+            Create2.computeAddress(s.accountSalt(owner, bytes32(0)), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)),
             "and it derives the way the hub recomputes"
         );
     }
@@ -498,9 +455,8 @@ contract DivergenceIsNotConfigurableTest is Test {
         assertEq(tron.accountBytecodeHash(), HASH);
 
         // And each derives its own way, not Ethereum's.
-        address ethWay = Create2.computeAddress(
-            zk.accountSalt(owner, bytes32(0)), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
-        );
+        address ethWay =
+            Create2.computeAddress(zk.accountSalt(owner, bytes32(0)), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk));
         assertTrue(zk.predictCrossAccount(owner, bytes32(0)) != ethWay);
     }
 
@@ -511,9 +467,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
         zk.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
 
-        (bool ok,) = address(zk).call(
-            abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other"))
-        );
+        (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));
         assertFalse(ok, "no setter on the ABI");
     }
 }

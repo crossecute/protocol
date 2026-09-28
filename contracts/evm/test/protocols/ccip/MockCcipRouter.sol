@@ -30,7 +30,14 @@ contract MockCcipRouter {
     function sent(uint256 i)
         external
         view
-        returns (uint64 destChainSelector, bytes memory receiver, bytes memory data, address feeToken, bytes memory extraArgs, uint256 value)
+        returns (
+            uint64 destChainSelector,
+            bytes memory receiver,
+            bytes memory data,
+            address feeToken,
+            bytes memory extraArgs,
+            uint256 value
+        )
     {
         Sent storage s = _sent[i];
         return (s.destChainSelector, s.receiver, s.data, s.feeToken, s.extraArgs, s.value);
@@ -45,7 +52,11 @@ contract MockCcipRouter {
         feePerByte = perByte;
     }
 
-    function getFee(uint64, /* destinationChainSelector */ Client.EVM2AnyMessage memory message)
+    function getFee(
+        uint64,
+        /* destinationChainSelector */
+        Client.EVM2AnyMessage memory message
+    )
         public
         view
         returns (uint256)

@@ -33,11 +33,7 @@ library Envelope {
     ///      derives the account address from that pair and a CREATE2 address cannot be
     ///      derived from itself. It has to be stated because the hub is shared by every
     ///      owner, so nothing the bridge reports says who authorized the message.
-    function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls) internal pure returns (bytes memory) {
         return abi.encode(owner, salt, calls);
     }
 
@@ -60,11 +56,11 @@ library Envelope {
     ///      There is no `decodeBootstrapElements` because nothing written in Solidity ever
     ///      receives one. `SpokeTransceiverBase` runs on an EVM chain by construction; the
     ///      decoder for this lives in whatever language that destination speaks.
-    function encodeBootstrapElements(
-        address owner,
-        bytes32 salt,
-        bytes[] memory elements
-    ) internal pure returns (bytes memory) {
+    function encodeBootstrapElements(address owner, bytes32 salt, bytes[] memory elements)
+        internal
+        pure
+        returns (bytes memory)
+    {
         return abi.encode(owner, salt, elements);
     }
 

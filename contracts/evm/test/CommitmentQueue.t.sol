@@ -206,16 +206,12 @@ contract CommitmentQueueTest is Test {
     /// @dev Refused rather than treated as a no-op: reporting success would suggest a
     ///      payload had been stopped when it may already have run.
     function test_cancellingWhatIsNotThereIsRefused() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1)));
         r.cancel(_hash(1));
 
         r.commit(_hash(1));
         r.finalize(_calls(1));
-        vm.expectRevert(
-            abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(InboundBase.NotCommitted.selector, _hash(1)));
         r.cancel(_hash(1));
     }
 
@@ -241,11 +237,7 @@ contract CommitmentQueueTest is Test {
     function test_reentrantFinalizeIsRefused() public {
         Reenterer bad = new Reenterer();
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({
-            target: address(bad),
-            value: 0,
-            data: abi.encodeCall(Reenterer.attack, ())
-        });
+        calls[0] = Call({target: address(bad), value: 0, data: abi.encodeCall(Reenterer.attack, ())});
 
         bytes32 h = Commitment.hashCalls(ChainKey.local(), calls);
         r.commit(h);
@@ -255,9 +247,7 @@ contract CommitmentQueueTest is Test {
             abi.encodeWithSelector(
                 Executor.CallFailed.selector,
                 uint256(0),
-                abi.encodeWithSelector(
-                    ReentrancyGuard.ReentrancyGuardReentrantCall.selector
-                )
+                abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector)
             )
         );
         r.finalize(calls);
@@ -271,11 +261,7 @@ contract CommitmentQueueTest is Test {
 
     function _calls(uint256 x) internal view returns (Call[] memory calls) {
         calls = new Call[](1);
-        calls[0] = Call({
-            target: address(ledger),
-            value: 0,
-            data: abi.encodeCall(Ledger.note, (x))
-        });
+        calls[0] = Call({target: address(ledger), value: 0, data: abi.encodeCall(Ledger.note, (x))});
     }
 
     function _failingHash() internal view returns (bytes32) {
@@ -284,8 +270,7 @@ contract CommitmentQueueTest is Test {
 
     function _failingCalls() internal view returns (Call[] memory calls) {
         calls = new Call[](1);
-        calls[0] =
-            Call({target: address(ledger), value: 0, data: abi.encodeCall(Ledger.boom, ())});
+        calls[0] = Call({target: address(ledger), value: 0, data: abi.encodeCall(Ledger.boom, ())});
     }
 }
 

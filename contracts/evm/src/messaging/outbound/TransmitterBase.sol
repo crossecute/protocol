@@ -10,8 +10,7 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {IERC7786GatewaySource} from
-    "src/messaging/IErc7786.sol";
+import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 
 /// @title IAccountTransceiver
 /// @notice Everything an account needs from the transceiver whose address it already stores.
@@ -102,12 +101,7 @@ interface IAccountTransceiver {
 ///      in the LOCAL chainKey, which here is the home chain, and the receiver recomputes on
 ///      the DESTINATION chain. So the previews below hash with the destination's key, and
 ///      the chain-binding still does its job.
-abstract contract TransmitterBase is
-    Initializable,
-    OutboundBase,
-    Executor,
-    IERC7786GatewaySource
-{
+abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC7786GatewaySource {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
     /// The caller-chosen half of this account's CREATE2 salt.
@@ -196,11 +190,7 @@ abstract contract TransmitterBase is
 
     /// @notice This account's receiver on `destinationChainKey`, in that chain's own format.
     /// @dev `counterpartOn` names the same value; this is the name that says what it IS here.
-    function destinationReceiverOn(bytes32 destinationChainKey)
-        external
-        view
-        returns (bytes memory)
-    {
+    function destinationReceiverOn(bytes32 destinationChainKey) external view returns (bytes memory) {
         return counterpartOn(destinationChainKey);
     }
 
@@ -245,10 +235,7 @@ abstract contract TransmitterBase is
     ///      cannot direct a report at an account the reporting chain did not name. What it
     ///      CAN do is report a wrong address for a real account on its own chain, and that
     ///      is permanent: see `_receiverPinned` for why there is no override.
-    function onDestinationReceiverReported(
-        bytes32 destinationChainKey,
-        bytes calldata receiver
-    ) external {
+    function onDestinationReceiverReported(bytes32 destinationChainKey, bytes calldata receiver) external {
         if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
         // The DISPATCH is what a report answers, not a counterpart: on a reporting chain
         // there is no counterpart yet, which is the whole reason the report exists.
@@ -313,21 +300,17 @@ abstract contract TransmitterBase is
     ///
     /// @return sendId Zero when the gateway has taken the message. A binding that returns
     ///         non-zero has a second step to perform and says so in its own NatSpec.
-    function sendMessage(
-        bytes calldata recipient,
-        bytes calldata payload,
-        bytes[] calldata attributes
-    ) external payable onlyAccountOwner returns (bytes32 sendId) {
+    function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
+        external
+        payable
+        onlyAccountOwner
+        returns (bytes32 sendId)
+    {
         _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 
         emit MessageSent(
-            bytes32(0),
-            Erc7930.encodeEvm(block.chainid, address(this)),
-            recipient,
-            payload,
-            msg.value,
-            attributes
+            bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), recipient, payload, msg.value, attributes
         );
         return _sendMessage(recipient, payload, attributes, msg.value);
     }
@@ -362,11 +345,7 @@ abstract contract TransmitterBase is
     /// @dev `bootstrap(uint256, ...)` MAKES THIS OPTIONAL FOR EVM DESTINATIONS, deliberately.
     ///      This is for a caller that wants one spelling for every destination, and it is the
     ///      only spelling available for a chain with no `uint256` id at all.
-    function chainIdentifierFor(uint256 destinationChainId)
-        public
-        pure
-        returns (bytes memory)
-    {
+    function chainIdentifierFor(uint256 destinationChainId) public pure returns (bytes memory) {
         return _evmIdentifier(destinationChainId);
     }
 
@@ -376,11 +355,7 @@ abstract contract TransmitterBase is
     }
 
     /// @notice The wire bytes for a destination whose calls this chain cannot express.
-    function payloadForElements(bytes[] calldata elements)
-        public
-        pure
-        returns (bytes memory)
-    {
+    function payloadForElements(bytes[] calldata elements) public pure returns (bytes memory) {
         return Payload.encodeElements(elements);
     }
 
@@ -404,11 +379,7 @@ abstract contract TransmitterBase is
     /// @dev THE BOOTSTRAP CHECK RUNS INSIDE IT, so both entry points get it in the right
     ///      order: `_recipientOn` would also revert on an unrecorded destination, but as
     ///      `NoRouteFor`, which describes the storage rather than the mistake.
-    function _requireOwnRecipient(bytes calldata recipient)
-        private
-        view
-        returns (bytes32 chainKey)
-    {
+    function _requireOwnRecipient(bytes calldata recipient) private view returns (bytes32 chainKey) {
         if (recipient.length == 0) revert NoDestination();
 
         chainKey = ChainKey.fromIdentifier(recipient);
@@ -450,20 +421,20 @@ abstract contract TransmitterBase is
     ///      be a send with no quote of matching arity, to save a caller writing
     ///      `new bytes[](0)`. Pass an empty array to mean "the gateway's default"; that is a
     ///      choice worth making visibly.
-    function bootstrap(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) external payable onlyAccountOwner {
+    function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
+        external
+        payable
+        onlyAccountOwner
+    {
         _bootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
     }
 
     /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
-    function bootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) external payable onlyAccountOwner {
+    function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls, bytes[] calldata attributes)
+        external
+        payable
+        onlyAccountOwner
+    {
         _bootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
     }
 
@@ -493,11 +464,12 @@ abstract contract TransmitterBase is
     ///      UNGATED, unlike the send: it spends nothing, writes nothing, reveals nothing an
     ///      observer could not compute, and a signer reviewing a payload before the owner
     ///      submits it has to be able to call it.
-    function quoteMessage(
-        bytes calldata recipient,
-        bytes calldata payload,
-        bytes[] calldata attributes
-    ) external view override returns (uint256 nativeFee) {
+    function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
+        external
+        view
+        override
+        returns (uint256 nativeFee)
+    {
         _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 
@@ -513,11 +485,11 @@ abstract contract TransmitterBase is
     /// @dev THE PAIR IS NOT CHECKED, HERE OR THERE. `bootstrap` proves `(owner, salt)`
     ///      resolves to `msg.sender` before it spends anything; a quote spends nothing, and
     ///      is taken before the account it prices exists.
-    function quoteBootstrap(
-        uint256 destinationChainId,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) external view returns (uint256 nativeFee) {
+    function quoteBootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
+        external
+        view
+        returns (uint256 nativeFee)
+    {
         return _quoteBootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
     }
 
@@ -527,9 +499,7 @@ abstract contract TransmitterBase is
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        return _quoteBootstrapCalls(
-            _typedIdentifier(destinationChainIdentifier), calls, attributes
-        );
+        return _quoteBootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
     }
 
     /// @notice `quoteBootstrap`, in the portable form.
@@ -539,27 +509,24 @@ abstract contract TransmitterBase is
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         if (transceiver == address(0)) revert NoTransceiver();
-        bytes32 chainKey =
-            ChainKey.fromIdentifier(_opaqueIdentifier(destinationChainIdentifier));
+        bytes32 chainKey = ChainKey.fromIdentifier(_opaqueIdentifier(destinationChainIdentifier));
         _requireNotBootstrapped(chainKey);
 
-        return IAccountTransceiver(transceiver).quoteBootstrapElements(
-            chainKey, _owner(), accountSalt, elements, attributes
-        );
+        return
+            IAccountTransceiver(transceiver)
+                .quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
     }
 
-    function _quoteBootstrapCalls(
-        bytes memory identifier,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) private view returns (uint256) {
+    function _quoteBootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes)
+        private
+        view
+        returns (uint256)
+    {
         if (transceiver == address(0)) revert NoTransceiver();
         bytes32 chainKey = ChainKey.fromIdentifier(identifier);
         _requireNotBootstrapped(chainKey);
 
-        return IAccountTransceiver(transceiver).quoteBootstrap(
-            chainKey, _owner(), accountSalt, calls, attributes
-        );
+        return IAccountTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
     /* =========================== destination identifiers ======================= */
@@ -576,11 +543,7 @@ abstract contract TransmitterBase is
     }
 
     /// @dev The typed form only reaches a chain that executes `Call[]`.
-    function _typedIdentifier(bytes calldata identifier)
-        private
-        pure
-        returns (bytes calldata)
-    {
+    function _typedIdentifier(bytes calldata identifier) private pure returns (bytes calldata) {
         if (identifier.length == 0) revert NoDestination();
         if (!Payload.isTypedDestination(identifier)) {
             revert TypedPayloadToNonEvmDestination();
@@ -589,11 +552,7 @@ abstract contract TransmitterBase is
     }
 
     /// @dev And the portable form only reaches one that does not.
-    function _opaqueIdentifier(bytes calldata identifier)
-        private
-        pure
-        returns (bytes calldata)
-    {
+    function _opaqueIdentifier(bytes calldata identifier) private pure returns (bytes calldata) {
         if (identifier.length == 0) revert NoDestination();
         if (Payload.isTypedDestination(identifier)) {
             revert OpaquePayloadToEvmDestination();
@@ -608,23 +567,15 @@ abstract contract TransmitterBase is
     ///      second bootstrap for the same destination meets the flag it would otherwise race.
     ///      If the dispatch reverts the whole transaction unwinds and the flag goes with it,
     ///      so the ordering costs nothing.
-    function _bootstrapCalls(
-        bytes memory identifier,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) private {
+    function _bootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes) private {
         bytes32 chainKey = _markBootstrapped(identifier);
 
-        IAccountTransceiver(transceiver).bootstrap{value: msg.value}(
-            chainKey, _owner(), accountSalt, calls, attributes
-        );
+        IAccountTransceiver(transceiver).bootstrap{value: msg.value}(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
-    function _bootstrapElements(
-        bytes memory identifier,
-        bytes[] calldata elements,
-        bytes[] calldata attributes
-    ) private {
+    function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)
+        private
+    {
         bytes32 chainKey = _markBootstrapped(identifier);
 
         IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
@@ -646,10 +597,7 @@ abstract contract TransmitterBase is
     ///      check, and was addressed at an address holding no receiver. Now nothing is written
     ///      until the report arrives, so those destinations are unreachable rather than
     ///      misaddressed, and `isBootstrapped` and `isReachable` answer different questions.
-    function _markBootstrapped(bytes memory identifier)
-        private
-        returns (bytes32 chainKey)
-    {
+    function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
         if (transceiver == address(0)) revert NoTransceiver();
         chainKey = ChainKey.fromIdentifier(identifier);
         _requireNotBootstrapped(chainKey);
@@ -707,16 +655,8 @@ abstract contract TransmitterBase is
     ///      receiver accepts a self-call because the only way to produce
     ///      `msg.sender == address(this)` there is through `_execute`, reachable only from an
     ///      authenticated inbound message or a gated entry point.
-    function commitmentCall(address receiver, bytes32 commitment)
-        public
-        pure
-        returns (Call memory)
-    {
-        return Call({
-            target: receiver,
-            value: 0,
-            data: abi.encodeCall(ICommitFinalize.commit, (commitment))
-        });
+    function commitmentCall(address receiver, bytes32 commitment) public pure returns (Call memory) {
+        return Call({target: receiver, value: 0, data: abi.encodeCall(ICommitFinalize.commit, (commitment))});
     }
 
     /// @notice The call that withdraws an approval on a receiver, for inclusion in a payload
@@ -729,16 +669,8 @@ abstract contract TransmitterBase is
     ///      built when the payload is approved and executes whenever it lands, with nobody
     ///      watching in between. A hash cannot go stale the way a position could: it either
     ///      still has an approval, or the call reverts.
-    function cancellationCall(address receiver, bytes32 commitment)
-        public
-        pure
-        returns (Call memory)
-    {
-        return Call({
-            target: receiver,
-            value: 0,
-            data: abi.encodeCall(ICancel.cancel, (commitment))
-        });
+    function cancellationCall(address receiver, bytes32 commitment) public pure returns (Call memory) {
+        return Call({target: receiver, value: 0, data: abi.encodeCall(ICancel.cancel, (commitment))});
     }
 
     /* ================================= preview ================================= */
@@ -761,11 +693,7 @@ abstract contract TransmitterBase is
     /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed. It is
     ///      what `commitmentCall` feeds, so a deferred payload's hash is checkable before
     ///      anything is approved.
-    function commitmentFor(uint256 destinationChainId, Call[] memory calls)
-        public
-        pure
-        returns (bytes32)
-    {
+    function commitmentFor(uint256 destinationChainId, Call[] memory calls) public pure returns (bytes32) {
         return Commitment.hashCalls(ChainKey.forEvm(destinationChainId), calls);
     }
 
@@ -774,16 +702,15 @@ abstract contract TransmitterBase is
     ///      you can compute for a message you cannot send in this shape is a trap. The revert
     ///      names the mistake; `ChainRegistry.commitmentFor` is where that destination is
     ///      answered.
-    function commitmentForChain(
-        bytes calldata destinationChainIdentifier,
-        Call[] memory calls
-    ) public pure returns (bytes32) {
+    function commitmentForChain(bytes calldata destinationChainIdentifier, Call[] memory calls)
+        public
+        pure
+        returns (bytes32)
+    {
         if (!Payload.isTypedDestination(destinationChainIdentifier)) {
             revert TypedPayloadToNonEvmDestination();
         }
-        return Commitment.hashCalls(
-            ChainKey.fromIdentifier(destinationChainIdentifier), calls
-        );
+        return Commitment.hashCalls(ChainKey.fromIdentifier(destinationChainIdentifier), calls);
     }
 
     /// @notice Accept ETH, so a refunded fee has somewhere to land.
@@ -795,10 +722,7 @@ abstract contract TransmitterBase is
     ///      `execute` is payable and this address is the owner's.
     receive() external payable {}
 
-    function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_)
-        internal
-        onlyInitializing
-    {
+    function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_) internal onlyInitializing {
         if (transceiver_ == address(0)) revert NoTransceiver();
 
         transceiver = transceiver_;

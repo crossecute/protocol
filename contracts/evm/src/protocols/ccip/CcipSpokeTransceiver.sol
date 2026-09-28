@@ -35,12 +35,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
-            gateways,
-            receiverImplementation_,
-            homeChainKey_,
-            homeChainIdentifier_,
-            homeTransceiver_,
-            addressesDiverge_
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
         );
     }
 
@@ -50,12 +45,11 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
     ///      but `homeChainKey`, so `homeSelector` is always the right destination, and
     ///      `_recipientOn(homeChainKey)` (what `recipient` already is, on this path) already
     ///      carries the home transceiver's address for `EVM2AnyMessage.receiver`.
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32 sendId)
+    {
         CcipMessage.send(router, homeSelector, recipient, payload, attributes, value);
     }
 
@@ -74,10 +68,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
 
     /// @dev Origin chain per `ProviderOrigin`. CCIP's off-ramp asserts nothing about the sender;
     ///      `_authenticateOrigin` checks it.
-    function ccipReceive(Client.Any2EVMMessage calldata message)
-        external
-        onlyRole(GATEWAY_ROLE)
-    {
+    function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
         ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
         _onHomeInbound(abi.decode(message.sender, (address)), message.data);
     }
@@ -86,8 +77,8 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
     /// @dev See `CcipReceiver.supportsInterface`'s note: CCIP's off-ramp checks this before
     ///      calling `ccipReceive`, and answering false makes it deliver silently.
     function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 }
 
@@ -104,7 +95,13 @@ contract CcipSpokeTransceiver is CcipSpokeBase {
         uint64 homeSelector_
     ) external initializer {
         __CcipSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeSelector_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            false,
+            homeSelector_
         );
     }
 }

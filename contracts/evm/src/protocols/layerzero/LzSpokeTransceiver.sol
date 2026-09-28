@@ -5,10 +5,8 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {Call} from "src/messaging/Call.sol";
 import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {OAppUpgradeable, Origin} from
-    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
-import {MessagingFee} from
-    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice LayerZero wiring shared by every spoke variant (this file's, and the zkSync/Tron
@@ -75,7 +73,11 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value
-    ) internal override returns (bytes32 sendId) {
+    )
+        internal
+        override
+        returns (bytes32 sendId)
+    {
         _lzSend(homeEid, payload, LzMessage.options(attributes), MessagingFee(value, 0), _refundTo());
     }
 
@@ -108,7 +110,10 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         bytes calldata _message,
         address, /* _executor */
         bytes calldata /* _extraData */
-    ) internal override {
+    )
+        internal
+        override
+    {
         _onHomeInbound(ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

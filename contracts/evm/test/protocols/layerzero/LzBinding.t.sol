@@ -13,10 +13,8 @@ import {Payload} from "src/messaging/Payload.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
-import {LzZkSyncSpokeTransceiver} from
-    "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
-import {Origin} from
-    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {LzZkSyncSpokeTransceiver} from "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {
@@ -38,20 +36,15 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 contract LzHubHarness is LzHubTransceiver {
     constructor(address endpoint) LzHubTransceiver(endpoint) {}
 
-    function sendMessagePublic(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) external payable returns (bytes32) {
+    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        external
+        payable
+        returns (bytes32)
+    {
         return _sendMessage(recipient, payload, attributes, value);
     }
 
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload)
-        external
-        view
-        returns (uint256)
-    {
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
         return _quoteMessage(recipient, payload, new bytes[](0));
     }
 }
@@ -70,17 +63,14 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
     function setUp() public {
         endpoint = new MockLzEndpoint();
         hub = LzHubHarness(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(new LzHubHarness(address(endpoint))),
                         abi.encodeCall(
-                            LzHubTransceiver.initialize,
-                            (msig, address(0), new address[](0), address(0xBEEF))
+                            LzHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
                         )
                     )
-                )
-            )
+                ))
         );
         harness = IHubSendHarness(address(hub));
 
@@ -118,9 +108,7 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
         bytes memory payload = "payload";
 
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(
-            _configuredRecipient(), payload, new bytes[](0), 0.01 ether
-        );
+        hub.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
 
         (,, bytes memory sentPayload,, uint256 value,) = endpoint.sent(0);
         assertEq(sentPayload, payload);
@@ -134,9 +122,7 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
     function test_sendSpendsExactlyValueEvenWhenLessThanMsgValue() public {
         endpoint.setFee(0.01 ether);
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.02 ether}(
-            _configuredRecipient(), "x", new bytes[](0), 0.01 ether
-        );
+        hub.sendMessagePublic{value: 0.02 ether}(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
 
         (,,,, uint256 value,) = endpoint.sent(0);
         assertEq(value, 0.01 ether, "spends value, not msg.value");
@@ -171,11 +157,9 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
         endpoint.setFeePerByte(perByte);
     }
 
-
     function _lastRefundAddress() internal view override returns (address refundAddress) {
         (,,,,, refundAddress) = endpoint.sent(endpoint.sentLength() - 1);
     }
-
 
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
@@ -185,7 +169,11 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
     function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(endpoint));
         hub.lzReceive(
-            Origin({srcEid: uint32(providerId), sender: bytes32(uint256(0xC0DE)), nonce: 1}), bytes32(0), "", address(0), ""
+            Origin({srcEid: uint32(providerId), sender: bytes32(uint256(0xC0DE)), nonce: 1}),
+            bytes32(0),
+            "",
+            address(0),
+            ""
         );
     }
 
@@ -193,7 +181,6 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IOAppCore.NoPeer.selector, uint32(providerId));
     }
-
 }
 
 /// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender inside the
@@ -233,9 +220,7 @@ contract LzReceiveTest is ProviderWideSenderSpec {
     function _deliverFromConfiguredSource() internal override {
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         vm.prank(address(endpoint));
-        receiver.lzReceive(
-            _origin(sourceTransmitter, HOME_EID), bytes32(0), payload, address(0), ""
-        );
+        receiver.lzReceive(_origin(sourceTransmitter, HOME_EID), bytes32(0), payload, address(0), "");
     }
 
     /// @dev OApp's own `OnlyPeer`, ahead of `_lzReceive`.
@@ -247,9 +232,7 @@ contract LzReceiveTest is ProviderWideSenderSpec {
     /// @dev OApp's own `NoPeer`.
     function _deliverFromUnconfiguredOrigin() internal override {
         vm.prank(address(endpoint));
-        receiver.lzReceive(
-            _origin(sourceTransmitter, HOME_EID + 1), bytes32(0), "", address(0), ""
-        );
+        receiver.lzReceive(_origin(sourceTransmitter, HOME_EID + 1), bytes32(0), "", address(0), "");
     }
 
     /// @dev OApp's own `OnlyEndpoint`: no `vm.prank`, so the caller is this test contract.
@@ -266,7 +249,6 @@ contract LzReceiveTest is ProviderWideSenderSpec {
     function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, HOME_EID, wide);
     }
-
 }
 
 /// @notice The Copilot-flagged gap: a zero eid or a mis-sized `homeTransceiver_` must not
@@ -277,10 +259,7 @@ contract LzInitValidationTest is Test {
     function test_receiverRejectsZeroHomeEid() public {
         address impl = address(new LzReceiver(ENDPOINT));
         vm.expectRevert(LzReceiver.ZeroHomeEid.selector);
-        new ERC1967Proxy(
-            impl,
-            abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0))
-        );
+        new ERC1967Proxy(impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0)));
     }
 
     function test_spokeRejectsZeroHomeEid() public {
@@ -327,12 +306,11 @@ contract LzInitValidationTest is Test {
 contract LzZkSyncSpokeHarness is LzZkSyncSpokeTransceiver {
     constructor(address endpoint) LzZkSyncSpokeTransceiver(endpoint) {}
 
-    function sendMessagePublic(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) external payable returns (bytes32) {
+    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        external
+        payable
+        returns (bytes32)
+    {
         return _sendMessage(recipient, payload, attributes, value);
     }
 }
@@ -351,8 +329,7 @@ contract LzDivergentSpokePayNativeTest is Test {
     function setUp() public {
         endpoint = new MockLzEndpoint();
         spoke = LzZkSyncSpokeHarness(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(new LzZkSyncSpokeHarness(address(endpoint))),
                         abi.encodeCall(
@@ -368,8 +345,7 @@ contract LzDivergentSpokePayNativeTest is Test {
                             )
                         )
                     )
-                )
-            )
+                ))
         );
     }
 
@@ -389,7 +365,12 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec {
     MockLzEndpoint endpoint = new MockLzEndpoint();
 
     function _transmitter() internal override returns (address) {
-        return address(new ERC1967Proxy(address(new LzTransmitter(address(endpoint))), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+        return address(
+            new ERC1967Proxy(
+                address(new LzTransmitter(address(endpoint))),
+                abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
+            )
+        );
     }
 
     function _deliveringGateway() internal view override returns (address) {
@@ -478,16 +459,26 @@ contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec {
 
     function _deliverToHub(address sender) internal override {
         vm.prank(address(endpoint));
-        LzHubTransceiver(payable(hub)).lzReceive(
-            Origin({srcEid: SPOKE_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}), bytes32(0), "", address(0), ""
-        );
+        LzHubTransceiver(payable(hub))
+            .lzReceive(
+                Origin({srcEid: SPOKE_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
+                bytes32(0),
+                "",
+                address(0),
+                ""
+            );
     }
 
     function _deliverToSpoke(address sender) internal override {
         vm.prank(address(endpoint));
-        LzSpokeTransceiver(payable(spoke)).lzReceive(
-            Origin({srcEid: HOME_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}), bytes32(0), "", address(0), ""
-        );
+        LzSpokeTransceiver(payable(spoke))
+            .lzReceive(
+                Origin({srcEid: HOME_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
+                bytes32(0),
+                "",
+                address(0),
+                ""
+            );
     }
 
     function _hubWrongSenderRevert(bytes32, address sender) internal pure override returns (bytes memory) {

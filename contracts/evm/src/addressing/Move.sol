@@ -124,12 +124,7 @@ library Move {
     function hash(MoveQualifier memory q) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(
-                uint8(q.kind),
-                q.moduleName,
-                q.functionName,
-                q.typeArgs,
-                q.originalPackageId,
-                q.initialSharedVersion
+                uint8(q.kind), q.moduleName, q.functionName, q.typeArgs, q.originalPackageId, q.initialSharedVersion
             )
         );
     }
@@ -185,8 +180,7 @@ library Move {
 
         for (uint256 i = 1; i < n; ++i) {
             bytes1 c = b[i];
-            bool okRest = (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
-                || (c >= 0x30 && c <= 0x39) // 0-9
+            bool okRest = (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) // 0-9
                 || c == 0x5f;
             if (!okRest) revert BadIdentifier();
         }
@@ -196,28 +190,16 @@ library Move {
 
     /// @notice Build the 7930 envelope for a Move address. The address field holds the
     ///         32-byte account/package ID and nothing else.
-    function encodeMove(uint16 chainType, bytes memory chainRef, bytes32 addr)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encodeMove(uint16 chainType, bytes memory chainRef, bytes32 addr) internal pure returns (bytes memory) {
         if (!isMoveChain(chainType)) revert NotMoveChain();
         return Erc7930.encode(chainType, chainRef, abi.encodePacked(addr));
     }
 
-    function encodeAptos(bytes memory chainRef, bytes32 addr)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encodeAptos(bytes memory chainRef, bytes32 addr) internal pure returns (bytes memory) {
         return encodeMove(CT_PROV_APTOS, chainRef, addr);
     }
 
-    function encodeSui(bytes memory chainRef, bytes32 addr)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encodeSui(bytes memory chainRef, bytes32 addr) internal pure returns (bytes memory) {
         return encodeMove(CT_PROV_SUI, chainRef, addr);
     }
 

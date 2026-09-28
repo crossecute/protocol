@@ -35,8 +35,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///        instead, where the grade states the weaker guarantee rather than hiding it.
 library StarknetDerive {
     /// @dev FIELD_PRIME = 2^251 + 17 * 2^192 + 1
-    uint256 internal constant FIELD_PRIME =
-        0x0800000000000011000000000000000000000000000000000000000000000001;
+    uint256 internal constant FIELD_PRIME = 0x0800000000000011000000000000000000000000000000000000000000000001;
 
     /// @dev L2_ADDRESS_UPPER_BOUND = 2^251 - 256. Note the "- 256": a naive `< 2^251`
     ///      check admits 256 values that can never be a Starknet contract address,
@@ -49,8 +48,7 @@ library StarknetDerive {
     /// @dev CONTRACT_ADDRESS_PREFIX = felt encoding of ASCII "STARKNET_CONTRACT_ADDRESS"
     ///      (25 bytes, big-endian). Present so an off-chain derivation can be checked
     ///      against the same constant the contract enforces.
-    uint256 internal constant CONTRACT_ADDRESS_PREFIX =
-        0x535441524b4e45545f434f4e54524143545f41444452455353;
+    uint256 internal constant CONTRACT_ADDRESS_PREFIX = 0x535441524b4e45545f434f4e54524143545f41444452455353;
 
     error AddressOutOfRange();
     error FeltOutOfRange();

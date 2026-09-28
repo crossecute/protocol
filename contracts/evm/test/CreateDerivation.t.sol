@@ -51,14 +51,8 @@ contract CreateDerivationTest is Test {
         assertEq(h.create(DEPLOYER, 128), 0x08e190dcB7b73F5fcDAbb43e102215c83659A76D, "128");
         assertEq(h.create(DEPLOYER, 255), 0x3eF7c1a519E4b4431E317d7839340E3139B03c65, "255");
         assertEq(h.create(DEPLOYER, 256), 0x3837C1Ae70354f670550C746580199Ac6a73Cb0a, "256");
-        assertEq(
-            h.create(DEPLOYER, 65535), 0x65260EECFf4eDeBaBE134f76F1F39a91Defde56C, "65535"
-        );
-        assertEq(
-            h.create(DEPLOYER, 16777216),
-            0x2F7e0b32826965De88a6FeBf0f35f55fdC22B262,
-            "16777216"
-        );
+        assertEq(h.create(DEPLOYER, 65535), 0x65260EECFf4eDeBaBE134f76F1F39a91Defde56C, "65535");
+        assertEq(h.create(DEPLOYER, 16777216), 0x2F7e0b32826965De88a6FeBf0f35f55fdC22B262, "16777216");
     }
 
     /// @dev 127 and 128 straddle the arm boundary, so they must not collide and must not

@@ -56,19 +56,11 @@ contract ConstantScheme is ICommitmentScheme {
 /// @dev The library is `internal`, so reaching it the way a caller would needs a
 ///      deployed surface.
 contract LibraryHarness {
-    function frozenEvmPath(bytes32 chainKey, bytes[] calldata elements)
-        external
-        pure
-        returns (bytes32)
-    {
+    function frozenEvmPath(bytes32 chainKey, bytes[] calldata elements) external pure returns (bytes32) {
         return Commitment.hashCalls(chainKey, elements);
     }
 
-    function enumPath(Scheme scheme, bytes32 chainKey, bytes[] memory elements)
-        external
-        view
-        returns (bytes32)
-    {
+    function enumPath(Scheme scheme, bytes32 chainKey, bytes[] memory elements) external view returns (bytes32) {
         return Commitment.hashCalls(scheme, chainKey, elements);
     }
 }
@@ -112,21 +104,14 @@ contract CommitmentSchemePluginTest is Test {
         sha256dScheme = new Sha256dScheme();
 
         ChainRegistry impl = new ChainRegistry();
-        registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(ChainRegistry.initialize, (owner))
-                )
-            )
-        );
+        registry =
+            ChainRegistry(address(new ERC1967Proxy(address(impl), abi.encodeCall(ChainRegistry.initialize, (owner)))));
 
         vm.startPrank(owner);
         evmKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
         tonKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.NEAR, hex"01"));
         cardanoKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.COSMOS, hex"02"));
-        starknetKey = registry.addChainKey(
-            Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"))
-        );
+        starknetKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN")));
 
         registry.setCommitmentScheme(evmKey, keccakScheme);
         registry.setCommitmentScheme(tonKey, sha256Scheme);
@@ -163,16 +148,8 @@ contract CommitmentSchemePluginTest is Test {
     function test_pluginPathReproducesEveryEnumScheme() public view {
         bytes[] memory elements = _elements();
 
-        assertEq(
-            registry.commitmentFor(evmKey, elements),
-            lib.enumPath(Scheme.Keccak256, evmKey, elements),
-            "keccak"
-        );
-        assertEq(
-            registry.commitmentFor(tonKey, elements),
-            lib.enumPath(Scheme.Sha256, tonKey, elements),
-            "sha256"
-        );
+        assertEq(registry.commitmentFor(evmKey, elements), lib.enumPath(Scheme.Keccak256, evmKey, elements), "keccak");
+        assertEq(registry.commitmentFor(tonKey, elements), lib.enumPath(Scheme.Sha256, tonKey, elements), "sha256");
         assertEq(
             registry.commitmentFor(cardanoKey, elements),
             lib.enumPath(Scheme.Blake2b256Scheme, cardanoKey, elements),
@@ -224,8 +201,7 @@ contract CommitmentSchemePluginTest is Test {
         bytes32 evmBefore = registry.commitmentFor(evmKey, elements);
 
         vm.startPrank(owner);
-        newChainKey =
-            registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
+        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
         registry.setCommitmentScheme(newChainKey, sha256dScheme);
         vm.stopPrank();
 
@@ -239,10 +215,7 @@ contract CommitmentSchemePluginTest is Test {
 
         // Every chain configured before it is untouched.
         assertEq(registry.commitmentFor(evmKey, elements), evmBefore);
-        assertEq(
-            registry.commitmentFor(tonKey, elements),
-            lib.enumPath(Scheme.Sha256, tonKey, elements)
-        );
+        assertEq(registry.commitmentFor(tonKey, elements), lib.enumPath(Scheme.Sha256, tonKey, elements));
     }
 
     /// @dev The new primitive is unreachable through the frozen enum in either
@@ -250,8 +223,7 @@ contract CommitmentSchemePluginTest is Test {
     ///      exist produces a different digest.
     function test_newSchemeIsUnreachableThroughTheEnum() public {
         vm.startPrank(owner);
-        newChainKey =
-            registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
+        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
         registry.setCommitmentScheme(newChainKey, sha256dScheme);
         vm.stopPrank();
 
@@ -270,9 +242,7 @@ contract CommitmentSchemePluginTest is Test {
     function test_poseidonBecomesPreviewableThroughThePlugin() public {
         bytes[] memory elements = _elements();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Commitment.SchemeNotComputable.selector, Scheme.Poseidon));
         lib.enumPath(Scheme.Poseidon, starknetKey, elements);
 
         ICommitmentScheme stub = new NotReallyPoseidonScheme();
@@ -314,8 +284,7 @@ contract CommitmentSchemePluginTest is Test {
 
         bytes[] memory elements = _elements();
         assertTrue(
-            registry.commitmentFor(evmKey, elements)
-                != registry.commitmentFor(otherKey, elements),
+            registry.commitmentFor(evmKey, elements) != registry.commitmentFor(otherKey, elements),
             "same elements on two chains must not share a commitment"
         );
     }
@@ -333,10 +302,7 @@ contract CommitmentSchemePluginTest is Test {
         registry.setCommitmentScheme(evmKey, sha256Scheme);
 
         assertTrue(registry.commitmentFor(evmKey, elements) != before);
-        assertEq(
-            registry.commitmentFor(evmKey, elements),
-            lib.enumPath(Scheme.Sha256, evmKey, elements)
-        );
+        assertEq(registry.commitmentFor(evmKey, elements), lib.enumPath(Scheme.Sha256, evmKey, elements));
     }
 
     /// @dev Withdrawing a plugin makes the preview revert rather than answer. A signer
@@ -385,11 +351,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /// @dev The fold, written out longhand against the new primitive. Deliberately not
     ///      expressed in terms of anything under test.
-    function _sha256dFold(bytes32 chainKey, bytes[] memory elements)
-        private
-        pure
-        returns (bytes32 acc)
-    {
+    function _sha256dFold(bytes32 chainKey, bytes[] memory elements) private pure returns (bytes32 acc) {
         acc = _sha256d(abi.encode(chainKey));
         for (uint256 i = 0; i < elements.length; i++) {
             acc = _sha256d(abi.encodePacked(acc, _sha256d(elements[i])));

@@ -44,12 +44,7 @@ contract PolicyReceiver is ReceiverBase {
         permitted[target][selector] = true;
     }
 
-    function isAllowed(address target, bytes4 selector)
-        public
-        view
-        override
-        returns (bool)
-    {
+    function isAllowed(address target, bytes4 selector) public view override returns (bool) {
         return permitted[target][selector];
     }
 }
@@ -76,11 +71,7 @@ contract ExecutionTest is Test {
         t = new Target();
     }
 
-    function _call(address target, uint256 value, bytes memory data)
-        internal
-        pure
-        returns (Call memory)
-    {
+    function _call(address target, uint256 value, bytes memory data) internal pure returns (Call memory) {
         return Call({target: target, value: value, data: data});
     }
 
@@ -136,11 +127,7 @@ contract ExecutionTest is Test {
         bytes memory data = abi.encodeCall(Target.ping, (1));
         vm.prank(transmitter);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                Executor.SelectorNotAllowed.selector,
-                address(other),
-                Target.ping.selector
-            )
+            abi.encodeWithSelector(Executor.SelectorNotAllowed.selector, address(other), Target.ping.selector)
         );
         r.execute(_one(_call(address(other), 0, data)));
     }
@@ -152,11 +139,7 @@ contract ExecutionTest is Test {
         vm.deal(address(r), 1 ether);
 
         vm.prank(transmitter);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Executor.SelectorNotAllowed.selector, address(t), bytes4(0)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Executor.SelectorNotAllowed.selector, address(t), bytes4(0)));
         r.execute(_one(_call(address(t), 1 ether, "")));
 
         r.allow(address(t), bytes4(0));
@@ -219,9 +202,7 @@ contract ExecutionTest is Test {
         vm.prank(transmitter);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Executor.CallFailed.selector,
-                uint256(1),
-                abi.encodeWithSelector(Target.Boom.selector, "target said no")
+                Executor.CallFailed.selector, uint256(1), abi.encodeWithSelector(Target.Boom.selector, "target said no")
             )
         );
         r.execute(calls);
@@ -239,12 +220,9 @@ contract ExecutionTest is Test {
         try r.execute(_one(_call(address(t), 0, abi.encodeCall(Target.nope, ())))) {
             revert("should have failed");
         } catch (bytes memory err) {
-            (uint256 idx, bytes memory reason) =
-                abi.decode(_stripSelector(err), (uint256, bytes));
+            (uint256 idx, bytes memory reason) = abi.decode(_stripSelector(err), (uint256, bytes));
             assertEq(idx, 0);
-            assertEq(
-                reason, abi.encodeWithSelector(Target.Boom.selector, "target said no")
-            );
+            assertEq(reason, abi.encodeWithSelector(Target.Boom.selector, "target said no"));
         }
     }
 

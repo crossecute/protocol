@@ -23,17 +23,12 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 ///         so a test can exercise the translation layer without going through the full
 ///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzHubHarness`.
 interface IHubSendHarness {
-    function sendMessagePublic(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) external payable returns (bytes32);
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload)
+    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
-        view
-        returns (uint256);
+        payable
+        returns (bytes32);
+
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256);
 }
 
 /// @title ProviderHubSendSpec
@@ -111,9 +106,8 @@ abstract contract ProviderHubSendSpec is Test {
 
     /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
     function test_quoteIsView() public view {
-        (bool ok,) = address(harness).staticcall(
-            abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x"))
-        );
+        (bool ok,) = address(harness)
+            .staticcall(abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
         assertTrue(ok);
     }
 }

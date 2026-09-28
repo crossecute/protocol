@@ -17,7 +17,14 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderHubSendSpec, IHubSendHarness, ProviderReceiveSpec, ProviderEvmRecipientSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {
+    ProviderHubSendSpec,
+    IHubSendHarness,
+    ProviderReceiveSpec,
+    ProviderEvmRecipientSpec,
+    ProviderTransmitterSpec,
+    ProviderTransceiverInboundSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
@@ -283,7 +290,12 @@ contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
     address messenger = address(0xBEEF);
 
     function _transmitter() internal override returns (address) {
-        return address(new ERC1967Proxy(address(new OpStackTransmitter()), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+        return address(
+            new ERC1967Proxy(
+                address(new OpStackTransmitter()),
+                abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
+            )
+        );
     }
 
     function _deliveringGateway() internal view override returns (address) {

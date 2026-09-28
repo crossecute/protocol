@@ -47,7 +47,10 @@ contract MockLzEndpoint {
         return sent.length;
     }
 
-    function quote(MessagingParams calldata _params, address /* _sender */ )
+    function quote(
+        MessagingParams calldata _params,
+        address /* _sender */
+    )
         external
         view
         returns (MessagingFee memory)

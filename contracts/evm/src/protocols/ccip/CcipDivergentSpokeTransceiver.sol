@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {ZkSyncSpokeTransceiver, TronSpokeTransceiver} from
-    "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {
+    ZkSyncSpokeTransceiver,
+    TronSpokeTransceiver
+} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {AccessControlEnumerableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import {
+    AccessControlEnumerableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
 import {CcipSpokeBase} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
 
 /// @dev The overrides below only name both bases, as Solidity requires where each supplies an
@@ -27,7 +30,13 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
         uint64 homeSelector_
     ) external initializer {
         __CcipSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeSelector_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            true,
+            homeSelector_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
@@ -45,8 +54,12 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
         return super._deployAccount(salt);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
-        returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 }
@@ -66,7 +79,13 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
         uint64 homeSelector_
     ) external initializer {
         __CcipSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, true, homeSelector_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            true,
+            homeSelector_
         );
         __DivergentSpoke_init(accountBytecodeHash_);
     }
@@ -80,8 +99,12 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
         return super.predictCrossAccount(owner, salt);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
-        returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AccessControlEnumerableUpgradeable, CcipSpokeBase)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 }

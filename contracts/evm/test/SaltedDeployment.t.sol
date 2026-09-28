@@ -63,7 +63,6 @@ contract HubForAccounts is UnsendableHub {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @dev A SPOKE, because receivers are made on the spoke side. A hub has no
@@ -80,7 +79,6 @@ contract SaltedTransceiver is UnsendableSpoke {
         );
     }
 
-
     /// @dev Stands in for `_onInbound`, which authenticates and then self-calls.
     function bootstrapFor(address owner_) external returns (address) {
         this.bootstrapInbound(owner_, bytes32(0), new Call[](0));
@@ -92,7 +90,6 @@ contract SaltedTransceiver is UnsendableSpoke {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @dev A transmitter that answers `owner()`, which is how `createReceiver` decides who
@@ -119,12 +116,7 @@ contract SaltedDeploymentTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
         );
         factory = new MiniFactory();
 
@@ -144,13 +136,9 @@ contract SaltedDeploymentTest is Test {
         return keccak256(type(CrossProxy).creationCode);
     }
 
-    function _record(bytes32 transceiverInitCodeHash, bytes32 receiverInitCodeHash)
-        internal
-    {
+    function _record(bytes32 transceiverInitCodeHash, bytes32 receiverInitCodeHash) internal {
         vm.prank(owner);
-        registry.setProviderDeployment(
-            provider, SALT, transceiverInitCodeHash, receiverInitCodeHash
-        );
+        registry.setProviderDeployment(provider, SALT, transceiverInitCodeHash, receiverInitCodeHash);
     }
 
     /* ============================== the whole chain ============================= */
@@ -166,8 +154,7 @@ contract SaltedDeploymentTest is Test {
 
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
-        address predictedReceiver =
-            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
+        address predictedReceiver = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
 
         // Nothing is deployed yet.
         assertEq(predictedTransceiver.code.length, 0);
@@ -249,11 +236,7 @@ contract SaltedDeploymentTest is Test {
 
         address receiver = SaltedTransceiver(payable(spokeAt)).bootstrapFor(ownerOf);
         assertEq(receiver, predicted, "the receiver is where Ethereum said");
-        assertEq(
-            SaltedReceiver(payable(receiver)).sourceTransmitter(),
-            predicted,
-            "and its peer is that same address"
-        );
+        assertEq(SaltedReceiver(payable(receiver)).sourceTransmitter(), predicted, "and its peer is that same address");
 
         vm.revertToState(world);
 
@@ -268,9 +251,7 @@ contract SaltedDeploymentTest is Test {
         vm.prank(ownerOf);
         address transmitter = HubForAccounts(payable(hubAt)).createTransmitter(bytes32(0));
 
-        assertEq(
-            transmitter, predicted, "the transmitter occupies the address its receivers do"
-        );
+        assertEq(transmitter, predicted, "the transmitter occupies the address its receivers do");
         assertEq(MiniTransmitter(transmitter).owner(), ownerOf, "and it is theirs");
     }
 
@@ -298,12 +279,9 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev ONE OWNER'S SALT CANNOT REACH ANOTHER OWNER'S ACCOUNT. The pair is hashed, so
     ///      there is no choice of salt that lands on somebody else's address.
-    function testFuzz_theOwnerIsAlwaysPartOfTheSalt(
-        address ownerA,
-        address ownerB,
-        bytes32 saltA,
-        bytes32 saltB
-    ) public {
+    function testFuzz_theOwnerIsAlwaysPartOfTheSalt(address ownerA, address ownerB, bytes32 saltA, bytes32 saltB)
+        public
+    {
         vm.assume(ownerA != address(0) && ownerB != address(0));
         vm.assume(ownerA != ownerB);
         _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
@@ -396,9 +374,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256("initcode"), keccak256("receiver"));
 
         vm.prank(owner);
-        bytes32 sol = registry.addChainKey(
-            Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708")
-        );
+        bytes32 sol = registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
         registry.predictTransceiver(sol, provider);
@@ -411,9 +387,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.setProviderDeployment(
-            provider, keccak256("other"), keccak256("initcode"), keccak256("receiver")
-        );
+        registry.setProviderDeployment(provider, keccak256("other"), keccak256("initcode"), keccak256("receiver"));
 
         // Re-writing the identical record is a no-op, not a failure.
         _record(keccak256("initcode"), keccak256("receiver"));
@@ -444,9 +418,7 @@ contract SaltedDeploymentTest is Test {
         assertEq(
             registry.predictTransceiver(chainKey, provider),
             AddressDerive.create2(
-                registry.create2Factory(chainKey),
-                SALT,
-                keccak256(type(SaltedTransceiver).creationCode)
+                registry.create2Factory(chainKey), SALT, keccak256(type(SaltedTransceiver).creationCode)
             ),
             "arithmetic over the recorded inputs, not a local address"
         );
@@ -454,17 +426,9 @@ contract SaltedDeploymentTest is Test {
 
     /* ================================== helpers ================================ */
 
-    function _freshRegistryWith(bytes32 salt, bytes32 initCodeHash)
-        internal
-        returns (ChainRegistry r)
-    {
+    function _freshRegistryWith(bytes32 salt, bytes32 initCodeHash) internal returns (ChainRegistry r) {
         r = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
         );
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");

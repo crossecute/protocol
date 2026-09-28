@@ -174,12 +174,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      happily answer for any key that had been written; a spoke asked to route anywhere
     ///      but home reverts instead, which is what makes spoke-to-spoke traffic structurally
     ///      impossible rather than merely unconfigured.
-    function _counterpartOn(bytes32 chainKey)
-        internal
-        view
-        override
-        returns (bytes memory)
-    {
+    function _counterpartOn(bytes32 chainKey) internal view override returns (bytes memory) {
         if (chainKey != homeChainKey) revert NotHome(chainKey);
         return OutboundBase._counterpartOn(chainKey);
     }
@@ -194,12 +189,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev ONE ORIGIN, SO IT IS A COMPARISON. Both halves are write-once, so there is no
     ///      lookup that could return the wrong answer if configuration drifted and no
     ///      configuration by which this could be made to accept a second origin.
-    function _authenticateOrigin(bytes memory route, bytes memory sender)
-        internal
-        view
-        override
-        returns (bytes32)
-    {
+    function _authenticateOrigin(bytes memory route, bytes memory sender) internal view override returns (bytes32) {
         if (!_isHome(route, sender)) revert NotHomeOrigin();
         return homeChainKey;
     }
@@ -208,15 +198,13 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A spoke receives bootstrap messages and nothing else. The chainKey is discarded:
     ///      it is `homeChainKey` or `_authenticateOrigin` already reverted.
     function _handleInbound(bytes32, bytes calldata message) internal virtual override {
-        (address owner, bytes32 salt, Call[] memory calls) =
-            Envelope.decodeBootstrap(message);
+        (address owner, bytes32 salt, Call[] memory calls) = Envelope.decodeBootstrap(message);
         this.bootstrapInbound(owner, salt, calls);
     }
 
     /// @notice Whether an inbound message's origin is the hub, in one comparison.
     function _isHome(bytes memory route, bytes memory sender) internal view returns (bool) {
-        return keccak256(route) == keccak256(homeRoute())
-            && keccak256(sender) == keccak256(homeTransceiver());
+        return keccak256(route) == keccak256(homeRoute()) && keccak256(sender) == keccak256(homeTransceiver());
     }
 
     /* ============================ receiver manufacture ========================= */
@@ -240,9 +228,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(
-            IReceiverInit.initialize, (predictCrossAccount(owner, salt), calls)
-        );
+        return abi.encodeCall(IReceiverInit.initialize, (predictCrossAccount(owner, salt), calls));
     }
 
     /// @notice What an arriving payload may call here: `TransceiverBase`'s two, plus the
@@ -253,13 +239,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      and the array it supplies is exactly one call to this. It is already `msg.sender ==
     ///      address(this)`, so the allowlist adds no authority; it only refuses everything the
     ///      base refuses, on a contract that deploys every account on this chain.
-    function isAllowed(address target, bytes4 selector)
-        public
-        view
-        virtual
-        override
-        returns (bool)
-    {
+    function isAllowed(address target, bytes4 selector) public view virtual override returns (bool) {
         if (target == address(this) && selector == this.bootstrapInbound.selector) {
             return true;
         }
@@ -288,9 +268,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev THE SALT CROSSES WITH THE OWNER, AND IT HAS TO: the account address is
     ///      `(owner, salt)`, so a spoke that only knew the owner could not reproduce the
     ///      address its transmitter occupies at home, which is the entire property.
-    function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls)
-        external
-    {
+    function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls) external {
         require(msg.sender == address(this));
         address receiver = _createCrossAccount(owner, salt, calls);
         if (addressesDiverge) _reportReceiver(owner, salt, receiver);
@@ -323,12 +301,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         bytes memory recipient = _recipientOn(homeChainKey);
         bytes memory payload = reportPayload(owner, salt, receiver);
 
-        _sendMessage(
-            recipient,
-            payload,
-            new bytes[](0),
-            _quoteMessage(recipient, payload, new bytes[](0))
-        );
+        _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));
     }
 
     /// @notice The report this spoke would send for `(owner, salt)` and the receiver it
@@ -345,13 +318,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev `predictCrossAccount(owner, salt)` IS THE RECEIVER ARGUMENT on the live path, and
     ///      taking it explicitly rather than deriving it keeps this honest on a chain whose
     ///      derivation is overridden: the value quoted is the value reported.
-    function reportPayload(address owner, bytes32 salt, address receiver)
-        public
-        view
-        returns (bytes memory)
-    {
-        return Envelope.encodeReceiverReport(
-            owner, salt, Erc7930.encodeEvm(block.chainid, receiver)
-        );
+    function reportPayload(address owner, bytes32 salt, address receiver) public view returns (bytes memory) {
+        return Envelope.encodeReceiverReport(owner, salt, Erc7930.encodeEvm(block.chainid, receiver));
     }
 }

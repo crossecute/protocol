@@ -23,7 +23,17 @@ import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {
+    ProviderIdTableSpec,
+    IHubSendHarness,
+    ProviderWideSenderSpec,
+    ProviderSpokeOriginSpec,
+    ProviderEvmRecipientSpec,
+    ProviderPayloadPricedSpec,
+    ProviderRefundSpec,
+    ProviderTransmitterSpec,
+    ProviderTransceiverInboundSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -46,7 +56,12 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
+contract HyperlaneSendTest is
+    ProviderIdTableSpec,
+    ProviderEvmRecipientSpec,
+    ProviderPayloadPricedSpec,
+    ProviderRefundSpec
+{
     MockHyperlaneMailbox mailbox;
     HyperlaneHubHarness hub;
     address msig = address(0x5165);
@@ -183,7 +198,6 @@ contract HyperlaneSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Pro
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
     }
-
 }
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so
@@ -246,7 +260,6 @@ contract HyperlaneReceiveTest is ProviderWideSenderSpec {
     function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderAddress.UnsupportedSender.selector, wide);
     }
-
 }
 
 contract HyperlaneTransceiverReceiveTest is Test {
@@ -347,7 +360,14 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new HyperlaneSpokeTransceiver(address(mailbox))),
                 abi.encodeCall(
                     HyperlaneSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME_DOMAIN)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        HOME_DOMAIN
+                    )
                 )
             )
         );
@@ -356,7 +376,15 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new HyperlaneZkSyncSpokeTransceiver(address(mailbox))),
                 abi.encodeCall(
                     HyperlaneZkSyncSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_DOMAIN)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        bytes32(uint256(1)),
+                        HOME_DOMAIN
+                    )
                 )
             )
         );
@@ -365,7 +393,15 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new HyperlaneTronSpokeTransceiver(address(mailbox))),
                 abi.encodeCall(
                     HyperlaneTronSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_DOMAIN)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        bytes32(uint256(1)),
+                        HOME_DOMAIN
+                    )
                 )
             )
         );
@@ -385,7 +421,12 @@ contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec {
     address mailbox = address(0xBEEF);
 
     function _transmitter() internal override returns (address) {
-        return address(new ERC1967Proxy(address(new HyperlaneTransmitter(mailbox)), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+        return address(
+            new ERC1967Proxy(
+                address(new HyperlaneTransmitter(mailbox)),
+                abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
+            )
+        );
     }
 
     function _deliveringGateway() internal view override returns (address) {
@@ -429,7 +470,9 @@ contract HyperlaneTransceiverInboundTest is ProviderTransceiverInboundSpec {
         hub = address(
             new ERC1967Proxy(
                 address(new HyperlaneInboundHubHarness(mailbox)),
-                abi.encodeCall(HyperlaneHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
+                abi.encodeCall(
+                    HyperlaneHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
+                )
             )
         );
         vm.prank(msig);

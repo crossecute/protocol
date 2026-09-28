@@ -85,16 +85,12 @@ contract TreasuryTest is Test {
     }
 
     function test_nobodyElseMovesAnything() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
         treasury.withdraw(payee, 1 ether);
 
         Token t = new Token();
         t.mint(address(treasury), 100);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
         treasury.withdrawERC20(t, payee, 100);
     }
 

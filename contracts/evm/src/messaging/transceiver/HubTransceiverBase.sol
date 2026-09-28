@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {OwnableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -24,8 +23,7 @@ interface ITransmitterInit {
 ///      address on a chain whose derivation this one cannot run, and the hub is the only
 ///      contract that authenticates the message carrying it.
 interface IAccountReceiverReport {
-    function onDestinationReceiverReported(bytes32 chainKey, bytes calldata receiver)
-        external;
+    function onDestinationReceiverReported(bytes32 chainKey, bytes calldata receiver) external;
 }
 
 /// @title HubTransceiverBase
@@ -63,12 +61,8 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      this dial decides whether this transceiver talks to them at all.
     Provenance public minCounterpartProvenance;
 
-    event DestinationReceiverReported(
-        bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account
-    );
-    event RoutingSet(
-        address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance
-    );
+    event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account);
+    event RoutingSet(address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance);
 
     error NoChainRegistry();
     /// @dev The route resolved to a known chain, but the sender is not that chain's
@@ -169,11 +163,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev An owner can compute the address they are about to claim, here and on every
     ///      parity chain, before spending anything. It is also what lets an address be pinned
     ///      inside a payload approved before the account exists.
-    function predictTransmitter(address owner, bytes32 salt)
-        external
-        view
-        returns (address)
-    {
+    function predictTransmitter(address owner, bytes32 salt) external view returns (address) {
         return predictCrossAccount(owner, salt);
     }
 
@@ -223,9 +213,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         }
 
         minCounterpartProvenance = minCounterpartProvenance_;
-        emit RoutingSet(
-            address(chainRegistry_), messageProvider_, minCounterpartProvenance_
-        );
+        emit RoutingSet(address(chainRegistry_), messageProvider_, minCounterpartProvenance_);
     }
 
     /* ============================== the bootstrap fee ========================== */
@@ -318,11 +306,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev THE TREASURY IS OURS AND STILL GETS A `call`, not a `transfer`: the 2300-gas
     ///      stipend is not survivable by a contract that does anything on receipt, and a
     ///      failure here must be loud rather than silently under-paying the provider.
-    function _bootstrapSendValue(bytes32 chainKey)
-        internal
-        override
-        returns (uint256)
-    {
+    function _bootstrapSendValue(bytes32 chainKey) internal override returns (uint256) {
         uint256 fee = bootstrapFee[chainKey];
         if (msg.value < fee) revert InsufficientBootstrapFee(fee, msg.value);
         if (fee == 0) return msg.value;
@@ -373,10 +357,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      precisely that the inputs were approved. Passing the hash puts the exact bytes
     ///      in the signed calldata and keeps the grade honest.
     /// @param paramsCommitment `keccak256(chainRegistry.deriveParams(chainKey))`.
-    function resolveCounterpart(bytes32 chainKey, bytes32 paramsCommitment)
-        external
-        onlyOwner
-    {
+    function resolveCounterpart(bytes32 chainKey, bytes32 paramsCommitment) external onlyOwner {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
         if (keccak256(chainRegistry.deriveParams(chainKey)) != paramsCommitment) {
@@ -406,18 +387,14 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev Re-setting the SAME qualifier is a no-op; a DIFFERENT one reverts, because
     ///      re-pointing a live call target is the same operation as re-pointing the address
     ///      it lives at, and that is a redeploy.
-    function setQualifier(bytes32 chainKey, Move.MoveQualifier calldata q)
-        external
-        onlyOwner
-    {
+    function setQualifier(bytes32 chainKey, Move.MoveQualifier calldata q) external onlyOwner {
         if (!hasCounterpart(chainKey)) revert NoCounterpartFor(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         Move.validate(q, Erc7930.parseStrict(chainRegistry.chainIdentifier(chainKey)).chainType);
 
         bytes32 qh = Move.hash(q);
         bytes memory existing = _qualifiers[chainKey];
-        if (existing.length != 0 && Move.hash(abi.decode(existing, (Move.MoveQualifier))) != qh)
-        {
+        if (existing.length != 0 && Move.hash(abi.decode(existing, (Move.MoveQualifier))) != qh) {
             revert QualifierMismatch(chainKey);
         }
 
@@ -426,11 +403,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     }
 
     /// @notice The qualified name a destination executor needs to build the call.
-    function qualifier(bytes32 chainKey)
-        external
-        view
-        returns (Move.MoveQualifier memory q)
-    {
+    function qualifier(bytes32 chainKey) external view returns (Move.MoveQualifier memory q) {
         bytes memory raw = _qualifiers[chainKey];
         if (raw.length == 0) revert NoQualifier(chainKey);
         q = abi.decode(raw, (Move.MoveQualifier));
@@ -448,12 +421,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      CREATE2 formula holds, which is exactly what `Derived` records. That is the
     ///      common case, and requiring a table whose every row said the same thing would
     ///      make a real gap indistinguishable from the default.
-    function _counterpartOn(bytes32 chainKey)
-        internal
-        view
-        override
-        returns (bytes memory)
-    {
+    function _counterpartOn(bytes32 chainKey) internal view override returns (bytes memory) {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
 
         Provenance grade = chainRegistry.provenanceFor(chainKey);
@@ -490,8 +458,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev A hub receives receiver reports and nothing else. Commitments travel the other
     ///      way, because transmitters live on the home chain.
     function _handleInbound(bytes32 chainKey, bytes calldata message) internal virtual override {
-        (address owner, bytes32 salt, bytes memory interop) =
-            Envelope.decodeReceiverReport(message);
+        (address owner, bytes32 salt, bytes memory interop) = Envelope.decodeReceiverReport(message);
         this.onDestinationReceiver(chainKey, owner, salt, interop);
     }
 
@@ -537,12 +504,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      own chain. That is the residual risk, and it has no recovery. The account pins
     ///      the first report it accepts, so a compromised spoke costs its own chain.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
-    function onDestinationReceiver(
-        bytes32 chainKey,
-        address owner,
-        bytes32 salt,
-        bytes calldata interop
-    ) external {
+    function onDestinationReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes calldata interop) external {
         require(msg.sender == address(this));
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (owner == address(0)) revert ZeroOwner();
@@ -554,9 +516,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         if (reported != chainKey) revert ReportedChainMismatch(chainKey, reported);
 
         address account = predictCrossAccount(owner, salt);
-        IAccountReceiverReport(account).onDestinationReceiverReported(
-            chainKey, Erc7930.parseStrict(interop).addr
-        );
+        IAccountReceiverReport(account).onDestinationReceiverReported(chainKey, Erc7930.parseStrict(interop).addr);
         emit DestinationReceiverReported(chainKey, owner, salt, account);
     }
 
@@ -584,13 +544,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      that the answer moved. It is the account's own counterpart table, which is also
     ///      what its `sendMessage` checks against, so there is one answer rather than a
     ///      directory copy that could disagree with the send path.
-    function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt)
-        external
-        view
-        returns (bytes memory)
-    {
-        return TransmitterBase(payable(predictCrossAccount(owner, salt))).counterpartOn(
-            chainKey
-        );
+    function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory) {
+        return TransmitterBase(payable(predictCrossAccount(owner, salt))).counterpartOn(chainKey);
     }
 }

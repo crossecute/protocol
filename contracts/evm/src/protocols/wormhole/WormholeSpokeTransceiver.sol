@@ -103,7 +103,13 @@ contract WormholeSpokeTransceiver is WormholeSpokeBase {
         uint16 homeWormholeChain_
     ) external initializer {
         __WormholeSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeWormholeChain_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            false,
+            homeWormholeChain_
         );
     }
 }

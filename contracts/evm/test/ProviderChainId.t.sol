@@ -54,9 +54,7 @@ contract ProviderChainIdTest is Test {
     function test_settingADifferentIdReverts() public {
         table.setProviderId(BASE_KEY, 30184);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(ProviderChainId.ProviderIdAlreadySet.selector, BASE_KEY)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.ProviderIdAlreadySet.selector, BASE_KEY));
         table.setProviderId(BASE_KEY, 99);
     }
 
@@ -82,9 +80,7 @@ contract ProviderChainIdTest is Test {
     }
 
     function test_unconfiguredChainKeyReverts() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, BASE_KEY)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, BASE_KEY));
         table.providerIdFor(BASE_KEY);
     }
 

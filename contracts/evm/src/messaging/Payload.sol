@@ -72,11 +72,7 @@ library Payload {
     ///      `TransmitterBase.bootstrap(uint256, ...)` is `eip155` by construction and
     ///      `bootstrapTo(bytes, ...)` has the envelope as its argument. `sendMessage` does
     ///      not choose, because its payload arrives already built.
-    function isTypedDestination(bytes memory chainIdentifier)
-        internal
-        pure
-        returns (bool)
-    {
+    function isTypedDestination(bytes memory chainIdentifier) internal pure returns (bool) {
         return Erc7930.parseStrict(chainIdentifier).chainType == Erc7930.CT_EIP155;
     }
 }

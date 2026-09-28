@@ -67,10 +67,7 @@ library Commitment {
     ///
     /// @dev EVERY ARRAY PARAMETER HERE IS `memory`, because Solidity will not overload on
     ///      data location and a `calldata` twin would need a different name.
-    function hashCalls(
-        bytes32 destinationChainKey,
-        Call[] memory calls
-    ) internal pure returns (bytes32 hashed) {
+    function hashCalls(bytes32 destinationChainKey, Call[] memory calls) internal pure returns (bytes32 hashed) {
         hashed = _seed(destinationChainKey);
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; i++) {
@@ -83,10 +80,7 @@ library Commitment {
     /// @dev The source calls this with the DESTINATION's key. Passing the local one
     ///      produces a commitment nothing on the far side can ever match, and it fails
     ///      only on a live message.
-    function hashCalls(
-        bytes32 destinationChainKey,
-        bytes[] memory elements
-    ) internal pure returns (bytes32 hashed) {
+    function hashCalls(bytes32 destinationChainKey, bytes[] memory elements) internal pure returns (bytes32 hashed) {
         hashed = _seed(destinationChainKey);
         uint256 len = elements.length;
         for (uint256 i = 0; i < len; i++) {
@@ -94,10 +88,7 @@ library Commitment {
         }
     }
 
-    function isHashedCall(
-        bytes32 hashed,
-        Call[] memory calls
-    ) internal view returns (bool) {
+    function isHashedCall(bytes32 hashed, Call[] memory calls) internal view returns (bool) {
         return hashed == hashCalls(calls);
     }
 
@@ -114,11 +105,11 @@ library Commitment {
     ///      through `staticcall`, which Solidity forbids inside `pure`. `IVmDeriver` already
     ///      pays the same tax. It costs nothing where it matters, since these are read
     ///      through `eth_call` when a signer checks a payload.
-    function hashCalls(
-        Scheme scheme,
-        bytes32 destinationChainKey,
-        bytes[] memory elements
-    ) internal view returns (bytes32 hashed) {
+    function hashCalls(Scheme scheme, bytes32 destinationChainKey, bytes[] memory elements)
+        internal
+        view
+        returns (bytes32 hashed)
+    {
         hashed = _hash(scheme, abi.encode(destinationChainKey));
         uint256 len = elements.length;
         for (uint256 i = 0; i < len; i++) {
@@ -136,11 +127,11 @@ library Commitment {
     /// @dev THE ARRAY COPY IS FREE WHERE THIS RUNS. The keccak overloads avoid materializing
     ///      elements because they are on the gas-paying `finalize` path. A
     ///      scheme-parameterized commitment is only ever read through `eth_call`.
-    function hashCalls(
-        Scheme scheme,
-        bytes32 destinationChainKey,
-        Call[] memory calls
-    ) internal view returns (bytes32) {
+    function hashCalls(Scheme scheme, bytes32 destinationChainKey, Call[] memory calls)
+        internal
+        view
+        returns (bytes32)
+    {
         return hashCalls(scheme, destinationChainKey, Calls.encodeAll(calls));
     }
 

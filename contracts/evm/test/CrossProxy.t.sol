@@ -87,14 +87,10 @@ contract CrossProxyTest is Test {
     function test_theInitCodeHashIsIndependentOfTheImplementation() public view {
         bytes32 hash = keccak256(type(CrossProxy).creationCode);
         assertEq(
-            Create2.computeAddress(SALT, hash, address(deployer)),
-            Create2.computeAddress(SALT, hash, address(deployer))
+            Create2.computeAddress(SALT, hash, address(deployer)), Create2.computeAddress(SALT, hash, address(deployer))
         );
         // No constructor arguments at all: the creation code IS the initcode.
-        assertEq(
-            keccak256(type(CrossProxy).creationCode),
-            keccak256(abi.encodePacked(type(CrossProxy).creationCode))
-        );
+        assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
     }
 
     /* ================================== the lock =============================== */
@@ -144,9 +140,7 @@ contract CrossProxyTest is Test {
 
         assertEq(_adminOf(p), address(deployer), "the admin is unchanged");
         assertEq(
-            StorageSlot.getAddressSlot(ERC1967Utils.IMPLEMENTATION_SLOT).value,
-            address(0),
-            "and nothing was installed"
+            StorageSlot.getAddressSlot(ERC1967Utils.IMPLEMENTATION_SLOT).value, address(0), "and nothing was installed"
         );
     }
 
@@ -160,10 +154,7 @@ contract CrossProxyTest is Test {
 
         // The implementation's own function of the same name is reachable, which it could
         // not be if the proxy had declared one.
-        assertEq(
-            Shadower(p).upgradeInitializeAndLock(address(0), ""),
-            "reached the implementation"
-        );
+        assertEq(Shadower(p).upgradeInitializeAndLock(address(0), ""), "reached the implementation");
     }
 
     /// @dev An unrecognised call from the admin reverts rather than delegating, so a
@@ -174,23 +165,14 @@ contract CrossProxyTest is Test {
         vm.prank(address(deployer));
         (bool ok, bytes memory ret) = p.call(abi.encodeWithSignature("nonsense()"));
         assertFalse(ok);
-        assertEq(
-            bytes4(ret),
-            CrossProxy.UnknownAdminCall.selector,
-            "named, not a bare delegate failure"
-        );
+        assertEq(bytes4(ret), CrossProxy.UnknownAdminCall.selector, "named, not a bare delegate failure");
     }
-
 }
 
 /// @dev An implementation that declares the same selector the proxy routes on, to prove
 ///      the proxy is not holding it hostage.
 contract Shadower {
-    function upgradeInitializeAndLock(address, bytes calldata)
-        external
-        pure
-        returns (string memory)
-    {
+    function upgradeInitializeAndLock(address, bytes calldata) external pure returns (string memory) {
         return "reached the implementation";
     }
 }

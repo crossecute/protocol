@@ -24,11 +24,13 @@ library CcipMessage {
         IRouterClient(router).ccipSend{value: value}(selector, build(recipient, payload, attributes));
     }
 
-    function quote(address router, uint64 selector, bytes memory recipient, bytes memory payload, bytes[] memory attributes)
-        internal
-        view
-        returns (uint256)
-    {
+    function quote(
+        address router,
+        uint64 selector,
+        bytes memory recipient,
+        bytes memory payload,
+        bytes[] memory attributes
+    ) internal view returns (uint256) {
         return IRouterClient(router).getFee(selector, build(recipient, payload, attributes));
     }
 

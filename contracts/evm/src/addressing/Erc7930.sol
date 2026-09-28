@@ -74,38 +74,21 @@ library Erc7930 {
     /// @notice Build an interoperable address from parts.
     /// @dev `chainRef` MUST already be minimally encoded per its CAIP-350 profile.
     ///      Use `encodeEvm` for eip155 rather than encoding the chain id by hand.
-    function encode(uint16 chainType, bytes memory chainRef, bytes memory addr)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encode(uint16 chainType, bytes memory chainRef, bytes memory addr) internal pure returns (bytes memory) {
         if (chainRef.length > 255 || addr.length > 255) revert BadLength();
         if (chainRef.length == 0 && addr.length == 0) revert EmptyEnvelope();
-        return abi.encodePacked(
-            VERSION_1,
-            chainType,
-            uint8(chainRef.length),
-            chainRef,
-            uint8(addr.length),
-            addr
-        );
+        return abi.encodePacked(VERSION_1, chainType, uint8(chainRef.length), chainRef, uint8(addr.length), addr);
     }
 
     /// @notice eip155 interoperable address. ChainReference is the chain id as a
     ///         MINIMAL big-endian integer: chain 1 -> 0x01, Base (8453) -> 0x2105.
     function encodeEvm(uint256 chainId, address a) internal pure returns (bytes memory) {
-        return encode(
-            CT_EIP155, minimalBigEndian(chainId), abi.encodePacked(a)
-        );
+        return encode(CT_EIP155, minimalBigEndian(chainId), abi.encodePacked(a));
     }
 
     /// @notice A Chain Identifier: an interop address with a zero-length Address.
     ///         Identifies a chain rather than an account on it.
-    function encodeChainId(uint16 chainType, bytes memory chainRef)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function encodeChainId(uint16 chainType, bytes memory chainRef) internal pure returns (bytes memory) {
         return encode(chainType, chainRef, "");
     }
 
@@ -235,11 +218,7 @@ library Erc7930 {
         }
     }
 
-    function _slice(bytes memory src, uint256 start, uint256 len)
-        private
-        pure
-        returns (bytes memory out)
-    {
+    function _slice(bytes memory src, uint256 start, uint256 len) private pure returns (bytes memory out) {
         out = new bytes(len);
         for (uint256 i; i < len; ++i) {
             out[i] = src[start + i];

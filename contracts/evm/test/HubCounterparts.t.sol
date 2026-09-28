@@ -28,7 +28,6 @@ contract Hub is UnsendableHub {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @notice The counterpart directory after it moved off the registry.
@@ -48,25 +47,12 @@ contract HubCounterpartsTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
         );
-        hub = Hub(
-            address(
-                new ERC1967Proxy(
-                    address(new Hub()), abi.encodeCall(Hub.initialize, (owner))
-                )
-            )
-        );
+        hub = Hub(address(new ERC1967Proxy(address(new Hub()), abi.encodeCall(Hub.initialize, (owner)))));
 
         bytes memory suiChain = Erc7930.encodeChainId(ChainType.SUI, bytes("mainnet"));
-        suiInterop = Erc7930.encode(
-            ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("pkg"))
-        );
+        suiInterop = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("pkg")));
 
         vm.startPrank(owner);
         suiChainKey = registry.addChainKey(suiChain);
@@ -74,9 +60,7 @@ contract HubCounterpartsTest is Test {
         registry.setProvenance(suiChainKey, Provenance.Attested);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(hub));
-        hub.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         vm.stopPrank();
     }
 
@@ -101,29 +85,18 @@ contract HubCounterpartsTest is Test {
     ///      without displacing the first, and neither can decide the chain is worth more
     ///      than the registry says.
     function test_twoHubsHoldSeparateAddressesAndShareTheGrade() public {
-        Hub second = Hub(
-            address(
-                new ERC1967Proxy(
-                    address(new Hub()), abi.encodeCall(Hub.initialize, (owner))
-                )
-            )
-        );
-        bytes memory other = Erc7930.encode(
-            ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("other"))
-        );
+        Hub second = Hub(address(new ERC1967Proxy(address(new Hub()), abi.encodeCall(Hub.initialize, (owner)))));
+        bytes memory other = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("other")));
 
         vm.startPrank(owner);
         bytes32 p2 = registry.addMessageProvider("hyperlane");
-        second.setRouting(
-            IChainRegistryRefs(address(registry)), p2, Provenance.Attested
-        );
+        second.setRouting(IChainRegistryRefs(address(registry)), p2, Provenance.Attested);
         hub.setCounterpart(suiChainKey, suiInterop);
         second.setCounterpart(suiChainKey, other);
         vm.stopPrank();
 
         assertTrue(
-            keccak256(hub.counterpartOn(suiChainKey))
-                != keccak256(second.counterpartOn(suiChainKey)),
+            keccak256(hub.counterpartOn(suiChainKey)) != keccak256(second.counterpartOn(suiChainKey)),
             "each provider its own transceiver"
         );
         assertEq(
@@ -134,16 +107,10 @@ contract HubCounterpartsTest is Test {
     }
 
     function test_aCounterpartIsWriteOnce() public {
-        bytes memory other = Erc7930.encode(
-            ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("other"))
-        );
+        bytes memory other = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("other")));
         vm.startPrank(owner);
         hub.setCounterpart(suiChainKey, suiInterop);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.CounterpartAlreadySet.selector, suiChainKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.CounterpartAlreadySet.selector, suiChainKey));
         hub.setCounterpart(suiChainKey, other);
         vm.stopPrank();
     }
@@ -158,9 +125,7 @@ contract HubCounterpartsTest is Test {
     ///      serves every provider's hub rather than each carrying its own copy.
     function test_theChainsValidatorStillRuns() public {
         // 31 bytes: a Move address is 32, and the envelope alone cannot express that.
-        bytes memory short = Erc7930.encode(
-            ChainType.SUI, bytes("mainnet"), new bytes(31)
-        );
+        bytes memory short = Erc7930.encode(ChainType.SUI, bytes("mainnet"), new bytes(31));
         vm.prank(owner);
         vm.expectRevert();
         hub.setCounterpart(suiChainKey, short);
@@ -190,9 +155,7 @@ contract HubCounterpartsTest is Test {
 
     function test_aQualifierNeedsACounterpartFirst() public {
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, suiChainKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, suiChainKey));
         hub.setQualifier(suiChainKey, _qualifier());
     }
 
@@ -219,19 +182,13 @@ contract HubCounterpartsTest is Test {
         hub.setQualifier(suiChainKey, q);
 
         q.functionName = "something_else";
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.QualifierMismatch.selector, suiChainKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.QualifierMismatch.selector, suiChainKey));
         hub.setQualifier(suiChainKey, q);
         vm.stopPrank();
     }
 
     function test_readingAnAbsentQualifierReverts() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(HubTransceiverBase.NoQualifier.selector, suiChainKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NoQualifier.selector, suiChainKey));
         hub.qualifier(suiChainKey);
     }
 }

@@ -29,7 +29,6 @@ contract RoutingTransceiver is UnsendableHub {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
@@ -49,27 +48,19 @@ contract CounterpartRoutingTest is Test {
 
     function setUp() public {
         registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()),
-                    abi.encodeCall(ChainRegistry.initialize, (msig))
-                )
-            )
+            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
         transceiver = RoutingTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new RoutingTransceiver()),
-                    abi.encodeCall(RoutingTransceiver.initialize, (msig))
+                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
                 )
             )
         );
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        transceiver.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Derived
-        );
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
         vm.stopPrank();
     }
 
@@ -102,11 +93,7 @@ contract CounterpartRoutingTest is Test {
 
         vm.startPrank(msig);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xA)));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.CounterpartAlreadySet.selector, baseKey
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.CounterpartAlreadySet.selector, baseKey));
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xB)));
         vm.stopPrank();
     }
@@ -143,11 +130,9 @@ contract CounterpartRoutingTest is Test {
     /// @dev A chain the registry grades `Attested` is refused while the bar is `Derived`.
     ///      This is the dial that decides whether Solana or Sui are reachable at all.
     function test_counterpartBelowProvenanceBarIsRefused() public {
-        bytes memory solChain =
-            Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
-        bytes memory solAccount = Erc7930.encode(
-            ChainType.SOLANA, hex"0102030405060708", abi.encodePacked(keccak256("prog"))
-        );
+        bytes memory solChain = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes memory solAccount =
+            Erc7930.encode(ChainType.SOLANA, hex"0102030405060708", abi.encodePacked(keccak256("prog")));
 
         vm.startPrank(msig);
         bytes32 solKey = registry.addChainKey(solChain);
@@ -157,18 +142,14 @@ contract CounterpartRoutingTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector,
-                solKey,
-                Provenance.Attested
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
             )
         );
         transceiver.counterpartOn(solKey);
 
         // Lowering the bar makes it reachable: explicitly, not by accident.
         vm.prank(msig);
-        transceiver.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         assertEq(transceiver.counterpartOn(solKey).length, 32);
     }
 
@@ -176,8 +157,7 @@ contract CounterpartRoutingTest is Test {
         RoutingTransceiver bare = RoutingTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new RoutingTransceiver()),
-                    abi.encodeCall(RoutingTransceiver.initialize, (msig))
+                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
                 )
             )
         );
@@ -200,12 +180,8 @@ contract CounterpartRoutingTest is Test {
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
         vm.stopPrank();
 
-        assertTrue(
-            registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here"
-        );
-        assertFalse(
-            registry.requiresReceiverCallback(baseKey), "parity: derived locally"
-        );
+        assertTrue(registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here");
+        assertFalse(registry.requiresReceiverCallback(baseKey), "parity: derived locally");
     }
 
     /// @dev IT IS DERIVED FROM THE CAPS RATHER THAN DECLARED, so it cannot disagree with
@@ -241,9 +217,7 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
 
         assertEq(
-            transceiver.counterpartOn(baseKey),
-            abi.encodePacked(address(transceiver)),
-            "address parity is the default"
+            transceiver.counterpartOn(baseKey), abi.encodePacked(address(transceiver)), "address parity is the default"
         );
     }
 
@@ -273,8 +247,7 @@ contract CounterpartRoutingTest is Test {
 
     function test_thereIsNoDefaultOnANonEvmChain() public {
         vm.startPrank(msig);
-        bytes32 solKey =
-            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
+        bytes32 solKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -282,9 +255,7 @@ contract CounterpartRoutingTest is Test {
         // a default would be a guess rather than a shortcut.
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector,
-                solKey,
-                Provenance.Unresolved
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
             )
         );
         transceiver.counterpartOn(solKey);
@@ -300,16 +271,12 @@ contract CounterpartRoutingTest is Test {
         bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324));
         registry.setLocalTransceiver(provider, address(transceiver));
         registry.setProvenance(zkKey, Provenance.Attested);
-        transceiver.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         vm.stopPrank();
 
         // The default withdraws: the hub's own address is only the right answer where
         // Ethereum's formula holds, which is exactly what `Derived` records.
-        vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, zkKey)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, zkKey));
         transceiver.counterpartOn(zkKey);
 
         // Declaring one explicitly is what the grade forces you to do.
@@ -344,8 +311,6 @@ contract CounterpartRoutingTest is Test {
 
     function test_setRoutingIsOwnerGated() public {
         vm.expectRevert();
-        transceiver.setRouting(
-            IChainRegistryRefs(address(registry)), provider, Provenance.Attested
-        );
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
     }
 }

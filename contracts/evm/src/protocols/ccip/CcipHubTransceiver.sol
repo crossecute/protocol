@@ -45,12 +45,11 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
 
     /* ================================== sending =================================== */
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32 sendId)
+    {
         CcipMessage.send(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes, value);
     }
 
@@ -71,10 +70,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     ///      source-chain sender (see `docs/provider-research.md#4-ccip-as-a-native-binding`),
     ///      so `_authenticateOrigin` (reached through `_onInbound`) is the only check —
     ///      matching `_onInbound`'s stated rule directly, unlike LayerZero.
-    function ccipReceive(Client.Any2EVMMessage calldata message)
-        external
-        onlyRole(GATEWAY_ROLE)
-    {
+    function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
         _onProviderInbound(message.sourceChainSelector, abi.decode(message.sender, (address)), message.data);
     }
 
@@ -82,7 +78,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     /// @dev See `CcipReceiver.supportsInterface`'s note: CCIP's off-ramp checks this before
     ///      calling `ccipReceive`, and answering false makes it deliver silently.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 }

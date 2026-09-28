@@ -2,10 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
-import {OAppUpgradeable, Origin} from
-    "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
-import {MessagingFee} from
-    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -36,12 +34,11 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
 
     /* ================================== sending =================================== */
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32 sendId)
+    {
         uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
@@ -86,7 +83,10 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
         bytes calldata _message,
         address, /* _executor */
         bytes calldata /* _extraData */
-    ) internal override {
+    )
+        internal
+        override
+    {
         _onProviderInbound(_origin.srcEid, ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

@@ -22,7 +22,16 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdTableSpec, IHubSendHarness, ProviderWideSenderSpec, ProviderSpokeOriginSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec, ProviderTransmitterSpec, ProviderTransceiverInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {
+    ProviderIdTableSpec,
+    IHubSendHarness,
+    ProviderWideSenderSpec,
+    ProviderSpokeOriginSpec,
+    ProviderEvmRecipientSpec,
+    ProviderPayloadPricedSpec,
+    ProviderTransmitterSpec,
+    ProviderTransceiverInboundSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
@@ -155,7 +164,6 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Provider
         router.setFeePerByte(perByte);
     }
 
-
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
         hub.setSelector(chainKey, uint64(providerId));
@@ -177,7 +185,6 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Provider
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
     }
-
 }
 
 /// @notice CCIP's off-ramp asserts nothing about the source-chain sender (unlike
@@ -262,7 +269,6 @@ contract CcipReceiveTest is ProviderWideSenderSpec {
     function _wideSenderRevert(bytes32) internal pure override returns (bytes memory) {
         return "";
     }
-
 }
 
 /// @notice The Copilot-adjacent gap this binding has to get right on its own: CCIP's
@@ -341,7 +347,14 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new CcipSpokeTransceiver(router)),
                 abi.encodeCall(
                     CcipSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME_SELECTOR)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        HOME_SELECTOR
+                    )
                 )
             )
         );
@@ -350,7 +363,15 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new CcipZkSyncSpokeTransceiver(router)),
                 abi.encodeCall(
                     CcipZkSyncSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_SELECTOR)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        bytes32(uint256(1)),
+                        HOME_SELECTOR
+                    )
                 )
             )
         );
@@ -359,7 +380,15 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new CcipTronSpokeTransceiver(router)),
                 abi.encodeCall(
                     CcipTronSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, bytes32(uint256(1)), HOME_SELECTOR)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        bytes32(uint256(1)),
+                        HOME_SELECTOR
+                    )
                 )
             )
         );
@@ -371,15 +400,16 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec {
 
     function _deliverFromHubOn(address spoke, uint256 origin) internal override {
         vm.prank(router);
-        IAny2EVMMessageReceiver(spoke).ccipReceive(
-            Client.Any2EVMMessage({
-                messageId: bytes32(0),
-                sourceChainSelector: uint64(origin),
-                sender: abi.encode(hub),
-                data: "",
-                destTokenAmounts: new Client.EVMTokenAmount[](0)
-            })
-        );
+        IAny2EVMMessageReceiver(spoke)
+            .ccipReceive(
+                Client.Any2EVMMessage({
+                    messageId: bytes32(0),
+                    sourceChainSelector: uint64(origin),
+                    sender: abi.encode(hub),
+                    data: "",
+                    destTokenAmounts: new Client.EVMTokenAmount[](0)
+                })
+            );
     }
 }
 
@@ -387,7 +417,12 @@ contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
     address router = address(0xBEEF);
 
     function _transmitter() internal override returns (address) {
-        return address(new ERC1967Proxy(address(new CcipTransmitter(router)), abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))));
+        return address(
+            new ERC1967Proxy(
+                address(new CcipTransmitter(router)),
+                abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
+            )
+        );
     }
 
     function _deliveringGateway() internal view override returns (address) {
@@ -398,12 +433,12 @@ contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
         return abi.encodeCall(
             IAny2EVMMessageReceiver.ccipReceive,
             (Client.Any2EVMMessage({
-                messageId: bytes32(0),
-                sourceChainSelector: 1,
-                sender: abi.encode(address(0xABCD)),
-                data: "",
-                destTokenAmounts: new Client.EVMTokenAmount[](0)
-            }))
+                    messageId: bytes32(0),
+                    sourceChainSelector: 1,
+                    sender: abi.encode(address(0xABCD)),
+                    data: "",
+                    destTokenAmounts: new Client.EVMTokenAmount[](0)
+                }))
         );
     }
 }

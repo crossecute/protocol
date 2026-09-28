@@ -172,12 +172,7 @@ abstract contract OutboundBase is Roles {
     ///      use. A HUB overrides it to read the registry instead, because it holds N claims
     ///      about remote code and each carries a provenance grade that a stored address could
     ///      not express; see `HubTransceiverBase`.
-    function _counterpartOn(bytes32 chainKey)
-        internal
-        view
-        virtual
-        returns (bytes memory counterpart)
-    {
+    function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory counterpart) {
         counterpart = _counterparts[chainKey];
         if (counterpart.length == 0) revert NoCounterpartFor(chainKey);
     }
@@ -263,12 +258,10 @@ abstract contract OutboundBase is Roles {
     ///         further unstandardised action is required, so a binding MUST NOT discard one
     ///         silently: it either handles the second step or refuses such gateways, in
     ///         NatSpec.
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal virtual returns (bytes32 sendId);
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        virtual
+        returns (bytes32 sendId);
 
     /// @notice What `_sendMessage` would cost, in THIS chain's native currency.
     ///
@@ -296,11 +289,11 @@ abstract contract OutboundBase is Roles {
     /// @dev NATIVE CURRENCY AND NOTHING ELSE. Where a provider also takes its own token, the
     ///      binding quotes the native path: signers fund one currency on one chain, which is
     ///      the property the whole protocol is arranged around.
-    function _quoteMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes
-    ) internal view virtual returns (uint256 nativeFee);
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+        internal
+        view
+        virtual
+        returns (uint256 nativeFee);
 
     /// @notice What sending `payload` to `recipient` would cost, in this chain's native
     ///         currency.
@@ -321,11 +314,12 @@ abstract contract OutboundBase is Roles {
     /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own addition alongside it. A
     ///      gateway that cannot answer implements `_quoteMessage` as a `QuoteNotImplemented`
     ///      revert, with the off-chain measurement documented in its place.
-    function quoteMessage(
-        bytes calldata recipient,
-        bytes calldata payload,
-        bytes[] calldata attributes
-    ) external view virtual returns (uint256 nativeFee) {
+    function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
+        external
+        view
+        virtual
+        returns (uint256 nativeFee)
+    {
         return _quoteMessage(recipient, payload, attributes);
     }
 }

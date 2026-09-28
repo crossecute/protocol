@@ -5,10 +5,8 @@ import {Test} from "forge-std/Test.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
-import {TransmitterBase, IAccountTransceiver} from
-    "src/messaging/outbound/TransmitterBase.sol";
-import {IERC7786GatewaySource} from
-    "src/messaging/IErc7786.sol";
+import {TransmitterBase, IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
+import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -35,12 +33,11 @@ contract MockTransmitter is OwnableTransmitter {
         return sentAttributes.length;
     }
 
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32) {
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32)
+    {
         sentRecipient = recipient;
         sentPayload = payload;
         sentAttributes = attributes;
@@ -54,11 +51,12 @@ contract MockTransmitter is OwnableTransmitter {
     ///      quote that read the payload from one that guessed at its size.
     uint256 public constant WEI_PER_BYTE = 7;
 
-    function _quoteMessage(
-        bytes memory,
-        bytes memory payload,
-        bytes[] memory attributes
-    ) internal pure override returns (uint256) {
+    function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
         return payload.length * WEI_PER_BYTE + attributes.length;
     }
 
@@ -67,7 +65,6 @@ contract MockTransmitter is OwnableTransmitter {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
@@ -102,12 +99,7 @@ contract MockTransceiver is TransceiverBase {
         return _impl;
     }
 
-    function _accountInitializer(address, bytes32, Call[] memory)
-        internal
-        pure
-        override
-        returns (bytes memory)
-    {
+    function _accountInitializer(address, bytes32, Call[] memory) internal pure override returns (bytes memory) {
         return "";
     }
 
@@ -122,12 +114,7 @@ contract MockTransceiver is TransceiverBase {
 
     function _handleInbound(bytes32, bytes calldata) internal override {}
 
-    function _authenticateOrigin(bytes memory, bytes memory)
-        internal
-        pure
-        override
-        returns (bytes32)
-    {
+    function _authenticateOrigin(bytes memory, bytes memory) internal pure override returns (bytes32) {
         return bytes32(0);
     }
 
@@ -169,7 +156,6 @@ contract MockTransceiver is TransceiverBase {
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
-
 }
 
 contract Sink {
@@ -219,9 +205,7 @@ contract TransportTest is Test {
         transmitter.bootstrapTo(identifier, none, none);
         // The address the spoke reported home. Only the account's transceiver may write it.
         vm.prank(address(hub));
-        transmitter.onDestinationReceiverReported(
-            ChainKey.fromIdentifier(identifier), SOL_RECEIVER
-        );
+        transmitter.onDestinationReceiverReported(ChainKey.fromIdentifier(identifier), SOL_RECEIVER);
     }
 
     /// @dev The account's address on the non-EVM destination, which is not derivable here.
@@ -232,11 +216,7 @@ contract TransportTest is Test {
     /// @dev A non-EVM recipient: the account's address there is not `address(this)` and is
     ///      not derivable here, which is why `sendMessage` only binds the address check on
     ///      eip155 destinations.
-    function _solRecipient(bytes memory chainIdentifier)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function _solRecipient(bytes memory chainIdentifier) internal pure returns (bytes memory) {
         Erc7930.Interop memory io = Erc7930.parseStrict(chainIdentifier);
         return Erc7930.encode(io.chainType, io.chainRef, SOL_RECEIVER);
     }
@@ -283,9 +263,7 @@ contract TransportTest is Test {
     function test_sendForwardsTheBridgeFee() public {
         vm.deal(owner, 1 ether);
         vm.prank(owner);
-        transmitter.sendMessage{value: 0.3 ether}(
-            _recip(DEST), Payload.encodeCalls(_calls()), NONE
-        );
+        transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
         assertEq(transmitter.sentValue(), 0.3 ether);
     }
 
@@ -397,11 +375,7 @@ contract TransportTest is Test {
         bytes memory notUs = Erc7930.encodeEvm(DEST, address(0xBEEF));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.RecipientIsNotThisAccount.selector, notUs
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, notUs));
         transmitter.sendMessage(notUs, Payload.encodeCalls(_calls()), NONE);
     }
 
@@ -419,13 +393,8 @@ contract TransportTest is Test {
         vm.prank(owner);
         transmitter.sendMessage(_solRecipient(sol), Payload.encodeElements(elements), NONE);
 
-        assertEq(
-            ChainKey.fromIdentifier(transmitter.sentRecipient()),
-            ChainKey.fromIdentifier(sol)
-        );
-        assertEq(
-            transmitter.sentRecipient(), _solRecipient(sol), "the recorded receiver, exactly"
-        );
+        assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.fromIdentifier(sol));
+        assertEq(transmitter.sentRecipient(), _solRecipient(sol), "the recorded receiver, exactly");
     }
 
     /// @dev THE CHECK IS UNIVERSAL NOW, WHICH IT COULD NOT BE WHILE IT WAS DERIVED. A
@@ -442,11 +411,7 @@ contract TransportTest is Test {
         bytes memory payload = Payload.encodeElements(new bytes[](0));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.RecipientIsNotThisAccount.selector, impostor
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, impostor));
         transmitter.sendMessage(impostor, payload, NONE);
     }
 
@@ -471,8 +436,7 @@ contract TransportTest is Test {
     /// @dev The envelope is still parsed strictly, so a non-canonical one cannot become a
     ///      chainKey nothing else reproduces.
     function test_aNonCanonicalRecipientIsRejected() public {
-        bytes memory bad =
-            abi.encodePacked(uint16(1), ChainType.EIP155, uint8(2), hex"0001", uint8(0));
+        bytes memory bad = abi.encodePacked(uint16(1), ChainType.EIP155, uint8(2), hex"0001", uint8(0));
 
         vm.prank(owner);
         vm.expectRevert(Erc7930.NonMinimalChainRef.selector);
@@ -539,11 +503,7 @@ contract TransportTest is Test {
 
     /// @dev An account sitting at the address `(owner, SALT)` derives to, which is what
     ///      the transceiver checks `msg.sender` against.
-    function _decodeTyped(bytes memory m)
-        internal
-        pure
-        returns (address, bytes32, Call[] memory)
-    {
+    function _decodeTyped(bytes memory m) internal pure returns (address, bytes32, Call[] memory) {
         return abi.decode(m, (address, bytes32, Call[]));
     }
 
@@ -563,11 +523,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)));
         t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE);
     }
 
@@ -634,11 +590,7 @@ contract TransportTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"01";
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)));
         t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, NONE);
     }
 
@@ -726,11 +678,7 @@ contract TransportTest is Test {
         vm.prank(owner);
         _sendCalls(DEST, calls);
 
-        assertEq(
-            quoted,
-            transmitter.sentPayload().length * transmitter.WEI_PER_BYTE(),
-            "priced the bytes that left"
-        );
+        assertEq(quoted, transmitter.sentPayload().length * transmitter.WEI_PER_BYTE(), "priced the bytes that left");
     }
 
     /// @dev A LONGER PAYLOAD COSTS MORE, which is the property a caller is relying on. A
@@ -751,14 +699,14 @@ contract TransportTest is Test {
     /// @dev IT IS A VIEW, WHICH IS THE WHOLE POINT OF IT. The only way a quote is ever
     ///      used is an `eth_call` before the send, so a mutable one is not a quote.
     function test_quoteIsStaticallyCallable() public view {
-        (bool ok, bytes memory ret) = address(transmitter).staticcall(
-            abi.encodeCall(
-                TransmitterBase.quoteMessage,
-                (_recip(DEST), Payload.encodeCalls(_calls()), NONE)
-            )
-        );
+        (bool ok, bytes memory ret) = address(transmitter)
+            .staticcall(
+                abi.encodeCall(TransmitterBase.quoteMessage, (_recip(DEST), Payload.encodeCalls(_calls()), NONE))
+            );
         assertTrue(ok, "staticcall succeeded, so it wrote nothing");
-        assertEq(abi.decode(ret, (uint256)), transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE));
+        assertEq(
+            abi.decode(ret, (uint256)), transmitter.quoteMessage(_recip(DEST), Payload.encodeCalls(_calls()), NONE)
+        );
     }
 
     /// @dev UNGATED, UNLIKE THE SEND IT PRICES. A signer reviewing a payload before the
@@ -796,9 +744,7 @@ contract TransportTest is Test {
         t.initialize(address(this), address(new MockTransmitter()));
 
         vm.prank(address(0xDEAD));
-        uint256 quoted = t.quoteBootstrap(
-            ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE
-        );
+        uint256 quoted = t.quoteBootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE);
         assertGt(quoted, 0);
     }
 
@@ -810,11 +756,8 @@ contract TransportTest is Test {
         MockReceiver r = new MockReceiver();
         r.initialize(address(transmitter), new Call[](0));
 
-        (bool ok,) = address(r).staticcall(
-            abi.encodeWithSignature(
-                "quoteMessage(bytes,bytes,bytes[])", DEST, _calls(), NONE
-            )
-        );
+        (bool ok,) =
+            address(r).staticcall(abi.encodeWithSignature("quoteMessage(bytes,bytes,bytes[])", DEST, _calls(), NONE));
         assertFalse(ok, "no such function on a receiver");
     }
 
@@ -826,9 +769,7 @@ contract TransportTest is Test {
     function test_pathARefundsToTheOwner() public {
         vm.deal(owner, 1 ether);
         vm.prank(owner);
-        transmitter.sendMessage{value: 0.3 ether}(
-            _recip(DEST), Payload.encodeCalls(_calls()), NONE
-        );
+        transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
         assertEq(transmitter.sentRefund(), owner);
     }
 
@@ -869,11 +810,7 @@ contract TransportTest is Test {
         uint256 other = 42161;
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)));
         _sendCalls(other, _calls());
     }
 
@@ -908,11 +845,7 @@ contract TransportTest is Test {
     ///      revert on arrival.
     function test_rebootstrappingIsRefused() public {
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)));
         transmitter.bootstrap(DEST, _calls(), NONE);
     }
 
@@ -921,11 +854,7 @@ contract TransportTest is Test {
         bytes memory identifier = transmitter.chainIdentifierFor(DEST);
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)));
         transmitter.bootstrapTo(identifier, _calls(), NONE);
     }
 
@@ -957,18 +886,10 @@ contract TransportTest is Test {
     function test_theQuotesRevertWhereTheirSendsWould() public {
         uint256 other = 42161;
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(other)));
         transmitter.quoteMessage(_recip(other), Payload.encodeCalls(_calls()), NONE);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)));
         transmitter.quoteBootstrap(DEST, _calls(), NONE);
     }
 
@@ -1040,15 +961,12 @@ contract TransportTest is Test {
             "the identifier bootstrap was given, stored verbatim"
         );
         assertTrue(transmitter.hasRoute(ChainKey.forEvm(DEST)));
-        assertFalse(
-            transmitter.hasRoute(ChainKey.forEvm(42161)), "and nothing it was not asked for"
-        );
+        assertFalse(transmitter.hasRoute(ChainKey.forEvm(42161)), "and nothing it was not asked for");
     }
 
     function _oneCall() internal view returns (Call[] memory calls) {
         calls = new Call[](1);
-        calls[0] =
-            Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.hit, (1))});
+        calls[0] = Call({target: address(sink), value: 0, data: abi.encodeCall(Sink.hit, (1))});
     }
 }
 
@@ -1086,11 +1004,7 @@ contract DivergingDestinationTest is Test {
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.RecipientIsNotThisAccount.selector, recipient
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, recipient));
         transmitter.sendMessage(recipient, payload, new bytes[](0));
     }
 
@@ -1123,11 +1037,7 @@ contract DivergingDestinationTest is Test {
         transmitter.onDestinationReceiverReported(key, DIVERGED);
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                TransmitterBase.RecipientIsNotThisAccount.selector, stale
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, stale));
         transmitter.sendMessage(stale, payload, new bytes[](0));
     }
 
@@ -1151,9 +1061,7 @@ contract DivergingDestinationTest is Test {
         bytes memory impostor = Erc7930.encodeEvm(1, address(r));
         bytes memory payload = Payload.encodeCalls(new Call[](0));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, impostor)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, impostor));
         r.receiveMessage(bytes32(0), impostor, payload);
     }
 }

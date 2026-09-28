@@ -187,7 +187,6 @@ library WormholeMessage {
         return vaa[start:];
     }
 
-
     function consumed(bytes32 vaaHash) internal view returns (bool) {
         return _consumedSet()[vaaHash];
     }

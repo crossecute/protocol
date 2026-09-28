@@ -22,12 +22,11 @@ contract CcipTransmitter is OwnableTransmitter {
     ///      provider-side peer concept, so `EVM2AnyMessage.receiver` names the destination
     ///      exactly the way `_recipientOn` already resolved it. `feeToken` is always
     ///      `address(0)` (native payment; P8).
-    function _sendMessage(
-        bytes memory recipient,
-        bytes memory payload,
-        bytes[] memory attributes,
-        uint256 value
-    ) internal override returns (bytes32 sendId) {
+    function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
+        internal
+        override
+        returns (bytes32 sendId)
+    {
         CcipMessage.send(router, uint64(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value);
     }
 

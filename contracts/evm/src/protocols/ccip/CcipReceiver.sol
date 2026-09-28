@@ -27,11 +27,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      is fixed infrastructure, not a per-account choice), so `GATEWAY_ROLE` is granted
     ///      here, before `__ReceiverBase_init`. `grantRole` is
     ///      `onlyInitializing`, so this initializer is the only window it ever gets.
-    function initialize(address sourceTransmitter_, Call[] calldata calls)
-        external
-        override
-        initializer
-    {
+    function initialize(address sourceTransmitter_, Call[] calldata calls) external override initializer {
         grantRole(GATEWAY_ROLE, router);
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
@@ -41,10 +37,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      `docs/provider-research.md#4-ccip-as-a-native-binding`), so `_onMessageFrom`
     ///      below is the only authentication check, matching `_onInbound`'s stated rule with
     ///      no exception to write.
-    function ccipReceive(Client.Any2EVMMessage calldata message)
-        external
-        onlyRole(GATEWAY_ROLE)
-    {
+    function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
         _onMessageFrom(abi.decode(message.sender, (address)), message.data);
     }
 
@@ -57,13 +50,8 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      arrives, not a revert. See `CCIPReceiver.sol`'s own comment on
     ///      `supportsInterface` at the pinned commit
     ///      (`docs/provider-research.md#4-ccip-as-a-native-binding`).
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override
-        returns (bool)
-    {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId || super.supportsInterface(interfaceId);
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 }
