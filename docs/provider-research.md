@@ -18,7 +18,7 @@ behind prerequisite P7, rules R3.5 through R3.7, and compliance tests C29 throug
 [ERC-7786 analysis](#3-erc-7786-as-a-transport) is the reasoning behind the core contracts
 implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 [Hyperlane](#5-hyperlane-as-a-native-binding) sections are the reasoning behind
-`contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, and [§6](#6-wormhole-core-vs-the-relayer-two-different-bindings),
+`contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, and [§6](#6-wormhole-core-vs-the-relayer-are-two-different-bindings),
 [§7](#7-op-stack-as-a-native-binding), and [§8](#8-layerzero-as-a-native-binding) the same for
 `.../wormhole/`, `.../op-stack/`, and `.../layerzero/`.
 
@@ -29,7 +29,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [3. ERC-7786](#3-erc-7786-as-a-transport) | ERC-7786 as of OpenZeppelin 5.5.0, whose `draft-IERC7786` is vendored at `src/messaging/IErc7786.sol`; `draft-InteroperableAddress` for comparison | The ERC changes. The vendored copy makes that a reviewed edit rather than a dependency bump |
 | [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
-| [6. Wormhole](#6-wormhole-core-vs-the-relayer-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
+| [6. Wormhole](#6-wormhole-core-vs-the-relayer-are-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
 | [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`) | Optimism changes `relayMessage`'s calling convention or how `xDomainMessageSender` is scoped |
 | [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace, its peer check, or `_payNative`'s `msg.value` rule |
 
@@ -106,8 +106,8 @@ holds a security property rather than a translation. Binding to ICM rather than 
 is the way to avoid that on Avalanche.
 
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its
-own. Correlation never needed one: the receiver report's slot is derived from the
-authenticated origin plus the stated `(owner, salt)`, and the slot is write-once.
+own. Correlation never needed one: the hub derives the reporting account from the
+authenticated origin plus the stated `(owner, salt)`, and the account pins the first report.
 Idempotency does need one, and it exists at the transport for every candidate here except
 the two raw signature primitives. Adding a protocol-level id would put a field on every
 channel plus a growing set on every receiver to buy something seven of nine already give.
@@ -433,7 +433,7 @@ covers both, the same as every other candidate here.
 **The chain identifier is a `uint64` selector, not an EVM chain id.** `destChainSelector` /
 `sourceChainSelector` are CCIP's own per-chain values. Same shape as LayerZero's `eid` and
 Hyperlane's `domain`: a native CCIP binding needs its own chainKey↔selector table, under
-[R5](provider-spec.md#5-the-route-codec), same as either of them.
+[R5](provider-spec.md#r5-the-route-codec), same as either of them.
 
 **The wire addresses are ABI-encoded, not raw bytes.** `Client.EVM2AnyMessage.receiver` is
 `abi.encode(address)` for an EVM destination, and `Client.Any2EVMMessage.sender` is
@@ -500,7 +500,7 @@ permissionless relay call that verifies the message's ISM and then calls the rec
 equals the EVM chain id for EVM chains, but that is a convention, not a guarantee the
 protocol may depend on, and it is not even meaningful for a non-EVM chain. A native Hyperlane
 binding needs its own chainKey↔domain table, same as LayerZero's `eid` and CCIP's selector,
-under [R5](provider-spec.md#5-the-route-codec).
+under [R5](provider-spec.md#r5-the-route-codec).
 
 **A native `view` quote.** `IMailbox.quoteDispatch(domain, recipient, body[, hookMetadata,
 hook])` prices the exact send, satisfying
@@ -756,7 +756,7 @@ compared comes from.
 path stays unused by this binding entirely — it would only be needed by a binding built
 directly on `OptimismPortal`, which this is deliberately not.
 
-**No divergent-spoke variant, unlike the other three.** zkSync and Tron need
+**No divergent-spoke variant, unlike the other four.** zkSync and Tron need
 `ZkSyncSpokeTransceiver`/`TronSpokeTransceiver` because their CREATE2 formulas differ from
 Ethereum's. An OP Stack chain runs standard `op-geth` and Ethereum's own CREATE2 formula, so
 it is always the parity case; there is no OP-Stack-flavoured divergence to name a contract

@@ -275,7 +275,7 @@ What an operator or integrator has to know:
 
 - **Transports are fixed at initialization, and a disconnect is permanent.** `grantRole` is
   `onlyInitializing`, so a provider that migrates its endpoint means redeploying the
-  transceiver unless the `Deployment` named both endpoints up front. On an account,
+  transceiver unless its initializer's `gateways` named both endpoints up front. On an account,
   `revokeGateway` only subtracts. A receiver that drops its transport has no way to
   reconnect, and because `CrossProxy` arms once it cannot be redeployed at that address, so
   that owner's account on that chain stops receiving for good. This is deliberate: a

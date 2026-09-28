@@ -8,7 +8,7 @@ import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
 /// @dev The Wormhole chain id is its own `uint16` enumeration, not an EVM chain id, hence the
-///      table. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-two-different-bindings`.
+///      table. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings`.
 contract WormholeHubTransceiver is ProviderHubTransceiver, IVaaV1Receiver {
     /// @notice Core bridge, Executor quoter router, and relay provider's quoter on this chain.
     ///         Set on the implementation, not the proxy: harmless, since they never affect a

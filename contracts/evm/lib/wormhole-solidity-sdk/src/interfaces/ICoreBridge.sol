@@ -3,7 +3,7 @@
 // Vendored, unmodified, from wormhole-foundation/wormhole-solidity-sdk @ 2cb855ea
 // (src/interfaces/ICoreBridge.sol).
 // Apache-2.0, like the rest of its source repo. No imports. See
-// docs/provider-research.md#6-wormhole-core-vs-the-relayer-two-different-bindings.
+// docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings.
 
 pragma solidity ^0.8.0;
 

@@ -195,7 +195,7 @@ the transmitter and both transceivers.
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
 | nothing for authority | `OwnableUpgradeable`, via `HubTransceiverBase` | There is no seam to answer. The owner is `__HubTransceiverBase_init`'s own argument, and `Ownable` refuses a zero. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
-| nothing for the roles | `Roles.grantRole` | Named in the same `Deployment`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
+| nothing for the roles | `Roles.grantRole` | Named in the initializer's `gateways` argument, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `_accountInitializer(owner, salt, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
 
@@ -492,7 +492,7 @@ nobody a grant could come from. Not the transceiver that created it, not the msi
 the account's own owner. A binding therefore calls `grantRole(GATEWAY_ROLE, endpoint)` from its
 own `initialize`, ahead of `__ReceiverBase_init`, where the rest of its provider setup already
 goes. The same applies to a transmitter, and to a transceiver, whose gateways normally arrive
-in its `Deployment` instead.
+in its initializer's `gateways` argument instead.
 
 **R3.0.2 A binding MUST NOT add a grant path, and MUST NOT expect one.** The only membership
 change that survives initialization anywhere in this protocol is
@@ -532,7 +532,7 @@ repo's source.
 An execute-on-arrival payload carries no commitment and no identifier, so a second delivery
 of the same message runs it again. Bootstrap and the receiver report are both structurally
 single-shot and need nothing (`CrossProxy` arms exactly once, `initialize` is single-shot,
-and the registry slot is write-once), but path A has no such property, and it is the path
+and the account refuses a second receiver report), but path A has no such property, and it is the path
 every message after the first takes.
 
 Most candidate transports guarantee it, and there the binding does nothing. The exceptions
@@ -581,7 +581,7 @@ bytes memory sender = abi.encodePacked(address(uint160(uint256(origin.sender))))
 **R4.3** The narrowing MUST reject a non-EVM sender rather than truncate one. A 32-byte
 Solana pubkey cast down to 20 bytes is a forgery primitive, not a formatting bug.
 
-**R4.4** A spoke's `_homeTransceiver` is written once at initialization with no setter. The
+**R4.4** A spoke's `homeTransceiver()` is written once at initialization with no setter. The
 deployment MUST pass it in the same byte form the binding will produce inbound. There is no
 way to fix a mistake here but a redeploy: see the README's
 [Message providers](../README.md#message-providers).
