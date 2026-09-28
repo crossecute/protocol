@@ -24,7 +24,7 @@ contract RoutingTransceiver is UnsendableHub {
 
     /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -64,7 +64,7 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev THE HUB HOLDS THE ADDRESS, THE REGISTRY HOLDS WHAT IT IS WORTH. A location is
+    /// @dev The hub holds the address, the registry holds what it is worth. A location is
     ///      per provider, because two providers deploy two transceivers to one chain; the
     ///      grade is per chain, because how well an address there can be known is the same
     ///      question for both. So this writes the address here and reads the grade there.
@@ -85,7 +85,7 @@ contract CounterpartRoutingTest is Test {
         );
     }
 
-    /// @dev WRITE-ONCE, LIKE A ROUTE. A counterpart names the contract every message to that
+    /// @dev Write-once, like a route. A counterpart names the contract every message to that
     ///      chain authenticates against, so re-pointing one redirects the whole destination.
     function test_aCounterpartIsWriteOnce() public {
         vm.prank(msig);
@@ -98,7 +98,7 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev A LOCATION MUST BE ON THE CHAIN IT IS FILED UNDER, and the registry is what says
+    /// @dev A location must be on the chain it is filed under, and the registry is what says
     ///      so: the validation stayed there when the storage left, because what makes an
     ///      address well-formed is a property of the chain.
     function test_aCounterpartOnTheWrongChainIsRefused() public {
@@ -165,10 +165,10 @@ contract CounterpartRoutingTest is Test {
         bare.counterpartOn(keccak256("anything"));
     }
 
-    /// @dev THE REGISTRY SAYS WHICH CHAINS REPORT, AND HOLDS NO RECEIVER DATA. Starknet's
+    /// @dev The registry says which chains report, and holds no receiver data. Starknet's
     ///      address derivation is Pedersen and cannot run on the EVM at any price, so the
-    ///      destination has to create the receiver and report it back. WHICH chains are like
-    ///      that is a property of the chain and belongs in this directory; WHERE a given
+    ///      destination has to create the receiver and report it back. Which chains are like
+    ///      that is a property of the chain and belongs in this directory; where a given
     ///      account's receiver landed is a property of that account and lives on its
     ///      transmitter, which is also the only contract that reads it. The round trip is
     ///      covered in `ReceiverReport.t.sol`.
@@ -184,8 +184,8 @@ contract CounterpartRoutingTest is Test {
         assertFalse(registry.requiresReceiverCallback(baseKey), "parity: derived locally");
     }
 
-    /// @dev IT IS DERIVED FROM THE CAPS RATHER THAN DECLARED, so it cannot disagree with
-    ///      them. zkSync and Tron are the case that needs this: they ARE `eip155`, so chain
+    /// @dev It is derived from the caps rather than declared, so it cannot disagree with
+    ///      them. zkSync and Tron are the case that needs this: they are `eip155`, so chain
     ///      type alone says they are derivable, and the cap is what records that their
     ///      CREATE2 formula differs. One fact, read two ways, rather than two flags.
     function test_theReportingFlagFollowsTheProvenanceCap() public {
@@ -205,7 +205,7 @@ contract CounterpartRoutingTest is Test {
 
     /* =========================== the default counterpart ======================== */
 
-    /// @dev THE COMMON CASE NEEDS NO CONFIGURATION AT ALL. A transceiver is deployed as a
+    /// @dev The common case needs no configuration at all. A transceiver is deployed as a
     ///      proxy through Nick's factory, so hub and spoke share initcode and salt and
     ///      land on one address wherever Ethereum's CREATE2 formula holds. The local
     ///      transceiver's own address is therefore the right answer for every such chain,
@@ -261,7 +261,7 @@ contract CounterpartRoutingTest is Test {
         transceiver.counterpartOn(solKey);
     }
 
-    /// @dev THE zkSYNC AND TRON CASE. Both are `eip155`, so the chain type alone says
+    /// @dev The zkSYNC and Tron case. Both are `eip155`, so the chain type alone says
     ///      parity might hold, and both have different CREATE2 formulas, so it does not.
     ///      `setProvenance` is already the dial that records "addresses here cannot be
     ///      recomputed on the hub", so a cap below `Derived` withdraws the default rather
@@ -285,7 +285,7 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(zkKey), abi.encodePacked(address(0xACE5)));
     }
 
-    /// @dev THE HUB IS ITS OWN FALLBACK NOW, so there is nothing to be missing. The
+    /// @dev The hub is its own fallback now, so there is nothing to be missing. The
     ///      registry used to answer the default out of `localTransceiver`, which meant a
     ///      provider with none had no counterpart anywhere; the hub answers it from
     ///      `address(this)`, which it always has. `localTransceiver` still names the hub

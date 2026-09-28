@@ -6,16 +6,12 @@ import {Provenance} from "src/registry/Provenance.sol";
 /// @notice The slice of `ChainRegistry` a hub transceiver needs: where remote things
 ///         live, and how much each claim about them is worth.
 ///
-/// @dev DECLARED SEPARATELY BECAUSE ONLY ONE SIDE HAS IT. The registry exists on the
-///      home chain and nowhere else: the hub has N counterparts and needs a directory to
-///      tell them apart, while a spoke has exactly one and is told which at deployment.
-///      Keeping this interface out of the shared transceiver base is what stops a spoke
-///      from carrying a dependency it can never satisfy.
+/// @dev The registry exists only on the home chain, so this stays out of the shared
+///      transceiver base: a spoke has one counterpart, given at deployment, and no registry.
 ///
-/// @dev IT HOLDS NO ROUTES, WHICH IS WHY IT IS NOT NAMED FOR THEM. A message provider's
-///      own name for a chain lives on the transceiver (the contract that sends and
-///      receives), so what remains here is references: counterparts, account slots, and
-///      the callback that records one.
+/// @dev Routes live on the transceiver. What the hub reads here is provenance, derived
+///      counterpart addresses, location validation, and which chains must report their
+///      receivers.
 interface IChainRegistryRefs {
     /// @notice What an address claim about `chainKey` is worth. Chain-scoped, so every
     ///         provider's hub reads the same answer.

@@ -71,7 +71,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     ///      so `_authenticateOrigin` (reached through `_onInbound`) is the only check —
     ///      matching `_onInbound`'s stated rule directly, unlike LayerZero.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
-        _onProviderInbound(message.sourceChainSelector, abi.decode(message.sender, (address)), message.data);
+        _onProviderInbound(message.sourceChainSelector, CcipMessage.sender(message), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

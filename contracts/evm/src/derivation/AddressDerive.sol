@@ -11,8 +11,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      test-only comparison, because on an EVM destination the registry can resolve
 ///      locally and skip the round trip entirely.
 ///
-/// @dev SCOPE. Everything here bottoms out in `keccak256` (native), `sha256` (0x02),
-///      or `sha256` (0x02). Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
+/// @dev Scope. Everything here bottoms out in `keccak256` (native) or `sha256` (0x02).
+///      Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
 ///      EraVM does not support that precompile and rejects any unit importing it, which a
 ///      zkSync spoke needs this file for. Sui lives in SuiDerive.sol because BLAKE2b needs the
 ///      0x09 precompile, which forces `view` rather than `pure`.
@@ -31,10 +31,10 @@ library AddressDerive {
 
     /// @notice Nonce-based CREATE, address = keccak256(rlp([deployer, nonce]))[12:].
     /// @dev RLP has three cases for the nonce and getting them wrong is a classic bug:
-    ///      0 encodes as 0x80 (empty string, NOT 0x00), 1..127 encode as themselves,
+    ///      0 encodes as 0x80 (empty string, not 0x00), 1..127 encode as themselves,
     ///      and anything larger takes a 0x80+len prefix over minimal big-endian bytes.
     ///
-    /// @dev THE LIST PREFIX IS `0xc0 + payload`, AND THE PAYLOAD GROWS WITH THE NONCE.
+    /// @dev The list prefix is `0xc0 + payload`, and the payload grows with the nonce.
     ///      The address item is always 21 bytes (0x94 plus twenty), and the nonce item is
     ///      1 byte in the first two arms but `1 + len` in the third, so the prefix is
     ///      0xd6 in the first two and `0xd6 + len` in the third. It read `0xd5 + len`
@@ -63,7 +63,7 @@ library AddressDerive {
     }
 
     /// @notice Creation-code hash of an EIP-1167 minimal proxy for `implementation`.
-    /// @dev This is what lets Ethereum predict a RECEIVER address on a destination chain:
+    /// @dev This is what lets Ethereum predict a receiver address on a destination chain:
     ///      receivers are clones, so their address is CREATE2 over the destination
     ///      transceiver (deployer), the transmitter-derived salt, and this hash.
     ///
@@ -97,7 +97,7 @@ library AddressDerive {
     ///      does a plain CREATE at nonce 1. The nonce is a hardcoded 1 from a fresh
     ///      contract, not the deployer's transaction history.
     ///
-    ///      DOES NOT PORT to zkSync (both stages use different formulas) or to Tron
+    ///      Does not port to zkSync (both stages use different formulas) or to Tron
     ///      (CREATE derives from root tx id, so stage 2 is not a function of the proxy
     ///      address). Use only for chains sharing Ethereum's derivation.
     function create3(address factory, bytes32 salt) internal pure returns (address) {
@@ -109,16 +109,16 @@ library AddressDerive {
     /*                        L1 -> L2 sender aliasing                         */
     /* ====================================================================== */
 
-    /// @dev SHARED BY THREE STACKS, WHICH IS WHY IT IS NOT UNDER ANY OF THEM. Arbitrum,
+    /// @dev Shared by three stacks, which is why it is not under any of them. Arbitrum,
     ///      zkSync Era, and the OP Stack's `OptimismPortal` all rewrite the sender of an
     ///      L1-originated message by the same constant, and Arbitrum's own
     ///      `AddressAliasHelper.OFFSET` is this value. Filing it under one of them invites
     ///      the next binding to write a second copy.
     uint160 internal constant L1_TO_L2_ALIAS_OFFSET = uint160(0x1111000000000000000000000000000000001111);
 
-    /// @notice The address an L1 CONTRACT appears as when its message arrives on L2.
+    /// @notice The address an L1 contract appears as when its message arrives on L2.
     ///
-    /// @dev CONTRACTS ONLY. An EOA is not aliased, because the collision this prevents is a
+    /// @dev Contracts only. An EOA is not aliased, because the collision this prevents is a
     ///      contract at some address on L1 impersonating a different contract that happens
     ///      to sit at the same address on L2.
     function applyL1ToL2Alias(address l1) internal pure returns (address) {
@@ -129,25 +129,25 @@ library AddressDerive {
 
     /// @notice Recover the L1 address from the sender an L2 actually observed.
     ///
-    /// @dev THIS IS THE DIRECTION A BINDING NEEDS, and the one whose absence is a silent bug
+    /// @dev This is the direction a binding needs, and the one whose absence is a silent bug
     ///      rather than a revert. `ReceiverBase` compares an inbound sender against
-    ///      `sourceTransmitter`, which holds the transmitter's address on the HOME chain; an
+    ///      `sourceTransmitter`, which holds the transmitter's address on the home chain; an
     ///      L2 receiver sees that address plus the offset, so every inbound message is
     ///      refused until the binding subtracts it back out.
     ///
-    /// @dev IT IS L1 -> L2 ONLY, AND APPLYING IT SYMMETRICALLY CORRUPTS THE OTHER DIRECTION.
+    /// @dev It is L1 -> L2 only, and applying it symmetrically corrupts the other direction.
     ///      A withdrawal carries the raw L2 sender: Arbitrum's `Outbox` hashes `l2Sender`
     ///      unaliased into the leaf it proves against. So a binding un-aliases on the
     ///      inbound-to-L2 path and nowhere else.
     ///
-    /// @dev IT CANNOT TELL WHETHER IT WAS NEEDED. The arithmetic wraps, so undoing an alias
+    /// @dev It cannot tell whether it was needed. The arithmetic wraps, so undoing an alias
     ///      that was never applied returns a perfectly well-formed address belonging to
     ///      nobody rather than failing. There is no "was this aliased" predicate and there
-    ///      cannot be one: the caller decides from the DIRECTION of the message, never from
+    ///      cannot be one: the caller decides from the direction of the message, never from
     ///      the value. That is why this is a binding's job and not `ReceiverBase`'s, which
     ///      cannot know which transport delivered.
     ///
-    /// @dev NOT EVERY BINDING NEEDS IT. The OP Stack's `CrossDomainMessenger` un-aliases
+    /// @dev Not every binding needs it. The OP Stack's `CrossDomainMessenger` un-aliases
     ///      internally and reports the original through `xDomainMessageSender()`, so only a
     ///      binding built directly on `OptimismPortal` has to. Arbitrum and zkSync have no
     ///      equivalent.
@@ -165,8 +165,8 @@ library AddressDerive {
     bytes32 internal constant ZKSYNC_CREATE_PREFIX = keccak256("zksyncCreate");
 
     /// @param sender If an L1 *contract* triggers the deploy via Bridgehub/Mailbox, pass
-    ///        the ALIASED address. EOAs are not aliased.
-    /// @param bytecodeHash EraVM versioned hash: see `hashL2Bytecode`, NOT keccak(initcode).
+    ///        the aliased address. EOAs are not aliased.
+    /// @param bytecodeHash EraVM versioned hash: see `hashL2Bytecode`, not keccak(initcode).
     function zksyncCreate2(address sender, bytes32 salt, bytes32 bytecodeHash, bytes32 constructorInputHash)
         internal
         pure
@@ -213,13 +213,13 @@ library AddressDerive {
     }
 
     /* ====================================================================== */
-    /*                                 TRON                                    */
+    /*                                 Tron                                    */
     /* ====================================================================== */
 
     /// @notice Same 85-byte preimage as EIP-1014; only the domain byte differs (0x41).
     /// @dev Returns the bare 20-byte in-VM form. Prepend 0x41 + Base58Check off-chain.
-    ///      initCodeHash must come from TRON-solc, not solc.
-    ///      CAVEAT: TRON's docs conflict on whether high-level `new {salt:}` uses 0x41
+    ///      initCodeHash must come from Tron-solc, not solc.
+    ///      Caveat: TRON's docs conflict on whether high-level `new {salt:}` uses 0x41
     ///      or 0xff. Verify on Shasta before trusting this in a signed payload.
     function tronCreate2(address deployer, bytes32 salt, bytes32 initCodeHash) internal pure returns (address) {
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0x41), deployer, salt, initCodeHash)))));
@@ -234,9 +234,9 @@ library AddressDerive {
 
     /// @notice CosmWasm Instantiate2: the CREATE2 analogue on Cosmos.
     /// @dev sha256( sha256("module") ++ key ), key = "wasm\0" ++ be64/value pairs.
-    ///      The "wasm\0" prefix exists in cosmwasm-std but is ABSENT from the published
+    ///      The "wasm\0" prefix exists in cosmwasm-std but is absent from the published
     ///      spec page. Verified against cosmwasm-std's own test vectors.
-    /// @param creator CANONICAL decoded address bytes, not the bech32 string.
+    /// @param creator Canonical decoded address bytes, not the bech32 string.
     function cosmosInstantiate2(bytes32 checksum, bytes memory creator, bytes memory salt, bytes memory initMsg)
         internal
         pure
@@ -261,9 +261,9 @@ library AddressDerive {
     /*                                Solana                                   */
     /* ====================================================================== */
 
-    /// @notice PDA for a KNOWN bump.
-    /// @dev This is NOT `find_program_address`. The canonical PDA is the first bump
-    ///      counting down from 255 whose output is OFF the ed25519 curve; that check
+    /// @notice PDA for a known bump.
+    /// @dev This is not `find_program_address`. The canonical PDA is the first bump
+    ///      counting down from 255 whose output is off the ed25519 curve; that check
     ///      needs Edwards decompression over GF(2^255-19) and is not implemented.
     ///      A too-high bump yields an on-curve point this function will happily return.
     ///      Bind the bump into committed inputs so signers approve it explicitly.
@@ -304,14 +304,14 @@ library AddressDerive {
     /* ====================================================================== */
 
     /// @notice NEAR deterministic account: NEAR's CREATE2, and free here since it
-    ///         uses keccak256. Render as "0s" + lowercase hex, NOT "0x".
+    ///         uses keccak256. Render as "0s" + lowercase hex, not "0x".
     /// @param borshStateInit Borsh-serialized DeterministicAccountStateInit. Serialize
     ///        off-chain; do not build Borsh in Solidity.
     function nearDeterministicAccount(bytes memory borshStateInit) internal pure returns (bytes20) {
         return bytes20(uint160(uint256(keccak256(borshStateInit))));
     }
 
-    /// @param uncompressedPubkey64 64 bytes, WITHOUT the 0x04 SEC1 prefix.
+    /// @param uncompressedPubkey64 64 bytes, without the 0x04 SEC1 prefix.
     function nearEthImplicitAccount(bytes memory uncompressedPubkey64) internal pure returns (bytes20) {
         require(uncompressedPubkey64.length == 64, "C2L: bad pubkey len");
         return bytes20(uint160(uint256(keccak256(uncompressedPubkey64))));

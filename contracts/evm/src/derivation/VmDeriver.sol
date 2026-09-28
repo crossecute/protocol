@@ -9,18 +9,18 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 /// @notice Uniform address derivation across every VM the protocol targets.
 ///
-/// @dev THE NORMALIZATION PROBLEM. Every VM's derivation takes different inputs: CREATE2
+/// @dev The normalization problem. Every VM's derivation takes different inputs: CREATE2
 ///      wants (deployer, salt, initCodeHash), a Solana PDA wants (seeds[], bump,
 ///      programId), CosmWasm wants (checksum, creator, salt, initMsg). There is no
-///      argument list that fits all of them, so the parameters stay OPAQUE: the caller
+///      argument list that fits all of them, so the parameters stay opaque: the caller
 ///      passes an ABI-encoded blob and the deriver decodes the shape its scheme requires.
 ///
-///      What IS uniform is the two ends. Every implementation takes a canonical ERC-7930
-///      chain identifier plus a params blob, and returns a canonical ERC-7930 ACCOUNT
+///      What is uniform is the two ends. Every implementation takes a canonical ERC-7930
+///      chain identifier plus a params blob, and returns a canonical ERC-7930 account
 ///      envelope for the same chain. The registry can therefore store the result without
 ///      knowing which VM produced it.
 ///
-/// @dev MUST BE `view`, NOT `pure`. Sui's BLAKE2b-256 goes through precompile 0x09, which
+/// @dev Must be `view`, not `pure`. Sui's BLAKE2b-256 goes through precompile 0x09, which
 ///      is a `staticcall`. One non-pure member forces the whole interface to `view`.
 interface IVmDeriver {
     /// @param chainIdentifier Canonical ERC-7930 chain identifier (zero-length address).
@@ -41,19 +41,19 @@ interface IVmDeriver {
 /// @notice One standalone, stateless contract implementing every derivation the protocol
 ///         can perform on-chain, dispatched by (ChainType, Scheme).
 ///
-/// @dev WHY ONE CONTRACT AND NOT ONE PER VM. These are pure functions over calldata with
+/// @dev Why one contract and not one per VM. These are pure functions over calldata with
 ///      no storage and no privileges, so there is nothing to isolate between them. A
 ///      single deployment means one address to audit and one address to register for
 ///      every chain, and the registry's `deriverOf` mapping still allows a per-chain
 ///      override later if a VM ever needs its own.
 ///
-/// @dev DISPATCH IS TWO-DIMENSIONAL, and it has to be. ChainType alone is not enough:
-///      Ethereum, zkSync Era, and Tron are ALL `eip155`, with three different CREATE2
+/// @dev Dispatch is two-dimensional, and it has to be. ChainType alone is not enough:
+///      Ethereum, zkSync Era, and Tron are all `eip155`, with three different CREATE2
 ///      formulas. Scheme alone is not enough either, since the same scheme must produce
 ///      envelopes on different chains. Every scheme is therefore checked against the
 ///      chain type it is legal for, in `supportsScheme`.
 ///
-/// @dev NOT DERIVABLE HERE, BY CONSTRUCTION:
+/// @dev Not derivable here, by construction:
 ///        - Aptos / Movement: SHA3-256 is not keccak256 (padding domain 0x06 vs 0x01).
 ///          A hand-rolled Keccak-f[1600] is ~1e5 gas.
 ///        - Starknet: Pedersen/Poseidon over the STARK curve. No precompile, and the
@@ -106,7 +106,7 @@ contract VmDeriver is IVmDeriver {
         /// (bytes32 txDigest, uint64 creationNum): verification only, see note.
         SuiObjectId,
         /// EIP-1167 clone. (address deployer, address implementation, bytes32 salt)
-        /// This is how a RECEIVER address is predicted: deployer is the destination
+        /// This is how a receiver address is predicted: deployer is the destination
         /// transceiver, salt is `keccak256(abi.encode(transmitter))`.
         EvmClone,
         /// EIP-1167 clone under Tron's 0x41 domain byte. Same params as EvmClone.
@@ -174,13 +174,13 @@ contract VmDeriver is IVmDeriver {
         if (chainType == ChainType.SUI) {
             return s == Scheme.SuiAddress || s == Scheme.SuiMultisig || s == Scheme.SuiObjectId;
         }
-        // ChainType.APTOS and ChainType.STARKNET are deliberately absent.
+        // ChainType.Aptos and ChainType.Starknet are deliberately absent.
         return false;
     }
 
     /* =============================== derivations =============================== */
 
-    /// @dev Returns the RAW address bytes for the scheme, at the width that chain's
+    /// @dev Returns the raw address bytes for the scheme, at the width that chain's
     ///      ERC-7930 profile expects. The caller wraps them in the envelope.
     function _derive(Scheme s, bytes memory p) private view returns (bytes memory) {
         /* ---------------------------------- EVM --------------------------------- */
@@ -198,7 +198,7 @@ contract VmDeriver is IVmDeriver {
         }
 
         /* -------------------------------- clones -------------------------------- */
-        // NOTE ON zkSYNC: EIP-1167 has no zkSync equivalent. EraVM will only deploy
+        // Note on zkSYNC: EIP-1167 has no zkSync equivalent. EraVM will only deploy
         // bytecode whose hash has been published, and a 55-byte EVM proxy is not valid
         // EraVM bytecode at all. A zkSync "clone" is a real proxy contract compiled with
         // zksolc, so it is derived with `ZkSyncCreate2` using that proxy's versioned
@@ -277,7 +277,7 @@ contract VmDeriver is IVmDeriver {
             return abi.encodePacked(AddressDerive.nearEthImplicitAccount(pubkey64));
         }
         if (s == Scheme.NearImplicit) {
-            // The ed25519 pubkey IS the account id. Identity, kept explicit so the
+            // The ed25519 pubkey is the account id. Identity, kept explicit so the
             // envelope width is unambiguous.
             bytes32 pubkey = abi.decode(p, (bytes32));
             return abi.encodePacked(pubkey);
@@ -308,8 +308,8 @@ contract VmDeriver is IVmDeriver {
             return abi.encodePacked(SuiDerive.addressFromMultisig(threshold, flags, pubkeys, weights));
         }
         if (s == Scheme.SuiObjectId) {
-            // Derivable but NOT counterfactual: txDigest does not exist until the
-            // transaction is built and signed. Use this to VERIFY an object id the
+            // Derivable but not counterfactual: txDigest does not exist until the
+            // transaction is built and signed. Use this to verify an object id the
             // destination reported, never to predict one in advance.
             (bytes32 txDigest, uint64 creationNum) = abi.decode(p, (bytes32, uint64));
             return abi.encodePacked(SuiDerive.deriveObjectId(txDigest, creationNum));

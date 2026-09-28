@@ -19,7 +19,7 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {UnsendableHub, UnsendableSpoke, UnsendableTransmitter} from "test/Unsendable.sol";
 
 contract MockReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -50,7 +50,7 @@ contract Transmitter is UnsendableTransmitter {
         return bytes32(0);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -75,7 +75,7 @@ contract Hub is UnsendableHub {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -91,7 +91,7 @@ contract Spoke is UnsendableSpoke {
         _onInbound(route, sender, message);
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -129,7 +129,7 @@ contract InboundAuthTest is Test {
 
     /* ================================== spoke ================================== */
 
-    /// @dev ONE ORIGIN, SO IT IS A COMPARISON. No registry, no lookup that could return
+    /// @dev One origin, so it is a comparison. No registry, no lookup that could return
     ///      the wrong answer if configuration drifted.
     function test_spokeAcceptsTheHubAndStandsTheReceiverUp() public {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
@@ -174,13 +174,13 @@ contract InboundAuthTest is Test {
         hub.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
         vm.stopPrank();
         vm.prank(msig);
-        // The route IS the chain identifier now, so `keccak256(route) == chainKey`.
+        // The route is the chain identifier now, so `keccak256(route) == chainKey`.
         hub.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
         vm.startPrank(msig);
         vm.stopPrank();
     }
 
-    /// @dev N ORIGINS, SO IT IS A LOOKUP. The route names the chain and the registry names
+    /// @dev N origins, so it is a lookup. The route names the chain and the registry names
     ///      that chain's counterpart; the report is recorded against the chain the route
     ///      resolved to, not one the message claimed.
     function test_hubResolvesTheOriginAndRecordsTheReport() public {

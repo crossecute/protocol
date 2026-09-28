@@ -12,7 +12,7 @@ source contracts/evm/script/vendor/lib.sh
 
 REPO="wormhole-foundation/wormhole-solidity-sdk"
 COMMIT="2cb855ea"
-NOTE=$'Apache-2.0, like the rest of its source repo. No imports. See\n// docs/provider-research.md#6-wormhole-core-vs-the-relayer-two-different-bindings.'
+NOTE=$'Apache-2.0, like the rest of its source repo. No imports. See\n// docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings.'
 DEST="contracts/evm/lib/wormhole-solidity-sdk/src"
 
 for path in \

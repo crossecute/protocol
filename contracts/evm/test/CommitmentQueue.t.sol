@@ -32,7 +32,7 @@ contract Ledger {
 }
 
 contract QueueReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -45,7 +45,7 @@ contract QueueReceiver is ReceiverBase {
 
 /// @notice The approval map: unordered discharge, duplicate approvals, and cancellation.
 ///
-/// @dev THE PROPERTY THAT REPLACED FIFO. An array names its own approval by hashing to it,
+/// @dev The property that replaced FIFO. An array names its own approval by hashing to it,
 ///      so nothing executes by position and nothing can block: a payload nobody relays sits
 ///      outstanding while every other approval discharges around it. What is given up is
 ///      ordering, which the payloads themselves now have to express.
@@ -87,7 +87,7 @@ contract CommitmentQueueTest is Test {
 
     /* ================================ unordered ================================= */
 
-    /// @dev THE RULE: `finalize` discharges the approval its array matches, whichever that
+    /// @dev The rule: `finalize` discharges the approval its array matches, whichever that
     ///      is. Approving 1 then 2 and finalizing 2 first is not a reordering to be
     ///      prevented; it is the point.
     function test_finalizeTakesWhicheverArrayItIsHanded() public {
@@ -103,7 +103,7 @@ contract CommitmentQueueTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev THE WHOLE REASON THE QUEUE WENT. Under FIFO a payload that can never succeed
+    /// @dev The whole reason the queue went. Under FIFO a payload that can never succeed
     ///      stalled everything approved after it until it was cancelled. Here it stalls
     ///      nothing: it simply stays outstanding.
     function test_anUndischargeablePayloadBlocksNothing() public {
@@ -158,7 +158,7 @@ contract CommitmentQueueTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev ALL OR NOTHING. Each entry is decremented before its payload runs, so a prefix
+    /// @dev All or nothing. Each entry is decremented before its payload runs, so a prefix
     ///      standing would discharge approvals whose payloads never completed.
     function test_aFailureLateInABatchRevertsTheWholeBatch() public {
         r.commit(_hash(1));
@@ -191,7 +191,7 @@ contract CommitmentQueueTest is Test {
         r.finalize(_calls(1));
     }
 
-    /// @dev IT ZEROES THE ENTRY, NOT ONE COPY. A payload that turns out to be wrong is
+    /// @dev It zeroes the entry, not one copy. A payload that turns out to be wrong is
     ///      wrong in every copy; re-approving is one `commit` away if only some were meant
     ///      to go.
     function test_cancelDropsEveryCopyOfAnApproval() public {
@@ -215,7 +215,7 @@ contract CommitmentQueueTest is Test {
         r.cancel(_hash(1));
     }
 
-    /// @dev GATED EXACTLY LIKE `commit`. Leaving it open would hand any caller a way to
+    /// @dev Gated exactly like `commit`. Leaving it open would hand any caller a way to
     ///      strip approvals.
     function test_cancelIsGatedOnTheSameBarAsCommit() public {
         r.commit(_hash(1));
@@ -230,9 +230,9 @@ contract CommitmentQueueTest is Test {
 
     /* ============================ reentrancy on an approval ===================== */
 
-    /// @dev TWO DEFENCES, AND THE OUTER ONE FIRES FIRST. `finalize` is `nonReentrant`, so a
+    /// @dev Two defences, and the outer one fires first. `finalize` is `nonReentrant`, so a
     ///      payload that re-enters is stopped before it can reach the map at all.
-    ///      Underneath that, the count is decremented BEFORE `_execute`, so even without the
+    ///      Underneath that, the count is decremented before `_execute`, so even without the
     ///      guard a re-entrant call would find that copy of the approval already spent.
     function test_reentrantFinalizeIsRefused() public {
         Reenterer bad = new Reenterer();

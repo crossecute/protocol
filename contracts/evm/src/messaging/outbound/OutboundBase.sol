@@ -8,99 +8,65 @@ import {Roles} from "src/messaging/Roles.sol";
 /// @notice The sending half: who this contract's counterpart is on each chain, how to
 ///         address it, and the two primitives that put a message on the wire.
 ///
-/// @dev SPLIT FROM `TransmitterBase` BECAUSE A TRANSCEIVER NEEDS THE MECHANICS AND MUST NOT
-///      HAVE THE OWNER. A transceiver already answers to the crossecute msig, and an account
-///      to its user; merging the two would collide on `owner` outright. So the setters below
-///      are `internal` and ungated, and each side wraps them in the authority it already
-///      has: `onlyOwner` on a hub transceiver, `onlyAccountOwner` on an account. A spoke
-///      wraps them in nothing, because it has no setters at all.
+/// @dev Split from `TransmitterBase` because a transceiver needs the mechanics but must not
+///      have an account's owner. The setters are `internal` and ungated; each side wraps them
+///      in its own authority (`onlyOwner` on a hub, `onlyAccountOwner` on an account), and a
+///      spoke exposes none.
 ///
-/// @dev EVERY SENDER HAS THE SAME TWO QUESTIONS, WHICH IS WHY THIS IS ONE TABLE. To address
-///      anything, a sender needs the chain (an ERC-7930 identifier) and the counterpart's
-///      address on it, and ERC-7930 is exactly the pair joined. What varies is only what a
-///      counterpart IS: a hub's is the transceiver on the far side, a spoke's is the hub,
-///      and an ACCOUNT'S IS ITS OWN RECEIVER. Holding one table and letting `_counterpartOn`
-///      say which does not just remove duplication: it is what lets an account's peer be a
-///      stored fact rather than a guess about its own address, which is wrong on any chain
-///      whose CREATE2 formula differs from Ethereum's.
+/// @dev One table serves every sender: an ERC-7930 recipient is the route (chain) joined to
+///      the counterpart (address). A hub's counterpart is the far transceiver, a spoke's is
+///      the hub, and an account's is its own receiver, stored rather than assumed equal to
+///      this address, which is wrong wherever the CREATE2 formula differs from Ethereum's.
 ///
-/// @dev IT DECLARES STORAGE NOW, AND THAT IS A CONSTRAINT ON ITS CONSUMERS. Both are proxies,
-///      so these slots must stay first: `OutboundBase` leads the inheritance list on
-///      `TransmitterBase` and `TransceiverBase`, and a base inserted ahead of it would move
-///      every field below. `ReceiverBase` does not inherit this at all, because a receiver
-///      never sends, so its layout is independent.
+/// @dev Leads the inheritance list on `TransmitterBase` and `TransceiverBase`, so its fields
+///      take the first slots of both layouts (R8.2). `ReceiverBase` does not inherit it.
 ///
-/// @dev ENTRY POINTS CALL `_sendMessage` DIRECTLY, with nothing in between to drift out of
-///      step with either. Validation belongs at the entry point, where the untrusted
-///      argument arrives, and the send event belongs to the standard: a gateway source MUST
-///      emit `MessageSent`. Path B is not a gateway source, so `TransceiverBase` emits
+/// @dev Entry points validate their arguments and call `_sendMessage` directly. A gateway
+///      source emits `MessageSent`; path B is not one, so `TransceiverBase` emits
 ///      `BootstrapSent` instead.
 abstract contract OutboundBase is Roles {
     /// chainKey => that chain's canonical ERC-7930 chain identifier.
-    ///
-    /// @dev IT LIVES ON THE SENDER RATHER THAN IN THE REGISTRY. A registry read would put a
-    ///      second shared contract in the path of every send, and give a compromised one the
-    ///      ability to misroute a payload. On the execute-on-arrival path there is no
-    ///      commitment binding the destination, so a wrong identifier means the payload runs
-    ///      on the wrong chain.
+    /// @dev Held by the sender, not the registry: on the execute-on-arrival path nothing else
+    ///      binds the destination, so a registry that could misroute could run a payload on
+    ///      the wrong chain.
     mapping(bytes32 => bytes) private _routes;
 
-    /// keccak256(identifier) => chainKey. The inbound direction, which is not optional: a
-    /// provider hands over a source id and this contract has to turn it back into a chain.
-    ///
-    /// @dev MAINTAINED IN THE SAME SETTER, because two setters is how the two directions
-    ///      drift apart. It is injective by construction, and a collision reverts.
+    /// keccak256(identifier) => chainKey, for turning a provider's source id back into a
+    /// chain. Written by the same setter as `_routes`, and injective: a collision reverts.
     mapping(bytes32 => bytes32) private _chainKeyOfRoute;
 
     /// chainKey => this contract's counterpart there, in that chain's own address format.
-    ///
-    /// @dev RAW BYTES, NOT `address`. The counterpart is not assumed to be at this
-    ///      contract's own address. That holds on most EVM chains, but not on zkSync or
-    ///      Tron, whose CREATE2 formulas differ, and not on Solana or the Move chains, where
-    ///      a 32-byte key cannot be narrowed to 20.
+    /// @dev Raw bytes: the counterpart is not at this address on zkSync or Tron, and a 32-byte
+    ///      Solana or Move key cannot be narrowed to 20.
     mapping(bytes32 => bytes) private _counterparts;
 
     event RouteSet(bytes32 indexed chainKey, bytes route);
     event CounterpartSet(bytes32 indexed chainKey, bytes counterpart);
 
-    /// @dev Raised at the entry point, not in a shared internal. See the note above.
     error NoDestination();
     error EmptyPayload();
     error ZeroRoute();
     error ZeroCounterpart();
-    /// @dev Re-pointing a route would redirect every message to that destination at once, so
-    ///      it is a redeploy rather than a config edit.
+    /// @dev Re-pointing a route would redirect every message to that destination at once.
     error RouteAlreadySet(bytes32 chainKey);
     error NoRouteFor(bytes32 chainKey);
     /// @dev Two chains sharing one identifier would let an inbound message be attributed to
-    ///      the wrong source: a forgery primitive, not a config mistake.
+    ///      the wrong source.
     error RouteInUse(bytes32 routeKey);
     error UnknownRoute();
     error NoCounterpartFor(bytes32 chainKey);
-    /// @dev For a binding whose provider cannot quote on-chain (P9). Returning zero instead
-    ///      would be indistinguishable from a free message.
+    /// @dev For a binding whose provider cannot quote on-chain (P9). Zero would read as free.
     error QuoteNotImplemented();
 
     /* ================================== routing ================================ */
 
-    /// @notice Record how a destination chain is named. WRITE-ONCE, ungated: the caller
+    /// @notice Record how a destination chain is named. Write-once and ungated: the caller
     ///         applies its own authority.
     ///
-    /// @dev THE ROUTE IS THE CHAIN'S ERC-7930 IDENTIFIER, not a provider's private id for it.
-    ///      That is what ERC-7786 removed the need for: a gateway is told the chain by the
-    ///      recipient. It also makes the reverse index correct by construction, since
-    ///      `keccak256(identifier)` IS the chainKey.
-    ///
-    /// @dev Re-writing the SAME route is a no-op, so a replayed configuration transaction is
-    ///      not a failure. A DIFFERENT one reverts.
-    ///
-    /// @dev WRITE-ONCE HAS NO RECOVERY PATH, AND THAT IS THE PROPERTY RATHER THAN A GAP IN
-    ///      IT. A route declared wrong is permanent and the fix is a redeploy. The
-    ///      alternative, a timelocked repoint, is a standing ability to redirect every
-    ///      message to a destination, which is the exact power this refusal exists to deny;
-    ///      a delay makes it observable, not absent. The protocol's guarantees are worth
-    ///      what the smallest set of things that can change them is worth, so values that
-    ///      decide where a payload lands do not change.
+    /// @dev The route is the chain's ERC-7930 identifier, so `keccak256(route)` is the
+    ///      chainKey and the reverse index is correct by construction. Re-writing the same
+    ///      route is a no-op; a different one reverts. There is no repoint path, timelocked or
+    ///      otherwise: a wrong route is fixed by redeploying.
     function _setRoute(bytes32 chainKey, bytes memory route) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (route.length == 0) revert ZeroRoute();
@@ -121,14 +87,10 @@ abstract contract OutboundBase is Roles {
     }
 
     /// @notice Record this contract's counterpart on a chain. Ungated: the caller applies its
-    ///         own authority.
-    ///
-    /// @dev REBINDABLE, UNLIKE A ROUTE, AND THE ASYMMETRY IS DELIBERATE. A route names the
-    ///      chain every message to that destination is addressed by, so re-pointing one
-    ///      redirects the lot. A counterpart names one address on a chain already fixed, and
-    ///      the case that needs correcting is real: on a chain whose addresses this one
-    ///      cannot recompute, the value is learned after the fact and a first guess may be
-    ///      wrong. Whoever wraps this decides whether to allow the second write.
+    ///         own authority and decides whether a second write is allowed.
+    /// @dev Rebindable here, unlike a route: a counterpart names one address on an
+    ///      already-fixed chain, and on a chain this one cannot recompute it is learned after
+    ///      the fact.
     function _setCounterpart(bytes32 chainKey, bytes memory counterpart) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (counterpart.length == 0) revert ZeroCounterpart();
@@ -137,15 +99,13 @@ abstract contract OutboundBase is Roles {
         emit CounterpartSet(chainKey, counterpart);
     }
 
-    /// @notice The chain a route refers to. The inbound direction, resolved once, at the edge.
+    /// @notice The chain a route refers to.
     function chainKeyOfRoute(bytes memory route) public view returns (bytes32 chainKey) {
         chainKey = _chainKeyOfRoute[keccak256(route)];
         if (chainKey == bytes32(0)) revert UnknownRoute();
     }
 
-    /// @notice How a chain is named here. Reverts when unset, because an unconfigured id and
-    ///         an id of zero are different states and a send that confused them would go into
-    ///         the void.
+    /// @notice How a chain is named here. Reverts when unset.
     function routeFor(bytes32 chainKey) public view returns (bytes memory route) {
         route = _routes[chainKey];
         if (route.length == 0) revert NoRouteFor(chainKey);
@@ -159,19 +119,16 @@ abstract contract OutboundBase is Roles {
         return _counterparts[chainKey].length != 0;
     }
 
-    /// @notice THE SEAM, one half: how the chain itself is named.
-    /// @dev The default answers from the table above. A spoke overrides it, because its one
-    ///      destination is fixed at initialization and every other key must revert.
+    /// @notice How the chain itself is named.
+    /// @dev A spoke overrides it: its one destination is fixed at initialization and every
+    ///      other key reverts.
     function _routeTo(bytes32 chainKey) internal view virtual returns (bytes memory) {
         return routeFor(chainKey);
     }
 
-    /// @notice THE SEAM, other half: where the counterpart lives.
-    ///
-    /// @dev The default answers from the table above, which is what a transmitter and a spoke
-    ///      use. A HUB overrides it to read the registry instead, because it holds N claims
-    ///      about remote code and each carries a provenance grade that a stored address could
-    ///      not express; see `HubTransceiverBase`.
+    /// @notice Where the counterpart lives.
+    /// @dev A hub overrides it to apply the registry's provenance bar, and to answer its own
+    ///      address on a `Derived` chain with no counterpart recorded; see `HubTransceiverBase`.
     function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory counterpart) {
         counterpart = _counterparts[chainKey];
         if (counterpart.length == 0) revert NoCounterpartFor(chainKey);
@@ -187,26 +144,17 @@ abstract contract OutboundBase is Roles {
         return _routeTo(chainKey);
     }
 
-    /// @notice Revert unless this contract can reach `chainKey`: a counterpart it trusts, and
-    ///         a route to address it by.
-    ///
-    /// @dev IT IS CALLED FOR THE REVERT, AND THE NAME SAYS SO. Both lookups throw away their
-    ///      values; what matters is that `_counterpartOn` refuses an unknown or under-graded
-    ///      counterpart and `_routeTo` refuses an unconfigured destination. A function
-    ///      returning values nobody reads invites someone to remove the "unused" call and
-    ///      take the check with it.
+    /// @notice Revert unless this contract has both a counterpart it trusts and a route on
+    ///         `chainKey`.
+    /// @dev Called for its reverts; both lookups' values are discarded.
     function _requireRoutable(bytes32 chainKey) internal view {
         _counterpartOn(chainKey);
         _routeTo(chainKey);
     }
 
-    /// @notice The counterpart on `chainKey`, as a binary interoperable address.
-    ///
-    /// @dev IT IS THE TWO HALVES OF `_requireRoutable`, JOINED. The route holds the chain and
-    ///      `_counterpartOn` holds the address, which is exactly the pair ERC-7930 encodes
-    ///      and exactly what an ERC-7786 gateway takes as a recipient. Building it here means
-    ///      both lookups happen on the send path, so whatever bar each side applies is
-    ///      enforced by construction rather than by a separate call somebody could drop.
+    /// @notice The counterpart on `chainKey`, as the ERC-7930 address an ERC-7786 gateway
+    ///         takes as a recipient.
+    /// @dev Runs both lookups, so building a recipient enforces whatever bar each applies.
     function _recipientOn(bytes32 chainKey) internal view returns (bytes memory) {
         Erc7930.Interop memory io = Erc7930.parseStrict(_routeTo(chainKey));
         return Erc7930.encode(io.chainType, io.chainRef, _counterpartOn(chainKey));
@@ -215,80 +163,42 @@ abstract contract OutboundBase is Roles {
     /* ================================== sending ================================ */
 
     /// @notice Where a provider's excess fee goes back to: whoever paid it.
-    ///
-    /// @dev `msg.sender` RESOLVES CORRECTLY ON BOTH PATHS with nothing threaded through the
-    ///      call stack. On path A `sendMessage` is owner-gated, so it is the wallet that
-    ///      signed and funded the message. On path B `bootstrap` refuses any caller that is
-    ///      not `predictCrossAccount(owner, salt)`, so it is the ACCOUNT. A shared
-    ///      transceiver cannot be its own refund target, because it is never the caller of
-    ///      its own `bootstrap`, and refunding to `address(this)` would pool every user's
-    ///      excess into infrastructure with no per-user way out.
-    ///
-    /// @dev A FUNCTION RATHER THAN AN INLINE `msg.sender`, so every binding gets one answer
-    ///      and changing the policy is one edit. Both halves of an account declare `receive`
-    ///      to accept the transfer; without it the refund reverts the send that earned it.
+    /// @dev `msg.sender` is the payer on both paths: `sendMessage` is owner-gated, and
+    ///      `bootstrap` refuses any caller but the account. Never `address(this)`, which on a
+    ///      shared transceiver would pool every user's excess. Both halves of an account
+    ///      declare `receive`, or the refund would revert the send.
     function _refundTo() internal view returns (address) {
         return msg.sender;
     }
 
-    /// @notice Put the payload on the wire. Implemented per protocol, with no default: a
-    ///         concrete contract that forgets it does not compile.
+    /// @notice Put the payload on the wire. No default, so a binding that omits it does not
+    ///         compile.
     ///
-    /// @dev ONE PRIMITIVE FOR EVERY CHANNEL: a payload to an account, a bootstrap to a spoke
-    ///      transceiver, and a receiver report home are all `bytes` to an interoperable
-    ///      address. Three signatures would be three places to get authentication or fee
-    ///      handling subtly different, and a `bytes32` could express none of them.
+    /// @dev One primitive for every channel: a payload to an account, a bootstrap to a spoke,
+    ///      and a receiver report home are all `bytes` to an ERC-7930 address.
     ///
-    /// @dev IT IS TOLD HOW MUCH IT MAY SPEND, AND MUST NOT READ `msg.value`. Those were the
-    ///      same number until the hub began taking a bootstrap fee off the top, and they are
-    ///      not the same on a nested send at all, where `msg.value` is zero and the payment
-    ///      comes from the contract's balance. A binding reading `msg.value` would overpay a
-    ///      provider by the fee, or refund the fee to the sender, or send nothing.
+    /// @dev Spend `value`, never `msg.value`. They differ when the hub takes a bootstrap fee
+    ///      and on a nested send, where `msg.value` is zero and the balance pays.
     ///
-    ///      This is the one argument `OutboundBase` widens the primitive for, and the test
-    ///      it passes that a refund address did not: the callee CANNOT read the right value
-    ///      off the stack. Refusing the parameter would mean a rule every binding has to
-    ///      remember instead of one the compiler states.
-    ///
-    /// @param attributes Selector-prefixed values the gateway understands, and a gateway MUST
-    ///        refuse one it does not (see `supportsAttribute`). Per send rather than
-    ///        configuration because destination gas is a property of the payload, so a stored
-    ///        default would strand the first message that needed more.
-    /// @return sendId The gateway's, and NOT always "done". ERC-7786 says a non-zero id means
-    ///         further unstandardised action is required, so a binding MUST NOT discard one
-    ///         silently: it either handles the second step or refuses such gateways, in
-    ///         NatSpec.
+    /// @param attributes Selector-prefixed values the gateway understands; it must refuse one
+    ///        it does not (see `supportsAttribute`).
+    /// @return sendId The gateway's. Under ERC-7786 a non-zero id means further action is
+    ///         required, so a binding either handles that step or refuses such gateways.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         virtual
         returns (bytes32 sendId);
 
-    /// @notice What `_sendMessage` would cost, in THIS chain's native currency.
+    /// @notice What `_sendMessage` would cost, in this chain's native currency.
     ///
-    /// @dev DECLARED NEXT TO ITS TWIN BECAUSE THE TWO ARE ONE OBLIGATION, and ERC-7786
-    ///      defines no quote, so this is the protocol's own. A binding that implements the
-    ///      send and forgets the quote leaves every caller guessing at a `msg.value` nobody
-    ///      can derive off-chain: the fee is a function of the payload's exact bytes, the
-    ///      destination gas, and the provider's price feed at that block. Adjacent
-    ///      declarations make the omission visible on sight.
+    /// @dev ERC-7786 defines no quote. It is `view` so it can be `eth_call`ed before the send,
+    ///      and takes the built `payload` and the send's arguments, since providers price the
+    ///      exact bytes. A provider that also takes its own token is quoted on the native path.
     ///
-    /// @dev `view`, WHICH IS THE WHOLE POINT. A quote is only ever an `eth_call` in the block
-    ///      before the send, so a mutable one is not a quote. Every provider in scope answers
-    ///      as a view: LayerZero's `endpoint.quote`, Hyperlane's `quoteDispatch`, CCIP's
-    ///      `getFee`.
-    ///
-    /// @dev IT TAKES THE BUILT `payload`, NOT THE CALL ARRAY, because every provider prices
-    ///      per byte and an estimate of the length would be a number to pad rather than a
-    ///      number to send. Its arguments are `sendMessage`'s exactly, minus the value: the
-    ///      one thing it must not do is price a different message than the one that goes out.
-    ///
-    /// @dev NOTHING CONSULTS IT ON THE SEND PATH. Quoting inside a send would double the
-    ///      provider round trip and turn a price that moved into a revert, when the
-    ///      provider's refund already handles it. The quote is advisory.
-    ///
-    /// @dev NATIVE CURRENCY AND NOTHING ELSE. Where a provider also takes its own token, the
-    ///      binding quotes the native path: signers fund one currency on one chain, which is
-    ///      the property the whole protocol is arranged around.
+    /// @dev Advisory: nothing on the send path consults it, and a fee that moves between quote
+    ///      and send is not absorbed. LayerZero reverts an underpayment, CCIP keeps an
+    ///      overpayment, and Hyperlane refunds one only through hooks that do (`docs/todo.md`
+    ///      §3).
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
@@ -297,23 +207,9 @@ abstract contract OutboundBase is Roles {
 
     /// @notice What sending `payload` to `recipient` would cost, in this chain's native
     ///         currency.
-    ///
-    /// @dev IT IS HERE RATHER THAN ON THE ACCOUNT BECAUSE EVERY SENDER NEEDS IT, and a spoke
-    ///      needs it most. Its receiver report is sent from inside a delivery callback where
-    ///      `msg.value` is zero, so it pays from its own balance. Anyone who has to fund that
-    ///      balance, or who is about to finalize a deferred bootstrap that ends in one, has
-    ///      to be able to price it first. Leaving the surface on `TransmitterBase` meant the
-    ///      one contract that cannot ask for value at call time was also the one that could
-    ///      not be asked what it needed.
-    ///
-    /// @dev UNGATED, DELIBERATELY. It spends nothing, writes nothing, and reveals nothing an
-    ///      observer could not compute. `TransmitterBase` overrides it to carry the same
-    ///      checks its send does. There, a quote that succeeded for a message the send would
-    ///      refuse reports the operation ready when it is not.
-    ///
-    /// @dev ERC-7786 DEFINES NO QUOTE, so this is the protocol's own addition alongside it. A
-    ///      gateway that cannot answer implements `_quoteMessage` as a `QuoteNotImplemented`
-    ///      revert, with the off-chain measurement documented in its place.
+    /// @dev On every sender, not only accounts: a spoke's receiver report is paid from its
+    ///      balance, which someone has to price in order to fund. Ungated, since it spends and
+    ///      writes nothing; `TransmitterBase` overrides it to apply its send's checks.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         external
         view

@@ -5,9 +5,8 @@ import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-/// @notice The one call an `CrossProxy` accepts from its deployer. Declared separately
-///         so callers have a typed interface and a selector to compute, without the proxy
-///         declaring a function that would shadow the implementation's ABI.
+/// @notice The one call a `CrossProxy` accepts from its deployer. Declared separately so
+///         callers have a selector without the proxy shadowing the implementation's ABI.
 interface ICrossProxy {
     function upgradeInitializeAndLock(address implementation, bytes calldata data) external;
 }
@@ -15,32 +14,21 @@ interface ICrossProxy {
 /// @title CrossProxy
 /// @notice The proxy every crossecute account is deployed as: transmitter and receiver alike.
 ///
-/// @dev IT TAKES NO CONSTRUCTOR ARGUMENTS, AND THAT IS THE ENTIRE POINT. CREATE2 hashes the
-///      initcode, so anything written into it changes the address. With no arguments the
-///      initcode is one constant byte string. A transmitter deployed by the hub and a
-///      receiver deployed by a spoke (same deployer, same salt, same initcode) therefore
-///      land on ONE address, and diverge only in what they are upgraded to, which the
-///      derivation never sees. A minimal clone could not do this: EIP-1167 embeds the
-///      implementation address in its initcode, so the two could never share an address.
+/// @dev No constructor arguments, so its initcode is one constant and a transmitter (from the
+///      hub) and a receiver (from a spoke) at the same deployer address and salt land on one
+///      address. An EIP-1167 clone embeds its implementation in the initcode and could not.
 ///
-/// @dev THERE IS NO WAY TO UPGRADE WITHOUT LOCKING. The single admin operation upgrades,
-///      runs the initializer, and zeroes the admin, in that order and in one call. Not "the
-///      deployer is expected to lock afterwards": there is no reachable state in which an
-///      account has a live upgrade key and a real implementation at once. That is what makes
-///      an upgradeable full-power account acceptable.
+/// @dev The single admin operation upgrades, initializes, and zeroes the admin in one call, so
+///      no account ever has a live upgrade key and real logic at once.
 ///
-/// @dev DISPATCH IS TRANSPARENT-STYLE, WHICH MATTERS AFTER THE LOCK. The admin operation is
-///      routed inside `fallback` rather than declared, because a declared function would
-///      shadow that selector on the implementation forever. Once the admin is zeroed no
-///      caller can match it, so every selector delegates and this is indistinguishable from
-///      a plain ERC-1967 proxy.
+/// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
+///      Once the admin is zeroed every call delegates, as in a plain ERC-1967 proxy.
 contract CrossProxy is Proxy {
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
 
-    /// @dev The deployer is the admin. Set in storage rather than taken as an argument,
-    ///      so it never reaches the initcode.
+    /// @dev The deployer is the admin, set in storage so it never reaches the initcode.
     constructor() {
         ERC1967Utils.changeAdmin(msg.sender);
     }
@@ -66,9 +54,7 @@ contract CrossProxy is Proxy {
 
         ERC1967Utils.upgradeToAndCall(implementation, data);
 
-        // The slot is written directly because `ERC1967Utils.changeAdmin` refuses the
-        // zero address: it assumes an admin is being handed over rather than retired.
-        // Retiring it is exactly what this does, and there is no other way to say so.
+        // Written directly: `ERC1967Utils.changeAdmin` refuses the zero address.
         StorageSlot.getAddressSlot(ERC1967Utils.ADMIN_SLOT).value = address(0);
         emit Locked(implementation);
     }

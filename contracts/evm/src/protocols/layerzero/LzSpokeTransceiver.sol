@@ -8,27 +8,23 @@ import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 
 /// @notice LayerZero wiring shared by every spoke variant (this file's, and the zkSync/Tron
 ///         ones in `LzDivergentSpokeTransceiver.sol`), which differ only in address derivation.
 /// @dev Both halves of OApp: sends the receiver report home (diverging spokes) and receives
 ///      every bootstrap.
-abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
+abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePeer {
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
 
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint32 public homeEid;
 
-    /// @dev Zero is LayerZero's unset sentinel (`ProviderChainId`'s convention, mirrored here
-    ///      since a spoke's single eid bypasses that mixin entirely).
-    error ZeroHomeEid();
     /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
     ///      silently truncate or pad into the wrong peer.
     error InvalidHomeTransceiverLength();
 
-    /// @param homeEid_ LayerZero's id for the home chain. Written directly to OApp peer
-    ///        storage here (not via `setPeer`, which is `onlyOwner` — this contract has no
-    ///        `Ownable`), since this initializer is the only window it ever gets.
+    /// @param homeEid_ LayerZero's id for the home chain, whose peer is the hub.
     function __LzSpoke_init(
         address[] calldata gateways,
         address receiverImplementation_,
@@ -38,13 +34,10 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable {
         bool addressesDiverge_,
         uint32 homeEid_
     ) internal onlyInitializing {
-        if (homeEid_ == 0) revert ZeroHomeEid();
         if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         homeEid = homeEid_;
         __OApp_init(address(this)); // delegate = self, R6.4
-        bytes32 peer = bytes32(uint256(uint160(address(bytes20(homeTransceiver_)))));
-        _getOAppCoreStorage().peers[homeEid_] = peer;
-        emit PeerSet(homeEid_, peer);
+        _initHomePeer(homeEid_, address(bytes20(homeTransceiver_)));
         __SpokeTransceiverBase_init(
             gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
         );

@@ -24,7 +24,7 @@ contract Hub is UnsendableHub {
         __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
     }
 
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -113,7 +113,7 @@ contract UniformDerivationTest is Test {
     }
 
     /// @dev The inputs were written in an earlier transaction, so the signers approving
-    ///      THIS one must name them or they are approving a pointer.
+    ///      This one must name them or they are approving a pointer.
     function test_resolveCounterpart_revertsOnStaleParamsCommitment() public {
         bytes memory params = abi.encode(VmDeriver.Scheme.EvmCreate3, abi.encode(address(0xBEEF), bytes32(uint256(1))));
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(1), params, keccak256("eth.tx"));

@@ -89,8 +89,8 @@ contract ProviderChainIdTest is Test {
         table.chainKeyOfProvider(30184);
     }
 
-    /// @dev The three real widths this mixin has to hold without narrowing: LayerZero's
-    ///      uint32 eid, CCIP's uint64 selector, Hyperlane's uint32 domain.
+    /// @dev The widest provider ids this mixin holds without narrowing: uint32 (LayerZero's
+    ///      eid, Hyperlane's domain) and uint64 (CCIP's selector). Wormhole's uint16 fits both.
     function test_holdsEveryProviderWidthWithoutNarrowing() public {
         table.setProviderId(BASE_KEY, uint256(type(uint32).max));
         assertEq(table.providerIdFor(BASE_KEY), uint256(type(uint32).max));

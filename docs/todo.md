@@ -12,6 +12,16 @@ this file is the gap between that design and the tree.
 
 ## 1. Blockers on specific paths
 
+- **A receiver on zkSync or Tron authenticates the wrong transmitter address** ([#13](https://github.com/crossecute/protocol/issues/13)). The spoke
+  arms each receiver with `sourceTransmitter = predictCrossAccount(owner, salt)`
+  (`SpokeTransceiverBase._accountInitializer`, and `LzSpokeBase`'s override). On a
+  divergent spoke that is the chain's own formula over the spoke's address, which is the
+  receiver's own address, not the home transmitter's Ethereum CREATE2 address. So every
+  path-A message from the home transmitter would fail `_authenticateSender` there. Found
+  by reading, not by a test: Forge cannot run the divergent formulas, and account creation
+  on a divergent spoke fails closed in this suite. The likely fix is to derive the
+  transmitter from `homeTransceiver()` with Ethereum's formula, with a test that sets a
+  divergent spoke's prediction apart from its deployment.
 - **Funding a diverging spoke, and getting the money there.** The report fires from inside
   the destination's inbound callback, where `msg.value` is zero, so it is paid from the
   spoke's own balance and a dry one reverts the bootstrap with it. That revert is deliberate
@@ -146,7 +156,8 @@ mainnet.
   CREATE2 parity story depends on). Not worth the dependency migration.
 
 - **A LayerZero receiver's or spoke's peer has no setter.** OApp's `setPeer` is `onlyOwner`
-  and these contracts have no `Ownable`, so the peer is written once in the initializer. It
+  and these contracts never initialize an owner, so `LzHomePeer` writes the peer once in the
+  initializer. It
   fell out of that fix rather than being chosen: confirm it is wanted, rather than an
   owner-gated repoint on the account side, before mainnet.
 - **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000
@@ -164,8 +175,12 @@ mainnet.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
-- **Registry `slot` namespacing.** Raw `transceiverId`, so two callers choosing the same
-  bytes32 collide; only the monotonic provenance rule limits the damage.
+- **Removing a chain does not clear its declared provenance** ([#14](https://github.com/crossecute/protocol/issues/14)). `ChainRegistry.removeChainKey`
+  deletes the identifier but not `provenanceOf`, and `provenanceFor` returns a declared
+  grade before it looks at the identifier. So a removed chain that had been declared keeps
+  its grade, and a hub that already recorded its counterpart keeps sending there; only an
+  undeclared chain fails closed. Either clear `provenanceOf` on removal or check membership
+  in `provenanceFor`.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 - **What else a self-call may reach.** Today `commit` / `cancel` / `finalize` / `execute`.
@@ -184,7 +199,7 @@ mainnet.
   load-bearing rather than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
   `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
   fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
-  being wrong is a redeploy rather than a loss. See §1. zkSync Era's override
+  being wrong is a redeploy rather than a loss. zkSync Era's override
   (`ZkSyncSpokeTransceiver`) is unverified the same way and needs the same one-account check.
 - **The home chain is a deployment parameter**, not Ethereum. `SpokeTransceiverBase`
   takes its home chainKey, the provider's route to it, and the hub's address as
@@ -197,9 +212,9 @@ mainnet.
 - **Merkle-verified calls** as an opt-in policy, replacing the `(target, selector)`
   predicate. `isAllowed` defaults open, so this is an owner's restriction rather than a
   safety baseline.
-- **A fourth provider, NEAR Intents / Chain Signatures, is not ruled out but needs its own
-  research pass before it belongs anywhere near the other three.** Explored informally, not
-  source-verified the way §4/§5 of [`provider-research.md`](provider-research.md) are.
+- **Another provider, NEAR Intents / Chain Signatures, is not ruled out but needs its own
+  research pass before it belongs beside the five.** Explored informally, not
+  source-verified the way §4 to §8 of [`provider-research.md`](provider-research.md) are.
 
   NEAR Intents itself (the `defuse`/Verifier contract plus its PoA token bridge, in
   `near/intents`) is a swap-settlement ledger, not a message-passing transport: no
@@ -216,19 +231,18 @@ mainnet.
   since a Chain-Signatures transaction is broadcast directly by whoever holds the signature
   and is indistinguishable on the destination chain from any other EOA's transaction.
   Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derived address
-  as "the account" at all — an architecture question upstream of "add a fourth binding," not
-  a peer of the LayerZero/CCIP/Hyperlane comparison.
+  as "the account" at all — an architecture question upstream of "add a binding," not a peer
+  of the five in `provider-research.md`.
 
-  **Explicitly not required for, and must not block, the three-provider MVP.** Recorded here
+  **Not required by, and must not block, the five bindings that exist.** Recorded here
   so it isn't rediscovered under time pressure. The next step, if ever pursued, is
   source-verified research matching the existing provider-research.md format — of `v1.signer`
   and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
   application layer built on top of it.
 
 - **Sending should not make a signer responsible for pricing its own message, and this needs
-  solving before mainnet even though it does not block the provider-bindings PR.** Found
-  while wiring the three bindings: the identical mistake (quote now, send later, the fee
-  moved) fails three different ways. LayerZero's stock `_payNative` requires
+  solving before mainnet.** Found while wiring the bindings: the identical mistake (quote
+  now, send later, the fee moved) fails differently on each provider. LayerZero's stock `_payNative` requires
   `msg.value == nativeFee` EXACTLY and reverts `NotEnoughNative` on any drift, either
   direction; the bindings override it to spend `value`, and the endpoint still reverts an
   underpayment. CCIP's own NatSpec says an overpayment is accepted with no refund, so padding
@@ -236,8 +250,8 @@ mainnet.
   `requiredHook` what it asks and forwards the rest of `msg.value` to the post-dispatch
   hook; the IGP and ProtocolFee hooks refund their overpayment to `metadata.refundAddress`
   (which the binding sets to `_refundTo()` in `HyperlaneMessage.hookMetadata`), but any other hook the Mailbox owner
-  configures may keep it. No single on-chain buffer is safe across all three; at least one
-  of them turns "add a margin" into a standing cost. Wormhole's Executor quoter router
+  configures may keep it. No single on-chain buffer is safe across LayerZero, CCIP, and
+  Hyperlane; at least one of them turns "add a margin" into a standing cost. Wormhole's Executor quoter router
   refunds its overpayment to `_refundTo()`, and OP Stack has no fee to pad.
 
   **The direction to build toward: the transmitter prices and funds the send itself, rather
@@ -255,19 +269,9 @@ mainnet.
   fixed and when it is paid — there is no longer a stale number to submit, because nothing
   about the signature commits to one.
 
-  **Pre-production, not pre-PR.** This needs the bindings to exist and their real fee
-  behavior to test against (this todo exists because that testing already found the
-  divergence above), so it belongs after the provider-bindings PR lands, not inside it — but
-  it has to land before mainnet, since it is the difference between a signer bearing gas risk
-  and the protocol bearing it.
-
-  **A stale NatSpec to correct in the same pass.** `OutboundBase._quoteMessage` currently
-  says quoting inside a send is unnecessary because "a price that moved into a revert, when
-  the provider's refund already handles it." That assumption is false for all three
-  providers, per the divergence above: LZ reverts on any mismatch with nothing to refund,
-  CCIP keeps an overpayment outright, and Hyperlane's refund depends on which hook the
-  Mailbox owner has configured. Fix that comment when this lands, so it stops asserting a safety
-  net that does not exist.
+  **Pre-production.** It needed the bindings and their real fee behavior to test against,
+  which is how the divergence above was found. It has to land before mainnet, since it is
+  the difference between a signer bearing gas risk and the protocol bearing it.
 
 ## 4. Infrastructure
 
@@ -301,8 +305,8 @@ mainnet.
   argument stands or falls on that initcode being byte-identical, and nothing pins it. The
   scripts are also where the deployment-time provider decisions get made: the
   [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
-  `accountInitCodeHash` assertion (R8.4), and how many gateways each `Deployment` names, since
-  a transceiver's gateways cannot be added to later.
+  `accountInitCodeHash` assertion (R8.4), and how many gateways each transceiver's
+  initializer names, since a transceiver's gateways cannot be added to later.
 - **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
   says where every line is held). C21's script-side assertion waits on the deploy scripts.
   C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay

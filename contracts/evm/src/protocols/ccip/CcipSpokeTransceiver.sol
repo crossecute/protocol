@@ -32,6 +32,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         bool addressesDiverge_,
         uint64 homeSelector_
     ) internal onlyInitializing {
+        ProviderOrigin.requireHomeSet(homeSelector_);
         grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
@@ -70,7 +71,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
     ///      `_authenticateOrigin` checks it.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
         ProviderOrigin.requireHome(message.sourceChainSelector, homeSelector);
-        _onHomeInbound(abi.decode(message.sender, (address)), message.data);
+        _onHomeInbound(CcipMessage.sender(message), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

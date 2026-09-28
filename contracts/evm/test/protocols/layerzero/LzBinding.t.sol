@@ -24,8 +24,10 @@ import {
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransceiverInboundSpec,
+    ProviderHomeIdSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -253,20 +255,18 @@ contract LzReceiveTest is ProviderWideSenderSpec {
 
 /// @notice The Copilot-flagged gap: a zero eid or a mis-sized `homeTransceiver_` must not
 ///         silently misconfigure the LayerZero peer.
-contract LzInitValidationTest is Test {
+contract LzInitValidationTest is ProviderHomeIdSpec {
     address ENDPOINT = address(new MockLzEndpoint());
 
     function test_receiverRejectsZeroHomeEid() public {
         address impl = address(new LzReceiver(ENDPOINT));
-        vm.expectRevert(LzReceiver.ZeroHomeEid.selector);
+        vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
         new ERC1967Proxy(impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0)));
     }
 
-    function test_spokeRejectsZeroHomeEid() public {
-        address impl = address(new LzSpokeTransceiver(ENDPOINT));
-        vm.expectRevert(LzSpokeBase.ZeroHomeEid.selector);
-        new ERC1967Proxy(
-            impl,
+    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
+        return (
+            address(new LzSpokeTransceiver(ENDPOINT)),
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
                 (
@@ -275,7 +275,7 @@ contract LzInitValidationTest is Test {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(address(0xC0DE)),
-                    uint32(0)
+                    uint32(homeId)
                 )
             )
         );

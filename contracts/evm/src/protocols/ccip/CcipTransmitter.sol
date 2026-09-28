@@ -18,7 +18,7 @@ contract CcipTransmitter is OwnableTransmitter {
         router = router_;
     }
 
-    /// @dev `recipient`'s address half IS used, unlike LayerZero's peer table: CCIP has no
+    /// @dev `recipient`'s address half is used, unlike LayerZero's peer table: CCIP has no
     ///      provider-side peer concept, so `EVM2AnyMessage.receiver` names the destination
     ///      exactly the way `_recipientOn` already resolved it. `feeToken` is always
     ///      `address(0)` (native payment; P8).

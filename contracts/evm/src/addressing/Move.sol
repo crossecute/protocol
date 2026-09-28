@@ -7,34 +7,34 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @title Move
 /// @notice Reference extension for Move chains (Aptos, Movement, Sui).
 ///
-/// @dev WHY THIS EXISTS. Two gaps the ERC-7930 envelope cannot close on its own:
+/// @dev Why this exists. Two gaps the ERC-7930 envelope cannot close on its own:
 ///
-///      1. NO ASSIGNED CHAIN TYPE. As of writing, the CASA namespace registry defines
+///      1. No assigned chain type. As of writing, the casa namespace registry defines
 ///         CAIP-350 profiles for exactly four namespaces: eip155 (0x0000), bip122
 ///         (0x0001), solana (0x0002), starknet (0x0003). `aptos/` and `sui/` have
 ///         CAIP-2 profiles only: no CAIP-10, no CAIP-350. There is therefore no
 ///         standard ChainType and no standard address serialization for Move chains.
-///         The values below are PROVISIONAL. See the migration note.
+///         The values below are provisional. See the migration note.
 ///
-///      2. A MOVE MODULE HAS NO ADDRESS. A transceiver on Aptos is
+///      2. A Move module has no address. A transceiver on Aptos is
 ///         `account_address::module_name`; on Sui it is a function in a package.
 ///         The 32-byte account or package ID fits the envelope's Address field, but
 ///         the qualified name does not, and no amount of length-prefixing changes
 ///         that: it is a different kind of thing, not a longer address.
 ///
-/// @dev DESIGN: SEPARATION OF ADDRESS AND QUALIFICATION.
-///      The 7930 Address field carries ONLY the 32-byte account/package ID, which is
+/// @dev Design: separation of address and qualification.
+///      The 7930 Address field carries only the 32-byte account/package ID, which is
 ///      almost certainly what a future CAIP-350 profile will specify. Everything else
 /// (module name, function name, type arguments, Sui package lineage) lives in
-///      a MoveQualifier attached alongside. When CASA assigns real chain types, only
+///      a MoveQualifier attached alongside. When casa assigns real chain types, only
 ///      the ChainType constants change; the qualifier structure is untouched.
 ///
-/// @dev MIGRATION. Registry keys are `keccak256(envelope)`, and the envelope contains
-///      the ChainType. If CASA assigns Aptos or Sui a value different from the
-///      provisional ones here, EVERY id for those chains changes. That is a
+/// @dev Migration. Registry keys are `keccak256(envelope)`, and the envelope contains
+///      the ChainType. If casa assigns Aptos or Sui a value different from the
+///      provisional ones here, every id for those chains changes. That is a
 ///      re-keying migration across the registry, not a config edit. Provisional types
 ///      are deliberately confined to the 0xFF00..0xFFFF range so `isProvisional` can
-///      flag affected refs, and so a collision with a CASA assignment (which allocates
+///      flag affected refs, and so a collision with a casa assignment (which allocates
 ///      upward from 0x0000) is implausible rather than merely unlikely.
 library Move {
     /* ========================= provisional chain types ======================== */
@@ -46,7 +46,7 @@ library Move {
     /// @dev Aptos-Move address semantics: 32-byte AccountAddress, SHA3-256 derivation.
     ///      Movement shares this profile and is distinguished by ChainReference, not
     ///      by ChainType: the address format is identical, which is the same basis
-    ///      CASA uses to group networks under one namespace.
+    ///      Casa uses to group networks under one namespace.
     uint16 internal constant CT_PROV_APTOS = ChainType.APTOS;
 
     /// @dev Sui-Move: 32-byte address/ObjectID, BLAKE2b-256 derivation.
@@ -95,13 +95,13 @@ library Move {
         /// BCS-serialized `Vec<TypeTag>`. Empty if the entry takes no type arguments.
         /// Opaque here: serialize off-chain; do not build BCS in Solidity.
         bytes typeArgs;
-        /// SUI ONLY. A package upgrade mints a NEW package ID, but types retain the
-        /// ORIGINAL package ID in their StructTag while calls target the latest. A
+        /// Sui only. A package upgrade mints a new package ID, but types retain the
+        /// Original package ID in their StructTag while calls target the latest. A
         /// single id would silently mean the wrong thing after the first upgrade, so
-        /// the envelope address holds the CALL target (latest) and this holds type
+        /// the envelope address holds the call target (latest) and this holds type
         /// identity (original). Zero when not applicable.
         bytes32 originalPackageId;
-        /// SUI ONLY. A shared-object reference is `(ObjectID, initial_shared_version)`;
+        /// Sui only. A shared-object reference is `(ObjectID, initial_shared_version)`;
         /// the ID alone is not enough to construct a call. Zero if not shared.
         uint64 initialSharedVersion;
     }

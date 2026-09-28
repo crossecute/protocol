@@ -13,6 +13,13 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 library CcipMessage {
     bytes4 internal constant EXTRA_ARGS_ATTRIBUTE = bytes4(keccak256("crossecute.ccip.extraArgs"));
 
+    /// @notice The EVM sender of a delivered message.
+    /// @dev `abi.decode` reverts on a word with bits above the low 20 bytes set, so a wider
+    ///      sender is refused rather than truncated (C10).
+    function sender(Client.Any2EVMMessage calldata message) internal pure returns (address) {
+        return abi.decode(message.sender, (address));
+    }
+
     function send(
         address router,
         uint64 selector,

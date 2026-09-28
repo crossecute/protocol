@@ -177,7 +177,7 @@ chain, so no channel names a destination separately from its message.
 **Both transceiver channels name the owner and salt rather than an address.** The hub is
 shared by every owner, so nothing the bridge reports says who authorized the message. The
 pair rather than the address, because the address is a derivation of it. That is also what
-lets the hub key the receiver slot without a request id.
+lets the hub find the reporting account without a request id.
 
 A call is `(address target, uint256 value, bytes data)`: the tuple ERC-7579 and ERC-7821
 use, so payload-building tooling that already speaks those formats works without custom

@@ -35,7 +35,7 @@ contract DestinationNamingTest is Test {
 
     /// @dev The route slot holds a chain's ERC-7930 identifier now, not a provider's id
     ///      for it: an ERC-7786 recipient names its own chain, so there is nothing left to
-    ///      translate. `keccak256(BASE_ROUTE)` IS `baseKey`, by definition.
+    ///      translate. `keccak256(BASE_ROUTE)` is `baseKey`, by definition.
     bytes BASE_ROUTE = Erc7930.encodeEvmChain(8453);
     bytes ARB_ROUTE = Erc7930.encodeEvmChain(42161);
 
@@ -84,7 +84,7 @@ contract DestinationNamingTest is Test {
 
     /* ============================ the chainKey itself =========================== */
 
-    /// @dev THE POINT OF THE WHOLE DESIGN. Both ends of a message derive the same key
+    /// @dev The point of the whole design. Both ends of a message derive the same key
     ///      from values they already have (a chain id in the signed payload on one side,
     ///      `block.chainid` on the other), so neither stores a chainKey anywhere.
     function test_chainKeyNeedsNoStorageOnEitherSide() public {
@@ -98,24 +98,24 @@ contract DestinationNamingTest is Test {
     }
 
     /// @dev An account envelope reduces to its chain, so every address on a chain yields
-    ///      one key and `submitTo` accepts either form.
+    ///      one key and `ChainKey.fromIdentifier` accepts either form.
     function test_chainKeyIsStableAcrossAddressesOnAChain() public pure {
         bytes memory acct = Erc7930.encodeEvm(8453, address(0xBEEF));
         assertEq(ChainKey.fromIdentifier(acct), ChainKey.forEvm(8453));
     }
 
-    /// @dev THE LOAD-BEARING LITERAL. `homeChainKey` is hardcoded rather than computed
+    /// @dev The load-bearing literal. `homeChainKey` is hardcoded rather than computed
     ///      so the spoke's initcode is byte-identical on every chain: CREATE2 parity
     ///      depends on that. This is the check that keeps the literal honest; if it ever
     ///      fails, every spoke is pointed at a chain that does not exist.
-    /// @dev THIS deployment anchors on Ethereum, which is a fact about the initializer
+    /// @dev This deployment anchors on Ethereum, which is a fact about the initializer
     ///      arguments above and not about the protocol. See the next test.
     function test_thisDeploymentIsAnchoredOnEthereum() public view {
         assertEq(spoke.homeChainKey(), ChainKey.forEvm(1));
         assertEq(spoke.homeRoute(), Erc7930.encodeEvmChain(1));
     }
 
-    /// @dev THE HOME CHAIN IS A PARAMETER, NOT ETHEREUM. Ethereum is the expected anchor,
+    /// @dev The home chain is a parameter, not Ethereum. Ethereum is the expected anchor,
     ///      but nothing in the protocol requires it: a team can centralize on whichever
     ///      chain they are willing to anchor to, and every spoke simply names that one
     ///      instead. The spoke is exactly as rigid either way (three write-once values,
@@ -208,7 +208,7 @@ contract DestinationNamingTest is Test {
         hub.routeTo(key);
     }
 
-    /// @dev REMOVING A CHAIN FAILS ITS HUB CLOSED RATHER THAN ORPHANING IT. The registry no
+    /// @dev Removing a chain fails its hub closed rather than orphaning it. The registry no
     ///      longer holds counterparts, so it cannot refuse on their behalf; what it can do is
     ///      stop grading the chain, and `provenanceFor` then reverts `UnknownChainKey`, which
     ///      no bar accepts. The hub keeps its stored address and simply will not send.
@@ -245,7 +245,7 @@ contract DestinationNamingTest is Test {
         hub.setRoute(baseKey, ARB_ROUTE);
     }
 
-    /// @dev A route is WRITE-ONCE. Re-pointing one would redirect every message to that
+    /// @dev A route is write-once. Re-pointing one would redirect every message to that
     ///      destination at once, which is a redeploy rather than a config edit.
     function test_aRouteCannotBeRepointed() public {
         bytes32 baseKey = _wireBase();
@@ -257,7 +257,7 @@ contract DestinationNamingTest is Test {
         assertEq(hub.routeTo(baseKey), BASE_ROUTE, "unchanged");
     }
 
-    /// @dev THE ROUTE LIVES WHERE THE SENDING HAPPENS. A registry read would put a second
+    /// @dev The route lives where the sending happens. A registry read would put a second
     ///      shared contract in the path of every send, and a compromised one could
     ///      misroute a payload, which on the execute-on-arrival path means it runs on the
     ///      wrong chain, with no commitment binding the destination.
@@ -294,7 +294,7 @@ contract DestinationNamingTest is Test {
         spoke.routeTo(solKey);
     }
 
-    /// @dev THERE IS NO WINDOW, NOT MERELY A CLOSABLE ONE. A setter plus a lock would
+    /// @dev There is no window, not merely a closable one. A setter plus a lock would
     ///      leave a period in which the admin could repoint the one address the spoke
     ///      authenticates every inbound message against. The counterpart is an initializer
     ///      argument with no setter, so there is no reachable state in which it is set and
@@ -341,7 +341,7 @@ contract DestinationNamingTest is Test {
 
     /// @dev Fixed-width encoding, so a value configured at the wrong width fails in
     ///      `decode` rather than being silently reinterpreted as another chain.
-    /// @dev A ROUTE THAT IS NOT A CANONICAL CHAIN IDENTIFIER CANNOT BE USED. The old test
+    /// @dev A route that is not a canonical chain identifier cannot be used. The old test
     ///      here checked that a mistyped endpoint id failed in `abi.decode`; there is no
     ///      endpoint id any more, and the equivalent mistake is a route that does not parse
     ///      as ERC-7930. It is caught when a recipient is built from it rather than at
@@ -366,7 +366,7 @@ contract DestinationNamingTest is Test {
         return ChainKey.fromIdentifier(route);
     }
 
-    /// @dev `keccak256(identifier) == chainKey` is the DEFINITION of a chainKey, which is
+    /// @dev `keccak256(identifier) == chainKey` is the definition of a chainKey, which is
     ///      what lets the route slot hold an identifier and the reverse index be correct
     ///      without being maintained.
     function testFuzz_aChainIdentifierRoundTripsToItsKey(uint256 chainId) public pure {

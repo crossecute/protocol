@@ -30,7 +30,7 @@ contract Sink {
 /// @dev A receiver with an open policy, so these tests are about encoding rather than
 ///      about `isAllowed`.
 contract OpenReceiver is ReceiverBase {
-    /// @dev A HARNESS TRUSTS ANY GATEWAY, which no deployment may do. Overriding the
+    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
     ///      membership read rather than granting a role keeps each test on its own subject.
     function hasRole(bytes32 role, address account) public view override returns (bool) {
         return role == GATEWAY_ROLE || super.hasRole(role, account);
@@ -78,7 +78,7 @@ contract PayloadEncodingTest is Test {
 
     /* =============================== the equivalence ============================ */
 
-    /// THE PROPERTY EVERYTHING ELSE RESTS ON. An EVM destination receives `Call[]` and a
+    /// The property everything else rests on. An EVM destination receives `Call[]` and a
     /// non-EVM one receives opaque `bytes[]`, so the same logical payload is serialized two
     /// different ways depending on where it is going, and it must approve to one hash
     /// either way. If these diverge, a payload approved off-chain in the portable form
@@ -129,7 +129,7 @@ contract PayloadEncodingTest is Test {
     /* ============================ the struct-encoding trap ====================== */
 
     /// `abi.encode(struct)` prepends an offset word, because a struct with a dynamic
-    /// member encodes as a dynamic tuple. Encoding the STRUCT rather than the FIELDS is
+    /// member encodes as a dynamic tuple. Encoding the struct rather than the fields is
     /// the mistake that breaks the equivalence above, and it is invisible by inspection.
     function test_encodingTheStructIsNotEncodingTheFields() public pure {
         Call memory c = Call({target: address(0xBEEF), value: 1, data: hex"deadbeef"});
@@ -174,7 +174,7 @@ contract PayloadEncodingTest is Test {
         }
     }
 
-    /// THERE IS NO TAG, AND NOTHING NEEDS ONE. The form is a property of the destination:
+    /// There is no tag, and nothing needs one. The form is a property of the destination:
     /// an EVM chain always gets `Call[]`, everything else always gets `bytes[]`. Both
     /// sides know which before a byte is written, so a field saying so would carry a value
     /// each already holds: the same reason `Envelope` has no message-type field.
@@ -187,7 +187,7 @@ contract PayloadEncodingTest is Test {
         assertFalse(harness.isTypedDestination(Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"))));
     }
 
-    /// @dev THE REASON THE TAG COULD GO, STATED AS A TEST RATHER THAN A COMMENT. Feeding a
+    /// @dev The reason the tag could go, stated as a test rather than a comment. Feeding a
     ///      receiver the wrong encoding fails rather than being misread, but note this is
     ///      a property of how these two layouts happen to collide, not a promise the ABI
     ///      decoder makes. What actually prevents the misread is that no path sends opaque
@@ -212,7 +212,7 @@ contract PayloadEncodingTest is Test {
         harness.decodeCalls(Payload.encodeElements(elements));
     }
 
-    /// ...but it still HASHES, which is the property that keeps the commitment layer
+    /// ...but it still hashes, which is the property that keeps the commitment layer
     /// portable: the hub can approve a payload for a VM whose calls it cannot parse.
     function test_aNonEvmElementStillCommits() public view {
         bytes[] memory elements = new bytes[](1);
@@ -229,9 +229,9 @@ contract PayloadEncodingTest is Test {
 
     /* ========================== against a real receiver ========================= */
 
-    /// THE EQUIVALENCE, END TO END. The receiver's entry point takes `Call[]` only (an
+    /// The equivalence, end to end. The receiver's entry point takes `Call[]` only (an
     /// EVM receiver executes EVM calls and nothing else), but the approval it discharges
-    /// may have been computed over the canonical OPAQUE elements, which is what
+    /// may have been computed over the canonical opaque elements, which is what
     /// VM-agnostic off-chain tooling produces. This is the case that would break silently
     /// if `Calls.encode` ever stopped matching the opaque element.
     function test_anOpaqueApprovalIsDischargedByTypedCalls() public {
@@ -275,7 +275,7 @@ contract PayloadEncodingTest is Test {
         r.execute(_sinkCalls());
     }
 
-    /// The receiver exposes ONE execution shape. An opaque array is not an alternative
+    /// The receiver exposes one execution shape. An opaque array is not an alternative
     /// spelling of the entry point: it has no selector here at all.
     function test_thereIsNoOpaqueEntryPoint() public {
         OpenReceiver r = new OpenReceiver();

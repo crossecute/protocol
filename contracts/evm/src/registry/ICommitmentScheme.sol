@@ -2,62 +2,31 @@
 pragma solidity ^0.8.0;
 
 /// @title ICommitmentScheme
-/// @notice The registry's per-chain commitment primitive, for PREVIEW ONLY.
+/// @notice A chain's commitment hash primitive, for previewing a commitment on this chain.
 ///
-/// @dev IT IS THE PRIMITIVE, NOT THE FOLD, AND THAT IS THE WHOLE DESIGN. `Commitment.sol`
-///      states that the fold is fixed and only the primitive varies; this interface makes
-///      that structural rather than conventional. The registry performs the fold and calls
-///      in here for each hash, so a plugin cannot change the SHAPE of a commitment however
-///      wrong or hostile it is: the worst it can do is produce a digest the destination
-///      refuses. A plugin that returned a whole commitment could quietly fold differently
-///      and nothing would notice until a live message.
+/// @dev The plugin supplies the primitive and `SchemeFold` performs the fold, so a wrong or
+///      hostile plugin can yield a digest the destination refuses but cannot change a
+///      commitment's shape. Nothing on the execution path reads it: a receiver enforces the
+///      fold compiled into `ReceiverBase`.
 ///
-/// @dev NOTHING ON THE EXECUTION PATH READS THIS. A receiver enforces its commitment with
-///      the keccak256 fold compiled into `ReceiverBase`, which is frozen with the account
-///      and can never consult a mutable lookup. This exists so a signer can ask, on-chain,
-///      "what am I approving" for a destination whose hash their own transmitter was
-///      compiled too early to know about. Advisory here, enforced there: that split is
-///      what keeps a swappable plugin from being a forgery surface.
-///
-/// @dev `view` RATHER THAN `pure`, FOR THE SAME ONE REASON THE LIBRARY IS. Blake2b-256
-///      reaches the EIP-152 precompile through `staticcall`, which Solidity forbids inside
-///      `pure`. It costs nothing where it matters: this is read through `eth_call`.
+/// @dev `view`, not `pure`: Blake2b-256 calls the EIP-152 precompile through `staticcall`.
 interface ICommitmentScheme {
     /// @notice The destination's hash of `data`.
-    /// @dev MUST be the exact primitive the destination's own receiver applies. A
-    ///      mismatch is not a safety hole, since the destination simply never matches the
-    ///      commitment, but it leaves an approval outstanding until a `cancel` crosses. It
-    ///      MUST be verified against a documented test corpus rather than assumed.
+    /// @dev Must be the primitive the destination's receiver applies, checked against a test
+    ///      corpus. A mismatch leaves an approval outstanding until a `cancel` crosses.
     function hash(bytes calldata data) external view returns (bytes32);
 }
 
 /// @title SchemeFold
-/// @notice The commitment fold, over a plugin's primitive.
-///
-/// @dev THIS IS THE SECOND DEFINITION OF ONE FOLD, AND IT IS DELIBERATE. `Commitment.hashCalls`
-///      is the first and the two must agree byte for byte, but they cannot be merged:
-///      `Commitment` lives in `messaging`, which imports `registry`, so importing it back
-///      would close a cycle in a dependency graph that runs one way. Solidity offers no third
-///      option, because the only difference between the two bodies is whether the primitive
-///      is an enum arm or an external call, and an internal function pointer cannot close
-///      over the value that decides.
-///
-///      TRIPWIRE: the two are pinned equal by `test/CommitmentSchemePlugin.t.sol` for every
-///      primitive the enum carries. If that test ever goes, this comment is the warning.
-///
-/// @dev IT LIVES HERE RATHER THAN IN `ChainRegistry` because a registry stores bindings, and
-///      a thousand-line contract is the wrong place to hide four lines everything else in the
-///      protocol has to match.
+/// @notice The commitment fold over a plugin's primitive.
+/// @dev A second copy of `Commitment.hashCalls`'s fold. They cannot share code: `messaging`
+///      imports `registry`, and the primitive is an enum arm in one and an external call in
+///      the other. `test/CommitmentSchemePlugin.t.sol` pins the two equal for every enum
+///      primitive.
 library SchemeFold {
     /// @notice The commitment `scheme`'s chain will require over `elements`.
-    ///
-    /// @dev THE CHAINKEY IS THE SEED, and the plugin never learns it as a chainKey, only
-    ///      as bytes to hash. Cross-chain replay protection is therefore not a plugin's
-    ///      to weaken: it cannot bind a commitment to a chain other than the one asked
-    ///      for, however wrong its primitive is.
-    ///
-    /// @dev AN EMPTY ARRAY HASHES TO THE SEED ALONE, matching `Commitment`. Non-zero, and
-    ///      therefore a valid commitment.
+    /// @dev Seeded with the chainKey, so no plugin can bind a commitment to another chain. An
+    ///      empty array hashes to the seed alone, as in `Commitment`.
     function hashCalls(ICommitmentScheme scheme, bytes32 destinationChainKey, bytes[] memory elements)
         internal
         view
