@@ -582,7 +582,8 @@ bytes memory sender = abi.encodePacked(address(uint160(uint256(origin.sender))))
 Solana pubkey cast down to 20 bytes is a forgery primitive, not a formatting bug.
 
 **R4.4** A spoke's `homeTransceiver()` is written once at initialization with no setter. The
-deployment MUST pass it in the same byte form the binding will produce inbound. There is no
+deployment MUST pass it in the same byte form the binding will produce inbound: the hub's
+20-byte address, which `SpokeTransceiverBase` enforces at initialization. There is no
 way to fix a mistake here but a redeploy: see the README's
 [Message providers](../README.md#message-providers).
 

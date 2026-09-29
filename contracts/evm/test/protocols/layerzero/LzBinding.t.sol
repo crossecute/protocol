@@ -12,7 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {LzZkSyncSpokeTransceiver} from "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
@@ -276,25 +276,6 @@ contract LzInitValidationTest is ProviderHomeIdSpec {
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(address(0xC0DE)),
                     uint32(homeId)
-                )
-            )
-        );
-    }
-
-    function test_spokeRejectsAMissizedHomeTransceiver() public {
-        address impl = address(new LzSpokeTransceiver(ENDPOINT));
-        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
-        new ERC1967Proxy(
-            impl,
-            abi.encodeCall(
-                LzSpokeTransceiver.initialize,
-                (
-                    new address[](0),
-                    address(0xBEEF),
-                    ChainKey.forEvm(1),
-                    Erc7930.encodeEvmChain(1),
-                    abi.encodePacked(address(0xC0DE), uint8(1)), // 21 bytes, not 20
-                    uint32(1)
                 )
             )
         );

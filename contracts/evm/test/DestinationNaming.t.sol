@@ -11,7 +11,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -338,14 +338,33 @@ contract DestinationNamingTest is Test {
     ///      should never have been deployed, so it fails at initialization.
     function test_homeTransceiverIsRequiredAtInitialization() public {
         LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
-        // LzSpokeTransceiver checks the 20-byte length itself, ahead of the base contract's
-        // own (weaker) non-empty check, since it casts this value to an address.
-        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
+        vm.expectRevert(SpokeTransceiverBase.NoHomeTransceiver.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
                 (new address[](0), address(0xBEEF), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), bytes(""), uint32(1))
+            )
+        );
+    }
+
+    /// @dev The hub is an EVM contract whose address is cast to `address`, so any other width
+    ///      is refused rather than truncated.
+    function test_aMissizedHomeTransceiverIsRefused() public {
+        LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
+        vm.expectRevert(SpokeTransceiverBase.InvalidHomeTransceiverLength.selector);
+        new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(
+                LzSpokeTransceiver.initialize,
+                (
+                    new address[](0),
+                    address(0xBEEF),
+                    ChainKey.forEvm(1),
+                    Erc7930.encodeEvmChain(1),
+                    abi.encode(address(0xC0DE)), // ABI-encoded: 32 bytes, not 20
+                    uint32(1)
+                )
             )
         );
     }
