@@ -477,6 +477,24 @@ abstract contract ProviderTransceiverInboundSpec is Test {
         assertEq(_spoke().balance, 1 ether);
     }
 
+    /// @dev The float leaves only at the treasury's call and only to the treasury, so the
+    ///      binding must pass its initializer's treasury through to the base.
+    function test_spokeFloatLeavesOnlyToTheTreasury() public {
+        SpokeTransceiverBase spoke = SpokeTransceiverBase(payable(_spoke()));
+        address treasury = spoke.treasury();
+        vm.deal(address(spoke), 1 ether);
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotTreasury.selector, address(0xBAD)));
+        spoke.withdraw(1 ether);
+
+        uint256 before = treasury.balance;
+        vm.prank(treasury);
+        spoke.withdraw(0.4 ether);
+        assertEq(treasury.balance - before, 0.4 ether);
+        assertEq(address(spoke).balance, 0.6 ether);
+    }
+
     /// @dev C24 over the hub's configuration after `initialize` and a delivery to each side.
     function test_noWriteLandsOnAnotherField() public {
         vm.startStateDiffRecording();

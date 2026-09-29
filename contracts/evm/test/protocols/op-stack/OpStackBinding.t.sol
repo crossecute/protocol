@@ -239,7 +239,8 @@ contract OpStackTransceiverReceiveTest is Test {
                             address(0xC0DE),
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(homeTransceiver)
+                            abi.encodePacked(homeTransceiver),
+                            address(0x7EA5)
                         )
                     )
                 ))
@@ -350,7 +351,8 @@ contract OpStackTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         address(0xC0DE),
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
-                        abi.encodePacked(HUB_TRANSCEIVER)
+                        abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5)
                     )
                 )
             )

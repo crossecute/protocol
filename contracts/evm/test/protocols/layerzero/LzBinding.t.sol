@@ -275,6 +275,7 @@ contract LzInitValidationTest is ProviderHomeIdSpec {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(address(0xC0DE)),
+                    address(0x7EA5),
                     uint32(homeId)
                 )
             )
@@ -321,6 +322,7 @@ contract LzDivergentSpokePayNativeTest is Test {
                                 ChainKey.forEvm(1),
                                 Erc7930.encodeEvmChain(1),
                                 abi.encodePacked(address(0xC0DE)),
+                                address(0x7EA5),
                                 HASH,
                                 HOME_EID
                             )
@@ -414,6 +416,7 @@ contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
                         HOME_EID
                     )
                 )

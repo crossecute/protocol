@@ -24,11 +24,12 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
     /// @dev Grants `GATEWAY_ROLE` to `mailbox` directly — see
     ///      `HyperlaneHubTransceiver.initialize`.
     function __HyperlaneSpoke_init(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         bool addressesDiverge_,
         uint32 homeDomain_
     ) internal onlyInitializing {
@@ -36,7 +37,13 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
         grantRole(GATEWAY_ROLE, mailbox);
         homeDomain = homeDomain_;
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasury_,
+            addressesDiverge_
         );
     }
 
@@ -83,15 +90,23 @@ contract HyperlaneSpokeTransceiver is HyperlaneSpokeBase {
     constructor(address mailbox_) HyperlaneSpokeBase(mailbox_) {}
 
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         uint32 homeDomain_
     ) external initializer {
         __HyperlaneSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeDomain_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasury_,
+            false,
+            homeDomain_
         );
     }
 }

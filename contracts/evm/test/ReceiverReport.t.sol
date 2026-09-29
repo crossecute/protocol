@@ -67,13 +67,14 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address owner_, address impl, bool addressesDiverge_) external initializer {
+    function initialize(address owner_, address impl, bool addressesDiverge_, address treasury_) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(this)), // parity: the hub shares this address
+            treasury_,
             addressesDiverge_
         );
     }
@@ -140,7 +141,7 @@ contract ReceiverReportTest is Test {
 
     function _spoke(bool diverges) internal returns (ReportingSpoke s) {
         s = new ReportingSpoke();
-        s.initialize(msig, address(impl), diverges);
+        s.initialize(msig, address(impl), diverges, address(0x7EA5));
     }
 
     /* ============================== the parity case ============================ */
@@ -294,6 +295,29 @@ contract ReceiverReportTest is Test {
         assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0);
     }
 
+    /// @dev The intended treasury is the msig's own receiver here, so withdrawing is an
+    ///      ordinary payload from home that calls `withdraw` on arrival.
+    function test_theMsigsReceiverWithdrawsByPayload() public {
+        Receiver treasury = new Receiver();
+        ReportingSpoke s = new ReportingSpoke();
+        s.initialize(msig, address(impl), true, address(treasury));
+        vm.deal(address(s), 1 ether);
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
+        treasury.initialize(msig, calls);
+
+        assertEq(address(treasury).balance, 1 ether);
+        assertEq(address(s).balance, 0);
+    }
+
+    /// @dev A spoke with no treasury could never release its float, so it is refused.
+    function test_aSpokeRefusesAZeroTreasury() public {
+        ReportingSpoke s = new ReportingSpoke();
+        vm.expectRevert(SpokeTransceiverBase.NoTreasury.selector);
+        s.initialize(msig, address(impl), true, address(0));
+    }
+
     /// @dev A parity chain never touches the send path at all, so it needs no balance and
     ///      cannot fail this way. That is the point of gating on the flag rather than
     ///      reporting everywhere and tolerating failures.
@@ -330,7 +354,7 @@ contract ReceiverReportTest is Test {
         ReportingSpoke s = _spoke(false);
 
         vm.expectRevert();
-        s.initialize(msig, address(impl), true);
+        s.initialize(msig, address(impl), true, address(0x7EA5));
         assertFalse(s.addressesDiverge());
     }
 }
@@ -416,7 +440,7 @@ contract ReceiverReportRoundTripTest is Test {
         // facts, and the tests below separate them.
         hub.initialize(msig, msig, address(new Transmitter()));
         spoke = new ReportingSpoke();
-        spoke.initialize(msig, address(new Receiver()), true);
+        spoke.initialize(msig, address(new Receiver()), true, address(0x7EA5));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");

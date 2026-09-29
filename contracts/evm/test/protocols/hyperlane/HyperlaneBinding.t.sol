@@ -297,6 +297,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(homeTransceiver),
+                            address(0x7EA5),
                             homeDomain
                         )
                     )
@@ -320,6 +321,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(homeTransceiver),
+                    address(0x7EA5),
                     uint32(homeId)
                 )
             )
@@ -362,6 +364,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         HOME_DOMAIN
                     )
                 )
@@ -378,6 +381,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -395,6 +399,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -484,6 +489,7 @@ contract HyperlaneTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
                         HOME_DOMAIN
                     )
                 )

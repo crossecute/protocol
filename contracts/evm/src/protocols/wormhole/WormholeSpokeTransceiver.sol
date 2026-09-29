@@ -27,11 +27,12 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     /// @dev Grants `GATEWAY_ROLE` to `coreBridge` directly — see
     ///      `WormholeHubTransceiver.initialize`.
     function __WormholeSpoke_init(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         bool addressesDiverge_,
         uint16 homeWormholeChain_
     ) internal onlyInitializing {
@@ -39,7 +40,13 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
         grantRole(GATEWAY_ROLE, coreBridge);
         homeWormholeChain = homeWormholeChain_;
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasury_,
+            addressesDiverge_
         );
     }
 
@@ -92,11 +99,12 @@ contract WormholeSpokeTransceiver is WormholeSpokeBase {
     {}
 
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         uint16 homeWormholeChain_
     ) external initializer {
         __WormholeSpoke_init(
@@ -105,6 +113,7 @@ contract WormholeSpokeTransceiver is WormholeSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
+            treasury_,
             false,
             homeWormholeChain_
         );

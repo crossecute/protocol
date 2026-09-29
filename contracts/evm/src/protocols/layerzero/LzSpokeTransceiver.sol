@@ -22,11 +22,12 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
 
     /// @param homeEid_ LayerZero's id for the home chain, whose peer is the hub.
     function __LzSpoke_init(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         bool addressesDiverge_,
         uint32 homeEid_
     ) internal onlyInitializing {
@@ -34,7 +35,13 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         __OApp_init(address(this)); // delegate = self, R6.4
         _initHomePeer(homeEid_, address(bytes20(homeTransceiver_)));
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasury_,
+            addressesDiverge_
         );
     }
 
@@ -111,15 +118,23 @@ contract LzSpokeTransceiver is LzSpokeBase {
     constructor(address _endpoint) LzSpokeBase(_endpoint) {}
 
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         uint32 homeEid_
     ) external initializer {
         __LzSpoke_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false, homeEid_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasury_,
+            false,
+            homeEid_
         );
     }
 }

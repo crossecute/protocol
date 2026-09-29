@@ -324,6 +324,7 @@ contract CcipGatewayRoleGrantTest is Test {
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(address(0xD00D)),
+                            address(0x7EA5),
                             uint64(1)
                         )
                     )
@@ -349,6 +350,7 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(hub),
+                    address(0x7EA5),
                     uint64(homeId)
                 )
             )
@@ -369,6 +371,7 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         HOME_SELECTOR
                     )
                 )
@@ -385,6 +388,7 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME_SELECTOR
                     )
@@ -402,6 +406,7 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME_SELECTOR
                     )
@@ -507,6 +512,7 @@ contract CcipTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
                         HOME_SELECTOR
                     )
                 )

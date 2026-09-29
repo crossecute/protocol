@@ -21,15 +21,16 @@ contract OpStackSpokeTransceiver is SpokeTransceiverBase, IOpStackRecipient {
     /// @dev Grants `GATEWAY_ROLE` to `messenger` directly — see
     ///      `OpStackHubTransceiver.initialize`.
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_
     ) external initializer {
         grantRole(GATEWAY_ROLE, messenger);
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, false
+            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, treasury_, false
         );
     }
 

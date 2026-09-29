@@ -20,11 +20,12 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         bytes32 accountBytecodeHash_,
         uint16 homeWormholeChain_
     ) external initializer {
@@ -34,6 +35,7 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
+            treasury_,
             true,
             homeWormholeChain_
         );
@@ -62,11 +64,12 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasury_,
         bytes32 accountBytecodeHash_,
         uint16 homeWormholeChain_
     ) external initializer {
@@ -76,6 +79,7 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
+            treasury_,
             true,
             homeWormholeChain_
         );

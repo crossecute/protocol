@@ -453,6 +453,7 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
                 ChainKey.forEvm(1),
                 Erc7930.encodeEvmChain(1),
                 abi.encodePacked(homeTransceiver),
+                address(0x7EA5),
                 homeWormholeChain
             )
         );
@@ -504,7 +505,15 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new WormholeSpokeTransceiver(address(core), address(0), address(0))),
                 abi.encodeCall(
                     WormholeSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        address(0x7EA5),
+                        HOME
+                    )
                 )
             )
         );
@@ -519,6 +528,7 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME
                     )
@@ -536,6 +546,7 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
                         bytes32(uint256(1)),
                         HOME
                     )
@@ -627,6 +638,7 @@ contract WormholeTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
                         HOME
                     )
                 )
