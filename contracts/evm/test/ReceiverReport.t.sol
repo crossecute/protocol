@@ -73,7 +73,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xB0BB1E)),
+            abi.encodePacked(address(this)), // parity: the hub shares this address
             addressesDiverge_
         );
     }

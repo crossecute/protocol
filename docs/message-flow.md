@@ -134,7 +134,9 @@ them:
 
 **The message carries the owner and their salt, not the transmitter.** The account address
 derives from that pair, and a CREATE2 address cannot be derived from itself. The receiver's
-peer is therefore its own address, since that is where the transmitter sits at home.
+peer is the transmitter's address at home, which the spoke derives from that pair with
+Ethereum's CREATE2 over the hub (`homeTransmitterOf`). On a parity chain that is also the
+receiver's own address; on zkSync and Tron it is not.
 
 **The return leg is sent by the spoke transceiver.** The receiver cannot be its own sender:
 it is not an `OutboundBase`, has no `_sendMessage`, and holds neither the home route nor the

@@ -6,12 +6,13 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver, LzSpokeBase} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
+import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -208,22 +209,58 @@ contract DestinationNamingTest is Test {
         hub.routeTo(key);
     }
 
-    /// @dev Removing a chain fails its hub closed rather than orphaning it. The registry no
-    ///      longer holds counterparts, so it cannot refuse on their behalf; what it can do is
-    ///      stop grading the chain, and `provenanceFor` then reverts `UnknownChainKey`, which
-    ///      no bar accepts. The hub keeps its stored address and simply will not send.
-    function test_removingAChainFailsItsHubClosed() public {
+    /// @dev Removal stops onboarding, not accounts: the hub keeps the counterpart it has, and
+    ///      the chain accepts no new counterpart until it is added back.
+    function test_removingAChainStopsOnboardingButNotItsHub() public {
+        vm.startPrank(msig);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        registry.setProvenance(key, Provenance.Derived);
+        hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+
+        registry.removeChainKey(key);
+
+        assertFalse(registry.hasChainKey(key));
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived), "the declared grade stays");
+        assertEq(hub.counterpartOn(key), abi.encodePacked(address(0xC0DE)), "the hub still resolves it");
+
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        registry.validateLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
+        vm.stopPrank();
+    }
+
+    /// @dev Lowering the grade still cuts a removed chain off: removal must not disable it.
+    function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
-        assertEq(hub.counterpartOn(key), abi.encodePacked(address(0xC0DE)));
+        registry.removeChainKey(key);
 
+        registry.setProvenance(key, Provenance.Attested);
+        vm.stopPrank();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector, key, Provenance.Attested
+            )
+        );
+        hub.counterpartOn(key);
+    }
+
+    /// @dev A chain never registered has nothing to grade.
+    function test_aNeverRegisteredChainCannotBeGraded() public {
+        vm.prank(msig);
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        registry.setProvenance(keccak256("never registered"), Provenance.Attested);
+    }
+
+    /// @dev An undeclared chain keeps its derived default after removal too.
+    function test_aRemovedUndeclaredChainKeepsItsDefaultGrade() public {
+        vm.startPrank(msig);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
         registry.removeChainKey(key);
         vm.stopPrank();
 
-        assertFalse(registry.hasChainKey(key));
-        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        hub.counterpartOn(key);
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived));
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable
@@ -325,14 +362,33 @@ contract DestinationNamingTest is Test {
     ///      should never have been deployed, so it fails at initialization.
     function test_homeTransceiverIsRequiredAtInitialization() public {
         LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
-        // LzSpokeTransceiver checks the 20-byte length itself, ahead of the base contract's
-        // own (weaker) non-empty check, since it casts this value to an address.
-        vm.expectRevert(LzSpokeBase.InvalidHomeTransceiverLength.selector);
+        vm.expectRevert(SpokeTransceiverBase.NoHomeTransceiver.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
                 LzSpokeTransceiver.initialize,
                 (new address[](0), address(0xBEEF), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), bytes(""), uint32(1))
+            )
+        );
+    }
+
+    /// @dev The hub is an EVM contract whose address is cast to `address`, so any other width
+    ///      is refused rather than truncated.
+    function test_aMissizedHomeTransceiverIsRefused() public {
+        LzSpokeTransceiver impl = new LzSpokeTransceiver(ENDPOINT);
+        vm.expectRevert(SpokeTransceiverBase.InvalidHomeTransceiverLength.selector);
+        new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(
+                LzSpokeTransceiver.initialize,
+                (
+                    new address[](0),
+                    address(0xBEEF),
+                    ChainKey.forEvm(1),
+                    Erc7930.encodeEvmChain(1),
+                    abi.encode(address(0xC0DE)), // ABI-encoded: 32 bytes, not 20
+                    uint32(1)
+                )
             )
         );
     }

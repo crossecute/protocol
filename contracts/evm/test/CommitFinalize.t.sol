@@ -107,7 +107,7 @@ contract MockTransceiver is UnsendableSpoke {
             receiverImplementation_,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xB0BB1E)),
+            abi.encodePacked(address(this)), // parity: the hub shares this address
             false
         );
     }
@@ -903,7 +903,7 @@ contract CommitFinalizeTest is Test {
         vm.prank(gateway);
         t.receiveMessage(
             bytes32(0),
-            Erc7930.encodeEvm(1, address(0xB0BB1E)), // the home chain, and the hub on it
+            Erc7930.encodeEvm(1, address(t)), // the home chain, and the hub on it
             Payload.encodeCalls(approve)
         );
 
@@ -964,7 +964,7 @@ contract CommitFinalizeTest is Test {
 
     function _deliverToTransceiver(Call[] memory calls) internal {
         vm.prank(gateway);
-        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(0xB0BB1E)), Payload.encodeCalls(calls));
+        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(t)), Payload.encodeCalls(calls));
     }
 
     /// @dev The approval is over the whole bootstrap, so a finalizer cannot stand up a
@@ -981,7 +981,7 @@ contract CommitFinalizeTest is Test {
         approve[0] = Call({target: address(t), value: 0, data: abi.encodeCall(ICommitFinalize.commit, (hashOf(boot)))});
 
         vm.prank(gateway);
-        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(0xB0BB1E)), Payload.encodeCalls(approve));
+        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(t)), Payload.encodeCalls(approve));
 
         Call[] memory hijacked = new Call[](1);
         hijacked[0] = Call({

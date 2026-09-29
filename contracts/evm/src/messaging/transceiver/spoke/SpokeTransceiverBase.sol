@@ -6,6 +6,7 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
@@ -50,6 +51,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A spoke's only destination is its home; there is no spoke-to-spoke path.
     error NotHome(bytes32 chainKey);
     error NoHomeTransceiver();
+    /// @dev The hub is an EVM contract, and its address is cast to `address` for the home
+    ///      transmitter and LayerZero's peer: any other width would truncate or pad silently.
+    error InvalidHomeTransceiverLength();
     /// @dev Something that is not the hub tried to drive this contract.
     error NotHomeOrigin();
     error NoHomeChainKey();
@@ -77,6 +81,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         // one and send to the other.
         if (ChainKey.fromIdentifier(homeRoute_) != homeChainKey_) revert HomeRouteMismatch();
         if (homeTransceiver_.length == 0) revert NoHomeTransceiver();
+        if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         if (receiverImplementation_ == address(0)) revert NoAccountImplementation();
 
         receiverImplementation = receiverImplementation_;
@@ -106,6 +111,16 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///         origin chain (`ProviderOrigin`) and reports the sender as a plain address.
     function _onHomeInbound(address sender, bytes calldata message) internal {
         _onInbound(homeRoute(), abi.encodePacked(sender), message);
+    }
+
+    /// @notice Where `(owner, salt)`'s transmitter lives on the home chain: Ethereum's CREATE2
+    ///         over the hub's address, which the hub itself deploys with.
+    /// @dev A receiver's `sourceTransmitter`. Not `predictCrossAccount`, which on zkSync and
+    ///      Tron is the receiver's own address under this chain's formula.
+    function homeTransmitterOf(address owner, bytes32 salt) public view returns (address) {
+        return Create2.computeAddress(
+            accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(bytes20(homeTransceiver()))
+        );
     }
 
     /// @notice The home chain's ERC-7930 chain identifier.
@@ -153,8 +168,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev The receiver's `sourceTransmitter` is `predictCrossAccount(owner, salt)`, which is
-    ///      the home transmitter's address wherever both chains share Ethereum's CREATE2.
+    /// @dev The receiver authenticates `homeTransmitterOf(owner, salt)`.
     function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
         internal
         view
@@ -162,7 +176,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(IReceiverInit.initialize, (predictCrossAccount(owner, salt), calls));
+        return abi.encodeCall(IReceiverInit.initialize, (homeTransmitterOf(owner, salt), calls));
     }
 
     /// @notice What an arriving payload may call here: `TransceiverBase`'s two, plus

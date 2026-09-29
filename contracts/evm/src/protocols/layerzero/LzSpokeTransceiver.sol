@@ -20,10 +20,6 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint32 public homeEid;
 
-    /// @dev `homeTransceiver_` is cast to an `address` below; anything but 20 bytes would
-    ///      silently truncate or pad into the wrong peer.
-    error InvalidHomeTransceiverLength();
-
     /// @param homeEid_ LayerZero's id for the home chain, whose peer is the hub.
     function __LzSpoke_init(
         address[] calldata gateways,
@@ -34,7 +30,6 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         bool addressesDiverge_,
         uint32 homeEid_
     ) internal onlyInitializing {
-        if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         homeEid = homeEid_;
         __OApp_init(address(this)); // delegate = self, R6.4
         _initHomePeer(homeEid_, address(bytes20(homeTransceiver_)));
@@ -54,7 +49,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ILzReceiverInit.initialize, (predictCrossAccount(owner, salt), calls, homeEid));
+        return abi.encodeCall(ILzReceiverInit.initialize, (homeTransmitterOf(owner, salt), calls, homeEid));
     }
 
     /* ================================== sending =================================== */
