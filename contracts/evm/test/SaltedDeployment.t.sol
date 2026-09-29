@@ -75,6 +75,8 @@ contract SaltedTransceiver is UnsendableSpoke {
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(this)), // parity: the hub shares this address
+            address(0x7EA5),
+            bytes32(0),
             false
         );
     }

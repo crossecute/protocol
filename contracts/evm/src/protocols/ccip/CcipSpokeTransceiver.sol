@@ -24,11 +24,13 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
     /// @dev Grants `GATEWAY_ROLE` to `router` directly rather than relying on the
     ///      deployment to include it in `gateways` — see `CcipHubTransceiver.initialize`.
     function __CcipSpoke_init(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_,
         uint64 homeSelector_
     ) internal onlyInitializing {
@@ -36,7 +38,14 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         grantRole(GATEWAY_ROLE, router);
         homeSelector = homeSelector_;
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, addressesDiverge_
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasuryOwner_,
+            treasurySalt_,
+            addressesDiverge_
         );
     }
 
@@ -88,11 +97,13 @@ contract CcipSpokeTransceiver is CcipSpokeBase {
     constructor(address router_) CcipSpokeBase(router_) {}
 
     function initialize(
-        address[] calldata gateways,
+        address[] memory gateways,
         address receiverImplementation_,
         bytes32 homeChainKey_,
-        bytes calldata homeChainIdentifier_,
-        bytes calldata homeTransceiver_,
+        bytes memory homeChainIdentifier_,
+        bytes memory homeTransceiver_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         uint64 homeSelector_
     ) external initializer {
         __CcipSpoke_init(
@@ -101,6 +112,8 @@ contract CcipSpokeTransceiver is CcipSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
+            treasuryOwner_,
+            treasurySalt_,
             false,
             homeSelector_
         );

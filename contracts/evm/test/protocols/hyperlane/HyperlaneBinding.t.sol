@@ -287,8 +287,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
 
     function _spoke(uint32 homeDomain) internal returns (HyperlaneSpokeTransceiver) {
         return HyperlaneSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new HyperlaneSpokeTransceiver(address(mailbox))),
                     abi.encodeCall(
                         HyperlaneSpokeTransceiver.initialize,
@@ -298,11 +297,12 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(homeTransceiver),
+                            address(0x7EA5),
+                            bytes32(0),
                             homeDomain
                         )
                     )
-                )
-            )
+                ))
         );
     }
 
@@ -322,6 +322,8 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(homeTransceiver),
+                    address(0x7EA5),
+                    bytes32(0),
                     uint32(homeId)
                 )
             )
@@ -364,6 +366,8 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         HOME_DOMAIN
                     )
                 )
@@ -380,6 +384,8 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -397,6 +403,8 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -486,6 +494,8 @@ contract HyperlaneTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
+                        bytes32(0),
                         HOME_DOMAIN
                     )
                 )

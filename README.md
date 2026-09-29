@@ -335,12 +335,16 @@ What an operator or integrator has to know:
 - A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the hub owner's bootstrap fee and to a provider's price.
-- The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
-  treasury for the whole protocol, on the home chain, named at the hub's deployment and
-  write-once. A bootstrap fee is charged there and forwarded in the same transaction, so no
-  transceiver ever holds an accrued balance and there is no withdrawal to gate. Ownership is
-  the only live authority, and it cannot admit a transport, drop one, or repoint the
-  treasury. An account is one owner's, so a receiver may drop its own gateway through
+- The crossecute msig owns the registry, the hub, and the `Treasury`. There is ONE
+  `Treasury` for the whole protocol, on the home chain, named at the hub's deployment and
+  write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
+  hub never holds an accrued balance and has no withdrawal to gate. A spoke has no owner. It
+  holds only the float for its reports, and its treasury, the account of a write-once owner
+  and salt on that chain (the msig's own receiver), is the only caller of `withdraw` and the
+  only place it pays. The receiver need not exist when the spoke is deployed; the msig's
+  ordinary bootstrap creates it.
+  Ownership is the only live authority, and it cannot admit a transport, drop one, or
+  repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization
   anywhere.
 
@@ -365,7 +369,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 600 passing
+cd contracts/evm && forge test        # 613 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

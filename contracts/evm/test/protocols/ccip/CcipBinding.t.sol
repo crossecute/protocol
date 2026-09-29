@@ -314,8 +314,7 @@ contract CcipGatewayRoleGrantTest is Test {
 
     function test_spokeGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
         CcipSpokeTransceiver spoke = CcipSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new CcipSpokeTransceiver(router)),
                     abi.encodeCall(
                         CcipSpokeTransceiver.initialize,
@@ -325,11 +324,12 @@ contract CcipGatewayRoleGrantTest is Test {
                             ChainKey.forEvm(1),
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(address(0xD00D)),
+                            address(0x7EA5),
+                            bytes32(0),
                             uint64(1)
                         )
                     )
-                )
-            )
+                ))
         );
         assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), router));
     }
@@ -351,6 +351,8 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                     ChainKey.forEvm(1),
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(hub),
+                    address(0x7EA5),
+                    bytes32(0),
                     uint64(homeId)
                 )
             )
@@ -371,6 +373,8 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         HOME_SELECTOR
                     )
                 )
@@ -387,6 +391,8 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_SELECTOR
                     )
@@ -404,6 +410,8 @@ contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_SELECTOR
                     )
@@ -509,6 +517,8 @@ contract CcipTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
+                        bytes32(0),
                         HOME_SELECTOR
                     )
                 )

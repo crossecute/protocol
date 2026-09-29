@@ -67,13 +67,18 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address owner_, address impl, bool addressesDiverge_) external initializer {
+    function initialize(address owner_, address impl, bool addressesDiverge_, address treasuryOwner_)
+        external
+        initializer
+    {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(this)), // parity: the hub shares this address
+            treasuryOwner_,
+            bytes32(0),
             addressesDiverge_
         );
     }
@@ -140,7 +145,7 @@ contract ReceiverReportTest is Test {
 
     function _spoke(bool diverges) internal returns (ReportingSpoke s) {
         s = new ReportingSpoke();
-        s.initialize(msig, address(impl), diverges);
+        s.initialize(msig, address(impl), diverges, address(0x7EA5));
     }
 
     /* ============================== the parity case ============================ */
@@ -275,19 +280,76 @@ contract ReceiverReportTest is Test {
         assertEq(s.sentValue(), quoted, "and they were sent at the price it quoted");
     }
 
-    /// @dev And the retry works, which is the property the revert buys.
+    /// @dev And the retry works, which is the property the revert buys. Funded by a plain
+    ///      transfer, the way an operator tops a spoke up, so a spoke that cannot accept one
+    ///      fails here (#17).
     function test_theBootstrapSucceedsOnceTheSpokeIsFunded() public {
         ReportingSpoke s = _spoke(true);
-        s.setSendReverts(true);
+        s.setReportFee(1 ether);
 
         vm.expectRevert(ReportingSpoke.NoBalanceForTheReport.selector);
         s.inbound(owner, SALT, new Call[](0));
 
-        s.setSendReverts(false);
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(s).call{value: 1 ether}("");
+        assertTrue(ok, "the spoke accepts its float");
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
         assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0);
+    }
+
+    /// @dev The treasury is the msig's own account here, which need not exist when the spoke
+    ///      is deployed: the msig's ordinary bootstrap creates it, and a later payload from
+    ///      home withdraws.
+    function test_theMsigsReceiverIsCreatedByBootstrapAndWithdraws() public {
+        ReportingSpoke s = new ReportingSpoke();
+        s.initialize(msig, address(impl), false, msig);
+        address treasury = s.treasury();
+        assertEq(treasury.code.length, 0, "named before it exists");
+        vm.deal(address(s), 1 ether);
+
+        s.inbound(msig, bytes32(0), new Call[](0));
+        assertEq(treasury, s.predictCrossAccount(msig, bytes32(0)), "the bootstrap created it");
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
+        Receiver(payable(treasury))
+            .receiveMessage(
+                bytes32(0),
+                Erc7930.encodeEvm(1, Receiver(payable(treasury)).sourceTransmitter()),
+                Payload.encodeCalls(calls)
+            );
+
+        assertEq(treasury.balance, 1 ether);
+        assertEq(address(s).balance, 0);
+    }
+
+    /// @dev Not from the bootstrap payload itself: while the receiver is being armed the
+    ///      spoke is still its proxy admin, and `CrossProxy` refuses an admin call that is not
+    ///      the upgrade.
+    function test_theBootstrapPayloadCannotWithdraw() public {
+        ReportingSpoke s = new ReportingSpoke();
+        s.initialize(msig, address(impl), false, msig);
+        vm.deal(address(s), 1 ether);
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Executor.CallFailed.selector,
+                0,
+                abi.encodeWithSelector(SpokeTransceiverBase.WithdrawFailed.selector, 1 ether)
+            )
+        );
+        s.inbound(msig, bytes32(0), calls);
+    }
+
+    /// @dev A spoke with no treasury owner could never release its float, so it is refused.
+    function test_aSpokeRefusesAZeroTreasury() public {
+        ReportingSpoke s = new ReportingSpoke();
+        vm.expectRevert(SpokeTransceiverBase.NoTreasury.selector);
+        s.initialize(msig, address(impl), true, address(0));
     }
 
     /// @dev A parity chain never touches the send path at all, so it needs no balance and
@@ -326,7 +388,7 @@ contract ReceiverReportTest is Test {
         ReportingSpoke s = _spoke(false);
 
         vm.expectRevert();
-        s.initialize(msig, address(impl), true);
+        s.initialize(msig, address(impl), true, address(0x7EA5));
         assertFalse(s.addressesDiverge());
     }
 }
@@ -412,7 +474,7 @@ contract ReceiverReportRoundTripTest is Test {
         // facts, and the tests below separate them.
         hub.initialize(msig, msig, address(new Transmitter()));
         spoke = new ReportingSpoke();
-        spoke.initialize(msig, address(new Receiver()), true);
+        spoke.initialize(msig, address(new Receiver()), true, address(0x7EA5));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");

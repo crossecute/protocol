@@ -89,7 +89,16 @@ contract Hub is UnsendableHub {
 
 contract Spoke is UnsendableSpoke {
     function initialize(address owner_, address impl, bytes calldata home) external initializer {
-        __SpokeTransceiverBase_init(new address[](0), impl, ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), home, false);
+        __SpokeTransceiverBase_init(
+            new address[](0),
+            impl,
+            ChainKey.forEvm(1),
+            Erc7930.encodeEvmChain(1),
+            home,
+            address(0x7EA5),
+            bytes32(0),
+            false
+        );
     }
 
     function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {

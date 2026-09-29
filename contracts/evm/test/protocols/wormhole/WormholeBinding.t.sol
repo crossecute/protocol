@@ -427,11 +427,9 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
     function setUp() public {
         core = new MockWormholeCore(HERE);
         spoke = WormholeSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new WormholeSpokeTransceiver(address(core), address(0), address(0))), _spokeInit(HOME)
-                )
-            )
+                ))
         );
         hub = WormholeHubTransceiver(
             address(
@@ -455,6 +453,8 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
                 ChainKey.forEvm(1),
                 Erc7930.encodeEvmChain(1),
                 abi.encodePacked(homeTransceiver),
+                address(0x7EA5),
+                bytes32(0),
                 homeWormholeChain
             )
         );
@@ -506,7 +506,16 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                 address(new WormholeSpokeTransceiver(address(core), address(0), address(0))),
                 abi.encodeCall(
                     WormholeSpokeTransceiver.initialize,
-                    (new address[](0), address(0xC0DE), ChainKey.forEvm(1), Erc7930.encodeEvmChain(1), hubBytes, HOME)
+                    (
+                        new address[](0),
+                        address(0xC0DE),
+                        ChainKey.forEvm(1),
+                        Erc7930.encodeEvmChain(1),
+                        hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
+                        HOME
+                    )
                 )
             )
         );
@@ -521,6 +530,8 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME
                     )
@@ -538,6 +549,8 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
                         ChainKey.forEvm(1),
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
+                        address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME
                     )
@@ -552,7 +565,8 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
 
     /// @dev Addressed to `spoke` on this chain, so only the emitter chain is wrong.
     function _deliverFromHubOn(address spoke, uint256 origin) internal override {
-        WormholeSpokeTransceiver(spoke).executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
+        WormholeSpokeTransceiver(payable(spoke))
+            .executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
     }
 }
 
@@ -628,6 +642,8 @@ contract WormholeTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         ChainKey.forEvm(HOME_CHAIN_ID),
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
+                        address(0x7EA5),
+                        bytes32(0),
                         HOME
                     )
                 )

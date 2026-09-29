@@ -108,6 +108,8 @@ contract MockTransceiver is UnsendableSpoke {
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(this)), // parity: the hub shares this address
+            address(0x7EA5),
+            bytes32(0),
             false
         );
     }
@@ -633,12 +635,10 @@ contract CommitFinalizeTest is Test {
     ///      refuses upgrades outside one.
     function test_initializingLocksUpgrades() public {
         MockTransceiver proxied = MockTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new MockTransceiver()),
                     abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
-                )
-            )
+                ))
         );
         assertTrue(proxied.upgradesLocked(), "locked by the initializer, not by a later call");
 

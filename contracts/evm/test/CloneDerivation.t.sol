@@ -266,6 +266,8 @@ contract DivergentSpokeTest is Test {
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(HUB),
+            address(0x7EA5),
+            bytes32(0),
             HASH,
             uint32(1)
         );
@@ -279,6 +281,8 @@ contract DivergentSpokeTest is Test {
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(HUB),
+            address(0x7EA5),
+            bytes32(0),
             HASH,
             uint32(1)
         );
@@ -337,12 +341,14 @@ contract DivergentSpokeTest is Test {
 
         ZkSpoke s = new ZkSpoke(ENDPOINT);
         vm.expectRevert(DivergentSpokeTransceiver.ZeroAccountBytecodeHash.selector);
-        s.initialize(new address[](0), impl, homeKey, homeId, hub, bytes32(0), uint32(1));
+        s.initialize(new address[](0), impl, homeKey, homeId, hub, address(0x7EA5), bytes32(0), bytes32(0), uint32(1));
 
         ZkSpoke ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(new address[](0), impl, homeKey, homeId, hub, keccak256("other"), uint32(1));
+        ok.initialize(
+            new address[](0), impl, homeKey, homeId, hub, address(0x7EA5), bytes32(0), keccak256("other"), uint32(1)
+        );
     }
 }
 
@@ -431,7 +437,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_theParitySpokeAlwaysReportsNoDivergence() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
         LzSpokeTransceiver s = new LzSpokeTransceiver(ENDPOINT);
-        s.initialize(new address[](0), impl, k, id, hub, uint32(1));
+        s.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), uint32(1));
 
         assertFalse(s.addressesDiverge(), "not settable, and false");
         assertEq(
@@ -445,9 +451,9 @@ contract DivergenceIsNotConfigurableTest is Test {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
 
         LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
-        zk.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
+        zk.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
         LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver(ENDPOINT);
-        tron.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
+        tron.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
 
         assertTrue(zk.addressesDiverge(), "not settable, and true");
         assertTrue(tron.addressesDiverge());
@@ -465,7 +471,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_thereIsNoSetterForTheBytecodeHash() public {
         (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
         LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
-        zk.initialize(new address[](0), impl, k, id, hub, HASH, uint32(1));
+        zk.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
 
         (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));
         assertFalse(ok, "no setter on the ABI");

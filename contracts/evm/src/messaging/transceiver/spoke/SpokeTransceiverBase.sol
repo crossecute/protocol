@@ -43,10 +43,18 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      chain can never address, silently.
     bool public addressesDiverge;
 
+    /// The owner and salt of the account that is this spoke's treasury; see `treasury`.
+    /// @dev Write-once. Stored as the pair rather than an address, so the treasury is always
+    ///      an account this spoke itself would create, and cannot be mistyped at deployment.
+    address public treasuryOwner;
+    bytes32 public treasurySalt;
+
     event ReceiverImplementationSet(address implementation);
     event HomeSet(bytes32 homeChainKey, bytes homeRoute, bytes homeTransceiver);
     event AddressesDivergeSet(bool addressesDiverge);
     event ReceiverReported(address indexed owner, bytes32 salt, address receiver);
+    event TreasurySet(address treasuryOwner, bytes32 treasurySalt);
+    event Withdrawn(address indexed to, uint256 amount);
 
     /// @dev A spoke's only destination is its home; there is no spoke-to-spoke path.
     error NotHome(bytes32 chainKey);
@@ -60,11 +68,15 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NoHomeRoute();
     /// @dev The stated route does not hash to the stated home chainKey.
     error HomeRouteMismatch();
+    /// @dev With no treasury owner the float could never leave.
+    error NoTreasury();
+    error NotTreasury(address caller);
+    error WithdrawFailed(uint256 amount);
 
     /// @notice Bind this spoke to its hub, permanently.
-    /// @dev Home chainKey, route, transceiver, and receiver implementation are written once
-    ///      with no setter. There is no treasury: a spoke charges nothing and holds only the
-    ///      float for its reports.
+    /// @dev Home chainKey, route, transceiver, treasury, and receiver implementation are
+    ///      written once with no setter. A spoke charges nothing and holds only the float for
+    ///      its reports.
     /// @param addressesDiverge_ True only where an account's address here is not the one the
     ///        hub derives: zkSync and Tron among EVM chains.
     function __SpokeTransceiverBase_init(
@@ -73,6 +85,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         bytes32 homeChainKey_,
         bytes memory homeRoute_,
         bytes memory homeTransceiver_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_
     ) internal onlyInitializing {
         if (homeChainKey_ == bytes32(0)) revert NoHomeChainKey();
@@ -83,6 +97,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         if (homeTransceiver_.length == 0) revert NoHomeTransceiver();
         if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         if (receiverImplementation_ == address(0)) revert NoAccountImplementation();
+        if (treasuryOwner_ == address(0)) revert NoTreasury();
 
         receiverImplementation = receiverImplementation_;
         emit ReceiverImplementationSet(receiverImplementation_);
@@ -94,6 +109,10 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
 
         addressesDiverge = addressesDiverge_;
         emit AddressesDivergeSet(addressesDiverge_);
+
+        treasuryOwner = treasuryOwner_;
+        treasurySalt = treasurySalt_;
+        emit TreasurySet(treasuryOwner_, treasurySalt_);
 
         // Last, and the spoke is sealed. See `TransceiverBase.__TransceiverBase_init`.
         __TransceiverBase_init(gateways);
@@ -224,6 +243,34 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         bytes memory payload = reportPayload(owner, salt, receiver);
 
         _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));
+    }
+
+    /// @notice Accept the float `_reportReceiver` pays from. Without it a diverging spoke
+    ///         could not be funded and every bootstrap on it would revert at the report.
+    receive() external payable {}
+
+    /// @notice The only address that may withdraw this spoke's balance, and the only place it
+    ///         goes: `(treasuryOwner, treasurySalt)`'s account on this chain, meant to be the
+    ///         crossecute msig's own receiver, which it drives from home with a payload.
+    /// @dev Derived on each call rather than at initialization: a divergent spoke's
+    ///      `predictCrossAccount` needs the bytecode hash it sets after the base initializer.
+    ///      The account need not exist yet; it is created by an ordinary bootstrap.
+    function treasury() public view returns (address) {
+        return predictCrossAccount(treasuryOwner, treasurySalt);
+    }
+
+    /// @notice Send `amount` of this spoke's balance to the treasury, at the treasury's call.
+    /// @dev Gated, not a permissionless sweep: anyone able to empty the float could make every
+    ///      bootstrap here revert at its report.
+    /// @dev Fails from the treasury's own bootstrap payload, while this spoke is still its
+    ///      proxy admin; a later payload works.
+    function withdraw(uint256 amount) external {
+        address to = treasury();
+        if (msg.sender != to) revert NotTreasury(msg.sender);
+
+        (bool ok,) = to.call{value: amount}("");
+        if (!ok) revert WithdrawFailed(amount);
+        emit Withdrawn(to, amount);
     }
 
     /// @notice The exact report bytes this spoke would send for `(owner, salt)` and

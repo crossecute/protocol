@@ -203,9 +203,9 @@ the transmitter and both transceivers.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| no authority at all | n/a | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. |
+| no authority at all | n/a | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. The float leaves through `withdraw`, callable only by `treasury()`: the account of a write-once owner and salt on this chain, which is an account address and not an owner. |
 | `_accountInitializer(owner, salt, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. |
-| `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier and the hub's address into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
+| `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier, the hub's address and the treasury's owner and salt into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
 | the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from contract balance. |
 
@@ -734,7 +734,7 @@ chain unless noted:
 | 1 | `ChainRegistry.addChainKey(identifier)` | Per chain, canonical ERC-7930. |
 | 2 | `ChainRegistry.addMessageProvider(name)` | The `bytes32` is `keccak256(name)`. |
 | 3 | Deploy the hub transceiver proxy through the CREATE2 factory, upgrade, `initialize` | Proxy initcode must be identical on every chain. |
-| 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
+| 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address, and the msig's owner and salt as the treasury, so `treasury()` is the msig's own receiver there. The msig then bootstraps that receiver like any account | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
 | 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Names the hub that speaks for a provider. |
 | 6 | `ChainRegistry.setProviderDeployment(provider, salt, transceiverInitCodeHash, accountInitCodeHash)` | Write-once. `accountInitCodeHash` per [R8.4](#r8-storage-and-address-parity). |
 | 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must hash to the chainKey. |
@@ -968,8 +968,9 @@ A binding is done when every line is true.
 - [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
       `_onInbound` on the transceivers
 - [ ] Inbound reverts on the transmitter
-- [ ] Initialized with the msig as `owner`, the protocol's one `Treasury` as `treasury` (hub
-      only), and every transport the deployment needs in `gateways`, none grantable afterwards
+- [ ] Initialized with the msig as `owner` and the protocol's one `Treasury` as `treasury` on
+      the hub, the msig's owner and salt as the treasury on a spoke, and every
+      transport the deployment needs in `gateways`, none grantable afterwards
 - [ ] No second ownership implementation in the tree, and no grant path added
 - [ ] `_accountInitializer` overridden wherever an account's initializer needs provider
       arguments the base shape does not carry
