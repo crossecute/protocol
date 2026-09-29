@@ -193,9 +193,9 @@ defence.
 | **Avalanche ICM** | **no**: the relayer incentive is an ERC-20 | n/a |
 
 Arbitrum is the only one of the three that partly satisfies
-[P9](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist). OP Stack fails
-it and would use the off-chain measurement in
-[R2.2.2](provider-spec.md#r2-quote). Avalanche ICM fails
+[P9](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist). OP Stack has no
+quote function, but its native fee is zero (see [§7's correction](#7-op-stack-as-a-native-binding)),
+so its binding quotes zero rather than failing. Avalanche ICM fails
 [P8](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist) outright: a
 per-chain ERC-20 fee reintroduces exactly the funding matrix the protocol exists to remove,
 so a binding would have to pay relayers some other way or accept that signers hold a fee
@@ -381,8 +381,10 @@ on either side.
 
 1. **No quote, at all.** The interface is `supportsAttribute` and `sendMessage`. A payable
    send with no way to ask its price fails [P9](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)
-   and kills eight functions of read surface. This is the largest cost and the reason to
-   prefer a native SDK where one exists. Fallbacks are in [R2.2.2](provider-spec.md#r2-quote).
+   and kills eight functions of read surface. It also kills every send: the transmitter
+   prices each one on-chain ([R2.6](provider-spec.md#r2-quote)), so a binding over a gateway
+   with no quote extension cannot send. This is the largest cost and the reason to prefer a
+   native SDK where one exists.
 2. **`sendMessage` may not complete the send.** It returns a `sendId`, and a non-zero value
    means further gateway-specific, non-standardised action is required. `_sendMessage`
    passes that id straight back and nothing here acts on it, so a binding must either handle
@@ -442,8 +444,8 @@ LayerZero and a bare EVM address use; a binding's `_authenticateSender` narrowin
 `abi.decode`, not slice.
 
 **A native `view` quote, satisfying P9 outright.** `getFee` prices the exact message with no
-fallback needed, unlike ERC-7786 (no quote at all) or OP Stack (no quote, an off-chain
-measurement instead). `feeToken = address(0)` pays in native currency through `msg.value`,
+fallback needed, unlike ERC-7786 (no quote at all) or OP Stack (no quote function, and a
+native fee of zero). `feeToken = address(0)` pays in native currency through `msg.value`,
 which is the only choice consistent with
 [P8](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist): CCIP also supports
 paying in LINK, and using it would reintroduce exactly the per-chain funding-token matrix P8
@@ -717,9 +719,9 @@ function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` ex
 returns a `uint64` GAS OVERHEAD, not a native-currency price — it still has to be combined
 with an off-chain gas price to produce a `msg.value`. This confirms §2's finding
 ("no view quote... there is nothing to ask for a price") at the interface level: a binding's
-`_quoteMessage` has nothing to answer from, and uses the off-chain measurement in
-[R2.2.2](provider-spec.md#r2-quote), the same escape hatch already documented for bare
-Wormhole Core.
+`_quoteMessage` has nothing to answer from. The correction below is what keeps the binding
+usable, since a transmitter now prices every send on-chain
+([R2.6](provider-spec.md#r2-quote)).
 
 **Correction (Phase 6): the native quote is zero, not missing.** Checked against
 `CrossDomainMessenger.sendMessage` and `ResourceMetering` at the same commit: a deposit's L2

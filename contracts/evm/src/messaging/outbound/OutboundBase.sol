@@ -163,11 +163,10 @@ abstract contract OutboundBase is Roles {
     /* ================================== sending ================================ */
 
     /// @notice Where a provider's excess fee goes back to: whoever paid it.
-    /// @dev `msg.sender` is the payer on both paths: `sendMessage` is owner-gated, and
-    ///      `bootstrap` refuses any caller but the account. Never `address(this)`, which on a
-    ///      shared transceiver would pool every user's excess. Both halves of an account
-    ///      declare `receive`, or the refund would revert the send.
-    function _refundTo() internal view returns (address) {
+    /// @dev On a transceiver's `bootstrap` that is `msg.sender`, the only account it accepts.
+    ///      Never a shared transceiver's `address(this)`, which would pool every user's excess.
+    ///      `TransmitterBase` pays from its own balance and overrides this to itself.
+    function _refundTo() internal view virtual returns (address) {
         return msg.sender;
     }
 
@@ -177,8 +176,9 @@ abstract contract OutboundBase is Roles {
     /// @dev One primitive for every channel: a payload to an account, a bootstrap to a spoke,
     ///      and a receiver report home are all `bytes` to an ERC-7930 address.
     ///
-    /// @dev Spend `value`, never `msg.value`. They differ when the hub takes a bootstrap fee
-    ///      and on a nested send, where `msg.value` is zero and the balance pays.
+    /// @dev Spend `value`, never `msg.value`. On a transmitter `value` is the quote and
+    ///      `msg.value` only tops up the balance; the hub takes a bootstrap fee off the top; on
+    ///      a nested send `msg.value` is zero.
     ///
     /// @param attributes Selector-prefixed values the gateway understands; it must refuse one
     ///        it does not (see `supportsAttribute`).
@@ -195,10 +195,9 @@ abstract contract OutboundBase is Roles {
     ///      and takes the built `payload` and the send's arguments, since providers price the
     ///      exact bytes. A provider that also takes its own token is quoted on the native path.
     ///
-    /// @dev Advisory: nothing on the send path consults it, and a fee that moves between quote
-    ///      and send is not absorbed. LayerZero reverts an underpayment, CCIP keeps an
-    ///      overpayment, and Hyperlane refunds one only through hooks that do (`docs/todo.md`
-    ///      §3).
+    /// @dev `_sendMessage` never consults it. A transmitter's entry points call it in the same
+    ///      transaction as the send and pay exactly the answer, so it has no time to go stale.
+    ///      The spoke's report does the same.
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view

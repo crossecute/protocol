@@ -31,7 +31,9 @@ needs no Safe at all: the authority on the spoke is the account this protocol de
 **Gas is funded in one place.** A multisig only one person can afford to execute is not
 decentralized, so an operable Safe per chain means N signers funded on M chains in M
 currencies. Here signers transact only at home. The bridge fee is paid there in one
-currency and execution runs inside the delivery callback. A payload that spends native
+currency, by the transmitter from its own balance at the price quoted in the same
+transaction, so signers approve a payload and never a price. Execution runs inside the
+delivery callback. A payload that spends native
 currency draws on the receiver's address, which is derivable and fundable before the
 receiver exists: topped up once, not per signer.
 
@@ -298,8 +300,9 @@ What an operator or integrator has to know:
   contracts has to keep it.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA, and liveness does not
   depend on the Executor quoter, which is an implementation immutable.
-- **OP Stack sends carry no value and cost only gas.** The quote is zero, and a nonzero
-  `value` reverts, because `sendMessage` would bridge it rather than spend it. There is one
+- **OP Stack sends carry no value and cost only gas.** The quote is zero, so a send spends
+  nothing from the account, and the binding refuses a nonzero `value` because the messenger
+  would bridge it rather than spend it. There is one
   `OpStackHubTransceiver` per OP Stack chain, and it refuses recipients on any other chain.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
@@ -329,6 +332,9 @@ What an operator or integrator has to know:
   bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
   `src/messaging/IErc7786.sol` instead of imported, because they are a `draft-` upstream and
   this protocol's ABI here.
+- A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
+  that balance at a quote nothing caps, so value kept there for any other purpose is exposed
+  to the hub owner's bootstrap fee and to a provider's price.
 - The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
   treasury for the whole protocol, on the home chain, named at the hub's deployment and
   write-once. A bootstrap fee is charged there and forwarded in the same transaction, so no
@@ -359,7 +365,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 596 passing
+cd contracts/evm && forge test        # 600 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

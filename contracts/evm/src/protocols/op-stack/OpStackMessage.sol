@@ -16,8 +16,8 @@ interface IOpStackRecipient {
 ///
 /// @dev No native fee: an L1->L2 deposit pays for its L2 gas by burning L1 gas in the sending
 ///      transaction (`ResourceMetering`), and an L2->L1 message pays nothing at the source.
-///      `sendMessage`'s `msg.value` is bridged to the target, not spent, so `value` must be
-///      zero and the quote is zero.
+///      The messenger's `sendMessage` bridges its `msg.value` to the target rather than
+///      spending it, so `value` must be zero and the quote is zero.
 library OpStackMessage {
     bytes4 internal constant MIN_GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.opstack.minGasLimit"));
 
