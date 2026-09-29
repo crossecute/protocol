@@ -27,7 +27,8 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_,
         uint32 homeEid_
     ) internal onlyInitializing {
@@ -40,7 +41,8 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             addressesDiverge_
         );
     }
@@ -123,7 +125,8 @@ contract LzSpokeTransceiver is LzSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         uint32 homeEid_
     ) external initializer {
         __LzSpoke_init(
@@ -132,7 +135,8 @@ contract LzSpokeTransceiver is LzSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             false,
             homeEid_
         );

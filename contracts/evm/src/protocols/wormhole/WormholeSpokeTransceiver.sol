@@ -32,7 +32,8 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_,
         uint16 homeWormholeChain_
     ) internal onlyInitializing {
@@ -45,7 +46,8 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             addressesDiverge_
         );
     }
@@ -104,7 +106,8 @@ contract WormholeSpokeTransceiver is WormholeSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         uint16 homeWormholeChain_
     ) external initializer {
         __WormholeSpoke_init(
@@ -113,7 +116,8 @@ contract WormholeSpokeTransceiver is WormholeSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             false,
             homeWormholeChain_
         );

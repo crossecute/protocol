@@ -298,6 +298,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(homeTransceiver),
                             address(0x7EA5),
+                            bytes32(0),
                             homeDomain
                         )
                     )
@@ -322,6 +323,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                     Erc7930.encodeEvmChain(1),
                     abi.encodePacked(homeTransceiver),
                     address(0x7EA5),
+                    bytes32(0),
                     uint32(homeId)
                 )
             )
@@ -365,6 +367,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
                         address(0x7EA5),
+                        bytes32(0),
                         HOME_DOMAIN
                     )
                 )
@@ -382,6 +385,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
                         address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -400,6 +404,7 @@ contract HyperlaneSpokeOriginTest is ProviderSpokeOriginSpec {
                         Erc7930.encodeEvmChain(1),
                         hubBytes,
                         address(0x7EA5),
+                        bytes32(0),
                         bytes32(uint256(1)),
                         HOME_DOMAIN
                     )
@@ -490,6 +495,7 @@ contract HyperlaneTransceiverInboundTest is ProviderTransceiverInboundSpec {
                         Erc7930.encodeEvmChain(HOME_CHAIN_ID),
                         abi.encodePacked(HUB_TRANSCEIVER),
                         address(0x7EA5),
+                        bytes32(0),
                         HOME_DOMAIN
                     )
                 )

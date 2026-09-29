@@ -70,6 +70,7 @@ contract DestinationNamingTest is Test {
                             Erc7930.encodeEvmChain(1),
                             abi.encodePacked(address(hub)),
                             address(0x7EA5),
+                            bytes32(0),
                             uint32(1)
                         )
                     )
@@ -134,6 +135,7 @@ contract DestinationNamingTest is Test {
                             Erc7930.encodeEvmChain(42161),
                             abi.encodePacked(arbHub),
                             address(0x7EA5),
+                            bytes32(0),
                             uint32(2)
                         )
                     )
@@ -352,6 +354,7 @@ contract DestinationNamingTest is Test {
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(0xBAD)),
             address(0x7EA5),
+            bytes32(0),
             uint32(1)
         );
         assertEq(spoke.homeTransceiver(), abi.encodePacked(address(hub)), "unchanged");
@@ -373,6 +376,7 @@ contract DestinationNamingTest is Test {
                     Erc7930.encodeEvmChain(1),
                     bytes(""),
                     address(0x7EA5),
+                    bytes32(0),
                     uint32(1)
                 )
             )
@@ -395,6 +399,7 @@ contract DestinationNamingTest is Test {
                     Erc7930.encodeEvmChain(1),
                     abi.encode(address(0xC0DE)), // ABI-encoded: 32 bytes, not 20
                     address(0x7EA5),
+                    bytes32(0),
                     uint32(1)
                 )
             )

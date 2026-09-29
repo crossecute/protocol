@@ -25,7 +25,8 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint16 homeWormholeChain_
     ) external initializer {
@@ -35,7 +36,8 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeWormholeChain_
         );
@@ -69,7 +71,8 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint16 homeWormholeChain_
     ) external initializer {
@@ -79,7 +82,8 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeWormholeChain_
         );

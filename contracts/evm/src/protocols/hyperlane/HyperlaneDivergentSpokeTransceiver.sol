@@ -23,7 +23,8 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, HyperlaneSpo
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint32 homeDomain_
     ) external initializer {
@@ -33,7 +34,8 @@ contract HyperlaneZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, HyperlaneSpo
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeDomain_
         );
@@ -65,7 +67,8 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, HyperlaneSpokeBa
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint32 homeDomain_
     ) external initializer {
@@ -75,7 +78,8 @@ contract HyperlaneTronSpokeTransceiver is TronSpokeTransceiver, HyperlaneSpokeBa
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeDomain_
         );

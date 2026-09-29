@@ -29,7 +29,8 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_,
         uint32 homeDomain_
     ) internal onlyInitializing {
@@ -42,7 +43,8 @@ abstract contract HyperlaneSpokeBase is SpokeTransceiverBase, IMessageRecipient 
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             addressesDiverge_
         );
     }
@@ -95,7 +97,8 @@ contract HyperlaneSpokeTransceiver is HyperlaneSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         uint32 homeDomain_
     ) external initializer {
         __HyperlaneSpoke_init(
@@ -104,7 +107,8 @@ contract HyperlaneSpokeTransceiver is HyperlaneSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             false,
             homeDomain_
         );

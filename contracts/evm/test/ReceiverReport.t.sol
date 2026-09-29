@@ -67,14 +67,18 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address owner_, address impl, bool addressesDiverge_, address treasury_) external initializer {
+    function initialize(address owner_, address impl, bool addressesDiverge_, address treasuryOwner_)
+        external
+        initializer
+    {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,
             ChainKey.forEvm(1),
             Erc7930.encodeEvmChain(1),
             abi.encodePacked(address(this)), // parity: the hub shares this address
-            treasury_,
+            treasuryOwner_,
+            bytes32(0),
             addressesDiverge_
         );
     }
@@ -295,23 +299,53 @@ contract ReceiverReportTest is Test {
         assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0);
     }
 
-    /// @dev The intended treasury is the msig's own receiver here, so withdrawing is an
-    ///      ordinary payload from home that calls `withdraw` on arrival.
-    function test_theMsigsReceiverWithdrawsByPayload() public {
-        Receiver treasury = new Receiver();
+    /// @dev The treasury is the msig's own account here, which need not exist when the spoke
+    ///      is deployed: the msig's ordinary bootstrap creates it, and a later payload from
+    ///      home withdraws.
+    function test_theMsigsReceiverIsCreatedByBootstrapAndWithdraws() public {
         ReportingSpoke s = new ReportingSpoke();
-        s.initialize(msig, address(impl), true, address(treasury));
+        s.initialize(msig, address(impl), false, msig);
+        address treasury = s.treasury();
+        assertEq(treasury.code.length, 0, "named before it exists");
+        vm.deal(address(s), 1 ether);
+
+        s.inbound(msig, bytes32(0), new Call[](0));
+        assertEq(treasury, s.predictCrossAccount(msig, bytes32(0)), "the bootstrap created it");
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
+        Receiver(payable(treasury))
+            .receiveMessage(
+                bytes32(0),
+                Erc7930.encodeEvm(1, Receiver(payable(treasury)).sourceTransmitter()),
+                Payload.encodeCalls(calls)
+            );
+
+        assertEq(treasury.balance, 1 ether);
+        assertEq(address(s).balance, 0);
+    }
+
+    /// @dev Not from the bootstrap payload itself: while the receiver is being armed the
+    ///      spoke is still its proxy admin, and `CrossProxy` refuses an admin call that is not
+    ///      the upgrade.
+    function test_theBootstrapPayloadCannotWithdraw() public {
+        ReportingSpoke s = new ReportingSpoke();
+        s.initialize(msig, address(impl), false, msig);
         vm.deal(address(s), 1 ether);
 
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
-        treasury.initialize(msig, calls);
-
-        assertEq(address(treasury).balance, 1 ether);
-        assertEq(address(s).balance, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Executor.CallFailed.selector,
+                0,
+                abi.encodeWithSelector(SpokeTransceiverBase.WithdrawFailed.selector, 1 ether)
+            )
+        );
+        s.inbound(msig, bytes32(0), calls);
     }
 
-    /// @dev A spoke with no treasury could never release its float, so it is refused.
+    /// @dev A spoke with no treasury owner could never release its float, so it is refused.
     function test_aSpokeRefusesAZeroTreasury() public {
         ReportingSpoke s = new ReportingSpoke();
         vm.expectRevert(SpokeTransceiverBase.NoTreasury.selector);

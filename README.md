@@ -339,8 +339,10 @@ What an operator or integrator has to know:
   `Treasury` for the whole protocol, on the home chain, named at the hub's deployment and
   write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
   hub never holds an accrued balance and has no withdrawal to gate. A spoke has no owner. It
-  holds only the float for its reports, and its write-once `treasury`, the msig's own
-  receiver on that chain, is the only caller of `withdraw` and the only place it pays.
+  holds only the float for its reports, and its treasury, the account of a write-once owner
+  and salt on that chain (the msig's own receiver), is the only caller of `withdraw` and the
+  only place it pays. The receiver need not exist when the spoke is deployed; the msig's
+  ordinary bootstrap creates it.
   Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization

@@ -26,11 +26,19 @@ contract OpStackSpokeTransceiver is SpokeTransceiverBase, IOpStackRecipient {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_
+        address treasuryOwner_,
+        bytes32 treasurySalt_
     ) external initializer {
         grantRole(GATEWAY_ROLE, messenger);
         __SpokeTransceiverBase_init(
-            gateways, receiverImplementation_, homeChainKey_, homeChainIdentifier_, homeTransceiver_, treasury_, false
+            gateways,
+            receiverImplementation_,
+            homeChainKey_,
+            homeChainIdentifier_,
+            homeTransceiver_,
+            treasuryOwner_,
+            treasurySalt_,
+            false
         );
     }
 

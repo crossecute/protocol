@@ -26,7 +26,8 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
@@ -36,7 +37,8 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeSelector_
         );
@@ -77,7 +79,8 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint64 homeSelector_
     ) external initializer {
@@ -87,7 +90,8 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeSelector_
         );

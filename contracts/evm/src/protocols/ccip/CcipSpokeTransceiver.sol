@@ -29,7 +29,8 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bool addressesDiverge_,
         uint64 homeSelector_
     ) internal onlyInitializing {
@@ -42,7 +43,8 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             addressesDiverge_
         );
     }
@@ -100,7 +102,8 @@ contract CcipSpokeTransceiver is CcipSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         uint64 homeSelector_
     ) external initializer {
         __CcipSpoke_init(
@@ -109,7 +112,8 @@ contract CcipSpokeTransceiver is CcipSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             false,
             homeSelector_
         );

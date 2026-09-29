@@ -25,7 +25,8 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, LzSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint32 homeEid_
     ) external initializer {
@@ -35,7 +36,8 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, LzSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeEid_
         );
@@ -76,7 +78,8 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, LzSpokeBase {
         bytes32 homeChainKey_,
         bytes memory homeChainIdentifier_,
         bytes memory homeTransceiver_,
-        address treasury_,
+        address treasuryOwner_,
+        bytes32 treasurySalt_,
         bytes32 accountBytecodeHash_,
         uint32 homeEid_
     ) external initializer {
@@ -86,7 +89,8 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, LzSpokeBase {
             homeChainKey_,
             homeChainIdentifier_,
             homeTransceiver_,
-            treasury_,
+            treasuryOwner_,
+            treasurySalt_,
             true,
             homeEid_
         );
