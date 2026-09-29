@@ -226,6 +226,10 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));
     }
 
+    /// @notice Accept the float `_reportReceiver` pays from. Without it a diverging spoke
+    ///         could not be funded and every bootstrap on it would revert at the report.
+    receive() external payable {}
+
     /// @notice The exact report bytes this spoke would send for `(owner, salt)` and
     ///         `receiver`, so its cost can be quoted with `quoteMessage` before it is owed.
     /// @dev On the live path `receiver` is `predictCrossAccount(owner, salt)`, taken

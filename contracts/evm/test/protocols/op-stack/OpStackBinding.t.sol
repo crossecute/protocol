@@ -230,8 +230,7 @@ contract OpStackTransceiverReceiveTest is Test {
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
         spoke = OpStackSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new OpStackSpokeTransceiver(address(messenger))),
                     abi.encodeCall(
                         OpStackSpokeTransceiver.initialize,
@@ -243,8 +242,7 @@ contract OpStackTransceiverReceiveTest is Test {
                             abi.encodePacked(homeTransceiver)
                         )
                     )
-                )
-            )
+                ))
         );
         hub = OpStackHubTransceiver(
             address(

@@ -468,6 +468,15 @@ abstract contract ProviderTransceiverInboundSpec is Test {
         _deliverToSpoke(address(0xBAD));
     }
 
+    /// @dev The report is paid from the spoke's balance, so an operator has to be able to
+    ///      fund it with a plain transfer (#17).
+    function test_spokeAcceptsAPlainTransfer() public {
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = _spoke().call{value: 1 ether}("");
+        assertTrue(ok);
+        assertEq(_spoke().balance, 1 ether);
+    }
+
     /// @dev C24 over the hub's configuration after `initialize` and a delivery to each side.
     function test_noWriteLandsOnAnotherField() public {
         vm.startStateDiffRecording();

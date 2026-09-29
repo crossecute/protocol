@@ -314,8 +314,7 @@ contract CcipGatewayRoleGrantTest is Test {
 
     function test_spokeGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
         CcipSpokeTransceiver spoke = CcipSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new CcipSpokeTransceiver(router)),
                     abi.encodeCall(
                         CcipSpokeTransceiver.initialize,
@@ -328,8 +327,7 @@ contract CcipGatewayRoleGrantTest is Test {
                             uint64(1)
                         )
                     )
-                )
-            )
+                ))
         );
         assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), router));
     }

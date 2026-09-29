@@ -427,11 +427,9 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
     function setUp() public {
         core = new MockWormholeCore(HERE);
         spoke = WormholeSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new WormholeSpokeTransceiver(address(core), address(0), address(0))), _spokeInit(HOME)
-                )
-            )
+                ))
         );
         hub = WormholeHubTransceiver(
             address(
@@ -552,7 +550,8 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
 
     /// @dev Addressed to `spoke` on this chain, so only the emitter chain is wrong.
     function _deliverFromHubOn(address spoke, uint256 origin) internal override {
-        WormholeSpokeTransceiver(spoke).executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
+        WormholeSpokeTransceiver(payable(spoke))
+            .executeVAAv1(_vaa(1, uint16(origin), hub, 0, _envelope(HERE, spoke, "")));
     }
 }
 

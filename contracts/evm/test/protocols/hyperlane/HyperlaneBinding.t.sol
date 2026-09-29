@@ -287,8 +287,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
 
     function _spoke(uint32 homeDomain) internal returns (HyperlaneSpokeTransceiver) {
         return HyperlaneSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new HyperlaneSpokeTransceiver(address(mailbox))),
                     abi.encodeCall(
                         HyperlaneSpokeTransceiver.initialize,
@@ -301,8 +300,7 @@ contract HyperlaneTransceiverReceiveTest is ProviderHomeIdSpec {
                             homeDomain
                         )
                     )
-                )
-            )
+                ))
         );
     }
 

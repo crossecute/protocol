@@ -275,15 +275,19 @@ contract ReceiverReportTest is Test {
         assertEq(s.sentValue(), quoted, "and they were sent at the price it quoted");
     }
 
-    /// @dev And the retry works, which is the property the revert buys.
+    /// @dev And the retry works, which is the property the revert buys. Funded by a plain
+    ///      transfer, the way an operator tops a spoke up, so a spoke that cannot accept one
+    ///      fails here (#17).
     function test_theBootstrapSucceedsOnceTheSpokeIsFunded() public {
         ReportingSpoke s = _spoke(true);
-        s.setSendReverts(true);
+        s.setReportFee(1 ether);
 
         vm.expectRevert(ReportingSpoke.NoBalanceForTheReport.selector);
         s.inbound(owner, SALT, new Call[](0));
 
-        s.setSendReverts(false);
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(s).call{value: 1 ether}("");
+        assertTrue(ok, "the spoke accepts its float");
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);

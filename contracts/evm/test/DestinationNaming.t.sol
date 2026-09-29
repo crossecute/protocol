@@ -59,8 +59,7 @@ contract DestinationNamingTest is Test {
         // The hub address is knowable before the spoke is initialized, which is what lets
         // the counterpart be an initializer argument rather than a setter.
         spoke = LzSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new LzSpokeTransceiver(ENDPOINT)),
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
@@ -73,8 +72,7 @@ contract DestinationNamingTest is Test {
                             uint32(1)
                         )
                     )
-                )
-            )
+                ))
         );
 
         vm.startPrank(msig);
@@ -124,8 +122,7 @@ contract DestinationNamingTest is Test {
     function test_aTeamCanAnchorOnADifferentChain() public {
         address arbHub = address(0xA4B);
         LzSpokeTransceiver arbSpoke = LzSpokeTransceiver(
-            address(
-                new ERC1967Proxy(
+            payable(new ERC1967Proxy(
                     address(new LzSpokeTransceiver(ENDPOINT)),
                     abi.encodeCall(
                         LzSpokeTransceiver.initialize,
@@ -138,8 +135,7 @@ contract DestinationNamingTest is Test {
                             uint32(2)
                         )
                     )
-                )
-            )
+                ))
         );
 
         assertEq(arbSpoke.homeChainKey(), ChainKey.forEvm(42161), "Arbitrum is home");
