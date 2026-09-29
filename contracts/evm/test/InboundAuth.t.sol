@@ -71,6 +71,11 @@ contract Hub is UnsendableHub {
         return bytes32(0);
     }
 
+    /// @dev The account prices its bootstrap before sending it.
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal pure override returns (uint256) {
+        return 0;
+    }
+
     function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
     }

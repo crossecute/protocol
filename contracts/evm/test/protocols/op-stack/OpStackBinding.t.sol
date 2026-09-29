@@ -104,7 +104,7 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
         assertEq(messenger.sent(1).minGasLimit, 900_000);
     }
 
-    /// @dev `msg.value` on `sendMessage` is bridged to the target, not spent as a fee.
+    /// @dev Value handed to the messenger is bridged to the target, not spent as a fee.
     function test_nonzeroValueIsRefused() public {
         vm.deal(address(this), 1 ether);
         vm.expectRevert(abi.encodeWithSelector(OpStackMessage.OpStackValueNotSupported.selector, 1));

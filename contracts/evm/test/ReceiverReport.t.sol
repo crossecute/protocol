@@ -349,6 +349,9 @@ contract Hub is HubTransceiverBase {
         returns (bytes32)
     {
         lastSendValue = value;
+        // Pays a stand-in provider, so nothing the message cost stays on the hub.
+        (bool ok,) = address(0xFEE).call{value: value}("");
+        require(ok);
         return bytes32(0);
     }
 
@@ -427,6 +430,7 @@ contract ReceiverReportRoundTripTest is Test {
         // spoke, because that is what gives it a counterpart slot for that chain.
         vm.startPrank(owner);
         account = Transmitter(payable(hub.createTransmitter(SALT)));
+        vm.deal(address(account), 1 ether);
         account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
         vm.stopPrank();
     }
@@ -722,7 +726,7 @@ contract BootstrapFeeTest is Test {
 
         vm.prank(owner);
         account = Transmitter(payable(hub.createTransmitter(SALT)));
-        vm.deal(owner, 10 ether);
+        vm.deal(address(account), 10 ether);
     }
 
     /// @dev A parity destination pays nothing. It sends no report and creates no obligation,
@@ -738,7 +742,7 @@ contract BootstrapFeeTest is Test {
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
-        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         assertEq(treasury.balance, FEE, "paid, not accrued");
         assertEq(address(hub).balance, 0, "and the hub holds none of it");
@@ -748,7 +752,7 @@ contract BootstrapFeeTest is Test {
     ///      only place a fee is ever withdrawn from now.
     function test_theMsigMovesFeesOnFromTheTreasury() public {
         vm.prank(owner);
-        account.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(msig);
         Treasury(payable(treasury)).withdraw(msig, FEE);
@@ -757,11 +761,25 @@ contract BootstrapFeeTest is Test {
 
     /// @dev Underpaying reverts rather than eating the provider's payment. The alternative
     ///      is a bootstrap that dispatches with a shortfall taken out of the message fee and
-    ///      fails on arrival, after the signers have committed.
+    ///      fails on arrival. The account always pays the quote, so this guards the hub's own
+    ///      entry point.
     function test_underpayingTheFeeReverts() public {
-        vm.prank(owner);
+        vm.deal(address(account), FEE);
+        vm.prank(address(account));
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
-        account.bootstrap{value: FEE - 1}(DIVERGING, new Call[](0), new bytes[](0));
+        hub.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev An account that cannot cover the quote, fee included, sends nothing and pays
+    ///      nobody.
+    function test_anUnfundedAccountCannotBootstrap() public {
+        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        vm.deal(address(account), quote - 1);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, quote, quote - 1));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        assertEq(treasury.balance, 0);
     }
 
     /// @dev The quote carries it, or it is worse than no quote: a caller would fund the send
@@ -773,12 +791,31 @@ contract BootstrapFeeTest is Test {
         assertGt(withoutFee, 0, "and the message still costs something");
     }
 
-    /// @dev The binding is told what is left, not `msg.value`. Reading `msg.value` would
-    ///      overpay the provider by the fee, or refund the fee to the sender.
-    function test_theBindingSeesTheValueMinusTheFee() public {
+    /// @dev The account pays exactly its quote, whatever it holds, and the binding is told
+    ///      what is left after the fee.
+    function test_theAccountPaysTheQuoteAndTheBindingSeesItLessTheFee() public {
+        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 before = address(account).balance;
+
         vm.prank(owner);
-        account.bootstrap{value: FEE + 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
-        assertEq(hub.lastSendValue(), 1 ether, "message value, fee already taken");
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        assertEq(before - address(account).balance, quote, "the quote, not the balance");
+        assertEq(hub.lastSendValue(), quote - FEE, "message value, fee already taken");
+    }
+
+    /// @dev `msg.value` tops the balance up and is not a price: the same quote is paid and
+    ///      the rest stays on the account.
+    function test_attachedValueStaysOnTheAccount() public {
+        vm.deal(address(account), 0);
+        vm.deal(owner, 1 ether);
+        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(owner);
+        account.bootstrap{value: 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
+
+        assertEq(address(account).balance, 1 ether - quote);
+        assertEq(hub.lastSendValue(), quote - FEE);
     }
 
     function test_onlyTheOwnerSetsTheFee() public {
@@ -818,10 +855,11 @@ contract BootstrapFeeTest is Test {
 
         vm.prank(owner);
         Transmitter a = Transmitter(payable(h.createTransmitter(SALT)));
+        vm.deal(address(a), 1 ether);
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.FeeTransferFailed.selector, rejecting, FEE));
-        a.bootstrap{value: FEE}(DIVERGING, new Call[](0), new bytes[](0));
+        a.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 }
 

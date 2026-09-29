@@ -20,6 +20,8 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
+address constant PROVIDER = address(0xFEE);
+
 contract MockTransmitter is OwnableTransmitter {
     bytes public sentRecipient;
     bytes public sentPayload;
@@ -41,9 +43,12 @@ contract MockTransmitter is OwnableTransmitter {
         sentRecipient = recipient;
         sentPayload = payload;
         sentAttributes = attributes;
-        sentValue = msg.value;
+        sentValue = value;
         sentRefund = _refundTo();
         ++sentCount;
+        // Pays the stand-in provider, so the account's balance shows what the send spent.
+        (bool ok,) = PROVIDER.call{value: value}("");
+        require(ok);
         return bytes32(0);
     }
 
@@ -188,6 +193,7 @@ contract TransportTest is Test {
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(hub), SALT);
+        vm.deal(at, 1 ether);
 
         vm.prank(owner);
         transmitter.bootstrap(DEST, new Call[](0), NONE);
@@ -259,12 +265,43 @@ contract TransportTest is Test {
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev The fee rides with the send; the adapter reads `msg.value`.
-    function test_sendForwardsTheBridgeFee() public {
-        vm.deal(owner, 1 ether);
+    /// @dev The account prices the send itself and pays exactly that from its balance.
+    function test_sendPaysItsOwnQuoteFromTheBalance() public {
+        bytes memory payload = Payload.encodeCalls(_calls());
+        uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
+        uint256 before = address(transmitter).balance;
+
         vm.prank(owner);
-        transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
-        assertEq(transmitter.sentValue(), 0.3 ether);
+        transmitter.sendMessage(_recip(DEST), payload, NONE);
+
+        assertEq(transmitter.sentValue(), quote, "the binding is handed the quote");
+        assertEq(before - address(transmitter).balance, quote, "and nothing else left the account");
+    }
+
+    /// @dev Attached value tops the balance up rather than setting the price: the send
+    ///      still spends the quote, and the rest stays on the account.
+    function test_attachedValueIsNotThePrice() public {
+        bytes memory payload = Payload.encodeCalls(_calls());
+        uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
+        vm.deal(address(transmitter), 0);
+        vm.deal(owner, 1 ether);
+
+        vm.prank(owner);
+        transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), payload, NONE);
+
+        assertEq(transmitter.sentValue(), quote);
+        assertEq(address(transmitter).balance, 0.3 ether - quote);
+    }
+
+    /// @dev An account that cannot cover the quote refuses before anything reaches the wire.
+    function test_anUnfundedSendReverts() public {
+        bytes memory payload = Payload.encodeCalls(_calls());
+        uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
+        vm.deal(address(transmitter), quote - 1);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, quote, quote - 1));
+        transmitter.sendMessage(_recip(DEST), payload, NONE);
     }
 
     /// @dev ERC-7786 requires `MessageSent`, and it superseded our own event. `Dispatched`
@@ -282,11 +319,12 @@ contract TransportTest is Test {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].topics[0] != IERC7786GatewaySource.MessageSent.selector) continue;
             found = true;
-            (bytes memory sender, bytes memory recipient, bytes memory payload,,) =
+            (bytes memory sender, bytes memory recipient, bytes memory payload, uint256 value,) =
                 abi.decode(logs[i].data, (bytes, bytes, bytes, uint256, bytes[]));
             assertEq(sender, Erc7930.encodeEvm(block.chainid, address(transmitter)));
             assertEq(recipient, _recip(DEST));
             assertEq(payload, Payload.encodeCalls(calls));
+            assertEq(value, transmitter.sentValue(), "the fee paid, not msg.value");
         }
         assertTrue(found, "MessageSent is mandatory for a gateway source");
     }
@@ -514,6 +552,7 @@ contract TransportTest is Test {
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
+        vm.deal(at, 1 ether);
     }
 
     /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it,
@@ -762,14 +801,12 @@ contract TransportTest is Test {
 
     /* ================================== refund ================================= */
 
-    /// @dev The party who overpaid is the party who gets it back. On path A the sender is
-    ///      the owner, because `send` is owner-gated, so the remainder goes to the wallet
-    ///      that signed and funded the message.
-    function test_pathARefundsToTheOwner() public {
-        vm.deal(owner, 1 ether);
+    /// @dev The party who overpaid is the party who gets it back. On path A that is the
+    ///      account, which paid from its own balance, not the owner who submitted the send.
+    function test_pathARefundsToTheAccount() public {
         vm.prank(owner);
-        transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), Payload.encodeCalls(_calls()), NONE);
-        assertEq(transmitter.sentRefund(), owner);
+        _sendCalls(DEST, _calls());
+        assertEq(transmitter.sentRefund(), address(transmitter));
     }
 
     /// @dev On path B it is the account, and never the transceiver. This is the one this
@@ -780,9 +817,8 @@ contract TransportTest is Test {
     function test_pathBRefundsToTheAccountNotTheTransceiver() public {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
-        vm.deal(owner, 1 ether);
         vm.prank(owner);
-        acct.bootstrap{value: 0.2 ether}(DEST, _calls(), new bytes[](0));
+        acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         assertEq(t.bootRefund(), address(acct), "the account that asked for the message");
         assertTrue(t.bootRefund() != address(t), "never the shared transceiver");
@@ -794,10 +830,11 @@ contract TransportTest is Test {
     function test_theAccountCanReceiveARefund() public {
         (, MockTransmitter acct) = _account();
 
+        uint256 before = address(acct).balance;
         vm.deal(address(this), 1 ether);
         (bool ok,) = payable(address(acct)).call{value: 0.1 ether}("");
         assertTrue(ok, "the transmitter accepts a refunded fee");
-        assertEq(address(acct).balance, 0.1 ether);
+        assertEq(address(acct).balance - before, 0.1 ether);
     }
 
     /* ============================== the bootstrap gate ========================= */
@@ -990,6 +1027,7 @@ contract DivergingDestinationTest is Test {
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(hub), bytes32(0));
+        vm.deal(at, 1 ether);
 
         vm.prank(owner);
         transmitter.bootstrap(ZKSYNC, new Call[](0), new bytes[](0));

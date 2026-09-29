@@ -105,6 +105,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     error TypedPayloadToNonEvmDestination();
     /// @dev An EVM receiver decodes only `Call[]`, so opaque elements would be undeliverable.
     error OpaquePayloadToEvmDestination();
+    /// @dev This account's balance, including the call's `msg.value`, cannot cover the fee.
+    error InsufficientBalance(uint256 fee, uint256 balance);
 
     /// @notice Whether a bootstrap to `destinationChainKey` has been dispatched.
     ///
@@ -214,6 +216,10 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     /// @dev The recipient must be this account's recorded receiver on that chain; see
     ///      `_requireOwnRecipient`.
     ///
+    /// @dev Priced here, in the same call, and paid from this account's balance, so the owner
+    ///      approves a payload rather than a payload and a price. `msg.value` only tops the
+    ///      balance up.
+    ///
     /// @return sendId Zero when the gateway has taken the message. A binding that returns
     ///         non-zero has a second step to perform and says so in its own NatSpec.
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
@@ -225,10 +231,13 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
 
+        uint256 fee = _quoteMessage(recipient, payload, attributes);
+        _requireFunded(fee);
+
         emit MessageSent(
-            bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), recipient, payload, msg.value, attributes
+            bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), recipient, payload, fee, attributes
         );
-        return _sendMessage(recipient, payload, attributes, msg.value);
+        return _sendMessage(recipient, payload, attributes, fee);
     }
 
     /// @notice Whether this account understands a per-send attribute. Required by ERC-7786
@@ -294,8 +303,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     ///      envelope: `_evmIdentifier` is `eip155` by construction, `_typedIdentifier` refuses
     ///      a non-EVM destination, and `_opaqueIdentifier` refuses an EVM one.
     ///
-    /// @dev Each bootstrap has a quote with the same arguments minus the value. Pass empty
-    ///      `attributes` for the gateway's default.
+    /// @dev Pays the transceiver's `quoteBootstrap` from this account's balance, as
+    ///      `sendMessage` does. Each bootstrap has a public quote with the same arguments, for
+    ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
     function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
         external
         payable
@@ -326,9 +336,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     /* ================================== quote ================================== */
 
     /// @notice What `sendMessage` would cost, in this chain's native currency.
-    /// @dev Takes `sendMessage`'s arguments minus the value and applies its checks, so a
-    ///      quote never succeeds for a send that would be refused. Ungated, so a signer can
-    ///      price a payload before the owner submits it.
+    /// @dev Takes `sendMessage`'s arguments and applies its checks, so a quote never succeeds
+    ///      for a send that would be refused. Ungated, so the balance can be sized off-chain.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         external
         view
@@ -421,18 +430,28 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     function _bootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes) private {
         bytes32 chainKey = _markBootstrapped(identifier);
+        IAccountTransceiver t = IAccountTransceiver(transceiver);
 
-        IAccountTransceiver(transceiver).bootstrap{value: msg.value}(chainKey, _owner(), accountSalt, calls, attributes);
+        uint256 fee = t.quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
+        _requireFunded(fee);
+        t.bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
     function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)
         private
     {
         bytes32 chainKey = _markBootstrapped(identifier);
+        IAccountTransceiver t = IAccountTransceiver(transceiver);
 
-        IAccountTransceiver(transceiver).bootstrapElements{value: msg.value}(
-            chainKey, _owner(), accountSalt, elements, attributes
-        );
+        uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
+        _requireFunded(fee);
+        t.bootstrapElements{value: fee}(chainKey, _owner(), accountSalt, elements, attributes);
+    }
+
+    /// @dev The fee comes from a provider's or the hub's quote, so it is bounded only by this
+    ///      balance: an account holding more than it sends exposes the difference to both.
+    function _requireFunded(uint256 fee) private view {
+        if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
     }
 
     /// @dev Records the destination before the transceiver is called: that call reaches a
@@ -519,10 +538,16 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         return Commitment.hashCalls(ChainKey.fromIdentifier(destinationChainIdentifier), calls);
     }
 
-    /// @notice Accept ETH, so a refunded fee has somewhere to land.
-    /// @dev `bootstrap` is called by this account, so a provider's path-B refund comes here;
-    ///      without `receive` it would revert the bootstrap.
+    /// @notice Accept ETH: the balance every send and bootstrap is paid from, and where a
+    ///         provider's refund lands. Without `receive` a refund would revert the send.
     receive() external payable {}
+
+    /// @inheritdoc OutboundBase
+    /// @dev Path A: this account paid from its own balance. Path B refunds come here too, as
+    ///      the hub's caller.
+    function _refundTo() internal view override returns (address) {
+        return address(this);
+    }
 
     function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_) internal onlyInitializing {
         if (transceiver_ == address(0)) revert NoTransceiver();

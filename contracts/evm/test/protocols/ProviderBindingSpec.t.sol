@@ -148,8 +148,10 @@ abstract contract ProviderFeeSpec is ProviderHubSendSpec {
 }
 
 /// @title ProviderRefundSpec
-/// @notice C25 (R7.2): an overpayment is refunded to the caller, never to the sending contract.
-///         For providers that refund (LayerZero, Hyperlane, Wormhole); CCIP keeps overpayment.
+/// @notice C25 (R7.2): a transceiver's overpayment is refunded to its caller, the account on
+///         path B, never to itself. A transmitter refunds to itself, as the payer
+///         (`Transport.t.sol`). For providers that refund (LayerZero, Hyperlane, Wormhole); CCIP
+///         keeps overpayment.
 abstract contract ProviderRefundSpec is ProviderFeeSpec {
     /// @notice The refund address the provider was given for the last send.
     function _lastRefundAddress() internal view virtual returns (address);
