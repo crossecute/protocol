@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -224,9 +225,32 @@ contract DestinationNamingTest is Test {
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         registry.validateLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
-        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        vm.stopPrank();
+    }
+
+    /// @dev Lowering the grade still cuts a removed chain off: removal must not disable it.
+    function test_aRemovedChainCanStillBeCutOff() public {
+        vm.startPrank(msig);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        hub.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+        registry.removeChainKey(key);
+
         registry.setProvenance(key, Provenance.Attested);
         vm.stopPrank();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HubTransceiverBase.InsufficientCounterpartProvenance.selector, key, Provenance.Attested
+            )
+        );
+        hub.counterpartOn(key);
+    }
+
+    /// @dev A chain never registered has nothing to grade.
+    function test_aNeverRegisteredChainCannotBeGraded() public {
+        vm.prank(msig);
+        vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
+        registry.setProvenance(keccak256("never registered"), Provenance.Attested);
     }
 
     /// @dev An undeclared chain keeps its derived default after removal too.

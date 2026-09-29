@@ -157,7 +157,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev Stops onboarding only: `validateLocation` requires membership, so no hub can
     ///      record a new counterpart there. Its identifier and grade stay, so hubs keep
     ///      bootstrapping to it and accepting its reports; removal must not strand accounts.
-    ///      Cutting a chain off is `setProvenance`.
+    ///      Cutting a chain off is `setProvenance`, which still applies after removal.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
 
@@ -355,9 +355,10 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev Declare `Attested` for every chain this one cannot recompute, which also turns on
     ///      `requiresReceiverCallback`. Rebindable, unlike routes and counterparts: re-grading
     ///      is how the owner responds to a bridge's standing changing, including cutting off a
-    ///      compromised one without a redeploy.
+    ///      compromised one without a redeploy. Applies to a removed chain too, since hubs
+    ///      still grade it: any chain ever registered can be cut off.
     function setProvenance(bytes32 chainKey, Provenance provenance) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        if (_chainIdentifier[chainKey].length == 0) revert UnknownChainKey();
         provenanceOf[chainKey] = provenance;
         emit ProvenanceSet(chainKey, provenance);
     }
