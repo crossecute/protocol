@@ -70,12 +70,11 @@ mainnet.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee.
 
-  **The bootstrap fee now has no caller-side cap.** An account pays its bootstrap quote
-  from its own balance, fee included, rather than from a `msg.value` its owner chose. So an
-  owner that raises `bootstrapFee` takes up to the whole balance of the next account to
-  bootstrap that chain, into the write-once treasury. The same holds for a provider quote
-  that goes wrong. An account that keeps only what it is about to send limits this; an
-  owner-set per-account ceiling on one fee would close it.
+  **The bootstrap fee has no caller-side cap, BY DESIGN.** An account pays its bootstrap
+  quote from its own balance, fee included, so an owner that raises `bootstrapFee`, or a
+  provider quote that goes wrong, can take up to that balance. A transmitter is meant to
+  hold only pre-funded bridging fees, whose loss does not harm its owner, so no ceiling is
+  added.
 
   **RESOLVED, PARTIALLY BY DESIGN.** `setRouting` (`HubTransceiverBase`) let the owner
   silently repoint the registry a hub trusts and its provider id at any time, with no

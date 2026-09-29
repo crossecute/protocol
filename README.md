@@ -332,6 +332,9 @@ What an operator or integrator has to know:
   bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
   `src/messaging/IErc7786.sol` instead of imported, because they are a `draft-` upstream and
   this protocol's ABI here.
+- A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
+  that balance at a quote nothing caps, so value kept there for any other purpose is exposed
+  to the hub owner's bootstrap fee and to a provider's price.
 - The crossecute msig owns the registry, every transceiver, and the treasury. There is ONE
   treasury for the whole protocol, on the home chain, named at the hub's deployment and
   write-once. A bootstrap fee is charged there and forwarded in the same transaction, so no

@@ -448,8 +448,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         t.bootstrapElements{value: fee}(chainKey, _owner(), accountSalt, elements, attributes);
     }
 
-    /// @dev The fee comes from a provider's or the hub's quote, so it is bounded only by this
-    ///      balance: an account holding more than it sends exposes the difference to both.
+    /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
+    ///      nothing else.
     function _requireFunded(uint256 fee) private view {
         if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
     }
