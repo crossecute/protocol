@@ -90,7 +90,7 @@ account up on however good the transport is.
 | **P6** | Permissionless retry of a failed message | Execution runs inside the delivery callback, so a revert must be a retry and not a loss. |
 | **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay). |
 | **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
-| **P9** | **Quote that fee at source, as a `view`, before the send** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. Without a quote a caller either overpays blindly or has a send revert after the signers have already approved it. See [R2](#r2-quote). |
+| **P9** | **Quote that fee at source, as a `view`, on-chain** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. The transmitter prices every send and bootstrap in the same call and pays exactly the answer, so a provider without an on-chain quote cannot be sent through at all. See [R2](#r2-quote). |
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
@@ -171,7 +171,7 @@ the transmitter and both transceivers.
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
 | `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. There is no default: a contract that omits it does not compile. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
-| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. There is no default; a provider that cannot quote on-chain overrides it to revert `QuoteNotImplemented`. See [R2](#r2-quote). |
+| `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. There is no default; a provider that cannot quote on-chain overrides it to revert `QuoteNotImplemented`, which also reverts every send, since the entry points price themselves. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
 ### 4.2 Required on the transmitter
@@ -298,7 +298,9 @@ code, so such a send is a fee spent on a message that cannot be delivered.
 
 Every send has a fee, and the fee is not derivable off-chain from first principles: it is a
 function of the payload's exact bytes, the destination gas the payload needs, and the
-provider's own price feed at that block. A caller therefore needs to ask.
+provider's own price feed at that block. The transmitter therefore asks on-chain, in the
+same call as the send ([R2.6](#r2-quote)), and the public quotes let a caller size the
+balance it pays from ahead of time.
 
 **R2.1 The seam.** `_quoteMessage` MUST be overridden alongside `_sendMessage` and MUST
 mirror it exactly:
@@ -339,50 +341,41 @@ is still refused here. It requires the gateway to reveal the fee somehow, it nee
 balance override to fund the simulation, and it would make the whole read surface above
 non-view, which is the property R2.2 exists to protect.
 
-**R2.2.2 Where a provider offers no quote, the fallback is off-chain, and it MEASURES
-rather than searches.** The constraints in R2.2.1 are the EVM's static context, and a
-simulator is not bound by them. A Foundry fork test or script can call the REAL send,
-overfunded, against the real endpoint, and read the exact net cost off the balance delta:
+**R2.2.2 Checking a quote is off-chain, and it MEASURES rather than searches.** The
+constraints in R2.2.1 are the EVM's static context, and a simulator is not bound by them. A
+Foundry fork test or script can call the REAL send against the real endpoint and read the
+exact net cost off the paying account's balance:
 
 ```solidity
 uint256 snap = vm.snapshotState();
-vm.deal(owner, 100 ether);
-uint256 before = owner.balance;
+vm.deal(address(transmitter), 100 ether);
+uint256 before = address(transmitter).balance;
 
 bytes memory recipient = transmitter.recipientOn(destinationChainId);
 bytes memory payload = transmitter.payloadForCalls(calls);   // or payloadForElements
 
 vm.prank(owner);
-transmitter.sendMessage{value: 100 ether}(recipient, payload, attributes);
+transmitter.sendMessage(recipient, payload, attributes);
 
-uint256 fee = before - owner.balance;   // charged minus refunded, exactly
+uint256 fee = before - address(transmitter).balance;   // charged minus refunded, exactly
 vm.revertToState(snap);
 ```
 
 That is one call and an exact number, not a bound from bisection, because the refund lands
-back on `_refundTo()` and the delta is therefore the net. It cannot be exposed through
-`quoteMessage`, since the on-chain constraints still hold, so it belongs in `script/` and
-in the compliance suite rather than in the contracts.
+back on `_refundTo()` and the delta is therefore the net. It is how
+[C11](#8-the-compliance-suite) checks that a quote equals what the send actually consumes,
+and how an operator sizes the balance a diverging spoke needs for its return report under
+[R7.5](#r7-fees-and-value).
 
-The same measurement answers two other open questions, so write it once and reuse it. It is
-how [C11](#8-the-compliance-suite) checks that a quote equals what the send actually
-consumes, and how an operator sizes the balance a diverging spoke needs for its return
-report under [R7.5](#r7-fees-and-value).
-
-A binding whose provider has no quote MUST say so in the NatSpec of the `_quoteMessage`
-that reverts `QuoteNotImplemented`, and point at the script that measures instead.
-
-Note also the cheaper mitigation, which is why a missing quote is a cost rather than a
-disqualification: if the provider refunds excess reliably, a caller can simply overpay and
-let [`_refundTo`](#r7-fees-and-value) return the difference. A quote buys capital
-efficiency and a failure that happens before the signers commit, not correctness.
+It is not a substitute for a missing quote. The transmitter prices each send on-chain
+([R2.6](#r2-quote)), so a binding whose `_quoteMessage` reverts `QuoteNotImplemented` can
+send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist).
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, calls)`, the same
 function `sendMessage` puts on the wire, not over an estimate of the length. Every provider prices
-per byte. This is what makes a quote a number a caller can send rather than a number a
-caller must pad, and it is why the public surface below takes exactly `sendMessage`'s
-arguments.
+per byte. This is what makes a quote a number the send can pay rather than a number it must
+pad, and it is why the public surface below takes exactly `sendMessage`'s arguments.
 
 **R2.4 It MUST use the same route, destination, and options resolution as the send.** Any
 divergence between `_quoteMessage` and `_sendMessage` is a quote that prices a different
@@ -395,11 +388,14 @@ unroutable destination, or a counterpart below the provenance bar MUST fail the 
 A quote that succeeds where the send fails tells a caller the operation is ready when it is
 not, which is worse than no quote at all.
 
-**R2.6 It MUST NOT be consulted by `_sendMessage`.** The quote is advisory. Making a send
-call its own quote and compare doubles the provider round trip on every message, and turns
-a price that moved between quote and send into a revert rather than into the provider's own
-refund. Excess `msg.value` is refunded per [R7.2](#r7-fees-and-value); shortfall is the
-provider's revert to raise.
+**R2.6 The entry point consults it; `_sendMessage` MUST NOT.** `sendMessage` and each
+bootstrap call the quote in the same call as the send and pay exactly its answer from the
+transmitter's balance, reverting `InsufficientBalance` when the balance cannot cover it.
+Taken in the same transaction, the price cannot move between quote and send, so a signer
+approves a payload and never a price, and `msg.value` only tops the balance up. The cost is
+one extra provider read per message. `_sendMessage` stays a plain spend of the `value` it is
+handed, so a binding implements the same seam either way. The spoke's receiver report
+prices itself the same way.
 
 **R2.7 It MUST NOT be cached on-chain.** A stored quote is a stale quote.
 
@@ -413,9 +409,9 @@ quote has one too:
 
 ```solidity
 /// @notice What `sendMessage` would cost, in this chain's native currency.
-/// @dev Its arguments are `sendMessage`'s, minus the value. A caller builds the recipient
-///      and the payload once, prices them, and sends the same three arguments with the
-///      answer attached.
+/// @dev Its arguments are `sendMessage`'s. A caller builds the recipient and the payload
+///      once, prices them to fund the account, and sends the same three arguments; the
+///      send prices itself again and pays from the account's balance.
 function quoteMessage(
     bytes calldata recipient,
     bytes calldata payload,
@@ -425,8 +421,8 @@ function quoteMessage(
 
 It carries the same gates the send does, for the reason in R2.5: an unbootstrapped
 destination and a recipient that is not this account fail here too. It is ungated, unlike
-the send, because a signer reviewing a payload before the owner submits it has to be able
-to call it.
+the send, because a signer reviewing a payload, or anyone funding the account for it, has
+to be able to call it.
 
 `quoteBootstrap` and `quoteBootstrapTo` keep their `Call[]` and `bytes[]` forms, because
 path B's envelope is built by the transceiver rather than handed to it.
@@ -642,25 +638,26 @@ cost the bootstrap quote must include, which is [R2.3](#r2-quote) applied to pat
 
 **R7.1 The binding is told how much it may spend, and MUST NOT read `msg.value`.**
 `_sendMessage` takes the amount as its fourth argument, and that is the number to pay the
-provider. The two were the same until the hub began taking a bootstrap fee off the top, and
-on a nested send they are not related at all: `msg.value` is zero there and the payment
-comes from the contract's own balance. A binding reading `msg.value` overpays the provider
-by the fee, or refunds the fee to the sender, or sends nothing.
+provider. It is never `msg.value`: on a transmitter it is the quote and `msg.value` only
+tops up the balance, the hub takes its bootstrap fee off the top, and on a nested send
+`msg.value` is zero. In every case the payment comes from the sending contract's balance. A
+binding reading `msg.value` overpays the provider, or refunds the fee to the sender, or
+sends nothing.
 
 **R7.2** Refunding the excess is the binding's job, because only the binding knows the
 provider's refund convention. The address it refunds to is NOT the binding's choice: it
-MUST be `OutboundBase._refundTo()`, which is `msg.sender`, and a binding MUST NOT read a
-refund address out of the attributes or substitute one of its own.
+MUST be `OutboundBase._refundTo()`, and a binding MUST NOT read a refund address out of the
+attributes or substitute one of its own.
 
 The rule is one sentence: a fee is overpaid by whoever paid it, so the remainder goes back
-to the party that sent the value. It resolves correctly on both paths without anything
-being threaded through the call stack. On path A `sendMessage` is `onlyAccountOwner`, so
-`msg.sender` is the wallet that signed and funded the message. On path B `bootstrap`
-refuses any caller that is not `predictCrossAccount(owner, salt)`, so `msg.sender` is the
-ACCOUNT, and the transceiver is structurally incapable of being its own refund target: it
-is never the caller of its own `bootstrap`. A shared transceiver refunding to
-`address(this)` would pool every user's excess into infrastructure with no per-user way
-out, and this is the arrangement under which that cannot be written by accident.
+to the party that sent the value. That is the account on both paths. On path A the
+transmitter paid from its own balance, so `TransmitterBase` overrides `_refundTo()` to
+`address(this)`. On path B the base answers `msg.sender`, and `bootstrap` refuses any
+caller that is not `predictCrossAccount(owner, salt)`, so `msg.sender` is the ACCOUNT. The
+transceiver is structurally incapable of being its own refund target: it is never the
+caller of its own `bootstrap`. A shared transceiver refunding to `address(this)` would pool
+every user's excess into infrastructure with no per-user way out, and this is the
+arrangement under which that cannot be written by accident.
 
 Both halves of an account declare `receive`, which on `TransmitterBase` is load-bearing
 rather than decorative: a provider's refund is a plain value transfer, and one to a
@@ -679,8 +676,8 @@ provider cannot do this MUST say so and the report path MUST fall back to a sepa
 funded transaction. This is the top blocker on the report path in
 [todo §1](todo.md#1-blockers-on-specific-paths).
 
-**R7.4** `bootstrap` forwards the whole `msg.value` to the transceiver. A binding MUST NOT
-retain a remainder there.
+**R7.4** The transmitter's `bootstrap` forwards exactly the transceiver's `quoteBootstrap`,
+from its balance. A binding MUST NOT retain a remainder on the transceiver.
 
 **R7.5** Where the report is sent from a contract balance, the binding SHOULD expose the
 report's own quote so an operator can size that balance. A spoke that runs dry fails every
@@ -830,7 +827,7 @@ below. The column says where each line is held.
 | C22 | `parity_hubAndSpokeProxiesShareInitcode` | The claim that puts hub and spokes at one address. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
-| C25 | `fees_excessRefundsToTheOwnerNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec`. CCIP keeps an overpayment; OP Stack takes no value |
+| C25 | `fees_excessRefundsToTheAccountNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec` (transceiver), core `Transport.t.sol` `test_pathARefundsToTheAccount` (transmitter). CCIP keeps an overpayment; OP Stack takes no value |
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
 | C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `CommitFinalize.t.sol` `test_initializingLocksUpgrades` |
 | C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). | core setters (`DestinationNaming.t.sol`, `SaltedDeployment.t.sol`, `ProviderChainId.t.sol`); the binding's typed setter `ProviderIdTableSpec` |
@@ -894,8 +891,8 @@ contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
     }
 
     /// R2: ERC-7786 defines no quote, so this is the gateway's own extension or nothing.
-    /// Reverting is the honest answer; the binding then documents the measurement in
-    /// R2.2.2 that replaces it.
+    /// Reverting is the honest answer, and it reverts every send too (R2.6): a gateway with
+    /// no quote extension fails P9.
     function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
         internal
         view
@@ -986,8 +983,8 @@ A binding is done when every line is true.
 - [ ] Fixed-width `abi.encode` everywhere a route is built
 
 **Value**
-- [ ] The `value` argument pays the fee, never `msg.value`, and excess refunds to the owner
-- [ ] Quote priced over the exact payload bytes, never cached, never called by the send
+- [ ] The `value` argument pays the fee, never `msg.value`, and excess refunds to `_refundTo()`
+- [ ] Quote priced over the exact payload bytes, never cached, never called by `_sendMessage`
 - [ ] Nested send funded from balance, or the gap documented, and its quote exposed
 
 **Parity**

@@ -46,11 +46,13 @@ flowchart LR
 
 Every check on that path, in the order a message meets them:
 
-- `sendMessage{value: fee}(recipient, payload, attributes)` is `onlyAccountOwner`. The
-  recipient is checked against the stored counterpart, not trusted, and the destination
-  must already be bootstrapped.
+- `sendMessage(recipient, payload, attributes)` is `onlyAccountOwner`. The recipient is
+  checked against the stored counterpart, not trusted, and the destination must already be
+  bootstrapped.
 - `recipient` is `<erc7930: chain, address(this)>` and `payload` is `abi.encode(calls)`,
-  both built by the caller. `_sendMessage` hands them to the gateway.
+  both built by the caller. The transmitter quotes them in the same call and `_sendMessage`
+  hands them to the gateway with exactly that fee, paid from the transmitter's balance.
+  Attached `msg.value` only tops the balance up.
 - `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
   arming, and the sender's address must equal `sourceTransmitter`.
 - `_onMessage` is `nonReentrant`. It decodes with `Payload.decodeCalls` and `_execute`s
@@ -114,8 +116,9 @@ flowchart LR
 
 Hop by hop:
 
-- `transmitter.bootstrap{value: fee}(chainId, calls)` is `onlyAccountOwner`, and refuses a
-  destination this account has already bootstrapped.
+- `transmitter.bootstrap(chainId, calls)` is `onlyAccountOwner`, and refuses a destination
+  this account has already bootstrapped. It asks the hub's `quoteBootstrap` and forwards
+  exactly that, bootstrap fee included, from its own balance.
 - `hub.bootstrap(chainKey, owner, salt, calls, attributes)`: `msg.sender` must BE the
   account, `_requireRoutable(chainKey)` applies the provenance bar here and only here, and
   `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.

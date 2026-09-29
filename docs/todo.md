@@ -21,8 +21,8 @@ this file is the gap between that design and the tree.
   the msig sets. `_bootstrapSendValue` takes it off `msg.value` at bootstrap and forwards it
   to the hub's `treasury` in the same transaction, so nothing accrues anywhere. It is zero
   by default, so only the chains that actually report are charged. It is in `quoteBootstrap`
-  because a quote that omitted it would be worse than none: the caller would fund the send
-  exactly, and the bootstrap would revert with the signers already committed.
+  because the account pays exactly that quote: one that omitted the fee would fail every
+  bootstrap to that chain with `InsufficientBootstrapFee`.
 
   **What is not built is the crossing.** The fee is paid on the home chain in the home
   currency and the spoke needs the destination's, so the two are funded separately and out
@@ -69,6 +69,13 @@ mainnet.
   in the same transaction that charges it.
   What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
   bootstrap fee.
+
+  **The bootstrap fee now has no caller-side cap.** An account pays its bootstrap quote
+  from its own balance, fee included, rather than from a `msg.value` its owner chose. So an
+  owner that raises `bootstrapFee` takes up to the whole balance of the next account to
+  bootstrap that chain, into the write-once treasury. The same holds for a provider quote
+  that goes wrong. An account that keeps only what it is about to send limits this; an
+  owner-set per-account ceiling on one fee would close it.
 
   **RESOLVED, PARTIALLY BY DESIGN.** `setRouting` (`HubTransceiverBase`) let the owner
   silently repoint the registry a hub trusts and its provider id at any time, with no
@@ -223,39 +230,6 @@ mainnet.
   source-verified research matching the existing provider-research.md format — of `v1.signer`
   and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
   application layer built on top of it.
-
-- **Sending should not make a signer responsible for pricing its own message, and this needs
-  solving before mainnet.** Found while wiring the bindings: the identical mistake (quote
-  now, send later, the fee moved) fails differently on each provider. LayerZero's stock `_payNative` requires
-  `msg.value == nativeFee` EXACTLY and reverts `NotEnoughNative` on any drift, either
-  direction; the bindings override it to spend `value`, and the endpoint still reverts an
-  underpayment. CCIP's own NatSpec says an overpayment is accepted with no refund, so padding
-  the quote for safety just burns the difference. Hyperlane's `Mailbox.dispatch` sends
-  `requiredHook` what it asks and forwards the rest of `msg.value` to the post-dispatch
-  hook; the IGP and ProtocolFee hooks refund their overpayment to `metadata.refundAddress`
-  (which the binding sets to `_refundTo()` in `HyperlaneMessage.hookMetadata`), but any other hook the Mailbox owner
-  configures may keep it. No single on-chain buffer is safe across LayerZero, CCIP, and
-  Hyperlane; at least one of them turns "add a margin" into a standing cost. Wormhole's Executor quoter router
-  refunds its overpayment to `_refundTo()`, and OP Stack has no fee to pad.
-
-  **The direction to build toward: the transmitter prices and funds the send itself, rather
-  than asking a signer to have attached the right `msg.value` in advance.** Concretely, on
-  send the transmitter calculates the provider's current fee dynamically and pays it out of
-  a pre-funded balance it holds, rather than requiring the caller's transaction to carry an
-  exact, pre-computed amount. A signer approves a PAYLOAD, not a payload-plus-a-price, and
-  never touches gas or bridging cost at all.
-
-  **This is what actually closes the staleness problem, and closes it structurally rather
-  than by padding a number.** The failure mode above exists because the fee is fixed at the
-  moment something is SIGNED, and provider pricing can move before that signature is
-  submitted and executed. Pricing at send time, from a balance that does not need the
-  signer's transaction to carry an exact value, removes the gap between when a price is
-  fixed and when it is paid — there is no longer a stale number to submit, because nothing
-  about the signature commits to one.
-
-  **Pre-production.** It needed the bindings and their real fee behavior to test against,
-  which is how the divergence above was found. It has to land before mainnet, since it is
-  the difference between a signer bearing gas risk and the protocol bearing it.
 
 ## 4. Infrastructure
 
