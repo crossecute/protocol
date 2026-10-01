@@ -16,7 +16,7 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 /// @dev Forge runs Ethereum's EVM, so the suite pins only that each override reproduces
 ///      `AddressDerive`'s formula, that the bytecode hash is write-once, and that a mismatch
 ///      is refused by `_createCrossAccount`. Deploying one account on Era and on Shasta is
-///      still open: see [todo](../../../../../../docs/todo.md#3-smaller-open-questions).
+///      still open: see [todo](../../../../../../docs/todo.md#2-chain-checks-before-mainnet).
 ///
 /// @dev zksolc 1.5.17 over era-solc 0.8.28-1.0.2 builds `CrossProxy` and every contract a
 ///      spoke needs. `BitcoinDerive` is split from `AddressDerive` for this: EraVM has no

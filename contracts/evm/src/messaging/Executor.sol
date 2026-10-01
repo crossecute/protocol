@@ -22,7 +22,7 @@ abstract contract Executor {
     ///      as a call. Failing closed would revert every payload, the bootstrap payload
     ///      included, until overridden. A transceiver overrides it.
     ///
-    /// @dev Merkle-verified calls are the planned opt-in (`docs/todo.md` §3), after Veda's
+    /// @dev Merkle-verified calls are not in v1. If added, the model is Veda's
     ///      `ManagerWithMerkleVerification`:
     ///      https://github.com/Veda-Labs/boring-vault/blob/main/src/base/Roles/ManagerWithMerkleVerification.sol
     function isAllowed(address, bytes4) public view virtual returns (bool) {

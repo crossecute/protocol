@@ -169,6 +169,28 @@ contract InboundAuthTest is Test {
         spoke.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
+    /// @dev A receiver may call its spoke, but a bootstrap from a spoke would reach the hub as
+    ///      an untagged envelope it decodes as a report, so neither the send nor its quote runs.
+    function test_aSpokeRefusesAnOutboundBootstrap() public {
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
+        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0));
+        bytes32 home = ChainKey.forEvm(1);
+
+        vm.deal(receiver, 1 ether);
+        vm.prank(receiver);
+        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
+        spoke.bootstrap{value: 1 ether}(home, transmitter, bytes32(0), _boot(), new bytes[](0));
+
+        vm.prank(receiver);
+        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
+        spoke.bootstrapElements(home, transmitter, bytes32(0), new bytes[](1), new bytes[](0));
+
+        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
+        spoke.quoteBootstrap(home, transmitter, bytes32(0), _boot(), new bytes[](0));
+        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
+        spoke.quoteBootstrapElements(home, transmitter, bytes32(0), new bytes[](1), new bytes[](0));
+    }
+
     /// @dev There is no setter by which a spoke could be made to accept a second origin.
     ///      The set of chains that can drive it is fixed at deployment.
     function test_spokeOriginCannotBeWidenedByAnyone() public {

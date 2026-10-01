@@ -168,7 +168,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      account home from its own balance. The account being created pays, once.
     ///
     /// @dev The fee is forwarded to `treasury` in the home currency; the spoke needs the
-    ///      destination's, so spokes are funded out of band (`docs/todo.md` §1). Zero by
+    ///      destination's, so spokes are funded out of band. Zero by
     ///      default, so parity destinations, which never report, pay nothing.
     mapping(bytes32 => uint256) public bootstrapFee;
 

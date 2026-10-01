@@ -100,6 +100,9 @@ message left. It is sent from inside the delivery callback at the fee its own qu
 an underfunded spoke reverts and takes the account creation with it: all or nothing, and
 retryable once it is funded. This runs once per chain.
 
+A bootstrap may carry the account's whole first payload. A large one should pass a gas
+attribute, since no provider's default gas has been measured against it.
+
 ### 3 · Sending a message
 
 After bootstrap the transmitter is its own message-provider endpoint, sending straight to its
@@ -350,9 +353,9 @@ What an operator or integrator has to know:
   `Treasury` for the whole protocol, on the home chain, named at the hub's deployment and
   write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
   hub never holds an accrued balance and has no withdrawal to gate. A spoke has no owner. It
-  holds only the float for its reports, and its treasury, the account of a write-once owner
-  and salt on that chain (the msig's own receiver), is the only caller of `withdraw` and the
-  only place it pays. The receiver need not exist when the spoke is deployed; the msig's
+  holds only the float for its reports, funded out of band in the destination's currency.
+  Its treasury, the account of a write-once owner and salt on that chain (the msig's own
+  receiver), is the only caller of `withdraw` and the only place it pays. The receiver need not exist when the spoke is deployed; the msig's
   ordinary bootstrap creates it.
   Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
@@ -381,7 +384,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 622 passing
+cd contracts/evm && forge test        # 623 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

@@ -23,7 +23,7 @@ enum Scheme {
     /// functions are `view` rather than `pure`.
     Blake2b256Scheme,
     /// Starknet. Declared, not implemented: Poseidon needs the exact round constants and MDS
-    /// matrix, checked against vectors (`docs/todo.md` §1). Until then a Starknet commitment
+    /// matrix, checked against vectors (`docs/todo.md` §4). Until then a Starknet commitment
     /// is computed off-chain and carried in an element calling that receiver's `commit`.
     Poseidon
 }
