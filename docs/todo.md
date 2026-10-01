@@ -88,9 +88,6 @@ Deliberate choices with a cost worth confirming before mainnet.
   When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
-- **No storage gaps anywhere.** A transceiver locks upgrades in its own initializer, so
-  there is no later upgrade to make room for; the registry and the account implementations
-  are where a gap would still buy something.
 - **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
   is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs

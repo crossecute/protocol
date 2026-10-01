@@ -692,9 +692,11 @@ belongs on the implementation, where an `immutable` never reaches the proxy's in
 per-chain endpoint address is exactly what an implementation-level immutable is for.
 
 **R8.2** The SDK's storage MUST be ERC-7201 namespaced, or the binding MUST pin the
-inheritance order and document the resulting layout. There are no storage gaps anywhere in
-this codebase ([todo §3](todo.md#3-smaller-open-questions)), so a binding that appends
-sequential slots to a base freezes that base's layout.
+inheritance order and document the resulting layout. The bases use sequential storage with
+no gaps, so a binding that appends sequential slots to a base freezes that base's layout.
+Accounts and transceivers are upgraded once, onto a blank proxy, and then locked, so no later
+version has to match it. `ChainRegistry`, the one contract upgraded after deployment, is
+ERC-7201 namespaced.
 
 **R8.3** The binding MUST NOT change `CROSS_PROXY_INIT_CODE_HASH`, and MUST NOT change
 compiler settings. `bytecode_hash = "none"` and `cbor_metadata = false` are pinned in
