@@ -338,6 +338,14 @@ contract CommitFinalizeTest is Test {
         r.execute(new Call[](0));
     }
 
+    /// @dev An empty array is refused before any lookup, so no approval of nothing can exist
+    ///      to discharge.
+    function test_finalizeRejectsAnEmptyArray() public {
+        MockReceiver r = _liveReceiver();
+        vm.expectRevert(Commitment.EmptyCommitment.selector);
+        r.finalize(new Call[](0));
+    }
+
     /// @dev An uninitialized clone authorizes nobody, so `execute` cannot be front-run
     ///      onto a counterfactual receiver before the transceiver deploys it.
     function test_executeOnAnUninitializedReceiverAuthorizesNobody() public {

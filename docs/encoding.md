@@ -172,9 +172,10 @@ a second entry point here.
 
 ### Note on the empty array
 
-Zero calls hashes to `keccak256(abi.encode(chainKey))`, which is non-zero and therefore a
-valid commitment. `execute` refuses an empty array; `finalize` does not. Worth deciding
-whether an empty payload should be committable at all.
+Zero calls would hash to `keccak256(abi.encode(chainKey))`: non-zero, and so an approval
+of nothing. Every fold refuses an empty array (`Commitment.EmptyCommitment`, and
+`SchemeFold`'s copy), so one can be neither previewed nor finalized, and `execute` refuses
+one too. A bootstrap may still carry none, since standing the receiver up is the intent.
 
 ## Non-EVM
 

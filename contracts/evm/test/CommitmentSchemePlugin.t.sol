@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {ICommitmentScheme} from "src/registry/ICommitmentScheme.sol";
+import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Commitment, Scheme} from "src/messaging/Commitment.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -156,15 +156,11 @@ contract CommitmentSchemePluginTest is Test {
         );
     }
 
-    /// @dev An empty payload hashes to the seed alone: non-zero, and therefore a valid
-    ///      commitment. Matches the library, which `finalize` relies on.
-    function test_emptyElementsHashToTheSeedAlone() public view {
-        bytes[] memory none = new bytes[](0);
-        bytes32 got = registry.commitmentFor(evmKey, none);
-
-        assertEq(got, keccak256(abi.encode(evmKey)));
-        assertEq(got, lib.frozenEvmPath(evmKey, none));
-        assertTrue(got != bytes32(0));
+    /// @dev Refused, as the library refuses it, so no preview hands a signer an approval of
+    ///      nothing.
+    function test_emptyElementsAreRefused() public {
+        vm.expectRevert(SchemeFold.EmptyCommitment.selector);
+        registry.commitmentFor(evmKey, new bytes[](0));
     }
 
     /// @dev The capability moved, it was not dropped. `TransmitterBase` used to answer
@@ -268,8 +264,9 @@ contract CommitmentSchemePluginTest is Test {
 
         // Seed, then one fold per element: every call returning the same constant.
         assertEq(registry.commitmentFor(evmKey, elements), c);
-        // And the element count still drives the loop: an empty array is the seed alone.
-        assertEq(registry.commitmentFor(evmKey, new bytes[](0)), c);
+        // And the plugin is never asked to hash an empty array.
+        vm.expectRevert(SchemeFold.EmptyCommitment.selector);
+        registry.commitmentFor(evmKey, new bytes[](0));
     }
 
     /// @dev The chainKey is the seed, and the plugin never sees which chain it is

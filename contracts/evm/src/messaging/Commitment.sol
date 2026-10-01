@@ -42,6 +42,8 @@ library Commitment {
     /// @dev The scheme has no implementation on this chain, so a commitment for it must be
     ///      computed off-chain and approved as a digest.
     error SchemeNotComputable(Scheme scheme);
+    /// @dev An empty array would hash to the seed alone, an approval that runs nothing.
+    error EmptyCommitment();
 
     /// @notice The hash a receiver on this chain will require, for typed calls.
     function hashCalls(Call[] memory calls) internal view returns (bytes32) {
@@ -53,8 +55,9 @@ library Commitment {
     ///      `test/PayloadEncoding.t.sol`. Array parameters are `memory` throughout because
     ///      Solidity will not overload on data location.
     function hashCalls(bytes32 destinationChainKey, Call[] memory calls) internal pure returns (bytes32 hashed) {
-        hashed = _seed(destinationChainKey);
         uint256 len = calls.length;
+        if (len == 0) revert EmptyCommitment();
+        hashed = _seed(destinationChainKey);
         for (uint256 i = 0; i < len; i++) {
             hashed = _fold(hashed, Calls.hash(calls[i]));
         }
@@ -65,8 +68,9 @@ library Commitment {
     /// @dev The source passes the destination's key; the local one yields a commitment the
     ///      far side never matches.
     function hashCalls(bytes32 destinationChainKey, bytes[] memory elements) internal pure returns (bytes32 hashed) {
-        hashed = _seed(destinationChainKey);
         uint256 len = elements.length;
+        if (len == 0) revert EmptyCommitment();
+        hashed = _seed(destinationChainKey);
         for (uint256 i = 0; i < len; i++) {
             hashed = _fold(hashed, keccak256(elements[i]));
         }
@@ -86,8 +90,9 @@ library Commitment {
         view
         returns (bytes32 hashed)
     {
-        hashed = _hash(scheme, abi.encode(destinationChainKey));
         uint256 len = elements.length;
+        if (len == 0) revert EmptyCommitment();
+        hashed = _hash(scheme, abi.encode(destinationChainKey));
         for (uint256 i = 0; i < len; i++) {
             hashed = _hash(scheme, abi.encodePacked(hashed, _hash(scheme, elements[i])));
         }
@@ -111,8 +116,6 @@ library Commitment {
 
     /* ================================== internals =============================== */
 
-    /// @dev An empty array hashes to the seed alone, which is non-zero and so a valid
-    ///      commitment: `finalize` accepts one, `execute` refuses one (`docs/todo.md` §3).
     function _seed(bytes32 destinationChainKey) private pure returns (bytes32) {
         return keccak256(abi.encode(destinationChainKey));
     }

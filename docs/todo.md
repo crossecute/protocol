@@ -170,7 +170,6 @@ mainnet.
   until a non-EVM receiver exists, because the commitment never sees the container.
 - **The Solana account list belongs inside the committed element.** Argued in
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
-- **Empty-array commitments.** `execute` refuses one; `finalize` accepts. Pick one.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 - **What else a self-call may reach.** Today `commit` / `cancel` / `finalize` / `execute`.

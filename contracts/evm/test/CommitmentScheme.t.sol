@@ -123,13 +123,19 @@ contract CommitmentSchemeTest is Test {
         assertEq(h.hashElements(Scheme.Blake2b256Scheme, DEST, elements), expected);
     }
 
-    /// @dev An empty array is the seed alone: non-zero, and therefore a valid commitment
-    ///      under every scheme, exactly as it is under keccak.
-    function test_anEmptyArrayIsTheSeedUnderEveryScheme() public view {
+    /// @dev An empty array would be the seed alone, a valid approval of nothing, so every
+    ///      fold refuses one.
+    function test_anEmptyArrayIsRefusedUnderEveryScheme() public {
         bytes[] memory none = new bytes[](0);
-
-        assertEq(h.hashElements(Scheme.Sha256, DEST, none), sha256(abi.encode(DEST)));
-        assertTrue(h.hashElements(Scheme.Sha256, DEST, none) != bytes32(0));
+        Scheme[3] memory schemes = [Scheme.Keccak256, Scheme.Sha256, Scheme.Blake2b256Scheme];
+        for (uint256 i; i < schemes.length; ++i) {
+            vm.expectRevert(Commitment.EmptyCommitment.selector);
+            h.hashElements(schemes[i], DEST, none);
+            vm.expectRevert(Commitment.EmptyCommitment.selector);
+            h.hashCalls(schemes[i], DEST, new Call[](0));
+        }
+        vm.expectRevert(Commitment.EmptyCommitment.selector);
+        h.keccakElements(DEST, none);
     }
 
     /* =============================== not computable ============================= */
