@@ -67,7 +67,8 @@ interface IAccountTransceiver {
 /// @dev Ownership is declared through `_owner`/`_checkOwner` and the modifier is
 ///      `onlyAccountOwner`, so a provider SDK that brings its own `onlyOwner` does not
 ///      collide. Every binding answers through `OwnableTransmitter`, whose inherited
-///      `renounceOwnership` bricks the account, since every entry point is owner-gated.
+///      `renounceOwnership` bricks the account, since every entry point is owner-gated. Left
+///      available on purpose, so an owner can retire an account for good.
 ///
 /// @dev No registry pointer: chainKeys derive purely and the hub does the directory lookups.
 ///
@@ -434,6 +435,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
         uint256 fee = t.quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
         _requireFunded(fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
         t.bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
@@ -445,6 +447,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
         uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
         _requireFunded(fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
         t.bootstrapElements{value: fee}(chainKey, _owner(), accountSalt, elements, attributes);
     }
 

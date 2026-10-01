@@ -137,9 +137,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A receiver's `sourceTransmitter`. Not `predictCrossAccount`, which on zkSync and
     ///      Tron is the receiver's own address under this chain's formula.
     function homeTransmitterOf(address owner, bytes32 salt) public view returns (address) {
-        return Create2.computeAddress(
-            accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(bytes20(homeTransceiver()))
-        );
+        // forge-lint: disable-next-line(unsafe-typecast) the initializer requires 20 bytes
+        address hub = address(bytes20(homeTransceiver()));
+        return Create2.computeAddress(accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, hub);
     }
 
     /// @notice The home chain's ERC-7930 chain identifier.
@@ -268,9 +268,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         address to = treasury();
         if (msg.sender != to) revert NotTreasury(msg.sender);
 
+        emit Withdrawn(to, amount);
         (bool ok,) = to.call{value: amount}("");
         if (!ok) revert WithdrawFailed(amount);
-        emit Withdrawn(to, amount);
     }
 
     /// @notice The exact report bytes this spoke would send for `(owner, salt)` and

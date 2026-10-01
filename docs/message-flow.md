@@ -165,7 +165,9 @@ Move chains) need somewhere to hold the payload in between, which is a per-VM co
 
 After this, every subsequent message takes path A and the transceiver is not involved again.
 Nothing has to be pointed anywhere: the transmitter's peer is its own address, which is
-where its receiver sits on every parity chain, so it is derived rather than configured.
+where its receiver sits on every parity chain, so it is derived rather than configured. The
+exception is LayerZero, which delivers to a peer the OApp stores: the owner records it once
+per destination with `setPeer`, and it cannot be changed after.
 
 ## Wire formats
 

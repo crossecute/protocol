@@ -150,7 +150,8 @@ flowchart LR
     Check -->|"yes"| Target[target contract]
 ```
 
-The check is why `finalize` needs no caller gate: exactly one of "the payload is checked" or
+An empty array is refused, so there is never an approval of nothing to discharge. The
+check is why `finalize` needs no caller gate: exactly one of "the payload is checked" or
 "the caller is checked" holds, and each entry point picks a different one. The hash folds in
 the local chainKey, so an array approved for one chain cannot be finalized on another.
 
@@ -283,8 +284,10 @@ What an operator or integrator has to know:
   that owner's account on that chain stops receiving for good. This is deliberate: a
   re-grant path would be a fallback-override surface.
 - **Provider ids named at deploy cannot be corrected.** A spoke's home eid, selector,
-  domain, or Wormhole chain, a LayerZero receiver's or spoke's peer, and each entry in a
-  hub's id table are write-once. Fixing a wrong one means a redeploy.
+  domain, or Wormhole chain, each entry in a hub's id table, and every LayerZero peer are
+  write-once. A receiver's or spoke's peer is set by its initializer; a hub's or
+  transmitter's is set once per eid by its owner. Fixing a wrong one means a redeploy, or
+  for a transmitter a new account.
 - **LayerZero's inbound check is partly in vendored code.** Auditing it means reading
   `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
   `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
@@ -326,12 +329,20 @@ What an operator or integrator has to know:
   one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
-- OpenZeppelin 5.4.0, a submodule pinned to that exact commit. The version is an
-  address-determining input like the compiler pin: `CrossProxy`'s initcode compiles OZ's
-  `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes any of their
-  bytes moves every account on every chain. ERC-7786's two interfaces are vendored at
-  `src/messaging/IErc7786.sol` instead of imported, because they are a `draft-` upstream and
-  this protocol's ABI here.
+- `ChainRegistry` is the one contract upgraded after deployment, so its storage is ERC-7201
+  namespaced. Accounts and transceivers keep sequential storage with no gaps, since no later
+  version ever has to match their layout.
+- OpenZeppelin 5.4.0 and forge-std 1.16.2, submodules pinned to exact commits and fetched
+  from forks in the crossecute org, each holding its commit under its own tag, so a deleted
+  or force-pushed upstream tag cannot break the build. The same commits are in
+  `contracts/evm/foundry.lock`; a bump made with `git` alone has to update it by hand. The
+  OZ version is an address-determining input like the compiler pin: `CrossProxy`'s initcode
+  compiles OZ's `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes
+  any of their bytes moves every account on every chain. These are the versions to ship on.
+  OZ 5.5's `Arrays` uses `mcopy`, which breaks `AccessControlEnumerableUpgradeable` at
+  `paris` (`Roles.sol`), and v6's `ReentrancyGuardTransient` needs Cancun. ERC-7786's two
+  interfaces are vendored at `src/messaging/IErc7786.sol` instead of imported, because they
+  are a `draft-` upstream and this protocol's ABI here.
 - A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the hub owner's bootstrap fee and to a provider's price.
@@ -346,7 +357,8 @@ What an operator or integrator has to know:
   Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization
-  anywhere.
+  anywhere. `renounceOwnership` stays available everywhere: it retires that transmitter,
+  hub, registry, or treasury for good, and that is the owner's call.
 
 ## Docs
 
@@ -368,12 +380,13 @@ execution, per-destination commitment schemes, both message paths end to end in-
 and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
-git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 613 passing
+git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
+cd contracts/evm && forge test        # 622 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
-request (`.github/workflows/test.yml`).
+request (`.github/workflows/test.yml`). `src/` is linted a second time under the `lint-src`
+profile, which also enforces the detector heuristics the default profile leaves off for tests.
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).

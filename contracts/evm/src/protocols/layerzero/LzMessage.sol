@@ -6,6 +6,7 @@ import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 /// @notice The one attribute every LayerZero binding accepts: execution options, as
 ///         `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptionsBytes)`.
 library LzMessage {
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
 
     /// @dev Empty options is a valid default (LayerZero's executor applies its own gas limit),

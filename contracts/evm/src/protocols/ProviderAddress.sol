@@ -8,6 +8,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 library ProviderAddress {
     error UnsupportedRecipient(bytes addr);
     error UnsupportedSender(bytes32 sender);
+    /// @notice A provider endpoint passed to a constructor was zero; it is immutable.
+    error ZeroEndpoint();
 
     /// @notice The receiving address, for a provider that delivers to it as an EVM address
     ///         (CCIP, Hyperlane, Wormhole, OP Stack).
@@ -16,6 +18,7 @@ library ProviderAddress {
     function evmRecipient(bytes memory recipient) internal pure returns (address) {
         bytes memory addr = Erc7930.parseStrict(recipient).addr;
         if (addr.length != 20) revert UnsupportedRecipient(addr);
+        // forge-lint: disable-next-line(unsafe-typecast) length checked above
         return address(bytes20(addr));
     }
 

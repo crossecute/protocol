@@ -37,7 +37,8 @@ the old fact. Before committing such a change:
    the cited item. If the item was deleted, repoint the citation to where the fact now lives
    (README, `provider-research.md`, the implementing contract) or drop it.
 3. Run `forge lint` on the changed files and clear `unused-import`, which appears when an
-   import's only user moves elsewhere.
+   import's only user moves elsewhere. For files under `src/`, also run it with
+   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
 
 A citation that was already wrong before your change still gets fixed when you find it.
 

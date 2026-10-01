@@ -19,7 +19,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 /// @dev Enumerable so an operator can read the whole member set, which is fixed at
 ///      initialization. `AccessControlEnumerableUpgradeable` compiles at `paris` only through
 ///      OZ 5.4, since 5.5's `Arrays` uses `mcopy`; a bump past 5.4 breaks this inheritance
-///      first (`docs/todo.md` §4).
+///      first (README, Assumptions).
 abstract contract Roles is AccessControlEnumerableUpgradeable {
     /// @notice May deliver a message to this contract and carry one out of it. The only role.
     /// @dev Namespaced so a provider SDK's own role of the same name cannot share its members.

@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `handle` implemented, so R3.1 is answered by absence rather than a
@@ -17,6 +18,7 @@ contract HyperlaneTransmitter is OwnableTransmitter {
     address public immutable mailbox;
 
     constructor(address mailbox_) {
+        if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }
 
@@ -25,9 +27,9 @@ contract HyperlaneTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
-        return HyperlaneMessage.dispatch(
-            mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value, _refundTo()
-        );
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
+        uint32 domain = uint32(providerIdOf(transceiver, recipient));
+        return HyperlaneMessage.dispatch(mailbox, domain, recipient, payload, attributes, value, _refundTo());
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -36,9 +38,9 @@ contract HyperlaneTransmitter is OwnableTransmitter {
         override
         returns (uint256 nativeFee)
     {
-        return HyperlaneMessage.quote(
-            mailbox, uint32(providerIdOf(transceiver, recipient)), recipient, payload, attributes, _refundTo()
-        );
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
+        uint32 domain = uint32(providerIdOf(transceiver, recipient));
+        return HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo());
     }
 
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;

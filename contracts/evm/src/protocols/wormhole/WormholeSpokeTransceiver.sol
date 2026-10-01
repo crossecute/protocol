@@ -5,6 +5,7 @@ import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransce
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Wormhole wiring shared by every spoke variant (this file's, and the zkSync/Tron
 ///         ones in `WormholeDivergentSpokeTransceiver.sol`), which differ only in address
@@ -15,6 +16,9 @@ abstract contract WormholeSpokeBase is SpokeTransceiverBase, IVaaV1Receiver {
     address public immutable quoter;
 
     constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoterRouter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
         quoterRouter = quoterRouter_;
         quoter = quoter_;

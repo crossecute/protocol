@@ -49,45 +49,60 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /* ================================= storage ================================= */
 
-    /// Set of keccak256(canonical ERC-7930 chain identifier).
-    EnumerableSet.Bytes32Set private _chainKeys;
-    /// chainKey => the canonical chain identifier it hashes from.
-    mapping(bytes32 => bytes) private _chainIdentifier;
+    /// @dev ERC-7201 namespaced, since this is the one contract here that is upgraded after
+    ///      deployment: a later version can add fields without regard to inheritance order.
+    /// @custom:storage-location erc7201:crossecute.storage.ChainRegistry
+    struct ChainRegistryStorage {
+        /// Set of keccak256(canonical ERC-7930 chain identifier).
+        EnumerableSet.Bytes32Set chainKeys;
+        /// chainKey => the canonical chain identifier it hashes from.
+        mapping(bytes32 => bytes) chainIdentifier;
 
-    /// Set of keccak256(message provider name).
-    EnumerableSet.Bytes32Set private _messageProviders;
-    /// messageProvider => the name it hashes from.
-    mapping(bytes32 => string) private _messageProviderName;
-    /// messageProvider => the CREATE2 inputs its transceiver and receivers deploy from.
-    mapping(bytes32 => ProviderDeployment) private _deployment;
-    /// chainKey => the CREATE2 factory to derive against. Zero means `ARACHNID_FACTORY`.
-    mapping(bytes32 => address) private _create2Factory;
+        /// Set of keccak256(message provider name).
+        EnumerableSet.Bytes32Set messageProviders;
+        /// messageProvider => the name it hashes from.
+        mapping(bytes32 => string) messageProviderName;
+        /// messageProvider => the CREATE2 inputs its transceiver and receivers deploy from.
+        mapping(bytes32 => ProviderDeployment) deployment;
+        /// chainKey => the CREATE2 factory to derive against. Zero means `ARACHNID_FACTORY`.
+        mapping(bytes32 => address) create2Factory;
 
-    /// messageProvider => the local hub transceiver that serves it.
-    mapping(bytes32 => address) public localTransceiver;
-    /// The reverse: which provider a local hub transceiver serves.
-    mapping(address => bytes32) public providerOfTransceiver;
+        /// messageProvider => the local hub transceiver that serves it.
+        mapping(bytes32 => address) localTransceiver;
+        /// The reverse: which provider a local hub transceiver serves.
+        mapping(address => bytes32) providerOfTransceiver;
 
-    /// chainKey => the contract that computes addresses on that chain, so callers never
-    /// branch on VM.
-    mapping(bytes32 => IVmDeriver) public deriverOf;
-    /// chainKey => the abi-encoded `(Scheme, bytes)` its deriver expects. Stored so
-    /// `expectedTransceiver` takes no inputs.
-    mapping(bytes32 => bytes) private _deriveParams;
+        /// chainKey => the contract that computes addresses on that chain, so callers never
+        /// branch on VM.
+        mapping(bytes32 => IVmDeriver) deriverOf;
+        /// chainKey => the abi-encoded `(Scheme, bytes)` its deriver expects. Stored so
+        /// `expectedTransceiver` takes no inputs.
+        mapping(bytes32 => bytes) deriveParams;
 
-    /// chainKey => optional value-range validator for what ERC-7930 cannot express, e.g.
-    /// Starknet felts.
-    mapping(bytes32 => IRefValidator) public validatorOf;
-    /// chainKey => what an address claim about this chain is worth, as declared.
-    /// @dev `Attested` for chains this contract cannot recompute: Starknet (Pedersen), and
-    ///      zkSync and Tron (different CREATE2). Unset falls back to `provenanceFor`'s default.
-    mapping(bytes32 => Provenance) public provenanceOf;
+        /// chainKey => optional value-range validator for what ERC-7930 cannot express, e.g.
+        /// Starknet felts.
+        mapping(bytes32 => IRefValidator) validatorOf;
+        /// chainKey => what an address claim about this chain is worth, as declared.
+        /// @dev `Attested` for chains this contract cannot recompute: Starknet (Pedersen), and
+        ///      zkSync and Tron (different CREATE2). Unset falls back to `provenanceFor`'s default.
+        mapping(bytes32 => Provenance) provenanceOf;
 
-    /// chainKey => the primitive that chain's receiver hashes commitments with.
-    /// @dev A mapping rather than the `Scheme` enum, which is compiled into every locked
-    ///      transmitter and cannot grow. Mutable because nothing enforces with it: a receiver
-    ///      checks its own compiled fold.
-    mapping(bytes32 => ICommitmentScheme) public commitmentSchemeOf;
+        /// chainKey => the primitive that chain's receiver hashes commitments with.
+        /// @dev A mapping rather than the `Scheme` enum, which is compiled into every locked
+        ///      transmitter and cannot grow. Mutable because nothing enforces with it: a receiver
+        ///      checks its own compiled fold.
+        mapping(bytes32 => ICommitmentScheme) commitmentSchemeOf;
+    }
+
+    /// keccak256(abi.encode(uint256(keccak256("crossecute.storage.ChainRegistry")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant CHAIN_REGISTRY_STORAGE =
+        0xc5ddaabfe4181e6c66bcf6748fc79fc5c991a8b60931bb72c2b9ae33ded53500;
+
+    function _getChainRegistryStorage() private pure returns (ChainRegistryStorage storage $) {
+        assembly {
+            $.slot := CHAIN_REGISTRY_STORAGE
+        }
+    }
 
     /* ================================== events ================================= */
 
@@ -145,10 +160,11 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @param identifier ERC-7930 bytes. An account envelope is accepted and reduced to
     ///                   its chain identifier form.
     function addChainKey(bytes calldata identifier) external onlyOwner returns (bytes32 chainKey) {
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
         bytes memory canonical = Erc7930.toChainIdentifier(identifier);
         chainKey = keccak256(canonical);
-        if (_chainKeys.add(chainKey)) {
-            _chainIdentifier[chainKey] = canonical;
+        if ($.chainKeys.add(chainKey)) {
+            $.chainIdentifier[chainKey] = canonical;
             emit ChainKeyAdded(chainKey, canonical);
         }
     }
@@ -159,25 +175,28 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      bootstrapping to it and accepting its reports; removal must not strand accounts.
     ///      Cutting a chain off is `setProvenance`, which still applies after removal.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
 
-        _chainKeys.remove(chainKey);
+        $.chainKeys.remove(chainKey);
         emit ChainKeyRemoved(chainKey);
     }
 
     /// @notice Register a message provider by name; the key is keccak256 of the name.
     function addMessageProvider(string calldata name) external onlyOwner returns (bytes32 messageProvider) {
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
         if (bytes(name).length == 0) revert EmptyName();
         messageProvider = keccak256(bytes(name));
-        if (_messageProviders.add(messageProvider)) {
-            _messageProviderName[messageProvider] = name;
+        if ($.messageProviders.add(messageProvider)) {
+            $.messageProviderName[messageProvider] = name;
             emit MessageProviderAdded(messageProvider, name);
         }
     }
 
     function removeMessageProvider(bytes32 messageProvider) external onlyOwner {
-        if (!_messageProviders.remove(messageProvider)) revert UnknownMessageProvider();
-        delete _messageProviderName[messageProvider];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.messageProviders.remove(messageProvider)) revert UnknownMessageProvider();
+        delete $.messageProviderName[messageProvider];
         emit MessageProviderRemoved(messageProvider);
     }
 
@@ -186,13 +205,14 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Record the local hub transceiver that serves one message provider. Zero
     ///         retires the provider's entry.
     function setLocalTransceiver(bytes32 messageProvider, address transceiver_) external onlyOwner {
-        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
 
-        address prev = localTransceiver[messageProvider];
-        if (prev != address(0)) delete providerOfTransceiver[prev];
+        address prev = $.localTransceiver[messageProvider];
+        if (prev != address(0)) delete $.providerOfTransceiver[prev];
 
-        localTransceiver[messageProvider] = transceiver_;
-        if (transceiver_ != address(0)) providerOfTransceiver[transceiver_] = messageProvider;
+        $.localTransceiver[messageProvider] = transceiver_;
+        if (transceiver_ != address(0)) $.providerOfTransceiver[transceiver_] = messageProvider;
 
         emit LocalTransceiverSet(messageProvider, transceiver_);
     }
@@ -210,7 +230,8 @@ contract ChainRegistry is OwnableUpgradeable {
         bytes32 transceiverInitCodeHash,
         bytes32 accountInitCodeHash
     ) external onlyOwner {
-        if (!_messageProviders.contains(messageProvider)) {
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.messageProviders.contains(messageProvider)) {
             revert UnknownMessageProvider();
         }
         if (salt == bytes32(0)) revert ZeroSalt();
@@ -218,7 +239,7 @@ contract ChainRegistry is OwnableUpgradeable {
             revert ZeroInitCodeHash();
         }
 
-        ProviderDeployment storage d = _deployment[messageProvider];
+        ProviderDeployment storage d = $.deployment[messageProvider];
         if (d.salt != bytes32(0)) {
             if (
                 d.salt != salt || d.transceiverInitCodeHash != transceiverInitCodeHash
@@ -227,7 +248,7 @@ contract ChainRegistry is OwnableUpgradeable {
             return;
         }
 
-        _deployment[messageProvider] = ProviderDeployment({
+        $.deployment[messageProvider] = ProviderDeployment({
             salt: salt, transceiverInitCodeHash: transceiverInitCodeHash, accountInitCodeHash: accountInitCodeHash
         });
         emit ProviderDeploymentSet(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
@@ -237,17 +258,20 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev Defaults to Arachnid's. For chains that run their own factory; a chain whose
     ///      CREATE2 formula differs (zkSync, Tron) is excluded by its provenance instead.
     function setCreate2Factory(bytes32 chainKey, address factory) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        _create2Factory[chainKey] = factory;
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
+        $.create2Factory[chainKey] = factory;
         emit Create2FactorySet(chainKey, factory);
     }
 
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
-        return _deployment[messageProvider];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.deployment[messageProvider];
     }
 
     function create2Factory(bytes32 chainKey) public view returns (address) {
-        address f = _create2Factory[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        address f = $.create2Factory[chainKey];
         return f == address(0) ? ARACHNID_FACTORY : f;
     }
 
@@ -256,7 +280,8 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the
     ///         recorded factory, salt, and initcode hash.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
-        ProviderDeployment memory d = _deployment[messageProvider];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        ProviderDeployment memory d = $.deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
         _requireEvmDerivable(chainKey);
         return AddressDerive.create2(create2Factory(chainKey), d.salt, d.transceiverInitCodeHash);
@@ -271,7 +296,8 @@ contract ChainRegistry is OwnableUpgradeable {
         view
         returns (address)
     {
-        ProviderDeployment memory d = _deployment[messageProvider];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        ProviderDeployment memory d = $.deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
@@ -293,10 +319,11 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      `Unresolved`, the lowest grade. Answers for a removed chain; reverts only for one
     ///      never registered.
     function provenanceFor(bytes32 chainKey) public view returns (Provenance) {
-        Provenance declared = provenanceOf[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        Provenance declared = $.provenanceOf[chainKey];
         if (declared != Provenance.Unresolved) return declared;
 
-        bytes memory identifier = _chainIdentifier[chainKey];
+        bytes memory identifier = $.chainIdentifier[chainKey];
         if (identifier.length == 0) revert UnknownChainKey();
         return
             Erc7930.parseStrict(identifier).chainType == Erc7930.CT_EIP155 ? Provenance.Derived : Provenance.Unresolved;
@@ -315,19 +342,21 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev A hub calls this before recording a counterpart, so one validator per chain serves
     ///      every provider.
     function validateLocation(bytes32 chainKey, bytes calldata interop) external view {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
         // `parseStrict` runs inside: rejects bad versions, length mismatches, trailing
         // bytes, and non-minimal eip155 chain references.
         if (Erc7930.chainKey(interop) != chainKey) revert UnknownChainKey();
 
-        IRefValidator v = validatorOf[chainKey];
+        IRefValidator v = $.validatorOf[chainKey];
         if (address(v) != address(0)) v.validateRef(interop);
     }
 
     /// @notice Attach a value-range validator to a chain.
     function setValidator(bytes32 chainKey, IRefValidator validator) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        validatorOf[chainKey] = validator;
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
+        $.validatorOf[chainKey] = validator;
         emit ValidatorSet(chainKey, address(validator));
     }
 
@@ -337,8 +366,9 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev Rebindable: it redirects nothing, so a wrong primitive must be fixable. Zero
     ///      unregisters, and `commitmentFor` then reverts rather than answer wrongly.
     function setCommitmentScheme(bytes32 chainKey, ICommitmentScheme scheme) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        commitmentSchemeOf[chainKey] = scheme;
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
+        $.commitmentSchemeOf[chainKey] = scheme;
         emit CommitmentSchemeSet(chainKey, address(scheme));
     }
 
@@ -346,7 +376,8 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev For `eth_call` by a signer checking a payload; nothing on-chain may enforce with
     ///      it. The fold is `SchemeFold`'s.
     function commitmentFor(bytes32 chainKey, bytes[] calldata elements) external view returns (bytes32) {
-        ICommitmentScheme scheme = commitmentSchemeOf[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        ICommitmentScheme scheme = $.commitmentSchemeOf[chainKey];
         if (address(scheme) == address(0)) revert NoCommitmentScheme();
         return SchemeFold.hashCalls(scheme, chainKey, elements);
     }
@@ -358,8 +389,9 @@ contract ChainRegistry is OwnableUpgradeable {
     ///      compromised one without a redeploy. Applies to a removed chain too, since hubs
     ///      still grade it: any chain ever registered can be cut off.
     function setProvenance(bytes32 chainKey, Provenance provenance) external onlyOwner {
-        if (_chainIdentifier[chainKey].length == 0) revert UnknownChainKey();
-        provenanceOf[chainKey] = provenance;
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if ($.chainIdentifier[chainKey].length == 0) revert UnknownChainKey();
+        $.provenanceOf[chainKey] = provenance;
         emit ProvenanceSet(chainKey, provenance);
     }
 
@@ -367,8 +399,9 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /// @notice Point a chain at the contract that computes addresses on it.
     function setDeriver(bytes32 chainKey, IVmDeriver deriver) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        deriverOf[chainKey] = deriver;
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
+        $.deriverOf[chainKey] = deriver;
         emit DeriverSet(chainKey, address(deriver));
     }
 
@@ -376,14 +409,15 @@ contract ChainRegistry is OwnableUpgradeable {
     ///         rather than at the first resolve.
     /// @param params abi.encode(VmDeriver.Scheme, bytes): shape is the scheme's business.
     function setDeriveParams(bytes32 chainKey, bytes calldata params) external onlyOwner {
-        IVmDeriver d = deriverOf[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        IVmDeriver d = $.deriverOf[chainKey];
         if (address(d) == address(0)) revert NoDeriver();
 
-        uint16 ct = Erc7930.parseStrict(_chainIdentifier[chainKey]).chainType;
+        uint16 ct = Erc7930.parseStrict($.chainIdentifier[chainKey]).chainType;
         (uint8 scheme,) = abi.decode(params, (uint8, bytes));
         if (!d.supportsScheme(ct, scheme)) revert SchemeNotSupported();
 
-        _deriveParams[chainKey] = params;
+        $.deriveParams[chainKey] = params;
         emit DeriveParamsSet(chainKey, scheme, keccak256(params));
     }
 
@@ -392,25 +426,28 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @dev A deriver is external code: without the chainKey re-check a wrong one could return
     ///      another chain's envelope for a hub to record as this chain's counterpart.
     function expectedTransceiver(bytes32 chainKey) public view returns (bytes memory interop) {
-        IVmDeriver d = deriverOf[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        IVmDeriver d = $.deriverOf[chainKey];
         if (address(d) == address(0)) revert NoDeriver();
-        bytes memory params = _deriveParams[chainKey];
+        bytes memory params = $.deriveParams[chainKey];
         if (params.length == 0) revert NoDeriveParams();
 
-        interop = d.deriveAddress(_chainIdentifier[chainKey], params);
+        interop = d.deriveAddress($.chainIdentifier[chainKey], params);
         if (Erc7930.chainKey(interop) != chainKey) revert DeriverChainMismatch();
     }
 
     /// @notice Every destination at once: the expected transceiver on each registered chain.
     /// @dev Unconfigured or underivable chains yield an empty entry rather than reverting.
     function expectedTransceivers() external view returns (bytes32[] memory keys, bytes[] memory interops) {
-        keys = _chainKeys.values();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        keys = $.chainKeys.values();
         uint256 n = keys.length;
         interops = new bytes[](n);
 
         for (uint256 i; i < n; ++i) {
-            if (address(deriverOf[keys[i]]) == address(0)) continue;
-            if (_deriveParams[keys[i]].length == 0) continue;
+            if (address($.deriverOf[keys[i]]) == address(0)) continue;
+            if ($.deriveParams[keys[i]].length == 0) continue;
+            // forge-lint: disable-next-line(calls-loop) a view self-call; failure is caught
             try this.expectedTransceiver(keys[i]) returns (bytes memory io) {
                 interops[i] = io;
             } catch {
@@ -421,51 +458,91 @@ contract ChainRegistry is OwnableUpgradeable {
 
     /// @notice The stored derivation inputs for a chain.
     function deriveParams(bytes32 chainKey) external view returns (bytes memory) {
-        return _deriveParams[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.deriveParams[chainKey];
+    }
+
+    /* ============================ configuration reads ========================== */
+
+    /// @notice The local hub transceiver that serves `messageProvider`.
+    function localTransceiver(bytes32 messageProvider) external view returns (address) {
+        return _getChainRegistryStorage().localTransceiver[messageProvider];
+    }
+
+    /// @notice Which provider a local hub transceiver serves.
+    function providerOfTransceiver(address transceiver_) external view returns (bytes32) {
+        return _getChainRegistryStorage().providerOfTransceiver[transceiver_];
+    }
+
+    function deriverOf(bytes32 chainKey) external view returns (IVmDeriver) {
+        return _getChainRegistryStorage().deriverOf[chainKey];
+    }
+
+    function validatorOf(bytes32 chainKey) external view returns (IRefValidator) {
+        return _getChainRegistryStorage().validatorOf[chainKey];
+    }
+
+    /// @notice The grade as declared; `provenanceFor` applies the default.
+    function provenanceOf(bytes32 chainKey) external view returns (Provenance) {
+        return _getChainRegistryStorage().provenanceOf[chainKey];
+    }
+
+    function commitmentSchemeOf(bytes32 chainKey) external view returns (ICommitmentScheme) {
+        return _getChainRegistryStorage().commitmentSchemeOf[chainKey];
     }
 
     /* ============================== directory reads ============================ */
 
     function chainKeyCount() external view returns (uint256) {
-        return _chainKeys.length();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.chainKeys.length();
     }
 
     function chainKeyAt(uint256 i) external view returns (bytes32) {
-        return _chainKeys.at(i);
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.chainKeys.at(i);
     }
 
     function chainKeys() external view returns (bytes32[] memory) {
-        return _chainKeys.values();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.chainKeys.values();
     }
 
     function hasChainKey(bytes32 chainKey) external view returns (bool) {
-        return _chainKeys.contains(chainKey);
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.chainKeys.contains(chainKey);
     }
 
     /// @notice The canonical ERC-7930 chain identifier a `chainKey` hashes from.
     function chainIdentifier(bytes32 chainKey) external view returns (bytes memory) {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        return _chainIdentifier[chainKey];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.chainKeys.contains(chainKey)) revert UnknownChainKey();
+        return $.chainIdentifier[chainKey];
     }
 
     function messageProviderCount() external view returns (uint256) {
-        return _messageProviders.length();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.messageProviders.length();
     }
 
     function messageProviderAt(uint256 i) external view returns (bytes32) {
-        return _messageProviders.at(i);
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.messageProviders.at(i);
     }
 
     function messageProviders() external view returns (bytes32[] memory) {
-        return _messageProviders.values();
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.messageProviders.values();
     }
 
     function hasMessageProvider(bytes32 messageProvider) external view returns (bool) {
-        return _messageProviders.contains(messageProvider);
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        return $.messageProviders.contains(messageProvider);
     }
 
     function messageProviderName(bytes32 messageProvider) external view returns (string memory) {
-        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
-        return _messageProviderName[messageProvider];
+        ChainRegistryStorage storage $ = _getChainRegistryStorage();
+        if (!$.messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
+        return $.messageProviderName[messageProvider];
     }
 }

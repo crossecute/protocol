@@ -221,6 +221,7 @@ abstract contract InboundBase is Executor, Roles, ReentrancyGuardUpgradeable, IC
     function _senderAddress(bytes calldata sender) internal pure returns (address) {
         Erc7930.Interop memory io = Erc7930.parseStrict(sender);
         if (io.addr.length != 20) revert UnauthenticatedSender(sender);
+        // forge-lint: disable-next-line(unsafe-typecast) length checked above
         return address(bytes20(io.addr));
     }
 }

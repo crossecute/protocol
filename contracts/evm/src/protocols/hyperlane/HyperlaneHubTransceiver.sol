@@ -18,6 +18,7 @@ contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
     address public immutable mailbox;
 
     constructor(address mailbox_) {
+        if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }
 
@@ -47,6 +48,7 @@ contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
         override
         returns (bytes32 sendId)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(_providerIdOf(recipient));
         return HyperlaneMessage.dispatch(mailbox, domain, recipient, payload, attributes, value, _refundTo());
     }
@@ -57,6 +59,7 @@ contract HyperlaneHubTransceiver is ProviderHubTransceiver, IMessageRecipient {
         override
         returns (uint256 nativeFee)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(_providerIdOf(recipient));
         return HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo());
     }

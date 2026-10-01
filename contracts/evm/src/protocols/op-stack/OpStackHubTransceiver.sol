@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the home chain, for one OP Stack chain.
 /// @dev `sendMessage` names no destination chain: each OP Stack chain has its own messenger,
@@ -22,6 +23,7 @@ contract OpStackHubTransceiver is HubTransceiverBase, IOpStackRecipient {
     bytes32 public immutable messengerChainKey;
 
     constructor(address messenger_, bytes32 messengerChainKey_) {
+        if (messenger_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         messenger = messenger_;
         messengerChainKey = messengerChainKey_;
     }

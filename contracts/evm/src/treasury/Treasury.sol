@@ -42,10 +42,10 @@ contract Treasury is Ownable {
 
         // `call`, not `transfer`: a msig recipient needs more than the 2300-gas stipend, and
         // there is no state here for a re-entrant call to confuse.
+        emit NativeWithdrawn(to, amount);
+
         (bool ok, bytes memory reason) = to.call{value: amount}("");
         if (!ok) revert NativeTransferFailed(to, amount, reason);
-
-        emit NativeWithdrawn(to, amount);
     }
 
     /// @notice Send `amount` of `token` to `to`.

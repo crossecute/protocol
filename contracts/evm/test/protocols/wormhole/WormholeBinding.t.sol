@@ -40,6 +40,10 @@ import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.so
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
+/// @dev Executor router and quoter for contracts these tests never send from. Only being
+///      nonzero matters: the constructors refuse zero.
+address constant UNUSED_EXECUTOR = address(0xE0);
+
 /// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
 ///         covered by `test/Transport.t.sol`).
 contract WormholeHubHarness is WormholeHubTransceiver {
@@ -428,13 +432,14 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
         core = new MockWormholeCore(HERE);
         spoke = WormholeSpokeTransceiver(
             payable(new ERC1967Proxy(
-                    address(new WormholeSpokeTransceiver(address(core), address(0), address(0))), _spokeInit(HOME)
+                    address(new WormholeSpokeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
+                    _spokeInit(HOME)
                 ))
         );
         hub = WormholeHubTransceiver(
             address(
                 new ERC1967Proxy(
-                    address(new WormholeHubTransceiver(address(core), address(0), address(0))),
+                    address(new WormholeHubTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                     abi.encodeCall(
                         WormholeHubTransceiver.initialize,
                         (address(this), address(0), new address[](0), address(0xBEEF))
@@ -466,8 +471,10 @@ contract WormholeTransceiverReceiveTest is ProviderHomeIdSpec {
     }
 
     function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
-        return
-            (address(new WormholeSpokeTransceiver(address(core), address(0), address(0))), _spokeInit(uint16(homeId)));
+        return (
+            address(new WormholeSpokeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
+            _spokeInit(uint16(homeId))
+        );
     }
 
     function test_spokeRejectsANonHubEmitterFromHome() public {
@@ -503,7 +510,7 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
         spokes = new address[](3);
         spokes[0] = address(
             new ERC1967Proxy(
-                address(new WormholeSpokeTransceiver(address(core), address(0), address(0))),
+                address(new WormholeSpokeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(
                     WormholeSpokeTransceiver.initialize,
                     (
@@ -521,7 +528,7 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
         );
         spokes[1] = address(
             new ERC1967Proxy(
-                address(new WormholeZkSyncSpokeTransceiver(address(core), address(0), address(0))),
+                address(new WormholeZkSyncSpokeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(
                     WormholeZkSyncSpokeTransceiver.initialize,
                     (
@@ -540,7 +547,7 @@ contract WormholeSpokeOriginTest is ProviderSpokeOriginSpec {
         );
         spokes[2] = address(
             new ERC1967Proxy(
-                address(new WormholeTronSpokeTransceiver(address(core), address(0), address(0))),
+                address(new WormholeTronSpokeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(
                     WormholeTronSpokeTransceiver.initialize,
                     (
@@ -576,7 +583,7 @@ contract WormholeTransmitterInboundTest is ProviderTransmitterSpec {
     function _transmitter() internal override returns (address) {
         return address(
             new ERC1967Proxy(
-                address(new WormholeTransmitter(core, address(0), address(0))),
+                address(new WormholeTransmitter(core, UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
             )
         );
@@ -595,7 +602,7 @@ contract WormholeTransmitterInboundTest is ProviderTransmitterSpec {
 contract WormholeInboundHubHarness is WormholeHubTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address c) WormholeHubTransceiver(c, address(0), address(0)) {}
+    constructor(address c) WormholeHubTransceiver(c, UNUSED_EXECUTOR, UNUSED_EXECUTOR) {}
 
     function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
         emit InboundHandled(chainKey);
@@ -605,7 +612,7 @@ contract WormholeInboundHubHarness is WormholeHubTransceiver {
 contract WormholeInboundSpokeHarness is WormholeSpokeTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address c) WormholeSpokeTransceiver(c, address(0), address(0)) {}
+    constructor(address c) WormholeSpokeTransceiver(c, UNUSED_EXECUTOR, UNUSED_EXECUTOR) {}
 
     function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
         emit InboundHandled(chainKey);

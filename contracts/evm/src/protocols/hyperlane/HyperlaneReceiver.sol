@@ -21,6 +21,7 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
     address public immutable mailbox;
 
     constructor(address mailbox_) {
+        if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }
 

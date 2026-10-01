@@ -24,17 +24,22 @@ interface ICommitmentScheme {
 ///      the other. `test/CommitmentSchemePlugin.t.sol` pins the two equal for every enum
 ///      primitive.
 library SchemeFold {
+    /// @dev Same selector as `Commitment.EmptyCommitment`.
+    error EmptyCommitment();
+
     /// @notice The commitment `scheme`'s chain will require over `elements`.
     /// @dev Seeded with the chainKey, so no plugin can bind a commitment to another chain. An
-    ///      empty array hashes to the seed alone, as in `Commitment`.
+    ///      empty array reverts, as in `Commitment`, before the plugin is called.
     function hashCalls(ICommitmentScheme scheme, bytes32 destinationChainKey, bytes[] memory elements)
         internal
         view
         returns (bytes32 hashed)
     {
-        hashed = scheme.hash(abi.encode(destinationChainKey));
         uint256 len = elements.length;
+        if (len == 0) revert EmptyCommitment();
+        hashed = scheme.hash(abi.encode(destinationChainKey));
         for (uint256 i = 0; i < len; i++) {
+            // forge-lint: disable-next-line(calls-loop) an owner-registered scheme
             hashed = scheme.hash(abi.encodePacked(hashed, scheme.hash(elements[i])));
         }
     }

@@ -15,7 +15,9 @@ import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 /// @dev Both halves of OApp: sends the receiver report home (diverging spokes) and receives
 ///      every bootstrap.
 abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePeer {
-    constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
+    constructor(address _endpoint) OAppUpgradeable(_endpoint) {
+        if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
+    }
 
     /// @dev Plain stored value, not `ProviderChainId`: a spoke has exactly one destination.
     uint32 public homeEid;
@@ -34,6 +36,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
     ) internal onlyInitializing {
         homeEid = homeEid_;
         __OApp_init(address(this)); // delegate = self, R6.4
+        // forge-lint: disable-next-line(unsafe-typecast) the initializer requires 20 bytes
         _initHomePeer(homeEid_, address(bytes20(homeTransceiver_)));
         __SpokeTransceiverBase_init(
             gateways,

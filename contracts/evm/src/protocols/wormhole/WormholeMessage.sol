@@ -15,6 +15,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      share one CREATE2 address across parity chains and trust the same source transmitter,
 ///      so without this prefix a VAA addressed to one chain would execute on every other.
 library WormholeMessage {
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.gasLimit"));
 
     /// @dev The Executor has no default; a gas instruction is required. Matches CCIP's own
@@ -137,6 +138,7 @@ library WormholeMessage {
     ///         `type(uint128).max`. Anything else is refused per ERC-7786.
     function gasLimitFrom(bytes[] memory attributes) internal pure returns (uint128) {
         return
+            // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
             uint128(ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint128).max, DEFAULT_GAS_LIMIT));
     }
 
