@@ -60,96 +60,7 @@ this file is the gap between that design and the tree.
 
 ## 2. Decisions taken that deserve a second look
 
-None of these are bugs. Each is a deliberate choice with a cost worth confirming before
-mainnet.
-
-- **The owner is a live authority, and the roles bound it.** Configuration moved to `Ownable`
-  when `ADMIN_ROLE` was retired, so a compromised owner can still repoint nothing that is
-  write-once, add no transport, and redirect no fee. The treasury is write-once and is paid
-  in the same transaction that charges it.
-  What it CAN do is set a route or a counterpart on a chain that has none yet, and set the
-  bootstrap fee.
-
-  **The bootstrap fee has no caller-side cap, BY DESIGN.** An account pays its bootstrap
-  quote from its own balance, fee included, so an owner that raises `bootstrapFee`, or a
-  provider quote that goes wrong, can take up to that balance. A transmitter is meant to
-  hold only pre-funded bridging fees, whose loss does not harm its owner, so no ceiling is
-  added.
-
-  **RESOLVED, PARTIALLY BY DESIGN.** `setRouting` (`HubTransceiverBase`) let the owner
-  silently repoint the registry a hub trusts and its provider id at any time, with no
-  write-once guard and no test exercising that. That half is now locked, following
-  `setRoute`/`setCounterpart`'s pattern: re-declaring the same `(registry, providerId)` pair
-  is a no-op, a different one reverts `RoutingAlreadySet`.
-
-  `minCounterpartProvenance` (also set through `setRouting`) and `ChainRegistry.setProvenance`
-  turned out to be the opposite of a gap: `test_hubProvenanceBarAppliesToInbound` and
-  `test_aDerivableChainMayNotReport` already exercise raising and lowering both live, on a
-  deployed instance, as the intended way to react to a bridge's standing changing without a
-  redeploy. Both stay freely rebindable. So the owner's list grows by exactly one entry
-  removed (repointing the registry/provider id) rather than the three originally suspected.
-- **Approvals are unordered, and a sequence has to be expressed inside the payloads.** A
-  relayer holding two valid arrays chooses which lands first. Nothing stalls, which is the
-  trade, but an operation that depends on order cannot rely on the approval layer for it.
-
-  **CONFIRMED.** No planned operation depends on approvals landing in a particular order.
-
-  **A note on privatizing execution, for when ordering matters operationally rather than
-  correctness-wise.** `commit(hash)` reveals nothing about what the array contains, only
-  `finalize(calls)` does, and `finalize` is permissionless and open to whoever holds the
-  matching array. So a team wanting to control WHEN and IN WHAT ORDER two approved
-  operations actually land can commit both hashes with no calldata published anywhere, and
-  hold the matching arrays privately, submitting `finalize` themselves in whichever order
-  they choose: an outside watcher sees two commitments and cannot construct either array
-  from the hash alone, so it cannot race the team to finalize one out of turn. This is a
-  usage pattern available today, not a protocol guarantee: it holds only as long as the
-  calldata stays off-chain and unguessable until the team submits it.
-- **A parity chain can still be sent to before its bootstrap has landed.** `isReachable` is
-  true from dispatch there, because the address is pre-deterministic and correct. What is
-  not guaranteed is that the receiver EXISTS yet, since a deferred bootstrap waits for
-  someone to finalize it. Those sends fail on arrival and are retryable at the provider, so the cost is
-  the fee and the wait. Closing it would mean a confirmation message on chains that need none,
-  which is the trade this deliberately does not make.
-
-  **CONFIRMED.** Accepting the trade: a lost, retryable send at the cost of sending before
-  the destination is actually set up is not a security risk, only a self-inflicted ordering
-  mistake. No confirmation message added.
-- **A blank `CrossProxy` delegates to `address(0)` and succeeds silently.** Only safe
-  because deploy, arm, and lock are one function. It becomes a real hole if those are ever
-  split.
-
-  **CONFIRMED SAFE, WITH THE MECHANISM SPELLED OUT.** `_createCrossAccount`
-  (`TransceiverBase.sol`) calls `_deployAccount` (bare proxy: no implementation, admin = the
-  transceiver) and then `upgradeInitializeAndLock` as two statements in ONE function, so
-  there is no transaction boundary between them for anyone to call the blank proxy through.
-  "Arm" and "lock" are themselves one call, not two: `CrossProxy.fallback()` runs
-  `ERC1967Utils.upgradeToAndCall(implementation, data)` (sets the implementation AND
-  delegatecalls into it with the initializer, which for a LayerZero transceiver is where
-  `__OApp_init(delegate)`, the peer, and `GATEWAY_ROLE` all have to be set, since this is the
-  only initializer call the proxy ever gets) and, immediately after, zeroes its own admin
-  slot. There is no "before LZ config" phase and no separate step after arming; LZ setup IS
-  part of arming. Stays a real hole only if deploy is ever split from arm/lock into separate
-  transactions, which nothing today does.
-- **Self-replaying payloads.** `finalize` clears an approval before executing, so a payload
-  containing a self-call to `commit` with its own hash re-arms itself indefinitely.
-  Owner-approved either way, so not an escalation, but "approvals are single-use" stops
-  being true. Disallowing it costs extra code. Allowing it is strictly cheaper.
-
-  **CONFIRMED.** Kept allowing it: the transmitter could already re-`commit` the same hash
-  through an ordinary message any time it wants, so a self-replaying payload grants no
-  authority that did not already exist. No guard added.
-- **Whether to replace `src/addressing/Erc7930.sol` with OpenZeppelin's
-  `draft-InteroperableAddress`.** It is out of reach at the pinned version, which predates
-  it, so adopting it means moving the dependency first. Two checks come before that: the
-  upstream is a `draft-`, and our `parseStrict` enforces strictness the registry depends on.
-  Both are argued in
-  [`provider-research.md`](provider-research.md#the-other-draft-worth-knowing-about). It is
-  its own task with its own vectors.
-
-  **DECLINED.** Staying on the hand-rolled `Erc7930.sol`: the OZ bump this would require
-  breaks proxy inheritance (see `Roles.sol`'s note on `AccessControlEnumerableUpgradeable`
-  and the `paris`/`mcopy` collision — OZ past 5.4.0 does not compile at `paris`, which the
-  CREATE2 parity story depends on). Not worth the dependency migration.
+Deliberate choices with a cost worth confirming before mainnet.
 
 - **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000
   (the IGP default, written explicitly because the refund field follows it), the Wormhole
@@ -158,6 +69,12 @@ mainnet.
   Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
   records the failed relay and anyone can replay it with more gas); the others are not
   known to be.
+- **A LayerZero hub's and transmitter's peers are repointable.** A receiver's or spoke's peer
+  is final (`test_thePeerHasNoSetter`), but OApp's `setPeer` is live wherever an owner is
+  initialized: the msig can repoint the hub's peer for any eid, and an account owner sets,
+  and can later change, its transmitter's peer per destination. `_lzSend` delivers to that
+  peer whatever the recipient's address half says. Neither is write-once, unlike the routes
+  and counterparts it duplicates.
 
 ## 3. Smaller open questions
 
@@ -238,18 +155,12 @@ mainnet.
   precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag
   is a repository nobody can build. Worth a mirror before mainnet rather than a policy.
 
-  **A dependency bump moves every account address**, because `CrossProxy`'s initcode hash
-  is a function of everything it compiles against. Free while nothing is deployed; after a
-  deployment it is not a bump, it is a migration of every account on every chain. So the
-  version to ship on has to be settled before `script/` exists, not after.
+  **These are the versions to ship on, along with the `paris` pin.** A bump would move every
+  account address, since `CrossProxy`'s initcode hash depends on everything it compiles
+  against. There is no move to OZ 6 or to a 5.x that needs transient storage. 5.5's `Arrays`
+  uses `mcopy`, which breaks `AccessControlEnumerableUpgradeable` at `paris` (`Roles.sol`),
+  and v6's `ReentrancyGuardTransient` needs Cancun.
 
-- **The `paris` pin and OpenZeppelin are on a collision course, and it gets worse.** OZ has
-  DEPRECATED the storage-based `ReentrancyGuard` and says it will be replaced by
-  `ReentrancyGuardTransient` in v6.0, which needs TSTORE and therefore Cancun. The question
-  to settle before then is which chains the pin is actually buying, since zkSync and Tron are ALREADY excluded from address derivation by
-  their provenance caps: their CREATE2 formulas differ, so parity never held for them. If
-  the pin is only protecting chains that the registry already declines to derive, it is
-  costing more than it buys.
 - **No deploy scripts.** `script/` holds only the vendoring drivers. The Assumptions section
   specifies an elaborate deploy story (Arachnid's factory, proxy with deployer-as-owner,
   immediate upgrade, ProxyAdmin under the msig), with no code behind it. The CREATE2 parity
