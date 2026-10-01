@@ -151,11 +151,6 @@ mainnet.
   and the `paris`/`mcopy` collision — OZ past 5.4.0 does not compile at `paris`, which the
   CREATE2 parity story depends on). Not worth the dependency migration.
 
-- **A LayerZero receiver's or spoke's peer has no setter.** OApp's `setPeer` is `onlyOwner`
-  and these contracts never initialize an owner, so `LzHomePeer` writes the peer once in the
-  initializer. It
-  fell out of that fix rather than being chosen: confirm it is wanted, rather than an
-  owner-gated repoint on the account side, before mainnet.
 - **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000
   (the IGP default, written explicitly because the refund field follows it), the Wormhole
   Executor 200,000, and OP Stack's `minGasLimit` 200,000. Bootstrap and `_reportReceiver`
