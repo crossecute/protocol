@@ -5,6 +5,7 @@ import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user account on a non-home chain.
 /// @dev `GATEWAY_ROLE` is held by the Core bridge, which never calls in: `executeVAAv1` is
@@ -17,6 +18,7 @@ contract WormholeReceiver is ReceiverBase, IVaaV1Receiver {
     address public immutable coreBridge;
 
     constructor(address coreBridge_) {
+        if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
     }
 

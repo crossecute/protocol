@@ -7,6 +7,7 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice CCIP wiring shared by every spoke variant (this file's, and the zkSync/Tron ones in
 ///         `CcipDivergentSpokeTransceiver.sol`), which differ only in address derivation.
@@ -14,6 +15,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
     address public immutable router;
 
     constructor(address router_) {
+        if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }
 

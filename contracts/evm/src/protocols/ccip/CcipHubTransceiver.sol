@@ -6,6 +6,7 @@ import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -18,6 +19,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     address public immutable router;
 
     constructor(address router_) {
+        if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }
 

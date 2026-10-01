@@ -8,6 +8,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
@@ -16,7 +17,9 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
     /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
     ///        because the implementation address lives in the proxy's ERC-1967 slot, not its
     ///        initcode, so this never moves a derived account address.
-    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {}
+    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {
+        if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
+    }
 
     /// @dev No peer set here: peers are per-destination, and a one-shot initializer cannot
     ///      know every chain this account will ever reach. The owner calls `setPeer` (plain

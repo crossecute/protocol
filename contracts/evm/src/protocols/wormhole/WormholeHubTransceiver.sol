@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {ProviderHubTransceiver} from "src/protocols/ProviderHubTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
@@ -18,6 +19,9 @@ contract WormholeHubTransceiver is ProviderHubTransceiver, IVaaV1Receiver {
     address public immutable quoter;
 
     constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoterRouter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
         quoterRouter = quoterRouter_;
         quoter = quoter_;

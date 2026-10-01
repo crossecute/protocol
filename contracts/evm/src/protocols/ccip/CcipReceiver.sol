@@ -7,6 +7,7 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user account on a non-home chain.
 /// @dev Does not inherit Chainlink's `CCIPReceiver`: its `onlyRouter` duplicates what
@@ -20,6 +21,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     address public immutable router;
 
     constructor(address router_) {
+        if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }
 

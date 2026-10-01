@@ -12,7 +12,9 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev Inherits the combined `OAppUpgradeable` (unlike `LzTransmitter`/`LzReceiver`): a hub
 ///      both sends bootstraps and receives diverging spokes' receiver reports.
 contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
-    constructor(address _endpoint) OAppUpgradeable(_endpoint) {}
+    constructor(address _endpoint) OAppUpgradeable(_endpoint) {
+        if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
+    }
 
     function initialize(
         address owner_,

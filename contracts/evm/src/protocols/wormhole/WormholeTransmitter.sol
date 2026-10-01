@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `executeVAAv1`, so R3.1 is answered by absence rather than a guard.
@@ -17,6 +18,9 @@ contract WormholeTransmitter is OwnableTransmitter {
     address public immutable quoter;
 
     constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+        if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoterRouter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (quoter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
         quoterRouter = quoterRouter_;
         quoter = quoter_;

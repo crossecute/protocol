@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `handle` implemented, so R3.1 is answered by absence rather than a
@@ -17,6 +18,7 @@ contract HyperlaneTransmitter is OwnableTransmitter {
     address public immutable mailbox;
 
     constructor(address mailbox_) {
+        if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }
 

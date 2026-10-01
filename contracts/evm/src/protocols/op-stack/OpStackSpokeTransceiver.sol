@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Transceiver on the OP Stack chain that is not the home chain.
 /// @dev Always the parity spoke, no divergent variant: an OP Stack chain runs standard
@@ -12,6 +13,7 @@ contract OpStackSpokeTransceiver is SpokeTransceiverBase, IOpStackRecipient {
     address public immutable messenger;
 
     constructor(address messenger_) {
+        if (messenger_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         messenger = messenger_;
     }
 

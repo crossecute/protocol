@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user account on a non-home chain.
 /// @dev No origin-chain check: an OP Stack messenger relays only from its one paired chain.
@@ -14,6 +15,7 @@ contract OpStackReceiver is ReceiverBase, IOpStackRecipient {
     address public immutable messenger;
 
     constructor(address messenger_) {
+        if (messenger_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         messenger = messenger_;
     }
 

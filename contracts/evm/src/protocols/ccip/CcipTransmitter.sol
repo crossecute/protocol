@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
@@ -15,6 +16,7 @@ contract CcipTransmitter is OwnableTransmitter {
     address public immutable router;
 
     constructor(address router_) {
+        if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }
 
