@@ -140,9 +140,11 @@ Deliberate choices with a cost worth confirming before mainnet.
   commits are also in `contracts/evm/foundry.lock`, which `forge update` keeps in step; a
   bump made with `git` alone has to update it by hand.
 
-  **What this gives up against vendoring is availability, not exactness.** A gitlink is as
-  precise as a committed tree, but the bytes now live upstream: a deleted or force-pushed tag
-  is a repository nobody can build. Worth a mirror before mainnet rather than a policy.
+  **Fetched from forks in the crossecute org, not from upstream.** `.gitmodules` points at
+  `crossecute/forge-std`, `crossecute/openzeppelin-contracts`, and
+  `crossecute/openzeppelin-contracts-upgradeable`, each holding the pinned commit under its
+  own tag (`v1.16.2`, `v5.4.0`, `v5.4.0`). A deleted or force-pushed upstream tag no longer
+  breaks the build. The versions are frozen, so the forks are never synced.
 
   **These are the versions to ship on, along with the `paris` pin.** A bump would move every
   account address, since `CrossProxy`'s initcode hash depends on everything it compiles
