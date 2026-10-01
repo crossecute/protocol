@@ -72,6 +72,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NoTreasury();
     error NotTreasury(address caller);
     error WithdrawFailed(uint256 amount);
+    error NoOutboundBootstrap();
 
     /// @notice Bind this spoke to its hub, permanently.
     /// @dev Home chainKey, route, transceiver, treasury, and receiver implementation are
@@ -243,6 +244,17 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         bytes memory payload = reportPayload(owner, salt, receiver);
 
         _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));
+    }
+
+    /// @dev A spoke never bootstraps: its only route is home, and `Envelope` carries no type
+    ///      tag, so a bootstrap sent spoke to hub would be decoded there as a report. Both hooks
+    ///      `TransceiverBase.bootstrap` and its quotes run before anything is sent refuse it.
+    function _bootstrapSendValue(bytes32) internal pure override returns (uint256) {
+        revert NoOutboundBootstrap();
+    }
+
+    function _bootstrapSurcharge(bytes32) internal pure override returns (uint256) {
+        revert NoOutboundBootstrap();
     }
 
     /// @notice Accept the float `_reportReceiver` pays from. Without it a diverging spoke

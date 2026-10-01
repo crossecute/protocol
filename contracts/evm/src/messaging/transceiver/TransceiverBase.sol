@@ -191,9 +191,10 @@ abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, I
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
+        uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey), Envelope.encodeBootstrap(owner, salt, calls), attributes
-        ) + _bootstrapSurcharge(destinationChainKey);
+        ) + surcharge;
     }
 
     /// @notice `quoteBootstrap`, for a destination whose calls this chain cannot express.
@@ -205,9 +206,10 @@ abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, I
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
         _requireRoutable(destinationChainKey);
+        uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey), Envelope.encodeBootstrapElements(owner, salt, elements), attributes
-        ) + _bootstrapSurcharge(destinationChainKey);
+        ) + surcharge;
     }
 
     /// @notice What this transceiver charges on top of the message, per destination.

@@ -7,8 +7,9 @@ import {Call} from "src/messaging/Call.sol";
 /// @notice The two message bodies that cross between transceivers.
 ///
 /// @dev No type tag: bootstraps travel hub to spoke and reports spoke to hub, so direction
-///      decides the shape. That holds only while transmitters live on the home chain; one on
-///      a spoke would need a tag, since decoding the wrong shape can misread silently.
+///      decides the shape. That holds only while transmitters live on the home chain and a
+///      spoke refuses `bootstrap`; otherwise a tag is needed, since decoding the wrong shape
+///      can misread silently.
 ///
 /// @dev `abi.encode`, not `encodePacked`, so no two messages share a byte string.
 library Envelope {
