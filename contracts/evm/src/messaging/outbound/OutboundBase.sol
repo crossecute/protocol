@@ -163,9 +163,9 @@ abstract contract OutboundBase is Roles {
     /* ================================== sending ================================ */
 
     /// @notice Where a provider's excess fee goes back to: whoever paid it.
-    /// @dev On a transceiver's `bootstrap` that is `msg.sender`, the only account it accepts.
-    ///      Never a shared transceiver's `address(this)`, which would pool every user's excess.
-    ///      `TransmitterBase` pays from its own balance and overrides this to itself.
+    /// @dev On a hub's `bootstrap` that is `msg.sender`, the only account it accepts. Never a
+    ///      hub's `address(this)`, which would pool every user's excess. `TransmitterBase` and
+    ///      `SpokeTransceiverBase` pay from their own balance and override this to themselves.
     function _refundTo() internal view virtual returns (address) {
         return msg.sender;
     }

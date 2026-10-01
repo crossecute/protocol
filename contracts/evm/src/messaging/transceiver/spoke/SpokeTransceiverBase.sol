@@ -257,6 +257,13 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         revert NoOutboundBootstrap();
     }
 
+    /// @inheritdoc OutboundBase
+    /// @dev The report is a spoke's only send, paid from its own float inside a delivery, where
+    ///      `msg.sender` is the relayer. An overpayment comes back to the float.
+    function _refundTo() internal view override returns (address) {
+        return address(this);
+    }
+
     /// @notice Accept the float `_reportReceiver` pays from. Without it a diverging spoke
     ///         could not be funded and every bootstrap on it would revert at the report.
     receive() external payable {}

@@ -19,11 +19,6 @@ this file is the gap between that design and the tree.
   Making that automatic means the bootstrap message drops value across, which is a provider
   capability question rather than a contract one.
 
-  **And the report's refund target is unresolved.** `_refundTo()` is `msg.sender`, which on
-  a nested send is whoever delivered the message, so a provider refunding an overpaid report
-  pays the relayer out of the spoke's balance. Nobody is stolen from, but the spoke drains
-  at a rate nothing here bounds. `_reportReceiver` sends the quoted fee rather than the
-  balance, which bounds one report; it does not answer where the refund goes.
 - **Starknet bytes↔felt packing.** Bridges deliver Starknet payloads as `Array<felt252>`,
   not bytes. Before any container format can be parsed there has to be an agreed packing
   rule. Unspecified, needed in either container format, and the kind of value that is wrong

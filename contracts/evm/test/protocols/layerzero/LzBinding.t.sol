@@ -390,11 +390,14 @@ contract LzDivergentSpokePayNativeTest is Test {
         endpoint.setFee(0.01 ether);
         vm.deal(address(spoke), 1 ether);
 
-        // No {value: ...}: reproduces msg.value == 0 inside the delivery callback.
+        // No {value: ...}: reproduces msg.value == 0 inside the delivery callback, whose
+        // caller is the relayer.
+        vm.prank(makeAddr("relayer"));
         spoke.sendMessagePublic(Erc7930.encodeEvmChain(1), "report", new bytes[](0), 0.01 ether);
 
-        (,,,, uint256 value,) = endpoint.sent(0);
+        (,,,, uint256 value, address refundAddress) = endpoint.sent(0);
         assertEq(value, 0.01 ether);
+        assertEq(refundAddress, address(spoke), "an overpayment returns to the float, not the relayer");
     }
 }
 
