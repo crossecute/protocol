@@ -6,12 +6,14 @@ import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contr
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 
 /// @notice Transceiver on the home chain. One instance, msig-administered, shared by every
 ///         user's transmitter.
 /// @dev Inherits the combined `OAppUpgradeable` (unlike `LzTransmitter`/`LzReceiver`): a hub
 ///      both sends bootstraps and receives diverging spokes' receiver reports.
-contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
+contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOncePeer {
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
@@ -29,9 +31,14 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
     /* ============================== the eid table =============================== */
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape). Adding a spoke also needs
-    ///      `setPeer` (inherited, `onlyOwner`) for its transceiver address.
+    ///      `setPeer` (`LzWriteOncePeer`, write-once) for its transceiver address.
     function setEid(bytes32 chainKey, uint32 eid) external onlyOwner {
         _setProviderId(chainKey, eid);
+    }
+
+    /// @dev Resolves the inheritance diamond; the body is `LzWriteOncePeer`'s.
+    function setPeer(uint32 eid, bytes32 peer) public override(OAppCoreUpgradeable, LzWriteOncePeer) {
+        super.setPeer(eid, peer);
     }
 
     /* ================================== sending =================================== */

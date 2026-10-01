@@ -283,8 +283,10 @@ What an operator or integrator has to know:
   that owner's account on that chain stops receiving for good. This is deliberate: a
   re-grant path would be a fallback-override surface.
 - **Provider ids named at deploy cannot be corrected.** A spoke's home eid, selector,
-  domain, or Wormhole chain, a LayerZero receiver's or spoke's peer, and each entry in a
-  hub's id table are write-once. Fixing a wrong one means a redeploy.
+  domain, or Wormhole chain, each entry in a hub's id table, and every LayerZero peer are
+  write-once. A receiver's or spoke's peer is set by its initializer; a hub's or
+  transmitter's is set once per eid by its owner. Fixing a wrong one means a redeploy, or
+  for a transmitter a new account.
 - **LayerZero's inbound check is partly in vendored code.** Auditing it means reading
   `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
   `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
@@ -369,7 +371,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, at pinned commits
-cd contracts/evm && forge test        # 620 passing
+cd contracts/evm && forge test        # 622 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

@@ -29,6 +29,7 @@ import {
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -212,6 +213,30 @@ abstract contract LzFixedPeerCheck is Test {
     }
 }
 
+/// @notice Where an owner exists (hub, transmitter), `setPeer` is write-once per eid.
+abstract contract LzWriteOncePeerCheck is Test {
+    function _assertPeerIsWriteOnce(address oapp, address owner, uint32 eid) internal {
+        bytes32 peer = bytes32(uint256(0xA11CE));
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        IOAppCore(oapp).setPeer(eid, peer);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LzWriteOncePeer.ZeroPeer.selector, eid));
+        IOAppCore(oapp).setPeer(eid, bytes32(0));
+
+        vm.startPrank(owner);
+        IOAppCore(oapp).setPeer(eid, peer);
+        IOAppCore(oapp).setPeer(eid, peer);
+        assertEq(IOAppCore(oapp).peers(eid), peer);
+
+        vm.expectRevert(abi.encodeWithSelector(LzWriteOncePeer.PeerAlreadySet.selector, eid));
+        IOAppCore(oapp).setPeer(eid, bytes32(uint256(0xB0B)));
+        vm.stopPrank();
+    }
+}
+
 contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck {
     MockLzEndpoint endpoint;
     LzReceiver receiver;
@@ -373,7 +398,7 @@ contract LzDivergentSpokePayNativeTest is Test {
     }
 }
 
-contract LzTransmitterInboundTest is ProviderTransmitterSpec {
+contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerCheck {
     MockLzEndpoint endpoint = new MockLzEndpoint();
 
     function _transmitter() internal override returns (address) {
@@ -394,6 +419,10 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec {
             ILayerZeroReceiver.lzReceive,
             (Origin({srcEid: 30101, sender: bytes32(uint256(0xABCD)), nonce: 1}), bytes32(0), "", address(0), "")
         );
+    }
+
+    function test_thePeerIsWriteOnce() public {
+        _assertPeerIsWriteOnce(_transmitter(), address(this), 30184);
     }
 }
 
@@ -417,7 +446,7 @@ contract LzInboundSpokeHarness is LzSpokeTransceiver {
     }
 }
 
-contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec, LzFixedPeerCheck {
+contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec, LzFixedPeerCheck, LzWriteOncePeerCheck {
     MockLzEndpoint endpoint = new MockLzEndpoint();
     address msig = address(0x5165);
     uint32 constant SPOKE_EID = 30184;
@@ -464,6 +493,11 @@ contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec, LzFixedPeer
 
     function _spoke() internal view override returns (address) {
         return spoke;
+    }
+
+    /// @dev An eid with no peer yet: `setUp` configures `SPOKE_EID`'s.
+    function test_theHubsPeerIsWriteOnce() public {
+        _assertPeerIsWriteOnce(hub, msig, SPOKE_EID + 1);
     }
 
     function test_theSpokesPeerHasNoSetter() public {

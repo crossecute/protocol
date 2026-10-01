@@ -69,12 +69,6 @@ Deliberate choices with a cost worth confirming before mainnet.
   Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
   records the failed relay and anyone can replay it with more gas); the others are not
   known to be.
-- **A LayerZero hub's and transmitter's peers are repointable.** A receiver's or spoke's peer
-  is final (`test_thePeerHasNoSetter`), but OApp's `setPeer` is live wherever an owner is
-  initialized: the msig can repoint the hub's peer for any eid, and an account owner sets,
-  and can later change, its transmitter's peer per destination. `_lzSend` delivers to that
-  peer whatever the recipient's address half says. Neither is write-once, unlike the routes
-  and counterparts it duplicates.
 
 ## 3. Smaller open questions
 
