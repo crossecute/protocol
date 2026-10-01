@@ -175,3 +175,8 @@ Deliberate choices with a cost worth confirming before mainnet.
   destination's own receiver applies, and a wrong one leaves an approval that can never be
   discharged. The corpus is what turns "we believe this is Blake2b" into a
   check.
+
+  **Built per chain, as each non-EVM chain enters launch scope.** The gate: no
+  `ChainRegistry.setCommitmentScheme` or `setDeriveParams` for a non-EVM chain until its
+  vectors are in `test/vectors/`, produced by that chain's own tooling. EVM destinations are
+  covered by the keccak and CREATE2 tests.
