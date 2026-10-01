@@ -120,7 +120,7 @@ abstract contract ProviderFeeSpec is ProviderHubSendSpec {
     /// @notice What the provider's mocks were paid, in total, for the last send.
     function _lastPaid() internal view virtual returns (uint256);
 
-    /// @dev C11 against the mock; the real endpoint's C11 is a fork test (`docs/todo.md` §4).
+    /// @dev C11 against the mock; the real endpoint's C11 is a fork test (`docs/todo.md` §3).
     function test_quoteEqualsWhatTheSendActuallyConsumes() public {
         _setProviderFee(0.02 ether);
         uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");

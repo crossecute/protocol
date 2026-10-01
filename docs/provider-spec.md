@@ -94,7 +94,7 @@ account up on however good the transport is.
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
-| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#1-blockers-on-specific-paths) stays blocked on a second provider. |
+| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 | **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the RELAYER'S SIGNING KEY, not for any contract. |
 
@@ -673,8 +673,8 @@ than an argument; the send VALUE is the opposite case, and is passed (see
 **R7.3** A nested send (the receiver report, sent from inside a delivery callback) has
 `msg.value == 0` and MUST be funded from the sending contract's balance. A binding whose
 provider cannot do this MUST say so and the report path MUST fall back to a separately
-funded transaction. This is the top blocker on the report path in
-[todo §1](todo.md#1-blockers-on-specific-paths).
+funded transaction. Spokes are funded for it out of band
+([§6](#6-configuration-a-compliant-deployment-performs), step 12).
 
 **R7.4** The transmitter's `bootstrap` forwards exactly the transceiver's `quoteBootstrap`,
 from its balance. A binding MUST NOT retain a remainder on the transceiver.
@@ -748,7 +748,7 @@ chain unless noted:
 | n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
 
 There are no deploy scripts yet; `script/` holds only the vendoring drivers
-([todo §4](todo.md#4-infrastructure)). The ordering above is their
+([todo §3](todo.md#3-infrastructure)). The ordering above is their
 specification.
 
 ---
@@ -815,7 +815,7 @@ below. The column says where each line is held.
 | C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. | core `DestinationNaming.t.sol`: the route is the chain identifier and the chainKey its hash |
 | C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). | `ProviderTransmitterSpec` |
 | C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). | `ProviderWideSenderSpec` |
-| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §4](todo.md#4-infrastructure)) |
+| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §3](todo.md#3-infrastructure)) |
 | C12 | `quote_isTakenOverTheExactPayloadBytes` | Two payloads of different lengths quote differently, and the longer one's quote matches a send of the longer one. [R2.3](#r2-quote). | `ProviderPayloadPricedSpec` |
 | C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). | `ProviderHubSendSpec` |
 | C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). | `ProviderHubSendSpec` |
@@ -856,7 +856,7 @@ message it ever carries.
 
 The suite is separate from and does not replace `test/vectors/`, which covers the
 commitment half and is
-[load-bearing for the scheme plugins](todo.md#4-infrastructure).
+[load-bearing for the scheme plugins](todo.md#4-post-launch-non-evm-destinations).
 
 ---
 

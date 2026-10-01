@@ -868,3 +868,34 @@ destination, read from the table rather than computed.
   the R3.3 exception, taken in each LayerZero contract's NatSpec: for a 1:1 pairing there is
   nothing extra to verify. The receiver checks `GATEWAY_ROLE` on top, so `revokeGateway` still
   disconnects LayerZero.
+
+---
+
+## Parked: NEAR Intents and Chain Signatures
+
+**Not ruled out, but it needs its own research pass before it belongs beside the five.**
+Explored informally, not source-verified the way §4 to §8 above are.
+
+NEAR Intents itself (the `defuse`/Verifier contract plus its PoA token bridge, in
+`near/intents`) is a swap-settlement ledger, not a message-passing transport: no
+arbitrary-call delivery, and its one data-carrying primitive
+(`PoaFactory.ft_deposit`'s `msg`, NEP-141's transfer-and-call) is gated to a small
+permissioned role and only ever reaches a NEAR contract's callback. It is not a candidate
+transport in the shape this protocol needs.
+
+The more plausible angle is Chain Signatures itself (`v1.signer`, NEAR's MPC
+threshold-signing contract, `crates/mpc` in the same repo), which signs an arbitrary
+payload for a key derived from a NEAR account, for any chain its curve covers:
+general-purpose, not restricted to token transfers. But it does not fit this protocol's
+transceiver shape at all: there is no message delivered and no gateway to authenticate,
+since a Chain-Signatures transaction is broadcast directly by whoever holds the signature
+and is indistinguishable on the destination chain from any other EOA's transaction.
+Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derived address
+as "the account" at all: an architecture question upstream of "add a binding," not a peer
+of the five in `provider-research.md`.
+
+**Not required by, and must not block, the five bindings that exist.** Recorded here
+so it isn't rediscovered under time pressure. The next step, if ever pursued, is
+source-verified research in the format above, of `v1.signer`
+and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
+application layer built on top of it.
