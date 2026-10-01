@@ -12,22 +12,12 @@ this file is the gap between that design and the tree.
 
 ## 1. Blockers on specific paths
 
-- **Funding a diverging spoke, and getting the money there.** The report fires from inside
-  the destination's inbound callback, where `msg.value` is zero, so it is paid from the
-  spoke's own balance and a dry one reverts the bootstrap with it. That revert is deliberate
-  and keeps the operation retryable.
-
-  **The fee half is built.** `HubTransceiverBase.bootstrapFee` is a per-chainKey surcharge
-  the msig sets. `_bootstrapSendValue` takes it off `msg.value` at bootstrap and forwards it
-  to the hub's `treasury` in the same transaction, so nothing accrues anywhere. It is zero
-  by default, so only the chains that actually report are charged. It is in `quoteBootstrap`
-  because the account pays exactly that quote: one that omitted the fee would fail every
-  bootstrap to that chain with `InsufficientBootstrapFee`.
-
-  **What is not built is the crossing.** The fee is paid on the home chain in the home
-  currency and the spoke needs the destination's, so the two are funded separately and out
-  of band. Making that automatic means the bootstrap message drops value across, which is a
-  provider capability question rather than a contract one.
+- **Getting a diverging spoke's report float there.** The report fires from inside the
+  destination's inbound callback, where `msg.value` is zero, so it is paid from the spoke's
+  own balance. The hub's `bootstrapFee` is charged on the home chain in the home currency and
+  the spoke needs the destination's, so the two are funded separately and out of band.
+  Making that automatic means the bootstrap message drops value across, which is a provider
+  capability question rather than a contract one.
 
   **And the report's refund target is unresolved.** `_refundTo()` is `msg.sender`, which on
   a nested send is whoever delivered the message, so a provider refunding an overpaid report
@@ -51,16 +41,10 @@ this file is the gap between that design and the tree.
   Starknet commitment is computed off-chain and carried in an opaque element that calls
   that receiver's own `commit`.
 
-  **It does not need a redeploy.** `ICommitmentScheme` plus
-  `ChainRegistry.setCommitmentScheme` make a primitive a per-chainKey plugin, so the port
-  lands as a deployment and one owner transaction rather than as new account bytecode,
-  which frozen accounts could never receive anyway. The enum cannot grow, being compiled
-  into every live transmitter, so a new primitive gets a contract rather than a member.
-  What is outstanding is Poseidon itself.
+  It lands as an `ICommitmentScheme` plugin through `ChainRegistry.setCommitmentScheme`,
+  with no redeploy.
 
-## 2. Decisions taken that deserve a second look
-
-Deliberate choices with a cost worth confirming before mainnet.
+## 2. Measurements before mainnet
 
 - **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000
   (the IGP default, written explicitly because the refund field follows it), the Wormhole
@@ -131,26 +115,6 @@ Deliberate choices with a cost worth confirming before mainnet.
   application layer built on top of it.
 
 ## 4. Infrastructure
-
-- **`lib/` is pinned submodules**: forge-std v1.16.2, OZ v5.4.0, OZ-upgradeable v5.4.0, each
-  recorded as an exact commit rather than a branch, because CREATE2 parity depends on
-  byte-identical initcode and a floating dependency would move every account address on the
-  next `--remote`. `git submodule update --init` is enough. The nested submodules OZ carries
-  for its own test suite are not needed, and `--recursive` only costs time. The same
-  commits are also in `contracts/evm/foundry.lock`, which `forge update` keeps in step; a
-  bump made with `git` alone has to update it by hand.
-
-  **Fetched from forks in the crossecute org, not from upstream.** `.gitmodules` points at
-  `crossecute/forge-std`, `crossecute/openzeppelin-contracts`, and
-  `crossecute/openzeppelin-contracts-upgradeable`, each holding the pinned commit under its
-  own tag (`v1.16.2`, `v5.4.0`, `v5.4.0`). A deleted or force-pushed upstream tag no longer
-  breaks the build. The versions are frozen, so the forks are never synced.
-
-  **These are the versions to ship on, along with the `paris` pin.** A bump would move every
-  account address, since `CrossProxy`'s initcode hash depends on everything it compiles
-  against. There is no move to OZ 6 or to a 5.x that needs transient storage. 5.5's `Arrays`
-  uses `mcopy`, which breaks `AccessControlEnumerableUpgradeable` at `paris` (`Roles.sol`),
-  and v6's `ReentrancyGuardTransient` needs Cancun.
 
 - **No deploy scripts.** `script/` holds only the vendoring drivers. The Assumptions section
   specifies an elaborate deploy story (Arachnid's factory, proxy with deployer-as-owner,

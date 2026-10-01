@@ -412,7 +412,8 @@ own task with its own vectors.
 repo's pinned OpenZeppelin past 5.4.0, and that bump is the same one that breaks
 `AccessControlEnumerableUpgradeable`'s compilation at `paris` from 5.5.0 onward (see
 `Roles.sol`). The dependency the swap would need is the dependency the pin cannot survive,
-so it stays declined: the pin is kept (see [`todo.md`](todo.md#4-infrastructure)).
+so it stays declined: the pin is kept (see the README's
+[Assumptions](../README.md#assumptions)).
 
 ---
 
