@@ -88,8 +88,6 @@ Deliberate choices with a cost worth confirming before mainnet.
   When a merkle-root setter lands, a self-call could rotate the policy: probably right,
   but it should be deliberate.
 - **Whether bootstrap may carry a full payload**, or only enough to stand the account up.
-- **`renounceOwnership` bricks a transmitter.** Recorded rather than prevented; disabling it
-  is a separate decision.
 - **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs
   contradiction. It needs a FUNDED deployment: the trick that settled Aurora, `eth_call`ing
   Arachnid's factory so the chain's own engine answers, does not transfer, because that

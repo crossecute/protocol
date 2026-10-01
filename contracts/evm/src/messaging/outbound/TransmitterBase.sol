@@ -67,7 +67,8 @@ interface IAccountTransceiver {
 /// @dev Ownership is declared through `_owner`/`_checkOwner` and the modifier is
 ///      `onlyAccountOwner`, so a provider SDK that brings its own `onlyOwner` does not
 ///      collide. Every binding answers through `OwnableTransmitter`, whose inherited
-///      `renounceOwnership` bricks the account, since every entry point is owner-gated.
+///      `renounceOwnership` bricks the account, since every entry point is owner-gated. Left
+///      available on purpose, so an owner can retire an account for good.
 ///
 /// @dev No registry pointer: chainKeys derive purely and the hub does the directory lookups.
 ///
