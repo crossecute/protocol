@@ -212,10 +212,10 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         if (fee == 0) return msg.value;
 
         address to = treasury;
+        emit BootstrapFeePaid(chainKey, to, fee);
+
         (bool ok,) = to.call{value: fee}("");
         if (!ok) revert FeeTransferFailed(to, fee);
-
-        emit BootstrapFeePaid(chainKey, to, fee);
         return msg.value - fee;
     }
 

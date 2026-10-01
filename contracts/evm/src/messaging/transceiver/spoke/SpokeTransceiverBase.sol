@@ -268,9 +268,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         address to = treasury();
         if (msg.sender != to) revert NotTreasury(msg.sender);
 
+        emit Withdrawn(to, amount);
         (bool ok,) = to.call{value: amount}("");
         if (!ok) revert WithdrawFailed(amount);
-        emit Withdrawn(to, amount);
     }
 
     /// @notice The exact report bytes this spoke would send for `(owner, salt)` and
