@@ -411,6 +411,7 @@ contract ChainRegistry is OwnableUpgradeable {
         for (uint256 i; i < n; ++i) {
             if (address(deriverOf[keys[i]]) == address(0)) continue;
             if (_deriveParams[keys[i]].length == 0) continue;
+            // forge-lint: disable-next-line(calls-loop) a view self-call; failure is caught
             try this.expectedTransceiver(keys[i]) returns (bytes memory io) {
                 interops[i] = io;
             } catch {

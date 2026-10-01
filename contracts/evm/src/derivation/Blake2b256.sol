@@ -51,6 +51,7 @@ library Blake2b256 {
                 uint256 offset = i * BLOCK_SIZE;
                 // Counter is bytes compressed so far including this block. For the
                 // final block that is the true message length, not a padded length.
+                // forge-lint: disable-next-line(unsafe-typecast) a memory length fits in 64 bits
                 uint64 t = uint64(last ? len : offset + BLOCK_SIZE);
                 h = _compress(h, _blockAt(input, offset, len), t, last);
             }
@@ -67,6 +68,7 @@ library Blake2b256 {
     /// @dev Extracts a 128-byte block starting at `offset`, zero-padded if the message
     ///      ends early. Zero padding is part of the BLAKE2b spec, not an artifact.
     function _blockAt(bytes memory input, uint256 offset, uint256 len) private pure returns (bytes memory blk) {
+        // forge-lint: disable-next-line(calls-loop) allocation, not a call
         blk = new bytes(BLOCK_SIZE);
         uint256 n = len - offset;
         if (n > BLOCK_SIZE) n = BLOCK_SIZE;
@@ -83,6 +85,8 @@ library Blake2b256 {
     ///        t      16  bytes, t0 then t1, each little-endian uint64
     ///        f       1  byte,  0x01 on the final block
     function _compress(bytes memory h, bytes memory blk, uint64 t0, bool last) private view returns (bytes memory out) {
+        // Every field is fixed-width.
+        // forge-lint: disable-start(encode-packed-collision)
         bytes memory input = abi.encodePacked(
             ROUNDS, // 4, big-endian by abi.encodePacked
             h, // 64
@@ -91,7 +95,9 @@ library Blake2b256 {
             bytes8(0), // 8   (t1: messages beyond 2^64 bytes are not representable)
             last ? bytes1(0x01) : bytes1(0x00) // 1
         );
+        // forge-lint: disable-end(encode-packed-collision)
 
+        // forge-lint: disable-next-line(calls-loop) allocation, not a call
         out = new bytes(64);
         bool ok;
         assembly {

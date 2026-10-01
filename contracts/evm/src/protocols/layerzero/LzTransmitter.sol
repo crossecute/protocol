@@ -44,6 +44,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
         override
         returns (bytes32 sendId)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
@@ -55,6 +56,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable {
         override
         returns (uint256 nativeFee)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
         bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);

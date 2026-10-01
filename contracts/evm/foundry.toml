@@ -82,13 +82,18 @@ exclude_lints = [
     "low-level-calls",
     "unwrapped-modifier-logic",
     "non-reentrant-not-first",
-    # Heuristics with hits across src/ and test/ that have not been reviewed site by site
-    # (docs/todo.md §4). Each is enforced once its hits are fixed or suppressed inline.
-    "unsafe-typecast",
-    "reentrancy-events",
-    "missing-zero-check",
+    # Reviewed site by site in src/ and not enforced. `uint256 i;` is zero by definition,
+    # which is all this rule found.
     "uninitialized-local",
+    # A revert inside a loop is how an all-or-nothing check over an array is written.
     "require-revert-in-loop",
+    # The three value transfers it found now emit first; every other hit follows no call,
+    # or only a call into this protocol's own account proxy.
+    "reentrancy-events",
+    # Detector heuristics. They flag what tests and mocks do on purpose (an unread return, a
+    # mock that refunds its caller), so they are enforced on src/ alone, by the profile below.
+    "unsafe-typecast",
+    "missing-zero-check",
     "calls-loop",
     "arbitrary-send-eth",
     "unused-return",
@@ -96,4 +101,32 @@ exclude_lints = [
     "boolean-cst",
     "locked-ether",
     "empty-block",
+]
+
+# CI also runs `FOUNDRY_PROFILE=lint-src forge lint -D notes src`. A reviewed hit is suppressed
+# inline with its reason. A profile replaces the list rather than extending it, so this
+# repeats [lint] above, comments aside, minus the detector heuristics.
+[profile.lint-src.lint]
+exclude_lints = [
+    "screaming-snake-case-immutable",
+    "mixed-case-function",
+    "mixed-case-variable",
+    "multi-contract-file",
+    "literal-instead-of-constant",
+    "named-struct-fields",
+    "internal-function-used-once",
+    "missing-inheritance",
+    "cyclomatic-complexity",
+    "too-many-digits",
+    "pragma-inconsistent",
+    "asm-keccak256",
+    "custom-errors",
+    "event-fields",
+    "inline-assembly",
+    "low-level-calls",
+    "unwrapped-modifier-logic",
+    "non-reentrant-not-first",
+    "uninitialized-local",
+    "require-revert-in-loop",
+    "reentrancy-events",
 ]

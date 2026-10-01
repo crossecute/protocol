@@ -63,6 +63,7 @@ library SuiDerive {
 
         bytes memory pre = abi.encodePacked(FLAG_MULTISIG, _le16(threshold));
         for (uint256 i; i < n; ++i) {
+            // forge-lint: disable-next-line(encode-packed-collision) Sui's multisig preimage; each key's length is fixed by its flag
             pre = abi.encodePacked(pre, flags[i], pubkeys[i], weights[i]);
         }
         return Blake2b256.hash(pre);

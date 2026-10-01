@@ -29,6 +29,7 @@ contract CcipTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
         CcipMessage.send(router, uint64(providerIdOf(transceiver, recipient)), recipient, payload, attributes, value);
     }
 
@@ -38,6 +39,7 @@ contract CcipTransmitter is OwnableTransmitter {
         override
         returns (uint256 nativeFee)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
         return CcipMessage.quote(router, uint64(providerIdOf(transceiver, recipient)), recipient, payload, attributes);
     }
 

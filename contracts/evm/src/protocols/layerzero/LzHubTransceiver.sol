@@ -41,6 +41,7 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
         override
         returns (bytes32 sendId)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
@@ -52,6 +53,7 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable {
         override
         returns (uint256 nativeFee)
     {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         MessagingFee memory fee = _quote(dstEid, payload, options, false);

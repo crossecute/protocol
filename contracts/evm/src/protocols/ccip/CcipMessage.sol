@@ -11,6 +11,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///         return a zero sendId, ERC-7786's "sent" (see `ProviderHubSendSpec`); the id is in
 ///         the on-ramp's send event.
 library CcipMessage {
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant EXTRA_ARGS_ATTRIBUTE = bytes4(keccak256("crossecute.ccip.extraArgs"));
 
     /// @notice The EVM sender of a delivered message.
@@ -28,6 +29,7 @@ library CcipMessage {
         bytes[] memory attributes,
         uint256 value
     ) internal {
+        // forge-lint: disable-next-line(unused-return) the id is in the on-ramp's event; sends return 0
         IRouterClient(router).ccipSend{value: value}(selector, build(recipient, payload, attributes));
     }
 

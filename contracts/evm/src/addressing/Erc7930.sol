@@ -77,6 +77,7 @@ library Erc7930 {
     function encode(uint16 chainType, bytes memory chainRef, bytes memory addr) internal pure returns (bytes memory) {
         if (chainRef.length > 255 || addr.length > 255) revert BadLength();
         if (chainRef.length == 0 && addr.length == 0) revert EmptyEnvelope();
+        // forge-lint: disable-next-line(encode-packed-collision,unsafe-typecast) lengths checked <= 255 above, and each is prefixed
         return abi.encodePacked(VERSION_1, chainType, uint8(chainRef.length), chainRef, uint8(addr.length), addr);
     }
 
@@ -214,6 +215,7 @@ library Erc7930 {
         }
         out = new bytes(len);
         for (uint256 i; i < len; ++i) {
+            // forge-lint: disable-next-line(unsafe-typecast) one byte of x
             out[len - 1 - i] = bytes1(uint8(x >> (8 * i)));
         }
     }

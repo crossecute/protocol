@@ -35,6 +35,7 @@ library SchemeFold {
         hashed = scheme.hash(abi.encode(destinationChainKey));
         uint256 len = elements.length;
         for (uint256 i = 0; i < len; i++) {
+            // forge-lint: disable-next-line(calls-loop) an owner-registered scheme
             hashed = scheme.hash(abi.encodePacked(hashed, scheme.hash(elements[i])));
         }
     }

@@ -50,6 +50,7 @@ contract WormholeTransmitter is OwnableTransmitter {
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {
+        // forge-lint: disable-next-line(unsafe-typecast) set through a uint16 setter
         uint16 targetChain = uint16(providerIdOf(transceiver, recipient));
         return WormholeMessage.Route(coreBridge, quoterRouter, quoter, targetChain);
     }

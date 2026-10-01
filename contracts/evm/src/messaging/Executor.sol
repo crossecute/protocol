@@ -39,11 +39,13 @@ abstract contract Executor {
 
             // Under four bytes there is no selector (a value transfer or a fallback hit).
             // `bytes4` of short data right-pads with zeros and would invent one.
+            // forge-lint: disable-next-line(unsafe-typecast) the first 4 bytes; length checked
             bytes4 selector = c.data.length >= 4 ? bytes4(c.data) : bytes4(0);
             if (!isAllowed(c.target, selector)) {
                 revert SelectorNotAllowed(c.target, selector);
             }
 
+            // forge-lint: disable-next-line(arbitrary-send-eth,calls-loop) owner-approved calls, all or nothing
             (bool ok, bytes memory reason) = c.target.call{value: c.value}(c.data);
             if (!ok) revert CallFailed(i, reason);
         }

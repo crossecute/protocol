@@ -434,6 +434,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
         uint256 fee = t.quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
         _requireFunded(fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
         t.bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
@@ -445,6 +446,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
         uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
         _requireFunded(fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
         t.bootstrapElements{value: fee}(chainKey, _owner(), accountSalt, elements, attributes);
     }
 

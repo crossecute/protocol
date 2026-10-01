@@ -48,6 +48,7 @@ library AddressDerive {
         if (nonce == 0) {
             rlp = abi.encodePacked(bytes1(0xd6), bytes1(0x94), deployer, bytes1(0x80));
         } else if (nonce <= 0x7f) {
+            // forge-lint: disable-next-line(unsafe-typecast) nonce <= 0x7f in this branch
             rlp = abi.encodePacked(bytes1(0xd6), bytes1(0x94), deployer, uint8(nonce));
         } else {
             // Minimal big-endian, the same rule the eip155 chain reference uses.
@@ -55,9 +56,9 @@ library AddressDerive {
             // `addressing` and never the reverse, so this is the direction the
             // dependency graph already runs, and one encoder cannot drift from itself.
             bytes memory n = Erc7930.minimalBigEndian(nonce);
-            rlp = abi.encodePacked(
-                bytes1(uint8(0xd6 + n.length)), bytes1(0x94), deployer, bytes1(uint8(0x80 + n.length)), n
-            );
+            // forge-lint: disable-next-line(unsafe-typecast) n is at most 32 bytes
+            uint8 nLen = uint8(n.length);
+            rlp = abi.encodePacked(bytes1(0xd6 + nLen), bytes1(0x94), deployer, bytes1(0x80 + nLen), n);
         }
         return address(uint160(uint256(keccak256(rlp))));
     }
@@ -243,6 +244,8 @@ library AddressDerive {
         returns (bytes32)
     {
         require(salt.length >= 1 && salt.length <= 64, "C2L: bad salt len");
+        // Each variable field is length-prefixed, and a memory length fits in 64 bits.
+        // forge-lint: disable-start(encode-packed-collision,unsafe-typecast)
         bytes memory key = abi.encodePacked(
             hex"7761736d00", // "wasm\0"
             uint64(32),
@@ -254,6 +257,7 @@ library AddressDerive {
             uint64(initMsg.length),
             initMsg
         );
+        // forge-lint: disable-end(encode-packed-collision,unsafe-typecast)
         return sha256(abi.encodePacked(COSMOS_MODULE_TAG, key));
     }
 
@@ -276,6 +280,7 @@ library AddressDerive {
         bytes memory pre;
         for (uint256 i; i < seeds.length; ++i) {
             require(seeds[i].length <= 32, "C2L: seed too long");
+            // forge-lint: disable-next-line(encode-packed-collision) Solana's PDA preimage is the bare concatenation
             pre = abi.encodePacked(pre, seeds[i]);
         }
         return sha256(abi.encodePacked(pre, bump, programId, "ProgramDerivedAddress"));
@@ -308,12 +313,14 @@ library AddressDerive {
     /// @param borshStateInit Borsh-serialized DeterministicAccountStateInit. Serialize
     ///        off-chain; do not build Borsh in Solidity.
     function nearDeterministicAccount(bytes memory borshStateInit) internal pure returns (bytes20) {
+        // forge-lint: disable-next-line(unsafe-typecast) the address is the hash's low 20 bytes
         return bytes20(uint160(uint256(keccak256(borshStateInit))));
     }
 
     /// @param uncompressedPubkey64 64 bytes, without the 0x04 SEC1 prefix.
     function nearEthImplicitAccount(bytes memory uncompressedPubkey64) internal pure returns (bytes20) {
         require(uncompressedPubkey64.length == 64, "C2L: bad pubkey len");
+        // forge-lint: disable-next-line(unsafe-typecast) the address is the hash's low 20 bytes
         return bytes20(uint160(uint256(keccak256(uncompressedPubkey64))));
     }
 }

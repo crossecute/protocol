@@ -36,6 +36,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
     ) internal onlyInitializing {
         homeEid = homeEid_;
         __OApp_init(address(this)); // delegate = self, R6.4
+        // forge-lint: disable-next-line(unsafe-typecast) the initializer requires 20 bytes
         _initHomePeer(homeEid_, address(bytes20(homeTransceiver_)));
         __SpokeTransceiverBase_init(
             gateways,

@@ -19,6 +19,7 @@ interface IOpStackRecipient {
 ///      The messenger's `sendMessage` bridges its `msg.value` to the target rather than
 ///      spending it, so `value` must be zero and the quote is zero.
 library OpStackMessage {
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant MIN_GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.opstack.minGasLimit"));
 
     /// @dev `sendMessage` requires a gas limit for the target call. Underestimating is
@@ -80,8 +81,9 @@ library OpStackMessage {
     ///         `abi.encodePacked(MIN_GAS_LIMIT_ATTRIBUTE, abi.encode(minGasLimit))`, at most
     ///         `type(uint32).max`. Anything else is refused per ERC-7786.
     function minGasLimitFrom(bytes[] memory attributes) internal pure returns (uint32) {
-        return uint32(
-            ProviderAttribute.uintValue(attributes, MIN_GAS_LIMIT_ATTRIBUTE, type(uint32).max, DEFAULT_MIN_GAS_LIMIT)
-        );
+        uint256 v =
+            ProviderAttribute.uintValue(attributes, MIN_GAS_LIMIT_ATTRIBUTE, type(uint32).max, DEFAULT_MIN_GAS_LIMIT);
+        // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
+        return uint32(v);
     }
 }

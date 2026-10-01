@@ -18,6 +18,7 @@ library ProviderAddress {
     function evmRecipient(bytes memory recipient) internal pure returns (address) {
         bytes memory addr = Erc7930.parseStrict(recipient).addr;
         if (addr.length != 20) revert UnsupportedRecipient(addr);
+        // forge-lint: disable-next-line(unsafe-typecast) length checked above
         return address(bytes20(addr));
     }
 

@@ -12,6 +12,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///         `HyperlaneHubTransceiver`, `HyperlaneSpokeTransceiver`, and the zkSync/Tron
 ///         spokes).
 library HyperlaneMessage {
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.hyperlane.gasLimit"));
 
     /// @dev `InterchainGasPaymaster.DEFAULT_GAS_USAGE` at the pinned commit. Restated because
@@ -31,9 +32,12 @@ library HyperlaneMessage {
         uint256 value,
         address refundTo
     ) internal returns (bytes32) {
+        // The message id is in the mailbox's event; sends return 0.
+        // forge-lint: disable-start(unused-return)
         IMailbox(mailbox).dispatch{value: value}(
             domain, recipientOf(recipient), payload, hookMetadata(attributes, refundTo)
         );
+        // forge-lint: disable-end(unused-return)
         return bytes32(0);
     }
 

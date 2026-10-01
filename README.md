@@ -373,7 +373,8 @@ cd contracts/evm && forge test        # 616 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
-request (`.github/workflows/test.yml`).
+request (`.github/workflows/test.yml`). `src/` is linted a second time under the `lint-src`
+profile, which also enforces the detector heuristics the default profile leaves off for tests.
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).

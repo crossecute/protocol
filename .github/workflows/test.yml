@@ -33,4 +33,8 @@ jobs:
 
       - run: forge lint -D notes
 
+      - run: forge lint -D notes src
+        env:
+          FOUNDRY_PROFILE: lint-src
+
       - run: forge test -vvv

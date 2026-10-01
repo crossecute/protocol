@@ -214,6 +214,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         address to = treasury;
         emit BootstrapFeePaid(chainKey, to, fee);
 
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once treasury
         (bool ok,) = to.call{value: fee}("");
         if (!ok) revert FeeTransferFailed(to, fee);
         return msg.value - fee;

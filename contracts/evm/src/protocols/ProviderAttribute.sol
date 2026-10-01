@@ -17,6 +17,7 @@ library ProviderAttribute {
         pure
         returns (bool present, bytes memory out)
     {
+        // forge-lint: disable-next-line(boolean-cst) the `present` flag
         if (attributes.length == 0) return (false, "");
         bytes memory attribute = attributes[0];
         if (
@@ -29,6 +30,7 @@ library ProviderAttribute {
         for (uint256 i; i < out.length; ++i) {
             out[i] = attribute[i + 4];
         }
+        // forge-lint: disable-next-line(boolean-cst) the `present` flag
         return (true, out);
     }
 
