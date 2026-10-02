@@ -123,14 +123,14 @@ Hop by hop:
   account, `_requireRoutable(chainKey)` applies the provenance bar here and only here, and
   `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.
 - `spoke._onInbound(route, sender, message)`: `_authenticateOrigin` runs first and the
-  sender must be the hub; `_handleInbound` decodes and calls `bootstrapInbound(owner, salt,
-  calls)`.
+  sender must be the hub; `_handleInbound` decodes and calls `_bootstrapInbound(owner, salt,
+  calls)`. Creation and the payload happen in this delivery: a bootstrap is never deferred.
 - That deploys `CrossProxy` at `accountSalt(owner, salt)`, by CREATE2 with no constructor
   arguments, and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`,
   which installs the logic, executes the calls, and drops the upgrade key in one call.
 - The dashed return leg is `_reportReceiver(owner, salt, receiver)`, sent only where
   `addressesDiverge` is set. It arrives at `hub._handleInbound`, which passes it to
-  `onDestinationReceiver` and on to the account's own counterpart slot, not the registry.
+  `_onDestinationReceiver` and on to the account's own counterpart slot, not the registry.
 
 Four facts about that path are worth stating here, because no single file holds all of
 them:
@@ -206,19 +206,20 @@ currency as an explicit asset.
 Who inherits what:
 
 ```
-Roles           ← OutboundBase, InboundBase
-Executor        ← TransmitterBase, InboundBase
-ReentrancyGuard ← InboundBase
+Roles           ← OutboundBase, ReceiverBase
+Executor        ← TransmitterBase, ReceiverBase
+ReentrancyGuard ← ReceiverBase
 
 OutboundBase                  → TransmitterBase          the home account
-InboundBase                   → ReceiverBase             the destination account
-OutboundBase + InboundBase    → TransceiverBase          → HubTransceiverBase
+                                ReceiverBase             the destination account
+OutboundBase                  → TransceiverBase          → HubTransceiverBase
                                                          → SpokeTransceiverBase
 ```
 
-`TransceiverBase` is the only contract with both a send side and a receive side. A
-transmitter sends and executes locally but never receives over the wire. A receiver receives
-and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `_onMessage`, both
+`TransceiverBase` is the only contract with both a send side and a receive side, and its
+receive side is `_onInbound` alone: it decodes an `Envelope` and runs no payload of its own.
+A transmitter sends and executes locally but never receives over the wire. A receiver
+receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `_onMessage`, both
 `finalize` overloads, and `execute` under one lock.
 
 | Contract | What it is | Public surface |
@@ -227,11 +228,10 @@ and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `_onMessag
 | `messaging/Executor.sol` | The shared execution loop. In order, all or nothing, reverting with `CallFailed(index, reason)`. | `isAllowed(address, bytes4)`, open by default |
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on the home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
-| `messaging/inbound/InboundBase.sol` | Everything needed to RECEIVE, shared by `ReceiverBase` and `TransceiverBase`: the inbound funnel, the approval map, and the reads. | `receiveMessage`, `commit`, `finalize(Call[])`, `finalize(Call[][])`, `outstanding`, `isCommitted`, `commitments`, `pendingCount` |
-| `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `execute`, `cancel(bytes32)`, `revokeGateway`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | The symmetric half of hub and spoke: authentication, routing, account manufacture, and the upgrade lock. Not a `ReceiverBase` and holds no ownership. | `accountSalt`, `predictCrossAccount`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `cancel`, `CROSS_PROXY_INIT_CODE_HASH` |
-| `messaging/transceiver/HubTransceiverBase.sol` | The home side: N counterparts, one registry to grade them, and the only half with an owner. | `createTransmitter`, `predictTransmitter`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `setQualifier`, `qualifier`, `onDestinationReceiver`, `destinationReceiverOn`, `reportsReceiver` |
-| `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `bootstrapInbound`, `homeRoute`, `homeTransceiver`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
+| `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
+| `messaging/transceiver/TransceiverBase.sol` | The symmetric half of hub and spoke: authentication, routing, account manufacture, and the upgrade lock. Not a `ReceiverBase` and holds no ownership. | `accountSalt`, `predictCrossAccount`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `CROSS_PROXY_INIT_CODE_HASH` |
+| `messaging/transceiver/HubTransceiverBase.sol` | The home side: N counterparts, one registry to grade them, and the only half with an owner. | `createTransmitter`, `predictTransmitter`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `setQualifier`, `qualifier`, `destinationReceiverOn`, `reportsReceiver` |
+| `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `homeRoute`, `homeTransceiver`, `homeTransmitterOf`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
 | `messaging/Envelope.sol` | The two transceiver channels. `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 
 ### Facts that span contracts
@@ -251,15 +251,15 @@ sending through another would trust two transports and authenticate against one,
 would say so. `ReceiverBase` inherits `Roles` directly rather than through `OutboundBase`,
 because a receiver never sends yet has the strictest need to know which gateway is real.
 
-**Who may approve a hash differs by contract, and the gate is the whole question.**
-`InboundBase` holds `commit` and the internal `_cancel`, and each inheritor supplies its
-own bar through `_checkCommitter` and its own external `cancel`. A receiver answers to its source transmitter, or to a
-payload it is already executing. A transceiver answers only to a payload it is already
-executing, which means one that arrived from its authenticated counterpart.
+**Only an account holds approvals.** `ReceiverBase` gates `commit`, `cancel`, and `execute`
+on its source transmitter or a payload it is already executing. A transceiver holds no
+approval map: a bootstrap creates the receiver and runs
+its payload in one delivery, so there is nothing to approve. A first payload that should wait
+carries a call to the new receiver's own `commit`.
 
-**What an arriving payload may call is an allowlist on a transceiver and open on an
-account.** `Executor.isAllowed` defaults to true. `TransceiverBase` narrows it to `commit`
-and `cancel` on itself, plus `bootstrapInbound` on a spoke.
+**A transceiver runs no payload.** `Executor.isAllowed` defaults to true on an account. A
+transceiver has no `_execute`, so an authenticated counterpart can make it do exactly what
+`_handleInbound` does with an `Envelope` and nothing else.
 
 **`finalize` is permissionless; `commit`, `cancel`, and `execute` are gated.** Exactly one
 of "the payload is checked" or "the caller is checked" holds, and each entry point picks a

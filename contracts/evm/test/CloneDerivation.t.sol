@@ -45,7 +45,7 @@ contract CloneDerivationTest is Test {
     ///      `AddressDerive.cloneInitCodeHash`. If OpenZeppelin's proxy bytecode ever differs
     ///      from it (including a future optimized variant) every predicted receiver
     ///      address is silently wrong. So it is checked against OZ, not against itself.
-    function test_cloneInitCodeHashMatchesOpenZeppelin() public {
+    function test_cloneInitCodeHashMatchesOpenZeppelin() public view {
         bytes32 salt = keccak256("transmitter-x");
         address ozPredicted = Clones.predictDeterministicAddress(address(impl), salt, address(this));
         address ours = AddressDerive.clone2(address(this), address(impl), salt);
@@ -123,7 +123,7 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
     /// Stands in for a chain-specific derivation: any answer other than Ethereum's.
     bool public overridePrediction;
 
-    function initialize(address owner_, address impl) external initializer {
+    function initialize(address, address impl) external initializer {
         __TransceiverBase_init(new address[](0));
         _impl = impl;
     }

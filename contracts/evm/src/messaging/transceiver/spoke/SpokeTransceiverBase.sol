@@ -172,7 +172,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A spoke receives bootstraps only. The chainKey can only be `homeChainKey`.
     function _handleInbound(bytes32, bytes calldata message) internal virtual override {
         (address owner, bytes32 salt, Call[] memory calls) = Envelope.decodeBootstrap(message);
-        this.bootstrapInbound(owner, salt, calls);
+        _bootstrapInbound(owner, salt, calls);
     }
 
     /// @notice Whether an inbound message's origin is the hub.
@@ -199,26 +199,17 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         return abi.encodeCall(IReceiverInit.initialize, (homeTransmitterOf(owner, salt), calls));
     }
 
-    /// @notice What an arriving payload may call here: `TransceiverBase`'s two, plus
-    ///         `bootstrapInbound`, which a deferred bootstrap's finalized array calls.
-    function isAllowed(address target, bytes4 selector) public view virtual override returns (bool) {
-        if (target == address(this) && selector == this.bootstrapInbound.selector) {
-            return true;
-        }
-        return super.isAllowed(target, selector);
-    }
-
     /// @notice Inbound path: stand this owner's receiver up and run its bootstrap payload.
     ///
-    /// @dev Self-call only, so reachable only from an authenticated `_onInbound`. An open
-    ///      creation path would let anyone deploy an owner's account empty ahead of their
+    /// @dev Internal, so reachable only from an authenticated `_onInbound`, and never deferred:
+    ///      the receiver is created and its payload run in the delivery that carries them. An
+    ///      open creation path would let anyone deploy an owner's account empty ahead of their
     ///      bootstrap, and `CrossProxy` arms once.
     ///
     /// @dev Creation is the transceiver's whole relationship with a receiver: it never calls
     ///      `commit`, `finalize`, or `execute` afterwards. A payload that should wait carries a
     ///      self-call to the receiver's `commit`.
-    function bootstrapInbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        require(msg.sender == address(this));
+    function _bootstrapInbound(address owner, bytes32 salt, Call[] memory calls) internal {
         address receiver = _createCrossAccount(owner, salt, calls);
         if (addressesDiverge) _reportReceiver(owner, salt, receiver);
     }

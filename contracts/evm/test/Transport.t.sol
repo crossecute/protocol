@@ -95,7 +95,7 @@ contract MockTransceiver is TransceiverBase {
 
     address private _impl;
 
-    function initialize(address owner_, address impl) external initializer {
+    function initialize(address, address impl) external initializer {
         __TransceiverBase_init(new address[](0));
         _impl = impl;
     }
@@ -341,8 +341,6 @@ contract TransportTest is Test {
     }
 
     function test_providerDataTravelsPerSend() public {
-        bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
-
         vm.prank(owner);
         transmitter.sendMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
         assertEq(transmitter.attributeCount(), 1);
@@ -685,7 +683,7 @@ contract TransportTest is Test {
     }
 
     /// @dev And the two legal shapes agree with what the receiver will recompute.
-    function test_previewMatchesWhatTheReceiverRequires() public {
+    function test_previewMatchesWhatTheReceiverRequires() public view {
         Call[] memory calls = _sinkCallsFor(address(0));
         assertEq(
             transmitter.commitmentFor(block.chainid, calls),
@@ -931,7 +929,7 @@ contract TransportTest is Test {
 
     /// @dev And each is answerable in the state its own message belongs to: bootstrap is
     ///      quotable before, send is quotable after.
-    function test_eachQuoteIsAnswerableWhenItsMessageIsSendable() public {
+    function test_eachQuoteIsAnswerableWhenItsMessageIsSendable() public view {
         uint256 other = 42161;
 
         assertGt(transmitter.quoteBootstrap(other, _calls(), NONE), 0, "before");

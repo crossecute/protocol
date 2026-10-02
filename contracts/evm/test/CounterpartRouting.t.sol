@@ -198,9 +198,19 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    function test_receiverCallbackIsSelfCallOnly() public {
-        vm.expectRevert();
-        transceiver.onDestinationReceiver(keccak256("k"), address(0x7A11), bytes32(0), "");
+    /// @dev Reachable only from an authenticated delivery, so it has no selector at all.
+    function test_receiverCallbackIsNotExternal() public {
+        (bool ok,) = address(transceiver)
+            .call(
+                abi.encodeWithSignature(
+                    "onDestinationReceiver(bytes32,address,bytes32,bytes)",
+                    keccak256("k"),
+                    address(0x7A11),
+                    bytes32(0),
+                    ""
+                )
+            );
+        assertFalse(ok, "no onDestinationReceiver on the ABI");
     }
 
     /* =========================== the default counterpart ======================== */

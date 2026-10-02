@@ -11,7 +11,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user account on a non-home chain.
 /// @dev Does not inherit Chainlink's `CCIPReceiver`: its `onlyRouter` duplicates what
-///      `GATEWAY_ROLE` already checks, and it carries no `_authenticateSender`-equivalent
+///      `GATEWAY_ROLE` already checks, and it carries no sender check
 ///      at all (see the contract-level note on `_ccipReceive` below). Implements
 ///      `IAny2EVMMessageReceiver.ccipReceive` directly, gated `onlyRole(GATEWAY_ROLE)`.
 contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {

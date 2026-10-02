@@ -88,7 +88,7 @@ contract Hub is UnsendableHub {
 }
 
 contract Spoke is UnsendableSpoke {
-    function initialize(address owner_, address impl, bytes calldata home) external initializer {
+    function initialize(address, address impl, bytes calldata home) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,

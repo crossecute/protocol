@@ -392,7 +392,7 @@ on either side.
 3. **No mandated exactly-once.** The standard defines a `receiveId` for correlation but
    requires nothing about replay, so [R3.5](provider-spec.md#r3-receive) stays a per-gateway question rather
    than being answered by the standard. Note the `receiveId` is free where our own channels
-   carry no id; see `InboundBase.receiveMessage` for why we concluded none was needed.
+   carry no id; see `ReceiverBase.receiveMessage` for why we concluded none was needed.
 
 ### The other draft worth knowing about
 
@@ -440,7 +440,7 @@ Hyperlane's `domain`: a native CCIP binding needs its own chainKey↔selector ta
 **The wire addresses are ABI-encoded, not raw bytes.** `Client.EVM2AnyMessage.receiver` is
 `abi.encode(address)` for an EVM destination, and `Client.Any2EVMMessage.sender` is
 `abi.decode`d the same way for an EVM source. Neither is a raw 20-byte slice, which is what
-LayerZero and a bare EVM address use; a binding's `_authenticateSender` narrowing has to
+LayerZero and a bare EVM address use; a binding's sender narrowing (`CcipMessage.sender`) has to
 `abi.decode`, not slice.
 
 **A native `view` quote, satisfying P9 outright.** `getFee` prices the exact message with no
@@ -599,9 +599,9 @@ anything. A binding has to expose its own external entry point that accepts a ra
 WHOEVER submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
 no address to grant `GATEWAY_ROLE` to for this channel, because there is no fixed caller:
 authenticity comes entirely from the guardian signatures inside the VAA, checked by
-`_authenticateSender` against `vm.emitterChainId`/`vm.emitterAddress`, with nothing checking
+`vm.emitterChainId`/`vm.emitterAddress`, the emitter compared by `_onMessageFrom`, with nothing checking
 "who submitted this transaction" at all. That is not a gap relative to the other bindings:
-`_authenticateSender`, `_onMessage`, and `_onInbound` are already `internal`, so this
+`_onMessageFrom`, `_onMessage`, and `_onInbound` are already `internal`, so this
 entry point reaches the same seam CCIP and Hyperlane already reuse — it is simply the first
 candidate whose entry point has no role check in front of that seam.
 
@@ -682,7 +682,7 @@ to name, so it is granted to the Core bridge and checked by membership. Sources:
 ### What this means for scope
 
 Neither variant requires changing anything in the shared base contracts. `_sendMessage`/
-`_quoteMessage` are already `virtual` per-binding overrides; `_authenticateSender`,
+`_quoteMessage` are already `virtual` per-binding overrides; `_onMessageFrom`,
 `_onMessage`, and `_onInbound` are already `internal` and reusable by any provider-specific
 entry point regardless of that entry point's own gating; `Roles`/`GATEWAY_ROLE` needs no
 change either way. The Relayer binding is a template-comparable addition, the same shape as
@@ -746,7 +746,7 @@ called contract's own perspective — DURING the execution `relayMessage` trigge
 MUST call this itself and MUST NOT accept a "sender" as part of `message`'s own payload; an
 entry point that trusted a self-declared sender argument would let anyone impersonate this
 account's transmitter simply by encoding a claim to that effect in `message`, since nothing
-about `sendMessage` checks who is calling it or what they claim. `_authenticateSender` still
+about `sendMessage` checks who is calling it or what they claim. `_onMessageFrom` still
 does the real comparison against `sourceTransmitter`; what changes is where the value being
 compared comes from.
 

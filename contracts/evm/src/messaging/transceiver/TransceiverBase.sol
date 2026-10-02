@@ -5,8 +5,6 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -19,12 +17,11 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 ///      has no function that could. A transmitter and its receivers share one address, so a
 ///      receiver on the home chain would collide with the transmitter there.
 ///
-/// @dev An `InboundBase`, so a bootstrap can be deferred: its payload may arrive as
-///      `commit(hash)` and be finalized later by anyone willing to pay, running
-///      `bootstrapInbound` as a self-call. `_checkCommitter` admits only this contract.
-///
-/// @dev Not a `ReceiverBase`: no `sourceTransmitter` and no `execute`, and `cancel` is
-///      self-call only, since a transceiver is shared by every owner on its chain.
+/// @dev Runs no payload of its own: an inbound message is an `Envelope`, acted on in
+///      `_handleInbound`, and a bootstrap creates the account and runs its payload in the same
+///      delivery. A first payload that should wait carries a call to the new receiver's own
+///      `commit`. No approvals are held here, so no origin can approve or cancel on another's
+///      behalf.
 ///
 /// @dev No authority here. `Ownable` is on `HubTransceiverBase`; a spoke's configuration is
 ///      written in its initializer with no setters. `GATEWAY_ROLE` is fixed at initialization
@@ -37,7 +34,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 ///
 /// @dev An account's CREATE2 salt is `(owner, salt)` and nothing else, so one transmitter has
 ///      one receiver per destination, at an address fixed before the first message.
-abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, ICancel, UUPSUpgradeable {
+abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
@@ -59,9 +56,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, I
     ///      overrode one and not the other.
     error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
-    /// @dev Reachable only from a payload this contract is executing, which arrived through an
-    ///      authenticated delivery.
-    error NotSelfCall(address caller);
 
     /* ================================== routing ================================ */
 
@@ -268,24 +262,11 @@ abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, I
 
     /// @dev Refuses unconditionally: `__TransceiverBase_init` sets the lock and an
     ///      uninitialized transceiver has no owner to check against.
-    function _authorizeUpgrade(address) internal view override {
+    function _authorizeUpgrade(address) internal pure override {
         revert UpgradesAreLocked();
     }
 
     /* ================================= inbound ================================= */
-
-    /// @notice Who may approve a hash here: only a payload this contract is executing.
-    /// @dev Narrower than a receiver, which also admits its transmitter; a transceiver has no
-    ///      single party to admit.
-    function _checkCommitter() internal view override {
-        if (msg.sender != address(this)) revert NotSelfCall(msg.sender);
-    }
-
-    /// @notice Authenticate an ERC-7930 sender envelope: the chain half is the route, the
-    ///         address half the sender, both checked by `_authenticateOrigin`.
-    function _authenticateSender(bytes calldata sender) internal view override {
-        _authenticateOrigin(Erc7930.toChainIdentifier(sender), Erc7930.parseStrict(sender).addr);
-    }
 
     /// @notice Whether `chainKey` reports its receiver address back rather than having it
     ///         derived. False here; a hub answers from its registry.
@@ -293,30 +274,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, InboundBase, I
     ///      `HubTransceiverBase.reportsReceiver`.
     function reportsReceiver(bytes32) public view virtual returns (bool) {
         return false;
-    }
-
-    /// @notice What an arriving payload may call: `commit` and `cancel` on this contract, and
-    ///         on a spoke `bootstrapInbound`.
-    ///
-    /// @dev A transceiver authenticates every inbound message and deploys every account, so an
-    ///      unconstrained `_execute` would give an authenticated counterpart its whole address.
-    ///      A payload could self-call `HubTransceiverBase.onDestinationReceiver` with any
-    ///      chainKey and pin an account's receiver on another chain, which the account never
-    ///      unpins. It could also send a spoke's report float anywhere. Both allowed targets
-    ///      are `address(this)` and non-payable, so value-carrying calls revert.
-    function isAllowed(address target, bytes4 selector) public view virtual override returns (bool) {
-        return
-            target == address(this)
-                && (selector == ICommitFinalize.commit.selector || selector == ICancel.cancel.selector);
-    }
-
-    /// @notice Withdraw an approval this transceiver is holding.
-    /// @dev Gated like `commit`: only a payload from the authenticated counterpart reaches it.
-    ///      Without it an approved bootstrap could never be withdrawn, and whoever supplied the
-    ///      array to the permissionless `finalize` would choose when it ran.
-    function cancel(bytes32 commitment_) external virtual override {
-        _checkCommitter();
-        _cancel(commitment_);
     }
 
     /// @notice The funnel every binding routes an arriving message into.

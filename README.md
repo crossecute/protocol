@@ -101,7 +101,9 @@ an underfunded spoke reverts and takes the account creation with it: all or noth
 retryable once it is funded. This runs once per chain.
 
 A bootstrap may carry the account's whole first payload. A large one should pass a gas
-attribute, since no provider's default gas has been measured against it.
+attribute, since no provider's default gas has been measured against it, or carry only a
+call to the new receiver's own `commit`, so anyone can `finalize` the payload there later
+and pay for it.
 
 ### 3 · Sending a message
 
@@ -193,7 +195,7 @@ src/
   messaging/      Commitment, Call, Payload, Envelope, Executor, Roles
                   IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
-    inbound/      InboundBase -> ReceiverBase           what both halves RECEIVE with
+    inbound/      ReceiverBase                          what an account RECEIVES with
     transceiver/  TransceiverBase -> Hub
       spoke/      SpokeTransceiverBase -> zkSync / Tron
   account/        CrossProxy                                what both halves ARE
@@ -223,8 +225,8 @@ summary: the file is always the newer statement.
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
 | Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, and its two halves |
-| Why approvals are an unordered map of hash to count                      | `inbound/InboundBase.sol`             |
-| Why a transceiver receives, and what an arriving payload may call        | `inbound/InboundBase.sol`, `TransceiverBase.isAllowed` |
+| Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
+| Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |
 | Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |
@@ -384,7 +386,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 623 passing
+cd contracts/evm && forge test        # 619 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

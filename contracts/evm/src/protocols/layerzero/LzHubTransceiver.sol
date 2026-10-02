@@ -52,6 +52,7 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOnc
         uint32 dstEid = uint32(_providerIdOf(recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
+        return bytes32(0);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -74,7 +75,7 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOnc
     ///      is already the trusted, fee-adjusted amount `OutboundBase` computed; `endpoint.send`
     ///      still reverts if this contract's balance is short, so nothing here needs a second
     ///      check.
-    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+    function _payNative(uint256 _nativeFee) internal pure override returns (uint256) {
         return _nativeFee;
     }
 
@@ -84,8 +85,8 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOnc
 
     /// @dev R3.3 exception, hub's half — see `LzReceiver._lzReceive`. Each spoke has its own
     ///      peer entry (msig-set), so this stays 1:1 per source chain despite N spokes total.
-    ///      Translates into `_onInbound`, not `_authenticateSender`, since the hub's inbound
-    ///      path is registry-backed (N origins); `_authenticateOrigin` runs unmodified.
+    ///      Translates into `_onInbound`, whose registry-backed `_authenticateOrigin` (N
+    ///      origins) runs unmodified.
     /// @dev No `GATEWAY_ROLE` check: a transceiver's gateways cannot be revoked, so the role would
     ///      only restate OApp's `msg.sender == endpoint` check (unlike `LzReceiver`).
     function _lzReceive(

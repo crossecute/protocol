@@ -54,6 +54,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
         bytes memory options = LzMessage.options(attributes);
         _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
+        return bytes32(0);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

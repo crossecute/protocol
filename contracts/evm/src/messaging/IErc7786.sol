@@ -3,7 +3,7 @@ pragma solidity >=0.8.4;
 
 /// @title IErc7786
 /// @notice ERC-7786's two interfaces, vendored: the send surface `TransmitterBase` implements
-///         and the receive surface `InboundBase` implements.
+///         and the receive surface `ReceiverBase` implements.
 ///
 /// @dev Copied from `@openzeppelin/contracts/interfaces/draft-IERC7786.sol` at v5.5.0;
 ///      only this header and the file name differ. Vendored because the ERC is a draft and

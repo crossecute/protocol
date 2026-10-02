@@ -42,13 +42,7 @@ library Erc7930 {
     /* --------------------------- CAIP-350 chain types --------------------------- */
     // Aliases into `ChainType`, which is the one allocation table for the repo.
     uint16 internal constant CT_EIP155 = ChainType.EIP155;
-    uint16 internal constant CT_SOLANA = ChainType.SOLANA;
     uint16 internal constant CT_STARKNET = ChainType.STARKNET;
-
-    /// @dev Starknet chain references are the UTF-8 chain ID string, not an integer:
-    ///      "SN_MAIN" is 7 bytes, "SN_SEPOLIA" is 10. Do not reuse the eip155 minimal
-    ///      big-endian rule here: it would reject every valid Starknet reference.
-    bytes internal constant SN_MAIN = hex"534e5f4d41494e"; // "SN_MAIN"
 
     /// @dev Starknet addresses are 32-byte field elements, zero-padded. Unlike eip155,
     ///      leading zeros are required, so minimality must not be enforced on them.
@@ -128,7 +122,9 @@ library Erc7930 {
         }
 
         // starknet: the opposite rule. Addresses are fixed-width 32-byte field
-        // elements with leading zeros, so width is the canonicity condition here.
+        // elements with leading zeros, so width is the canonicity condition here. Chain
+        // references are the UTF-8 chain ID string ("SN_MAIN"), not an integer, so the
+        // eip155 minimality rule would reject every valid one.
         // The value-range check (< ADDR_BOUND) is not a structural property and lives
         // in StarknetDerive, wired in as a per-chain validator.
         if (io.chainType == CT_STARKNET && aLen != 0) {
@@ -145,26 +141,9 @@ library Erc7930 {
 
     /* ================================== keys =================================== */
 
-    /// @notice Universal registry key: keccak256 of the full canonical envelope.
-    /// @dev Uniform across every chain and every address length. Because the envelope
-    ///      is length-prefixed and version-tagged, this cannot collide across chain
-    ///      types the way a bare 32-byte address can.
-    function id(bytes memory raw) internal pure returns (bytes32) {
-        return keccak256(parseStrictAndReencode(raw));
-    }
-
     /// @notice Grouping key for "which chain is this on", independent of the account.
     function chainKey(bytes memory raw) internal pure returns (bytes32) {
         return keccak256(toChainIdentifier(raw));
-    }
-
-    /// @dev Re-encodes from parsed parts so that `id` is computed over the canonical
-    ///      serialization rather than over whatever bytes the caller supplied. Any
-    ///      non-canonical input has already reverted in parseStrict; this closes the
-    ///      remaining gap where a future chain type permits alternate framings.
-    function parseStrictAndReencode(bytes memory raw) internal pure returns (bytes memory) {
-        Interop memory io = parseStrict(raw);
-        return encode(io.chainType, io.chainRef, io.addr);
     }
 
     /* ================================ helpers ================================== */
@@ -180,14 +159,6 @@ library Erc7930 {
         bytes memory b = io.addr;
         assembly {
             a := shr(96, mload(add(b, 32)))
-        }
-    }
-
-    function toChainId(Interop memory io) internal pure returns (uint256 v) {
-        if (io.chainType != CT_EIP155) revert NotEvm();
-        bytes memory r = io.chainRef;
-        for (uint256 i; i < r.length; ++i) {
-            v = (v << 8) | uint8(r[i]);
         }
     }
 

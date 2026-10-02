@@ -63,6 +63,7 @@ abstract contract CcipSpokeBase is SpokeTransceiverBase, IAny2EVMMessageReceiver
         returns (bytes32 sendId)
     {
         CcipMessage.send(router, homeSelector, recipient, payload, attributes, value);
+        return bytes32(0);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
