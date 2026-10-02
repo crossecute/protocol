@@ -101,7 +101,9 @@ an underfunded spoke reverts and takes the account creation with it: all or noth
 retryable once it is funded. This runs once per chain.
 
 A bootstrap may carry the account's whole first payload. A large one should pass a gas
-attribute, since no provider's default gas has been measured against it.
+attribute, since no provider's default gas has been measured against it, or carry only a
+call to the new receiver's own `commit`, so anyone can `finalize` the payload there later
+and pay for it.
 
 ### 3 · Sending a message
 
