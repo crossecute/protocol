@@ -108,7 +108,7 @@ data location, so a `calldata` twin would need a different name, which is the on
 a second one ever existed.
 
 The three unparameterized forms are the **EVM scheme** (keccak256). The first seeds with
-`ChainKey.local()` and is what `isHashedCall` reaches from `finalize`, which is why it is
+`ChainKey.local()` and is what `ReceiverBase.finalize` recomputes, which is why it is
 `view` rather than `pure`: it reads `block.chainid`. The `Scheme` overloads are for the
 source side, where the hub builds a commitment a *different* VM will recompute. See below.
 
