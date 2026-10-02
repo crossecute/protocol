@@ -5,9 +5,8 @@ import {Call} from "src/messaging/Call.sol";
 
 /// @title Executor
 /// @notice Running a verified call array, and the policy that gates it.
-/// @dev Shared by every contract that runs payloads: a receiver runs what arrives, a
-///      transmitter what its owner hands it, and a transceiver the calls its `isAllowed`
-///      admits. No storage.
+/// @dev Shared by every contract that runs payloads: a receiver runs what arrives, and a
+///      transmitter what its owner hands it. A transceiver runs none. No storage.
 abstract contract Executor {
     error SelectorNotAllowed(address target, bytes4 selector);
     /// @dev Carries the index of the element that failed.
@@ -20,7 +19,7 @@ abstract contract Executor {
     /// @dev Open by default: accounts are full-power and answer to one owner, like a Safe, and
     ///      anything that can deliver an authorized payload could forge a commitment as easily
     ///      as a call. Failing closed would revert every payload, the bootstrap payload
-    ///      included, until overridden. A transceiver overrides it.
+    ///      included, until overridden.
     ///
     /// @dev Merkle-verified calls are not in v1. If added, the model is Veda's
     ///      `ManagerWithMerkleVerification`:

@@ -84,8 +84,8 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOnc
 
     /// @dev R3.3 exception, hub's half — see `LzReceiver._lzReceive`. Each spoke has its own
     ///      peer entry (msig-set), so this stays 1:1 per source chain despite N spokes total.
-    ///      Translates into `_onInbound`, not `_authenticateSender`, since the hub's inbound
-    ///      path is registry-backed (N origins); `_authenticateOrigin` runs unmodified.
+    ///      Translates into `_onInbound`, whose registry-backed `_authenticateOrigin` (N
+    ///      origins) runs unmodified.
     /// @dev No `GATEWAY_ROLE` check: a transceiver's gateways cannot be revoked, so the role would
     ///      only restate OApp's `msg.sender == endpoint` check (unlike `LzReceiver`).
     function _lzReceive(

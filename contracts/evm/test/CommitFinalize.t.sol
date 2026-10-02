@@ -9,10 +9,8 @@ import {Vm} from "forge-std/Vm.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {ICancel, ICommitFinalize, InboundBase} from "src/messaging/inbound/InboundBase.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -114,10 +112,10 @@ contract MockTransceiver is UnsendableSpoke {
         );
     }
 
-    /// @dev Stands in for `_onInbound`: the real path decodes the payload and reaches
-    ///      `bootstrapInbound` via a self-call.
+    /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
+    ///      `_bootstrapInbound` directly.
     function inbound(address transmitter, Call[] calldata calls) external {
-        this.bootstrapInbound(transmitter, bytes32(0), calls);
+        _bootstrapInbound(transmitter, bytes32(0), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -311,7 +309,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(r.isCommitted(pending), "approval untouched");
 
         // And it still requires its own matching array.
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(_otherCalls());
         r.finalize(approved);
         assertEq(r.pendingCount(), 0);
@@ -395,9 +393,20 @@ contract CommitFinalizeTest is Test {
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
     }
 
-    function test_bootstrapInboundIsSelfCallOnly() public {
-        vm.expectRevert();
-        t.bootstrapInbound(transmitter, bytes32(0), new Call[](0));
+    /// @dev Creation is reachable only from an authenticated delivery, so it has no selector
+    ///      at all rather than a gated one.
+    function test_bootstrapInboundIsNotExternal() public {
+        (bool ok,) = address(t)
+            .call(
+                abi.encodeWithSignature(
+                    "bootstrapInbound(address,bytes32,(address,uint256,bytes)[])",
+                    transmitter,
+                    bytes32(0),
+                    new Call[](0)
+                )
+            );
+        assertFalse(ok, "no bootstrapInbound on the ABI");
+        assertEq(t.predictCrossAccount(transmitter, bytes32(0)).code.length, 0, "and nothing was created");
     }
 
     /// @dev The transceiver has no way to reach a receiver after creating it. Bootstrap is
@@ -457,8 +466,8 @@ contract CommitFinalizeTest is Test {
         );
     }
 
-    /// @dev The commitment lives in the transceiver until someone spends it, and anyone
-    ///      may be that someone.
+    /// @dev The commitment lives in the receiver until someone spends it, and anyone may be
+    ///      that someone.
     function test_finalizeIsPermissionless() public {
         Call[] memory calls = _calls();
         MockReceiver r = _arrive(transmitter, calls);
@@ -477,7 +486,7 @@ contract CommitFinalizeTest is Test {
         tampered[1].data = abi.encodeWithSignature("bar(address)", address(0xBAD));
 
         vm.prank(relayer);
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(tampered);
     }
 
@@ -600,7 +609,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
         r.finalize(calls);
 
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -757,14 +766,14 @@ contract CommitFinalizeTest is Test {
     /// @dev An account's approvals live in the account, and isolation is structural. There
     ///      is exactly one receiver per transmitter, because the CREATE2 salt is the
     ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
-    ///      wrong. The transceiver holds approvals of its own now, but they are bootstraps
-    ///      rather than anybody's payload, and this one holds none.
+    ///      wrong. The transceiver holds no approvals at all.
     function test_anAccountsApprovalsLiveInTheAccount() public {
         t.inbound(transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0)), hashOf(_calls())));
 
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("pendingOf(address)", transmitter));
         assertFalse(a, "no per-sender mapping on the transceiver");
-        assertEq(t.pendingCount(), 0, "and nothing of its own here");
+        (bool b,) = address(t).staticcall(abi.encodeWithSignature("pendingCount()"));
+        assertFalse(b, "and no approval map of its own");
 
         assertTrue(
             MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).isCommitted(hashOf(_calls())),
@@ -856,151 +865,45 @@ contract CommitFinalizeTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev The single-slot entry points cannot say whose commitment they mean, and the
-    ///      transceiver has no commitments to mean. Neither was ever inherited.
-    /// @dev A transceiver commits and finalizes, and cancels neither its own nor anybody's.
-    ///      `commit` admits only a payload this contract is already executing, so no caller
-    ///      can approve work on the contract every account's bootstrap goes through. There
-    ///      is no `cancel` at all: an entry point that removed an approval on a shared
-    ///      contract would let whoever reached it strip a bootstrap somebody else paid for.
-    function test_theTransceiverCommitsOnlyToItselfAndCannotCancel() public {
-        vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotSelfCall.selector, relayer));
-        t.commit(keccak256("mine"));
-
-        (bool cancelled,) = address(t).call(abi.encodeWithSignature("cancel(bytes32)", keccak256("mine")));
-        assertFalse(cancelled, "no cancel on a shared contract");
-
-        (bool executed,) = address(t).call(abi.encodeWithSignature("execute((address,uint256,bytes)[])", new Call[](0)));
-        assertFalse(executed, "and no ungated execute either");
-    }
-
-    /* ========================== bootstrap, deferred =========================== */
-
-    /// @notice A bootstrap that arrives as an approval, and is paid for by somebody else.
-    ///
-    /// @dev The message that cannot pay for itself. Every other payload in the protocol lands
-    ///      in an account that already exists and whose owner chose to send it. A bootstrap
-    ///      lands where there is no account yet, inside a delivery callback, and standing an
-    ///      account up plus running its first payload is the most expensive thing this
-    ///      protocol does. Committing splits it: the authenticated message from the hub costs
-    ///      the gas of one `commit`, and whoever wants the account to exist supplies the array
-    ///      afterwards and pays for the deployment.
-    ///
-    /// @dev Nothing on the wire says which it is. The hub sends a payload either way;
-    ///      `commit` is a call in it, exactly as it is for an account. That is the same rule
-    ///      the receiver follows, now applied to the one contract that has to receive on
-    ///      behalf of an account that does not exist.
-    function test_aBootstrapCanBeCommittedThenFinalizedByAnyone() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
-        assertEq(predicted.code.length, 0, "no account yet");
-
-        // What the finalizer will supply: the bootstrap itself, as a self-call.
-        Call[] memory boot = new Call[](1);
-        boot[0] = Call({
-            target: address(t),
-            value: 0,
-            data: abi.encodeCall(SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls()))
-        });
-        bytes32 pending = hashOf(boot);
-
-        // What the hub sends: a payload whose one element approves that hash.
-        Call[] memory approve = new Call[](1);
-        approve[0] = Call({target: address(t), value: 0, data: abi.encodeCall(ICommitFinalize.commit, (pending))});
-
-        vm.prank(gateway);
-        t.receiveMessage(
+    /// @dev A bootstrap is never deferred: the receiver is created and its payload run in the
+    ///      delivery that carries them. A transceiver therefore holds no approvals and runs no
+    ///      payload, so no origin can approve, cancel, or finalize anything on the contract
+    ///      every account's bootstrap goes through. Absence beats a gate: there is no function
+    ///      a future predicate change could expose.
+    function test_aTransceiverHoldsNoApprovalsAndRunsNoPayload() public {
+        bytes[] memory absent = new bytes[](6);
+        absent[0] = abi.encodeWithSignature("commit(bytes32)", keccak256("p"));
+        absent[1] = abi.encodeWithSignature("cancel(bytes32)", keccak256("p"));
+        absent[2] = abi.encodeWithSignature("finalize((address,uint256,bytes)[])", new Call[](0));
+        absent[3] = abi.encodeWithSignature("finalize((address,uint256,bytes)[][])", new Call[][](0));
+        absent[4] = abi.encodeWithSignature(
+            "receiveMessage(bytes32,bytes,bytes)",
             bytes32(0),
-            Erc7930.encodeEvm(1, address(t)), // the home chain, and the hub on it
-            Payload.encodeCalls(approve)
+            Erc7930.encodeEvm(1, address(t)),
+            Payload.encodeCalls(_calls())
         );
+        absent[5] = abi.encodeWithSignature("isAllowed(address,bytes4)", address(t), bytes4(0));
 
-        assertTrue(t.isCommitted(pending), "the transceiver holds the approval");
-        assertEq(predicted.code.length, 0, "and the account still does not exist");
-
-        // A different party entirely supplies the array and pays for the deployment.
-        vm.prank(relayer);
-        t.finalize(boot);
-
-        assertGt(predicted.code.length, 0, "the account exists, paid for by the relayer");
-        assertEq(
-            MockReceiver(payable(predicted)).sourceTransmitter(),
-            predicted,
-            "and it was armed exactly as a direct bootstrap would have armed it"
-        );
-        assertEq(t.pendingCount(), 0, "the approval is spent");
+        for (uint256 i; i < absent.length; ++i) {
+            vm.prank(gateway);
+            (bool ok,) = address(t).call(absent[i]);
+            assertFalse(ok, "absent from a transceiver's ABI");
+        }
     }
 
-    /// @notice Regression: an approved bootstrap can be withdrawn, and only by the authority
-    ///         that approved it.
-    ///
-    /// @dev Without this the approval was permanent. `finalize` is permissionless and has no
-    ///      deadline, so an outstanding bootstrap left the moment it executed, and therefore
-    ///      the state its payload ran against, to whoever chose to supply the array. The
-    ///      cancel is gated like `commit`: a payload this contract is already executing,
-    ///      which means one that arrived from the authenticated hub.
-    function test_anApprovedBootstrapCanBeWithdrawnByTheHubAndNobodyElse() public {
-        Call[] memory boot = new Call[](1);
-        boot[0] = Call({
-            target: address(t),
-            value: 0,
-            data: abi.encodeCall(SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls()))
-        });
-        bytes32 pending = hashOf(boot);
+    /// @dev What a deferred first payload looks like instead: the bootstrap creates the
+    ///      receiver and runs a payload that approves a hash on the receiver itself, and
+    ///      anyone finalizes it there later.
+    function test_aDeferredFirstPayloadIsCommittedOnTheReceiver() public {
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        Call[] memory later = _calls();
 
-        _deliverToTransceiver(_callTo(address(t), abi.encodeCall(ICommitFinalize.commit, (pending))));
-        assertTrue(t.isCommitted(pending));
-
-        // Not the relayer, and not anyone else with an address.
-        vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotSelfCall.selector, relayer));
-        t.cancel(pending);
-
-        // The hub withdraws it the same way it approved it: a payload, through the gateway.
-        _deliverToTransceiver(_callTo(address(t), abi.encodeCall(ICancel.cancel, (pending))));
-
-        assertFalse(t.isCommitted(pending), "withdrawn");
-        vm.prank(relayer);
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
-        t.finalize(boot);
-    }
-
-    function _callTo(address target, bytes memory data) internal pure returns (Call[] memory calls) {
-        calls = new Call[](1);
-        calls[0] = Call({target: target, value: 0, data: data});
-    }
-
-    function _deliverToTransceiver(Call[] memory calls) internal {
-        vm.prank(gateway);
-        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(t)), Payload.encodeCalls(calls));
-    }
-
-    /// @dev The approval is over the whole bootstrap, so a finalizer cannot stand up a
-    ///      different account, or the same one carrying a different payload.
-    function test_aDeferredBootstrapCannotBeRedirected() public {
-        Call[] memory boot = new Call[](1);
-        boot[0] = Call({
-            target: address(t),
-            value: 0,
-            data: abi.encodeCall(SpokeTransceiverBase.bootstrapInbound, (transmitter, bytes32(0), _calls()))
-        });
-
-        Call[] memory approve = new Call[](1);
-        approve[0] = Call({target: address(t), value: 0, data: abi.encodeCall(ICommitFinalize.commit, (hashOf(boot)))});
-
-        vm.prank(gateway);
-        t.receiveMessage(bytes32(0), Erc7930.encodeEvm(1, address(t)), Payload.encodeCalls(approve));
-
-        Call[] memory hijacked = new Call[](1);
-        hijacked[0] = Call({
-            target: address(t),
-            value: 0,
-            data: abi.encodeCall(SpokeTransceiverBase.bootstrapInbound, (transmitter2, bytes32(0), _calls()))
-        });
+        t.inbound(transmitter, _deferred(predicted, hashOf(later)));
+        assertGt(predicted.code.length, 0, "created in the delivery");
 
         vm.prank(relayer);
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
-        t.finalize(hijacked);
+        MockReceiver(payable(predicted)).finalize(later);
+        assertEq(MockReceiver(payable(predicted)).pendingCount(), 0, "finalized on the receiver");
     }
 
     /* =============================== receiver ================================= */
@@ -1097,7 +1000,7 @@ contract CommitFinalizeTest is Test {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(address(r));
-        vm.expectRevert(InboundBase.ZeroCommitment.selector);
+        vm.expectRevert(ReceiverBase.ZeroCommitment.selector);
         r.commit(bytes32(0));
     }
 
@@ -1131,7 +1034,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         vm.chainId(999);
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(calls);
     }
 
@@ -1144,7 +1047,7 @@ contract CommitFinalizeTest is Test {
         r.commit(pending);
 
         vm.chainId(999);
-        vm.expectRevert(InboundBase.CommitmentMismatch.selector);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
         r.finalize(later);
     }
 }

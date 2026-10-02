@@ -19,7 +19,6 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {ICommitFinalize} from "src/messaging/inbound/InboundBase.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
@@ -118,10 +117,10 @@ contract ReportingSpoke is SpokeTransceiverBase {
         return bytes32(0);
     }
 
-    /// @dev Stands in for `_onInbound`, which reaches `bootstrapInbound` by self-call
-    ///      after authenticating the origin.
+    /// @dev Stands in for `_onInbound`, which reaches `_bootstrapInbound` after
+    ///      authenticating the origin.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        this.bootstrapInbound(owner, salt, calls);
+        _bootstrapInbound(owner, salt, calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -548,81 +547,46 @@ contract ReceiverReportRoundTripTest is Test {
         account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
     }
 
-    /* ===================== what an executed payload may call ==================== */
+    /* ======================== no payload runs on a hub ========================= */
 
-    /// @notice Regression: a spoke on one chain cannot report an address on another, and the
-    ///         `Call[]` path is not a way around that.
+    /// @notice Regression: a spoke on one chain cannot report an address on another, and there
+    ///         is no `Call[]` path around that.
     ///
-    /// @dev The escalation this closes. `onDestinationReceiver` is self-call gated and takes
-    ///      its `chainKey` as an argument, which the envelope path fills from
-    ///      `_authenticateOrigin`. Once a transceiver executed arrays, an authenticated spoke
-    ///      could send a payload that called it directly with any chainKey, pinning an
-    ///      account's receiver on a chain it has nothing to do with. That is write-once, and
-    ///      so unrecoverable. `test_aChainCannotReportAnAddressOnAnotherChain` covers the
-    ///      envelope path and passed throughout; only this covers the way around it.
-    function test_anExecutedPayloadCannotReachOnDestinationReceiver() public {
-        uint256 OTHER = 999;
-        vm.startPrank(msig);
-        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(OTHER));
-        registry.setProvenance(otherKey, Provenance.Attested);
-        hub.setCounterpart(otherKey, Erc7930.encodeEvm(OTHER, address(0xDEAD)));
-        hub.setRoute(otherKey, Erc7930.encodeEvmChain(OTHER));
-        vm.stopPrank();
-
-        vm.prank(owner);
-        account.bootstrap(OTHER, new Call[](0), new bytes[](0));
-
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call({
-            target: address(hub),
-            value: 0,
-            data: abi.encodeCall(
-                HubTransceiverBase.onDestinationReceiver,
-                (otherKey, owner, SALT, Erc7930.encodeEvm(OTHER, address(0xBADBAD)))
-            )
-        });
-
-        // Refused before the call is made, not by the callee: the allowlist is the check.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Executor.SelectorNotAllowed.selector, address(hub), HubTransceiverBase.onDestinationReceiver.selector
-            )
-        );
-        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
-
-        assertFalse(account.isReachable(otherKey), "nothing was recorded, so no chain got to speak for another");
-    }
-
-    /// @notice Regression: an executed payload cannot move the transceiver's balance.
-    /// @dev A `Call` carries value, so an unconstrained `_execute` let an authenticated
-    ///      counterpart send the transceiver's balance anywhere. A hub holds provider refunds
-    ///      and a spoke the float that pays for its reports, so there is still a balance to
-    ///      protect even though bootstrap fees now leave in the transaction that charges them.
-    function test_anExecutedPayloadCannotMoveTheBalance() public {
+    /// @dev `_onDestinationReceiver` takes its `chainKey` from `_authenticateOrigin`. If an
+    ///      authenticated spoke could deliver a call array, or call the report handler
+    ///      directly, it could pin an account's receiver on a chain it has nothing to do with,
+    ///      write-once and so unrecoverable. A transceiver runs no payload and the handler is
+    ///      internal, so neither entry exists. `test_aChainCannotReportAnAddressOnAnotherChain`
+    ///      covers the envelope path.
+    function test_noPayloadReachesTheReportHandlerOrTheBalance() public {
         vm.deal(address(hub), 5 ether);
-        address thief = address(0xF00D);
 
         Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: thief, value: 5 ether, data: ""});
+        calls[0] = Call({target: address(0xF00D), value: 5 ether, data: ""});
+        (bool delivered,) = address(hub)
+            .call(
+                abi.encodeWithSignature(
+                    "receiveMessage(bytes32,bytes,bytes)",
+                    bytes32(0),
+                    Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
+                    Payload.encodeCalls(calls)
+                )
+            );
+        assertFalse(delivered, "no receiveMessage on a transceiver");
 
-        vm.expectRevert();
-        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
+        (bool reported,) = address(hub)
+            .call(
+                abi.encodeWithSignature(
+                    "onDestinationReceiver(bytes32,address,bytes32,bytes)",
+                    spokeKey,
+                    owner,
+                    SALT,
+                    Erc7930.encodeEvm(SPOKE_CHAIN, address(0xBADBAD))
+                )
+            );
+        assertFalse(reported, "no external report handler");
 
-        assertEq(thief.balance, 0, "nothing left");
-        assertEq(address(hub).balance, 5 ether, "and the fee balance is intact");
-    }
-
-    /// @dev The allowlist is two entries, not zero. The payload the deferred path actually
-    ///      sends still lands.
-    function test_anExecutedPayloadMayStillApproveAHash() public {
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call({
-            target: address(hub), value: 0, data: abi.encodeCall(ICommitFinalize.commit, (keccak256("deferred")))
-        });
-
-        hub.receiveMessage(bytes32(0), Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)), Payload.encodeCalls(calls));
-
-        assertTrue(hub.isCommitted(keccak256("deferred")));
+        assertEq(address(hub).balance, 5 ether, "the balance is intact");
     }
 
     /// @dev The whole point of the file. The spoke creates an account and puts a report on

@@ -66,7 +66,7 @@ contract HubForAccounts is UnsendableHub {
     }
 }
 
-/// @dev A spoke, because only a spoke makes receivers; a hub has no `bootstrapInbound`.
+/// @dev A spoke, because only a spoke makes receivers; a hub has no `_bootstrapInbound`.
 contract SaltedTransceiver is UnsendableSpoke {
     function initialize(address owner_, address impl) external initializer {
         __SpokeTransceiverBase_init(
@@ -81,9 +81,9 @@ contract SaltedTransceiver is UnsendableSpoke {
         );
     }
 
-    /// @dev Stands in for `_onInbound`, which authenticates and then self-calls.
+    /// @dev Stands in for `_onInbound`, which authenticates and then calls `_bootstrapInbound`.
     function bootstrapFor(address owner_) external returns (address) {
-        this.bootstrapInbound(owner_, bytes32(0), new Call[](0));
+        _bootstrapInbound(owner_, bytes32(0), new Call[](0));
         return predictCrossAccount(owner_, bytes32(0));
     }
 

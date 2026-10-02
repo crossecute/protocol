@@ -334,7 +334,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev A hub receives receiver reports only; transmitters live on the home chain.
     function _handleInbound(bytes32 chainKey, bytes calldata message) internal virtual override {
         (address owner, bytes32 salt, bytes memory interop) = Envelope.decodeReceiverReport(message);
-        this.onDestinationReceiver(chainKey, owner, salt, interop);
+        _onDestinationReceiver(chainKey, owner, salt, interop);
     }
 
     /// @notice Turn an inbound source id back into a chain, from the write-once route table.
@@ -342,10 +342,11 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         return chainKeyOfRoute(route);
     }
 
-    /// @notice Inbound callback: the destination reports where it created the receiver.
+    /// @notice The destination reports where it created the receiver.
     ///
     /// @dev For chains the hub cannot derive: Starknet's Pedersen derivation, and zkSync's and
-    ///      Tron's CREATE2 formulas. Self-call only, reachable from `_onInbound`.
+    ///      Tron's CREATE2 formulas. Internal, so reachable only from an authenticated
+    ///      `_onInbound`.
     ///
     /// @dev Written to the account, not the registry, because the transmitter is what
     ///      addresses that receiver and the registry is out of the send path. The registry
@@ -360,8 +361,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///      still report a wrong address on its own chain; the account keeps the first one,
     ///      so a compromised spoke costs only its own chain.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
-    function onDestinationReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes calldata interop) external {
-        require(msg.sender == address(this));
+    function _onDestinationReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes memory interop) internal {
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (owner == address(0)) revert ZeroOwner();
         if (!chainRegistry.requiresReceiverCallback(chainKey)) {
@@ -379,7 +379,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @notice Whether `chainKey` reports its receiver address back, rather than this hub
     ///         deriving it.
     /// @dev True exactly where this contract cannot recompute an address (zkSync, Tron, every
-    ///      non-EVM VM), from the same registry answer `onDestinationReceiver` enforces. A hub
+    ///      non-EVM VM), from the same registry answer `_onDestinationReceiver` enforces. A hub
     ///      with no registry answers false; `_requireRoutable` then refuses the bootstrap.
     function reportsReceiver(bytes32 chainKey) public view override returns (bool) {
         if (address(chainRegistry) == address(0)) return false;
