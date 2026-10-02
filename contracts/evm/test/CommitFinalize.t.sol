@@ -97,7 +97,7 @@ contract RevertingReceiver is ReceiverBase {
     }
 }
 
-/// @dev Exposes the self-call `commit` and the implementation setter for testing.
+/// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
 contract MockTransceiver is UnsendableSpoke {
     function initialize(address owner_, address receiverImplementation_) external initializer {
         __SpokeTransceiverBase_init(
