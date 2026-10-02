@@ -54,6 +54,7 @@ contract CcipHubTransceiver is ProviderHubTransceiver, IAny2EVMMessageReceiver {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
         CcipMessage.send(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes, value);
+        return bytes32(0);
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)

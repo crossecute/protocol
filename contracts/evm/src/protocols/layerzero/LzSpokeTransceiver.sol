@@ -79,6 +79,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
         returns (bytes32 sendId)
     {
         _lzSend(homeEid, payload, LzMessage.options(attributes), MessagingFee(value, 0), _refundTo());
+        return bytes32(0);
     }
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory attributes)
