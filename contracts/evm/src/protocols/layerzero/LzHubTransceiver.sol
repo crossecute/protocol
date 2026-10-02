@@ -75,7 +75,7 @@ contract LzHubTransceiver is ProviderHubTransceiver, OAppUpgradeable, LzWriteOnc
     ///      is already the trusted, fee-adjusted amount `OutboundBase` computed; `endpoint.send`
     ///      still reverts if this contract's balance is short, so nothing here needs a second
     ///      check.
-    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+    function _payNative(uint256 _nativeFee) internal pure override returns (uint256) {
         return _nativeFee;
     }
 

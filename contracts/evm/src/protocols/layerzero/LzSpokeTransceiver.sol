@@ -94,7 +94,7 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
     /// @dev The vendored default requires `msg.value == _nativeFee`, but a spoke's only send is
     ///      `_reportReceiver`, nested in the delivery callback at `msg.value == 0` and paid from
     ///      this contract's balance. `endpoint.send` still reverts if that balance is short.
-    function _payNative(uint256 _nativeFee) internal override returns (uint256) {
+    function _payNative(uint256 _nativeFee) internal pure override returns (uint256) {
         return _nativeFee;
     }
 

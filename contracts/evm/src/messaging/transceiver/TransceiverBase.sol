@@ -262,7 +262,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
 
     /// @dev Refuses unconditionally: `__TransceiverBase_init` sets the lock and an
     ///      uninitialized transceiver has no owner to check against.
-    function _authorizeUpgrade(address) internal view override {
+    function _authorizeUpgrade(address) internal pure override {
         revert UpgradesAreLocked();
     }
 

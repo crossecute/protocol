@@ -66,10 +66,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address owner_, address impl, bool addressesDiverge_, address treasuryOwner_)
-        external
-        initializer
-    {
+    function initialize(address, address impl, bool addressesDiverge_, address treasuryOwner_) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,

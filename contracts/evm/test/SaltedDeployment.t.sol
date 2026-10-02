@@ -68,7 +68,7 @@ contract HubForAccounts is UnsendableHub {
 
 /// @dev A spoke, because only a spoke makes receivers; a hub has no `_bootstrapInbound`.
 contract SaltedTransceiver is UnsendableSpoke {
-    function initialize(address owner_, address impl) external initializer {
+    function initialize(address, address impl) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             impl,

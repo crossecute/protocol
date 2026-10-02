@@ -99,7 +99,7 @@ contract RevertingReceiver is ReceiverBase {
 
 /// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
 contract MockTransceiver is UnsendableSpoke {
-    function initialize(address owner_, address receiverImplementation_) external initializer {
+    function initialize(address, address receiverImplementation_) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
             receiverImplementation_,
@@ -459,7 +459,7 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev One receiver per transmitter: different transmitters must not share one.
-    function test_saltSeparatesTransmitters() public {
+    function test_saltSeparatesTransmitters() public view {
         assertTrue(
             t.predictCrossAccount(transmitter, bytes32(0)) != t.predictCrossAccount(address(0xBEEF), bytes32(0)),
             "transmitter must vary the address"
