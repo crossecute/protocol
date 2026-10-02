@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {Call, Calls} from "src/messaging/Call.sol";
+import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Executor} from "src/messaging/Executor.sol";
@@ -82,10 +82,6 @@ abstract contract ReceiverBase is
     address public parentTransceiver;
 
     event ReceiverInitialized(address indexed sourceTransmitter, address indexed transceiver);
-    event ReceiverCommitted(bytes32 indexed commitment, uint256 outstanding);
-    /// @dev Carries what was dropped, since cancelling removes every outstanding copy.
-    event ReceiverCancelled(bytes32 indexed commitment, uint256 dropped);
-    event ReceiverFinalized(bytes32 indexed commitment, uint256 remaining, uint256 callCount);
     event ReceiverExecuted(address indexed caller, uint256 callCount);
     event Committed(bytes32 indexed commitment, uint256 outstanding);
     event Finalized(bytes32 indexed commitment, uint256 remaining, uint256 callCount);
@@ -338,12 +334,6 @@ abstract contract ReceiverBase is
         Call[] memory calls = Payload.decodeCalls(payload);
         emit Delivered(calls.length);
         _execute(calls);
-    }
-
-    /// @notice Split a canonical opaque element into its target, value, and calldata.
-    function _decodeCall(bytes calldata call) internal pure returns (address target, uint256 value, bytes memory data) {
-        Call memory c = Calls.decode(call);
-        return (c.target, c.value, c.data);
     }
 
     /// @notice Accept ETH, so a receiver can be funded ahead of a `finalize` that spends it.
