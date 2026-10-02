@@ -40,11 +40,4 @@ library Calls {
             out[i] = encode(calls[i]);
         }
     }
-
-    function decodeAll(bytes[] memory elements) internal pure returns (Call[] memory out) {
-        out = new Call[](elements.length);
-        for (uint256 i; i < elements.length; ++i) {
-            out[i] = decode(elements[i]);
-        }
-    }
 }

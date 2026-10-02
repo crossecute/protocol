@@ -341,8 +341,6 @@ contract TransportTest is Test {
     }
 
     function test_providerDataTravelsPerSend() public {
-        bytes memory opts = hex"0003010011010000000000000000000000000000ea60";
-
         vm.prank(owner);
         transmitter.sendMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
         assertEq(transmitter.attributeCount(), 1);

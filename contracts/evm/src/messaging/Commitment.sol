@@ -76,10 +76,6 @@ library Commitment {
         }
     }
 
-    function isHashedCall(bytes32 hashed, Call[] memory calls) internal view returns (bool) {
-        return hashed == hashCalls(calls);
-    }
-
     /* ============================ non-EVM destinations =========================== */
 
     /// @notice The commitment a destination using `scheme` will require.
