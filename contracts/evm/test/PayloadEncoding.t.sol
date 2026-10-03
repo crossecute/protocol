@@ -177,7 +177,8 @@ contract PayloadEncodingTest is Test {
     /// There is no tag, and nothing needs one. The form is a property of the destination:
     /// an EVM chain always gets `Call[]`, everything else always gets `bytes[]`. Both
     /// sides know which before a byte is written, so a field saying so would carry a value
-    /// each already holds: the same reason `Envelope` has no message-type field.
+    /// each already holds. `Envelope` is tagged instead, since a transceiver channel carries
+    /// several kinds.
     function test_theFormIsDecidedByTheDestination() public view {
         assertTrue(harness.isTypedDestination(Erc7930.encodeEvmChain(8453)), "an EVM destination takes typed calls");
         assertFalse(

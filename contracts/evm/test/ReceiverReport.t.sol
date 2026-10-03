@@ -182,8 +182,9 @@ contract ReceiverReportTest is Test {
         assertEq(s.sentCount(), 1, "one report");
         assertEq(ChainKey.fromIdentifier(s.sentRecipient()), s.homeChainKey(), "addressed home");
 
-        (address gotOwner, bytes32 gotSalt, bytes memory interop) =
-            abi.decode(s.sentPayload(), (address, bytes32, bytes));
+        (uint8 kind, address gotOwner, bytes32 gotSalt, bytes memory interop) =
+            abi.decode(s.sentPayload(), (uint8, address, bytes32, bytes));
+        assertEq(kind, Envelope.RECEIVER_REPORT, "tagged as a report");
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);
         assertEq(
@@ -197,7 +198,7 @@ contract ReceiverReportTest is Test {
         ReportingSpoke s = _spoke(true);
 
         s.inbound(owner, SALT, new Call[](0));
-        (address a, bytes32 b,) = abi.decode(s.sentPayload(), (address, bytes32, bytes));
+        (, address a, bytes32 b,) = abi.decode(s.sentPayload(), (uint8, address, bytes32, bytes));
 
         assertEq(
             keccak256(s.sentPayload()),
@@ -215,7 +216,7 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, keccak256("second"), new Call[](0));
 
         assertEq(s.sentCount(), 2);
-        (, bytes32 gotSalt,) = abi.decode(s.sentPayload(), (address, bytes32, bytes));
+        (,, bytes32 gotSalt,) = abi.decode(s.sentPayload(), (uint8, address, bytes32, bytes));
         assertEq(gotSalt, keccak256("second"), "the most recent one");
     }
 
@@ -669,7 +670,7 @@ contract ReceiverReportRoundTripTest is Test {
         vm.prank(msig);
         bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        bytes memory elsewhere = abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
+        bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ReportedChainMismatch.selector, spokeKey, otherKey));
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
@@ -680,7 +681,7 @@ contract ReceiverReportRoundTripTest is Test {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(42161));
 
-        bytes memory elsewhere = abi.encode(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
+        bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
 

@@ -169,8 +169,9 @@ contract InboundAuthTest is Test {
         spoke.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
-    /// @dev A receiver may call its spoke, but a bootstrap from a spoke would reach the hub as
-    ///      an untagged envelope it decodes as a report, so neither the send nor its quote runs.
+    /// @dev A receiver may call its spoke, but a hub creates no receivers and would refuse a
+    ///      bootstrap envelope on arrival, after the fee was spent, so neither the send nor its
+    ///      quote runs.
     function test_aSpokeRefusesAnOutboundBootstrap() public {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
         address receiver = spoke.predictCrossAccount(transmitter, bytes32(0));
@@ -304,15 +305,71 @@ contract InboundAuthTest is Test {
 
     /* ================================= envelope ================================ */
 
-    /// @dev Each side decodes exactly one shape, so the direction is the discriminant and
-    ///      no type tag is needed. Feeding a hub a spoke's message is a decode failure,
-    ///      not a misread.
-    function test_theWrongShapeDoesNotDecodeSilently() public {
+    /// @dev Every envelope leads with its kind, and each side refuses a kind it does not act
+    ///      on before reading anything else, so a wrong shape is refused by name rather than
+    ///      misread.
+    function test_aHubRefusesABootstrapEnvelope() public {
         _wireSpokeChain(30184, 8453, address(0xC0DE));
         bytes memory wrongWay = Envelope.encodeBootstrap(transmitter, bytes32(0), _boot());
 
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Envelope.UnexpectedEnvelopeKind.selector, Envelope.RECEIVER_REPORT, Envelope.BOOTSTRAP
+            )
+        );
         hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xC0DE)), wrongWay);
+    }
+
+    function test_aSpokeRefusesAReportEnvelope() public {
+        bytes memory wrongWay =
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(1, transmitter));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.RECEIVER_REPORT
+            )
+        );
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, wrongWay);
+    }
+
+    /// @dev The elements form is for a non-EVM transceiver; an EVM one has no decoder for it.
+    function test_anEvmSpokeRefusesTheElementsForm() public {
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+        bytes memory wrongWay = Envelope.encodeBootstrapElements(transmitter, bytes32(0), elements);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.BOOTSTRAP_ELEMENTS
+            )
+        );
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, wrongWay);
+    }
+
+    /// @dev A v1 body led with the owner, not a kind. Kinds start at 1, so the owner word is
+    ///      refused as an unknown kind rather than decoded.
+    function test_anUntaggedV1BodyIsRefused() public {
+        bytes memory v1 = abi.encode(transmitter, bytes32(0), _boot());
+
+        vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, uint256(uint160(transmitter))));
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, v1);
+    }
+
+    /// @dev Shorter than the word that holds the kind.
+    function test_aTruncatedEnvelopeIsRefused() public {
+        bytes memory truncated = new bytes(31);
+        truncated[30] = 0x01;
+
+        vm.expectRevert(Envelope.EnvelopeTooShort.selector);
+        spoke.arrive(HOME_ROUTE, HOME_SENDER, truncated);
+    }
+
+    function testFuzz_onlyDefinedKindsAreRead(uint256 kind) public {
+        vm.assume(kind == 0 || kind > Envelope.RECEIVER_REPORT);
+        bytes memory m = abi.encode(kind, transmitter, bytes32(0), _boot());
+
+        vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, kind));
+        this.peekBootstrap(m);
     }
 
     function testFuzz_bootstrapEnvelopeRoundTrips(address t_, address target, bytes memory data) public view {

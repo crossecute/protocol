@@ -237,8 +237,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));
     }
 
-    /// @dev A spoke never bootstraps: its only route is home, and `Envelope` carries no type
-    ///      tag, so a bootstrap sent spoke to hub would be decoded there as a report.
+    /// @dev A spoke never bootstraps: its only route is home, and a hub creates no receivers,
+    ///      so it would refuse the bootstrap envelope on arrival after the fee was spent.
     ///      `TransceiverBase.bootstrap` and its quotes call both hooks before anything is sent,
     ///      so both refuse.
     function _bootstrapSendValue(bytes32) internal pure override returns (uint256) {

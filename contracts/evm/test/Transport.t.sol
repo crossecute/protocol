@@ -538,8 +538,10 @@ contract TransportTest is Test {
 
     /// @dev An account sitting at the address `(owner, SALT)` derives to, which is what
     ///      the transceiver checks `msg.sender` against.
-    function _decodeTyped(bytes memory m) internal pure returns (address, bytes32, Call[] memory) {
-        return abi.decode(m, (address, bytes32, Call[]));
+    function _decodeTyped(bytes memory m) internal pure returns (address o, bytes32 s, Call[] memory c) {
+        uint8 kind;
+        (kind, o, s, c) = abi.decode(m, (uint8, address, bytes32, Call[]));
+        assertEq(kind, Envelope.BOOTSTRAP, "tagged as a bootstrap");
     }
 
     function _account() internal returns (MockTransceiver t, MockTransmitter acct) {
@@ -576,8 +578,9 @@ contract TransportTest is Test {
         vm.prank(owner);
         acct.bootstrapTo(sol, elements, new bytes[](0));
 
-        (address gotOwner, bytes32 gotSalt, bytes[] memory got) =
-            abi.decode(t.sentPayload(), (address, bytes32, bytes[]));
+        (uint8 kind, address gotOwner, bytes32 gotSalt, bytes[] memory got) =
+            abi.decode(t.sentPayload(), (uint8, address, bytes32, bytes[]));
+        assertEq(kind, Envelope.BOOTSTRAP_ELEMENTS, "tagged as the elements form");
         assertEq(t.bootCount(), 1);
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);

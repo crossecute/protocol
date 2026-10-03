@@ -301,7 +301,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         returns (bytes32 chainKey);
 
     /// @notice Act on an authenticated message.
-    /// @dev Hub: a receiver report. Spoke: a bootstrap. Each side decodes one shape, so
-    ///      `Envelope` carries no type tag.
+    /// @dev Hub: a receiver report. Spoke: a bootstrap. Each decoder checks the `Envelope`
+    ///      kind first, so the other shape is refused by name rather than misread.
     function _handleInbound(bytes32 chainKey, bytes calldata message) internal virtual;
 }
