@@ -322,10 +322,10 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev A transceiver reads its chain once, at initialization. A later change of
-    ///      `block.chainid`, as after a chain split, moves neither its key nor where its
-    ///      transmitters land.
-    function test_theLocalChainKeyIsFixedAtInitialization() public {
+    /// @dev A transceiver's chain is an immutable of its implementation, read when that is
+    ///      deployed. A later change of `block.chainid`, as after a chain split, moves neither
+    ///      the key nor where its transmitters land, including through the proxy.
+    function test_theLocalChainKeyIsFixedAtDeployment() public {
         address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         factory.arm(
             hubAt,

@@ -40,11 +40,12 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
 
-    /// This chain's chainKey, read once at initialization: the home of every account this
-    /// transceiver creates as a transmitter.
-    /// @dev Stored rather than recomputed from `block.chainid`, so a chain split cannot move an
-    ///      account's derivation.
-    bytes32 public localChainKey;
+    /// This chain's chainKey: the home of every account this transceiver creates as a
+    /// transmitter.
+    /// @dev An immutable of the implementation, fixed when it is deployed on this chain, so a
+    ///      chain split cannot move an account's derivation. Each chain deploys its own
+    ///      implementation, as it must for its provider endpoints.
+    bytes32 public immutable localChainKey;
 
     /// @notice The initcode hash every crossecute account deploys from, for transmitters and
     ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
@@ -53,6 +54,10 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     bytes32 public constant CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
 
     event UpgradesLocked();
+
+    constructor() {
+        localChainKey = ChainKey.local();
+    }
     event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
 
     error UpgradesAreLocked();
@@ -273,8 +278,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
                 grantRole(GATEWAY_ROLE, gateways[i]);
             }
         }
-
-        localChainKey = ChainKey.local();
 
         upgradesLocked = true;
         emit UpgradesLocked();
