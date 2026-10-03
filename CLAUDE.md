@@ -18,29 +18,48 @@ This applies to every `.sol` file in `contracts/evm/`, including new provider bi
 their tests, not just files already in this style. Before committing a new file, check it
 against this rule the same way you'd check it builds.
 
-## When a fact changes, find every place that states it
+## When something changes, check everything that depends on it
 
-Moving, deleting, or renumbering a doc section, resolving a todo item, or changing what the
-code does (a status, a default, a check) invalidates every other place that states or cites
-the old fact. Before committing such a change:
+A change is not finished when the changed code is right. It is finished when everything that
+depends on it still holds. Before committing, name what the change alters (a value's role, a
+check, a signature, a data format, a stated fact) and find each kind of dependent:
 
-1. Grep the whole repo for each form a reference can take: the markdown anchor
-   (`todo.md#2-...`), the prose section number (`todo.md §2`, `` `todo.md` §2 ``, `todo §2`),
-   and the old claim's own wording (`SendNotImplemented`, "placeholder", "template", "not
-   wired", "three bindings", a test count). Search `docs/`, `README.md`, NatSpec in `src/`
-   and `test/`, `script/`, the provenance headers of vendored files under `lib/`,
-   `foundry.toml`, `.gitignore`, and the tracking PR's description. A stale claim need not
-   mention what changed, and may only be implied, so also reread every doc that describes
-   the thing that changed.
-2. Open every hit and confirm the target still says what the citation claims. An anchor that
-   resolves is not enough: a renumbered section can resolve to text that no longer contains
-   the cited item. If the item was deleted, repoint the citation to where the fact now lives
-   (README, `provider-research.md`, the implementing contract) or drop it.
-3. Run `forge lint` on the changed files and clear `unused-import`, which appears when an
-   import's only user moves elsewhere. For files under `src/`, also run it with
-   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
+- **What reads or derives from it.** If a value now feeds an identity, an authorization, or
+  anything that cannot be changed later, list every other value that must agree with it and
+  every place each is set. Add a check or a test for a mismatch.
+- **What calls it.** If shared code now rejects or accepts something new, trace every
+  caller. Where two operations must agree (an action and its preview, a write and its
+  validation), test both with the new input, and compute the value they share in one place.
+- **What constrains it.** Re-read the plans, specs, and recorded decisions that cover the
+  code being touched. Apply them in the same change, or record why not.
+- **What states or names it.** Search the whole repo for the old claim's wording and for
+  each changed name or signature: docs, READMEs, comments and docstrings in source and
+  tests, scripts, config files, provenance headers of vendored code, and the tracking PR's
+  description. A stale claim may only be implied, so also reread every doc that describes
+  what changed. Open every hit and confirm it still says what the citation claims; a
+  reference that resolves is not enough. If the cited item was deleted, repoint the citation
+  to where the fact now lives or drop it. A citation that was already wrong before your
+  change still gets fixed.
+- **What tests it.** Fixtures must satisfy the same invariants as production, or say why
+  not. A fixture that could never occur in production can hide the bug a change introduces.
+- **What pays for it.** A change to a data format or protocol states its size or cost
+  change, and a variable-size field needs a reason.
 
-A citation that was already wrong before your change still gets fixed when you find it.
+Then run the project's linter on the changed files and clear unused-import warnings, which
+appear when an import's only user moves elsewhere.
+
+In this repo:
+
+- Search `docs/`, `README.md`, NatSpec in `src/` and `test/`, `script/`, the provenance
+  headers of vendored files under `lib/`, `foundry.toml`, `.gitignore`, and the tracking
+  PR's description. A doc reference can be a markdown anchor (`todo.md#2-...`) or a prose
+  section number (`todo.md §2`, `` `todo.md` §2 ``, `todo §2`).
+- Values that must agree across chains depend on each other: a route and its chainKey, a
+  home key and a provider id, the addresses of one provider's transceivers.
+- A send and its quote are the paired operations most likely to drift.
+- Every message provider prices a payload per byte.
+- Lint with `forge lint`; for files under `src/`, also run it with
+  `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
 
 ## Generalize before duplicating
 
