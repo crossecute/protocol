@@ -386,14 +386,14 @@ contract InboundAuthTest is Test {
         this.peekBootstrap(m);
     }
 
-    function testFuzz_bootstrapEnvelopeRoundTrips(address t_, bytes memory src, address target, bytes memory data)
+    function testFuzz_bootstrapEnvelopeRoundTrips(address t_, bytes32 src, address target, bytes memory data)
         public
         view
     {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: target, value: 3, data: data});
 
-        (address gotT,, bytes memory gotSrc, Call[] memory got) =
+        (address gotT,, bytes32 gotSrc, Call[] memory got) =
             this.peekBootstrap(Envelope.encodeBootstrap(t_, bytes32(0), src, calls));
 
         assertEq(gotT, t_);
@@ -404,13 +404,21 @@ contract InboundAuthTest is Test {
         assertEq(got[0].data, data);
     }
 
-    function peekBootstrap(bytes calldata m) external pure returns (address, bytes32, bytes memory, Call[] memory) {
+    /// @dev Every provider prices per byte, so the transmitter is a fixed word: a dynamic
+    ///      `bytes` field would add an offset and a length word to every bootstrap as well.
+    function test_theTransmitterCostsOneWord() public view {
+        bytes memory withTransmitter = Envelope.encodeBootstrap(transmitter, bytes32(0), _homeTransmitter(), _boot());
+        bytes memory without = abi.encode(Envelope.BOOTSTRAP, transmitter, bytes32(0), _boot());
+        assertEq(withTransmitter.length, without.length + 32);
+    }
+
+    function peekBootstrap(bytes calldata m) external pure returns (address, bytes32, bytes32, Call[] memory) {
         return Envelope.decodeBootstrap(m);
     }
 
     /// @dev The transmitter a hub would carry for `transmitter`'s account.
-    function _homeTransmitter() internal view returns (bytes memory) {
-        return abi.encodePacked(homeTransmitterFor(spoke, transmitter, bytes32(0)));
+    function _homeTransmitter() internal view returns (bytes32) {
+        return bytes32(uint256(uint160(homeTransmitterFor(spoke, transmitter, bytes32(0)))));
     }
 
     function _bootstrapMsg() internal view returns (bytes memory) {
@@ -420,7 +428,7 @@ contract InboundAuthTest is Test {
     /// @dev The transmitter is not derived here: the receiver answers to whatever address the
     ///      authenticated bootstrap carried. An EVM receiver can only answer to an EVM one.
     function test_aBootstrapMustCarryAnEvmTransmitter() public {
-        bytes memory wide = abi.encodePacked(bytes32(uint256(0xBEEF)));
+        bytes32 wide = bytes32(uint256(0xBEEF) << 160);
         bytes memory m = Envelope.encodeBootstrap(transmitter, bytes32(0), wide, _boot());
 
         vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.SourceTransmitterNotEvm.selector, wide));
@@ -432,7 +440,7 @@ contract InboundAuthTest is Test {
         spoke.arrive(
             HOME_ROUTE,
             HOME_SENDER,
-            Envelope.encodeBootstrap(transmitter, bytes32(0), abi.encodePacked(carried), _boot())
+            Envelope.encodeBootstrap(transmitter, bytes32(0), bytes32(uint256(uint160(carried))), _boot())
         );
 
         MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey())));

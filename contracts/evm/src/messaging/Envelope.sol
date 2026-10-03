@@ -53,11 +53,13 @@ library Envelope {
     ///      A transceiver is shared, so nothing the bridge reports says who authorized the
     ///      message.
     ///
-    /// @dev Carries the transmitter the receiver will answer to, in the origin chain's own
-    ///      address format. The origin transceiver sends only for the account `(owner, salt)`
-    ///      resolves to there, so the value is vouched for by the same authenticated message,
-    ///      and no destination needs another chain's address formula to derive it.
-    function encodeBootstrap(address owner, bytes32 salt, bytes memory transmitter, Call[] memory calls)
+    /// @dev Carries the transmitter the receiver will answer to. The origin transceiver sends
+    ///      only for the account `(owner, salt)` resolves to there, so the value is vouched for
+    ///      by the same authenticated message, and no destination needs another chain's
+    ///      address formula to derive it. A fixed word rather than `bytes`, which would add an
+    ///      offset and a length word to every bootstrap: an EVM address left-padded, or a
+    ///      32-byte key on a VM that has one.
+    function encodeBootstrap(address owner, bytes32 salt, bytes32 transmitter, Call[] memory calls)
         internal
         pure
         returns (bytes memory)
@@ -68,16 +70,16 @@ library Envelope {
     function decodeBootstrap(bytes calldata message)
         internal
         pure
-        returns (address owner, bytes32 salt, bytes memory transmitter, Call[] memory calls)
+        returns (address owner, bytes32 salt, bytes32 transmitter, Call[] memory calls)
     {
         _expect(message, BOOTSTRAP);
-        (, owner, salt, transmitter, calls) = abi.decode(message, (uint8, address, bytes32, bytes, Call[]));
+        (, owner, salt, transmitter, calls) = abi.decode(message, (uint8, address, bytes32, bytes32, Call[]));
     }
 
     /// @notice The same message, for a destination whose calls this chain cannot express.
     /// @dev No Solidity decoder: `SpokeTransceiverBase` is EVM-only, and a non-EVM transceiver
     ///      decodes this in its own language.
-    function encodeBootstrapElements(address owner, bytes32 salt, bytes memory transmitter, bytes[] memory elements)
+    function encodeBootstrapElements(address owner, bytes32 salt, bytes32 transmitter, bytes[] memory elements)
         internal
         pure
         returns (bytes memory)

@@ -61,7 +61,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      transmitter and LayerZero's peer: any other width would truncate or pad silently.
     error InvalidHomeTransceiverLength();
     /// @dev An EVM receiver can only answer to an EVM transmitter.
-    error SourceTransmitterNotEvm(bytes transmitter);
+    error SourceTransmitterNotEvm(bytes32 transmitter);
     /// @dev Something that is not the hub tried to drive this contract.
     error NotHomeOrigin();
     error NoHomeChainKey();
@@ -156,10 +156,9 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @inheritdoc TransceiverBase
     /// @dev A spoke receives bootstraps only. The chainKey can only be `homeChainKey`.
     function _handleInbound(bytes32, bytes calldata message) internal virtual override {
-        (address owner, bytes32 salt, bytes memory transmitter, Call[] memory calls) = Envelope.decodeBootstrap(message);
-        if (transmitter.length != 20) revert SourceTransmitterNotEvm(transmitter);
-        // forge-lint: disable-next-line(unsafe-typecast) length checked above
-        _bootstrapInbound(owner, salt, address(bytes20(transmitter)), calls);
+        (address owner, bytes32 salt, bytes32 transmitter, Call[] memory calls) = Envelope.decodeBootstrap(message);
+        if (uint256(transmitter) >> 160 != 0) revert SourceTransmitterNotEvm(transmitter);
+        _bootstrapInbound(owner, salt, address(uint160(uint256(transmitter))), calls);
     }
 
     /// @notice Whether an inbound message's origin is the hub.

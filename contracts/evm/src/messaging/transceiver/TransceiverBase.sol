@@ -173,7 +173,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(account), calls),
+            Envelope.encodeBootstrap(owner, salt, _transmitterWord(account), calls),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -197,7 +197,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(account), elements),
+            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(account), elements),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -217,7 +217,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(_localAccount(owner, salt)), calls),
+            Envelope.encodeBootstrap(owner, salt, _transmitterWord(_localAccount(owner, salt)), calls),
             attributes
         ) + surcharge;
     }
@@ -234,7 +234,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(_localAccount(owner, salt)), elements),
+            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_localAccount(owner, salt)), elements),
             attributes
         ) + surcharge;
     }
@@ -244,6 +244,11 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      quote carry, and every hub lookup of an account, so they cannot drift apart.
     function _localAccount(address owner, bytes32 salt) internal view returns (address) {
         return predictCrossAccount(owner, salt, localChainKey);
+    }
+
+    /// @notice An EVM transmitter as a bootstrap carries it: left-padded to a word.
+    function _transmitterWord(address transmitter) private pure returns (bytes32) {
+        return bytes32(uint256(uint160(transmitter)));
     }
 
     /// @notice What this transceiver charges on top of the message, per destination.
