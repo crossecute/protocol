@@ -154,11 +154,12 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev A spoke receives bootstraps only. The chainKey can only be `homeChainKey`.
-    function _handleInbound(bytes32, bytes calldata message) internal virtual override {
+    /// @dev A spoke receives bootstraps only. The account's home is the authenticated origin,
+    ///      never a value the message states; on a spoke that can only be `homeChainKey`.
+    function _handleInbound(bytes32 origin, bytes calldata message) internal virtual override {
         (address owner, bytes32 salt, bytes32 transmitter, Call[] memory calls) = Envelope.decodeBootstrap(message);
         if (uint256(transmitter) >> 160 != 0) revert SourceTransmitterNotEvm(transmitter);
-        _bootstrapInbound(owner, salt, address(uint160(uint256(transmitter))), calls);
+        _bootstrapInbound(owner, salt, origin, address(uint160(uint256(transmitter))), calls);
     }
 
     /// @notice Whether an inbound message's origin is the hub.
@@ -197,9 +198,17 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      self-call to the receiver's `commit`.
     /// @param sourceTransmitter The transmitter the bootstrap carried, which the receiver will
     ///        answer to.
-    function _bootstrapInbound(address owner, bytes32 salt, address sourceTransmitter, Call[] memory calls) internal {
-        address receiver = _createCrossAccount(owner, salt, homeChainKey, sourceTransmitter, calls);
-        if (addressesDiverge) _reportReceiver(owner, salt, receiver);
+    /// @param home The authenticated chain the bootstrap came from, which is the account's
+    ///        home: it joins the salt, and the report goes back there.
+    function _bootstrapInbound(
+        address owner,
+        bytes32 salt,
+        bytes32 home,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal {
+        address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls);
+        if (addressesDiverge) _reportReceiver(home, owner, salt, receiver);
     }
 
     /* ================================ the report =============================== */
@@ -216,10 +225,10 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A failed send must revert the account creation with it, which keeps the bootstrap
     ///      retryable once the balance is topped up. Swallowing it would leave an account the
     ///      hub can never address: `CrossProxy` arms once, so no second bootstrap can report.
-    function _reportReceiver(address owner, bytes32 salt, address receiver) internal {
+    function _reportReceiver(bytes32 home, address owner, bytes32 salt, address receiver) internal {
         emit ReceiverReported(owner, salt, receiver);
 
-        bytes memory recipient = _recipientOn(homeChainKey);
+        bytes memory recipient = _recipientOn(home);
         bytes memory payload = reportPayload(owner, salt, receiver);
 
         _sendMessage(recipient, payload, new bytes[](0), _quoteMessage(recipient, payload, new bytes[](0)));

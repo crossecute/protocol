@@ -83,7 +83,7 @@ contract SaltedTransceiver is UnsendableSpoke {
 
     /// @dev Stands in for `_onInbound`, which authenticates and then calls `_bootstrapInbound`.
     function bootstrapFor(address owner_) external returns (address) {
-        _bootstrapInbound(owner_, bytes32(0), homeTransmitterFor(this, owner_, bytes32(0)), new Call[](0));
+        _bootstrapInbound(owner_, bytes32(0), homeChainKey, homeTransmitterFor(this, owner_, bytes32(0)), new Call[](0));
         return predictCrossAccount(owner_, bytes32(0), homeChainKey);
     }
 

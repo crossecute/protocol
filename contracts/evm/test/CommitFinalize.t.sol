@@ -115,7 +115,9 @@ contract MockTransceiver is UnsendableSpoke {
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
     ///      `_bootstrapInbound` directly.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(transmitter, bytes32(0), homeTransmitterFor(this, transmitter, bytes32(0)), calls);
+        _bootstrapInbound(
+            transmitter, bytes32(0), homeChainKey, homeTransmitterFor(this, transmitter, bytes32(0)), calls
+        );
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the

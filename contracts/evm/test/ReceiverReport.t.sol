@@ -118,7 +118,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
     /// @dev Stands in for `_onInbound`, which reaches `_bootstrapInbound` after
     ///      authenticating the origin.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, homeTransmitterFor(this, owner, salt), calls);
+        _bootstrapInbound(owner, salt, homeChainKey, homeTransmitterFor(this, owner, salt), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
