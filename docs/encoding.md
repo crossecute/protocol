@@ -342,9 +342,9 @@ So on the chains where the receiver address is least predictable, the chainKey a
 be written in at initialization. A mainnet/devnet mixup then produces a receiver that verifies nothing
 successfully and fails only on a live message. The mitigation is the one the spoke already
 uses for the mirror-image value: `SpokeTransceiverBase.homeChainKey` is a write-once
-initializer argument checked against the identifier passed beside it
-(`ChainKey.fromIdentifier(homeRoute_) != homeChainKey_` reverts `HomeRouteMismatch`), so the
-two halves cannot name different chains. A baked-in chainKey off the EVM wants the same
+initializer argument checked against the identifier passed beside it (`OutboundBase._setRoute`
+reverts `RouteKeyMismatch` unless the route is the canonical identifier the key hashes from),
+so the two halves cannot name different chains. A baked-in chainKey off the EVM wants the same
 treatment: assert it against a derived value in that chain's own test suite.
 
 ### Executing is where the chains diverge

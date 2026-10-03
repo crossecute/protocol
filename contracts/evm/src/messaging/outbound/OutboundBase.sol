@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Roles} from "src/messaging/Roles.sol";
 
 /// @title OutboundBase
@@ -53,6 +54,8 @@ abstract contract OutboundBase is Roles {
     /// @dev Two chains sharing one identifier would let an inbound message be attributed to
     ///      the wrong source.
     error RouteInUse(bytes32 routeKey);
+    /// @dev The route is not the canonical chain identifier that `chainKey` hashes from.
+    error RouteKeyMismatch(bytes32 chainKey);
     error UnknownRoute();
     error NoCounterpartFor(bytes32 chainKey);
     /// @dev For a binding whose provider cannot quote on-chain (P9). Zero would read as free.
@@ -63,13 +66,20 @@ abstract contract OutboundBase is Roles {
     /// @notice Record how a destination chain is named. Write-once and ungated: the caller
     ///         applies its own authority.
     ///
-    /// @dev The route is the chain's ERC-7930 identifier, so `keccak256(route)` is the
-    ///      chainKey and the reverse index is correct by construction. Re-writing the same
-    ///      route is a no-op; a different one reverts. There is no repoint path, timelocked or
-    ///      otherwise: a wrong route is fixed by redeploying.
+    /// @dev The route must be the chain's canonical ERC-7930 chain identifier, and
+    ///      `keccak256(route)` must be the chainKey: otherwise the reverse index would
+    ///      attribute one chain's messages to another, and an account homed there would be
+    ///      looked for under the wrong key (#25). Re-writing the same route is a no-op; a
+    ///      different one reverts. There is no repoint path, timelocked or otherwise: a wrong
+    ///      route is fixed by redeploying.
     function _setRoute(bytes32 chainKey, bytes memory route) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (route.length == 0) revert ZeroRoute();
+        // `fromIdentifier` parses strictly and reduces to the bare identifier, so both together
+        // admit only the canonical bare form, which is how an inbound route arrives.
+        if (keccak256(route) != chainKey || ChainKey.fromIdentifier(route) != chainKey) {
+            revert RouteKeyMismatch(chainKey);
+        }
 
         bytes memory existing = _routes[chainKey];
         if (existing.length != 0) {

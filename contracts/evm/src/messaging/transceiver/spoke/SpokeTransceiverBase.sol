@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
@@ -66,8 +65,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error NotHomeOrigin();
     error NoHomeChainKey();
     error NoHomeRoute();
-    /// @dev The stated route does not hash to the stated home chainKey.
-    error HomeRouteMismatch();
     /// @dev With no treasury owner the float could never leave.
     error NoTreasury();
     error NotTreasury(address caller);
@@ -92,9 +89,6 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ) internal onlyInitializing {
         if (homeChainKey_ == bytes32(0)) revert NoHomeChainKey();
         if (homeRoute_.length == 0) revert NoHomeRoute();
-        // A spoke whose route and chainKey named different chains would authenticate against
-        // one and send to the other.
-        if (ChainKey.fromIdentifier(homeRoute_) != homeChainKey_) revert HomeRouteMismatch();
         if (homeTransceiver_.length == 0) revert NoHomeTransceiver();
         if (homeTransceiver_.length != 20) revert InvalidHomeTransceiverLength();
         if (receiverImplementation_ == address(0)) revert NoAccountImplementation();

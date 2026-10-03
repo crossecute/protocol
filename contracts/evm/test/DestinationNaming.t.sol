@@ -17,6 +17,23 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {UnsendableSpoke} from "test/Unsendable.sol";
+
+/// @dev A spoke whose home key and route are both chosen by the test.
+contract HomeRouteSpoke is UnsendableSpoke {
+    function initialize(bytes32 homeKey, bytes calldata homeRoute) external initializer {
+        __SpokeTransceiverBase_init(
+            new address[](0),
+            address(1),
+            homeKey,
+            homeRoute,
+            abi.encodePacked(address(this)),
+            address(0x7EA5),
+            bytes32(0),
+            false
+        );
+    }
+}
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
 ///         a chainKey across the protocol, and the provider's own id only at the edge.
@@ -179,13 +196,14 @@ contract DestinationNamingTest is Test {
         assertEq(hub.chainKeyOfRoute(BASE_ROUTE), baseKey, "and back again, for inbound");
     }
 
-    /// @dev Two chains sharing one eid would let an inbound message be attributed to the
-    ///      wrong source chain. That is a forgery primitive, so it reverts.
-    function test_oneEidCannotNameTwoChains() public {
+    /// @dev A route names exactly one chain: it must hash to its key, so another chain's
+    ///      identifier is refused. Otherwise an inbound message from one chain would be
+    ///      attributed to the other (#25).
+    function test_oneRouteCannotNameTwoChains() public {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
-        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteInUse.selector, keccak256(BASE_ROUTE)));
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, arbKey));
         hub.setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
         assertEq(hub.chainKeyOfRoute(BASE_ROUTE), baseKey);
@@ -282,13 +300,13 @@ contract DestinationNamingTest is Test {
         hub.setRoute(baseKey, ARB_ROUTE);
     }
 
-    /// @dev A route is write-once. Re-pointing one would redirect every message to that
-    ///      destination at once, which is a redeploy rather than a config edit.
+    /// @dev A route cannot be repointed: a key has exactly one valid route, so pointing it
+    ///      anywhere else names another chain, which is refused.
     function test_aRouteCannotBeRepointed() public {
         bytes32 baseKey = _wireBase();
 
         vm.prank(msig);
-        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteAlreadySet.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, baseKey));
         hub.setRoute(baseKey, ARB_ROUTE);
 
         assertEq(hub.routeTo(baseKey), BASE_ROUTE, "unchanged");
@@ -410,29 +428,34 @@ contract DestinationNamingTest is Test {
 
     /// @dev Fixed-width encoding, so a value configured at the wrong width fails in
     ///      `decode` rather than being silently reinterpreted as another chain.
-    /// @dev A route that is not a canonical chain identifier cannot be used. The old test
-    ///      here checked that a mistyped endpoint id failed in `abi.decode`; there is no
-    ///      endpoint id any more, and the equivalent mistake is a route that does not parse
-    ///      as ERC-7930. It is caught when a recipient is built from it rather than at
-    ///      `setRoute`, which stores opaque bytes by design.
-    function test_aRouteThatIsNotAChainIdentifierFailsWhenUsed() public {
+    /// @dev A route that is not a canonical chain identifier is refused when it is set, not
+    ///      left to fail when a recipient is first built from it. A mistyped provider id is
+    ///      the usual way to get one.
+    function test_aRouteThatIsNotAChainIdentifierIsRefused() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, key));
         hub.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();
 
-        // Stored happily, because the base has no opinion about what a route contains.
-        assertEq(hub.routeTo(key), abi.encodePacked(uint32(30111)));
-
-        // And refused the moment anything asks it to name a chain. The read happens
-        // first, so `expectRevert` lands on the call under test rather than on it.
-        bytes memory stored = hub.routeTo(key);
-        vm.expectRevert();
-        this.chainKeyOf(stored);
+        assertFalse(hub.hasRoute(key));
     }
 
-    function chainKeyOf(bytes memory route) external pure returns (bytes32) {
-        return ChainKey.fromIdentifier(route);
+    /// @dev An account envelope reduces to the right chain, but it is not the bare identifier
+    ///      an inbound route arrives as, so inbound lookups would never match it.
+    function test_anAccountEnvelopeIsNotARoute() public {
+        bytes32 baseKey = ChainKey.forEvm(8453);
+        vm.prank(msig);
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, baseKey));
+        hub.setRoute(baseKey, Erc7930.encodeEvm(8453, address(0xBEEF)));
+    }
+
+    /// @dev The same check binds a spoke's home key to its home route, since the spoke
+    ///      writes its route through the same setter.
+    function test_aSpokeRefusesAHomeRouteForAnotherChain() public {
+        HomeRouteSpoke s = new HomeRouteSpoke();
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, ChainKey.forEvm(1)));
+        s.initialize(ChainKey.forEvm(1), ARB_ROUTE);
     }
 
     /// @dev `keccak256(identifier) == chainKey` is the definition of a chainKey, which is

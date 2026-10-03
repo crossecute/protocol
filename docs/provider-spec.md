@@ -739,7 +739,7 @@ chain unless noted:
 | 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address, and the msig's owner and salt as the treasury, so `treasury()` is the msig's own receiver there. The msig then bootstraps that receiver like any account | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
 | 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Names the hub that speaks for a provider. |
 | 6 | `ChainRegistry.setProviderDeployment(provider, salt, transceiverInitCodeHash, accountInitCodeHash)` | Write-once. `accountInitCodeHash` per [R8.4](#r8-storage-and-address-parity). |
-| 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must hash to the chainKey. |
+| 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must be the canonical one that hashes to the chainKey (`RouteKeyMismatch` otherwise). |
 | 8 | `ChainRegistry.setCreate2Factory(chainKey, factory)` for zk-chains | Defaults to Arachnid's. |
 | 9 | `ChainRegistry.setProvenance(chainKey, Attested)` for chains whose addresses cannot be recomputed here | zkSync and Tron are `eip155` with different CREATE2 formulas, so the `Derived` default would be wrong. This is also what turns `requiresReceiverCallback` on. |
 | 10 | `<P>HubTransceiver.setCounterpart(chainKey, interop)`, or `resolveCounterpart(chainKey, paramsCommitment)` where a deriver is configured | Write-once, on the hub. Most EVM chains need neither: the hub falls back to its own address. |
