@@ -93,8 +93,10 @@ flowchart LR
     Hub -.->|"onDestinationReceiverReported"| Tx
 ```
 
-The message carries the owner and their salt, not the transmitter, because a CREATE2 address
-cannot be derived from itself. The dashed return arrow fires only where `addressesDiverge`,
+The message carries the owner and their salt, from which the destination derives the account's
+own address, and the transmitter's address, which the receiver will answer to. The hub sends
+only for the account that pair resolves to, so the destination needs no other chain's address
+formula. The dashed return arrow fires only where `addressesDiverge`,
 which is zkSync and Tron. Elsewhere the hub derived the receiver's address before the first
 message left. It is sent from inside the delivery callback at the fee its own quote names, so
 an underfunded spoke reverts and takes the account creation with it: all or nothing, and
@@ -387,7 +389,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 628 passing
+cd contracts/evm && forge test        # 630 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

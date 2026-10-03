@@ -135,11 +135,12 @@ Hop by hop:
 Four facts about that path are worth stating here, because no single file holds all of
 them:
 
-**The message carries the owner and their salt, not the transmitter.** The account address
-derives from that pair, and a CREATE2 address cannot be derived from itself. The receiver's
-peer is the transmitter's address at home, which the spoke derives from that pair with
-Ethereum's CREATE2 over the hub (`homeTransmitterOf`). On a parity chain that is also the
-receiver's own address; on zkSync and Tron it is not.
+**The message carries the owner, their salt, and the transmitter.** The account's own address
+derives from the owner, the salt, and the home, and a CREATE2 address cannot be derived from
+itself. The receiver's peer is the transmitter's address at home, carried as that chain's own
+address bytes. The hub sends only for the account `(owner, salt)` resolves to there, so the
+authenticated message vouches for it and the spoke needs no other chain's address formula. On
+a parity chain it is also the receiver's own address; on zkSync and Tron it is not.
 
 **The return leg is sent by the spoke transceiver.** The receiver cannot be its own sender:
 it is not an `OutboundBase`, has no `_sendMessage`, and holds neither the home route nor the
@@ -182,13 +183,15 @@ separately from its message.
 | Channel | Payload |
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
-| hub → spoke transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes[] elements)` elsewhere |
+| hub → spoke transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes transmitter, bytes[] elements)` elsewhere |
 | spoke → hub transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
-**Both transceiver channels name the owner and salt rather than an address.** The hub is
-shared by every owner, so nothing the bridge reports says who authorized the message. The
-pair rather than the address, because the address is a derivation of it. That is also what
-lets the hub find the reporting account without a request id.
+**Both transceiver channels identify the account by owner and salt rather than by its
+address.** The hub is shared by every owner, so nothing the bridge reports says who
+authorized the message. The pair rather than the address, because the address is a
+derivation of it. That is also what lets the hub find the reporting account without a request
+id. A bootstrap also carries the transmitter's address, as the receiver's peer rather than as
+the account's identity.
 
 A call is `(address target, uint256 value, bytes data)`: the tuple ERC-7579 and ERC-7821
 use, so payload-building tooling that already speaks those formats works without custom
@@ -235,7 +238,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
 | `messaging/transceiver/TransceiverBase.sol` | The symmetric half of hub and spoke: authentication, routing, account manufacture, and the upgrade lock. Not a `ReceiverBase` and holds no ownership. | `accountSalt`, `predictCrossAccount`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/HubTransceiverBase.sol` | The home side: N counterparts, one registry to grade them, and the only half with an owner. | `createTransmitter`, `predictTransmitter`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `setQualifier`, `qualifier`, `destinationReceiverOn`, `reportsReceiver` |
-| `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `homeRoute`, `homeTransceiver`, `homeTransmitterOf`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
+| `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `homeRoute`, `homeTransceiver`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 
 ### Facts that span contracts
