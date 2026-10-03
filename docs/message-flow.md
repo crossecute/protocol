@@ -124,11 +124,15 @@ Hop by hop:
   `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.
 - `spoke._onInbound(route, sender, message)`: `_authenticateOrigin` runs first and the
   sender must be the hub; `_handleInbound` decodes and calls `_bootstrapInbound(owner, salt,
-  calls)`. Creation and the payload happen in this delivery: a bootstrap is never deferred.
-- That deploys `CrossProxy` at `accountSalt(owner, salt, homeChainKey)`, by CREATE2 with no constructor
-  arguments, and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`,
-  which installs the logic, executes the calls, and drops the upgrade key in one call.
-- The dashed return leg is `_reportReceiver(owner, salt, receiver)`, sent only where
+  origin, transmitter, calls)`, with `origin` the chain `_authenticateOrigin` established.
+  Creation and the payload happen in this delivery: a bootstrap is never deferred.
+- That deploys `CrossProxy` at `accountSalt(owner, salt, origin)`, by CREATE2 with no
+  constructor arguments, and calls `upgradeInitializeAndLock(receiverImpl,
+  initialize(transmitter, calls))`, which installs the logic, executes the calls, and drops
+  the upgrade key in one call. On a parity chain the receiver must sit at the carried
+  transmitter's address, or the bootstrap reverts `ParityBroken`: a spoke whose home key,
+  provider id, or hub address disagree fails its first bootstrap rather than every account.
+- The dashed return leg is `_reportReceiver(origin, owner, salt, receiver)`, sent only where
   `addressesDiverge` is set. It arrives at `hub._handleInbound`, which passes it to
   `_onDestinationReceiver` and on to the account's own counterpart slot, not the registry.
 
@@ -137,8 +141,8 @@ them:
 
 **The message carries the owner, their salt, and the transmitter.** The account's own address
 derives from the owner, the salt, and the home, and a CREATE2 address cannot be derived from
-itself. The receiver's peer is the transmitter's address at home, carried as that chain's own
-address bytes. The hub sends only for the account `(owner, salt)` resolves to there, so the
+itself. The receiver's peer is the transmitter's address at home, carried as a 32-byte word
+(an EVM address left-padded). The hub sends only for the account `(owner, salt)` resolves to there, so the
 authenticated message vouches for it and the spoke needs no other chain's address formula. On
 a parity chain it is also the receiver's own address; on zkSync and Tron it is not.
 
@@ -183,7 +187,7 @@ separately from its message.
 | Channel | Payload |
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
-| hub → spoke transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes transmitter, bytes[] elements)` elsewhere |
+| hub → spoke transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes32 transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes32 transmitter, bytes[] elements)` elsewhere |
 | spoke → hub transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
 **Both transceiver channels identify the account by owner and salt rather than by its

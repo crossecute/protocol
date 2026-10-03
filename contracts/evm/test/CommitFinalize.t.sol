@@ -445,8 +445,9 @@ contract CommitFinalizeTest is Test {
         assertTrue(r.isCommitted(pending), "and it holds the bridged commitment");
     }
 
-    /// @dev The salt is the transmitter alone, so the address does not move between
-    ///      payloads: it is knowable before the first message is ever sent.
+    /// @dev The salt is the owner, their salt, and the home, none of which a payload changes,
+    ///      so the address does not move between payloads: it is knowable before the first
+    ///      message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
         address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
 

@@ -374,7 +374,7 @@ It is not a substitute for a missing quote. The transmitter prices each send on-
 send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist).
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
-`Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, calls)`, the same
+`Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, transmitter, calls)`, the same
 function `sendMessage` puts on the wire, not over an estimate of the length. Every provider prices
 per byte. This is what makes a quote a number the send can pay rather than a number it must
 pad, and it is why the public surface below takes exactly `sendMessage`'s arguments.

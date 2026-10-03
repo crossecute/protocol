@@ -839,7 +839,7 @@ back out of it, rather than out of a route lookup.
 | `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
-| `_accountInitializer(owner, salt, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
+| `_accountInitializer(owner, salt, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are ONE owner rather than two authorities. A binding must not add a third |
 | `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 

@@ -57,8 +57,8 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /// @dev A spoke's only destination is its home; there is no spoke-to-spoke path.
     error NotHome(bytes32 chainKey);
     error NoHomeTransceiver();
-    /// @dev The hub is an EVM contract, and its address is cast to `address` for the home
-    ///      transmitter and LayerZero's peer: any other width would truncate or pad silently.
+    /// @dev The hub is an EVM contract, and its address is cast to `address` for LayerZero's
+    ///      peer: any other width would truncate or pad silently.
     error InvalidHomeTransceiverLength();
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
