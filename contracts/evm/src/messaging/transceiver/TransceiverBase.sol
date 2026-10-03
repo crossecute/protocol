@@ -163,9 +163,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable {
-        if (predictCrossAccount(owner, salt, localChainKey) != msg.sender) {
-            revert NotTheAccount(owner, salt, msg.sender);
-        }
+        address account = _localAccount(owner, salt);
+        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
 
         // The provenance bar lives inside this check: an under-graded counterpart, or an
         // unconfigured route, reverts before anything crosses.
@@ -174,7 +173,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(msg.sender), calls),
+            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(account), calls),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -190,16 +189,15 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external payable {
-        if (predictCrossAccount(owner, salt, localChainKey) != msg.sender) {
-            revert NotTheAccount(owner, salt, msg.sender);
-        }
+        address account = _localAccount(owner, salt);
+        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
 
         _requireRoutable(destinationChainKey);
 
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(msg.sender), elements),
+            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(account), elements),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -219,7 +217,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, _localTransmitter(owner, salt), calls),
+            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(_localAccount(owner, salt)), calls),
             attributes
         ) + surcharge;
     }
@@ -236,17 +234,16 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, _localTransmitter(owner, salt), elements),
+            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(_localAccount(owner, salt)), elements),
             attributes
         ) + surcharge;
     }
 
-    /// @notice The transmitter a bootstrap for `(owner, salt)` carries: the account homed here,
-    ///         which is the only caller `bootstrap` admits for that pair.
-    /// @dev The quotes take it from here rather than `msg.sender`, so an off-chain quote prices
-    ///      the exact bytes the send will carry.
-    function _localTransmitter(address owner, bytes32 salt) private view returns (bytes memory) {
-        return abi.encodePacked(predictCrossAccount(owner, salt, localChainKey));
+    /// @notice `(owner, salt)`'s account homed on this chain: its transmitter here.
+    /// @dev One expression for the bootstrap caller check, the transmitter a bootstrap and its
+    ///      quote carry, and every hub lookup of an account, so they cannot drift apart.
+    function _localAccount(address owner, bytes32 salt) internal view returns (address) {
+        return predictCrossAccount(owner, salt, localChainKey);
     }
 
     /// @notice What this transceiver charges on top of the message, per destination.
