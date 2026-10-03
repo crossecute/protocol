@@ -135,8 +135,9 @@ already built, and `bytes` cannot be asked which form it holds, so the pairing i
 caller's to get right. `payloadForCalls` and `payloadForElements` exist so it is at least
 spelled the same way here as it is decoded there. The receiver still decodes the single
 shape its own VM implies. Both sides know which before a byte is written, so a field saying
-so would carry a value each already holds. That is the same reason `Envelope` has no
-message-type tag, and it now holds here too: **every channel carries exactly one shape.**
+so would carry a value each already holds: **every account channel carries exactly one
+shape.** `Envelope` is the exception, and is tagged by kind, because a transceiver channel
+carries bootstraps and reports and does not stay one-directional.
 
 **This is a structural guarantee, not a decoder guarantee**, and the distinction is worth
 holding onto. `abi.decode` of the wrong shape does revert for these two layouts (asserted

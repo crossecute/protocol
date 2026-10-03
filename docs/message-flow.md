@@ -27,8 +27,8 @@ reason.
 2. **The wire carries a payload, not a commitment.** A message is a call array, executed on
    arrival.
 3. **Committing is a call, not a message kind.** A transmitter that wants approve-now and
-   run-later sends a payload whose single element calls the receiver's own `commit`. There
-   is no message-type tag anywhere.
+   run-later sends a payload whose single element calls the receiver's own `commit`. A
+   payload carries no message-type tag; only transceiver envelopes carry a kind.
 
 The transceiver has exactly two jobs: standing up a receiver on a chain that has none, and
 reporting back where it landed.
@@ -171,15 +171,19 @@ per destination with `setPeer`, and it cannot be changed after.
 
 ## Wire formats
 
-Each channel carries exactly one shape, so direction remains the discriminant and no channel
-needs a tag. A recipient is a binary interoperable address (ERC-7930) carrying its own
-chain, so no channel names a destination separately from its message.
+An account's channel carries exactly one shape, so its payload needs no tag. A transceiver's
+envelope leads with its kind (`Envelope.BOOTSTRAP` 1, `BOOTSTRAP_ELEMENTS` 2,
+`RECEIVER_REPORT` 3), and each decoder refuses a kind it does not act on before reading the
+rest, so a wrong shape is refused by name rather than misread. Kinds start at 1, so an
+untagged body, which leads with the owner, is refused too. A recipient is a binary
+interoperable address (ERC-7930) carrying its own chain, so no channel names a destination
+separately from its message.
 
 | Channel | Payload |
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
-| hub → spoke transceiver | `abi.encode(address owner, bytes32 salt, Call[] calls)` on EVM, `abi.encode(address owner, bytes32 salt, bytes[] elements)` elsewhere |
-| spoke → hub transceiver | `abi.encode(address owner, bytes32 salt, bytes interop)` |
+| hub → spoke transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes[] elements)` elsewhere |
+| spoke → hub transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
 **Both transceiver channels name the owner and salt rather than an address.** The hub is
 shared by every owner, so nothing the bridge reports says who authorized the message. The
@@ -232,7 +236,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/transceiver/TransceiverBase.sol` | The symmetric half of hub and spoke: authentication, routing, account manufacture, and the upgrade lock. Not a `ReceiverBase` and holds no ownership. | `accountSalt`, `predictCrossAccount`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/HubTransceiverBase.sol` | The home side: N counterparts, one registry to grade them, and the only half with an owner. | `createTransmitter`, `predictTransmitter`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `setQualifier`, `qualifier`, `destinationReceiverOn`, `reportsReceiver` |
 | `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `homeRoute`, `homeTransceiver`, `homeTransmitterOf`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
-| `messaging/Envelope.sol` | The two transceiver channels. `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
+| `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 
 ### Facts that span contracts
 

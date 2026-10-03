@@ -115,8 +115,8 @@ included, and the receiver accepts only its own transport and its own transmitte
 side. Execution is in order and all or nothing.
 
 A payload either runs when it lands or waits for someone to supply it. Nothing on the wire
-distinguishes the two: committing is a call, not a message kind, which is why there is no
-message-type tag anywhere in the protocol.
+distinguishes the two: committing is a call, not a message kind, which is why an account's
+payload carries no message-type tag. Only the envelopes transceivers exchange are tagged.
 
 #### 3a · Execute on arrival
 
@@ -386,7 +386,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 619 passing
+cd contracts/evm && forge test        # 624 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

@@ -235,7 +235,9 @@ A binding MUST NOT expect any of these, and MUST NOT add them.
   `HubTransceiverBase._authenticateOrigin` and `SpokeTransceiverBase._authenticateOrigin`, not by a binding. This is
   deliberate: a transceiver decides which cross-chain payloads are authentic, and leaving
   that per provider is how one provider ships without it.
-- **No message-type seam.** Direction is the discriminant. Each channel carries one shape.
+- **No message-type seam.** An account's channel carries one shape. Transceiver envelope
+  kinds are defined in `Envelope` and checked by the base decoders; a binding passes the
+  message through untouched.
 - **No registry pointer on an account.** A transmitter holds no registry and knows no
   routes, by design. It resolves through its transceiver: see [R1](#r1-send).
 - **No provenance seam.** Grading is the registry's, applied at the hub.
@@ -499,10 +501,8 @@ binding that needs two transports names both while arming.
 
 **R3.1 The transmitter MUST reject inbound messages.** There is no path in which a
 transmitter receives. If the SDK's base contract provides a receive entry point, the
-binding MUST override it to revert. A transmitter that could receive would make the hub
-start seeing commitments as well as reports, which is the exact condition under which
-`Envelope`'s no-tag property fails and a wrong-shape decode becomes a silent misread rather
-than a revert.
+binding MUST override it to revert. A transmitter is driven by its owner alone; a receive
+path would give a transport a second way to make it act.
 
 **R3.2 The binding MUST NOT authenticate in place of `_onInbound`.** Translating the SDK's
 callback into three arguments is the binding's entire inbound job. Any check the binding
@@ -759,8 +759,8 @@ Collected, because each of these is individually tempting.
 
 1. **No authentication in the binding** in place of `_onInbound`. ([R3.2](#r3-receive))
 2. **No inbound path to a transmitter.** ([R3.1](#r3-receive))
-3. **No message-type tag**, and no second shape on an existing channel. Direction is the
-   discriminant, and that holds only while transmitters live at home only.
+3. **No message-type tag on a payload**, and no second shape on an account's channel. The
+   only kinds are `Envelope`'s, and a binding adds none.
 4. **No registry read from an account.** The chainKey derivation is pure; keeping the
    directory dependency on one contract on one chain is what makes a transmitter a pure
    commit-and-forward contract.
