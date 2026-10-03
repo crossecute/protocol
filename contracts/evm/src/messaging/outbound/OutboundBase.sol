@@ -32,10 +32,6 @@ abstract contract OutboundBase is Roles {
     ///      the wrong chain.
     mapping(bytes32 => bytes) private _routes;
 
-    /// keccak256(identifier) => chainKey, for turning a provider's source id back into a
-    /// chain. Written by the same setter as `_routes`, and injective: a collision reverts.
-    mapping(bytes32 => bytes32) private _chainKeyOfRoute;
-
     /// chainKey => this contract's counterpart there, in that chain's own address format.
     /// @dev Raw bytes: the counterpart is not at this address on zkSync or Tron, and a 32-byte
     ///      Solana or Move key cannot be narrowed to 20.
@@ -48,12 +44,7 @@ abstract contract OutboundBase is Roles {
     error EmptyPayload();
     error ZeroRoute();
     error ZeroCounterpart();
-    /// @dev Re-pointing a route would redirect every message to that destination at once.
-    error RouteAlreadySet(bytes32 chainKey);
     error NoRouteFor(bytes32 chainKey);
-    /// @dev Two chains sharing one identifier would let an inbound message be attributed to
-    ///      the wrong source.
-    error RouteInUse(bytes32 routeKey);
     /// @dev The route is not the canonical chain identifier that `chainKey` hashes from.
     error RouteKeyMismatch(bytes32 chainKey);
     error UnknownRoute();
@@ -69,9 +60,9 @@ abstract contract OutboundBase is Roles {
     /// @dev The route must be the chain's canonical ERC-7930 chain identifier, and
     ///      `keccak256(route)` must be the chainKey: otherwise the reverse index would
     ///      attribute one chain's messages to another, and an account homed there would be
-    ///      looked for under the wrong key (#25). Re-writing the same route is a no-op; a
-    ///      different one reverts. There is no repoint path, timelocked or otherwise: a wrong
-    ///      route is fixed by redeploying.
+    ///      looked for under the wrong key (#25). A key therefore has exactly one valid route,
+    ///      which makes the table write-once and injective without further checks: re-writing
+    ///      it is a no-op, and any other route for the key is refused above.
     function _setRoute(bytes32 chainKey, bytes memory route) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (route.length == 0) revert ZeroRoute();
@@ -81,18 +72,9 @@ abstract contract OutboundBase is Roles {
             revert RouteKeyMismatch(chainKey);
         }
 
-        bytes memory existing = _routes[chainKey];
-        if (existing.length != 0) {
-            if (keccak256(existing) != keccak256(route)) revert RouteAlreadySet(chainKey);
-            return;
-        }
-
-        bytes32 routeKey = keccak256(route);
-        bytes32 held = _chainKeyOfRoute[routeKey];
-        if (held != bytes32(0) && held != chainKey) revert RouteInUse(routeKey);
+        if (_routes[chainKey].length != 0) return;
 
         _routes[chainKey] = route;
-        _chainKeyOfRoute[routeKey] = chainKey;
         emit RouteSet(chainKey, route);
     }
 
@@ -109,10 +91,10 @@ abstract contract OutboundBase is Roles {
         emit CounterpartSet(chainKey, counterpart);
     }
 
-    /// @notice The chain a route refers to.
+    /// @notice The chain a route refers to: its hash, provided that route is configured here.
     function chainKeyOfRoute(bytes memory route) public view returns (bytes32 chainKey) {
-        chainKey = _chainKeyOfRoute[keccak256(route)];
-        if (chainKey == bytes32(0)) revert UnknownRoute();
+        chainKey = keccak256(route);
+        if (_routes[chainKey].length == 0) revert UnknownRoute();
     }
 
     /// @notice How a chain is named here. Reverts when unset.

@@ -24,9 +24,9 @@ pragma solidity ^0.8.0;
 ///      sends to a different remote endpoint.
 ///
 /// @dev The reverse index exists because a provider's inbound callback reports the source by
-///      its own id, not our chainKey. It's injective by construction — two chainKeys sharing
-///      one provider id would let an inbound message from either be attributed to the other —
-///      the same property `OutboundBase._chainKeyOfRoute` enforces for routes.
+///      its own id, not our chainKey. It is injective: two chainKeys sharing one provider id
+///      would let an inbound message from either be attributed to the other. Routes get the
+///      same property from `OutboundBase._setRoute`, which requires a route to hash to its key.
 ///
 /// @dev Zero is the unset sentinel on both sides; no provider in scope ever names a live
 ///      chain 0 (verified in `docs/provider-research.md` §§4-5 and `docs/provider-research.md` §8).
