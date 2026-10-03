@@ -102,7 +102,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @inheritdoc TransceiverBase
     /// @dev A transmitter takes no creation payload: its owner drives it directly. The salt is
     ///      passed in because an account cannot recover it from its own address.
-    function _accountInitializer(address owner, bytes32 salt, Call[] memory)
+    function _accountInitializer(address owner, bytes32 salt, address, Call[] memory)
         internal
         view
         virtual
@@ -118,7 +118,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one account.
     /// @return account The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address account) {
-        account = _createCrossAccount(msg.sender, salt, localChainKey, new Call[](0));
+        account = _createCrossAccount(msg.sender, salt, localChainKey, address(0), new Call[](0));
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.

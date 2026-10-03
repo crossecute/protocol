@@ -121,10 +121,15 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      protocol publishes comes from that prediction: a transmitter's recorded
     ///      counterpart, a receiver's `sourceTransmitter`, the account a report is forwarded
     ///      to. Without the check a mismatch still fails, but with no revert reason.
-    function _createCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey, Call[] memory calls)
-        internal
-        returns (address account)
-    {
+    /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
+    ///        transmitter, which answers to its owner.
+    function _createCrossAccount(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal returns (address account) {
         if (owner == address(0)) revert ZeroOwner();
 
         address implementation = _accountImplementation();
@@ -136,7 +141,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         address deployed = _deployAccount(accountSalt(owner, salt, homeChainKey));
         if (deployed != account) revert AccountAddressMismatch(account, deployed);
 
-        ICrossProxy(account).upgradeInitializeAndLock(implementation, _accountInitializer(owner, salt, calls));
+        ICrossProxy(account)
+            .upgradeInitializeAndLock(implementation, _accountInitializer(owner, salt, sourceTransmitter, calls));
 
         emit CrossAccountCreated(owner, account, salt, homeChainKey);
     }
@@ -168,7 +174,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, calls),
+            Envelope.encodeBootstrap(owner, salt, abi.encodePacked(msg.sender), calls),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -193,7 +199,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(
             _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, elements),
+            Envelope.encodeBootstrapElements(owner, salt, abi.encodePacked(msg.sender), elements),
             attributes,
             _bootstrapSendValue(destinationChainKey)
         );
@@ -212,7 +218,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         _requireRoutable(destinationChainKey);
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
-            _recipientOn(destinationChainKey), Envelope.encodeBootstrap(owner, salt, calls), attributes
+            _recipientOn(destinationChainKey),
+            Envelope.encodeBootstrap(owner, salt, _localTransmitter(owner, salt), calls),
+            attributes
         ) + surcharge;
     }
 
@@ -227,8 +235,18 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         _requireRoutable(destinationChainKey);
         uint256 surcharge = _bootstrapSurcharge(destinationChainKey);
         return _quoteMessage(
-            _recipientOn(destinationChainKey), Envelope.encodeBootstrapElements(owner, salt, elements), attributes
+            _recipientOn(destinationChainKey),
+            Envelope.encodeBootstrapElements(owner, salt, _localTransmitter(owner, salt), elements),
+            attributes
         ) + surcharge;
+    }
+
+    /// @notice The transmitter a bootstrap for `(owner, salt)` carries: the account homed here,
+    ///         which is the only caller `bootstrap` admits for that pair.
+    /// @dev The quotes take it from here rather than `msg.sender`, so an off-chain quote prices
+    ///      the exact bytes the send will carry.
+    function _localTransmitter(address owner, bytes32 salt) private view returns (bytes memory) {
+        return abi.encodePacked(predictCrossAccount(owner, salt, localChainKey));
     }
 
     /// @notice What this transceiver charges on top of the message, per destination.
@@ -251,7 +269,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///         upgrade so the account is never live and uninitialized.
     /// @dev The proxy locks in the same call, and an account's own configuration is gated on
     ///      its owner, not this contract, so all provider setup must be in this calldata.
-    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
+    function _accountInitializer(address owner, bytes32 salt, address sourceTransmitter, Call[] memory calls)
         internal
         view
         virtual

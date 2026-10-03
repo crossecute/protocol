@@ -104,7 +104,12 @@ contract MockTransceiver is TransceiverBase {
         return _impl;
     }
 
-    function _accountInitializer(address, bytes32, Call[] memory) internal pure override returns (bytes memory) {
+    function _accountInitializer(address, bytes32, address, Call[] memory)
+        internal
+        pure
+        override
+        returns (bytes memory)
+    {
         return "";
     }
 
@@ -523,24 +528,30 @@ contract TransportTest is Test {
     /* ================================= path B ================================== */
 
     /// @dev The transmitter states its owner and salt; the transceiver checks the pair
-    ///      resolves back to the caller before anything crosses.
+    ///      resolves back to the caller before anything crosses, and carries that caller as
+    ///      the transmitter the receiver will answer to.
     function test_bootstrapStatesTheOwnerAndSalt() public {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
         vm.prank(owner);
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
-        (address gotOwner, bytes32 gotSalt,) = _decodeTyped(t.sentPayload());
+        (address gotOwner, bytes32 gotSalt, bytes memory gotTransmitter,) = _decodeTyped(t.sentPayload());
         assertEq(t.bootCount(), 1);
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);
+        assertEq(gotTransmitter, abi.encodePacked(address(acct)), "the account that sent it");
     }
 
     /// @dev An account sitting at the address `(owner, SALT)` derives to, which is what
     ///      the transceiver checks `msg.sender` against.
-    function _decodeTyped(bytes memory m) internal pure returns (address o, bytes32 s, Call[] memory c) {
+    function _decodeTyped(bytes memory m)
+        internal
+        pure
+        returns (address o, bytes32 s, bytes memory src, Call[] memory c)
+    {
         uint8 kind;
-        (kind, o, s, c) = abi.decode(m, (uint8, address, bytes32, Call[]));
+        (kind, o, s, src, c) = abi.decode(m, (uint8, address, bytes32, bytes, Call[]));
         assertEq(kind, Envelope.BOOTSTRAP, "tagged as a bootstrap");
     }
 
@@ -578,8 +589,9 @@ contract TransportTest is Test {
         vm.prank(owner);
         acct.bootstrapTo(sol, elements, new bytes[](0));
 
-        (uint8 kind, address gotOwner, bytes32 gotSalt, bytes[] memory got) =
-            abi.decode(t.sentPayload(), (uint8, address, bytes32, bytes[]));
+        (uint8 kind, address gotOwner, bytes32 gotSalt, bytes memory gotTransmitter, bytes[] memory got) =
+            abi.decode(t.sentPayload(), (uint8, address, bytes32, bytes, bytes[]));
+        assertEq(gotTransmitter, abi.encodePacked(address(acct)), "the account that sent it");
         assertEq(kind, Envelope.BOOTSTRAP_ELEMENTS, "tagged as the elements form");
         assertEq(t.bootCount(), 1);
         assertEq(gotOwner, owner);
@@ -770,7 +782,10 @@ contract TransportTest is Test {
 
         assertEq(
             quoted,
-            Envelope.encodeBootstrap(owner, SALT, calls).length * t.WEI_PER_BYTE(),
+            Envelope.encodeBootstrap(
+                owner, SALT, abi.encodePacked(t.predictCrossAccount(owner, SALT, t.localChainKey())), calls
+            )
+            .length * t.WEI_PER_BYTE(),
             "the transceiver priced its own envelope"
         );
     }

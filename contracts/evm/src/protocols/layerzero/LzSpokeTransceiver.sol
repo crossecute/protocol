@@ -54,14 +54,14 @@ abstract contract LzSpokeBase is SpokeTransceiverBase, OAppUpgradeable, LzHomePe
 
     /// @dev Adds `homeEid` to the base two-arg shape so `LzReceiver` can set its peer in the
     ///      same locked call.
-    function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
+    function _accountInitializer(address, bytes32, address sourceTransmitter, Call[] memory calls)
         internal
         view
         virtual
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ILzReceiverInit.initialize, (homeTransmitterOf(owner, salt), calls, homeEid));
+        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, homeEid));
     }
 
     /* ================================== sending =================================== */

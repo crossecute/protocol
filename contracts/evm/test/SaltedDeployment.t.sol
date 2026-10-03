@@ -16,7 +16,7 @@ import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
+import {UnsendableHub, UnsendableSpoke, homeTransmitterFor} from "test/Unsendable.sol";
 
 /// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
 contract MiniFactory {
@@ -83,7 +83,7 @@ contract SaltedTransceiver is UnsendableSpoke {
 
     /// @dev Stands in for `_onInbound`, which authenticates and then calls `_bootstrapInbound`.
     function bootstrapFor(address owner_) external returns (address) {
-        _bootstrapInbound(owner_, bytes32(0), new Call[](0));
+        _bootstrapInbound(owner_, bytes32(0), homeTransmitterFor(this, owner_, bytes32(0)), new Call[](0));
         return predictCrossAccount(owner_, bytes32(0), homeChainKey);
     }
 
@@ -529,8 +529,7 @@ contract DivergentReceiverAuthTest is Test {
 
     function test_theReceiverAuthenticatesTheHomeTransmitter() public view {
         assertTrue(address(receiver) != homeTransmitter, "the addresses diverge");
-        assertEq(receiver.sourceTransmitter(), homeTransmitter);
-        assertEq(t.homeTransmitterOf(ownerOf, bytes32(0)), homeTransmitter);
+        assertEq(receiver.sourceTransmitter(), homeTransmitter, "the transmitter the bootstrap carried");
     }
 
     function test_aMessageFromTheHomeTransmitterIsAccepted() public {

@@ -19,7 +19,7 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {UnsendableHub, UnsendableSpoke} from "test/Unsendable.sol";
+import {UnsendableHub, UnsendableSpoke, homeTransmitterFor} from "test/Unsendable.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
@@ -115,7 +115,7 @@ contract MockTransceiver is UnsendableSpoke {
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
     ///      `_bootstrapInbound` directly.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(transmitter, bytes32(0), calls);
+        _bootstrapInbound(transmitter, bytes32(0), homeTransmitterFor(this, transmitter, bytes32(0)), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the

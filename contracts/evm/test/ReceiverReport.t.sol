@@ -14,6 +14,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {homeTransmitterFor} from "test/Unsendable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -117,7 +118,7 @@ contract ReportingSpoke is SpokeTransceiverBase {
     /// @dev Stands in for `_onInbound`, which reaches `_bootstrapInbound` after
     ///      authenticating the origin.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, calls);
+        _bootstrapInbound(owner, salt, homeTransmitterFor(this, owner, salt), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the

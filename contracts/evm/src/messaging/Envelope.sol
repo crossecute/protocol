@@ -52,28 +52,37 @@ library Envelope {
     /// @dev Names the owner and salt, from which the destination derives the account address.
     ///      A transceiver is shared, so nothing the bridge reports says who authorized the
     ///      message.
-    function encodeBootstrap(address owner, bytes32 salt, Call[] memory calls) internal pure returns (bytes memory) {
-        return abi.encode(BOOTSTRAP, owner, salt, calls);
+    ///
+    /// @dev Carries the transmitter the receiver will answer to, in the origin chain's own
+    ///      address format. The origin transceiver sends only for the account `(owner, salt)`
+    ///      resolves to there, so the value is vouched for by the same authenticated message,
+    ///      and no destination needs another chain's address formula to derive it.
+    function encodeBootstrap(address owner, bytes32 salt, bytes memory transmitter, Call[] memory calls)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(BOOTSTRAP, owner, salt, transmitter, calls);
     }
 
     function decodeBootstrap(bytes calldata message)
         internal
         pure
-        returns (address owner, bytes32 salt, Call[] memory calls)
+        returns (address owner, bytes32 salt, bytes memory transmitter, Call[] memory calls)
     {
         _expect(message, BOOTSTRAP);
-        (, owner, salt, calls) = abi.decode(message, (uint8, address, bytes32, Call[]));
+        (, owner, salt, transmitter, calls) = abi.decode(message, (uint8, address, bytes32, bytes, Call[]));
     }
 
     /// @notice The same message, for a destination whose calls this chain cannot express.
     /// @dev No Solidity decoder: `SpokeTransceiverBase` is EVM-only, and a non-EVM transceiver
     ///      decodes this in its own language.
-    function encodeBootstrapElements(address owner, bytes32 salt, bytes[] memory elements)
+    function encodeBootstrapElements(address owner, bytes32 salt, bytes memory transmitter, bytes[] memory elements)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(BOOTSTRAP_ELEMENTS, owner, salt, elements);
+        return abi.encode(BOOTSTRAP_ELEMENTS, owner, salt, transmitter, elements);
     }
 
     /* ============================== receiver report ============================= */
