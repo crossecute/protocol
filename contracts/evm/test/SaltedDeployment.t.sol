@@ -77,8 +77,12 @@ contract SaltedTransceiver is UnsendableSpoke {
             abi.encodePacked(address(this)), // parity: the hub shares this address
             address(0x7EA5),
             bytes32(0),
-            false
+            _diverges()
         );
+    }
+
+    function _diverges() internal pure virtual returns (bool) {
+        return false;
     }
 
     /// @dev Stands in for `_onInbound`, which authenticates and then calls `_bootstrapInbound`.
@@ -495,6 +499,26 @@ contract SaltedDeploymentTest is Test {
 /// @dev A spoke on a chain whose address formula differs from Ethereum's, as zkSync's and
 ///      Tron's do, emulated on Forge's EVM by transforming the salt in both seams.
 contract DivergingSaltedTransceiver is SaltedTransceiver {
+    /// @dev Like zkSync's and Tron's spokes, it declares that it diverges, so its receivers
+    ///      are reported rather than checked against their transmitter.
+    function _diverges() internal pure override returns (bool) {
+        return true;
+    }
+
+    /// @dev The report is sent and dropped: this fixture is about the receiver, not the leg home.
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
+        internal
+        pure
+        override
+        returns (bytes32)
+    {
+        return bytes32(0);
+    }
+
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal pure override returns (uint256) {
+        return 0;
+    }
+
     function predictCrossAccount(address owner_, bytes32 salt, bytes32 home) public view override returns (address) {
         return
             Create2.computeAddress(_diverge(accountSalt(owner_, salt, home)), CROSS_PROXY_INIT_CODE_HASH, address(this));

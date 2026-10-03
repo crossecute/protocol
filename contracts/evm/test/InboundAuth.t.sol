@@ -7,6 +7,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Envelope} from "src/messaging/Envelope.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
@@ -89,6 +90,20 @@ contract Hub is UnsendableHub {
 }
 
 contract Spoke is UnsendableSpoke {
+    /// @dev Homed on chain 1, but with its key and route chosen by the test.
+    function initializeWithHome(address impl, bytes32 homeKey, bytes calldata homeRoute_) external initializer {
+        __SpokeTransceiverBase_init(
+            new address[](0),
+            impl,
+            homeKey,
+            homeRoute_,
+            abi.encodePacked(address(this)),
+            address(0x7EA5),
+            bytes32(0),
+            false
+        );
+    }
+
     function initialize(address, address impl, bytes calldata home) external initializer {
         __SpokeTransceiverBase_init(
             new address[](0),
@@ -122,7 +137,8 @@ contract InboundAuthTest is Test {
     address transmitter = address(0x7A11);
     bytes32 provider;
 
-    bytes HOME_SENDER = abi.encodePacked(address(0xB0B0));
+    /// The hub, at the spoke's own address, as on any parity chain. Set in `setUp`.
+    bytes HOME_SENDER;
     bytes HOME_ROUTE = Erc7930.encodeEvmChain(1);
 
     function setUp() public {
@@ -133,6 +149,7 @@ contract InboundAuthTest is Test {
         hub = new Hub();
         hub.initialize(msig, address(new Transmitter()));
         spoke = new Spoke();
+        HOME_SENDER = abi.encodePacked(address(spoke));
         spoke.initialize(msig, impl, HOME_SENDER);
 
         vm.startPrank(msig);
@@ -435,16 +452,45 @@ contract InboundAuthTest is Test {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, m);
     }
 
-    function test_theReceiverAnswersToTheCarriedTransmitter() public {
+    /// @dev On a parity chain the receiver must land on its transmitter's address. A carried
+    ///      transmitter elsewhere means the spoke's home key, provider id, or hub address
+    ///      disagree, which would leave every account here unreachable, so the first bootstrap
+    ///      is refused instead.
+    function test_aParitySpokeRefusesAReceiverOffItsTransmitter() public {
         address carried = address(0x5EC0);
+        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey());
+
+        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.ParityBroken.selector, receiver, carried));
         spoke.arrive(
             HOME_ROUTE,
             HOME_SENDER,
             Envelope.encodeBootstrap(transmitter, bytes32(0), bytes32(uint256(uint160(carried))), _boot())
         );
+    }
 
-        MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey())));
-        assertEq(r.sourceTransmitter(), carried, "not a derivation: the address the hub vouched for");
+    /// @dev The case the check exists for: a spoke configured with another chain's home key.
+    ///      Its receivers land under that key, never on the home transmitter's address.
+    function test_aParitySpokeWithTheWrongHomeKeyRefusesItsFirstBootstrap() public {
+        Spoke wrong = new Spoke();
+        wrong.initializeWithHome(address(new MockReceiver()), ChainKey.forEvm(8453), Erc7930.encodeEvmChain(8453));
+
+        // The transmitter as the real home (chain 1) would carry it.
+        address realTransmitter = Create2.computeAddress(
+            wrong.accountSalt(transmitter, bytes32(0), ChainKey.forEvm(1)),
+            wrong.CROSS_PROXY_INIT_CODE_HASH(),
+            address(wrong)
+        );
+        bytes memory m =
+            Envelope.encodeBootstrap(transmitter, bytes32(0), bytes32(uint256(uint160(realTransmitter))), _boot());
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SpokeTransceiverBase.ParityBroken.selector,
+                wrong.predictCrossAccount(transmitter, bytes32(0), ChainKey.forEvm(8453)),
+                realTransmitter
+            )
+        );
+        wrong.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(wrong)), m);
     }
 
     /// @dev A payload the mock receiver will record. Its contents do not matter to the

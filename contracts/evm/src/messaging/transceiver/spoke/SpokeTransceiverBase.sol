@@ -62,6 +62,11 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     error InvalidHomeTransceiverLength();
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
+    /// @dev On a chain whose addresses match Ethereum's, a receiver lands on its transmitter's
+    ///      address, since hub and spoke share an address and the formula. Anything else means
+    ///      the spoke's home key, provider id, or hub address disagree, and the transmitter would
+    ///      address an empty account: refused on the first bootstrap rather than for good.
+    error ParityBroken(address receiver, address sourceTransmitter);
     /// @dev Something that is not the hub tried to drive this contract.
     error NotHomeOrigin();
     error NoHomeChainKey();
@@ -208,7 +213,11 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
         Call[] memory calls
     ) internal {
         address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls);
-        if (addressesDiverge) _reportReceiver(home, owner, salt, receiver);
+        if (addressesDiverge) {
+            _reportReceiver(home, owner, salt, receiver);
+        } else if (receiver != sourceTransmitter) {
+            revert ParityBroken(receiver, sourceTransmitter);
+        }
     }
 
     /* ================================ the report =============================== */
