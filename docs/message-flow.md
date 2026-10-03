@@ -108,7 +108,7 @@ flowchart LR
     Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Hub[Hub transceiver]
     Hub -->|"bridge"| Spoke[Spoke transceiver]
-    Spoke -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Spoke -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
     Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
     Spoke -.->|"bridge: where it landed"| Hub
     Hub -.->|"onDestinationReceiverReported"| Tx
@@ -125,7 +125,7 @@ Hop by hop:
 - `spoke._onInbound(route, sender, message)`: `_authenticateOrigin` runs first and the
   sender must be the hub; `_handleInbound` decodes and calls `_bootstrapInbound(owner, salt,
   calls)`. Creation and the payload happen in this delivery: a bootstrap is never deferred.
-- That deploys `CrossProxy` at `accountSalt(owner, salt)`, by CREATE2 with no constructor
+- That deploys `CrossProxy` at `accountSalt(owner, salt, homeChainKey)`, by CREATE2 with no constructor
   arguments, and calls `upgradeInitializeAndLock(receiverImpl, initialize(peer, calls))`,
   which installs the logic, executes the calls, and drops the upgrade key in one call.
 - The dashed return leg is `_reportReceiver(owner, salt, receiver)`, sent only where
@@ -313,8 +313,9 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   how much they receive.
 - `finalize` is permissionless; `execute` is gated. Exactly one of "the payload is checked"
   or "the caller is checked" holds, and each entry point picks a different one.
-- Account addresses are CREATE2 on `(owner, salt)`, fixed for the life of the protocol and
-  pinnable in a signed payload. Each account has one address on every parity chain.
+- Account addresses are CREATE2 on `(owner, salt, homeChainKey)`, fixed for the life of the
+  protocol and pinnable in a signed payload. Each account has one address on every parity
+  chain; the same owner and salt homed on two chains are two accounts.
 - Approvals are an unordered map of hash to outstanding count. Nothing has a position, so
   nothing can block.
 - Provenance gates bootstrap, the first message to a chain, rather than every send.

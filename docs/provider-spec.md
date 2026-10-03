@@ -53,7 +53,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | --- | --- |
 | **provider** | The third-party transport: LayerZero, Hyperlane, Wormhole, CCIP, Axelar. |
 | **binding** | The contracts in this repo that attach a provider to the protocol. |
-| **account** | A `CrossProxy` at `keccak256(abi.encode(owner, salt))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
+| **account** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
 | **transceiver** | The shared msig-owned contract, one per provider per chain. Hub at home, spoke elsewhere. |
 | **route** | The provider's own name for a chain, opaque `bytes`: an eid, a domain, a chain id, a selector, a name string. |
 | **counterpart** | The address of the transceiver on the other chain, in that chain's own format. |
@@ -460,7 +460,7 @@ function quoteBootstrap(
 
 It MUST apply `_requireRoutable` first, exactly as `bootstrap` does, so the provenance bar
 is enforced identically on the quote and on the send ([R2.5](#r2-quote)). It MUST NOT
-apply `bootstrap`'s `predictCrossAccount(owner, salt) == msg.sender` check: a quote is
+apply `bootstrap`'s `predictCrossAccount(owner, salt, localChainKey) == msg.sender` check: a quote is
 taken by a UI or a signer before the account exists, and gating it on being the account
 would make it uncallable in exactly the case it is needed. The check protects the send from
 standing up somebody else's account, and there is nothing to protect on a `view`.
@@ -653,7 +653,7 @@ The rule is one sentence: a fee is overpaid by whoever paid it, so the remainder
 to the party that sent the value. That is the account on both paths. On path A the
 transmitter paid from its own balance, so `TransmitterBase` overrides `_refundTo()` to
 `address(this)`. On path B the base answers `msg.sender`, and `bootstrap` refuses any
-caller that is not `predictCrossAccount(owner, salt)`, so `msg.sender` is the ACCOUNT. The
+caller that is not `predictCrossAccount(owner, salt, localChainKey)`, so `msg.sender` is the ACCOUNT. The
 transceiver is structurally incapable of being its own refund target: it is never the
 caller of its own `bootstrap`. A shared transceiver refunding to `address(this)` would pool
 every user's excess into infrastructure with no per-user way out, and this is the

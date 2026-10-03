@@ -68,7 +68,7 @@ before anything exists on any of them.
 ```mermaid
 flowchart LR
     Owner([owner]) -->|"createTransmitter(salt)"| Hub[Hub transceiver]
-    Hub -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Hub -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
     Proxy -->|"arm and lock"| Tx[Transmitter]
 ```
 
@@ -87,7 +87,7 @@ flowchart LR
     Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Hub[Hub transceiver]
     Hub -->|"bridge"| Spoke[Spoke transceiver]
-    Spoke -->|"CREATE2(owner, salt)"| Proxy[CrossProxy]
+    Spoke -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
     Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
     Spoke -.->|"bridge: where it landed"| Hub
     Hub -.->|"onDestinationReceiverReported"| Tx
@@ -163,8 +163,9 @@ the local chainKey, so an array approved for one chain cannot be finalized on an
 ## The idea
 
 **One owner, one address, every chain.** An owner's account is deployed at
-`CREATE2(transceiver, keccak256(owner, salt), CrossProxy)`, and because all three inputs
-are the same everywhere, so is the address. On the **home chain** it is armed with
+`CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), CrossProxy)`, and
+because all three inputs are the same everywhere, so is the address. The home chain is part
+of the salt, so the same owner and salt homed on two chains are two accounts. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
 logic and driven by messages from the first. Same address, different half.
 
@@ -386,7 +387,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 624 passing
+cd contracts/evm && forge test        # 626 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
