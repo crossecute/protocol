@@ -578,6 +578,23 @@ contract TransportTest is Test {
 
     /* ========================= path B: the two forms =========================== */
 
+    /// @dev The quote reduces an account envelope to its chain, so the send must too: an
+    ///      input the quote prices is one the send accepts, and the route stored is the bare
+    ///      identifier inbound lookups match.
+    function test_bootstrapToAcceptsAnAccountEnvelopeLikeItsQuote() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+        bytes memory envelope = Erc7930.encodeEvm(DEST, address(0xBEEF));
+
+        uint256 quoted = acct.quoteBootstrapTo(envelope, _calls(), new bytes[](0));
+        assertGt(quoted, 0);
+
+        vm.prank(owner);
+        acct.bootstrapTo(envelope, _calls(), new bytes[](0));
+
+        assertEq(t.bootCount(), 1);
+        assertEq(acct.routeFor(ChainKey.forEvm(DEST)), Erc7930.encodeEvmChain(DEST), "the bare identifier");
+    }
+
     /// @dev A non-EVM chain needs its own bootstrap, because it needs its own payload
     ///      form. The account is stood up the same way; what differs is what it is handed.
     function test_bootstrapToCarriesOpaqueElementsToANonEvmChain() public {

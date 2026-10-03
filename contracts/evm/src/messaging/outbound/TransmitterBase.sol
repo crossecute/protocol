@@ -466,11 +466,14 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     ///      arrives, rather than addressed at a guess.
     function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
         if (transceiver == address(0)) revert NoTransceiver();
-        chainKey = ChainKey.fromIdentifier(identifier);
+        // Reduced to the bare chain identifier the route table holds, so the send accepts
+        // exactly what the quote does: an account envelope names the same chain.
+        bytes memory route = Erc7930.toChainIdentifier(identifier);
+        chainKey = keccak256(route);
         _requireNotBootstrapped(chainKey);
 
         _bootstrapDispatched[chainKey] = true;
-        _setRoute(chainKey, identifier);
+        _setRoute(chainKey, route);
 
         if (!IAccountTransceiver(transceiver).reportsReceiver(chainKey)) {
             _setCounterpart(chainKey, abi.encodePacked(address(this)));
