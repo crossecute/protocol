@@ -68,6 +68,9 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     error ChainDoesNotReport(bytes32 chainKey);
     /// @dev The registry or provider id is already set to a different value. See `setRouting`.
     error RoutingAlreadySet();
+    /// @dev This chain is never a destination or an origin: an account homed here is its
+    ///      transmitter, and a receiver here would collide with it.
+    error IsLocalChain(bytes32 chainKey);
 
     /// @param owner_ The configuring authority: it adds destinations and prices bootstraps,
     ///        and can move no money. `Ownable` refuses a zero, which would leave a sealed hub
@@ -297,10 +300,11 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///
     /// @dev Applies the registry's per-chain grade, which every provider's hub reads alike.
     ///
-    /// @dev An unset counterpart on a `Derived` chain is this contract's own address: hub and
-    ///      spoke proxies are deployed through the same factory at the same salt, so they
+    /// @dev An unset counterpart on a `Derived` chain is `_parityAddress()`: every transceiver
+    ///      of a provider is deployed through the same factory at the same salt, so they
     ///      coincide wherever Ethereum's CREATE2 holds.
     function _counterpartOn(bytes32 chainKey) internal view override returns (bytes memory) {
+        if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
 
         Provenance grade = chainRegistry.provenanceFor(chainKey);
@@ -310,9 +314,17 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
 
         if (!hasCounterpart(chainKey)) {
             if (grade != Provenance.Derived) revert NoCounterpartFor(chainKey);
-            return abi.encodePacked(address(this));
+            return abi.encodePacked(_parityAddress());
         }
         return OutboundBase._counterpartOn(chainKey);
+    }
+
+    /// @notice Where this provider's transceiver sits on every chain that uses Ethereum's
+    ///         CREATE2: the default counterpart on a `Derived` chain.
+    /// @dev This contract's own address wherever that formula holds here too. A transceiver on
+    ///      zkSync or Tron sits elsewhere, so it overrides this with the standard address.
+    function _parityAddress() internal view virtual returns (address) {
+        return address(this);
     }
 
     /// @inheritdoc TransceiverBase

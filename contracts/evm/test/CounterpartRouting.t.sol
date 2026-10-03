@@ -198,6 +198,18 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
+    /// @dev This chain is never a counterpart: sends and inbound authentication both resolve
+    ///      through `_counterpartOn`, so neither a bootstrap to this chain nor a message
+    ///      claiming to come from it gets anywhere, whatever the registry says.
+    function test_thisChainIsNeverACounterpart() public {
+        bytes32 local = transceiver.localChainKey();
+        vm.prank(msig);
+        registry.addChainKey(Erc7930.encodeEvmChain(block.chainid));
+
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, local));
+        transceiver.counterpartOn(local);
+    }
+
     /// @dev Reachable only from an authenticated delivery, so it has no selector at all.
     function test_receiverCallbackIsNotExternal() public {
         (bool ok,) = address(transceiver)
