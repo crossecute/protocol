@@ -57,13 +57,14 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, LzSpokeBase {
         return super._deployAccount(salt);
     }
 
-    function _accountInitializer(address owner, bytes32 salt, address sourceTransmitter, Call[] memory calls)
-        internal
-        view
-        override(SpokeTransceiverBase, LzSpokeBase)
-        returns (bytes memory)
-    {
-        return super._accountInitializer(owner, salt, sourceTransmitter, calls);
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(SpokeTransceiverBase, LzSpokeBase) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 }
 
@@ -106,12 +107,13 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, LzSpokeBase {
         return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
-    function _accountInitializer(address owner, bytes32 salt, address sourceTransmitter, Call[] memory calls)
-        internal
-        view
-        override(SpokeTransceiverBase, LzSpokeBase)
-        returns (bytes memory)
-    {
-        return super._accountInitializer(owner, salt, sourceTransmitter, calls);
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(SpokeTransceiverBase, LzSpokeBase) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 }

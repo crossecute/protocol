@@ -175,13 +175,13 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     /* ============================ receiver manufacture ========================= */
 
     /// @inheritdoc TransceiverBase
-    function _accountImplementation() internal view virtual override returns (address) {
+    function _accountImplementation(bytes32) internal view virtual override returns (address) {
         return receiverImplementation;
     }
 
     /// @inheritdoc TransceiverBase
     /// @dev The receiver authenticates the transmitter the bootstrap carried.
-    function _accountInitializer(address, bytes32, address sourceTransmitter, Call[] memory calls)
+    function _accountInitializer(address, bytes32, bytes32, address sourceTransmitter, Call[] memory calls)
         internal
         view
         virtual

@@ -143,11 +143,11 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         return _createCrossAccount(owner, salt, localChainKey, address(0), new Call[](0));
     }
 
-    function _accountImplementation() internal view override returns (address) {
+    function _accountImplementation(bytes32) internal view override returns (address) {
         return _impl;
     }
 
-    function _accountInitializer(address, bytes32, address, Call[] memory)
+    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
         internal
         pure
         override

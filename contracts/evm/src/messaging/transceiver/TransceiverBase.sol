@@ -132,7 +132,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ) internal returns (address account) {
         if (owner == address(0)) revert ZeroOwner();
 
-        address implementation = _accountImplementation();
+        address implementation = _accountImplementation(homeChainKey);
         if (implementation == address(0)) revert NoAccountImplementation();
 
         account = predictCrossAccount(owner, salt, homeChainKey);
@@ -142,7 +142,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         if (deployed != account) revert AccountAddressMismatch(account, deployed);
 
         ICrossProxy(account)
-            .upgradeInitializeAndLock(implementation, _accountInitializer(owner, salt, sourceTransmitter, calls));
+            .upgradeInitializeAndLock(
+                implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
+            );
 
         emit CrossAccountCreated(owner, account, salt, homeChainKey);
     }
@@ -264,18 +266,21 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         return msg.value;
     }
 
-    /// @notice The logic this side installs. Hub: a transmitter. Spoke: a receiver.
-    function _accountImplementation() internal view virtual returns (address);
+    /// @notice The logic an account homed on `homeChainKey` is armed with: a transmitter where
+    ///         that is this chain, a receiver anywhere else.
+    function _accountImplementation(bytes32 homeChainKey) internal view virtual returns (address);
 
     /// @notice The initializer that logic is armed with, run by delegatecall inside the
     ///         upgrade so the account is never live and uninitialized.
     /// @dev The proxy locks in the same call, and an account's own configuration is gated on
     ///      its owner, not this contract, so all provider setup must be in this calldata.
-    function _accountInitializer(address owner, bytes32 salt, address sourceTransmitter, Call[] memory calls)
-        internal
-        view
-        virtual
-        returns (bytes memory);
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view virtual returns (bytes memory);
 
     /// @notice Grant the gateways and lock upgrades.
     ///

@@ -100,11 +100,11 @@ contract MockTransceiver is TransceiverBase {
         _impl = impl;
     }
 
-    function _accountImplementation() internal view override returns (address) {
+    function _accountImplementation(bytes32) internal view override returns (address) {
         return _impl;
     }
 
-    function _accountInitializer(address, bytes32, address, Call[] memory)
+    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
         internal
         pure
         override

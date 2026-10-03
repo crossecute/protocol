@@ -95,14 +95,14 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /* =========================== transmitter manufacture ======================= */
 
     /// @inheritdoc TransceiverBase
-    function _accountImplementation() internal view virtual override returns (address) {
+    function _accountImplementation(bytes32) internal view virtual override returns (address) {
         return transmitterImplementation;
     }
 
     /// @inheritdoc TransceiverBase
     /// @dev A transmitter takes no creation payload: its owner drives it directly. The salt is
     ///      passed in because an account cannot recover it from its own address.
-    function _accountInitializer(address owner, bytes32 salt, address, Call[] memory)
+    function _accountInitializer(address owner, bytes32 salt, bytes32, address, Call[] memory)
         internal
         view
         virtual
