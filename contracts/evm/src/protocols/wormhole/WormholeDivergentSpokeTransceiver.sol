@@ -44,13 +44,13 @@ contract WormholeZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, WormholeSpoke
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, ZkSyncSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncSpokeTransceiver) returns (address) {
@@ -90,12 +90,12 @@ contract WormholeTronSpokeTransceiver is TronSpokeTransceiver, WormholeSpokeBase
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, TronSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 }

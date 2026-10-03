@@ -84,7 +84,7 @@ contract SaltedTransceiver is UnsendableSpoke {
     /// @dev Stands in for `_onInbound`, which authenticates and then calls `_bootstrapInbound`.
     function bootstrapFor(address owner_) external returns (address) {
         _bootstrapInbound(owner_, bytes32(0), new Call[](0));
-        return predictCrossAccount(owner_, bytes32(0));
+        return predictCrossAccount(owner_, bytes32(0), homeChainKey);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -155,7 +155,8 @@ contract SaltedDeploymentTest is Test {
 
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
-        address predictedReceiver = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
+        address predictedReceiver =
+            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
 
         // Nothing is deployed yet.
         assertEq(predictedTransceiver.code.length, 0);
@@ -186,10 +187,13 @@ contract SaltedDeploymentTest is Test {
         t.initialize(owner, impl);
 
         address ownerOf = address(0x7A11);
-        assertEq(t.accountSalt(ownerOf, bytes32(0)), keccak256(abi.encode(ownerOf, bytes32(0))));
         assertEq(
-            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0)),
-            t.predictCrossAccount(ownerOf, bytes32(0)),
+            t.accountSalt(ownerOf, bytes32(0), t.homeChainKey()),
+            keccak256(abi.encode(ownerOf, bytes32(0), t.homeChainKey()))
+        );
+        assertEq(
+            registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)),
+            t.predictCrossAccount(ownerOf, bytes32(0), t.homeChainKey()),
             "one salt convention, two chains"
         );
     }
@@ -222,7 +226,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
 
         address transceiverAt = registry.predictTransceiver(chainKey, provider);
-        address predicted = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
+        address predicted = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
 
         uint256 world = vm.snapshotState();
 
@@ -242,6 +246,9 @@ contract SaltedDeploymentTest is Test {
         vm.revertToState(world);
 
         // ---- Ethereum: the hub arms the same address with transmitter logic ----
+        // The spoke above is homed on chain 1, and an account's home is part of its address,
+        // so the hub has to actually run there.
+        vm.chainId(1);
         address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
         factory.arm(
             hubAt,
@@ -263,8 +270,8 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
         address ownerOf = address(0x7A11);
 
-        address a = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0));
-        address b = registry.predictCrossAccount(chainKey, provider, ownerOf, keccak256("ops"));
+        address a = registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
+        address b = registry.predictCrossAccount(chainKey, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1));
 
         assertTrue(a != b, "a different salt is a different account");
 
@@ -274,12 +281,12 @@ contract SaltedDeploymentTest is Test {
         registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
-        assertEq(a, registry.predictCrossAccount(arb, provider, ownerOf, bytes32(0)));
-        assertEq(b, registry.predictCrossAccount(arb, provider, ownerOf, keccak256("ops")));
+        assertEq(a, registry.predictCrossAccount(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
+        assertEq(b, registry.predictCrossAccount(arb, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1)));
     }
 
-    /// @dev One owner's salt cannot reach another owner's account. The pair is hashed, so
-    ///      there is no choice of salt that lands on somebody else's address.
+    /// @dev One owner's salt cannot reach another owner's account. The owner is hashed in,
+    ///      so there is no choice of salt that lands on somebody else's address.
     function testFuzz_theOwnerIsAlwaysPartOfTheSalt(address ownerA, address ownerB, bytes32 saltA, bytes32 saltB)
         public
     {
@@ -288,10 +295,55 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
 
         assertTrue(
-            registry.predictCrossAccount(chainKey, provider, ownerA, saltA)
-                != registry.predictCrossAccount(chainKey, provider, ownerB, saltB),
+            registry.predictCrossAccount(chainKey, provider, ownerA, saltA, ChainKey.forEvm(1))
+                != registry.predictCrossAccount(chainKey, provider, ownerB, saltB, ChainKey.forEvm(1)),
             "different owners, different accounts, whatever salt either picks"
         );
+    }
+
+    /// @dev The same owner and salt homed on two chains are two accounts. Without the home
+    ///      in the salt, the transmitter of one would sit where the other's receiver lands.
+    ///      The home is its own field, so no choice of the two salts makes them collide.
+    function testFuzz_theHomeIsAlwaysPartOfTheSalt(
+        address ownerOf,
+        bytes32 saltA,
+        bytes32 saltB,
+        uint64 homeA,
+        uint64 homeB
+    ) public {
+        vm.assume(ownerOf != address(0));
+        vm.assume(homeA != 0 && homeB != 0 && homeA != homeB);
+        _record(keccak256(type(CrossProxy).creationCode), _crossProxyInitCodeHash());
+
+        assertTrue(
+            registry.predictCrossAccount(chainKey, provider, ownerOf, saltA, ChainKey.forEvm(homeA))
+                != registry.predictCrossAccount(chainKey, provider, ownerOf, saltB, ChainKey.forEvm(homeB)),
+            "two homes, two accounts, whatever salts the owner picks"
+        );
+    }
+
+    /// @dev A transceiver reads its chain once, at initialization. A later change of
+    ///      `block.chainid`, as after a chain split, moves neither its key nor where its
+    ///      transmitters land.
+    function test_theLocalChainKeyIsFixedAtInitialization() public {
+        address hubAt = factory.deploy(SALT, type(CrossProxy).creationCode);
+        factory.arm(
+            hubAt,
+            address(new HubForAccounts()),
+            abi.encodeCall(HubForAccounts.initialize, (owner, address(new MiniTransmitter())))
+        );
+        HubForAccounts hub = HubForAccounts(payable(hubAt));
+        bytes32 atInit = hub.localChainKey();
+        assertEq(atInit, ChainKey.local());
+
+        address ownerOf = address(0x7A11);
+        address predicted = hub.predictTransmitter(ownerOf, bytes32(0));
+
+        vm.chainId(block.chainid + 1);
+        assertEq(hub.localChainKey(), atInit, "the key did not follow the chain id");
+
+        vm.prank(ownerOf);
+        assertEq(hub.createTransmitter(bytes32(0)), predicted, "and the account landed where it was predicted");
     }
 
     /// @dev The hub creates the caller's account, and `createTransmitter` binds the owner
@@ -443,8 +495,9 @@ contract SaltedDeploymentTest is Test {
 /// @dev A spoke on a chain whose address formula differs from Ethereum's, as zkSync's and
 ///      Tron's do, emulated on Forge's EVM by transforming the salt in both seams.
 contract DivergingSaltedTransceiver is SaltedTransceiver {
-    function predictCrossAccount(address owner_, bytes32 salt) public view override returns (address) {
-        return Create2.computeAddress(_diverge(accountSalt(owner_, salt)), CROSS_PROXY_INIT_CODE_HASH, address(this));
+    function predictCrossAccount(address owner_, bytes32 salt, bytes32 home) public view override returns (address) {
+        return
+            Create2.computeAddress(_diverge(accountSalt(owner_, salt, home)), CROSS_PROXY_INIT_CODE_HASH, address(this));
     }
 
     function _deployAccount(bytes32 salt) internal override returns (address) {
@@ -469,8 +522,9 @@ contract DivergentReceiverAuthTest is Test {
         t.initialize(address(this), address(new SaltedReceiver()));
         receiver = ReceiverBase(payable(t.bootstrapFor(ownerOf)));
         // The hub deploys with Ethereum's CREATE2; this fixture's hub shares the spoke's address.
-        homeTransmitter =
-            Create2.computeAddress(t.accountSalt(ownerOf, bytes32(0)), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
+        homeTransmitter = Create2.computeAddress(
+            t.accountSalt(ownerOf, bytes32(0), t.homeChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+        );
     }
 
     function test_theReceiverAuthenticatesTheHomeTransmitter() public view {

@@ -155,14 +155,14 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 0, "no message left the spoke");
-        assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0, "but the account exists");
+        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0, "but the account exists");
     }
 
     /// @dev And it would be a downgrade, not merely waste. A derivation is `Derived`;
     ///      anything arriving over a bridge is graded `Attested`, which is strictly less.
     function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
         ReportingSpoke s = _spoke(false);
-        address predicted = s.predictCrossAccount(owner, SALT);
+        address predicted = s.predictCrossAccount(owner, SALT, s.homeChainKey());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -175,7 +175,7 @@ contract ReceiverReportTest is Test {
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
         ReportingSpoke s = _spoke(true);
-        address created = s.predictCrossAccount(owner, SALT);
+        address created = s.predictCrossAccount(owner, SALT, s.homeChainKey());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -203,7 +203,9 @@ contract ReceiverReportTest is Test {
         assertEq(
             keccak256(s.sentPayload()),
             keccak256(
-                Envelope.encodeReceiverReport(a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b)))
+                Envelope.encodeReceiverReport(
+                    a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b, s.homeChainKey()))
+                )
             )
         );
     }
@@ -236,7 +238,9 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            s.predictCrossAccount(owner, SALT).code.length, 0, "no account, so the bootstrap can be retried once funded"
+            s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length,
+            0,
+            "no account, so the bootstrap can be retried once funded"
         );
     }
 
@@ -265,7 +269,7 @@ contract ReceiverReportTest is Test {
         ReportingSpoke s = _spoke(true);
         vm.deal(address(s), 1 ether);
 
-        address receiver = s.predictCrossAccount(owner, SALT);
+        address receiver = s.predictCrossAccount(owner, SALT, s.homeChainKey());
         bytes memory expected = s.reportPayload(owner, SALT, receiver);
 
         // Priced through the surface `OutboundBase` now exposes, before anything is sent.
@@ -293,7 +297,7 @@ contract ReceiverReportTest is Test {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
-        assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0);
+        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0);
     }
 
     /// @dev The treasury is the msig's own account here, which need not exist when the spoke
@@ -307,7 +311,7 @@ contract ReceiverReportTest is Test {
         vm.deal(address(s), 1 ether);
 
         s.inbound(msig, bytes32(0), new Call[](0));
-        assertEq(treasury, s.predictCrossAccount(msig, bytes32(0)), "the bootstrap created it");
+        assertEq(treasury, s.predictCrossAccount(msig, bytes32(0), s.homeChainKey()), "the bootstrap created it");
 
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
@@ -358,7 +362,7 @@ contract ReceiverReportTest is Test {
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertTrue(s.predictCrossAccount(owner, SALT).code.length != 0);
+        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0);
     }
 
     /* ================================ the flag ================================= */
@@ -527,7 +531,7 @@ contract ReceiverReportRoundTripTest is Test {
         // The report lands, and only then does the destination become sendable, at the
         // address the spoke actually created, not at the guess.
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT);
+        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
         assertTrue(account.isReachable(spokeKey), "now it is");
@@ -592,7 +596,7 @@ contract ReceiverReportRoundTripTest is Test {
     ///      address the spoke actually created. No `Envelope.encode*` in the assertion.
     function test_theSpokesBytesDecodeOnTheHub() public {
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT);
+        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
 
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
@@ -610,7 +614,7 @@ contract ReceiverReportRoundTripTest is Test {
     ///      not before.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT);
+        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
         bytes memory recipient = Erc7930.encodeEvm(SPOKE_CHAIN, created);
@@ -637,7 +641,7 @@ contract ReceiverReportRoundTripTest is Test {
         bytes memory produced = _report();
         hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
 
-        address created = spoke.predictCrossAccount(owner, SALT);
+        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
         assertTrue(account.isReceiverPinned(spokeKey));
 
         (bool ok,) = address(account)

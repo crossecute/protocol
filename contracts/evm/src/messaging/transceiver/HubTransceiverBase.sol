@@ -118,12 +118,12 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one account.
     /// @return account The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address account) {
-        account = _createCrossAccount(msg.sender, salt, new Call[](0));
+        account = _createCrossAccount(msg.sender, salt, localChainKey, new Call[](0));
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.
     function predictTransmitter(address owner, bytes32 salt) external view returns (address) {
-        return predictCrossAccount(owner, salt);
+        return predictCrossAccount(owner, salt, localChainKey);
     }
 
     /// @notice Teach this hub how a destination is named. Write-once, and the owner's.
@@ -371,7 +371,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
         bytes32 reported = Erc7930.chainKey(interop);
         if (reported != chainKey) revert ReportedChainMismatch(chainKey, reported);
 
-        address account = predictCrossAccount(owner, salt);
+        address account = predictCrossAccount(owner, salt, localChainKey);
         IAccountReceiverReport(account).onDestinationReceiverReported(chainKey, Erc7930.parseStrict(interop).addr);
         emit DestinationReceiverReported(chainKey, owner, salt, account);
     }
@@ -389,6 +389,6 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @notice Where an account's receiver lives on `chainKey`, as that account records it.
     /// @dev Reads the account's own counterpart table, the one its `sendMessage` checks.
     function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory) {
-        return TransmitterBase(payable(predictCrossAccount(owner, salt))).counterpartOn(chainKey);
+        return TransmitterBase(payable(predictCrossAccount(owner, salt, localChainKey))).counterpartOn(chainKey);
     }
 }

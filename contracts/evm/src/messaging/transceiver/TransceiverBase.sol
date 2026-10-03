@@ -6,6 +6,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -32,11 +33,18 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 /// @dev What differs between hub and spoke is behind `_counterpartOn` and `_routeTo`: the hub
 ///      has N counterparts graded by a registry, a spoke one, given at initialization.
 ///
-/// @dev An account's CREATE2 salt is `(owner, salt)` and nothing else, so one transmitter has
-///      one receiver per destination, at an address fixed before the first message.
+/// @dev An account's CREATE2 salt is `(owner, salt, homeChainKey)` and nothing else, so one
+///      transmitter has one receiver per destination, at an address fixed before the first
+///      message.
 abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable {
     /// Once true, no further implementation change is possible. One-way.
     bool public upgradesLocked;
+
+    /// This chain's chainKey, read once at initialization: the home of every account this
+    /// transceiver creates as a transmitter.
+    /// @dev Stored rather than recomputed from `block.chainid`, so a chain split cannot move an
+    ///      account's derivation.
+    bytes32 public localChainKey;
 
     /// @notice The initcode hash every crossecute account deploys from, for transmitters and
     ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
@@ -45,7 +53,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     bytes32 public constant CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
 
     event UpgradesLocked();
-    event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt);
+    event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
 
     error UpgradesAreLocked();
     error ZeroOwner();
@@ -66,10 +74,13 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     /* ============================ account manufacture ========================== */
 
     /// @notice The salt an owner's account deploys at, on every chain.
-    /// @dev The owner is the identity both chains name; the salt lets one owner hold several
-    ///      accounts. `abi.encode` is fixed-width, so no two pairs collide.
-    function accountSalt(address owner, bytes32 salt) public pure returns (bytes32) {
-        return keccak256(abi.encode(owner, salt));
+    /// @dev The owner is the identity every chain names; the salt lets one owner hold several
+    ///      accounts; the home separates the same owner and salt homed on two chains, whose
+    ///      transmitter on one would otherwise sit where the other's receiver lands. The home
+    ///      is its own field: adding or XORing it into `salt` would let one owner make two
+    ///      homes collide. `abi.encode` is fixed-width, so no two triples collide.
+    function accountSalt(address owner, bytes32 salt, bytes32 homeChainKey) public pure returns (bytes32) {
+        return keccak256(abi.encode(owner, salt, homeChainKey));
     }
 
     /// @notice Where an owner's account lives on this chain, before it exists.
@@ -77,8 +88,13 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      are: this address (hub and spoke share one), the salt, and a constant initcode.
     ///      zkSync and Tron derive differently, so a spoke there overrides this and
     ///      `_deployAccount` together; `_createCrossAccount` checks the two agree.
-    function predictCrossAccount(address owner, bytes32 salt) public view virtual returns (address) {
-        return Create2.computeAddress(accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, address(this));
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        public
+        view
+        virtual
+        returns (address)
+    {
+        return Create2.computeAddress(accountSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
@@ -100,27 +116,31 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      protocol publishes comes from that prediction: a transmitter's recorded
     ///      counterpart, a receiver's `sourceTransmitter`, the account a report is forwarded
     ///      to. Without the check a mismatch still fails, but with no revert reason.
-    function _createCrossAccount(address owner, bytes32 salt, Call[] memory calls) internal returns (address account) {
+    function _createCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey, Call[] memory calls)
+        internal
+        returns (address account)
+    {
         if (owner == address(0)) revert ZeroOwner();
 
         address implementation = _accountImplementation();
         if (implementation == address(0)) revert NoAccountImplementation();
 
-        account = predictCrossAccount(owner, salt);
+        account = predictCrossAccount(owner, salt, homeChainKey);
         if (account.code.length != 0) revert CrossAccountExists(owner, salt, account);
 
-        address deployed = _deployAccount(accountSalt(owner, salt));
+        address deployed = _deployAccount(accountSalt(owner, salt, homeChainKey));
         if (deployed != account) revert AccountAddressMismatch(account, deployed);
 
         ICrossProxy(account).upgradeInitializeAndLock(implementation, _accountInitializer(owner, salt, calls));
 
-        emit CrossAccountCreated(owner, account, salt);
+        emit CrossAccountCreated(owner, account, salt, homeChainKey);
     }
 
     /// @notice Stand an account up on a chain that has none, and carry its payload.
     ///
-    /// @dev Callable only by the account `(owner, salt)` resolves to, which is what lets the
-    ///      owner and salt travel in the message without a caller claiming another identity.
+    /// @dev Callable only by the account `(owner, salt)` resolves to when homed on this chain,
+    ///      which is what lets the owner and salt travel in the message without a caller
+    ///      claiming another identity. An account homed elsewhere bootstraps from its own home.
     ///
     /// @dev The only caller of `_requireRoutable`, so the only place `minCounterpartProvenance`
     ///      applies: it bars the first message to a chain, after which the account sends to
@@ -132,7 +152,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable {
-        if (predictCrossAccount(owner, salt) != msg.sender) {
+        if (predictCrossAccount(owner, salt, localChainKey) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
@@ -159,7 +179,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external payable {
-        if (predictCrossAccount(owner, salt) != msg.sender) {
+        if (predictCrossAccount(owner, salt, localChainKey) != msg.sender) {
             revert NotTheAccount(owner, salt, msg.sender);
         }
 
@@ -253,6 +273,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
                 grantRole(GATEWAY_ROLE, gateways[i]);
             }
         }
+
+        localChainKey = ChainKey.local();
 
         upgradesLocked = true;
         emit UpgradesLocked();

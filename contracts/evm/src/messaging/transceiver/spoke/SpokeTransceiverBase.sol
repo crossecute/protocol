@@ -140,7 +140,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     function homeTransmitterOf(address owner, bytes32 salt) public view returns (address) {
         // forge-lint: disable-next-line(unsafe-typecast) the initializer requires 20 bytes
         address hub = address(bytes20(homeTransceiver()));
-        return Create2.computeAddress(accountSalt(owner, salt), CROSS_PROXY_INIT_CODE_HASH, hub);
+        return Create2.computeAddress(accountSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, hub);
     }
 
     /// @notice The home chain's ERC-7930 chain identifier.
@@ -210,7 +210,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      `commit`, `finalize`, or `execute` afterwards. A payload that should wait carries a
     ///      self-call to the receiver's `commit`.
     function _bootstrapInbound(address owner, bytes32 salt, Call[] memory calls) internal {
-        address receiver = _createCrossAccount(owner, salt, calls);
+        address receiver = _createCrossAccount(owner, salt, homeChainKey, calls);
         if (addressesDiverge) _reportReceiver(owner, salt, receiver);
     }
 
@@ -267,7 +267,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
     ///      `predictCrossAccount` needs the bytecode hash it sets after the base initializer.
     ///      The account need not exist yet; it is created by an ordinary bootstrap.
     function treasury() public view returns (address) {
-        return predictCrossAccount(treasuryOwner, treasurySalt);
+        return predictCrossAccount(treasuryOwner, treasurySalt, homeChainKey);
     }
 
     /// @notice Send `amount` of this spoke's balance to the treasury, at the treasury's call.
@@ -286,7 +286,7 @@ abstract contract SpokeTransceiverBase is TransceiverBase {
 
     /// @notice The exact report bytes this spoke would send for `(owner, salt)` and
     ///         `receiver`, so its cost can be quoted with `quoteMessage` before it is owed.
-    /// @dev On the live path `receiver` is `predictCrossAccount(owner, salt)`, taken
+    /// @dev On the live path `receiver` is `predictCrossAccount(owner, salt, homeChainKey)`, taken
     ///      explicitly so an overridden derivation quotes the value it reports.
     function reportPayload(address owner, bytes32 salt, address receiver) public view returns (bytes memory) {
         return Envelope.encodeReceiverReport(owner, salt, Erc7930.encodeEvm(block.chainid, receiver));

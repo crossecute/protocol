@@ -45,13 +45,13 @@ contract CcipZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, CcipSpokeBase {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, ZkSyncSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncSpokeTransceiver) returns (address) {
@@ -98,13 +98,13 @@ contract CcipTronSpokeTransceiver is TronSpokeTransceiver, CcipSpokeBase {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, TronSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function supportsInterface(bytes4 interfaceId)

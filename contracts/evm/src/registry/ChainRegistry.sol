@@ -291,17 +291,21 @@ contract ChainRegistry is OwnableUpgradeable {
     ///         transceiver from the provider's salt, then the account from the transceiver.
     /// @dev The account salt must match `TransceiverBase.accountSalt`; it is written out
     ///      rather than imported, and `test/SaltedDeployment.t.sol` asserts the two agree.
-    function predictCrossAccount(bytes32 chainKey, bytes32 messageProvider, address owner, bytes32 salt)
-        external
-        view
-        returns (address)
-    {
+    /// @param homeChainKey The chain the account is homed on, which need not be `chainKey`.
+    function predictCrossAccount(
+        bytes32 chainKey,
+        bytes32 messageProvider,
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey
+    ) external view returns (address) {
         ChainRegistryStorage storage $ = _getChainRegistryStorage();
         ProviderDeployment memory d = $.deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
-        return AddressDerive.create2(transceiver, keccak256(abi.encode(owner, salt)), d.accountInitCodeHash);
+        return
+            AddressDerive.create2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), d.accountInitCodeHash);
     }
 
     /// @dev Plain CREATE2 derivation holds only on a chain graded `Derived`.

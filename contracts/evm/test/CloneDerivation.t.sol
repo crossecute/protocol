@@ -132,15 +132,15 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         overridePrediction = v;
     }
 
-    function predictCrossAccount(address owner, bytes32 salt) public view override returns (address) {
-        if (!overridePrediction) return super.predictCrossAccount(owner, salt);
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 home) public view override returns (address) {
+        if (!overridePrediction) return super.predictCrossAccount(owner, salt, home);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
         // Tron's prefix. `_deployAccount` is deliberately not overridden to match.
         return address(uint160(uint256(keccak256(abi.encode("other", owner, salt)))));
     }
 
     function create(address owner, bytes32 salt) external returns (address) {
-        return _createCrossAccount(owner, salt, new Call[](0));
+        return _createCrossAccount(owner, salt, localChainKey, new Call[](0));
     }
 
     function _accountImplementation() internal view override returns (address) {
@@ -183,7 +183,7 @@ contract DivergingFormulaTest is Test {
     /// @dev The parity path is untouched: prediction and deployment agree, so the guard
     ///      never fires and the account arms normally.
     function test_theParityPathIsUnaffected() public {
-        address predicted = t.predictCrossAccount(owner, bytes32(0));
+        address predicted = t.predictCrossAccount(owner, bytes32(0), t.localChainKey());
         assertEq(t.create(owner, bytes32(0)), predicted);
         assertTrue(predicted.code.length != 0, "armed");
     }
@@ -193,9 +193,9 @@ contract DivergingFormulaTest is Test {
     ///      `extcodesize` check, which carries no reason data at all.
     function test_aHalfOverriddenDerivationIsRefusedByName() public {
         t.setOverridePrediction(true);
-        address predicted = t.predictCrossAccount(owner, bytes32(0));
+        address predicted = t.predictCrossAccount(owner, bytes32(0), t.localChainKey());
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0))), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
         assertTrue(predicted != wouldDeployTo, "the two formulas disagree, by construction");
 
@@ -210,14 +210,14 @@ contract DivergingFormulaTest is Test {
     function test_aMismatchLeavesNothingBehind() public {
         t.setOverridePrediction(true);
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0))), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
 
         vm.expectRevert();
         t.create(owner, bytes32(0));
 
         assertEq(wouldDeployTo.code.length, 0, "no stranded proxy holding a live admin key");
-        assertEq(t.predictCrossAccount(owner, bytes32(0)).code.length, 0);
+        assertEq(t.predictCrossAccount(owner, bytes32(0), t.localChainKey()).code.length, 0);
     }
 }
 
@@ -233,7 +233,7 @@ contract ZkSpoke is LzZkSyncSpokeTransceiver {
     constructor(address _endpoint) LzZkSyncSpokeTransceiver(_endpoint) {}
 
     function create(address o, bytes32 s) external returns (address) {
-        return _createCrossAccount(o, s, new Call[](0));
+        return _createCrossAccount(o, s, homeChainKey, new Call[](0));
     }
 }
 
@@ -241,7 +241,7 @@ contract TronSpoke is LzTronSpokeTransceiver {
     constructor(address _endpoint) LzTronSpokeTransceiver(_endpoint) {}
 
     function create(address o, bytes32 s) external returns (address) {
-        return _createCrossAccount(o, s, new Call[](0));
+        return _createCrossAccount(o, s, homeChainKey, new Call[](0));
     }
 }
 
@@ -292,26 +292,37 @@ contract DivergentSpokeTest is Test {
         vm.assume(o != address(0));
         ZkSpoke s = _zk();
         assertEq(
-            s.predictCrossAccount(o, salt),
-            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt), HASH, keccak256(""))
+            s.predictCrossAccount(o, salt, s.homeChainKey()),
+            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt, s.homeChainKey()), HASH, keccak256(""))
         );
     }
 
     function testFuzz_tronReproducesTheTronFormula(address o, bytes32 salt) public {
         vm.assume(o != address(0));
         TronSpoke s = _tron();
-        assertEq(s.predictCrossAccount(o, salt), AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt), HASH));
+        assertEq(
+            s.predictCrossAccount(o, salt, s.homeChainKey()),
+            AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt, s.homeChainKey()), HASH)
+        );
     }
 
     /// @dev The whole point: neither answers what Ethereum's formula would.
     function test_neitherMatchesEthereum() public {
         ZkSpoke z = _zk();
         TronSpoke t = _tron();
-        address ethZ = Create2.computeAddress(z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z));
-        address ethT = Create2.computeAddress(t.accountSalt(owner, SALT), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
-        assertTrue(z.predictCrossAccount(owner, SALT) != ethZ, "zkSync diverges");
-        assertTrue(t.predictCrossAccount(owner, SALT) != ethT, "Tron diverges");
-        assertTrue(z.predictCrossAccount(owner, SALT) != t.predictCrossAccount(owner, SALT), "and from each other");
+        address ethZ = Create2.computeAddress(
+            z.accountSalt(owner, SALT, z.homeChainKey()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
+        );
+        address ethT = Create2.computeAddress(
+            t.accountSalt(owner, SALT, t.homeChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+        );
+        assertTrue(z.predictCrossAccount(owner, SALT, z.homeChainKey()) != ethZ, "zkSync diverges");
+        assertTrue(t.predictCrossAccount(owner, SALT, t.homeChainKey()) != ethT, "Tron diverges");
+        assertTrue(
+            z.predictCrossAccount(owner, SALT, z.homeChainKey())
+                != t.predictCrossAccount(owner, SALT, t.homeChainKey()),
+            "and from each other"
+        );
     }
 
     /// @dev On an Ethereum EVM both fail closed, which is the property that makes shipping
@@ -322,8 +333,10 @@ contract DivergentSpokeTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverBase.AccountAddressMismatch.selector,
-                z.predictCrossAccount(owner, SALT),
-                Create2.computeAddress(z.accountSalt(owner, SALT), z.CROSS_PROXY_INIT_CODE_HASH(), address(z))
+                z.predictCrossAccount(owner, SALT, z.homeChainKey()),
+                Create2.computeAddress(
+                    z.accountSalt(owner, SALT, z.homeChainKey()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
+                )
             )
         );
         z.create(owner, SALT);
@@ -441,8 +454,10 @@ contract DivergenceIsNotConfigurableTest is Test {
 
         assertFalse(s.addressesDiverge(), "not settable, and false");
         assertEq(
-            s.predictCrossAccount(owner, bytes32(0)),
-            Create2.computeAddress(s.accountSalt(owner, bytes32(0)), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)),
+            s.predictCrossAccount(owner, bytes32(0), s.homeChainKey()),
+            Create2.computeAddress(
+                s.accountSalt(owner, bytes32(0), s.homeChainKey()), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)
+            ),
             "and it derives the way the hub recomputes"
         );
     }
@@ -461,9 +476,10 @@ contract DivergenceIsNotConfigurableTest is Test {
         assertEq(tron.accountBytecodeHash(), HASH);
 
         // And each derives its own way, not Ethereum's.
-        address ethWay =
-            Create2.computeAddress(zk.accountSalt(owner, bytes32(0)), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk));
-        assertTrue(zk.predictCrossAccount(owner, bytes32(0)) != ethWay);
+        address ethWay = Create2.computeAddress(
+            zk.accountSalt(owner, bytes32(0), zk.homeChainKey()), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
+        );
+        assertTrue(zk.predictCrossAccount(owner, bytes32(0), zk.homeChainKey()) != ethWay);
     }
 
     /// @dev The bytecode hash has no setter, so a spoke initialized without one cannot

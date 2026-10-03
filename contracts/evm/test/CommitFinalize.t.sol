@@ -207,7 +207,7 @@ contract CommitFinalizeTest is Test {
     /// @dev Stand the receiver up if it does not exist. Bootstrap is once per transmitter
     ///      and refuses a second, so this is what repeat arrivals go through.
     function _bootstrapped(MockTransceiver t_, address tx_) internal returns (MockReceiver r) {
-        address predicted = t_.predictCrossAccount(tx_, bytes32(0));
+        address predicted = t_.predictCrossAccount(tx_, bytes32(0), t_.homeChainKey());
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -382,7 +382,7 @@ contract CommitFinalizeTest is Test {
     /// @dev An account is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
     function test_anOwnerGetsExactlyOneAccount() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")), "the bootstrap payload landed");
@@ -406,7 +406,9 @@ contract CommitFinalizeTest is Test {
                 )
             );
         assertFalse(ok, "no bootstrapInbound on the ABI");
-        assertEq(t.predictCrossAccount(transmitter, bytes32(0)).code.length, 0, "and nothing was created");
+        assertEq(
+            t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey()).code.length, 0, "and nothing was created"
+        );
     }
 
     /// @dev The transceiver has no way to reach a receiver after creating it. Bootstrap is
@@ -428,7 +430,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -444,7 +446,7 @@ contract CommitFinalizeTest is Test {
     /// @dev The salt is the transmitter alone, so the address does not move between
     ///      payloads: it is knowable before the first message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -461,7 +463,8 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public view {
         assertTrue(
-            t.predictCrossAccount(transmitter, bytes32(0)) != t.predictCrossAccount(address(0xBEEF), bytes32(0)),
+            t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())
+                != t.predictCrossAccount(address(0xBEEF), bytes32(0), t.homeChainKey()),
             "transmitter must vary the address"
         );
     }
@@ -518,7 +521,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0))));
+        MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())));
 
         assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -540,7 +543,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = rt.predictCrossAccount(transmitter, bytes32(0));
+        address addr = rt.predictCrossAccount(transmitter, bytes32(0), rt.homeChainKey());
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -571,7 +574,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -591,10 +594,10 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with: a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
 
-        vm.expectEmit(true, true, false, false, address(t));
-        emit TransceiverBase.CrossAccountCreated(transmitter, predicted, bytes32(0));
+        vm.expectEmit(true, true, false, true, address(t));
+        emit TransceiverBase.CrossAccountCreated(transmitter, predicted, bytes32(0), t.homeChainKey());
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
@@ -768,7 +771,9 @@ contract CommitFinalizeTest is Test {
     ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
     ///      wrong. The transceiver holds no approvals at all.
     function test_anAccountsApprovalsLiveInTheAccount() public {
-        t.inbound(transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0)), hashOf(_calls())));
+        t.inbound(
+            transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey()), hashOf(_calls()))
+        );
 
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("pendingOf(address)", transmitter));
         assertFalse(a, "no per-sender mapping on the transceiver");
@@ -776,7 +781,8 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "and no approval map of its own");
 
         assertTrue(
-            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0)))).isCommitted(hashOf(_calls())),
+            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())))
+                .isCommitted(hashOf(_calls())),
             "the approval lives with the sender it belongs to"
         );
     }
@@ -802,7 +808,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = rt.predictCrossAccount(transmitter, bytes32(0));
+        address poisoned = rt.predictCrossAccount(transmitter, bytes32(0), rt.homeChainKey());
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -816,7 +822,8 @@ contract CommitFinalizeTest is Test {
         RevertingReceiver(payable(poisoned)).finalize(stuck);
 
         // The other sender is entirely unaffected, now and repeatedly.
-        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictCrossAccount(transmitter2, bytes32(0))));
+        RevertingReceiver r2 =
+            RevertingReceiver(payable(rt.predictCrossAccount(transmitter2, bytes32(0), rt.homeChainKey())));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 
@@ -895,7 +902,7 @@ contract CommitFinalizeTest is Test {
     ///      receiver and runs a payload that approves a hash on the receiver itself, and
     ///      anyone finalizes it there later.
     function test_aDeferredFirstPayloadIsCommittedOnTheReceiver() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0));
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
         Call[] memory later = _calls();
 
         t.inbound(transmitter, _deferred(predicted, hashOf(later)));

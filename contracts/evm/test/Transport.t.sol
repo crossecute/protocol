@@ -189,7 +189,7 @@ contract TransportTest is Test {
         hub = new MockTransceiver();
         hub.initialize(address(this), address(new MockTransmitter()));
 
-        address at = hub.predictCrossAccount(owner, SALT);
+        address at = hub.predictCrossAccount(owner, SALT, hub.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(hub), SALT);
@@ -548,7 +548,7 @@ contract TransportTest is Test {
         t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = t.predictCrossAccount(owner, SALT);
+        address at = t.predictCrossAccount(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -946,7 +946,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = t.predictCrossAccount(owner, SALT);
+        address at = t.predictCrossAccount(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         MockTransmitter acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -1024,7 +1024,7 @@ contract DivergingDestinationTest is Test {
     function setUp() public {
         hub = new MockTransceiver();
         hub.initialize(address(this), address(new MockTransmitter()));
-        address at = hub.predictCrossAccount(owner, bytes32(0));
+        address at = hub.predictCrossAccount(owner, bytes32(0), hub.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(hub), bytes32(0));

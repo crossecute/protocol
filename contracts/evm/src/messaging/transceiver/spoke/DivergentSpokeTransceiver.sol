@@ -63,9 +63,15 @@ abstract contract ZkSyncSpokeTransceiver is DivergentSpokeTransceiver {
     bytes32 internal constant EMPTY_CONSTRUCTOR_INPUT_HASH = keccak256("");
 
     /// @inheritdoc TransceiverBase
-    function predictCrossAccount(address owner, bytes32 salt) public view virtual override returns (address) {
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        public
+        view
+        virtual
+        override
+        returns (address)
+    {
         return AddressDerive.zksyncCreate2(
-            address(this), accountSalt(owner, salt), accountBytecodeHash, EMPTY_CONSTRUCTOR_INPUT_HASH
+            address(this), accountSalt(owner, salt, homeChainKey), accountBytecodeHash, EMPTY_CONSTRUCTOR_INPUT_HASH
         );
     }
 
@@ -86,7 +92,13 @@ abstract contract ZkSyncSpokeTransceiver is DivergentSpokeTransceiver {
 /// @dev Tron runs raw-initcode CREATE2, so the base's `_deployAccount` stands.
 abstract contract TronSpokeTransceiver is DivergentSpokeTransceiver {
     /// @inheritdoc TransceiverBase
-    function predictCrossAccount(address owner, bytes32 salt) public view virtual override returns (address) {
-        return AddressDerive.tronCreate2(address(this), accountSalt(owner, salt), accountBytecodeHash);
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        public
+        view
+        virtual
+        override
+        returns (address)
+    {
+        return AddressDerive.tronCreate2(address(this), accountSalt(owner, salt, homeChainKey), accountBytecodeHash);
     }
 }

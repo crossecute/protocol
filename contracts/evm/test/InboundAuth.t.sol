@@ -10,6 +10,7 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -148,7 +149,7 @@ contract InboundAuthTest is Test {
     function test_spokeAcceptsTheHubAndStandsTheReceiverUp() public {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
 
-        MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0))));
+        MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey())));
         assertEq(
             r.sourceTransmitter(), spoke.homeTransmitterOf(transmitter, bytes32(0)), "its peer is the home transmitter"
         );
@@ -174,15 +175,26 @@ contract InboundAuthTest is Test {
     ///      quote runs.
     function test_aSpokeRefusesAnOutboundBootstrap() public {
         spoke.arrive(HOME_ROUTE, HOME_SENDER, Envelope.encodeBootstrap(transmitter, bytes32(0), _boot()));
-        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0));
+        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey());
         bytes32 home = ChainKey.forEvm(1);
 
+        // The receiver is homed elsewhere, so the caller check refuses it first: only an
+        // account homed on this chain may bootstrap from it.
         vm.deal(receiver, 1 ether);
         vm.prank(receiver);
+        vm.expectRevert(
+            abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, transmitter, bytes32(0), receiver)
+        );
+        spoke.bootstrap{value: 1 ether}(home, transmitter, bytes32(0), _boot(), new bytes[](0));
+
+        // An account homed here passes that check, and the spoke still refuses.
+        address local = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.localChainKey());
+        vm.deal(local, 1 ether);
+        vm.prank(local);
         vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
         spoke.bootstrap{value: 1 ether}(home, transmitter, bytes32(0), _boot(), new bytes[](0));
 
-        vm.prank(receiver);
+        vm.prank(local);
         vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
         spoke.bootstrapElements(home, transmitter, bytes32(0), new bytes[](1), new bytes[](0));
 

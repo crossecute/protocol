@@ -44,13 +44,13 @@ contract LzZkSyncSpokeTransceiver is ZkSyncSpokeTransceiver, LzSpokeBase {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, ZkSyncSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncSpokeTransceiver) returns (address) {
@@ -97,13 +97,13 @@ contract LzTronSpokeTransceiver is TronSpokeTransceiver, LzSpokeBase {
         __DivergentSpoke_init(accountBytecodeHash_);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt)
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
         override(TransceiverBase, TronSpokeTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt);
+        return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _accountInitializer(address owner, bytes32 salt, Call[] memory calls)
