@@ -56,29 +56,32 @@ contract HyperlaneHubHarness is HyperlaneHubTransceiver {
     }
 }
 
-contract HyperlaneSendTest is
+interface IHyperlaneSendHarness is IHubSendHarness {
+    function setDomain(bytes32 chainKey, uint32 domain) external;
+    function handle(uint32 origin, bytes32 sender, bytes calldata message) external payable;
+    function HYPERLANE_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
+}
+
+/// @dev Run against each Hyperlane transceiver through `_deploy`.
+abstract contract HyperlaneSendSuite is
     ProviderIdTableSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec
 {
     MockHyperlaneMailbox mailbox;
-    HyperlaneHubHarness hub;
-    address msig = address(0x5165);
+    IHyperlaneSendHarness hub;
+    address msig;
     uint32 constant BASE_DOMAIN = 8453;
+
+    /// @notice Deploy the transceiver under test against `mailbox`, returning it and its owner.
+    function _deploy() internal virtual returns (address transceiver, address owner);
 
     function setUp() public {
         mailbox = new MockHyperlaneMailbox();
-        hub = HyperlaneHubHarness(
-            address(
-                new ERC1967Proxy(
-                    address(new HyperlaneHubHarness(address(mailbox))),
-                    abi.encodeCall(
-                        HyperlaneHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
+        (address t, address owner) = _deploy();
+        hub = IHyperlaneSendHarness(t);
+        msig = owner;
         harness = IHubSendHarness(address(hub));
 
         vm.prank(msig);
@@ -134,8 +137,9 @@ contract HyperlaneSendTest is
         assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 50_000, address(this), ""));
     }
 
-    /// @dev Without `refundAddress` in the metadata the refund goes to the hub, which has no
-    ///      `receive`, and the overpaid send reverts.
+    /// @dev Without `refundAddress` in the metadata the refund goes to the sending contract:
+    ///      the hub has no `receive`, so the send reverts, and the transceiver's float would
+    ///      keep the payer's excess.
     function test_overpaymentIsRefundedToTheCallerNotTheHub() public {
         mailbox.setFee(0.01 ether);
         address payer = address(0xFEE);
@@ -197,6 +201,21 @@ contract HyperlaneSendTest is
 
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
+    }
+}
+
+contract HyperlaneSendTest is HyperlaneSendSuite {
+    function _deploy() internal override returns (address, address) {
+        address owner = address(0x5165);
+        address t = address(
+            new ERC1967Proxy(
+                address(new HyperlaneHubHarness(address(mailbox))),
+                abi.encodeCall(
+                    HyperlaneHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF))
+                )
+            )
+        );
+        return (t, owner);
     }
 }
 

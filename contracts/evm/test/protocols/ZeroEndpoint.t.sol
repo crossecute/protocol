@@ -10,6 +10,7 @@ import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {HyperlaneHubTransceiver} from "src/protocols/hyperlane/HyperlaneHubTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {HyperlaneSpokeTransceiver} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
+import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
@@ -28,7 +29,7 @@ contract ZeroEndpointTest is Test {
     address constant E = address(0xE0);
 
     function test_singleEndpointConstructorsRefuseZero() public {
-        bytes[15] memory code = [
+        bytes[16] memory code = [
             type(CcipHubTransceiver).creationCode,
             type(CcipReceiver).creationCode,
             type(CcipSpokeTransceiver).creationCode,
@@ -36,6 +37,7 @@ contract ZeroEndpointTest is Test {
             type(HyperlaneHubTransceiver).creationCode,
             type(HyperlaneReceiver).creationCode,
             type(HyperlaneSpokeTransceiver).creationCode,
+            type(HyperlaneTransceiver).creationCode,
             type(HyperlaneTransmitter).creationCode,
             type(LzHubTransceiver).creationCode,
             type(LzReceiver).creationCode,

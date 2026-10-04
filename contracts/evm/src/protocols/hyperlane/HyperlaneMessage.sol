@@ -9,8 +9,8 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Recipient narrowing, hook metadata, and the `dispatch`/`quoteDispatch` calls,
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
-///         `HyperlaneHubTransceiver`, `HyperlaneSpokeTransceiver`, and the zkSync/Tron
-///         spokes).
+///         `HyperlaneHubTransceiver`, `HyperlaneSpokeTransceiver`, `HyperlaneTransceiver`, and
+///         their zkSync/Tron variants).
 library HyperlaneMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.hyperlane.gasLimit"));
@@ -58,9 +58,10 @@ library HyperlaneMessage {
     }
 
     /// @dev Without an explicit `refundAddress`, the IGP and ProtocolFee hooks refund
-    ///      overpayment to the message sender, i.e. the contract calling `dispatch`. A hub or
-    ///      spoke has no `receive`, so that refund would revert the send; a transmitter would
-    ///      keep the payer's excess. `refundTo` is `OutboundBase._refundTo()`.
+    ///      overpayment to the message sender, i.e. the contract calling `dispatch`. The hub
+    ///      has no `receive`, so that refund would revert the send; a transmitter, or a
+    ///      transceiver's report float, would keep the payer's excess. `refundTo` is
+    ///      `OutboundBase._refundTo()`.
     function hookMetadata(bytes[] memory attributes, address refundTo) internal pure returns (bytes memory) {
         return StandardHookMetadata.formatMetadata(0, gasLimitFrom(attributes), refundTo, "");
     }
