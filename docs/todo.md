@@ -28,11 +28,12 @@ this file is the gap between that design and the tree.
   Arachnid's factory so the chain's own engine answers, does not transfer, because that
   factory relies on a pre-signed Ethereum transaction and is absent from Tron and Shasta. A
   one-afternoon empirical check that de-risks a whole chain family. Now load-bearing rather
-  than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
-  `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
-  fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
-  being wrong is a redeploy rather than a loss. zkSync Era's override
-  (`ZkSyncSpokeTransceiver`) is unverified the same way and needs the same one-account check.
+  than merely tidy: `TronAccounts`, which every Tron transceiver uses, commits to `0x41`
+  through `AddressDerive.tronCreate2`, so this check is what decides whether a Tron
+  transceiver works. It fails closed if wrong (`AccountAddressMismatch` on every account
+  creation), so the cost of being wrong is a redeploy rather than a loss. zkSync Era's
+  derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
+  check.
 
 ## 3. Infrastructure
 
