@@ -130,8 +130,13 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         overridePrediction = v;
     }
 
-    function predictCrossAccount(address owner, bytes32 salt, bytes32 home) public view override returns (address) {
-        if (!overridePrediction) return super.predictCrossAccount(owner, salt, home);
+    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        public
+        view
+        override
+        returns (address)
+    {
+        if (!overridePrediction) return super.predictCrossAccount(owner, salt, homeChainKey);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
         // Tron's prefix. `_deployAccount` is deliberately not overridden to match.
         return address(uint160(uint256(keccak256(abi.encode("other", owner, salt)))));

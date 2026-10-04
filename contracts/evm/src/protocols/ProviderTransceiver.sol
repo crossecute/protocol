@@ -7,7 +7,6 @@ import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 /// @notice What every native binding with a provider chain id shares on the transceiver that is
 ///         hub and spoke at once: the id table, and mapping a delivery's reported origin back
 ///         to a route, which `_authenticateOrigin` then checks like any other.
-/// @dev `ProviderHubTransceiver` holds the same mapping for the hub until the hub is folded in.
 abstract contract ProviderTransceiver is SymmetricTransceiverBase, ProviderChainId {
     /// @notice Name the provider's own delivery contract as a gateway, for a binding whose
     ///         entry point checks `GATEWAY_ROLE`.

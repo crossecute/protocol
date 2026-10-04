@@ -14,9 +14,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 /// @notice Authentication, routing, manufacture, and the upgrade lock: the half that is
 ///         identical wherever a transceiver is deployed.
 ///
-/// @dev Only a spoke makes receivers; manufacture lives in `SpokeTransceiverBase`, so a hub
-///      has no function that could. A transmitter and its receivers share one address, so a
-///      receiver on the home chain would collide with the transmitter there.
+/// @dev An account's home is part of its salt, so the transmitter an account has here and the
+///      receiver an account homed elsewhere has here never collide, though one contract makes
+///      both. A receiver is made only by an authenticated bootstrap.
 ///
 /// @dev Runs no payload of its own: an inbound message is an `Envelope`, acted on in
 ///      `_handleInbound`, and a bootstrap creates the account and runs its payload in the same

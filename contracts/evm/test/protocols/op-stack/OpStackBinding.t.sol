@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -11,8 +10,6 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 
-import {OpStackHubTransceiver} from "src/protocols/op-stack/OpStackHubTransceiver.sol";
-import {OpStackSpokeTransceiver} from "src/protocols/op-stack/OpStackSpokeTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
@@ -22,29 +19,10 @@ import {
     IHubSendHarness,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
-    ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-
-/// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
-///         covered by `test/Transport.t.sol`).
-contract OpStackHubHarness is OpStackHubTransceiver {
-    constructor(address messenger, bytes32 chainKey) OpStackHubTransceiver(messenger, chainKey) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-}
 
 interface IOpStackSendHarness is IHubSendHarness {
     function OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
@@ -146,19 +124,6 @@ abstract contract OpStackSendSuite is ProviderHubSendSpec, ProviderEvmRecipientS
     }
 }
 
-contract OpStackSendTest is OpStackSendSuite {
-    function _deploy() internal override returns (address) {
-        return address(
-            new ERC1967Proxy(
-                address(new OpStackHubHarness(address(messenger), ChainKey.forEvm(BASE))),
-                abi.encodeCall(
-                    OpStackHubTransceiver.initialize, (address(0x5165), address(0), new address[](0), address(0xBEEF))
-                )
-            )
-        );
-    }
-}
-
 /// @notice The sharp edge: the sender is `xDomainMessageSender()`, never anything in the
 ///         delivered calldata, which the origin-side caller wrote in full.
 contract OpStackReceiveTest is ProviderReceiveSpec {
@@ -232,71 +197,6 @@ contract OpStackReceiveTest is ProviderReceiveSpec {
     }
 }
 
-contract OpStackTransceiverReceiveTest is Test {
-    MockCrossDomainMessenger messenger;
-    OpStackSpokeTransceiver spoke;
-    OpStackHubTransceiver hub;
-    address homeTransceiver = address(0xD00D);
-
-    function setUp() public {
-        messenger = new MockCrossDomainMessenger();
-        spoke = OpStackSpokeTransceiver(
-            payable(new ERC1967Proxy(
-                    address(new OpStackSpokeTransceiver(address(messenger))),
-                    abi.encodeCall(
-                        OpStackSpokeTransceiver.initialize,
-                        (
-                            new address[](0),
-                            address(0xC0DE),
-                            ChainKey.forEvm(1),
-                            Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(homeTransceiver),
-                            address(0x7EA5),
-                            bytes32(0)
-                        )
-                    )
-                ))
-        );
-        hub = OpStackHubTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new OpStackHubTransceiver(address(messenger), ChainKey.forEvm(8453))),
-                    abi.encodeCall(
-                        OpStackHubTransceiver.initialize, (address(this), address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
-    }
-
-    function test_hubAndSpokeGrantTheMessengerTheGatewayRole() public view {
-        assertTrue(hub.hasRole(hub.GATEWAY_ROLE(), address(messenger)));
-        assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), address(messenger)));
-    }
-
-    function test_spokeRejectsANonHubSender() public {
-        vm.expectRevert();
-        messenger.relay(address(0xBAD), address(spoke), abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function test_spokeRejectsAnyCallerButTheMessenger() public {
-        vm.expectRevert();
-        spoke.receiveOpStackMessage("");
-    }
-
-    /// @dev The hub's only origin is the messenger's chain; with no route recorded for it,
-    ///      nothing is accepted.
-    function test_hubRejectsDeliveryBeforeItsChainIsRouted() public {
-        vm.expectRevert();
-        messenger.relay(address(0xC0DE), address(hub), abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function test_hubRejectsAnyCallerButTheMessenger() public {
-        vm.expectRevert();
-        hub.receiveOpStackMessage("");
-    }
-}
-
 contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
     address messenger = address(0xBEEF);
 
@@ -318,77 +218,3 @@ contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
     }
 }
 
-contract OpStackInboundHubHarness is OpStackHubTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address m, bytes32 k) OpStackHubTransceiver(m, k) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract OpStackInboundSpokeHarness is OpStackSpokeTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address m) OpStackSpokeTransceiver(m) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract OpStackTransceiverInboundTest is ProviderTransceiverInboundSpec {
-    /// @dev One messenger per pair of chains: the hub's reaches `SPOKE_CHAIN_ID`, the spoke's home.
-    MockCrossDomainMessenger hubMessenger = new MockCrossDomainMessenger();
-    MockCrossDomainMessenger spokeMessenger = new MockCrossDomainMessenger();
-    address msig = address(0x5165);
-    address hub;
-    address spoke;
-
-    function setUp() public {
-        hub = address(
-            new ERC1967Proxy(
-                address(new OpStackInboundHubHarness(address(hubMessenger), ChainKey.forEvm(SPOKE_CHAIN_ID))),
-                abi.encodeCall(OpStackHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        spoke = address(
-            new ERC1967Proxy(
-                address(new OpStackInboundSpokeHarness(address(spokeMessenger))),
-                abi.encodeCall(
-                    OpStackSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(HOME_CHAIN_ID),
-                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
-                        abi.encodePacked(HUB_TRANSCEIVER),
-                        address(0x7EA5),
-                        bytes32(0)
-                    )
-                )
-            )
-        );
-    }
-
-    function _hub() internal view override returns (address) {
-        return hub;
-    }
-
-    function _hubOwner() internal view override returns (address) {
-        return msig;
-    }
-
-    function _spoke() internal view override returns (address) {
-        return spoke;
-    }
-
-    function _deliverToHub(address sender) internal override {
-        hubMessenger.relay(sender, hub, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function _deliverToSpoke(address sender) internal override {
-        spokeMessenger.relay(sender, spoke, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-}

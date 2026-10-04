@@ -336,7 +336,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Whether accounts on `chainKey` must report their own address home.
     /// @dev True exactly where this contract cannot recompute addresses, so it cannot
     ///      disagree with the grades. Where a receiver landed is held by its transmitter, not
-    ///      here. The hub's side of `SpokeTransceiverBase.addressesDiverge`.
+    ///      here. The home's side of `SymmetricTransceiverBase.addressesDiverge`.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
     }

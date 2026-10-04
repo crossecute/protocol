@@ -10,6 +10,7 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {IOpStackMessengerSource} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
 import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
@@ -106,6 +107,15 @@ contract OpStackTransceiverInboundTest is ProviderSymmetricInboundSpec {
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, address(0xBAD), role)
         );
         t.receiveOpStackMessage(message);
+    }
+
+    /// @dev The paired chain is the only origin, and with no route recorded for it nothing is
+    ///      accepted, even from the counterpart's address.
+    function test_nothingIsAcceptedBeforeThePairedChainIsRouted() public {
+        bytes32 paired = ChainKey.forEvm(ORIGIN_CHAIN_ID);
+        bytes memory message = _bootstrap();
+        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, paired));
+        _deliver(ORIGIN_TRANSCEIVER, message);
     }
 
     /// @dev `OpStackTransmitter` reads its messenger and paired chain from the transceiver that

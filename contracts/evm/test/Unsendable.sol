@@ -3,21 +3,8 @@ pragma solidity ^0.8.0;
 
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {SymmetricTransceiverBase} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-
-/// @notice Where `(owner, salt)`'s transmitter sits on `s`'s home chain: Ethereum's CREATE2
-///         over the hub's address. The transmitter address a hub carries in a bootstrap, for
-///         harnesses that stand in for one.
-function homeTransmitterFor(SpokeTransceiverBase s, address owner, bytes32 salt) view returns (address) {
-    return Create2.computeAddress(
-        s.accountSalt(owner, salt, s.homeChainKey()),
-        s.CROSS_PROXY_INIT_CODE_HASH(),
-        address(bytes20(s.homeTransceiver()))
-    );
-}
 
 /// @notice For harnesses that exercise everything but the transport: `OutboundBase`'s two
 ///         provider seams, as reverts. One per base, because a mixin beside the base would
@@ -47,27 +34,6 @@ abstract contract UnsendableTransceiver is TransceiverBase {
 }
 
 abstract contract UnsendableHub is HubTransceiverBase {
-    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
-        internal
-        virtual
-        override
-        returns (bytes32)
-    {
-        revert Unsent();
-    }
-
-    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
-        internal
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        revert Unsent();
-    }
-}
-
-abstract contract UnsendableSpoke is SpokeTransceiverBase {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         virtual

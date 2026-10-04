@@ -6,7 +6,6 @@ import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -15,16 +14,14 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SymmetricTransceiverBase} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
-/// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
-///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
+/// @notice The wrapper every provider's send test harness exposes: a thin subclass of the
+///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
 ///         so a test can exercise the translation layer without going through the full
-///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzHubHarness`.
+///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzTransceiverHarness`.
 interface IHubSendHarness {
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -384,169 +381,6 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
         bytes32 wide = bytes32(uint256(uint160(source)) | (uint256(1) << 200));
         vm.expectRevert(_wideSenderRevert(wide));
         _deliverFromWideSender(wide);
-    }
-}
-
-/// @title ProviderTransceiverInboundSpec
-/// @notice C4, C6, C7 for transceivers: the route and sender bytes a binding hands `_onInbound`
-///         authenticate the configured counterpart exactly, and nothing else on that chain.
-/// @dev The harnesses override `_handleInbound` to emit `InboundHandled`, so what is asserted is
-///      the chain the base's own authentication accepted, not a stand-in for it.
-abstract contract ProviderTransceiverInboundSpec is Test {
-    event InboundHandled(bytes32 chainKey);
-
-    uint256 internal constant HOME_CHAIN_ID = 1;
-    uint256 internal constant SPOKE_CHAIN_ID = 8453;
-    /// @dev The spoke's counterpart as the hub records it, and the hub as the spoke records it.
-    address internal constant SPOKE_TRANSCEIVER = address(0xC0DE);
-    address internal constant HUB_TRANSCEIVER = address(0xD00D);
-
-    /// @notice A hub harness, owned by `_hubOwner()`, whose id table maps `SPOKE_CHAIN_ID`.
-    function _hub() internal view virtual returns (address);
-    function _hubOwner() internal view virtual returns (address);
-
-    /// @notice A spoke harness homed on `HOME_CHAIN_ID`, with `HUB_TRANSCEIVER` as its hub.
-    function _spoke() internal view virtual returns (address);
-
-    /// @notice Deliver to the hub through the provider's own path, from `SPOKE_CHAIN_ID`.
-    function _deliverToHub(address sender) internal virtual;
-
-    /// @notice Deliver to the spoke through the provider's own path, from home.
-    function _deliverToSpoke(address sender) internal virtual;
-
-    /// @notice Provider-side configuration the hub needs to accept `SPOKE_TRANSCEIVER` (a
-    ///         LayerZero peer). None by default.
-    function _configureProviderPeer() internal virtual {}
-
-    /// @notice The revert for a wrong sender. The base's own by default; LayerZero's peer check
-    ///         refuses it first (its R3.3 exception).
-    function _hubWrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
-    }
-
-    function _spokeWrongSenderRevert(address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(SpokeTransceiverBase.NotHomeOrigin.selector);
-    }
-
-    function _wireHub() internal returns (bytes32 chainKey) {
-        address owner = _hubOwner();
-        ChainRegistry registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
-        HubTransceiverBase hub = HubTransceiverBase(payable(_hub()));
-        vm.startPrank(owner);
-        bytes32 provider = registry.addMessageProvider("under-test");
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
-        registry.setLocalTransceiver(provider, address(hub));
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
-        registry.setProvenance(chainKey, Provenance.Attested);
-        hub.setCounterpart(chainKey, Erc7930.encodeEvm(SPOKE_CHAIN_ID, SPOKE_TRANSCEIVER));
-        hub.setRoute(chainKey, Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
-        vm.stopPrank();
-        _configureProviderPeer();
-    }
-
-    function test_hubAcceptsItsCounterpartThroughTheBinding() public {
-        bytes32 chainKey = _wireHub();
-        vm.expectEmit(true, true, true, true, _hub());
-        emit InboundHandled(chainKey);
-        _deliverToHub(SPOKE_TRANSCEIVER);
-    }
-
-    function test_hubRefusesAnotherSenderOnTheCounterpartsChain() public {
-        bytes32 chainKey = _wireHub();
-        vm.expectRevert(_hubWrongSenderRevert(chainKey, address(0xBAD)));
-        _deliverToHub(address(0xBAD));
-    }
-
-    function test_spokeAcceptsItsHubThroughTheBinding() public {
-        vm.expectEmit(true, true, true, true, _spoke());
-        emit InboundHandled(ChainKey.forEvm(HOME_CHAIN_ID));
-        _deliverToSpoke(HUB_TRANSCEIVER);
-    }
-
-    function test_spokeRefusesAnotherSenderFromHome() public {
-        vm.expectRevert(_spokeWrongSenderRevert(address(0xBAD)));
-        _deliverToSpoke(address(0xBAD));
-    }
-
-    /// @dev The report is paid from the spoke's balance, so an operator has to be able to
-    ///      fund it with a plain transfer (#17).
-    function test_spokeAcceptsAPlainTransfer() public {
-        vm.deal(address(this), 1 ether);
-        (bool ok,) = _spoke().call{value: 1 ether}("");
-        assertTrue(ok);
-        assertEq(_spoke().balance, 1 ether);
-    }
-
-    /// @dev The float leaves only at the treasury's call and only to the treasury, so the
-    ///      binding must pass its initializer's treasury through to the base.
-    function test_spokeFloatLeavesOnlyToTheTreasury() public {
-        SpokeTransceiverBase spoke = SpokeTransceiverBase(payable(_spoke()));
-        address treasury = spoke.treasury();
-        vm.deal(address(spoke), 1 ether);
-
-        vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotTreasury.selector, address(0xBAD)));
-        spoke.withdraw(1 ether);
-
-        uint256 before = treasury.balance;
-        vm.prank(treasury);
-        spoke.withdraw(0.4 ether);
-        assertEq(treasury.balance - before, 0.4 ether);
-        assertEq(address(spoke).balance, 0.6 ether);
-    }
-
-    /// @dev C24 over the hub's configuration after `initialize` and a delivery to each side.
-    function test_noWriteLandsOnAnotherField() public {
-        vm.startStateDiffRecording();
-        _wireHub();
-        _deliverToHub(SPOKE_TRANSCEIVER);
-        _deliverToSpoke(HUB_TRANSCEIVER);
-        address[] memory accounts = new address[](2);
-        accounts[0] = _hub();
-        accounts[1] = _spoke();
-        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
-    }
-}
-
-/// @title ProviderSpokeOriginSpec
-/// @notice Every spoke variant (base, zkSync, Tron) of a binding whose provider reports the
-///         origin chain refuses the hub's own address from any chain but home.
-/// @dev LayerZero is not held to this: its per-eid peer refuses the delivery inside OApp.
-///      OP Stack has no origin to report: one messenger connects exactly two chains.
-abstract contract ProviderSpokeOriginSpec is Test {
-    /// @notice Deploys each spoke variant with the same home.
-    function _spokes() internal virtual returns (address[] memory);
-
-    /// @notice The provider's id for a chain that is not home.
-    function _otherOrigin() internal view virtual returns (uint256);
-
-    /// @notice Deliver an empty message to `spoke`, through the provider's own gateway, with the
-    ///         hub's address as sender and `origin` as the reported source chain.
-    function _deliverFromHubOn(address spoke, uint256 origin) internal virtual;
-
-    function test_everySpokeVariantRefusesTheHubFromAnotherOrigin() public {
-        address[] memory spokes = _spokes();
-        assertEq(spokes.length, 3);
-        for (uint256 i; i < spokes.length; ++i) {
-            vm.expectRevert(abi.encodeWithSelector(ProviderOrigin.UnexpectedOrigin.selector, _otherOrigin()));
-            _deliverFromHubOn(spokes[i], _otherOrigin());
-        }
-    }
-}
-
-/// @title ProviderHomeIdSpec
-/// @notice A spoke refuses a zero home id, which no provider assigns to a live chain.
-/// @dev For every binding whose spoke is homed by a provider-native id (all but OP Stack).
-abstract contract ProviderHomeIdSpec is Test {
-    /// @notice A spoke implementation, and initializer calldata homing it at `homeId`.
-    function _spokeHomedAt(uint256 homeId) internal virtual returns (address impl, bytes memory init);
-
-    function test_aSpokeRefusesAZeroHomeId() public {
-        (address impl, bytes memory init) = _spokeHomedAt(0);
-        vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
-        new ERC1967Proxy(impl, init);
     }
 }
 

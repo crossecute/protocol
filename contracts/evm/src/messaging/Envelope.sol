@@ -77,8 +77,8 @@ library Envelope {
     }
 
     /// @notice The same message, for a destination whose calls this chain cannot express.
-    /// @dev No Solidity decoder: `SpokeTransceiverBase` is EVM-only, and a non-EVM transceiver
-    ///      decodes this in its own language.
+    /// @dev No Solidity decoder: the EVM transceiver refuses this kind, and a non-EVM
+    ///      transceiver decodes it in its own language.
     function encodeBootstrapElements(address owner, bytes32 salt, bytes32 transmitter, bytes[] memory elements)
         internal
         pure

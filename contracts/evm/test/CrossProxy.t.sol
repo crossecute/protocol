@@ -129,7 +129,7 @@ contract CrossProxyTest is Test {
     ///      to an account with no code returns empty rather than reverting. So a stranger's
     ///      attempt is not refused, it is simply ignored: it changes nothing and installs
     ///      nothing. That is only tolerable because a blank proxy never survives the
-    ///      transaction that created it; `SpokeTransceiverBase` deploys, arms, and locks in
+    ///      transaction that created it; `TransceiverBase` deploys, arms, and locks in
     ///      one function, so there is no block in which one is observable.
     function test_aStrangerIsNeverTheAdmin() public {
         address p = deployer.deploy(SALT);

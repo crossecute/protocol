@@ -11,12 +11,6 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 
-import {CcipHubTransceiver} from "src/protocols/ccip/CcipHubTransceiver.sol";
-import {CcipSpokeTransceiver} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
-import {
-    CcipZkSyncSpokeTransceiver,
-    CcipTronSpokeTransceiver
-} from "src/protocols/ccip/CcipDivergentSpokeTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
@@ -26,34 +20,13 @@ import {
     ProviderIdTableSpec,
     IHubSendHarness,
     ProviderWideSenderSpec,
-    ProviderSpokeOriginSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
-    ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec,
-    ProviderHomeIdSpec
+    ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
-
-/// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated selector-resolution
-///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
-contract CcipHubHarness is CcipHubTransceiver {
-    constructor(address router) CcipHubTransceiver(router) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-}
 
 /// @notice The selector-resolution/quote/unconfigured-destination properties are
 ///         `ProviderHubSendSpec`'s; this contract supplies the mock router and, in the two
@@ -191,19 +164,6 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
     }
 }
 
-contract CcipSendTest is CcipSendSuite {
-    function _deploy() internal override returns (address, address) {
-        address owner = address(0x5165);
-        address t = address(
-            new ERC1967Proxy(
-                address(new CcipHubHarness(address(router))),
-                abi.encodeCall(CcipHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        return (t, owner);
-    }
-}
-
 /// @notice CCIP's off-ramp asserts nothing about the source-chain sender (unlike
 ///         LayerZero's `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the
 ///         only authentication check here -- confirmed by these tests running the check
@@ -298,161 +258,6 @@ contract CcipInterfaceSupportTest is Test {
         assertTrue(receiver.supportsInterface(type(IERC165).interfaceId));
         assertFalse(receiver.supportsInterface(bytes4(0xdeadbeef)));
     }
-
-    function test_hubSupportsIAny2EVMMessageReceiverAndIERC165() public {
-        CcipHubTransceiver hub = new CcipHubTransceiver(address(0xBEEF));
-        assertTrue(hub.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
-        assertTrue(hub.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(hub.supportsInterface(bytes4(0xdeadbeef)));
-    }
-}
-
-/// @notice The Copilot-flagged gap: `ccipReceive` is gated `onlyRole(GATEWAY_ROLE)`, and a
-///         deployment that forgot to include `router` in `gateways` would deploy
-///         successfully and then reject every inbound message. The hub/spoke initializers
-///         now grant the role to their own immutable `router` directly.
-contract CcipGatewayRoleGrantTest is Test {
-    address router = address(0xBEEF);
-
-    function test_hubGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
-        CcipHubTransceiver hub = CcipHubTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new CcipHubTransceiver(router)),
-                    abi.encodeCall(
-                        CcipHubTransceiver.initialize, (address(this), address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
-        assertTrue(hub.hasRole(hub.GATEWAY_ROLE(), router));
-    }
-
-    function test_spokeGrantsRouterTheGatewayRoleEvenWithNoGatewaysPassed() public {
-        CcipSpokeTransceiver spoke = CcipSpokeTransceiver(
-            payable(new ERC1967Proxy(
-                    address(new CcipSpokeTransceiver(router)),
-                    abi.encodeCall(
-                        CcipSpokeTransceiver.initialize,
-                        (
-                            new address[](0),
-                            address(0xC0DE),
-                            ChainKey.forEvm(1),
-                            Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(address(0xD00D)),
-                            address(0x7EA5),
-                            bytes32(0),
-                            uint64(1)
-                        )
-                    )
-                ))
-        );
-        assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), router));
-    }
-}
-
-contract CcipSpokeOriginTest is ProviderSpokeOriginSpec, ProviderHomeIdSpec {
-    address router = address(0xBEEF);
-    address hub = address(0xD00D);
-    uint64 constant HOME_SELECTOR = 5009297550715157269;
-
-    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
-        return (
-            address(new CcipSpokeTransceiver(router)),
-            abi.encodeCall(
-                CcipSpokeTransceiver.initialize,
-                (
-                    new address[](0),
-                    address(0xC0DE),
-                    ChainKey.forEvm(1),
-                    Erc7930.encodeEvmChain(1),
-                    abi.encodePacked(hub),
-                    address(0x7EA5),
-                    bytes32(0),
-                    uint64(homeId)
-                )
-            )
-        );
-    }
-
-    function _spokes() internal override returns (address[] memory spokes) {
-        bytes memory hubBytes = abi.encodePacked(hub);
-        spokes = new address[](3);
-        spokes[0] = address(
-            new ERC1967Proxy(
-                address(new CcipSpokeTransceiver(router)),
-                abi.encodeCall(
-                    CcipSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(1),
-                        Erc7930.encodeEvmChain(1),
-                        hubBytes,
-                        address(0x7EA5),
-                        bytes32(0),
-                        HOME_SELECTOR
-                    )
-                )
-            )
-        );
-        spokes[1] = address(
-            new ERC1967Proxy(
-                address(new CcipZkSyncSpokeTransceiver(router)),
-                abi.encodeCall(
-                    CcipZkSyncSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(1),
-                        Erc7930.encodeEvmChain(1),
-                        hubBytes,
-                        address(0x7EA5),
-                        bytes32(0),
-                        bytes32(uint256(1)),
-                        HOME_SELECTOR
-                    )
-                )
-            )
-        );
-        spokes[2] = address(
-            new ERC1967Proxy(
-                address(new CcipTronSpokeTransceiver(router)),
-                abi.encodeCall(
-                    CcipTronSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(1),
-                        Erc7930.encodeEvmChain(1),
-                        hubBytes,
-                        address(0x7EA5),
-                        bytes32(0),
-                        bytes32(uint256(1)),
-                        HOME_SELECTOR
-                    )
-                )
-            )
-        );
-    }
-
-    function _otherOrigin() internal pure override returns (uint256) {
-        return 4949039107694359620;
-    }
-
-    function _deliverFromHubOn(address spoke, uint256 origin) internal override {
-        vm.prank(router);
-        IAny2EVMMessageReceiver(spoke)
-            .ccipReceive(
-                Client.Any2EVMMessage({
-                    messageId: bytes32(0),
-                    sourceChainSelector: uint64(origin),
-                    sender: abi.encode(hub),
-                    data: "",
-                    destTokenAmounts: new Client.EVMTokenAmount[](0)
-                })
-            );
-    }
 }
 
 contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
@@ -485,92 +290,3 @@ contract CcipTransmitterInboundTest is ProviderTransmitterSpec {
     }
 }
 
-contract CcipInboundHubHarness is CcipHubTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address r) CcipHubTransceiver(r) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract CcipInboundSpokeHarness is CcipSpokeTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address r) CcipSpokeTransceiver(r) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract CcipTransceiverInboundTest is ProviderTransceiverInboundSpec {
-    address router = address(0xBEEF);
-    address msig = address(0x5165);
-    uint64 constant SPOKE_SELECTOR = 15_971_525_489_660_198_786;
-    uint64 constant HOME_SELECTOR = 5_009_297_550_715_157_269;
-    address hub;
-    address spoke;
-
-    function setUp() public {
-        hub = address(
-            new ERC1967Proxy(
-                address(new CcipInboundHubHarness(router)),
-                abi.encodeCall(CcipHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        vm.prank(msig);
-        CcipHubTransceiver(payable(hub)).setSelector(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE_SELECTOR);
-        spoke = address(
-            new ERC1967Proxy(
-                address(new CcipInboundSpokeHarness(router)),
-                abi.encodeCall(
-                    CcipSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(HOME_CHAIN_ID),
-                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
-                        abi.encodePacked(HUB_TRANSCEIVER),
-                        address(0x7EA5),
-                        bytes32(0),
-                        HOME_SELECTOR
-                    )
-                )
-            )
-        );
-    }
-
-    function _hub() internal view override returns (address) {
-        return hub;
-    }
-
-    function _hubOwner() internal view override returns (address) {
-        return msig;
-    }
-
-    function _spoke() internal view override returns (address) {
-        return spoke;
-    }
-
-    function _message(uint64 selector, address sender) internal pure returns (Client.Any2EVMMessage memory) {
-        return Client.Any2EVMMessage({
-            messageId: bytes32(0),
-            sourceChainSelector: selector,
-            sender: abi.encode(sender),
-            data: "",
-            destTokenAmounts: new Client.EVMTokenAmount[](0)
-        });
-    }
-
-    function _deliverToHub(address sender) internal override {
-        vm.prank(router);
-        CcipHubTransceiver(payable(hub)).ccipReceive(_message(SPOKE_SELECTOR, sender));
-    }
-
-    function _deliverToSpoke(address sender) internal override {
-        vm.prank(router);
-        CcipSpokeTransceiver(payable(spoke)).ccipReceive(_message(HOME_SELECTOR, sender));
-    }
-}

@@ -3,28 +3,18 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {CcipHubTransceiver} from "src/protocols/ccip/CcipHubTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
-import {CcipSpokeTransceiver} from "src/protocols/ccip/CcipSpokeTransceiver.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
-import {HyperlaneHubTransceiver} from "src/protocols/hyperlane/HyperlaneHubTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
-import {HyperlaneSpokeTransceiver} from "src/protocols/hyperlane/HyperlaneSpokeTransceiver.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
-import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
-import {OpStackHubTransceiver} from "src/protocols/op-stack/OpStackHubTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
-import {OpStackSpokeTransceiver} from "src/protocols/op-stack/OpStackSpokeTransceiver.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
-import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
-import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 
@@ -33,24 +23,17 @@ contract ZeroEndpointTest is Test {
     address constant E = address(0xE0);
 
     function test_singleEndpointConstructorsRefuseZero() public {
-        bytes[18] memory code = [
-            type(CcipHubTransceiver).creationCode,
+        bytes[11] memory code = [
             type(CcipReceiver).creationCode,
-            type(CcipSpokeTransceiver).creationCode,
             type(CcipTransceiver).creationCode,
             type(CcipTransmitter).creationCode,
-            type(HyperlaneHubTransceiver).creationCode,
             type(HyperlaneReceiver).creationCode,
-            type(HyperlaneSpokeTransceiver).creationCode,
             type(HyperlaneTransceiver).creationCode,
             type(HyperlaneTransmitter).creationCode,
-            type(LzHubTransceiver).creationCode,
             type(LzReceiver).creationCode,
-            type(LzSpokeTransceiver).creationCode,
             type(LzTransceiver).creationCode,
             type(LzTransmitter).creationCode,
             type(OpStackReceiver).creationCode,
-            type(OpStackSpokeTransceiver).creationCode,
             type(WormholeReceiver).creationCode
         ];
         for (uint256 i; i < code.length; ++i) {
@@ -58,23 +41,17 @@ contract ZeroEndpointTest is Test {
         }
     }
 
-    function test_opStackHubAndTransceiverRefuseAZeroMessenger() public {
-        bytes[2] memory code = [type(OpStackHubTransceiver).creationCode, type(OpStackTransceiver).creationCode];
-        for (uint256 i; i < code.length; ++i) {
-            _assertRefusesOnlyZero(
-                code[i], abi.encode(address(0), bytes32(uint256(1))), abi.encode(E, bytes32(uint256(1)))
-            );
-        }
+    function test_opStackRefusesAZeroMessenger() public {
+        _assertRefusesOnlyZero(
+            type(OpStackTransceiver).creationCode,
+            abi.encode(address(0), bytes32(uint256(1))),
+            abi.encode(E, bytes32(uint256(1)))
+        );
     }
 
     /// @dev Core bridge, executor router, and quoter, each zeroed in turn.
     function test_wormholeRefusesAnyZeroEndpoint() public {
-        bytes[4] memory code = [
-            type(WormholeHubTransceiver).creationCode,
-            type(WormholeSpokeTransceiver).creationCode,
-            type(WormholeTransceiver).creationCode,
-            type(WormholeTransmitter).creationCode
-        ];
+        bytes[2] memory code = [type(WormholeTransceiver).creationCode, type(WormholeTransmitter).creationCode];
         for (uint256 i; i < code.length; ++i) {
             bytes memory good = abi.encode(E, E, E);
             _assertRefusesOnlyZero(code[i], abi.encode(address(0), E, E), good);

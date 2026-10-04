@@ -9,8 +9,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Recipient narrowing, hook metadata, and the `dispatch`/`quoteDispatch` calls,
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
-///         `HyperlaneHubTransceiver`, `HyperlaneSpokeTransceiver`, `HyperlaneTransceiver`, and
-///         their zkSync/Tron variants).
+///         `HyperlaneTransceiver`, and its zkSync/Tron variants).
 library HyperlaneMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.hyperlane.gasLimit"));

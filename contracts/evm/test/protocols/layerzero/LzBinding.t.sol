@@ -10,10 +10,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 
-import {LzHubTransceiver} from "src/protocols/layerzero/LzHubTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
-import {LzZkSyncSpokeTransceiver} from "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
+import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
@@ -23,35 +21,14 @@ import {
     ProviderWideSenderSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec,
-    ProviderHomeIdSpec
+    ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
-
-/// @notice Exposes `_sendMessage`/`_quoteMessage` directly for isolated eid-resolution
-///         testing (bootstrap/ownership machinery is covered by `test/Transport.t.sol`).
-contract LzHubHarness is LzHubTransceiver {
-    constructor(address endpoint) LzHubTransceiver(endpoint) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-}
 
 /// @notice What the LayerZero send suite drives, on the hub and on the transceiver that is hub
 ///         and spoke at once alike.
@@ -199,19 +176,6 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
     }
 }
 
-contract LzSendTest is LzSendSuite {
-    function _deploy() internal override returns (address, address) {
-        address owner = address(0x5165);
-        address t = address(
-            new ERC1967Proxy(
-                address(new LzHubHarness(address(endpoint))),
-                abi.encodeCall(LzHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        return (t, owner);
-    }
-}
-
 /// @notice Confirms the R3.3 exception is real: LayerZero rejects a wrong sender inside the
 ///         vendored OApp SDK, before `_lzReceive` — and therefore this protocol's own code —
 ///         ever runs. `ProviderReceiveSpec` fixes the four properties this must satisfy;
@@ -330,99 +294,14 @@ contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck {
     }
 }
 
-/// @notice The Copilot-flagged gap: a zero eid or a mis-sized `homeTransceiver_` must not
-///         silently misconfigure the LayerZero peer.
-contract LzInitValidationTest is ProviderHomeIdSpec {
+/// @notice A zero eid must not silently leave a receiver with no peer.
+contract LzInitValidationTest is Test {
     address ENDPOINT = address(new MockLzEndpoint());
 
     function test_receiverRejectsZeroHomeEid() public {
         address impl = address(new LzReceiver(ENDPOINT));
-        vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
+        vm.expectRevert(LzHomePeer.ZeroHomeEid.selector);
         new ERC1967Proxy(impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0)));
-    }
-
-    function _spokeHomedAt(uint256 homeId) internal override returns (address, bytes memory) {
-        return (
-            address(new LzSpokeTransceiver(ENDPOINT)),
-            abi.encodeCall(
-                LzSpokeTransceiver.initialize,
-                (
-                    new address[](0),
-                    address(0xBEEF),
-                    ChainKey.forEvm(1),
-                    Erc7930.encodeEvmChain(1),
-                    abi.encodePacked(address(0xC0DE)),
-                    address(0x7EA5),
-                    bytes32(0),
-                    uint32(homeId)
-                )
-            )
-        );
-    }
-}
-
-/// @notice Exposes `_sendMessage` directly, the same shape as `LzHubHarness`, to test the
-///         one send a diverging spoke ever makes: its receiver report.
-contract LzZkSyncSpokeHarness is LzZkSyncSpokeTransceiver {
-    constructor(address endpoint) LzZkSyncSpokeTransceiver(endpoint) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-}
-
-/// @notice The other Copilot-flagged gap on PR #6: `_reportReceiver` runs nested inside the
-///         `lzReceive` delivery callback, where `msg.value` is 0, and is documented
-///         (`SpokeTransceiverBase._reportReceiver`) to spend from the spoke's own balance.
-///         Without `LzSpokeBase._payNative`, this reverted `NotEnoughNative` on
-///         every zkSync/Tron account bootstrap.
-contract LzDivergentSpokePayNativeTest is Test {
-    MockLzEndpoint endpoint;
-    LzZkSyncSpokeHarness spoke;
-    bytes32 constant HASH = keccak256("zksolc-artifact");
-    uint32 constant HOME_EID = 30101;
-
-    function setUp() public {
-        endpoint = new MockLzEndpoint();
-        spoke = LzZkSyncSpokeHarness(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new LzZkSyncSpokeHarness(address(endpoint))),
-                        abi.encodeCall(
-                            LzZkSyncSpokeTransceiver.initialize,
-                            (
-                                new address[](0),
-                                address(0xBEEF),
-                                ChainKey.forEvm(1),
-                                Erc7930.encodeEvmChain(1),
-                                abi.encodePacked(address(0xC0DE)),
-                                address(0x7EA5),
-                                bytes32(0),
-                                HASH,
-                                HOME_EID
-                            )
-                        )
-                    )
-                ))
-        );
-    }
-
-    function test_reportSpendsFromTheSpokesOwnBalance() public {
-        endpoint.setFee(0.01 ether);
-        vm.deal(address(spoke), 1 ether);
-
-        // No {value: ...}: reproduces msg.value == 0 inside the delivery callback, whose
-        // caller is the relayer.
-        vm.prank(makeAddr("relayer"));
-        spoke.sendMessagePublic(Erc7930.encodeEvmChain(1), "report", new bytes[](0), 0.01 ether);
-
-        (,,,, uint256 value, address refundAddress) = endpoint.sent(0);
-        assertEq(value, 0.01 ether);
-        assertEq(refundAddress, address(spoke), "an overpayment returns to the float, not the relayer");
     }
 }
 
@@ -454,118 +333,3 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerChe
     }
 }
 
-contract LzInboundHubHarness is LzHubTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address e) LzHubTransceiver(e) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract LzInboundSpokeHarness is LzSpokeTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address e) LzSpokeTransceiver(e) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract LzTransceiverInboundTest is ProviderTransceiverInboundSpec, LzFixedPeerCheck, LzWriteOncePeerCheck {
-    MockLzEndpoint endpoint = new MockLzEndpoint();
-    address msig = address(0x5165);
-    uint32 constant SPOKE_EID = 30184;
-    uint32 constant HOME_EID = 30101;
-    address hub;
-    address spoke;
-
-    function setUp() public {
-        hub = address(
-            new ERC1967Proxy(
-                address(new LzInboundHubHarness(address(endpoint))),
-                abi.encodeCall(LzHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        vm.prank(msig);
-        LzHubTransceiver(payable(hub)).setEid(ChainKey.forEvm(SPOKE_CHAIN_ID), SPOKE_EID);
-        spoke = address(
-            new ERC1967Proxy(
-                address(new LzInboundSpokeHarness(address(endpoint))),
-                abi.encodeCall(
-                    LzSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(HOME_CHAIN_ID),
-                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
-                        abi.encodePacked(HUB_TRANSCEIVER),
-                        address(0x7EA5),
-                        bytes32(0),
-                        HOME_EID
-                    )
-                )
-            )
-        );
-    }
-
-    function _hub() internal view override returns (address) {
-        return hub;
-    }
-
-    function _hubOwner() internal view override returns (address) {
-        return msig;
-    }
-
-    function _spoke() internal view override returns (address) {
-        return spoke;
-    }
-
-    /// @dev An eid with no peer yet: `setUp` configures `SPOKE_EID`'s.
-    function test_theHubsPeerIsWriteOnce() public {
-        _assertPeerIsWriteOnce(hub, msig, SPOKE_EID + 1);
-    }
-
-    function test_theSpokesPeerHasNoSetter() public {
-        _assertPeerIsFixed(spoke, HOME_EID, HUB_TRANSCEIVER);
-    }
-
-    function _configureProviderPeer() internal override {
-        vm.prank(msig);
-        LzHubTransceiver(payable(hub)).setPeer(SPOKE_EID, bytes32(uint256(uint160(SPOKE_TRANSCEIVER))));
-    }
-
-    function _deliverToHub(address sender) internal override {
-        vm.prank(address(endpoint));
-        LzHubTransceiver(payable(hub))
-            .lzReceive(
-                Origin({srcEid: SPOKE_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
-                bytes32(0),
-                "",
-                address(0),
-                ""
-            );
-    }
-
-    function _deliverToSpoke(address sender) internal override {
-        vm.prank(address(endpoint));
-        LzSpokeTransceiver(payable(spoke))
-            .lzReceive(
-                Origin({srcEid: HOME_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
-                bytes32(0),
-                "",
-                address(0),
-                ""
-            );
-    }
-
-    function _hubWrongSenderRevert(bytes32, address sender) internal pure override returns (bytes memory) {
-        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, SPOKE_EID, bytes32(uint256(uint160(sender))));
-    }
-
-    function _spokeWrongSenderRevert(address sender) internal pure override returns (bytes memory) {
-        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, HOME_EID, bytes32(uint256(uint160(sender))));
-    }
-}

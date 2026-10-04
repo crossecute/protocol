@@ -144,6 +144,14 @@ contract WormholeTransceiverInboundTest is ProviderSymmetricInboundSpec {
         );
         t.executeVAAv1(vaa);
     }
+
+    function test_aVaaCoreRejectsIsRefused() public {
+        _wire();
+        core.setInvalid(true);
+        bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE, _bootstrap());
+        vm.expectRevert(abi.encodeWithSelector(WormholeMessage.InvalidVaa.selector, "VM signature invalid"));
+        t.executeVAAv1(vaa);
+    }
 }
 
 contract WormholeZkSyncHarness is WormholeZkSyncTransceiver {
