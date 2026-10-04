@@ -224,6 +224,7 @@ ReentrancyGuard ← ReceiverBase
 OutboundBase                  → TransmitterBase          the home account
                                 ReceiverBase             the destination account
 OutboundBase                  → TransceiverBase          → HubTransceiverBase
+                                                              → SymmetricTransceiverBase
                                                          → SpokeTransceiverBase
 ```
 
@@ -242,6 +243,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
 | `messaging/transceiver/TransceiverBase.sol` | The symmetric half of hub and spoke: authentication, routing, account manufacture, and the upgrade lock. Not a `ReceiverBase` and holds no ownership. | `accountSalt`, `predictCrossAccount`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/HubTransceiverBase.sol` | The home side: N counterparts, one registry to grade them, and the only half with an owner. | `createTransmitter`, `predictTransmitter`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `setQualifier`, `qualifier`, `destinationReceiverOn`, `reportsReceiver` |
+| `messaging/transceiver/SymmetricTransceiverBase.sol` | One transceiver per chain per provider, hub and spoke at once. Extends the hub with the spoke's half: it creates a receiver for an account homed on any authenticated origin, refuses a receiver off its transmitter's address when that home is `Derived` (`ParityBroken`), reports where this chain diverges, and holds the report float. Owned by the msig's own account on this chain. The bindings still use the hub and spoke until they are ported. | the hub's, plus `receiverImplementation`, `addressesDiverge`, `reportPayload`, `withdraw`, `receive()` |
 | `messaging/transceiver/spoke/SpokeTransceiverBase.sol` | Every chain that is not home: exactly one counterpart, named at initialization. No owner and no setters of any kind; its float leaves only to `treasury()`, the account of a write-once owner and salt on this chain. | `homeRoute`, `homeTransceiver`, `reportPayload`, `treasuryOwner`, `treasurySalt`, `treasury`, `withdraw`, `receive()` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 

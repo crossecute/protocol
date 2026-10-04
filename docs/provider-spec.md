@@ -563,7 +563,8 @@ same codec function. Never hand-encode at one end.
 **R4.2** The `sender` bytes MUST be byte-identical to what the counterpart lookup returns.
 For an EVM counterpart that is 20 raw bytes: `HubTransceiverBase.counterpartOn` returns
 what `setCounterpart` stored, which is `Erc7930.parseStrict(interop).addr`, and the fallback
-returns `abi.encodePacked(address(this))`. Both are 20 bytes. A provider reporting a 32-byte
+returns `abi.encodePacked(_parityAddress())`, the transceiver's own address unless it sits on
+zkSync or Tron. Both are 20 bytes. A provider reporting a 32-byte
 left-padded sender MUST be narrowed by the binding.
 
 ```solidity
@@ -654,10 +655,11 @@ to the party that sent the value. That is the account on both paths. On path A t
 transmitter paid from its own balance, so `TransmitterBase` overrides `_refundTo()` to
 `address(this)`. On path B the base answers `msg.sender`, and `bootstrap` refuses any
 caller that is not `predictCrossAccount(owner, salt, localChainKey)`, so `msg.sender` is the ACCOUNT. The
-transceiver is structurally incapable of being its own refund target: it is never the
-caller of its own `bootstrap`. A shared transceiver refunding to `address(this)` would pool
-every user's excess into infrastructure with no per-user way out, and this is the
-arrangement under which that cannot be written by accident.
+one exception is a receiver report, which a transceiver pays from its own float inside a
+delivery, where `msg.sender` is the relayer: its overpayment returns to that float. A
+shared transceiver refunding a bootstrap to `address(this)` would pool every user's excess
+into infrastructure with no per-user way out, so it refunds to itself only while it is
+sending a report.
 
 Both halves of an account declare `receive`, which on `TransmitterBase` is load-bearing
 rather than decorative: a provider's refund is a plain value transfer, and one to a

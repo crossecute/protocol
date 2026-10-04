@@ -199,10 +199,10 @@ src/
                   IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
     inbound/      ReceiverBase                          what an account RECEIVES with
-    transceiver/  TransceiverBase -> Hub
-      spoke/      SpokeTransceiverBase -> zkSync / Tron
+    transceiver/  TransceiverBase -> Hub -> Symmetric       hub and spoke in one
+      spoke/      SpokeTransceiverBase -> zkSync / Tron     until bindings move over
   account/        CrossProxy                                what both halves ARE
-  treasury/       Treasury                     one for the protocol, on the home chain
+  treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
 ```
 
@@ -238,6 +238,8 @@ summary: the file is always the newer statement.
 | Why routes live on the transceiver rather than in the registry           | `HubTransceiverBase.setRoute`         |
 | Why the hub owns, the spoke does not, and the roles are not authorities   | `messaging/Roles.sol`, `HubTransceiverBase` |
 | Why the treasury is one address on the hub, paid in the same transaction | `HubTransceiverBase._bootstrapSendValue` |
+| Why one transceiver is both hub and spoke, homing each account on its origin | `SymmetricTransceiverBase`         |
+| Why the report float leaves only at the treasury's call                  | `SymmetricTransceiverBase.withdraw`, `Treasury.collect` |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
@@ -354,9 +356,9 @@ What an operator or integrator has to know:
 - A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the hub owner's bootstrap fee and to a provider's price.
-- The crossecute msig owns the registry, the hub, and the `Treasury`. There is ONE
-  `Treasury` for the whole protocol, on the home chain, named at the hub's deployment and
-  write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
+- The crossecute msig owns the registry, the hub, and the `Treasury`. With a hub and its
+  spokes there is ONE `Treasury` for the whole protocol, on the home chain, named at the
+  hub's deployment and write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
   hub never holds an accrued balance and has no withdrawal to gate. A spoke has no owner. It
   holds only the float for its reports, funded out of band in the destination's currency.
   Its treasury, the account of a write-once owner and salt on that chain (the msig's own
@@ -367,6 +369,12 @@ What an operator or integrator has to know:
   `revokeGateway`, which is the only membership change that survives initialization
   anywhere. `renounceOwnership` stays available everywhere: it retires that transmitter,
   hub, registry, or treasury for good, and that is the owner's call.
+- `SymmetricTransceiverBase`, the v2 transceiver that is hub and spoke in one, differs from
+  the hub and spoke above in two ways. It is owned by the msig's own crossecute account on
+  its chain, derived at initialization from the msig's owner, salt, and home rather than
+  typed. And it names one `Treasury` per chain, shared by every provider there and
+  write-once: bootstrap fees are forwarded to it, and the report float leaves only when that
+  treasury pulls it with `Treasury.collect`, which its owner calls.
 
 ## Docs
 
