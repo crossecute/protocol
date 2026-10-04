@@ -67,7 +67,7 @@ function deployLz(address endpoint) returns (LzTransceiverHarness) {
     );
 }
 
-/// @notice `LzSendSuite` against the transceiver that is hub and spoke at once.
+/// @notice `LzSendSuite` against the plain transceiver.
 contract LzTransceiverSendTest is LzSendSuite {
     function _deploy() internal override returns (address, address) {
         LzTransceiverHarness t = deployLz(address(endpoint));

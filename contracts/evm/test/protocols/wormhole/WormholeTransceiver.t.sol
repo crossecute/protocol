@@ -74,7 +74,7 @@ function deployWormhole(address core, address router, address quoter) returns (W
     );
 }
 
-/// @notice `WormholeSendSuite` against the transceiver that is hub and spoke at once.
+/// @notice `WormholeSendSuite` against the plain transceiver.
 contract WormholeTransceiverSendTest is WormholeSendSuite {
     function _deploy() internal override returns (address, address) {
         WormholeTransceiverHarness t = deployWormhole(address(core), address(router), quoter);

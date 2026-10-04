@@ -43,24 +43,24 @@ interface ICcipSendHarness is ISendHarness {
 /// @dev Run against each CCIP transceiver through `_deploy`.
 abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
     MockCcipRouter router;
-    ICcipSendHarness hub;
+    ICcipSendHarness transceiver;
     address msig;
     bytes32 baseKey;
     uint64 constant BASE_SELECTOR = 15_971_525_489_660_198_786;
 
     /// @notice Deploy the transceiver under test against `router`, returning it and its owner.
-    function _deploy() internal virtual returns (address transceiver, address owner);
+    function _deploy() internal virtual returns (address deployed, address owner);
 
     function setUp() public {
         router = new MockCcipRouter();
         (address t, address owner) = _deploy();
-        hub = ICcipSendHarness(t);
+        transceiver = ICcipSendHarness(t);
         msig = owner;
-        harness = ISendHarness(address(hub));
+        harness = ISendHarness(address(transceiver));
 
         vm.startPrank(msig);
         baseKey = ChainKey.forEvm(8453);
-        hub.setSelector(baseKey, BASE_SELECTOR);
+        transceiver.setSelector(baseKey, BASE_SELECTOR);
         vm.stopPrank();
     }
 
@@ -87,7 +87,7 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
     }
 
     function test_sendUsesTheRecipientsAddressAsTheCcipReceiver() public {
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         (, bytes memory receiver,,,,) = router.sent(0);
         assertEq(receiver, abi.encode(address(0xC0DE)));
     }
@@ -97,7 +97,7 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
         bytes memory payload = "payload";
 
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
+        transceiver.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
 
         (,, bytes memory sentPayload,,, uint256 value) = router.sent(0);
         assertEq(sentPayload, payload);
@@ -108,24 +108,24 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), abi.encode(uint256(1), true));
-        attrs[1] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(1), true));
+        attrs[1] = abi.encodePacked(transceiver.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(1), true));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     /// @dev Previously a short body failed inside `abi.decode` and a long one was truncated.
     function test_extraArgsOfTheWrongLengthAreRefused() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), uint256(1));
+        attrs[0] = abi.encodePacked(transceiver.CCIP_EXTRA_ARGS_ATTRIBUTE(), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_extraArgsAttributeBecomesEVMExtraArgsV2() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(500_000), true));
+        attrs[0] = abi.encodePacked(transceiver.CCIP_EXTRA_ARGS_ATTRIBUTE(), abi.encode(uint256(500_000), true));
 
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
 
         (,,,, bytes memory extraArgs,) = router.sent(0);
         assertEq(
@@ -143,12 +143,12 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
 
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
-        hub.setSelector(chainKey, uint64(providerId));
+        transceiver.setSelector(chainKey, uint64(providerId));
     }
 
     function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(router));
-        hub.ccipReceive(
+        transceiver.ccipReceive(
             Client.Any2EVMMessage({
                 messageId: bytes32(0),
                 sourceChainSelector: uint64(providerId),

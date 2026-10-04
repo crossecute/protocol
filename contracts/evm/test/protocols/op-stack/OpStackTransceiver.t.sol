@@ -62,7 +62,7 @@ function deployOpStack(address messenger, uint256 pairedChainId) returns (OpStac
     );
 }
 
-/// @notice `OpStackSendSuite` against the transceiver that is hub and spoke at once.
+/// @notice `OpStackSendSuite` against the plain transceiver.
 contract OpStackTransceiverSendTest is OpStackSendSuite {
     function _deploy() internal override returns (address) {
         return address(deployOpStack(address(messenger), BASE));

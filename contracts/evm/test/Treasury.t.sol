@@ -83,7 +83,7 @@ contract TreasuryTest is Test {
         vm.deal(address(treasury), 10 ether);
     }
 
-    /// @dev The hub forwards a bootstrap fee with a plain value transfer, so a treasury that
+    /// @dev A transceiver forwards a bootstrap fee with a plain value transfer, so a treasury that
     ///      could not receive one would revert every bootstrap that charges a fee.
     function test_itAcceptsAPlainTransfer() public {
         (bool ok,) = address(treasury).call{value: 1 ether}("");

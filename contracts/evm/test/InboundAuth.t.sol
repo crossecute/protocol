@@ -187,7 +187,7 @@ contract InboundAuthTest is Test {
     /// @dev N origins, so it is a lookup. The route names the chain and the registry names
     ///      that chain's counterpart; the report is recorded against the chain the route
     ///      resolved to, not one the message claimed.
-    function test_hubResolvesTheOriginAndRecordsTheReport() public {
+    function test_theOriginIsResolvedAndTheReportRecorded() public {
         address counterpart = address(0xC0DE);
         bytes32 baseKey = _wireReportingChain(8453, counterpart);
         Transmitter acct = _standUpAccount(8453);
@@ -215,7 +215,7 @@ contract InboundAuthTest is Test {
         vm.stopPrank();
     }
 
-    function test_hubRejectsAnUnknownRoute() public {
+    function test_anUnknownRouteIsRefused() public {
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
         vm.expectRevert(OutboundBase.UnknownRoute.selector);
         node.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
@@ -223,7 +223,7 @@ contract InboundAuthTest is Test {
 
     /// @dev A known chain speaking with the wrong contract is refused. Without this, any
     ///      contract on a registered chain could report receiver addresses.
-    function test_hubRejectsAKnownRouteFromTheWrongSender() public {
+    function test_aKnownRouteFromTheWrongSenderIsRefused() public {
         bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
@@ -234,7 +234,7 @@ contract InboundAuthTest is Test {
     /// @dev The provenance bar gates the inbound path too. A chain whose counterpart is
     ///      only `Attested` cannot drive a transceiver that demands `Derived`, however well-formed
     ///      its message is.
-    function test_hubProvenanceBarAppliesToInbound() public {
+    function test_theProvenanceBarAppliesToInbound() public {
         address counterpart = address(0xC0DE);
         // Graded `Attested`: the chain's addresses cannot be recomputed here, so any
         // claim about them is worth exactly the bridge that carried it.

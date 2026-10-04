@@ -43,22 +43,22 @@ abstract contract HyperlaneSendSuite is
     ProviderRefundSpec
 {
     MockHyperlaneMailbox mailbox;
-    IHyperlaneSendHarness hub;
+    IHyperlaneSendHarness transceiver;
     address msig;
     uint32 constant BASE_DOMAIN = 8453;
 
     /// @notice Deploy the transceiver under test against `mailbox`, returning it and its owner.
-    function _deploy() internal virtual returns (address transceiver, address owner);
+    function _deploy() internal virtual returns (address deployed, address owner);
 
     function setUp() public {
         mailbox = new MockHyperlaneMailbox();
         (address t, address owner) = _deploy();
-        hub = IHyperlaneSendHarness(t);
+        transceiver = IHyperlaneSendHarness(t);
         msig = owner;
-        harness = ISendHarness(address(hub));
+        harness = ISendHarness(address(transceiver));
 
         vm.prank(msig);
-        hub.setDomain(ChainKey.forEvm(8453), BASE_DOMAIN);
+        transceiver.setDomain(ChainKey.forEvm(8453), BASE_DOMAIN);
     }
 
     function _configuredRecipient() internal pure override returns (bytes memory) {
@@ -84,70 +84,69 @@ abstract contract HyperlaneSendSuite is
 
     function _gasLimitAttribute(uint256 gasLimit) internal view returns (bytes[] memory attrs) {
         attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), gasLimit);
+        attrs[0] = abi.encodePacked(transceiver.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), gasLimit);
     }
 
     function test_sendUsesTheRecipientsAddressAsBytes32() public {
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         assertEq(mailbox.sent(0).recipientAddress, TypeCasts.addressToBytes32(address(0xC0DE)));
     }
 
     function test_sendForwardsThePayloadAndValueUnchanged() public {
         mailbox.setFee(0.01 ether);
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "payload", new bytes[](0), 0.01 ether);
+        transceiver.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "payload", new bytes[](0), 0.01 ether);
         assertEq(mailbox.sent(0).body, "payload");
         assertEq(mailbox.sent(0).value, 0.01 ether);
     }
 
     function test_hookMetadataCarriesTheGasLimitAttributeAndRefundTarget() public {
-        hub.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(400_000), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(400_000), 0);
         assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 400_000, address(this), ""));
     }
 
     function test_noAttributeMeansTheIgpDefaultGasLimit() public {
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 50_000, address(this), ""));
     }
 
-    /// @dev Without `refundAddress` in the metadata the refund goes to the sending contract:
-    ///      the hub has no `receive`, so the send reverts, and the transceiver's float would
-    ///      keep the payer's excess.
-    function test_overpaymentIsRefundedToTheCallerNotTheHub() public {
+    /// @dev Without `refundAddress` in the metadata the refund goes to the sending contract,
+    ///      and the transceiver's float would keep the payer's excess.
+    function test_overpaymentIsRefundedToTheCallerNotTheTransceiver() public {
         mailbox.setFee(0.01 ether);
         address payer = address(0xFEE);
         vm.deal(payer, 1 ether);
         vm.prank(payer);
-        hub.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
+        transceiver.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
         assertEq(payer.balance, 0.99 ether);
-        assertEq(address(hub).balance, 0);
+        assertEq(address(transceiver).balance, 0);
     }
 
     /// @dev A malformed first attribute is reported even when an extra follows it.
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        attrs[1] = abi.encodePacked(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), uint256(1));
+        attrs[1] = abi.encodePacked(transceiver.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_unknownAttributeIsRefused() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_malformedGasLimitAttributeIsRefused() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), uint128(1));
+        attrs[0] = abi.encodePacked(transceiver.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), uint128(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_supportedAttributeIsTheGasLimit() public view {
-        assertEq(hub.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), bytes4(keccak256("crossecute.hyperlane.gasLimit")));
+        assertEq(transceiver.HYPERLANE_GAS_LIMIT_ATTRIBUTE(), bytes4(keccak256("crossecute.hyperlane.gasLimit")));
     }
 
     function _lastPaid() internal view override returns (uint256) {
@@ -164,12 +163,12 @@ abstract contract HyperlaneSendSuite is
 
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
-        hub.setDomain(chainKey, uint32(providerId));
+        transceiver.setDomain(chainKey, uint32(providerId));
     }
 
     function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(mailbox));
-        hub.handle(uint32(providerId), TypeCasts.addressToBytes32(address(0xC0DE)), "");
+        transceiver.handle(uint32(providerId), TypeCasts.addressToBytes32(address(0xC0DE)), "");
     }
 
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {

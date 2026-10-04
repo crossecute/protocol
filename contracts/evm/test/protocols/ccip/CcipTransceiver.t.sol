@@ -79,7 +79,7 @@ function ccipMessage(uint64 selector, address sender, bytes memory data) pure re
     });
 }
 
-/// @notice `CcipSendSuite` against the transceiver that is hub and spoke at once.
+/// @notice `CcipSendSuite` against the plain transceiver.
 contract CcipTransceiverSendTest is CcipSendSuite {
     function _deploy() internal override returns (address, address) {
         CcipTransceiverHarness t = deployCcip(address(router));

@@ -67,7 +67,7 @@ function deployHyperlane(address mailbox) returns (HyperlaneTransceiverHarness) 
     );
 }
 
-/// @notice `HyperlaneSendSuite` against the transceiver that is hub and spoke at once.
+/// @notice `HyperlaneSendSuite` against the plain transceiver.
 contract HyperlaneTransceiverSendTest is HyperlaneSendSuite {
     function _deploy() internal override returns (address, address) {
         HyperlaneTransceiverHarness t = deployHyperlane(address(mailbox));

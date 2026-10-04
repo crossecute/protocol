@@ -31,7 +31,7 @@ contract UnknownChainTypeTest is Test {
     ChainRegistry registry;
 
     address owner = address(0xA11CE);
-    address hub = address(0x7BAD);
+    address transceiver = address(0x7BAD);
     bytes32 provider;
 
     /// A value allocated to nothing in `ChainType.sol`, and below the provisional floor.
@@ -47,7 +47,7 @@ contract UnknownChainTypeTest is Test {
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
-        registry.setLocalTransceiver(provider, hub);
+        registry.setLocalTransceiver(provider, transceiver);
         vm.stopPrank();
     }
 
@@ -98,7 +98,7 @@ contract UnknownChainTypeTest is Test {
         vm.stopPrank();
 
         // The validator is enforced wherever a location is checked, which is now the
-        // hub's setter calling back into `validateLocation`.
+        // transceiver's setter calling back into `validateLocation`.
         bytes memory wrongWidth = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"00112233");
         vm.expectRevert(abi.encodeWithSelector(WidthValidator.BadWidth.selector, 4));
         registry.validateLocation(chainKey, wrongWidth);

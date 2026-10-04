@@ -44,11 +44,11 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev The hub holds the address, the registry holds what it is worth. A location is
+    /// @dev The transceiver holds the address, the registry holds what it is worth. A location is
     ///      per provider, because two providers deploy two transceivers to one chain; the
     ///      grade is per chain, because how well an address there can be known is the same
     ///      question for both. So this writes the address here and reads the grade there.
-    function test_theHubStoresTheAddressAndTheRegistryGradesTheChain() public {
+    function test_theTransceiverStoresTheAddressAndTheRegistryGradesTheChain() public {
         vm.startPrank(msig);
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         vm.stopPrank();
@@ -204,8 +204,8 @@ contract CounterpartRoutingTest is Test {
     /* =========================== the default counterpart ======================== */
 
     /// @dev The common case needs no configuration at all. A transceiver is deployed as a
-    ///      proxy through Nick's factory, so hub and spoke share initcode and salt and
-    ///      land on one address wherever Ethereum's CREATE2 formula holds. The local
+    ///      proxy through Nick's factory, so every chain's transceiver shares initcode and salt
+    ///      and lands on one address wherever Ethereum's CREATE2 formula holds. The local
     ///      transceiver's own address is therefore the right answer for every such chain,
     ///      and a per-chain table would be rows all saying the same thing.
     function test_anUnsetRouteDefaultsToTheLocalTransceiver() public {
@@ -272,7 +272,7 @@ contract CounterpartRoutingTest is Test {
         transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         vm.stopPrank();
 
-        // The default withdraws: the hub's own address is only the right answer where
+        // The default withdraws: the transceiver's own address is only the right answer where
         // Ethereum's formula holds, which is exactly what `Derived` records.
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, zkKey));
         transceiver.counterpartOn(zkKey);
@@ -283,12 +283,12 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(zkKey), abi.encodePacked(address(0xACE5)));
     }
 
-    /// @dev The hub is its own fallback now, so there is nothing to be missing. The
+    /// @dev The transceiver is its own fallback, so there is nothing to be missing. The
     ///      registry used to answer the default out of `localTransceiver`, which meant a
-    ///      provider with none had no counterpart anywhere; the hub answers it from
-    ///      `address(this)`, which it always has. `localTransceiver` still names the hub
-    ///      that speaks for a provider, but nothing on the send path reads it.
-    function test_theHubIsItsOwnDefault() public {
+    ///      provider with none had no counterpart anywhere; the transceiver answers it from
+    ///      `address(this)`, which it always has. `localTransceiver` still names the
+    ///      transceiver that speaks for a provider, but nothing on the send path reads it.
+    function test_theTransceiverIsItsOwnDefault() public {
         vm.prank(msig);
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
 

@@ -31,19 +31,19 @@ contract UniformDerivationTest is Test {
         registry.addMessageProvider("layerzero");
         vm.stopPrank();
 
-        hub = OwnedTransceiver(
+        transceiver = OwnedTransceiver(
             payable(new ERC1967Proxy(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (owner))
                 ))
         );
         vm.prank(owner);
-        hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
-    /// @dev The hub is what records a counterpart now; the registry recomputes it and says
+    /// @dev The transceiver is what records a counterpart now; the registry recomputes it and says
     ///      what it is worth. Both halves are exercised together.
-    OwnedTransceiver hub;
+    OwnedTransceiver transceiver;
 
     function _wire(bytes memory chainIdentifier, bytes memory params, bytes32) internal returns (bytes32 chainKey) {
         vm.startPrank(owner);
@@ -70,11 +70,11 @@ contract UniformDerivationTest is Test {
         bytes memory interop = registry.expectedTransceiver(chainKey);
         assertEq(Erc7930.toAddress(Erc7930.parseStrict(interop)), want);
 
-        // The hub records the recomputed value; the registry says what it is worth.
+        // The transceiver records the recomputed value; the registry says what it is worth.
         vm.prank(owner);
-        hub.resolveCounterpart(chainKey, keccak256(params));
+        transceiver.resolveCounterpart(chainKey, keccak256(params));
 
-        assertEq(hub.counterpartOn(chainKey), abi.encodePacked(want));
+        assertEq(transceiver.counterpartOn(chainKey), abi.encodePacked(want));
         assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Derived), "an eip155 chain, recomputed here");
     }
 
@@ -95,10 +95,10 @@ contract UniformDerivationTest is Test {
         assertEq(bytes32(io.addr), AddressDerive.solanaCreateProgramAddress(seeds, 255, programId));
 
         vm.startPrank(owner);
-        hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
-        hub.resolveCounterpart(chainKey, keccak256(params));
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
+        transceiver.resolveCounterpart(chainKey, keccak256(params));
         vm.stopPrank();
-        assertEq(hub.counterpartOn(chainKey).length, 32);
+        assertEq(transceiver.counterpartOn(chainKey).length, 32);
     }
 
     /// @dev The inputs were written in an earlier transaction, so the signers approving
@@ -109,7 +109,7 @@ contract UniformDerivationTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
-        hub.resolveCounterpart(chainKey, keccak256("something else"));
+        transceiver.resolveCounterpart(chainKey, keccak256("something else"));
     }
 
     /// @dev Ethereum, zkSync, and Tron are all eip155 with different CREATE2 formulas,

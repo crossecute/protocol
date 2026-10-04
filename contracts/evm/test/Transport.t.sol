@@ -139,7 +139,7 @@ contract MockTransceiver is TransceiverBase {
     }
 
     /// @dev Records the raw payload. Which decoder applies is a property of the
-    ///      Destination, so the test picks it: a real spoke knows its own VM.
+    ///      Destination, so the test picks it: a real destination knows its own VM.
     bytes[] public sentAttributes;
 
     function attributeCount() external view returns (uint256) {
@@ -188,7 +188,7 @@ contract Sink {
 
 contract TransportTest is Test {
     MockTransmitter transmitter;
-    MockTransceiver hub;
+    MockTransceiver transceiver;
     Sink sink;
 
     address owner = address(0xA11CE);
@@ -201,13 +201,13 @@ contract TransportTest is Test {
     ///      sequence rather than reaching into storage: stand the account up on dest, then
     ///      send to it.
     function setUp() public {
-        hub = new MockTransceiver();
-        hub.initialize(address(this), address(new MockTransmitter()));
+        transceiver = new MockTransceiver();
+        transceiver.initialize(address(this), address(new MockTransmitter()));
 
-        address at = hub.predictCrossAccount(owner, SALT, hub.localChainKey());
+        address at = transceiver.predictCrossAccount(owner, SALT, transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
-        transmitter.initialize(owner, address(hub), SALT);
+        transmitter.initialize(owner, address(transceiver), SALT);
         vm.deal(at, 1 ether);
 
         vm.prank(owner);
@@ -217,15 +217,15 @@ contract TransportTest is Test {
     }
 
     /// @dev Stand the account up on a non-EVM destination, the way a real deployment does:
-    ///      bootstrap records `address(this)` as a presumption, and the owner then writes
-    ///      the address the spoke actually reported home. Without the second step the
-    ///      account has no reachable receiver there, which is the point of the correction.
+    ///      the bootstrap records no receiver there, and the destination's report supplies
+    ///      the address it actually created. Without the report the account has no reachable
+    ///      receiver there.
     function _bootstrapTo(bytes memory identifier) internal {
         bytes[] memory none = new bytes[](0);
         vm.prank(owner);
         transmitter.bootstrapTo(identifier, none, none);
-        // The address the spoke reported home. Only the account's transceiver may write it.
-        vm.prank(address(hub));
+        // The address the destination reported home. Only the account's transceiver may write it.
+        vm.prank(address(transceiver));
         transmitter.onDestinationReceiverReported(ChainKey.fromIdentifier(identifier), SOL_RECEIVER);
     }
 
@@ -1077,21 +1077,21 @@ contract TransportTest is Test {
 ///      being `eip155` they cannot be excluded by chain type the way a non-EVM chain is.
 contract DivergingDestinationTest is Test {
     MockTransmitter transmitter;
-    MockTransceiver hub;
+    MockTransceiver transceiver;
 
     address owner = address(0xA11CE);
     uint256 constant ZKSYNC = 324;
-    /// Where the spoke actually created the receiver, reported home under
+    /// Where the destination actually created the receiver, reported home under
     /// `addressesDiverge` and recorded as the transmitter's counterpart.
     bytes constant DIVERGED = hex"00000000000000000000000000000000deadbeef";
 
     function setUp() public {
-        hub = new MockTransceiver();
-        hub.initialize(address(this), address(new MockTransmitter()));
-        address at = hub.predictCrossAccount(owner, bytes32(0), hub.localChainKey());
+        transceiver = new MockTransceiver();
+        transceiver.initialize(address(this), address(new MockTransmitter()));
+        address at = transceiver.predictCrossAccount(owner, bytes32(0), transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
-        transmitter.initialize(owner, address(hub), bytes32(0));
+        transmitter.initialize(owner, address(transceiver), bytes32(0));
         vm.deal(at, 1 ether);
 
         vm.prank(owner);
@@ -1119,7 +1119,7 @@ contract DivergingDestinationTest is Test {
         bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
-        vm.prank(address(hub));
+        vm.prank(address(transceiver));
         transmitter.onDestinationReceiverReported(key, DIVERGED);
         vm.prank(owner);
         transmitter.sendMessage(recipient, payload, new bytes[](0));
@@ -1135,7 +1135,7 @@ contract DivergingDestinationTest is Test {
         bytes memory stale = Erc7930.encodeEvm(ZKSYNC, address(transmitter));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
-        vm.prank(address(hub));
+        vm.prank(address(transceiver));
         transmitter.onDestinationReceiverReported(key, DIVERGED);
 
         vm.prank(owner);

@@ -30,8 +30,7 @@ import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
-/// @notice What the LayerZero send suite drives, on the hub and on the transceiver that is hub
-///         and spoke at once alike.
+/// @notice What the LayerZero send suite drives on a transceiver.
 interface ILzSendHarness is ISendHarness {
     function setEid(bytes32 chainKey, uint32 eid) external;
     function setPeer(uint32 eid, bytes32 peer) external;
@@ -52,25 +51,25 @@ interface ILzSendHarness is ISendHarness {
 ///         LayerZero transceiver through `_deploy`.
 abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
     MockLzEndpoint endpoint;
-    ILzSendHarness hub;
+    ILzSendHarness transceiver;
     address msig;
     bytes32 baseKey;
     uint32 constant BASE_EID = 30184;
 
     /// @notice Deploy the transceiver under test against `endpoint`, returning it and its owner.
-    function _deploy() internal virtual returns (address transceiver, address owner);
+    function _deploy() internal virtual returns (address deployed, address owner);
 
     function setUp() public {
         endpoint = new MockLzEndpoint();
         (address t, address owner) = _deploy();
-        hub = ILzSendHarness(t);
+        transceiver = ILzSendHarness(t);
         msig = owner;
-        harness = ISendHarness(address(hub));
+        harness = ISendHarness(address(transceiver));
 
         vm.startPrank(msig);
         baseKey = ChainKey.forEvm(8453);
-        hub.setEid(baseKey, BASE_EID);
-        hub.setPeer(BASE_EID, bytes32(uint256(uint160(address(0xB45E)))));
+        transceiver.setEid(baseKey, BASE_EID);
+        transceiver.setPeer(BASE_EID, bytes32(uint256(uint160(address(0xB45E)))));
         vm.stopPrank();
     }
 
@@ -101,7 +100,7 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
         bytes memory payload = "payload";
 
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
+        transceiver.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), payload, new bytes[](0), 0.01 ether);
 
         (,, bytes memory sentPayload,, uint256 value,) = endpoint.sent(0);
         assertEq(sentPayload, payload);
@@ -115,19 +114,19 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
     function test_sendSpendsExactlyValueEvenWhenLessThanMsgValue() public {
         endpoint.setFee(0.01 ether);
         vm.deal(address(this), 1 ether);
-        hub.sendMessagePublic{value: 0.02 ether}(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
+        transceiver.sendMessagePublic{value: 0.02 ether}(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
 
         (,,,, uint256 value,) = endpoint.sent(0);
         assertEq(value, 0.01 ether, "spends value, not msg.value");
     }
 
     /// @notice The nested-send case: msg.value is 0 (as it is inside a delivery callback,
-    ///         where a diverging spoke's receiver report is sent from its own balance), and
+    ///         where a diverging chain's receiver report is sent from its float), and
     ///         `value` is still paid, drawn from the contract's pre-funded balance.
     function test_sendSpendsFromBalanceWhenMsgValueIsZero() public {
         endpoint.setFee(0.01 ether);
-        vm.deal(address(hub), 1 ether);
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
+        vm.deal(address(transceiver), 1 ether);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0.01 ether);
 
         (,,,, uint256 value,) = endpoint.sent(0);
         assertEq(value, 0.01 ether);
@@ -137,9 +136,9 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), hex"0003");
-        attrs[1] = abi.encodePacked(hub.LZ_OPTIONS_ATTRIBUTE(), hex"0003");
+        attrs[1] = abi.encodePacked(transceiver.LZ_OPTIONS_ATTRIBUTE(), hex"0003");
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function _lastPaid() internal view override returns (uint256 value) {
@@ -156,12 +155,12 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
 
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
-        hub.setEid(chainKey, uint32(providerId));
+        transceiver.setEid(chainKey, uint32(providerId));
     }
 
     function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(endpoint));
-        hub.lzReceive(
+        transceiver.lzReceive(
             Origin({srcEid: uint32(providerId), sender: bytes32(uint256(0xC0DE)), nonce: 1}),
             bytes32(0),
             "",
@@ -180,7 +179,7 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
 ///         vendored OApp SDK, before `_lzReceive` — and therefore this protocol's own code —
 ///         ever runs. `ProviderReceiveSpec` fixes the four properties this must satisfy;
 ///         where each is enforced is LayerZero-specific and documented on the hooks below.
-/// @notice A receiver's or spoke's peer is written once by its initializer. No owner is ever
+/// @notice A receiver's peer is written once by its initializer. No owner is ever
 ///         initialized, so OApp's `onlyOwner` setters are uncallable and the peer is final.
 abstract contract LzFixedPeerCheck is Test {
     function _assertPeerIsFixed(address oapp, uint32 eid, address peer) internal {
@@ -202,7 +201,7 @@ abstract contract LzFixedPeerCheck is Test {
     }
 }
 
-/// @notice Where an owner exists (hub, transmitter), `setPeer` is write-once per eid.
+/// @notice Where an owner exists (transceiver, transmitter), `setPeer` is write-once per eid.
 abstract contract LzWriteOncePeerCheck is Test {
     function _assertPeerIsWriteOnce(address oapp, address owner, uint32 eid) internal {
         bytes32 peer = bytes32(uint256(0xA11CE));

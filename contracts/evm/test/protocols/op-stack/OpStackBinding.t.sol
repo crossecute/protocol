@@ -31,7 +31,7 @@ interface IOpStackSendHarness is ISendHarness {
 /// @dev Run against each OP Stack transceiver through `_deploy`.
 abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec {
     MockCrossDomainMessenger messenger;
-    IOpStackSendHarness hub;
+    IOpStackSendHarness transceiver;
     uint256 constant BASE = 8453;
 
     /// @notice Deploy the transceiver under test against `messenger`, paired with `BASE`.
@@ -39,8 +39,8 @@ abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec
 
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
-        hub = IOpStackSendHarness(_deploy());
-        harness = ISendHarness(address(hub));
+        transceiver = IOpStackSendHarness(_deploy());
+        harness = ISendHarness(address(transceiver));
     }
 
     function _configuredRecipient() internal pure override returns (bytes memory) {
@@ -61,21 +61,21 @@ abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec
 
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(messenger.sentLength(), 1);
-        assertEq(messenger.sent(0).sender, address(hub));
+        assertEq(messenger.sent(0).sender, address(transceiver));
         assertEq(messenger.sent(0).target, address(0xC0DE));
     }
 
     function test_messageIsTheEntryPointCallWithThePayload() public {
-        hub.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         assertEq(messenger.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
         assertEq(messenger.sent(0).value, 0);
     }
 
     function test_minGasLimitDefaultsAndFollowsTheAttribute() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(900_000));
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        attrs[0] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(900_000));
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
         assertEq(messenger.sent(0).minGasLimit, OpStackMessage.DEFAULT_MIN_GAS_LIMIT);
         assertEq(messenger.sent(1).minGasLimit, 900_000);
     }
@@ -84,7 +84,7 @@ abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec
     function test_nonzeroValueIsRefused() public {
         vm.deal(address(this), 1 ether);
         vm.expectRevert(abi.encodeWithSelector(OpStackMessage.OpStackValueNotSupported.selector, 1));
-        hub.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
+        transceiver.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
     }
 
     /// @dev A recipient on another chain must not be delivered through this messenger, which
@@ -95,7 +95,7 @@ abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec
                 OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(BASE)
             )
         );
-        hub.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
     }
 
     function test_quoteRevertsForAnotherMessengersChain() public {
@@ -104,23 +104,23 @@ abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec
                 OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(BASE)
             )
         );
-        hub.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
+        transceiver.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
     }
 
     /// @dev A malformed first attribute is reported even when an extra follows it.
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        attrs[1] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(1));
+        attrs[1] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_minGasLimitAboveUint32IsRefused() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
+        attrs[0] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 }
 

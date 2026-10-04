@@ -87,7 +87,7 @@ abstract contract WormholeSendSuite is
     uint256 constant CORE_MESSAGE_FEE = 1 gwei;
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
-    IWormholeSendHarness hub;
+    IWormholeSendHarness transceiver;
     address msig;
     address quoter = address(0x0907);
     uint16 constant HOME_WORMHOLE_CHAIN = 2;
@@ -95,18 +95,18 @@ abstract contract WormholeSendSuite is
 
     /// @notice Deploy the transceiver under test against `core`, `router`, and `quoter`,
     ///         returning it and its owner.
-    function _deploy() internal virtual returns (address transceiver, address owner);
+    function _deploy() internal virtual returns (address deployed, address owner);
 
     function setUp() public {
         core = new MockWormholeCore(HOME_WORMHOLE_CHAIN);
         router = new MockExecutorQuoterRouter();
         (address t, address owner) = _deploy();
-        hub = IWormholeSendHarness(t);
+        transceiver = IWormholeSendHarness(t);
         msig = owner;
-        harness = ISendHarness(address(hub));
+        harness = ISendHarness(address(transceiver));
 
         vm.prank(msig);
-        hub.setWormholeChain(ChainKey.forEvm(8453), BASE_WORMHOLE_CHAIN);
+        transceiver.setWormholeChain(ChainKey.forEvm(8453), BASE_WORMHOLE_CHAIN);
     }
 
     function _configuredRecipient() internal pure override returns (bytes memory) {
@@ -133,13 +133,13 @@ abstract contract WormholeSendSuite is
 
     function _gasLimitAttribute(uint256 gasLimit) internal view returns (bytes[] memory attrs) {
         attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), gasLimit);
+        attrs[0] = abi.encodePacked(transceiver.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), gasLimit);
     }
 
     function test_publishedPayloadNamesItsDestination() public {
-        hub.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         MockWormholeCore.Published memory p = core.published(0);
-        assertEq(p.emitter, address(hub));
+        assertEq(p.emitter, address(transceiver));
         assertEq(p.payload, _envelope(BASE_WORMHOLE_CHAIN, address(0xC0DE), "payload"));
         assertEq(p.consistencyLevel, 1);
     }
@@ -147,17 +147,20 @@ abstract contract WormholeSendSuite is
     function test_executionRequestNamesTheVaaAndTheRecipient() public {
         address payer = address(0xFEE);
         vm.prank(payer);
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         MockExecutorQuoterRouter.Request memory r = router.requests(0);
         assertEq(r.dstAddr, _universal(address(0xC0DE)));
         assertEq(r.refundAddr, payer);
         assertEq(r.quoterAddr, quoter);
-        assertEq(r.requestBytes, RequestLib.encodeVaaMultiSigRequest(HOME_WORMHOLE_CHAIN, _universal(address(hub)), 0));
+        assertEq(
+            r.requestBytes,
+            RequestLib.encodeVaaMultiSigRequest(HOME_WORMHOLE_CHAIN, _universal(address(transceiver)), 0)
+        );
     }
 
     function test_gasLimitDefaultsAndFollowsTheAttribute() public {
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        hub.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(750_000), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(750_000), 0);
         assertEq(router.requests(0).relayInstructions, abi.encodePacked(uint8(1), uint128(200_000), uint128(0)));
         assertEq(router.requests(1).relayInstructions, abi.encodePacked(uint8(1), uint128(750_000), uint128(0)));
     }
@@ -165,7 +168,7 @@ abstract contract WormholeSendSuite is
     function test_quoteIsMessageFeePlusExecutionPrice() public {
         core.setMessageFee(0.001 ether);
         router.setFee(0.01 ether);
-        assertEq(hub.quoteMessagePublic(_configuredRecipient(), "x"), 0.011 ether);
+        assertEq(transceiver.quoteMessagePublic(_configuredRecipient(), "x"), 0.011 ether);
     }
 
     function test_valueSplitsBetweenCoreAndTheRouterWithExcessRefunded() public {
@@ -174,11 +177,11 @@ abstract contract WormholeSendSuite is
         address payer = address(0xFEE);
         vm.deal(payer, 1 ether);
         vm.prank(payer);
-        hub.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
+        transceiver.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
         assertEq(core.published(0).value, 0.001 ether);
         assertEq(router.requests(0).paid, 0.01 ether);
         assertEq(payer.balance, 0.989 ether);
-        assertEq(address(hub).balance, 0);
+        assertEq(address(transceiver).balance, 0);
     }
 
     function test_valueBelowTheMessageFeeIsRefused() public {
@@ -187,29 +190,29 @@ abstract contract WormholeSendSuite is
         vm.expectRevert(
             abi.encodeWithSelector(WormholeMessage.InsufficientWormholeValue.selector, 0.0005 ether, 0.001 ether)
         );
-        hub.sendMessagePublic{value: 0.0005 ether}(_configuredRecipient(), "x", new bytes[](0), 0.0005 ether);
+        transceiver.sendMessagePublic{value: 0.0005 ether}(_configuredRecipient(), "x", new bytes[](0), 0.0005 ether);
     }
 
     function test_gasLimitAboveUint128IsRefused() public {
         bytes[] memory attrs = _gasLimitAttribute(uint256(type(uint128).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     /// @dev A malformed first attribute is reported even when an extra follows it.
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        attrs[1] = abi.encodePacked(hub.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), uint256(1));
+        attrs[1] = abi.encodePacked(transceiver.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_unknownAttributeIsRefused() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     /// @dev Core's message fee plus what the Executor router kept (it refunds the rest).
@@ -228,12 +231,12 @@ abstract contract WormholeSendSuite is
 
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
         vm.prank(msig);
-        hub.setWormholeChain(chainKey, uint16(providerId));
+        transceiver.setWormholeChain(chainKey, uint16(providerId));
     }
 
     function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
-        hub.executeVAAv1(
-            _vaa(1, uint16(providerId), address(0xC0DE), 0, _envelope(HOME_WORMHOLE_CHAIN, address(hub), ""))
+        transceiver.executeVAAv1(
+            _vaa(1, uint16(providerId), address(0xC0DE), 0, _envelope(HOME_WORMHOLE_CHAIN, address(transceiver), ""))
         );
     }
 

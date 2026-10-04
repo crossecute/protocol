@@ -29,7 +29,7 @@ interface ISendHarness {
 }
 
 /// @title ProviderSendSpec
-/// @notice The properties every native provider binding's hub send path must satisfy,
+/// @notice The properties every native provider binding's transceiver send path must satisfy,
 ///         independent of which provider it is. A concrete per-provider suite (e.g.
 ///         `LzBinding.t.sol:LzSendTest`) inherits this and implements the hooks below against
 ///         its own mock provider endpoint; the test bodies run unchanged.
@@ -181,22 +181,23 @@ abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
 }
 
 /// @title ProviderIdTableSpec
-/// @notice For hubs with a provider id table: what every transmitter reads on each send, through
+/// @notice For transceivers with a provider id table: what every transmitter reads on each send, through
 ///         the same `providerIdOf` it calls.
 abstract contract ProviderIdTableSpec is ProviderSendSpec {
     /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
     function _configuredProviderId() internal view virtual returns (uint256);
 
-    /// @notice Call the hub's typed setter, as its owner.
+    /// @notice Call the transceiver's typed setter, as its owner.
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
 
-    /// @notice Deliver to the hub through the provider's own path, from an origin id never set.
+    /// @notice Deliver to the transceiver through the provider's own path, from an origin id
+    ///         never set.
     function _deliverFromUnmappedOrigin(uint256 providerId) internal virtual;
 
     /// @notice The exact revert for that delivery.
     function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
 
-    function test_transmittersReadTheConfiguredIdFromTheHub() public {
+    function test_transmittersReadTheConfiguredIdFromTheTransceiver() public {
         assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
         vm.expectRevert(
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
@@ -213,7 +214,7 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec {
         _setProviderIdAsOwner(chainKey, _configuredProviderId() + 1);
     }
 
-    /// @dev C5, hub side: a delivery whose origin the table does not map is refused.
+    /// @dev C5, transceiver side: a delivery whose origin the table does not map is refused.
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
         _deliverFromUnmappedOrigin(999);
@@ -382,7 +383,7 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
 }
 
 /// @title ProviderInboundSpec
-/// @notice What every binding's transceiver that is hub and spoke at once must satisfy on the
+/// @notice What every binding's transceiver must satisfy on the
 ///         way in: a bootstrap from a configured origin, arriving through the provider's own
 ///         path, creates a receiver configured for that provider; a wrong sender is refused;
 ///         and the float can be funded and leaves only to the treasury.
