@@ -593,7 +593,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
             abi.encodePacked(created),
             "the account recorded the address actually created"
         );
-        assertEq(homeSide.destinationReceiverOn(remoteKey, owner, SALT), abi.encodePacked(created));
+        assertEq(account.destinationReceiverOn(remoteKey), abi.encodePacked(created));
     }
 
     /// @dev And it reaches the send path, which is the reason the report moved off the

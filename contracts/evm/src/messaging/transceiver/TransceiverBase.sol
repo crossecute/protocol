@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
@@ -400,9 +399,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
     ///      which is what lets the owner and salt travel in the message without a caller
     ///      claiming another identity. An account homed elsewhere bootstraps from its own home.
     ///
-    /// @dev The only caller of `_requireRoutable`, so the only send `minCounterpartProvenance`
-    ///      gates: it bars the first message to a chain, after which the account sends to its
-    ///      receiver directly.
+    /// @dev The only send `minCounterpartProvenance` gates, through `_requireRoutable`: it bars
+    ///      the first message to a chain, after which the account sends to its receiver
+    ///      directly.
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -410,19 +409,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable {
-        address account = _localAccount(owner, salt);
-        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
-
-        // The provenance bar lives inside this check: an under-graded counterpart, or an
-        // unconfigured route, reverts before anything crosses.
-        _requireRoutable(destinationChainKey);
-
-        emit BootstrapSent(destinationChainKey, owner, salt);
-        _sendMessage(
-            _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrap(owner, salt, _transmitterWord(account), calls),
-            attributes,
-            _bootstrapSendValue(destinationChainKey)
+        bytes32 transmitter = _bootstrapCaller(owner, salt);
+        _sendBootstrap(
+            destinationChainKey, owner, salt, Envelope.encodeBootstrap(owner, salt, transmitter, calls), attributes
         );
     }
 
@@ -436,17 +425,13 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external payable {
-        address account = _localAccount(owner, salt);
-        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
-
-        _requireRoutable(destinationChainKey);
-
-        emit BootstrapSent(destinationChainKey, owner, salt);
-        _sendMessage(
-            _recipientOn(destinationChainKey),
-            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(account), elements),
-            attributes,
-            _bootstrapSendValue(destinationChainKey)
+        bytes32 transmitter = _bootstrapCaller(owner, salt);
+        _sendBootstrap(
+            destinationChainKey,
+            owner,
+            salt,
+            Envelope.encodeBootstrapElements(owner, salt, transmitter, elements),
+            attributes
         );
     }
 
@@ -460,12 +445,11 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        _requireRoutable(destinationChainKey);
-        return _quoteMessage(
-            _recipientOn(destinationChainKey),
+        return _quoteBootstrap(
+            destinationChainKey,
             Envelope.encodeBootstrap(owner, salt, _transmitterWord(_localAccount(owner, salt)), calls),
             attributes
-        ) + bootstrapFee[destinationChainKey];
+        );
     }
 
     /// @notice `quoteBootstrap`, for a destination whose calls this chain cannot express.
@@ -476,12 +460,45 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        _requireRoutable(destinationChainKey);
-        return _quoteMessage(
-            _recipientOn(destinationChainKey),
+        return _quoteBootstrap(
+            destinationChainKey,
             Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_localAccount(owner, salt)), elements),
             attributes
-        ) + bootstrapFee[destinationChainKey];
+        );
+    }
+
+    /// @notice Refuse any caller but the account `(owner, salt)` resolves to here, and return
+    ///         it as the bootstrap carries it.
+    function _bootstrapCaller(address owner, bytes32 salt) private view returns (bytes32) {
+        address account = _localAccount(owner, salt);
+        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
+        return _transmitterWord(account);
+    }
+
+    /// @dev One send path for both envelope forms. The provenance bar lives inside
+    ///      `_requireRoutable`: an under-graded counterpart, or an unconfigured route, reverts
+    ///      before anything crosses.
+    function _sendBootstrap(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes memory envelope,
+        bytes[] calldata attributes
+    ) private {
+        _requireRoutable(destinationChainKey);
+        emit BootstrapSent(destinationChainKey, owner, salt);
+        _sendMessage(_recipientOn(destinationChainKey), envelope, attributes, _bootstrapSendValue(destinationChainKey));
+    }
+
+    /// @dev The quote of `_sendBootstrap`, over the same envelope, plus the destination's fee.
+    function _quoteBootstrap(bytes32 destinationChainKey, bytes memory envelope, bytes[] calldata attributes)
+        private
+        view
+        returns (uint256)
+    {
+        _requireRoutable(destinationChainKey);
+        return
+            _quoteMessage(_recipientOn(destinationChainKey), envelope, attributes) + bootstrapFee[destinationChainKey];
     }
 
     /// @notice An EVM transmitter as a bootstrap carries it: left-padded to a word.
@@ -766,12 +783,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgrade
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) return false;
         return chainRegistry.requiresReceiverCallback(chainKey);
-    }
-
-    /// @notice Where an account's receiver lives on `chainKey`, as that account records it.
-    /// @dev Reads the account's own counterpart table, the one its `sendMessage` checks.
-    function destinationReceiverOn(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory) {
-        return TransmitterBase(payable(_localAccount(owner, salt))).counterpartOn(chainKey);
     }
 
     /// @notice Where a provider returns an overpaid fee: whoever paid it.
