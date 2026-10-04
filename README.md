@@ -1,6 +1,6 @@
 # crossecute protocol
 
-Secure multisig operations across chains, anchored on one of them.
+Secure multisig operations across chains, anchored on whichever one each account chooses.
 
 ## Why
 
@@ -26,7 +26,7 @@ payloads when only one was approved.
 **No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
 deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here
 every operation starts on the home chain, so one interface covers all of them, and a chain
-needs no Safe at all: the authority on the spoke is the account this protocol deploys.
+needs no Safe at all: the authority on every other chain is the account this protocol deploys.
 
 **Gas is funded in one place.** A multisig only one person can afford to execute is not
 decentralized, so an operable Safe per chain means N signers funded on M chains in M
@@ -52,8 +52,21 @@ confirms its destination, and the same bytes cannot be replayed onto another cha
 home delays everything, and a provider that can forge a message can drive an account. No
 shared failure is what N independent multisigs buy with N of everything else. The exposure
 is narrowed where it can be. A transceiver's upgrade key dies in the call that initializes
-it, and an account's in the call that arms it, so neither is ever live and replaceable. No
-shared contract sits in the path of a normal message.
+it, and an account's in the call that arms it, so neither is ever live and replaceable, and
+the registry has no upgrade path at all. No shared contract sits in the path of a normal
+message.
+
+The rest of the bill, stated plainly:
+
+- **A home cannot move.** It is part of the account's address. A team that wants another
+  home makes another account.
+- **Configuration is N × N.** Every chain's transceiver needs every other chain's route and
+  provider id, which deploy scripts have to generate from one source.
+- **A registry bug means new transceivers.** The registry is fixed and a transceiver's pointer
+  to it is write-once, so a fix moves that chain's accounts.
+- **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then
+  waits out a timelock.
+- **OP Stack stays L1 to L2.** An L2 home cannot reach other L2s over it.
 
 ## Three transactions
 
@@ -62,13 +75,13 @@ chain, and the third is every message after that.
 
 ### 1 · Creating a transmitter
 
-Home chain only, no bridge. The owner claims an address that is theirs on every parity chain
-before anything exists on any of them.
+On the chain the owner picks as home, no bridge. The owner claims an address that is theirs
+on every parity chain before anything exists on any of them.
 
 ```mermaid
 flowchart LR
-    Owner([owner]) -->|"createTransmitter(salt)"| Hub[Hub transceiver]
-    Hub -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
+    Owner([owner]) -->|"createTransmitter(salt)"| T[Transceiver at home]
+    T -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
     Proxy -->|"arm and lock"| Tx[Transmitter]
 ```
 
@@ -85,22 +98,28 @@ goes to the one contract that already exists there.
 ```mermaid
 flowchart LR
     Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
-    Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Hub[Hub transceiver]
-    Hub -->|"bridge"| Spoke[Spoke transceiver]
-    Spoke -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
+    Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Home[Transceiver at home]
+    Home -->|"bridge"| Dest[Transceiver at the destination]
+    Dest -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
     Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
-    Spoke -.->|"bridge: where it landed"| Hub
-    Hub -.->|"onDestinationReceiverReported"| Tx
+    Dest -.->|"bridge: where it landed"| Home
+    Home -.->|"onDestinationReceiverReported"| Tx
 ```
 
+Both transceivers are the same contract: one per chain per provider, at one address on every
+standard EVM chain, creating transmitters for accounts homed on its chain and receivers for
+accounts homed elsewhere. The account's home is whichever chain the bootstrap authenticated
+as its origin, never a field the message states.
+
 The message carries the owner and their salt, from which the destination derives the account's
-own address, and the transmitter's address, which the receiver will answer to. The hub sends
-only for the account that pair resolves to, so the destination needs no other chain's address
-formula. The dashed return arrow fires only where `addressesDiverge`,
-which is zkSync and Tron. Elsewhere the hub derived the receiver's address before the first
-message left. It is sent from inside the delivery callback at the fee its own quote names, so
-an underfunded spoke reverts and takes the account creation with it: all or nothing, and
-retryable once it is funded. This runs once per chain.
+own address, and the transmitter's address, which the receiver will answer to. The home's
+transceiver sends only for the account that pair resolves to, so the destination needs no
+other chain's address formula, and zkSync and Tron can be homes too. The dashed return arrow
+fires only where `addressesDiverge`, which is zkSync and Tron as destinations. Elsewhere the
+home derived the receiver's address before the first message left. The report is sent from
+inside the delivery callback at the fee its own quote names, paid from the transceiver's
+float, so an underfunded float reverts and takes the account creation with it: all or
+nothing, and retryable once it is funded. This runs once per chain.
 
 A bootstrap may carry the account's whole first payload. A large one should pass a gas
 attribute, since no provider's default gas has been measured against it, or carry only a
@@ -167,16 +186,22 @@ the local chainKey, so an array approved for one chain cannot be finalized on an
 **One owner, one address, every chain.** An owner's account is deployed at
 `CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), CrossProxy)`, and
 because all three inputs are the same everywhere, so is the address. The home chain is part
-of the salt, so the same owner and salt homed on two chains are two accounts. On the **home chain** it is armed with
+of the salt, so the same owner and salt homed on two chains are two accounts, and an owner
+can mine `salt` for a vanity or gas-cheap address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
 logic and driven by messages from the first. Same address, different half.
 
-**The home chain is a choice.** Ethereum is the expected anchor and the reason the protocol
-reads that way, but nothing requires it: a team can centralize on whichever chain they are
-willing to anchor to, and every spoke names that one instead. A spoke is exactly as rigid
-either way: its home chainKey, route, and counterpart are all written once at
-initialization with no setters. What the home chain _must_ be is an EVM chain with the
-EIP-152 precompile, because the registry recomputes addresses and commitments locally.
+**Any chain can be home.** An owner picks a home per account by calling `createTransmitter`
+there, and every other chain already has what it needs to receive from it: one deployment
+serves every home. The home is fixed for the life of the account. A chain's registry
+derives Sui addresses and previews BLAKE2b commitments with the EIP-152 precompile, where
+those plugins are configured; on a chain without it they revert rather than answer wrongly,
+and which target chains have it is unverified.
+
+**One multisig, on Ethereum only.** Every transceiver is owned by the crossecute msig's own
+account on its chain, derived at initialization rather than typed, and configured by payloads
+the msig sends from Ethereum like any other account's. No Safe, key, or deployer handover is
+needed on any other chain.
 
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
@@ -199,9 +224,8 @@ src/
                   IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
     inbound/      ReceiverBase                          what an account RECEIVES with
-    transceiver/  TransceiverBase -> Hub -> Symmetric       hub and spoke in one
-                  Symmetric -> zkSync / Tron                with DivergentAccounts
-      spoke/      SpokeTransceiverBase -> zkSync / Tron     until bindings move over
+    transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
+                  DivergentAccounts                         zkSync and Tron derivation
   account/        CrossProxy                                what both halves ARE
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
@@ -228,19 +252,20 @@ summary: the file is always the newer statement.
 | ------------------------------------------------------------------------ | ------------------------------------- |
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
 | How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
-| Why a hub makes transmitters and a spoke makes receivers                 | `TransceiverBase`, and its two halves |
+| Why one transceiver makes both transmitters and receivers               | `TransceiverBase`                     |
 | Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |
 | Why the wire carries a payload rather than a digest                      | `outbound/OutboundBase.sol`           |
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |
 | Why a chain is graded, and what each grade is worth                      | `registry/Provenance.sol`             |
-| Why the hub holds counterparts and the registry holds their grade        | `HubTransceiverBase.setCounterpart`   |
-| Why routes live on the transceiver rather than in the registry           | `HubTransceiverBase.setRoute`         |
-| Why the hub owns, the spoke does not, and the roles are not authorities   | `messaging/Roles.sol`, `HubTransceiverBase` |
-| Why the treasury is one address on the hub, paid in the same transaction | `HubTransceiverBase._bootstrapSendValue` |
-| Why one transceiver is both hub and spoke, homing each account on its origin | `SymmetricTransceiverBase`         |
-| Why the report float leaves only at the treasury's call                  | `SymmetricTransceiverBase.withdraw`, `Treasury.collect` |
+| Why the transceiver holds counterparts and the registry their grade      | `TransceiverBase.setCounterpart`      |
+| Why routes live on the transceiver rather than in the registry           | `TransceiverBase.setRoute`            |
+| Why the owner configures and the roles are not authorities               | `messaging/Roles.sol`, `TransceiverBase` |
+| Why the bootstrap fee is paid to the treasury in the same transaction    | `TransceiverBase._bootstrapSendValue` |
+| Why each account is homed on its authenticated origin                   | `TransceiverBase._handleInbound`      |
+| Why the report float leaves only at the treasury's call                  | `TransceiverBase.withdraw`, `Treasury.collect` |
+| Why a chain's grade is write-once and suspension is the cut-off          | `registry/ChainRegistry.sol`          |
 | Why zkSync and Tron derive accounts their own way, and what is unverified  | `transceiver/DivergentAccounts.sol`   |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
@@ -276,14 +301,16 @@ Then, per destination, add what the chain needs:
 ## Message providers
 
 Five native bindings live under `src/protocols/`. Each is held to
-[`docs/provider-spec.md`](docs/provider-spec.md). Where they differ is in who delivers a
-message and what authenticates it:
+[`docs/provider-spec.md`](docs/provider-spec.md). Each is one transceiver per chain, with
+zkSync and Tron variants where the provider reaches those chains. On a transceiver, the
+delivery's origin names a chain and the sender must be that chain's counterpart. Where the
+bindings differ is in who delivers a message to an account and what authenticates it:
 
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
 | --- | --- | --- | --- |
 | LayerZero | `lzReceive`, from the endpoint | the vendored OApp's peer check, then `GATEWAY_ROLE` and the source transmitter | the endpoint |
-| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter; a spoke also checks `homeSelector` | the off-ramp |
-| Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter; a spoke also checks `homeDomain` | the Mailbox |
+| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter | the off-ramp |
+| Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
 | OP Stack | `receiveOpStackMessage`, from the messenger | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
 
@@ -296,11 +323,10 @@ What an operator or integrator has to know:
   reconnect, and because `CrossProxy` arms once it cannot be redeployed at that address, so
   that owner's account on that chain stops receiving for good. This is deliberate: a
   re-grant path would be a fallback-override surface.
-- **Provider ids named at deploy cannot be corrected.** A spoke's home eid, selector,
-  domain, or Wormhole chain, each entry in a hub's id table, and every LayerZero peer are
-  write-once. A receiver's or spoke's peer is set by its initializer; a hub's or
-  transmitter's is set once per eid by its owner. Fixing a wrong one means a redeploy, or
-  for a transmitter a new account.
+- **Provider ids named at deploy cannot be corrected.** Each entry in a transceiver's id
+  table (eid, selector, domain, or Wormhole chain) and every LayerZero peer is write-once. A
+  receiver's peer is set by its initializer; a transceiver's or transmitter's is set once per
+  eid by its owner. Fixing a wrong one means a redeploy, or for a transmitter a new account.
 - **LayerZero's inbound check is partly in vendored code.** Auditing it means reading
   `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
   `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
@@ -318,8 +344,9 @@ What an operator or integrator has to know:
   depend on the Executor quoter, which is an implementation immutable.
 - **OP Stack sends carry no value and cost only gas.** The quote is zero, so a send spends
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
-  would bridge it rather than spend it. There is one
-  `OpStackHubTransceiver` per OP Stack chain, and it refuses recipients on any other chain.
+  would bridge it rather than spend it. `OpStackTransceiver` is one contract per L1 and OP
+  Stack chain pair, the same on both sides, registered as its own message provider; it
+  refuses recipients on any chain but its pair.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
@@ -358,26 +385,23 @@ What an operator or integrator has to know:
   are a `draft-` upstream and this protocol's ABI here.
 - A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
-  to the hub owner's bootstrap fee and to a provider's price.
-- The crossecute msig owns the registry, the hub, and the `Treasury`. With a hub and its
-  spokes there is ONE `Treasury` for the whole protocol, on the home chain, named at the
-  hub's deployment and write-once. A bootstrap fee is charged there and forwarded in the same transaction, so the
-  hub never holds an accrued balance and has no withdrawal to gate. A spoke has no owner. It
-  holds only the float for its reports, funded out of band in the destination's currency.
-  Its treasury, the account of a write-once owner and salt on that chain (the msig's own
-  receiver), is the only caller of `withdraw` and the only place it pays. The receiver need not exist when the spoke is deployed; the msig's
-  ordinary bootstrap creates it.
-  Ownership is the only live authority, and it cannot admit a transport, drop one, or
+  to the transceiver owner's bootstrap fee and to a provider's price.
+- Each chain has one `ChainRegistry` and one `Treasury`, shared by every provider there. A
+  chain's grade, and so whether it reports its receivers, is given when it is registered and
+  never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
+  deployment design gives each chain one `TimelockController` with a 48-hour delay as their
+  owner, where the msig's accounts under two providers propose and cancel, so a compromised
+  provider can freeze them but not take them. There are no deploy scripts yet, so nothing
+  enforces that design today.
+- A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
+  so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
+  reports, funded out of band, and that leaves only when the treasury pulls it with
+  `Treasury.collect`.
+- Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization
   anywhere. `renounceOwnership` stays available everywhere: it retires that transmitter,
-  hub, registry, or treasury for good, and that is the owner's call.
-- `SymmetricTransceiverBase`, the v2 transceiver that is hub and spoke in one, differs from
-  the hub and spoke above in two ways. It is owned by the msig's own crossecute account on
-  its chain, derived at initialization from the msig's owner, salt, and home rather than
-  typed. And it names one `Treasury` per chain, shared by every provider there and
-  write-once: bootstrap fees are forwarded to it, and the report float leaves only when that
-  treasury pulls it with `Treasury.collect`, which its owner calls.
+  transceiver, registry, or treasury for good, and that is the owner's call.
 
 ## Docs
 
