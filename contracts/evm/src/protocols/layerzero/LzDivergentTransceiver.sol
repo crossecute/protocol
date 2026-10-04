@@ -19,9 +19,13 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __LzTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeEid, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __LzTransceiver_init(c, governorHomeEid);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
+        _initGovernorHomePeer(c, governorHomeEid);
     }
 
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
@@ -62,9 +66,13 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
     constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __LzTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeEid, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __LzTransceiver_init(c, governorHomeEid);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
+        _initGovernorHomePeer(c, governorHomeEid);
     }
 
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)

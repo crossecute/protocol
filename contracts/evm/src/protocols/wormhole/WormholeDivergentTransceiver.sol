@@ -20,8 +20,11 @@ contract WormholeZkSyncTransceiver is ZkSyncTransceiver, WormholeTransceiverBase
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __WormholeTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint16 governorHomeChain, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __WormholeTransceiver_init(c, governorHomeChain);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 
@@ -55,8 +58,11 @@ contract WormholeTronTransceiver is TronTransceiver, WormholeTransceiverBase {
     {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __WormholeTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint16 governorHomeChain, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __WormholeTransceiver_init(c, governorHomeChain);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 

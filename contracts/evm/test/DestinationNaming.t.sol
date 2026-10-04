@@ -9,6 +9,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -41,12 +42,12 @@ contract DestinationNamingTest is Test {
             payable(address(
                     new ERC1967Proxy(
                         address(new LzTransceiver(ENDPOINT)),
-                        abi.encodeCall(LzTransceiver.initialize, (lzConfig(ENDPOINT)))
+                        abi.encodeCall(LzTransceiver.initialize, (lzConfig(ENDPOINT), uint32(0)))
                     )
                 ))
         );
         msig = t.owner();
-        registry = new ChainRegistry(msig);
+        registry = new ChainRegistry(msig, unseeded());
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");

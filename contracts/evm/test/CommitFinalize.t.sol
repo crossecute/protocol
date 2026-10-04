@@ -114,8 +114,11 @@ function transceiverConfig(
         receiverImplementation: receiverImplementation,
         governorOwner: governor,
         governorSalt: bytes32(0),
-        governorHome: home(),
-        treasury: treasury
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: treasury,
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 

@@ -7,6 +7,7 @@ import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contr
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -21,7 +22,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev No `GATEWAY_ROLE` check on delivery: OApp already requires `msg.sender == endpoint`,
 ///      and a transceiver's gateways cannot be revoked, so the role would only restate it.
-abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzWriteOncePeer {
+abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzWriteOncePeer, LzHomePeer {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {
@@ -29,8 +30,20 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     }
 
     /// @dev The OApp is its own delegate (R6.4).
-    function __LzTransceiver_init() internal onlyInitializing {
+    /// @param governorHomeEid LayerZero's eid for the governor's home; see
+    ///        `ProviderTransceiver._initGovernorHomeId`.
+    function __LzTransceiver_init(TransceiverConfig memory c, uint32 governorHomeEid) internal onlyInitializing {
         __OApp_init(address(this));
+        _initGovernorHomeId(c.governorHome, governorHomeEid);
+    }
+
+    /// @notice Set the peer for the governor's home eid to the counterpart there, which
+    ///         LayerZero requires before it delivers the bootstrap that creates the owner.
+    /// @dev After the base initializer, which sets the registry this resolves through.
+    function _initGovernorHomePeer(TransceiverConfig memory c, uint32 governorHomeEid) internal onlyInitializing {
+        bytes32 home = keccak256(c.governorHome);
+        if (governorHomeEid == 0 || home == localChainKey || address(c.chainRegistry) == address(0)) return;
+        _initHomePeer(governorHomeEid, _evmCounterpartOn(home));
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape). An eid also needs its peer.
@@ -117,8 +130,9 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
 contract LzTransceiver is LzTransceiverBase {
     constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
 
-    function initialize(TransceiverConfig memory c) external initializer {
-        __LzTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeEid) external initializer {
+        __LzTransceiver_init(c, governorHomeEid);
         __TransceiverBase_init(c);
+        _initGovernorHomePeer(c, governorHomeEid);
     }
 }

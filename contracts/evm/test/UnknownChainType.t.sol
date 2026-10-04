@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
@@ -41,7 +42,7 @@ contract UnknownChainTypeTest is Test {
     bytes account;
 
     function setUp() public {
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
         chainId = Erc7930.encodeChainId(CT_UNKNOWN, hex"cafe");
         account = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"0011223344556677");
 

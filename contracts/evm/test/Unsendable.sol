@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
 /// @notice For harnesses that exercise everything but the transport: `OutboundBase`'s two
@@ -44,8 +46,11 @@ contract OwnedTransceiver is UnsendableTransceiver {
                 receiverImplementation: address(0x1E19),
                 governorOwner: owner_,
                 governorSalt: bytes32(0),
-                governorHome: ChainKey.local(),
-                treasury: address(0x7EA5)
+                governorHome: Erc7930.encodeEvmChain(block.chainid),
+                treasury: address(0x7EA5),
+                chainRegistry: IChainRegistryRefs(address(0)),
+                messageProvider: bytes32(0),
+                minCounterpartProvenance: Provenance.Unresolved
             })
         );
         _transferOwnership(owner_);

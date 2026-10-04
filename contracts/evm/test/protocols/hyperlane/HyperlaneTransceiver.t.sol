@@ -10,6 +10,7 @@ import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -17,7 +18,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneSendSuite} from "test/protocols/hyperlane/HyperlaneBinding.t.sol";
 
 function hyperlaneConfig(address mailbox) returns (TransceiverConfig memory) {
@@ -27,8 +28,11 @@ function hyperlaneConfig(address mailbox) returns (TransceiverConfig memory) {
         receiverImplementation: address(new HyperlaneReceiver(mailbox)),
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
-        governorHome: ChainKey.forEvm(1),
-        treasury: address(0x7EA5)
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: address(0x7EA5),
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 
@@ -61,7 +65,7 @@ function deployHyperlane(address mailbox) returns (HyperlaneTransceiverHarness) 
         payable(address(
                 new ERC1967Proxy(
                     address(new HyperlaneTransceiverHarness(mailbox)),
-                    abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(mailbox)))
+                    abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(mailbox), uint32(0)))
                 )
             ))
     );
@@ -151,12 +155,12 @@ contract HyperlaneZkSyncTransceiverTest is Test {
                         address(new HyperlaneZkSyncHarness(address(mailbox))),
                         abi.encodeCall(
                             HyperlaneZkSyncTransceiver.initialize,
-                            (hyperlaneConfig(address(mailbox)), keccak256("zksolc"))
+                            (hyperlaneConfig(address(mailbox)), uint32(0), keccak256("zksolc"))
                         )
                     )
                 ))
         );
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("hyperlane");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
 
@@ -184,5 +188,16 @@ contract HyperlaneZkSyncTransceiverTest is Test {
         assertEq(s.recipientAddress, TypeCasts.addressToBytes32(address(0xC0DE)), "to its transceiver there");
         assertEq(s.value, 0.01 ether, "the quoted fee, paid from the float");
         assertEq(s.refundTo, address(t), "an overpayment returns to the float, not the relayer");
+    }
+}
+
+contract HyperlaneGovernorHomeTest is ProviderGovernorHomeSpec {
+    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
+        return address(
+            new ERC1967Proxy(
+                address(new HyperlaneTransceiver(address(0xBEEF))),
+                abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(address(0xBEEF)), uint32(id)))
+            )
+        );
     }
 }

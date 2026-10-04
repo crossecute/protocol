@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
@@ -102,7 +103,7 @@ contract CommitmentSchemePluginTest is Test {
         blake2bScheme = new Blake2bScheme();
         sha256dScheme = new Sha256dScheme();
 
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
 
         vm.startPrank(owner);
         evmKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);

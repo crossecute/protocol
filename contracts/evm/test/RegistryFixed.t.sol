@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -15,7 +16,7 @@ contract RegistryFixedTest is Test {
     bytes BASE = Erc7930.encodeEvmChain(8453);
 
     function setUp() public {
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
     }
 
     /// @dev Configured once, at construction, with nothing that could replace its code.

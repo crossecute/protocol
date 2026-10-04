@@ -27,6 +27,26 @@ struct ProviderDeployment {
     bytes32 accountInitCodeHash;
 }
 
+/// @notice A provider a registry is born knowing, with the CREATE2 inputs its contracts
+///         deploy from.
+struct ProviderSeed {
+    string name;
+    bytes32 salt;
+    bytes32 transceiverInitCodeHash;
+    bytes32 accountInitCodeHash;
+}
+
+/// @notice What a registry is born knowing: enough for a transceiver on this chain to accept,
+///         with no owner call, the bootstrap that creates its owner (the governor's account).
+/// @dev Identical on every chain, so the registry lands at one CREATE2 address on each. Empty
+///      on a chain configured by its owner from the start.
+struct RegistrySeed {
+    /// The governor's home chain, as an ERC-7930 chain identifier.
+    bytes governorHome;
+    Provenance governorHomeGrade;
+    ProviderSeed[] providers;
+}
+
 /// @title ChainRegistry
 /// @notice One per chain, shared by every provider there: the directory of every chain this one
 ///         talks to, and of what can be known about addresses on each.
@@ -141,7 +161,17 @@ contract ChainRegistry is Ownable {
     /* =============================== constructor =============================== */
 
     /// @param owner_ This chain's timelock.
-    constructor(address owner_) Ownable(owner_) {}
+    /// @dev Seeding goes through the same internal setters the owner uses later, so a seeded
+    ///      entry is write-once exactly like one added afterwards.
+    constructor(address owner_, RegistrySeed memory seed) Ownable(owner_) {
+        if (seed.governorHome.length != 0) _addChainKey(seed.governorHome, seed.governorHomeGrade);
+        for (uint256 i; i < seed.providers.length; ++i) {
+            ProviderSeed memory p = seed.providers[i];
+            _setProviderDeployment(
+                _addMessageProvider(p.name), p.salt, p.transceiverInitCodeHash, p.accountInitCodeHash
+            );
+        }
+    }
 
     /* ================================ directory ================================ */
 
@@ -159,6 +189,10 @@ contract ChainRegistry is Ownable {
         onlyOwner
         returns (bytes32 chainKey)
     {
+        return _addChainKey(identifier, provenance);
+    }
+
+    function _addChainKey(bytes memory identifier, Provenance provenance) private returns (bytes32 chainKey) {
         bytes memory canonical = Erc7930.toChainIdentifier(identifier);
         chainKey = keccak256(canonical);
 
@@ -204,6 +238,10 @@ contract ChainRegistry is Ownable {
 
     /// @notice Register a message provider by name; the key is keccak256 of the name.
     function addMessageProvider(string calldata name) external onlyOwner returns (bytes32 messageProvider) {
+        return _addMessageProvider(name);
+    }
+
+    function _addMessageProvider(string memory name) private returns (bytes32 messageProvider) {
         if (bytes(name).length == 0) revert EmptyName();
         messageProvider = keccak256(bytes(name));
         if (_messageProviders.add(messageProvider)) {
@@ -247,6 +285,15 @@ contract ChainRegistry is Ownable {
         bytes32 transceiverInitCodeHash,
         bytes32 accountInitCodeHash
     ) external onlyOwner {
+        _setProviderDeployment(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
+    }
+
+    function _setProviderDeployment(
+        bytes32 messageProvider,
+        bytes32 salt,
+        bytes32 transceiverInitCodeHash,
+        bytes32 accountInitCodeHash
+    ) private {
         if (!_messageProviders.contains(messageProvider)) {
             revert UnknownMessageProvider();
         }

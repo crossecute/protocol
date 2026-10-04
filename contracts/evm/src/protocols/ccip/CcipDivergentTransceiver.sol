@@ -21,8 +21,11 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __CcipTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __CcipTransceiver_init(c, governorHomeSelector);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 
@@ -63,8 +66,11 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
     constructor(address router_) CcipTransceiverBase(router_) {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __CcipTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __CcipTransceiver_init(c, governorHomeSelector);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 

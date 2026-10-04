@@ -12,6 +12,7 @@ import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -19,7 +20,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipSendSuite} from "test/protocols/ccip/CcipBinding.t.sol";
 
 function ccipConfig(address router) returns (TransceiverConfig memory) {
@@ -29,8 +30,11 @@ function ccipConfig(address router) returns (TransceiverConfig memory) {
         receiverImplementation: address(new CcipReceiver(router)),
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
-        governorHome: ChainKey.forEvm(1),
-        treasury: address(0x7EA5)
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: address(0x7EA5),
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 
@@ -63,7 +67,7 @@ function deployCcip(address router) returns (CcipTransceiverHarness) {
         payable(address(
                 new ERC1967Proxy(
                     address(new CcipTransceiverHarness(router)),
-                    abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(router)))
+                    abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(router), uint64(0)))
                 )
             ))
     );
@@ -161,12 +165,13 @@ contract CcipZkSyncTransceiverTest is Test {
                     new ERC1967Proxy(
                         address(new CcipZkSyncHarness(address(router))),
                         abi.encodeCall(
-                            CcipZkSyncTransceiver.initialize, (ccipConfig(address(router)), keccak256("zksolc"))
+                            CcipZkSyncTransceiver.initialize,
+                            (ccipConfig(address(router)), uint64(0), keccak256("zksolc"))
                         )
                     )
                 ))
         );
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("ccip");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
 
@@ -197,5 +202,16 @@ contract CcipZkSyncTransceiverTest is Test {
         assertEq(selector, HOME_SELECTOR, "to the account's home");
         assertEq(receiver, abi.encode(address(0xC0DE)), "to its transceiver there");
         assertEq(value, 0.01 ether, "the quoted fee, paid from the float");
+    }
+}
+
+contract CcipGovernorHomeTest is ProviderGovernorHomeSpec {
+    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
+        return address(
+            new ERC1967Proxy(
+                address(new CcipTransceiver(address(0xBEEF))),
+                abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(address(0xBEEF)), uint64(id)))
+            )
+        );
     }
 }

@@ -6,9 +6,11 @@ import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {providerIdOf, ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {providerIdOf, ProviderChainId, IProviderIdTable} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -383,6 +385,22 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
 }
 
 /// @title ProviderInboundSpec
+/// @title ProviderGovernorHomeSpec
+/// @notice #28: on any chain but the governor's home, the transceiver's owner is created by a
+///         bootstrap from that home, so a binding with a provider id table names the home's id
+///         at initialization rather than leaving it to an owner that does not exist yet.
+abstract contract ProviderGovernorHomeSpec is Test {
+    /// @notice Deploy the plain transceiver with `id` as the governor home's provider id and
+    ///         Ethereum as the governor's home.
+    function _deployWithGovernorHomeId(uint256 id) internal virtual returns (address);
+
+    function test_theGovernorHomeIdIsNamedAtInitialization() public {
+        address t = _deployWithGovernorHomeId(7);
+        assertEq(IProviderIdTable(t).providerIdFor(ChainKey.forEvm(1)), 7);
+        assertEq(TransceiverBase(payable(t)).routeFor(ChainKey.forEvm(1)), Erc7930.encodeEvmChain(1), "and its route");
+    }
+}
+
 /// @notice What every binding's transceiver must satisfy on the
 ///         way in: a bootstrap from a configured origin, arriving through the provider's own
 ///         path, creates a receiver configured for that provider; a wrong sender is refused;
@@ -421,7 +439,7 @@ abstract contract ProviderInboundSpec is Test {
 
     function _wire() internal returns (bytes32 chainKey) {
         TransceiverBase t = TransceiverBase(payable(_transceiver()));
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Attested);
 

@@ -65,16 +65,22 @@ abstract contract OutboundBase is Roles {
     function _setRoute(bytes32 chainKey, bytes memory route) internal {
         if (chainKey == bytes32(0)) revert NoDestination();
         if (route.length == 0) revert ZeroRoute();
-        // `fromIdentifier` parses strictly and reduces to the bare identifier, so both together
-        // admit only the canonical bare form, which is how an inbound route arrives.
-        if (keccak256(route) != chainKey || ChainKey.fromIdentifier(route) != chainKey) {
-            revert RouteKeyMismatch(chainKey);
-        }
+        _requireNames(route, chainKey);
 
         if (_routes[chainKey].length != 0) return;
 
         _routes[chainKey] = route;
         emit RouteSet(chainKey, route);
+    }
+
+    /// @notice Refuse `route` unless it is the canonical bare chain identifier `chainKey` hashes
+    ///         from.
+    /// @dev `fromIdentifier` parses strictly and reduces to the bare identifier, so both together
+    ///      admit only the canonical bare form, which is how an inbound route arrives.
+    function _requireNames(bytes memory route, bytes32 chainKey) internal pure {
+        if (keccak256(route) != chainKey || ChainKey.fromIdentifier(route) != chainKey) {
+            revert RouteKeyMismatch(chainKey);
+        }
     }
 
     /// @notice Record this contract's counterpart on a chain. Ungated: the caller applies its

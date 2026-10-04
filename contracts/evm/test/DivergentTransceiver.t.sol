@@ -10,6 +10,7 @@ import {
     DivergentTransceiver
 } from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -91,8 +92,11 @@ contract DivergentSymmetricTransceiverTest is Test {
             receiverImplementation: address(new Rcv()),
             governorOwner: msig,
             governorSalt: bytes32(0),
-            governorHome: ChainKey.forEvm(1),
-            treasury: address(0x7EA5)
+            governorHome: Erc7930.encodeEvmChain(1),
+            treasury: address(0x7EA5),
+            chainRegistry: IChainRegistryRefs(address(0)),
+            messageProvider: bytes32(0),
+            minCounterpartProvenance: Provenance.Unresolved
         });
     }
 
@@ -165,7 +169,7 @@ contract DivergentSymmetricTransceiverTest is Test {
     ///      account's address there under Ethereum's formula, not its own Era address.
     function test_aZkSyncHomePredictsItsReceiversTheEthereumWay() public {
         ZkSym t = _zk();
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
         bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         registry.setProviderDeployment(
@@ -185,7 +189,7 @@ contract DivergentSymmetricTransceiverTest is Test {
 
     function test_theDefaultCounterpartIsTheProvidersParityAddress() public {
         ZkSym t = _zk();
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
         bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
 

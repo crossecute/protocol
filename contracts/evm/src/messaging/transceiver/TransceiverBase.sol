@@ -41,9 +41,16 @@ struct TransceiverConfig {
     /// on that home, its receiver everywhere else. It owns this transceiver.
     address governorOwner;
     bytes32 governorSalt;
-    bytes32 governorHome;
+    /// The governor's home as an ERC-7930 chain identifier, which becomes its route here.
+    bytes governorHome;
     /// Where bootstrap fees go and the report float leaves to. Write-once.
     address treasury;
+    /// The routing `setRouting` would set, so that on any chain but the governor's home this
+    /// transceiver can accept the bootstrap that creates its owner. Zero leaves it to the
+    /// owner, which only the governor's home can do.
+    IChainRegistryRefs chainRegistry;
+    bytes32 messageProvider;
+    Provenance minCounterpartProvenance;
 }
 
 /// @title TransceiverBase
@@ -217,6 +224,10 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         if (c.treasury == address(0)) revert NoTreasury();
         if (c.governorOwner == address(0)) revert ZeroOwner();
 
+        // The identifier names the owner's home, so it must be the canonical one for its key.
+        bytes32 governorHome = keccak256(c.governorHome);
+        _requireNames(c.governorHome, governorHome);
+
         transmitterImplementation = c.transmitterImplementation;
         emit TransmitterImplementationSet(c.transmitterImplementation);
         receiverImplementation = c.receiverImplementation;
@@ -225,7 +236,14 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         emit AddressesDivergeSet(addressesDiverge_);
         treasury = c.treasury;
 
-        __Ownable_init(predictCrossAccount(c.governorOwner, c.governorSalt, c.governorHome));
+        __Ownable_init(predictCrossAccount(c.governorOwner, c.governorSalt, governorHome));
+
+        // Born accepting the governor's home as an origin: the owner is the governor's
+        // account here, which only a bootstrap from that home can create.
+        if (address(c.chainRegistry) != address(0)) {
+            _setRouting(c.chainRegistry, c.messageProvider, c.minCounterpartProvenance);
+        }
+        if (governorHome != localChainKey) _setRoute(governorHome, c.governorHome);
 
         for (uint256 i; i < c.gateways.length; ++i) {
             if (c.gateways[i] != address(0)) {
@@ -275,15 +293,19 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      on that chain. It equals the account's own address only when this chain also uses
     ///      that formula, which is why a transmitter records this rather than `address(this)`.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
+        return abi.encodePacked(
+            Create2.computeAddress(
+                accountSalt(owner, salt, localChainKey), CROSS_PROXY_INIT_CODE_HASH, _evmCounterpartOn(chainKey)
+            )
+        );
+    }
+
+    /// @notice The counterpart on `chainKey` as an EVM address, refusing any other width.
+    function _evmCounterpartOn(bytes32 chainKey) internal view returns (address) {
         bytes memory there = _counterpartOn(chainKey);
         if (there.length != 20) revert CounterpartNotEvm(chainKey);
         // forge-lint: disable-next-line(unsafe-typecast) length checked above
-        address transceiverThere = address(bytes20(there));
-        return abi.encodePacked(
-            Create2.computeAddress(
-                accountSalt(owner, salt, localChainKey), CROSS_PROXY_INIT_CODE_HASH, transceiverThere
-            )
-        );
+        return address(bytes20(there));
     }
 
     /// @notice Create the caller's transmitter.
@@ -522,6 +544,14 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         bytes32 messageProvider_,
         Provenance minCounterpartProvenance_
     ) external onlyOwner {
+        _setRouting(chainRegistry_, messageProvider_, minCounterpartProvenance_);
+    }
+
+    function _setRouting(
+        IChainRegistryRefs chainRegistry_,
+        bytes32 messageProvider_,
+        Provenance minCounterpartProvenance_
+    ) private {
         if (address(chainRegistry) != address(0)) {
             if (chainRegistry != chainRegistry_ || messageProvider != messageProvider_) {
                 revert RoutingAlreadySet();

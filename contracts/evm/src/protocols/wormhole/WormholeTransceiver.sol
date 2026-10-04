@@ -34,8 +34,14 @@ abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver
 
     /// @dev `executeVAAv1` requires the Core bridge to hold `GATEWAY_ROLE`, though it never
     ///      calls in.
-    function __WormholeTransceiver_init() internal onlyInitializing {
+    /// @param governorHomeChain Wormhole's chain id for the governor's home; see
+    ///        `ProviderTransceiver._initGovernorHomeId`.
+    function __WormholeTransceiver_init(TransceiverConfig memory c, uint16 governorHomeChain)
+        internal
+        onlyInitializing
+    {
         __ProviderTransceiver_init(coreBridge);
+        _initGovernorHomeId(c.governorHome, governorHomeChain);
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
@@ -92,8 +98,8 @@ contract WormholeTransceiver is WormholeTransceiverBase {
         WormholeTransceiverBase(coreBridge_, quoterRouter_, quoter_)
     {}
 
-    function initialize(TransceiverConfig memory c) external initializer {
-        __WormholeTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint16 governorHomeChain) external initializer {
+        __WormholeTransceiver_init(c, governorHomeChain);
         __TransceiverBase_init(c);
     }
 }

@@ -10,14 +10,15 @@ import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {unseeded} from "test/RegistrySeed.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {LzSendSuite, LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
 
 function lzConfig(address endpoint) returns (TransceiverConfig memory) {
@@ -27,8 +28,11 @@ function lzConfig(address endpoint) returns (TransceiverConfig memory) {
         receiverImplementation: address(new LzReceiver(endpoint)),
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
-        governorHome: ChainKey.forEvm(1),
-        treasury: address(0x7EA5)
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: address(0x7EA5),
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 
@@ -61,7 +65,7 @@ function deployLz(address endpoint) returns (LzTransceiverHarness) {
         payable(address(
                 new ERC1967Proxy(
                     address(new LzTransceiverHarness(endpoint)),
-                    abi.encodeCall(LzTransceiver.initialize, (lzConfig(endpoint)))
+                    abi.encodeCall(LzTransceiver.initialize, (lzConfig(endpoint), uint32(0)))
                 )
             ))
     );
@@ -145,11 +149,11 @@ contract LzZkSyncTransceiverTest is Test {
             payable(address(
                     new ERC1967Proxy(
                         address(new LzZkSyncHarness(address(endpoint))),
-                        abi.encodeCall(LzZkSyncTransceiver.initialize, (lzConfig(address(endpoint)), HASH))
+                        abi.encodeCall(LzZkSyncTransceiver.initialize, (lzConfig(address(endpoint)), uint32(0), HASH))
                     )
                 ))
         );
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("layerzero");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
 
@@ -177,5 +181,75 @@ contract LzZkSyncTransceiverTest is Test {
         assertEq(dstEid, HOME_EID, "to the account's home");
         assertEq(value, 0.01 ether, "the quoted fee, paid from the float");
         assertEq(refundAddress, address(t), "an overpayment returns to the float, not the relayer");
+    }
+}
+
+/// @notice LayerZero delivers only from a set peer, so the governor home's eid is born with its
+///         peer too: the transceiver there, which on a parity chain is this address.
+contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
+    MockLzEndpoint endpoint = new MockLzEndpoint();
+    uint32 constant HOME_EID = 30101;
+
+    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
+        return _deploy(uint32(id), IChainRegistryRefs(address(0)));
+    }
+
+    function _deploy(uint32 eid, IChainRegistryRefs registry) internal returns (address) {
+        TransceiverConfig memory c = lzConfig(address(endpoint));
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("layerzero");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new LzTransceiverHarness(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, eid))
+            )
+        );
+    }
+
+    function test_theGovernorHomePeerIsBornSet() public {
+        ChainRegistry registry = new ChainRegistry(
+            address(this),
+            RegistrySeed({
+                governorHome: Erc7930.encodeEvmChain(1),
+                governorHomeGrade: Provenance.Derived,
+                providers: new ProviderSeed[](0)
+            })
+        );
+        address t = _deploy(HOME_EID, IChainRegistryRefs(address(registry)));
+        assertEq(IOAppCore(t).peers(HOME_EID), bytes32(uint256(uint160(t))));
+    }
+
+    /// @dev On zkSync the transceiver on the home is not at this address, so the peer is the
+    ///      registry's prediction from the provider's deployment record.
+    function test_aDivergentTransceiversGovernorHomePeerIsThePredictedOne() public {
+        ProviderSeed[] memory providers = new ProviderSeed[](1);
+        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256("transceiver"), keccak256("account"));
+        ChainRegistry registry = new ChainRegistry(
+            address(this),
+            RegistrySeed({
+                governorHome: Erc7930.encodeEvmChain(1), governorHomeGrade: Provenance.Derived, providers: providers
+            })
+        );
+        TransceiverConfig memory c = lzConfig(address(endpoint));
+        c.chainRegistry = IChainRegistryRefs(address(registry));
+        c.messageProvider = keccak256("layerzero");
+        c.minCounterpartProvenance = Provenance.Attested;
+        address t = address(
+            new ERC1967Proxy(
+                address(new LzZkSyncHarness(address(endpoint))),
+                abi.encodeCall(LzZkSyncTransceiver.initialize, (c, HOME_EID, keccak256("zksolc")))
+            )
+        );
+
+        address there = registry.predictTransceiver(ChainKey.forEvm(1), keccak256("layerzero"));
+        assertTrue(there != t, "not this address");
+        assertEq(IOAppCore(t).peers(HOME_EID), bytes32(uint256(uint160(there))));
+    }
+
+    /// @dev The peer needs the registry to resolve the counterpart, so with none it is the
+    ///      owner's to set later, like the rest.
+    function test_withNoRegistryThePeerIsLeftToTheOwner() public {
+        address t = _deploy(HOME_EID, IChainRegistryRefs(address(0)));
+        assertEq(IOAppCore(t).peers(HOME_EID), bytes32(0));
     }
 }

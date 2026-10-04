@@ -27,8 +27,11 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
         router = router_;
     }
 
-    function __CcipTransceiver_init() internal onlyInitializing {
+    /// @param governorHomeSelector CCIP's selector for the governor's home; see
+    ///        `ProviderTransceiver._initGovernorHomeId`.
+    function __CcipTransceiver_init(TransceiverConfig memory c, uint64 governorHomeSelector) internal onlyInitializing {
         __ProviderTransceiver_init(router);
+        _initGovernorHomeId(c.governorHome, governorHomeSelector);
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
@@ -79,8 +82,8 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
 contract CcipTransceiver is CcipTransceiverBase {
     constructor(address router_) CcipTransceiverBase(router_) {}
 
-    function initialize(TransceiverConfig memory c) external initializer {
-        __CcipTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector) external initializer {
+        __CcipTransceiver_init(c, governorHomeSelector);
         __TransceiverBase_init(c);
     }
 }

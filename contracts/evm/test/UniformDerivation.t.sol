@@ -9,6 +9,7 @@ import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -26,7 +27,7 @@ contract UniformDerivationTest is Test {
 
     function setUp() public {
         deriver = new VmDeriver();
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
         vm.startPrank(owner);
         registry.addMessageProvider("layerzero");
         vm.stopPrank();

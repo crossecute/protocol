@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -10,6 +12,7 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {IOpStackMessengerSource} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
@@ -53,8 +56,11 @@ function deployOpStack(address messenger, uint256 pairedChainId) returns (OpStac
                                 receiverImplementation: address(new OpStackReceiver(messenger)),
                                 governorOwner: address(0x5165),
                                 governorSalt: bytes32(0),
-                                governorHome: ChainKey.forEvm(1),
-                                treasury: address(0x7EA5)
+                                governorHome: Erc7930.encodeEvmChain(1),
+                                treasury: address(0x7EA5),
+                                chainRegistry: IChainRegistryRefs(address(0)),
+                                messageProvider: bytes32(0),
+                                minCounterpartProvenance: Provenance.Unresolved
                             }))
                     )
                 )

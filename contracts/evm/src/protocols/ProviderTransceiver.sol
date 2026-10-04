@@ -14,6 +14,13 @@ abstract contract ProviderTransceiver is TransceiverBase, ProviderChainId {
         grantRole(GATEWAY_ROLE, providerGateway);
     }
 
+    /// @notice Name the provider's id for the governor's home, so the bootstrap that creates
+    ///         this transceiver's owner can be accepted. Zero leaves it to the owner, which only
+    ///         the governor's home can do.
+    function _initGovernorHomeId(bytes memory governorHome, uint256 providerId) internal onlyInitializing {
+        if (providerId != 0) _setProviderId(keccak256(governorHome), providerId);
+    }
+
     /// @dev An unmapped `providerId` reverts in `_chainKeyOfProvider`, so a chain this
     ///      transceiver was never configured for cannot deliver at all.
     function _onProviderInbound(uint256 providerId, address sender, bytes calldata message) internal {

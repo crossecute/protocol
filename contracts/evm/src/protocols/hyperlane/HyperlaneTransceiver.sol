@@ -27,8 +27,14 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
         mailbox = mailbox_;
     }
 
-    function __HyperlaneTransceiver_init() internal onlyInitializing {
+    /// @param governorHomeDomain Hyperlane's domain for the governor's home; see
+    ///        `ProviderTransceiver._initGovernorHomeId`.
+    function __HyperlaneTransceiver_init(TransceiverConfig memory c, uint32 governorHomeDomain)
+        internal
+        onlyInitializing
+    {
         __ProviderTransceiver_init(mailbox);
+        _initGovernorHomeId(c.governorHome, governorHomeDomain);
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
@@ -80,8 +86,8 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
 contract HyperlaneTransceiver is HyperlaneTransceiverBase {
     constructor(address mailbox_) HyperlaneTransceiverBase(mailbox_) {}
 
-    function initialize(TransceiverConfig memory c) external initializer {
-        __HyperlaneTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeDomain) external initializer {
+        __HyperlaneTransceiver_init(c, governorHomeDomain);
         __TransceiverBase_init(c);
     }
 }

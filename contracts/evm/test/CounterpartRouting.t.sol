@@ -11,6 +11,7 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OwnedTransceiver} from "test/Unsendable.sol";
@@ -31,7 +32,7 @@ contract CounterpartRoutingTest is Test {
     bytes32 constant INIT_CODE_HASH = keccak256("lz-transceiver-initcode");
 
     function setUp() public {
-        registry = new ChainRegistry(msig);
+        registry = new ChainRegistry(msig, unseeded());
         transceiver = OwnedTransceiver(
             payable(new ERC1967Proxy(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))

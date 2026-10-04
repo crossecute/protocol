@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
 
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -70,8 +72,11 @@ contract SaltedTransceiver is UnsendableTransceiver {
                 receiverImplementation: receiverImpl,
                 governorOwner: governor,
                 governorSalt: bytes32(0),
-                governorHome: home(),
-                treasury: address(0x7EA5)
+                governorHome: Erc7930.encodeEvmChain(1),
+                treasury: address(0x7EA5),
+                chainRegistry: IChainRegistryRefs(address(0)),
+                messageProvider: bytes32(0),
+                minCounterpartProvenance: Provenance.Unresolved
             }),
             _diverges()
         );
@@ -120,7 +125,7 @@ contract SaltedDeploymentTest is Test {
     bytes32 constant SALT = keccak256("crossecute.lz.v1");
 
     function setUp() public {
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
         factory = new MiniFactory();
 
         vm.startPrank(owner);
@@ -486,7 +491,7 @@ contract SaltedDeploymentTest is Test {
     /* ================================== helpers ================================ */
 
     function _freshRegistryWith(bytes32 salt, bytes32 initCodeHash) internal returns (ChainRegistry r) {
-        r = new ChainRegistry(owner);
+        r = new ChainRegistry(owner, unseeded());
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");
         r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);

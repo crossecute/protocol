@@ -9,6 +9,7 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Move} from "src/addressing/Move.sol";
 import {MoveValidator} from "src/validators/MoveValidator.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -32,7 +33,7 @@ contract TransceiverCounterpartsTest is Test {
     bytes suiInterop;
 
     function setUp() public {
-        registry = new ChainRegistry(owner);
+        registry = new ChainRegistry(owner, unseeded());
         transceiver = OwnedTransceiver(
             payable(new ERC1967Proxy(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (owner))

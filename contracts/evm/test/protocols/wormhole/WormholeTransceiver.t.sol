@@ -10,6 +10,7 @@ import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.so
 import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -18,7 +19,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {
     WormholeSendSuite,
     UNUSED_EXECUTOR,
@@ -34,8 +35,11 @@ function wormholeConfig(address coreBridge) returns (TransceiverConfig memory) {
         receiverImplementation: address(new WormholeReceiver(coreBridge)),
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
-        governorHome: ChainKey.forEvm(1),
-        treasury: address(0x7EA5)
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: address(0x7EA5),
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 
@@ -68,7 +72,7 @@ function deployWormhole(address core, address router, address quoter) returns (W
         payable(address(
                 new ERC1967Proxy(
                     address(new WormholeTransceiverHarness(core, router, quoter)),
-                    abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(core)))
+                    abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(core), uint16(0)))
                 )
             ))
     );
@@ -178,12 +182,13 @@ contract WormholeZkSyncTransceiverTest is Test {
                     new ERC1967Proxy(
                         address(new WormholeZkSyncHarness(address(core), address(router), address(0x0907))),
                         abi.encodeCall(
-                            WormholeZkSyncTransceiver.initialize, (wormholeConfig(address(core)), keccak256("zksolc"))
+                            WormholeZkSyncTransceiver.initialize,
+                            (wormholeConfig(address(core)), uint16(0), keccak256("zksolc"))
                         )
                     )
                 ))
         );
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("wormhole");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
 
@@ -213,5 +218,16 @@ contract WormholeZkSyncTransceiverTest is Test {
         assertEq(core.published(0).value + r.paid, 0.011 ether, "the quoted fee, paid from the float");
         assertEq(r.refundAddr, address(t), "an excess returns to the float, not the relayer");
         assertEq(address(t).balance, 0.989 ether);
+    }
+}
+
+contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec {
+    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
+        return address(
+            new ERC1967Proxy(
+                address(new WormholeTransceiver(address(0xBEEF), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
+                abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(address(0xBEEF)), uint16(id)))
+            )
+        );
     }
 }

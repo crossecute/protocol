@@ -18,8 +18,11 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __HyperlaneTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeDomain, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __HyperlaneTransceiver_init(c, governorHomeDomain);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 
@@ -51,8 +54,11 @@ contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
     constructor(address mailbox_) HyperlaneTransceiverBase(mailbox_) {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, bytes32 accountBytecodeHash_) external initializer {
-        __HyperlaneTransceiver_init();
+    function initialize(TransceiverConfig memory c, uint32 governorHomeDomain, bytes32 accountBytecodeHash_)
+        external
+        initializer
+    {
+        __HyperlaneTransceiver_init(c, governorHomeDomain);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
     }
 

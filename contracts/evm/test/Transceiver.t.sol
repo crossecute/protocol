@@ -4,7 +4,8 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {unseeded} from "test/RegistrySeed.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Treasury, IReportFloat} from "src/treasury/Treasury.sol";
@@ -116,7 +117,7 @@ contract SymmetricTransceiverTest is Test {
 
     function _chainWith(uint256 chainId, bool diverges, address transmitterImplementation) internal returns (Sym t) {
         vm.chainId(chainId);
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
@@ -128,8 +129,11 @@ contract SymmetricTransceiverTest is Test {
                 receiverImplementation: address(new Rcv()),
                 governorOwner: msig,
                 governorSalt: bytes32(0),
-                governorHome: _key(ETH),
-                treasury: address(treasury)
+                governorHome: _route(ETH),
+                treasury: address(treasury),
+                chainRegistry: IChainRegistryRefs(address(0)),
+                messageProvider: bytes32(0),
+                minCounterpartProvenance: Provenance.Unresolved
             }),
             diverges
         );
@@ -179,6 +183,55 @@ contract SymmetricTransceiverTest is Test {
 
         assertEq(account, t.predictCrossAccount(alice, SALT, _key(BASE)));
         assertEq(RecordingTransmitter(account).owner(), alice, "transmitter logic, owned by its caller");
+    }
+
+    /// @dev #28: a chain other than the governor's home has no owner until a bootstrap from
+    ///      that home creates the governor's receiver, so its transceiver is born able to
+    ///      accept it: a seeded registry, and the routing and route for that home at
+    ///      initialization. No owner call happens on Base before the receiver exists.
+    function test_aFreshChainAcceptsTheBootstrapThatCreatesItsOwner() public {
+        uint256 world = vm.snapshotState();
+
+        Sym eth = _chain(ETH, false);
+        address governor = eth.owner();
+        vm.prank(governor);
+        eth.bootstrap(_key(BASE), msig, bytes32(0), _calls(), new bytes[](0));
+        bytes memory sent = eth.sentPayload();
+
+        vm.revertToState(world);
+        vm.chainId(BASE);
+        ProviderSeed[] memory providers = new ProviderSeed[](1);
+        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, keccak256("transceiver"), keccak256("account"));
+        ChainRegistry registry = new ChainRegistry(
+            address(this),
+            RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Derived, providers: providers})
+        );
+        Sym base = new Sym{salt: TRANSCEIVER_SALT}();
+        base.initialize(
+            TransceiverConfig({
+                gateways: new address[](0),
+                transmitterImplementation: address(new RecordingTransmitter()),
+                receiverImplementation: address(new Rcv()),
+                governorOwner: msig,
+                governorSalt: bytes32(0),
+                governorHome: _route(ETH),
+                treasury: address(new Treasury(address(this))),
+                chainRegistry: IChainRegistryRefs(address(registry)),
+                messageProvider: keccak256("test"),
+                minCounterpartProvenance: Provenance.Attested
+            })
+        );
+        assertEq(address(base), address(eth), "one address on both chains");
+        assertEq(base.owner().code.length, 0, "the owner does not exist yet");
+
+        base.arrive(_route(ETH), abi.encodePacked(address(base)), sent);
+
+        address owner = base.owner();
+        assertEq(owner, governor, "the governor's receiver sits on its transmitter's address");
+        assertEq(ReceiverBase(payable(owner)).sourceTransmitter(), governor, "and answers to it");
+        vm.prank(owner);
+        base.setRoute(_key(ZK), _route(ZK));
+        assertEq(base.routeFor(_key(ZK)), _route(ZK), "and it configures the rest");
     }
 
     /* ============================ a bootstrap end to end =========================== */
@@ -353,8 +406,11 @@ contract SymmetricTransceiverTest is Test {
             receiverImplementation: address(0),
             governorOwner: msig,
             governorSalt: bytes32(0),
-            governorHome: _key(ETH),
-            treasury: address(1)
+            governorHome: _route(ETH),
+            treasury: address(1),
+            chainRegistry: IChainRegistryRefs(address(0)),
+            messageProvider: bytes32(0),
+            minCounterpartProvenance: Provenance.Unresolved
         });
 
         Sym fresh = new Sym();

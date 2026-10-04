@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {Test} from "forge-std/Test.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
@@ -101,8 +103,11 @@ contract MockTransceiver is TransceiverBase {
                 receiverImplementation: impl,
                 governorOwner: address(0x5165),
                 governorSalt: bytes32(0),
-                governorHome: ChainKey.local(),
-                treasury: address(0x7EA5)
+                governorHome: Erc7930.encodeEvmChain(block.chainid),
+                treasury: address(0x7EA5),
+                chainRegistry: IChainRegistryRefs(address(0)),
+                messageProvider: bytes32(0),
+                minCounterpartProvenance: Provenance.Unresolved
             })
         );
     }

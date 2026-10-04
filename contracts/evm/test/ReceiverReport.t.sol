@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -65,8 +66,11 @@ function config(address governor, address transmitterImpl, address receiverImpl,
         receiverImplementation: receiverImpl,
         governorOwner: governor,
         governorSalt: bytes32(0),
-        governorHome: home(),
-        treasury: treasury
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: treasury,
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
     });
 }
 
@@ -144,7 +148,7 @@ contract ReportingTransceiver is TransceiverBase {
 ///      `Derived`, with the default counterpart at the transceiver's own address.
 abstract contract WiresHome is Test {
     function _wire(ReportingTransceiver s) internal {
-        ChainRegistry registry = new ChainRegistry(address(this));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
         registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
 
@@ -447,7 +451,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     uint256 constant REMOTE_CHAIN = 8453;
 
     function setUp() public {
-        registry = new ChainRegistry(msig);
+        registry = new ChainRegistry(msig, unseeded());
 
         // Each side is deployed under its own chain id, which it records as local.
         vm.chainId(REMOTE_CHAIN);
@@ -718,7 +722,7 @@ contract BootstrapFeeTest is Test {
     address treasury;
 
     function setUp() public {
-        registry = new ChainRegistry(msig);
+        registry = new ChainRegistry(msig, unseeded());
         t = new HomeTransceiver();
         // One treasury per chain, named at deployment and never moved.
         treasury = address(new Treasury(msig));
