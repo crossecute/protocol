@@ -11,14 +11,12 @@ import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {homeTransmitterFor} from "test/Unsendable.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
-import {Executor} from "src/messaging/Executor.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
@@ -54,9 +52,31 @@ contract Receiver is ReceiverBase {
     }
 }
 
-/// @dev A spoke whose divergence flag is a constructor-time choice, so both arms can be
-///      exercised against otherwise identical contracts.
-contract ReportingSpoke is SpokeTransceiverBase {
+/// @dev Where every account the reporting side creates is homed.
+function home() pure returns (bytes32) {
+    return ChainKey.forEvm(1);
+}
+
+function config(address governor, address transmitterImpl, address receiverImpl, bool diverges, address treasury)
+    pure
+    returns (TransceiverConfig memory)
+{
+    return TransceiverConfig({
+        gateways: new address[](0),
+        transmitterImplementation: transmitterImpl,
+        receiverImplementation: receiverImpl,
+        governorOwner: governor,
+        governorSalt: bytes32(0),
+        governorHome: home(),
+        treasury: treasury,
+        addressesDiverge: diverges
+    });
+}
+
+/// @dev A transceiver whose divergence flag is an initializer choice, so both arms can be
+///      exercised against otherwise identical contracts. A diverging one stands in for the
+///      zkSync and Tron variants, whose account creation fails closed on Forge's EVM.
+contract ReportingTransceiver is SymmetricTransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -67,20 +87,14 @@ contract ReportingSpoke is SpokeTransceiverBase {
     ///      forgetting to configure something.
     bool public sendReverts;
 
-    function initialize(address, address impl, bool addressesDiverge_, address treasuryOwner_) external initializer {
-        __SpokeTransceiverBase_init(
-            new address[](0),
-            impl,
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(this)), // parity: the hub shares this address
-            treasuryOwner_,
-            bytes32(0),
-            addressesDiverge_
-        );
+    function initialize(address governor, address impl, bool addressesDiverge_, address treasury_)
+        external
+        initializer
+    {
+        __SymmetricTransceiver_init(config(governor, address(0xBEEF), impl, addressesDiverge_, treasury_));
     }
 
-    /// @dev Stands in for a dry spoke: a provider whose fee cannot be paid reverts here.
+    /// @dev Stands in for a dry float: a provider whose fee cannot be paid reverts here.
     function setSendReverts(bool v) external {
         sendReverts = v;
     }
@@ -116,9 +130,10 @@ contract ReportingSpoke is SpokeTransceiverBase {
     }
 
     /// @dev Stands in for `_onInbound`, which reaches `_bootstrapInbound` after
-    ///      authenticating the origin.
+    ///      authenticating the origin. The carried transmitter sits at the receiver's own
+    ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, homeChainKey, homeTransmitterFor(this, owner, salt), calls);
+        _bootstrapInbound(owner, salt, home(), predictCrossAccount(owner, salt, home()), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -128,9 +143,30 @@ contract ReportingSpoke is SpokeTransceiverBase {
     }
 }
 
+/// @dev Routes a reporting transceiver to the home, so a report has somewhere to go:
+///      `Derived`, with the default counterpart at the transceiver's own address.
+abstract contract WiresHome is Test {
+    function _wire(ReportingTransceiver s) internal {
+        ChainRegistry registry = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
+                )
+            )
+        );
+        bytes32 provider = registry.addMessageProvider("test");
+        registry.addChainKey(Erc7930.encodeEvmChain(1));
+
+        vm.startPrank(s.owner());
+        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        s.setRoute(home(), Erc7930.encodeEvmChain(1));
+        vm.stopPrank();
+    }
+}
+
 /// @notice The return leg: which chains report where their receiver landed, and which
-///         stay silent because the hub already knows.
-contract ReceiverReportTest is Test {
+///         stay silent because the home already knows.
+contract ReceiverReportTest is WiresHome {
     Receiver impl;
     address owner = address(0xA11CE);
     address msig = address(0x5165);
@@ -140,30 +176,31 @@ contract ReceiverReportTest is Test {
         impl = new Receiver();
     }
 
-    function _spoke(bool diverges) internal returns (ReportingSpoke s) {
-        s = new ReportingSpoke();
+    function _remote(bool diverges) internal returns (ReportingTransceiver s) {
+        s = new ReportingTransceiver();
         s.initialize(msig, address(impl), diverges, address(0x7EA5));
+        _wire(s);
     }
 
     /* ============================== the parity case ============================ */
 
     /// @dev The common case sends nothing. On a chain sharing Ethereum's CREATE2 formula
-    ///      the hub computed this address before the first message ever left, so a report
+    ///      the home computed this address before the first message ever left, so a report
     ///      would spend a message to restate a derivation it already holds.
     function test_aParityChainReportsNothing() public {
-        ReportingSpoke s = _spoke(false);
+        ReportingTransceiver s = _remote(false);
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertEq(s.sentCount(), 0, "no message left the spoke");
-        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0, "but the account exists");
+        assertEq(s.sentCount(), 0, "no message left");
+        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0, "but the account exists");
     }
 
     /// @dev And it would be a downgrade, not merely waste. A derivation is `Derived`;
     ///      anything arriving over a bridge is graded `Attested`, which is strictly less.
     function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
-        ReportingSpoke s = _spoke(false);
-        address predicted = s.predictCrossAccount(owner, SALT, s.homeChainKey());
+        ReportingTransceiver s = _remote(false);
+        address predicted = s.predictCrossAccount(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -172,16 +209,16 @@ contract ReceiverReportTest is Test {
 
     /* ============================ the diverging case =========================== */
 
-    /// @dev Where the hub cannot derive it, the spoke says so. One message per account
+    /// @dev Where the home cannot derive it, this chain says so. One message per account
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
-        ReportingSpoke s = _spoke(true);
-        address created = s.predictCrossAccount(owner, SALT, s.homeChainKey());
+        ReportingTransceiver s = _remote(true);
+        address created = s.predictCrossAccount(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1, "one report");
-        assertEq(ChainKey.fromIdentifier(s.sentRecipient()), s.homeChainKey(), "addressed home");
+        assertEq(ChainKey.fromIdentifier(s.sentRecipient()), home(), "addressed home");
 
         (uint8 kind, address gotOwner, bytes32 gotSalt, bytes memory interop) =
             abi.decode(s.sentPayload(), (uint8, address, bytes32, bytes));
@@ -193,10 +230,10 @@ contract ReceiverReportTest is Test {
         );
     }
 
-    /// @dev The report names `(owner, salt)`, not the address alone: the hub derives the
+    /// @dev The report names `(owner, salt)`, not the address alone: the home derives the
     ///      account from it plus the authenticated origin, so no request id is needed.
-    function test_theReportCarriesThePairTheHubKeysOn() public {
-        ReportingSpoke s = _spoke(true);
+    function test_theReportCarriesThePairTheHomeKeysOn() public {
+        ReportingTransceiver s = _remote(true);
 
         s.inbound(owner, SALT, new Call[](0));
         (, address a, bytes32 b,) = abi.decode(s.sentPayload(), (uint8, address, bytes32, bytes));
@@ -205,7 +242,7 @@ contract ReceiverReportTest is Test {
             keccak256(s.sentPayload()),
             keccak256(
                 Envelope.encodeReceiverReport(
-                    a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b, s.homeChainKey()))
+                    a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b, home()))
                 )
             )
         );
@@ -213,7 +250,7 @@ contract ReceiverReportTest is Test {
 
     /// @dev Two accounts, two reports, each naming its own pair.
     function test_eachAccountReportsItself() public {
-        ReportingSpoke s = _spoke(true);
+        ReportingTransceiver s = _remote(true);
 
         s.inbound(owner, SALT, new Call[](0));
         s.inbound(owner, keccak256("second"), new Call[](0));
@@ -225,21 +262,21 @@ contract ReceiverReportTest is Test {
 
     /* ================================= funding ================================= */
 
-    /// @dev A dry spoke takes the whole bootstrap down, and that is the correct shape.
+    /// @dev A dry float takes the whole bootstrap down, and that is the correct shape.
     ///      The send is nested inside a delivery callback where `msg.value` is zero, so it
     ///      is paid from this contract's balance. Swallowing the failure would create an
     ///      account here that the home chain could never address: `CrossProxy` arms
     ///      exactly once and `initialize` is single-shot, so there is no second bootstrap
     ///      to carry a second report. All or nothing is the only recoverable outcome.
     function test_aFailedReportRevertsTheAccountCreation() public {
-        ReportingSpoke s = _spoke(true);
+        ReportingTransceiver s = _remote(true);
         s.setSendReverts(true);
 
-        vm.expectRevert(ReportingSpoke.NoBalanceForTheReport.selector);
+        vm.expectRevert(ReportingTransceiver.NoBalanceForTheReport.selector);
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length,
+            s.predictCrossAccount(owner, SALT, home()).code.length,
             0,
             "no account, so the bootstrap can be retried once funded"
         );
@@ -248,11 +285,11 @@ contract ReceiverReportTest is Test {
     /// @notice The report is priced, not handed the balance.
     ///
     /// @dev It used to send `address(this).balance`, which told the provider "take what you
-    ///      like" and left a spoke unable to hold a float for anything else. Quoting first
+    ///      like" and left a transceiver unable to hold a float for anything else. Quoting first
     ///      means the provider charges what it charges and the rest stays put, which is what
-    ///      lets one spoke fund many reports.
+    ///      lets one float fund many reports.
     function test_theReportSendsTheQuotedFeeAndNotTheBalance() public {
-        ReportingSpoke s = _spoke(true);
+        ReportingTransceiver s = _remote(true);
         s.setReportFee(0.1 ether);
         vm.deal(address(s), 5 ether);
 
@@ -265,16 +302,16 @@ contract ReceiverReportTest is Test {
     /// @dev The helper is what makes the quote reachable. The payload is built inside a
     ///      delivery callback from the envelope layout, this chain's id, and the address the
     ///      account will land at; without a view producing those exact bytes, anyone funding
-    ///      a spoke would be pricing a guess.
+    ///      a float would be pricing a guess.
     function test_theReportPayloadHelperMatchesWhatIsSent() public {
-        ReportingSpoke s = _spoke(true);
+        ReportingTransceiver s = _remote(true);
         vm.deal(address(s), 1 ether);
 
-        address receiver = s.predictCrossAccount(owner, SALT, s.homeChainKey());
+        address receiver = s.predictCrossAccount(owner, SALT, home());
         bytes memory expected = s.reportPayload(owner, SALT, receiver);
 
         // Priced through the surface `OutboundBase` now exposes, before anything is sent.
-        uint256 quoted = s.quoteMessage(s.homeTransceiver(), expected, new bytes[](0));
+        uint256 quoted = s.quoteMessage(Erc7930.encodeEvm(1, address(s)), expected, new bytes[](0));
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -283,74 +320,28 @@ contract ReceiverReportTest is Test {
     }
 
     /// @dev And the retry works, which is the property the revert buys. Funded by a plain
-    ///      transfer, the way an operator tops a spoke up, so a spoke that cannot accept one
+    ///      transfer, the way an operator tops a float up, so a transceiver that cannot accept one
     ///      fails here (#17).
-    function test_theBootstrapSucceedsOnceTheSpokeIsFunded() public {
-        ReportingSpoke s = _spoke(true);
+    function test_theBootstrapSucceedsOnceTheFloatIsFunded() public {
+        ReportingTransceiver s = _remote(true);
         s.setReportFee(1 ether);
 
-        vm.expectRevert(ReportingSpoke.NoBalanceForTheReport.selector);
+        vm.expectRevert(ReportingTransceiver.NoBalanceForTheReport.selector);
         s.inbound(owner, SALT, new Call[](0));
 
         vm.deal(address(this), 1 ether);
         (bool ok,) = address(s).call{value: 1 ether}("");
-        assertTrue(ok, "the spoke accepts its float");
+        assertTrue(ok, "it accepts its float");
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
-        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0);
+        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0);
     }
 
-    /// @dev The treasury is the msig's own account here, which need not exist when the spoke
-    ///      is deployed: the msig's ordinary bootstrap creates it, and a later payload from
-    ///      home withdraws.
-    function test_theMsigsReceiverIsCreatedByBootstrapAndWithdraws() public {
-        ReportingSpoke s = new ReportingSpoke();
-        s.initialize(msig, address(impl), false, msig);
-        address treasury = s.treasury();
-        assertEq(treasury.code.length, 0, "named before it exists");
-        vm.deal(address(s), 1 ether);
-
-        s.inbound(msig, bytes32(0), new Call[](0));
-        assertEq(treasury, s.predictCrossAccount(msig, bytes32(0), s.homeChainKey()), "the bootstrap created it");
-
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
-        Receiver(payable(treasury))
-            .receiveMessage(
-                bytes32(0),
-                Erc7930.encodeEvm(1, Receiver(payable(treasury)).sourceTransmitter()),
-                Payload.encodeCalls(calls)
-            );
-
-        assertEq(treasury.balance, 1 ether);
-        assertEq(address(s).balance, 0);
-    }
-
-    /// @dev Not from the bootstrap payload itself: while the receiver is being armed the
-    ///      spoke is still its proxy admin, and `CrossProxy` refuses an admin call that is not
-    ///      the upgrade.
-    function test_theBootstrapPayloadCannotWithdraw() public {
-        ReportingSpoke s = new ReportingSpoke();
-        s.initialize(msig, address(impl), false, msig);
-        vm.deal(address(s), 1 ether);
-
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(s), value: 0, data: abi.encodeCall(SpokeTransceiverBase.withdraw, (1 ether))});
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Executor.CallFailed.selector,
-                0,
-                abi.encodeWithSelector(SpokeTransceiverBase.WithdrawFailed.selector, 1 ether)
-            )
-        );
-        s.inbound(msig, bytes32(0), calls);
-    }
-
-    /// @dev A spoke with no treasury owner could never release its float, so it is refused.
-    function test_aSpokeRefusesAZeroTreasury() public {
-        ReportingSpoke s = new ReportingSpoke();
-        vm.expectRevert(SpokeTransceiverBase.NoTreasury.selector);
+    /// @dev A transceiver with no treasury could never release its float, so it is refused.
+    function test_aZeroTreasuryIsRefused() public {
+        ReportingTransceiver s = new ReportingTransceiver();
+        vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
         s.initialize(msig, address(impl), true, address(0));
     }
 
@@ -358,21 +349,20 @@ contract ReceiverReportTest is Test {
     ///      cannot fail this way. That is the point of gating on the flag rather than
     ///      reporting everywhere and tolerating failures.
     function test_aParityChainNeedsNoBalance() public {
-        ReportingSpoke s = _spoke(false);
+        ReportingTransceiver s = _remote(false);
         s.setSendReverts(true);
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertTrue(s.predictCrossAccount(owner, SALT, s.homeChainKey()).code.length != 0);
+        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0);
     }
 
     /* ================================ the flag ================================= */
 
-    /// @dev Write-once, like every other home value on a spoke. Flipping it later would
-    ///      either start restating derivations the hub holds, or stop reporting addresses
-    ///      it cannot derive, and the second is silent.
+    /// @dev Write-once. Flipping it later would either start restating derivations the
+    ///      home holds, or stop reporting addresses it cannot derive, and the second is silent.
     function test_theFlagHasNoSetter() public {
-        ReportingSpoke s = _spoke(false);
+        ReportingTransceiver s = _remote(false);
 
         (bool ok,) = address(s).call(abi.encodeWithSignature("setAddressesDiverge(bool)", true));
         assertFalse(ok, "no such function");
@@ -380,14 +370,14 @@ contract ReceiverReportTest is Test {
     }
 
     function test_theFlagIsReadable() public {
-        assertFalse(_spoke(false).addressesDiverge());
-        assertTrue(_spoke(true).addressesDiverge());
+        assertFalse(_remote(false).addressesDiverge());
+        assertTrue(_remote(true).addressesDiverge());
     }
 
     /// @dev It is single-shot along with the rest of the initializer, so a second call
     ///      cannot change it.
     function test_reinitializingIsRefused() public {
-        ReportingSpoke s = _spoke(false);
+        ReportingTransceiver s = _remote(false);
 
         vm.expectRevert();
         s.initialize(msig, address(impl), true, address(0x7EA5));
@@ -397,11 +387,11 @@ contract ReceiverReportTest is Test {
 
 /* ========================================================================== */
 
-/// @dev The home side: a real hub, a real registry, and nothing hand-built. Everything
-///      below feeds the spoke's actual wire bytes into it.
-contract Hub is HubTransceiverBase {
-    function initialize(address owner_, address treasury_, address transmitterImplementation_) external initializer {
-        __HubTransceiverBase_init(owner_, treasury_, new address[](0), transmitterImplementation_);
+/// @dev The home side: a real transceiver, a real registry, and nothing hand-built.
+///      Everything below feeds the reporting side's actual wire bytes into it.
+contract HomeTransceiver is SymmetricTransceiverBase {
+    function initialize(address governor, address treasury_, address transmitterImplementation_) external initializer {
+        __SymmetricTransceiver_init(config(governor, transmitterImplementation_, address(0xBEEF), false, treasury_));
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -413,7 +403,7 @@ contract Hub is HubTransceiverBase {
         returns (bytes32)
     {
         lastSendValue = value;
-        // Pays a stand-in provider, so nothing the message cost stays on the hub.
+        // Pays a stand-in provider, so nothing the message cost stays here.
         (bool ok,) = address(0xFEE).call{value: value}("");
         require(ok);
         return bytes32(0);
@@ -445,11 +435,11 @@ contract Hub is HubTransceiverBase {
 
 /// @notice The report crossing both halves. Every other test of this path builds the
 ///         message by hand on one side or the other, which cannot catch the two sides
-///         drifting apart. An encoder change on the spoke, and a decoder that still
+///         drifting apart. An encoder change on the reporting side, and a decoder that still
 ///         expects the old shape, would leave both files green.
-contract ReceiverReportRoundTripTest is Test {
-    Hub hub;
-    ReportingSpoke spoke;
+contract ReceiverReportRoundTripTest is WiresHome {
+    HomeTransceiver homeSide;
+    ReportingTransceiver remote;
     ChainRegistry registry;
     Transmitter account;
 
@@ -457,52 +447,57 @@ contract ReceiverReportRoundTripTest is Test {
     address owner = address(0xA11CE);
     bytes32 constant SALT = keccak256("acct");
     bytes32 provider;
-    bytes32 spokeKey;
+    bytes32 remoteKey;
 
-    /// @dev A chain the hub cannot derive addresses on, because that is the only kind that
+    /// @dev A chain the home cannot derive addresses on, because that is the only kind that
     ///      may report. It is `eip155` and capped below `Derived`, which is exactly the
     ///      zkSync and Tron shape: nothing about the chain type separates it from Base, and
     ///      the cap is what records that its CREATE2 formula differs.
-    uint256 constant SPOKE_CHAIN = 8453;
-    uint32 constant SPOKE_EID = 30184;
+    uint256 constant REMOTE_CHAIN = 8453;
 
     function setUp() public {
         registry = ChainRegistry(
             address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
 
-        hub = new Hub();
-        // The msig owns the hub and is the treasury it may pay: one address here, two
-        // facts, and the tests below separate them.
-        hub.initialize(msig, msig, address(new Transmitter()));
-        spoke = new ReportingSpoke();
-        spoke.initialize(msig, address(new Receiver()), true, address(0x7EA5));
+        // Each side is deployed under its own chain id, which it records as local.
+        vm.chainId(REMOTE_CHAIN);
+        remote = new ReportingTransceiver();
+        remote.initialize(msig, address(new Receiver()), true, address(0x7EA5));
+        _wire(remote);
+        vm.chainId(1);
+
+        homeSide = new HomeTransceiver();
+        homeSide.initialize(msig, address(0x7EA5), address(new Transmitter()));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        registry.setLocalTransceiver(provider, address(hub));
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
-        spokeKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN));
-        // Graded `Attested`: the hub cannot recompute an address there, which is both why
+        registry.setLocalTransceiver(provider, address(homeSide));
+        remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN));
+        // Graded `Attested`: the home cannot recompute an address there, which is both why
         // a report is needed and why the report is worth only the bridge that carried it.
-        registry.setProvenance(spokeKey, Provenance.Attested);
-        hub.setCounterpart(spokeKey, Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)));
-        hub.setRoute(spokeKey, Erc7930.encodeEvmChain(SPOKE_CHAIN));
+        registry.setProvenance(remoteKey, Provenance.Attested);
+        vm.stopPrank();
+
+        vm.startPrank(homeSide.owner());
+        homeSide.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        homeSide.setCounterpart(remoteKey, Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)));
+        homeSide.setRoute(remoteKey, Erc7930.encodeEvmChain(REMOTE_CHAIN));
         vm.stopPrank();
 
         // The account the report is about. It has to exist and to have been stood up on the
-        // spoke, because that is what gives it a counterpart slot for that chain.
+        // reporting chain, because that is what gives it a counterpart slot for that chain.
         vm.startPrank(owner);
-        account = Transmitter(payable(hub.createTransmitter(SALT)));
+        account = Transmitter(payable(homeSide.createTransmitter(SALT)));
         vm.deal(address(account), 1 ether);
-        account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
+        account.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
         vm.stopPrank();
     }
 
     function _report() internal returns (bytes memory produced) {
-        vm.chainId(SPOKE_CHAIN);
-        spoke.inbound(owner, SALT, new Call[](0));
-        produced = spoke.sentPayload();
+        vm.chainId(REMOTE_CHAIN);
+        remote.inbound(owner, SALT, new Call[](0));
+        produced = remote.sentPayload();
         vm.chainId(1);
     }
 
@@ -517,96 +512,96 @@ contract ReceiverReportRoundTripTest is Test {
     ///      receiver. It was paid for, and undeliverable. Now nothing is recorded until the report
     ///      arrives.
     function test_aReportingChainIsNotSendableUntilItHasReported() public {
-        assertTrue(account.isBootstrapped(spokeKey), "the bootstrap went");
-        assertFalse(account.isReachable(spokeKey), "but the receiver is not known yet");
+        assertTrue(account.isBootstrapped(remoteKey), "the bootstrap went");
+        assertFalse(account.isReachable(remoteKey), "but the receiver is not known yet");
 
         // Both hoisted: an external call inside the pranked expression consumes the prank,
         // and one inside `expectRevert`'s next call would be the call it measures.
-        bytes memory recipient = Erc7930.encodeEvm(SPOKE_CHAIN, address(account));
+        bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, address(account));
         bytes memory payload = account.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, spokeKey));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, remoteKey));
         account.sendMessage(recipient, payload, new bytes[](0));
 
         // The report lands, and only then does the destination become sendable, at the
-        // address the spoke actually created, not at the guess.
+        // address the remote actually created, not at the guess.
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        address created = remote.predictCrossAccount(owner, SALT, home());
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        assertTrue(account.isReachable(spokeKey), "now it is");
-        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
+        assertTrue(account.isReachable(remoteKey), "now it is");
+        assertEq(account.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
     /// @dev And a second bootstrap is still refused in the meantime. The dispatch record is
     ///      what prevents that, which is why it had to become a fact of its own rather than
     ///      being read off the counterpart table.
     function test_aSecondBootstrapIsRefusedWhileTheReportIsOutstanding() public {
-        assertFalse(account.isReachable(spokeKey));
+        assertFalse(account.isReachable(remoteKey));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, spokeKey));
-        account.bootstrap(SPOKE_CHAIN, new Call[](0), new bytes[](0));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, remoteKey));
+        account.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
     }
 
-    /* ======================== no payload runs on a hub ========================= */
+    /* ======================== no payload runs on a homeSide ========================= */
 
-    /// @notice Regression: a spoke on one chain cannot report an address on another, and there
+    /// @notice Regression: a transceiver on one chain cannot report an address on another, and there
     ///         is no `Call[]` path around that.
     ///
     /// @dev `_onDestinationReceiver` takes its `chainKey` from `_authenticateOrigin`. If an
-    ///      authenticated spoke could deliver a call array, or call the report handler
+    ///      authenticated transceiver could deliver a call array, or call the report handler
     ///      directly, it could pin an account's receiver on a chain it has nothing to do with,
     ///      write-once and so unrecoverable. A transceiver runs no payload and the handler is
     ///      internal, so neither entry exists. `test_aChainCannotReportAnAddressOnAnotherChain`
     ///      covers the envelope path.
     function test_noPayloadReachesTheReportHandlerOrTheBalance() public {
-        vm.deal(address(hub), 5 ether);
+        vm.deal(address(homeSide), 5 ether);
 
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(0xF00D), value: 5 ether, data: ""});
-        (bool delivered,) = address(hub)
+        (bool delivered,) = address(homeSide)
             .call(
                 abi.encodeWithSignature(
                     "receiveMessage(bytes32,bytes,bytes)",
                     bytes32(0),
-                    Erc7930.encodeEvm(SPOKE_CHAIN, address(spoke)),
+                    Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)),
                     Payload.encodeCalls(calls)
                 )
             );
         assertFalse(delivered, "no receiveMessage on a transceiver");
 
-        (bool reported,) = address(hub)
+        (bool reported,) = address(homeSide)
             .call(
                 abi.encodeWithSignature(
                     "onDestinationReceiver(bytes32,address,bytes32,bytes)",
-                    spokeKey,
+                    remoteKey,
                     owner,
                     SALT,
-                    Erc7930.encodeEvm(SPOKE_CHAIN, address(0xBADBAD))
+                    Erc7930.encodeEvm(REMOTE_CHAIN, address(0xBADBAD))
                 )
             );
         assertFalse(reported, "no external report handler");
 
-        assertEq(address(hub).balance, 5 ether, "the balance is intact");
+        assertEq(address(homeSide).balance, 5 ether, "the balance is intact");
     }
 
-    /// @dev The whole point of the file. The spoke creates an account and puts a report on
-    ///      the wire; those exact bytes go into the hub; the account answers with the
-    ///      address the spoke actually created. No `Envelope.encode*` in the assertion.
-    function test_theSpokesBytesDecodeOnTheHub() public {
+    /// @dev The whole point of the file. The reporting side creates an account and puts a report
+    ///      on the wire; those exact bytes go into the home side; the account answers with the
+    ///      address the reporting side actually created. No `Envelope.encode*` in the assertion.
+    function test_theReportingSidesBytesDecodeAtHome() public {
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
+        address created = remote.predictCrossAccount(owner, SALT, home());
 
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         assertEq(
-            account.counterpartOn(spokeKey),
+            account.counterpartOn(remoteKey),
             abi.encodePacked(created),
-            "the account recorded the address the spoke actually created"
+            "the account recorded the address actually created"
         );
-        assertEq(hub.destinationReceiverOn(spokeKey, owner, SALT), abi.encodePacked(created));
+        assertEq(homeSide.destinationReceiverOn(remoteKey, owner, SALT), abi.encodePacked(created));
     }
 
     /// @dev And it reaches the send path, which is the reason the report moved off the
@@ -615,10 +610,10 @@ contract ReceiverReportRoundTripTest is Test {
     ///      not before.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
-        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        address created = remote.predictCrossAccount(owner, SALT, home());
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        bytes memory recipient = Erc7930.encodeEvm(SPOKE_CHAIN, created);
+        bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, created);
         bytes memory payload = account.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
@@ -628,48 +623,48 @@ contract ReceiverReportRoundTripTest is Test {
     /// @dev A replayed report is refused by the account now, not by the registry slot.
     function test_aReplayedReportIsRefused() public {
         bytes memory produced = _report();
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.ReceiverAlreadyReported.selector, spokeKey));
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.ReceiverAlreadyReported.selector, remoteKey));
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
     }
 
     /// @dev And there is no override, not even the owner's. An account's peer decides where
     ///      a payload lands, so it is the one value the protocol will not let anyone choose
     ///      after the fact. A wrong report is permanent for that destination, which costs
-    ///      only the chain whose spoke was already compromised to produce it.
+    ///      only the chain whose transceiver was already compromised to produce it.
     function test_notEvenTheOwnerCanRepointAReportedReceiver() public {
         bytes memory produced = _report();
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        address created = spoke.predictCrossAccount(owner, SALT, spoke.homeChainKey());
-        assertTrue(account.isReceiverPinned(spokeKey));
+        address created = remote.predictCrossAccount(owner, SALT, home());
+        assertTrue(account.isReceiverPinned(remoteKey));
 
         (bool ok,) = address(account)
             .call(
                 abi.encodeWithSignature(
-                    "setDestinationReceiver(bytes32,bytes)", spokeKey, abi.encodePacked(address(0xC0FFEE))
+                    "setDestinationReceiver(bytes32,bytes)", remoteKey, abi.encodePacked(address(0xC0FFEE))
                 )
             );
         assertFalse(ok, "no owner override exists");
-        assertEq(account.counterpartOn(spokeKey), abi.encodePacked(created));
+        assertEq(account.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
-    /// @dev A chain the hub can derive may not report. Its own derivation is `Derived` and a
+    /// @dev A chain the home can derive may not report. Its own derivation is `Derived` and a
     ///      claim over a bridge is weaker, so accepting one would let a remote chain replace
     ///      a stronger fact with a poorer one. The registry answers which chains may.
     function test_aDerivableChainMayNotReport() public {
         vm.prank(msig);
-        registry.setProvenance(spokeKey, Provenance.Derived);
-        assertFalse(registry.requiresReceiverCallback(spokeKey));
+        registry.setProvenance(remoteKey, Provenance.Derived);
+        assertFalse(registry.requiresReceiverCallback(remoteKey));
 
         bytes memory produced = _report();
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ChainDoesNotReport.selector, spokeKey));
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), produced);
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ChainDoesNotReport.selector, remoteKey));
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
     }
 
     /// @dev A chain may only report addresses on itself. An ERC-7930 envelope names its own
-    ///      chain, and the account is keyed by the origin the hub authenticated; without
+    ///      chain, and the account is keyed by the origin the home authenticated; without
     ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
         vm.prank(msig);
@@ -677,8 +672,8 @@ contract ReceiverReportRoundTripTest is Test {
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ReportedChainMismatch.selector, spokeKey, otherKey));
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ReportedChainMismatch.selector, remoteKey, otherKey));
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
     }
 
     /// @dev And the account keeps the bootstrap presumption, so nothing was half-recorded.
@@ -688,33 +683,33 @@ contract ReceiverReportRoundTripTest is Test {
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
-        hub.arrive(Erc7930.encodeEvmChain(SPOKE_CHAIN), abi.encodePacked(address(spoke)), elsewhere);
+        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
 
         // Nothing was recorded, which on a reporting chain is the state before the report:
         // the account is bootstrapped there and not yet reachable.
-        assertTrue(account.isBootstrapped(spokeKey));
-        assertFalse(account.isReachable(spokeKey));
-        assertFalse(account.isReceiverPinned(spokeKey));
+        assertTrue(account.isBootstrapped(remoteKey));
+        assertFalse(account.isReachable(remoteKey));
+        assertFalse(account.isReceiverPinned(remoteKey));
     }
 
-    /// @dev Only the account's own transceiver may report to it. The hub is trusted for this
+    /// @dev Only the account's own transceiver may report to it. The home transceiver is trusted for this
     ///      one call because it authenticated the origin; anyone else calling directly is
-    ///      not, and the account says so itself rather than relying on the hub being the
+    ///      not, and the account says so itself rather than relying on the home transceiver being the
     ///      only party that knows the function exists.
     function test_nobodyElseCanReportToTheAccount() public {
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this)));
-        account.onDestinationReceiverReported(spokeKey, abi.encodePacked(address(0xBAD)));
+        account.onDestinationReceiverReported(remoteKey, abi.encodePacked(address(0xBAD)));
     }
 }
 
 /// @notice The bootstrap fee, which pays for the return leg on the chains that have one.
 ///
 /// @dev It is not a bridge for the money. The fee accrues on the home chain in the home
-///      currency; the spoke needs the destination's currency on the destination. What it
+///      currency; the reporting chain's float needs the destination's currency on the destination. What it
 ///      buys is that the funding is recovered from the accounts that create the obligation
 ///      rather than subsidised, and the msig moves it across out of band.
 contract BootstrapFeeTest is Test {
-    Hub hub;
+    HomeTransceiver t;
     ChainRegistry registry;
     Transmitter account;
 
@@ -734,47 +729,50 @@ contract BootstrapFeeTest is Test {
         registry = ChainRegistry(
             address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
-        hub = new Hub();
-        // One treasury for the protocol, named at deployment and never moved.
+        t = new HomeTransceiver();
+        // One treasury per chain, named at deployment and never moved.
         treasury = address(new Treasury(msig));
-        hub.initialize(msig, treasury, address(new Transmitter()));
+        t.initialize(msig, treasury, address(new Transmitter()));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        registry.setLocalTransceiver(provider, address(hub));
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        registry.setLocalTransceiver(provider, address(t));
         divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING));
         parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY));
         registry.setProvenance(divergingKey, Provenance.Attested);
-        hub.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
-        hub.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
-        hub.setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
+        vm.stopPrank();
+
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
+        t.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
+        t.setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
         // Only the chain that reports is charged.
-        hub.setBootstrapFee(divergingKey, FEE);
+        t.setBootstrapFee(divergingKey, FEE);
         vm.stopPrank();
 
         vm.prank(owner);
-        account = Transmitter(payable(hub.createTransmitter(SALT)));
+        account = Transmitter(payable(t.createTransmitter(SALT)));
         vm.deal(address(account), 10 ether);
     }
 
     /// @dev A parity destination pays nothing. It sends no report and creates no obligation,
     ///      so charging it would tax the common case to fund the rare one.
     function test_aParityDestinationIsNotCharged() public {
-        assertEq(hub.bootstrapFee(parityKey), 0);
+        assertEq(t.bootstrapFee(parityKey), 0);
         vm.prank(owner);
         account.bootstrap(PARITY, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, 0);
     }
 
-    /// @dev The fee moves in the transaction that charges it. Nothing accrues on the hub, so
+    /// @dev The fee moves in the transaction that charges it. Nothing accrues on the transceiver, so
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         assertEq(treasury.balance, FEE, "paid, not accrued");
-        assertEq(address(hub).balance, 0, "and the hub holds none of it");
+        assertEq(address(t).balance, 0, "and the transceiver holds none of it");
     }
 
     /// @dev The treasury is `Ownable`, so the msig moves it onward from there, which is the
@@ -790,13 +788,13 @@ contract BootstrapFeeTest is Test {
 
     /// @dev Underpaying reverts rather than eating the provider's payment. The alternative
     ///      is a bootstrap that dispatches with a shortfall taken out of the message fee and
-    ///      fails on arrival. The account always pays the quote, so this guards the hub's own
+    ///      fails on arrival. The account always pays the quote, so this guards the transceiver's own
     ///      entry point.
     function test_underpayingTheFeeReverts() public {
         vm.deal(address(account), FEE);
         vm.prank(address(account));
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
-        hub.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
+        t.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
     }
 
     /// @dev An account that cannot cover the quote, fee included, sends nothing and pays
@@ -814,8 +812,8 @@ contract BootstrapFeeTest is Test {
     /// @dev The quote carries it, or it is worse than no quote: a caller would fund the send
     ///      exactly and the bootstrap would revert with the signers already committed.
     function test_theQuoteIncludesTheFee() public view {
-        uint256 withFee = hub.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
-        uint256 withoutFee = hub.quoteBootstrap(parityKey, owner, SALT, new Call[](0), new bytes[](0));
+        uint256 withFee = t.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
+        uint256 withoutFee = t.quoteBootstrap(parityKey, owner, SALT, new Call[](0), new bytes[](0));
         assertEq(withFee - withoutFee, FEE, "exactly the surcharge, on top of the message");
         assertGt(withoutFee, 0, "and the message still costs something");
     }
@@ -830,7 +828,7 @@ contract BootstrapFeeTest is Test {
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         assertEq(before - address(account).balance, quote, "the quote, not the balance");
-        assertEq(hub.lastSendValue(), quote - FEE, "message value, fee already taken");
+        assertEq(t.lastSendValue(), quote - FEE, "message value, fee already taken");
     }
 
     /// @dev `msg.value` tops the balance up and is not a price: the same quote is paid and
@@ -844,24 +842,25 @@ contract BootstrapFeeTest is Test {
         account.bootstrap{value: 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
 
         assertEq(address(account).balance, 1 ether - quote);
-        assertEq(hub.lastSendValue(), quote - FEE);
+        assertEq(t.lastSendValue(), quote - FEE);
     }
 
     function test_onlyTheOwnerSetsTheFee() public {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        hub.setBootstrapFee(divergingKey, 1);
+        t.setBootstrapFee(divergingKey, 1);
     }
 
-    /// @dev The treasury is write-once and the hub has no withdrawal. Together those remove
-    ///      the operation a compromised owner would have reached for: there is no accrued
-    ///      balance, no destination to name, and no setter to repoint.
+    /// @dev The treasury is write-once and there is no fee withdrawal. Together those remove
+    ///      the operation a compromised owner would have reached for: no accrued fees, no
+    ///      destination to name, and no setter to repoint. The float leaves only at the
+    ///      treasury's own call.
     function test_thereIsNoWithdrawalAndNoWayToRepointTheTreasury() public {
-        assertEq(hub.treasury(), treasury);
+        assertEq(t.treasury(), treasury);
 
-        (bool withdrew,) = address(hub).call(abi.encodeWithSignature("withdrawFees(address)", msig));
+        (bool withdrew,) = address(t).call(abi.encodeWithSignature("withdrawFees(address)", msig));
         assertFalse(withdrew);
 
-        (bool set,) = address(hub).call(abi.encodeWithSignature("setTreasury(address)", msig));
+        (bool set,) = address(t).call(abi.encodeWithSignature("setTreasury(address)", msig));
         assertFalse(set);
     }
 
@@ -869,13 +868,16 @@ contract BootstrapFeeTest is Test {
     ///      Provider. The fee is taken off the top, so a payment that did not happen would
     ///      otherwise leave the message dispatched with the shortfall coming out of it.
     function test_aTreasuryThatRefusesPaymentFailsTheBootstrap() public {
-        Hub h = new Hub();
+        HomeTransceiver h = new HomeTransceiver();
         address rejecting = address(new Rejector());
         h.initialize(msig, rejecting, address(new Transmitter()));
 
         vm.startPrank(msig);
         bytes32 second = registry.addMessageProvider("second");
         registry.setLocalTransceiver(second, address(h));
+        vm.stopPrank();
+
+        vm.startPrank(h.owner());
         h.setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Attested);
         h.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
         h.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));

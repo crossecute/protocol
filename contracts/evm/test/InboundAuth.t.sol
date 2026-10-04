@@ -7,18 +7,17 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Envelope} from "src/messaging/Envelope.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {UnsendableHub, UnsendableSpoke, UnsendableTransmitter, homeTransmitterFor} from "test/Unsendable.sol";
+import {UnsendableSymmetric, UnsendableTransmitter} from "test/Unsendable.sol";
 
 contract MockReceiver is ReceiverBase {
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -59,9 +58,22 @@ contract Transmitter is UnsendableTransmitter {
     }
 }
 
-contract Hub is UnsendableHub {
-    function initialize(address owner_, address impl) external initializer {
-        __HubTransceiverBase_init(owner_, address(0), new address[](0), impl);
+/// @dev One transceiver, which is both ends: it creates receivers for accounts homed on an
+///      origin it authenticates, and receives reports for accounts homed here.
+contract Node is UnsendableSymmetric {
+    function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
+        __SymmetricTransceiver_init(
+            TransceiverConfig({
+                gateways: new address[](0),
+                transmitterImplementation: transmitterImpl,
+                receiverImplementation: receiverImpl,
+                governorOwner: governor,
+                governorSalt: bytes32(0),
+                governorHome: ChainKey.local(),
+                treasury: address(0x7EA5),
+                addressesDiverge: false
+            })
+        );
     }
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
@@ -89,55 +101,17 @@ contract Hub is UnsendableHub {
     }
 }
 
-contract Spoke is UnsendableSpoke {
-    /// @dev Homed on chain 1, but with its key and route chosen by the test.
-    function initializeWithHome(address impl, bytes32 homeKey, bytes calldata homeRoute_) external initializer {
-        __SpokeTransceiverBase_init(
-            new address[](0),
-            impl,
-            homeKey,
-            homeRoute_,
-            abi.encodePacked(address(this)),
-            address(0x7EA5),
-            bytes32(0),
-            false
-        );
-    }
-
-    function initialize(address, address impl, bytes calldata home) external initializer {
-        __SpokeTransceiverBase_init(
-            new address[](0),
-            impl,
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            home,
-            address(0x7EA5),
-            bytes32(0),
-            false
-        );
-    }
-
-    function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
-        _onInbound(route, sender, message);
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
-
 contract InboundAuthTest is Test {
-    Hub hub;
-    Spoke spoke;
+    Node node;
     ChainRegistry registry;
+    address owner;
 
     address msig = address(0x5165);
     address transmitter = address(0x7A11);
     bytes32 provider;
 
-    /// The hub, at the spoke's own address, as on any parity chain. Set in `setUp`.
+    /// Chain 1, a `Derived` origin whose transceiver shares this one's address. Set in `setUp`.
+    bytes32 homeKey;
     bytes HOME_SENDER;
     bytes HOME_ROUTE = Erc7930.encodeEvmChain(1);
 
@@ -145,108 +119,76 @@ contract InboundAuthTest is Test {
         registry = ChainRegistry(
             address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
-        address impl = address(new MockReceiver());
-        hub = new Hub();
-        hub.initialize(msig, address(new Transmitter()));
-        spoke = new Spoke();
-        HOME_SENDER = abi.encodePacked(address(spoke));
-        spoke.initialize(msig, impl, HOME_SENDER);
+        node = new Node();
+        node.initialize(msig, address(new Transmitter()), address(new MockReceiver()));
+        owner = node.owner();
+        HOME_SENDER = abi.encodePacked(address(node));
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
-        registry.setLocalTransceiver(provider, address(hub));
+        homeKey = registry.addChainKey(HOME_ROUTE);
+        registry.setLocalTransceiver(provider, address(node));
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        node.setRoute(homeKey, HOME_ROUTE);
         vm.stopPrank();
     }
 
-    /* ================================== spoke ================================== */
+    /* ============================ a bootstrap's origin ============================ */
 
-    /// @dev One origin, so it is a comparison. No registry, no lookup that could return
-    ///      the wrong answer if configuration drifted.
-    function test_spokeAcceptsTheHubAndStandsTheReceiverUp() public {
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
+    /// @dev The origin is a lookup: the route names the chain, and the chain names its
+    ///      counterpart, here the default at this transceiver's own address.
+    function test_aBootstrapFromTheCounterpartStandsTheReceiverUp() public {
+        node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
 
-        MockReceiver r = MockReceiver(payable(spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey())));
-        assertEq(
-            r.sourceTransmitter(),
-            homeTransmitterFor(spoke, transmitter, bytes32(0)),
-            "its peer is the carried transmitter"
-        );
+        MockReceiver r = MockReceiver(payable(node.predictCrossAccount(transmitter, bytes32(0), homeKey)));
+        assertEq(r.sourceTransmitter(), address(uint160(uint256(_homeTransmitter()))), "its peer is the carried one");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }
 
-    /// @dev A sibling spoke sending from a chain the hub also talks to is still not the
-    ///      hub. Both halves of the check are load-bearing.
-    function test_spokeRejectsTheRightRouteFromTheWrongSender() public {
+    /// @dev A sibling transceiver sending from a chain this one talks to is still not the
+    ///      counterpart. Both halves of the check are load-bearing.
+    function test_theRightRouteFromTheWrongSenderIsRefused() public {
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(SpokeTransceiverBase.NotHomeOrigin.selector);
-        spoke.arrive(HOME_ROUTE, abi.encodePacked(address(0xBAD)), msg_);
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, homeKey));
+        node.arrive(HOME_ROUTE, abi.encodePacked(address(0xBAD)), msg_);
     }
 
-    function test_spokeRejectsTheRightSenderFromTheWrongRoute() public {
+    function test_theRightSenderFromTheWrongRouteIsRefused() public {
+        bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(SpokeTransceiverBase.NotHomeOrigin.selector);
-        spoke.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey));
+        node.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
-    /// @dev A receiver may call its spoke, but a hub creates no receivers and would refuse a
-    ///      bootstrap envelope on arrival, after the fee was spent, so neither the send nor its
-    ///      quote runs.
-    function test_aSpokeRefusesAnOutboundBootstrap() public {
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
-        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey());
-        bytes32 home = ChainKey.forEvm(1);
+    /// @dev A receiver may call its transceiver, but only an account homed on this chain may
+    ///      bootstrap from it, and a receiver here is homed elsewhere.
+    function test_aReceiverCannotBootstrapFromHere() public {
+        node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
+        address receiver = node.predictCrossAccount(transmitter, bytes32(0), homeKey);
 
-        // The receiver is homed elsewhere, so the caller check refuses it first: only an
-        // account homed on this chain may bootstrap from it.
         vm.deal(receiver, 1 ether);
         vm.prank(receiver);
         vm.expectRevert(
             abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, transmitter, bytes32(0), receiver)
         );
-        spoke.bootstrap{value: 1 ether}(home, transmitter, bytes32(0), _boot(), new bytes[](0));
-
-        // An account homed here passes that check, and the spoke still refuses.
-        address local = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.localChainKey());
-        vm.deal(local, 1 ether);
-        vm.prank(local);
-        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
-        spoke.bootstrap{value: 1 ether}(home, transmitter, bytes32(0), _boot(), new bytes[](0));
-
-        vm.prank(local);
-        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
-        spoke.bootstrapElements(home, transmitter, bytes32(0), new bytes[](1), new bytes[](0));
-
-        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
-        spoke.quoteBootstrap(home, transmitter, bytes32(0), _boot(), new bytes[](0));
-        vm.expectRevert(SpokeTransceiverBase.NoOutboundBootstrap.selector);
-        spoke.quoteBootstrapElements(home, transmitter, bytes32(0), new bytes[](1), new bytes[](0));
+        node.bootstrap{value: 1 ether}(homeKey, transmitter, bytes32(0), _boot(), new bytes[](0));
     }
 
-    /// @dev There is no setter by which a spoke could be made to accept a second origin.
-    ///      The set of chains that can drive it is fixed at deployment.
-    function test_spokeOriginCannotBeWidenedByAnyone() public {
-        (bool a,) = address(spoke).call(abi.encodeWithSignature("setHomeTransceiver(bytes)", HOME_SENDER));
-        assertFalse(a);
-        (bool b,) =
-            address(spoke).call(abi.encodeWithSignature("setRouting(address,bytes32,uint8)", address(0), bytes32(0), 0));
-        assertFalse(b, "a spoke has no routing to set either");
-    }
+    /* ================================== reports ================================== */
 
-    /* =================================== hub =================================== */
-
-    function _wireSpokeChain(uint32, uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
+    /// @dev A chain that reports is one this contract cannot derive an account on: `eip155`
+    ///      graded below `Derived` is the zkSync and Tron shape.
+    function _wireReportingChain(uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId));
-        // A chain that reports is one this contract cannot derive an account on: `eip155`
-        // graded below `Derived` is the zkSync and Tron shape.
         registry.setProvenance(chainKey, Provenance.Attested);
-        hub.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
         vm.stopPrank();
-        vm.prank(msig);
-        // The route is the chain identifier now, so `keccak256(route) == chainKey`.
-        hub.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
-        vm.startPrank(msig);
+        vm.startPrank(owner);
+        node.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
+        node.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
         vm.stopPrank();
     }
 
@@ -255,11 +197,11 @@ contract InboundAuthTest is Test {
     ///      resolved to, not one the message claimed.
     function test_hubResolvesTheOriginAndRecordsTheReport() public {
         address counterpart = address(0xC0DE);
-        bytes32 baseKey = _wireSpokeChain(30184, 8453, counterpart);
+        bytes32 baseKey = _wireReportingChain(8453, counterpart);
         Transmitter acct = _standUpAccount(8453);
 
         bytes memory interop = Erc7930.encodeEvm(8453, address(0xBEEF));
-        hub.arrive(
+        node.arrive(
             Erc7930.encodeEvmChain(8453),
             abi.encodePacked(counterpart),
             Envelope.encodeReceiverReport(transmitter, bytes32(0), interop)
@@ -276,7 +218,7 @@ contract InboundAuthTest is Test {
     ///      been stood up on that destination.
     function _standUpAccount(uint256 chainId) internal returns (Transmitter acct) {
         vm.startPrank(transmitter);
-        acct = Transmitter(payable(hub.createTransmitter(bytes32(0))));
+        acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
         acct.bootstrap(chainId, new Call[](0), new bytes[](0));
         vm.stopPrank();
     }
@@ -284,46 +226,37 @@ contract InboundAuthTest is Test {
     function test_hubRejectsAnUnknownRoute() public {
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
         vm.expectRevert(OutboundBase.UnknownRoute.selector);
-        hub.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
+        node.arrive(abi.encode(uint32(99999)), abi.encodePacked(address(0xC0DE)), m);
     }
 
     /// @dev A known chain speaking with the wrong contract is refused. Without this, any
     ///      contract on a registered chain could report receiver addresses.
     function test_hubRejectsAKnownRouteFromTheWrongSender() public {
-        bytes32 baseKey = _wireSpokeChain(30184, 8453, address(0xC0DE));
+        bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey));
-        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
+        node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
     /// @dev The provenance bar gates the inbound path too. A chain whose counterpart is
-    ///      only `Attested` cannot drive a hub that demands `Derived`, however well-formed
+    ///      only `Attested` cannot drive a transceiver that demands `Derived`, however well-formed
     ///      its message is.
     function test_hubProvenanceBarAppliesToInbound() public {
         address counterpart = address(0xC0DE);
-        vm.startPrank(msig);
-        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        vm.stopPrank();
-        vm.prank(msig);
-        hub.setRoute(chainKey, Erc7930.encodeEvmChain(8453));
-
         // Graded `Attested`: the chain's addresses cannot be recomputed here, so any
         // claim about them is worth exactly the bridge that carried it.
-        vm.startPrank(msig);
-        registry.setProvenance(chainKey, Provenance.Attested);
-        hub.setCounterpart(chainKey, Erc7930.encodeEvm(8453, counterpart));
-        vm.stopPrank();
+        bytes32 chainKey = _wireReportingChain(8453, counterpart);
         _standUpAccount(8453);
 
         // At the weakest bar the message is accepted.
         bytes memory report =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
-        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
+        node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
 
         // Raise it, and the same well-formed message from the same contract is refused.
-        vm.prank(msig);
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
+        vm.prank(owner);
+        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
         bytes memory report2 =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         vm.expectRevert(
@@ -331,59 +264,21 @@ contract InboundAuthTest is Test {
                 HubTransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Attested
             )
         );
-        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
+        node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
     }
 
     /* ================================= envelope ================================ */
 
-    /// @dev Every envelope leads with its kind, and each side refuses a kind it does not act
-    ///      on before reading anything else, so a wrong shape is refused by name rather than
-    ///      misread.
-    function test_aHubRefusesABootstrapEnvelope() public {
-        _wireSpokeChain(30184, 8453, address(0xC0DE));
-        bytes memory wrongWay = _bootstrapMsg();
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Envelope.UnexpectedEnvelopeKind.selector, Envelope.RECEIVER_REPORT, Envelope.BOOTSTRAP
-            )
-        );
-        hub.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xC0DE)), wrongWay);
-    }
-
-    function test_aSpokeRefusesAReportEnvelope() public {
-        bytes memory wrongWay =
-            Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(1, transmitter));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.RECEIVER_REPORT
-            )
-        );
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, wrongWay);
-    }
-
-    /// @dev The elements form is for a non-EVM transceiver; an EVM one has no decoder for it.
-    function test_anEvmSpokeRefusesTheElementsForm() public {
-        bytes[] memory elements = new bytes[](1);
-        elements[0] = hex"01";
-        bytes memory wrongWay = Envelope.encodeBootstrapElements(transmitter, bytes32(0), _homeTransmitter(), elements);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.BOOTSTRAP_ELEMENTS
-            )
-        );
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, wrongWay);
-    }
-
+    /// @dev Every envelope leads with its kind, so a wrong shape is refused by name rather
+    ///      than misread. The elements form, which an EVM chain has no decoder for, is
+    ///      `SymmetricTransceiver.t.sol`'s.
     /// @dev A v1 body led with the owner, not a kind. Kinds start at 1, so the owner word is
     ///      refused as an unknown kind rather than decoded.
     function test_anUntaggedV1BodyIsRefused() public {
         bytes memory v1 = abi.encode(transmitter, bytes32(0), _boot());
 
         vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, uint256(uint160(transmitter))));
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, v1);
+        node.arrive(HOME_ROUTE, HOME_SENDER, v1);
     }
 
     /// @dev Shorter than the word that holds the kind.
@@ -392,7 +287,7 @@ contract InboundAuthTest is Test {
         truncated[30] = 0x01;
 
         vm.expectRevert(Envelope.EnvelopeTooShort.selector);
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, truncated);
+        node.arrive(HOME_ROUTE, HOME_SENDER, truncated);
     }
 
     function testFuzz_onlyDefinedKindsAreRead(uint256 kind) public {
@@ -433,9 +328,9 @@ contract InboundAuthTest is Test {
         return Envelope.decodeBootstrap(m);
     }
 
-    /// @dev The transmitter a hub would carry for `transmitter`'s account.
+    /// @dev The transmitter chain 1 would carry for `transmitter`'s account.
     function _homeTransmitter() internal view returns (bytes32) {
-        return bytes32(uint256(uint160(homeTransmitterFor(spoke, transmitter, bytes32(0)))));
+        return bytes32(uint256(uint160(node.predictCrossAccount(transmitter, bytes32(0), homeKey))));
     }
 
     function _bootstrapMsg() internal view returns (bytes memory) {
@@ -448,49 +343,8 @@ contract InboundAuthTest is Test {
         bytes32 wide = bytes32(uint256(0xBEEF) << 160);
         bytes memory m = Envelope.encodeBootstrap(transmitter, bytes32(0), wide, _boot());
 
-        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.SourceTransmitterNotEvm.selector, wide));
-        spoke.arrive(HOME_ROUTE, HOME_SENDER, m);
-    }
-
-    /// @dev On a parity chain the receiver must land on its transmitter's address. A carried
-    ///      transmitter elsewhere means the spoke's home key, provider id, or hub address
-    ///      disagree, which would leave every account here unreachable, so the first bootstrap
-    ///      is refused instead.
-    function test_aParitySpokeRefusesAReceiverOffItsTransmitter() public {
-        address carried = address(0x5EC0);
-        address receiver = spoke.predictCrossAccount(transmitter, bytes32(0), spoke.homeChainKey());
-
-        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.ParityBroken.selector, receiver, carried));
-        spoke.arrive(
-            HOME_ROUTE,
-            HOME_SENDER,
-            Envelope.encodeBootstrap(transmitter, bytes32(0), bytes32(uint256(uint160(carried))), _boot())
-        );
-    }
-
-    /// @dev The case the check exists for: a spoke configured with another chain's home key.
-    ///      Its receivers land under that key, never on the home transmitter's address.
-    function test_aParitySpokeWithTheWrongHomeKeyRefusesItsFirstBootstrap() public {
-        Spoke wrong = new Spoke();
-        wrong.initializeWithHome(address(new MockReceiver()), ChainKey.forEvm(8453), Erc7930.encodeEvmChain(8453));
-
-        // The transmitter as the real home (chain 1) would carry it.
-        address realTransmitter = Create2.computeAddress(
-            wrong.accountSalt(transmitter, bytes32(0), ChainKey.forEvm(1)),
-            wrong.CROSS_PROXY_INIT_CODE_HASH(),
-            address(wrong)
-        );
-        bytes memory m =
-            Envelope.encodeBootstrap(transmitter, bytes32(0), bytes32(uint256(uint160(realTransmitter))), _boot());
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SpokeTransceiverBase.ParityBroken.selector,
-                wrong.predictCrossAccount(transmitter, bytes32(0), ChainKey.forEvm(8453)),
-                realTransmitter
-            )
-        );
-        wrong.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(wrong)), m);
+        vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.SourceTransmitterNotEvm.selector, wide));
+        node.arrive(HOME_ROUTE, HOME_SENDER, m);
     }
 
     /// @dev A payload the mock receiver will record. Its contents do not matter to the

@@ -265,6 +265,24 @@ contract SymmetricTransceiverTest is Test {
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
     }
 
+    /// @dev The case the check exists for: an origin whose provider id is mapped to the wrong
+    ///      chain. The carried transmitter is right for its real home, but the receiver lands
+    ///      under the mapped one, so every account from there would be unreachable.
+    function test_anOriginMappedToTheWrongChainRefusesItsFirstBootstrap() public {
+        Sym t = _chain(ETH, false);
+        address realTransmitter = t.predictCrossAccount(alice, SALT, _key(10));
+        bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(realTransmitter), _calls());
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SymmetricTransceiverBase.ParityBroken.selector,
+                t.predictCrossAccount(alice, SALT, _key(BASE)),
+                realTransmitter
+            )
+        );
+        t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
+    }
+
     /// @dev A zkSync home keeps its transmitter at a zkSync address, so the receiver here is
     ///      elsewhere by design and answers to the carried address.
     function test_anAttestedHomeIsNotHeldToParity() public {

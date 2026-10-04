@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
+import {SymmetricTransceiverBase} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
@@ -67,6 +68,27 @@ abstract contract UnsendableHub is HubTransceiverBase {
 }
 
 abstract contract UnsendableSpoke is SpokeTransceiverBase {
+    function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
+        internal
+        virtual
+        override
+        returns (bytes32)
+    {
+        revert Unsent();
+    }
+
+    function _quoteMessage(bytes memory, bytes memory, bytes[] memory)
+        internal
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        revert Unsent();
+    }
+}
+
+abstract contract UnsendableSymmetric is SymmetricTransceiverBase {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         virtual

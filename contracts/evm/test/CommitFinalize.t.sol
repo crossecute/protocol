@@ -19,7 +19,8 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {UnsendableHub, UnsendableSpoke, homeTransmitterFor} from "test/Unsendable.sol";
+import {UnsendableSymmetric} from "test/Unsendable.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
@@ -97,27 +98,43 @@ contract RevertingReceiver is ReceiverBase {
     }
 }
 
+/// @dev Where every account in these tests is homed: another chain, so the transceiver here
+///      creates receivers for it.
+function home() pure returns (bytes32) {
+    return ChainKey.forEvm(1);
+}
+
+function transceiverConfig(
+    address governor,
+    address receiverImplementation,
+    address treasury,
+    address[] memory gateways
+) pure returns (TransceiverConfig memory) {
+    return TransceiverConfig({
+        gateways: gateways,
+        transmitterImplementation: address(0xBEEF),
+        receiverImplementation: receiverImplementation,
+        governorOwner: governor,
+        governorSalt: bytes32(0),
+        governorHome: home(),
+        treasury: treasury,
+        addressesDiverge: false
+    });
+}
+
 /// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
-contract MockTransceiver is UnsendableSpoke {
-    function initialize(address, address receiverImplementation_) external initializer {
-        __SpokeTransceiverBase_init(
-            new address[](0),
-            receiverImplementation_,
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(this)), // parity: the hub shares this address
-            address(0x7EA5),
-            bytes32(0),
-            false
+contract MockTransceiver is UnsendableSymmetric {
+    function initialize(address governor, address receiverImplementation_) external initializer {
+        __SymmetricTransceiver_init(
+            transceiverConfig(governor, receiverImplementation_, address(0x7EA5), new address[](0))
         );
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
-    ///      `_bootstrapInbound` directly.
+    ///      `_bootstrapInbound` directly. The carried transmitter sits at the receiver's own
+    ///      address, as it does for an account homed on a parity chain.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(
-            transmitter, bytes32(0), homeChainKey, homeTransmitterFor(this, transmitter, bytes32(0)), calls
-        );
+        _bootstrapInbound(transmitter, bytes32(0), home(), predictCrossAccount(transmitter, bytes32(0), home()), calls);
     }
 
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -131,14 +148,14 @@ contract MockTransceiver is UnsendableSpoke {
 ///      two roles are named at initialization and ungrantable afterwards. If this gates
 ///      correctly, configuring is `Ownable` and the roles confer nothing, which is the split
 ///      the design turns on.
-contract MsigTransceiver is UnsendableHub {
+contract MsigTransceiver is UnsendableSymmetric {
     function initialize(
-        address owner_,
+        address governor,
         address treasury_,
         address[] calldata gateways_,
         address receiverImplementation_
     ) external initializer {
-        __HubTransceiverBase_init(owner_, treasury_, gateways_, receiverImplementation_);
+        __SymmetricTransceiver_init(transceiverConfig(governor, receiverImplementation_, treasury_, gateways_));
     }
 
     /// @dev No blanket gateway answer here, unlike the other harnesses in this file. These
@@ -209,7 +226,7 @@ contract CommitFinalizeTest is Test {
     /// @dev Stand the receiver up if it does not exist. Bootstrap is once per transmitter
     ///      and refuses a second, so this is what repeat arrivals go through.
     function _bootstrapped(MockTransceiver t_, address tx_) internal returns (MockReceiver r) {
-        address predicted = t_.predictCrossAccount(tx_, bytes32(0), t_.homeChainKey());
+        address predicted = t_.predictCrossAccount(tx_, bytes32(0), home());
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -369,22 +386,20 @@ contract CommitFinalizeTest is Test {
 
     /* ============================== transceiver =============================== */
 
-    /// @dev There is no public creation path on a spoke. An account here exists because a
-    ///      bootstrap message arrived, and nothing else. An open one would let anyone
-    ///      deploy an owner's account empty, one transaction ahead of their bootstrap, and
-    ///      permanently deny it: `CrossProxy` arms exactly once.
-    function test_aSpokeHasNoPublicCreationPath() public {
+    /// @dev There is no public creation path for a receiver. One exists because a bootstrap
+    ///      message arrived, and nothing else. An open one would let anyone deploy an owner's
+    ///      account empty, one transaction ahead of their bootstrap, and permanently deny it:
+    ///      `CrossProxy` arms exactly once. `createTransmitter` creates only the caller's own
+    ///      account homed here.
+    function test_thereIsNoPublicReceiverCreationPath() public {
         (bool a,) = address(t).call(abi.encodeWithSignature("createReceiver(address)", transmitter));
         assertFalse(a, "no createReceiver(address)");
-
-        (bool b,) = address(t).call(abi.encodeWithSignature("createTransmitter()"));
-        assertFalse(b, "and a spoke makes no transmitters either");
     }
 
     /// @dev An account is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
     function test_anOwnerGetsExactlyOneAccount() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")), "the bootstrap payload landed");
@@ -408,9 +423,7 @@ contract CommitFinalizeTest is Test {
                 )
             );
         assertFalse(ok, "no bootstrapInbound on the ABI");
-        assertEq(
-            t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey()).code.length, 0, "and nothing was created"
-        );
+        assertEq(t.predictCrossAccount(transmitter, bytes32(0), home()).code.length, 0, "and nothing was created");
     }
 
     /// @dev The transceiver has no way to reach a receiver after creating it. Bootstrap is
@@ -432,7 +445,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -449,7 +462,7 @@ contract CommitFinalizeTest is Test {
     ///      so the address does not move between payloads: it is knowable before the first
     ///      message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -466,8 +479,8 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public view {
         assertTrue(
-            t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())
-                != t.predictCrossAccount(address(0xBEEF), bytes32(0), t.homeChainKey()),
+            t.predictCrossAccount(transmitter, bytes32(0), home())
+                != t.predictCrossAccount(address(0xBEEF), bytes32(0), home()),
             "transmitter must vary the address"
         );
     }
@@ -524,7 +537,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())));
+        MockReceiver r = MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), home())));
 
         assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -546,7 +559,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = rt.predictCrossAccount(transmitter, bytes32(0), rt.homeChainKey());
+        address addr = rt.predictCrossAccount(transmitter, bytes32(0), home());
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -577,7 +590,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -597,10 +610,10 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with: a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
 
         vm.expectEmit(true, true, false, true, address(t));
-        emit TransceiverBase.CrossAccountCreated(transmitter, predicted, bytes32(0), t.homeChainKey());
+        emit TransceiverBase.CrossAccountCreated(transmitter, predicted, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
@@ -669,7 +682,8 @@ contract CommitFinalizeTest is Test {
         // authority that would have held the upgrade key has nothing to hold.
         // `new` is hoisted: a CREATE inside the pranked expression consumes the prank.
         address blockedImpl = address(new MockTransceiver());
-        vm.prank(msig);
+        address owner = proxied.owner();
+        vm.prank(owner);
         vm.expectRevert(TransceiverBase.UpgradesAreLocked.selector);
         proxied.upgradeToAndCall(blockedImpl, "");
     }
@@ -684,7 +698,7 @@ contract CommitFinalizeTest is Test {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
 
-        vm.prank(msig);
+        vm.prank(m.owner());
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
         assertEq(address(m.chainRegistry()), address(0xDEED));
 
@@ -707,7 +721,8 @@ contract CommitFinalizeTest is Test {
         // The owner is the strongest caller there is here, and it still cannot.
         // Hoisted: an external call inside a pranked expression consumes the prank.
         bytes32 gatewayRole = m.GATEWAY_ROLE();
-        vm.prank(msig);
+        address owner = m.owner();
+        vm.prank(owner);
         vm.expectRevert(Initializable.NotInitializing.selector);
         m.grantRole(gatewayRole, address(0xBADBAD));
     }
@@ -723,7 +738,8 @@ contract CommitFinalizeTest is Test {
         assertFalse(found, "no revoke entry point on the ABI at all");
 
         bytes32 gatewayRole = m.GATEWAY_ROLE();
-        vm.prank(msig);
+        address owner = m.owner();
+        vm.prank(owner);
         vm.expectRevert();
         m.revokeRole(gatewayRole, gateway);
 
@@ -731,8 +747,9 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev The treasury is an address the deployment named, and there is no way to move it.
-    ///      Fees leave in the transaction that charges them, so there is no accrued balance to
-    ///      direct, no `withdrawFees` to gate, and no setter for a compromised owner to reach.
+    ///      Fees leave in the transaction that charges them, so there is no `withdrawFees` to
+    ///      gate and no setter for a compromised owner to reach. The report float leaves only
+    ///      at the treasury's own call (`ProviderSymmetricInboundSpec`).
     function test_theTreasuryIsFixedAndThereIsNoWithdrawal() public {
         MsigTransceiver m = _msigTransceiver();
         assertEq(m.treasury(), treasury);
@@ -744,19 +761,15 @@ contract CommitFinalizeTest is Test {
         assertFalse(set, "and no setter");
     }
 
-    /// @dev A fee with nowhere to go is refused where it is set, not where it is charged:
-    ///      the mistake surfaces at configuration time rather than burning the fee inside
-    ///      somebody's bootstrap.
-    function test_aFeeCannotBeSetWithoutATreasury() public {
+    /// @dev A fee or a float with nowhere to go is refused at deployment, not discovered
+    ///      inside somebody's bootstrap.
+    function test_aTransceiverCannotBeDeployedWithoutATreasury() public {
         address[] memory gateways = new address[](1);
         gateways[0] = gateway;
 
         MsigTransceiver m = new MsigTransceiver();
-        m.initialize(msig, address(0), gateways, address(receiverImpl));
-
-        vm.prank(msig);
         vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
-        m.setBootstrapFee(ChainKey.forEvm(8453), 1 ether);
+        m.initialize(msig, address(0), gateways, address(receiverImpl));
     }
 
     function _msigTransceiver() internal returns (MsigTransceiver m) {
@@ -774,9 +787,7 @@ contract CommitFinalizeTest is Test {
     ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
     ///      wrong. The transceiver holds no approvals at all.
     function test_anAccountsApprovalsLiveInTheAccount() public {
-        t.inbound(
-            transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey()), hashOf(_calls()))
-        );
+        t.inbound(transmitter, _deferred(t.predictCrossAccount(transmitter, bytes32(0), home()), hashOf(_calls())));
 
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("pendingOf(address)", transmitter));
         assertFalse(a, "no per-sender mapping on the transceiver");
@@ -784,8 +795,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "and no approval map of its own");
 
         assertTrue(
-            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey())))
-                .isCommitted(hashOf(_calls())),
+            MockReceiver(payable(t.predictCrossAccount(transmitter, bytes32(0), home()))).isCommitted(hashOf(_calls())),
             "the approval lives with the sender it belongs to"
         );
     }
@@ -811,7 +821,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = rt.predictCrossAccount(transmitter, bytes32(0), rt.homeChainKey());
+        address poisoned = rt.predictCrossAccount(transmitter, bytes32(0), home());
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -825,8 +835,7 @@ contract CommitFinalizeTest is Test {
         RevertingReceiver(payable(poisoned)).finalize(stuck);
 
         // The other sender is entirely unaffected, now and repeatedly.
-        RevertingReceiver r2 =
-            RevertingReceiver(payable(rt.predictCrossAccount(transmitter2, bytes32(0), rt.homeChainKey())));
+        RevertingReceiver r2 = RevertingReceiver(payable(rt.predictCrossAccount(transmitter2, bytes32(0), home())));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 
@@ -905,7 +914,7 @@ contract CommitFinalizeTest is Test {
     ///      receiver and runs a payload that approves a hash on the receiver itself, and
     ///      anyone finalizes it there later.
     function test_aDeferredFirstPayloadIsCommittedOnTheReceiver() public {
-        address predicted = t.predictCrossAccount(transmitter, bytes32(0), t.homeChainKey());
+        address predicted = t.predictCrossAccount(transmitter, bytes32(0), home());
         Call[] memory later = _calls();
 
         t.inbound(transmitter, _deferred(predicted, hashOf(later)));

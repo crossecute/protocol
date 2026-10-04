@@ -13,14 +13,12 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
-import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
-import {
-    LzZkSyncSpokeTransceiver,
-    LzTronSpokeTransceiver
-} from "src/protocols/layerzero/LzDivergentSpokeTransceiver.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
+import {LzZkSyncTransceiver, LzTronTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {UnsendableTransceiver, homeTransmitterFor} from "test/Unsendable.sol";
+import {UnsendableTransceiver} from "test/Unsendable.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -230,102 +228,92 @@ contract MinimalAccount {
     function initialize() external {}
 }
 
+/// @dev Where the accounts in these tests are homed: anywhere but this chain.
+function home() pure returns (bytes32) {
+    return ChainKey.forEvm(1);
+}
+
+function config(address receiverImplementation) pure returns (TransceiverConfig memory) {
+    return TransceiverConfig({
+        gateways: new address[](0),
+        transmitterImplementation: address(0xBEEF),
+        receiverImplementation: receiverImplementation,
+        governorOwner: address(0x5165),
+        governorSalt: bytes32(0),
+        governorHome: home(),
+        treasury: address(0x7EA5),
+        addressesDiverge: false
+    });
+}
+
 /// @dev The shipped contracts, with one function added. Everything about initialization,
 ///      the divergence flag and the bytecode hash is inherited rather than restated, so
 ///      these exercise the initializer a deployment actually calls: a stand-in that
 ///      reimplemented it could pass while the real one was never wired to anything.
-contract ZkSpoke is LzZkSyncSpokeTransceiver {
-    constructor(address _endpoint) LzZkSyncSpokeTransceiver(_endpoint) {}
+contract ZkTransceiver is LzZkSyncTransceiver {
+    constructor(address _endpoint) LzZkSyncTransceiver(_endpoint) {}
 
     function create(address o, bytes32 s) external returns (address) {
-        return _createCrossAccount(o, s, homeChainKey, homeTransmitterFor(this, o, s), new Call[](0));
+        return _createCrossAccount(o, s, home(), address(0x7A11), new Call[](0));
     }
 }
 
-contract TronSpoke is LzTronSpokeTransceiver {
-    constructor(address _endpoint) LzTronSpokeTransceiver(_endpoint) {}
-
-    function create(address o, bytes32 s) external returns (address) {
-        return _createCrossAccount(o, s, homeChainKey, homeTransmitterFor(this, o, s), new Call[](0));
-    }
+contract TronTransceiver is LzTronTransceiver {
+    constructor(address _endpoint) LzTronTransceiver(_endpoint) {}
 }
 
-/// @dev What this suite can establish about a diverging spoke, running on an Ethereum EVM:
-///      that each override reproduces `AddressDerive`'s formula exactly, that it does not
+/// @dev What this suite can establish about a diverging transceiver, running on an Ethereum
+///      EVM: that each override reproduces `AddressDerive`'s formula exactly, that it does not
 ///      reproduce Ethereum's, and that the guard refuses rather than arming nothing. What
 ///      it cannot establish is that the target chain's own deployer agrees, which is an
 ///      on-chain check against Era and Shasta.
-contract DivergentSpokeTest is Test {
+contract DivergentTransceiverTest is Test {
     address owner = address(0xA11CE);
 
     bytes32 constant HASH = keccak256("zksolc-or-tronsolc-artifact");
     bytes32 constant SALT = bytes32(0);
-    address constant HUB = address(0xC0FFEE);
     address ENDPOINT = address(new MockLzEndpoint());
 
-    function _zk() internal returns (ZkSpoke s) {
-        s = new ZkSpoke(ENDPOINT);
-        s.initialize(
-            new address[](0),
-            address(new MinimalAccount()),
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            abi.encodePacked(HUB),
-            address(0x7EA5),
-            bytes32(0),
-            HASH,
-            uint32(1)
-        );
+    function _zk() internal returns (ZkTransceiver s) {
+        s = new ZkTransceiver(ENDPOINT);
+        s.initialize(config(address(new MinimalAccount())), HASH);
     }
 
-    function _tron() internal returns (TronSpoke s) {
-        s = new TronSpoke(ENDPOINT);
-        s.initialize(
-            new address[](0),
-            address(new MinimalAccount()),
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            abi.encodePacked(HUB),
-            address(0x7EA5),
-            bytes32(0),
-            HASH,
-            uint32(1)
-        );
+    function _tron() internal returns (TronTransceiver s) {
+        s = new TronTransceiver(ENDPOINT);
+        s.initialize(config(address(new MinimalAccount())), HASH);
     }
 
     function testFuzz_zkSyncReproducesTheEraFormula(address o, bytes32 salt) public {
         vm.assume(o != address(0));
-        ZkSpoke s = _zk();
+        ZkTransceiver s = _zk();
         assertEq(
-            s.predictCrossAccount(o, salt, s.homeChainKey()),
-            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt, s.homeChainKey()), HASH, keccak256(""))
+            s.predictCrossAccount(o, salt, home()),
+            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt, home()), HASH, keccak256(""))
         );
     }
 
     function testFuzz_tronReproducesTheTronFormula(address o, bytes32 salt) public {
         vm.assume(o != address(0));
-        TronSpoke s = _tron();
+        TronTransceiver s = _tron();
         assertEq(
-            s.predictCrossAccount(o, salt, s.homeChainKey()),
-            AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt, s.homeChainKey()), HASH)
+            s.predictCrossAccount(o, salt, home()),
+            AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt, home()), HASH)
         );
     }
 
     /// @dev The whole point: neither answers what Ethereum's formula would.
     function test_neitherMatchesEthereum() public {
-        ZkSpoke z = _zk();
-        TronSpoke t = _tron();
-        address ethZ = Create2.computeAddress(
-            z.accountSalt(owner, SALT, z.homeChainKey()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
-        );
-        address ethT = Create2.computeAddress(
-            t.accountSalt(owner, SALT, t.homeChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
-        );
-        assertTrue(z.predictCrossAccount(owner, SALT, z.homeChainKey()) != ethZ, "zkSync diverges");
-        assertTrue(t.predictCrossAccount(owner, SALT, t.homeChainKey()) != ethT, "Tron diverges");
+        ZkTransceiver z = _zk();
+        TronTransceiver t = _tron();
+        address ethZ =
+            Create2.computeAddress(z.accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z));
+        address ethT =
+            Create2.computeAddress(t.accountSalt(owner, SALT, home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
+        assertTrue(z.predictCrossAccount(owner, SALT, home()) != ethZ, "zkSync diverges");
+        assertTrue(t.predictCrossAccount(owner, SALT, home()) != ethT, "Tron diverges");
         assertTrue(
-            z.predictCrossAccount(owner, SALT, z.homeChainKey())
-                != t.predictCrossAccount(owner, SALT, t.homeChainKey()),
+            z.predictCrossAccount(owner, SALT, home()) != t.predictCrossAccount(owner, SALT, home()),
             "and from each other"
         );
     }
@@ -334,14 +322,12 @@ contract DivergentSpokeTest is Test {
     ///      them before the on-chain check safe. The deployer here uses Ethereum's formula,
     ///      the prediction does not, and the guard names both halves.
     function test_bothFailClosedOnAnEthereumEvm() public {
-        ZkSpoke z = _zk();
+        ZkTransceiver z = _zk();
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverBase.AccountAddressMismatch.selector,
-                z.predictCrossAccount(owner, SALT, z.homeChainKey()),
-                Create2.computeAddress(
-                    z.accountSalt(owner, SALT, z.homeChainKey()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
-                )
+                z.predictCrossAccount(owner, SALT, home()),
+                Create2.computeAddress(z.accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z))
             )
         );
         z.create(owner, SALT);
@@ -352,21 +338,16 @@ contract DivergentSpokeTest is Test {
     ///      expectation and the test fails on the wrong line. The same trap catches
     ///      `vm.prank`, and it is silent whenever the pranked call happens to succeed.
     function test_theBytecodeHashIsWriteOnceAndNonZero() public {
-        address impl = address(new MinimalAccount());
-        bytes memory homeId = Erc7930.encodeEvmChain(1);
-        bytes memory hub = abi.encodePacked(HUB);
-        bytes32 homeKey = ChainKey.forEvm(1);
+        TransceiverConfig memory c = config(address(new MinimalAccount()));
 
-        ZkSpoke s = new ZkSpoke(ENDPOINT);
+        ZkTransceiver s = new ZkTransceiver(ENDPOINT);
         vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
-        s.initialize(new address[](0), impl, homeKey, homeId, hub, address(0x7EA5), bytes32(0), bytes32(0), uint32(1));
+        s.initialize(c, bytes32(0));
 
-        ZkSpoke ok = _zk();
+        ZkTransceiver ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(
-            new address[](0), impl, homeKey, homeId, hub, address(0x7EA5), bytes32(0), keccak256("other"), uint32(1)
-        );
+        ok.initialize(c, keccak256("other"));
     }
 }
 
@@ -436,63 +417,57 @@ contract AddressAliasTest is Test {
 }
 
 /// @dev The flag and the formula cannot disagree, because neither is an argument any more.
-///      A spoke that reported divergence while deriving addresses Ethereum's way, or the
+///      A transceiver that reported divergence while deriving addresses Ethereum's way, or the
 ///      reverse, was the one state that cannot be right; picking the contract picks both.
 contract DivergenceIsNotConfigurableTest is Test {
     address owner = address(0xA11CE);
     bytes32 constant HASH = keccak256("artifact");
     address ENDPOINT = address(new MockLzEndpoint());
 
-    function _args() internal returns (address, bytes32, bytes memory, bytes memory) {
-        return (
-            address(new MinimalAccount()),
-            ChainKey.forEvm(1),
-            Erc7930.encodeEvmChain(1),
-            abi.encodePacked(address(0xC0FFEE))
-        );
+    /// @dev Asks for divergence, which the plain transceiver must not take from its caller.
+    function _asking(bool diverges) internal returns (TransceiverConfig memory c) {
+        c = config(address(new MinimalAccount()));
+        c.addressesDiverge = diverges;
     }
 
-    function test_theParitySpokeAlwaysReportsNoDivergence() public {
-        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
-        LzSpokeTransceiver s = new LzSpokeTransceiver(ENDPOINT);
-        s.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), uint32(1));
+    function test_theParityTransceiverDerivesTheEthereumWay() public {
+        LzTransceiver s = new LzTransceiver(ENDPOINT);
+        s.initialize(_asking(false));
 
-        assertFalse(s.addressesDiverge(), "not settable, and false");
+        assertFalse(s.addressesDiverge());
         assertEq(
-            s.predictCrossAccount(owner, bytes32(0), s.homeChainKey()),
+            s.predictCrossAccount(owner, bytes32(0), home()),
             Create2.computeAddress(
-                s.accountSalt(owner, bytes32(0), s.homeChainKey()), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)
+                s.accountSalt(owner, bytes32(0), home()), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)
             ),
-            "and it derives the way the hub recomputes"
+            "and it derives the way the home recomputes"
         );
     }
 
-    function test_theDivergentSpokesAlwaysReportDivergence() public {
-        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
+    /// @dev The variants force the flag on whatever the config says.
+    function test_theDivergentTransceiversAlwaysReportDivergence() public {
+        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
+        zk.initialize(_asking(false), HASH);
+        LzTronTransceiver tron = new LzTronTransceiver(ENDPOINT);
+        tron.initialize(_asking(false), HASH);
 
-        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
-        zk.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
-        LzTronSpokeTransceiver tron = new LzTronSpokeTransceiver(ENDPOINT);
-        tron.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
-
-        assertTrue(zk.addressesDiverge(), "not settable, and true");
+        assertTrue(zk.addressesDiverge(), "forced, and true");
         assertTrue(tron.addressesDiverge());
         assertEq(zk.accountBytecodeHash(), HASH, "the initializer wired it");
         assertEq(tron.accountBytecodeHash(), HASH);
 
         // And each derives its own way, not Ethereum's.
         address ethWay = Create2.computeAddress(
-            zk.accountSalt(owner, bytes32(0), zk.homeChainKey()), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
+            zk.accountSalt(owner, bytes32(0), home()), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
         );
-        assertTrue(zk.predictCrossAccount(owner, bytes32(0), zk.homeChainKey()) != ethWay);
+        assertTrue(zk.predictCrossAccount(owner, bytes32(0), home()) != ethWay);
     }
 
-    /// @dev The bytecode hash has no setter, so a spoke initialized without one cannot
+    /// @dev The bytecode hash has no setter, so a transceiver initialized without one cannot
     ///      acquire it later: the initializer refuses zero, which is the only way in.
     function test_thereIsNoSetterForTheBytecodeHash() public {
-        (address impl, bytes32 k, bytes memory id, bytes memory hub) = _args();
-        LzZkSyncSpokeTransceiver zk = new LzZkSyncSpokeTransceiver(ENDPOINT);
-        zk.initialize(new address[](0), impl, k, id, hub, address(0x7EA5), bytes32(0), HASH, uint32(1));
+        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
+        zk.initialize(_asking(true), HASH);
 
         (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));
         assertFalse(ok, "no setter on the ABI");
