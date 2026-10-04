@@ -197,15 +197,19 @@ contract TransceiverTest is Test {
         vm.prank(governor);
         eth.bootstrap(_key(BASE), msig, bytes32(0), _calls(), new bytes[](0));
         bytes memory sent = eth.sentPayload();
+        bytes32 accountInitCodeHash = eth.CROSS_PROXY_INIT_CODE_HASH();
 
         vm.revertToState(world);
         vm.chainId(BASE);
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, keccak256("transceiver"), keccak256("account"));
+        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, keccak256(type(Sym).creationCode), accountInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Derived, providers: providers})
         );
+        // The record is what places the counterpart on Ethereum (#31): this contract deployed
+        // both transceivers, so it stands as the factory there.
+        registry.setCreate2Factory(_key(ETH), address(this));
         Sym base = new Sym{salt: TRANSCEIVER_SALT}();
         base.initialize(
             TransceiverConfig({
@@ -328,6 +332,24 @@ contract TransceiverTest is Test {
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
+    }
+
+    /// @dev A `Derived` chain with its own CREATE2 factory holds the provider's transceiver
+    ///      off this address; once the deployment is recorded the default counterpart follows
+    ///      the registry's prediction there (#31).
+    function test_theDefaultCounterpartFollowsAChainsOwnFactory() public {
+        Sym t = _chain(ETH, false);
+        ChainRegistry registry = ChainRegistry(address(t.chainRegistry()));
+        assertEq(t.counterpartOn(_key(BASE)), abi.encodePacked(address(t)), "this address before a record");
+
+        registry.setCreate2Factory(_key(BASE), address(0xFAC7));
+        registry.setProviderDeployment(
+            t.messageProvider(), TRANSCEIVER_SALT, keccak256("transceiver"), t.CROSS_PROXY_INIT_CODE_HASH()
+        );
+        address there = registry.predictTransceiver(_key(BASE), t.messageProvider());
+
+        assertEq(t.counterpartOn(_key(BASE)), abi.encodePacked(there));
+        assertTrue(there != address(t), "not this contract's own address");
     }
 
     /// @dev A zkSync home keeps its transmitter at a zkSync address, so the receiver here is

@@ -272,8 +272,9 @@ nowhere, not a revert.
 which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
 own notion of a peer. Where the SDK insists on a peer table, the binding SHOULD populate it
 from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree only where both
-this chain and the destination use Ethereum's CREATE2 formula, and differ wherever either is
-zkSync or Tron, where deriving the peer names an address that holds no receiver.
+this chain and the destination use Ethereum's CREATE2 formula and the same CREATE2 factory,
+and differ wherever either is zkSync or Tron, where deriving the peer names an address that
+holds no receiver.
 
 **R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking

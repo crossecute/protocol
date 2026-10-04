@@ -846,7 +846,7 @@ native LayerZero binding keeps its own chainKey→eid mapping under R5, where a 
 binding keeps none.
 
 **The peer value is `counterpartOn(chainKey)`, not `address(this)`.** The two agree wherever
-Ethereum's CREATE2 formula holds, which made the shortcut tempting; they differ on zkSync and
+Ethereum's CREATE2 formula and factory hold, which made the shortcut tempting; they differ on zkSync and
 Tron, where deriving the peer names an address holding no receiver. One entry per
 destination, read from the table rather than computed.
 
