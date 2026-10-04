@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Commitment, Scheme} from "src/messaging/Commitment.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
@@ -102,15 +102,14 @@ contract CommitmentSchemePluginTest is Test {
         blake2bScheme = new Blake2bScheme();
         sha256dScheme = new Sha256dScheme();
 
-        ChainRegistry impl = new ChainRegistry();
-        registry =
-            ChainRegistry(address(new ERC1967Proxy(address(impl), abi.encodeCall(ChainRegistry.initialize, (owner)))));
+        registry = new ChainRegistry(owner);
 
         vm.startPrank(owner);
-        evmKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        tonKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.NEAR, hex"01"));
-        cardanoKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.COSMOS, hex"02"));
-        starknetKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN")));
+        evmKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        tonKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.NEAR, hex"01"), Provenance.Unresolved);
+        cardanoKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.COSMOS, hex"02"), Provenance.Unresolved);
+        starknetKey =
+            registry.addChainKey(Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN")), Provenance.Unresolved);
 
         registry.setCommitmentScheme(evmKey, keccakScheme);
         registry.setCommitmentScheme(tonKey, sha256Scheme);
@@ -173,7 +172,7 @@ contract CommitmentSchemePluginTest is Test {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         vm.startPrank(owner);
-        bytes32 solKey = registry.addChainKey(sol);
+        bytes32 solKey = registry.addChainKey(sol, Provenance.Unresolved);
         registry.setCommitmentScheme(solKey, keccakScheme);
         vm.stopPrank();
 
@@ -196,7 +195,7 @@ contract CommitmentSchemePluginTest is Test {
         bytes32 evmBefore = registry.commitmentFor(evmKey, elements);
 
         vm.startPrank(owner);
-        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
+        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"), Provenance.Unresolved);
         registry.setCommitmentScheme(newChainKey, sha256dScheme);
         vm.stopPrank();
 
@@ -218,7 +217,7 @@ contract CommitmentSchemePluginTest is Test {
     ///      exist produces a different digest.
     function test_newSchemeIsUnreachableThroughTheEnum() public {
         vm.startPrank(owner);
-        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"));
+        newChainKey = registry.addChainKey(Erc7930.encodeChainId(CT_UNALLOCATED, hex"2a"), Provenance.Unresolved);
         registry.setCommitmentScheme(newChainKey, sha256dScheme);
         vm.stopPrank();
 
@@ -274,7 +273,7 @@ contract CommitmentSchemePluginTest is Test {
     ///      plugin, because it is not the plugin's to weaken.
     function test_theChainKeyIsFoldedInAndIsNotThePluginsBusiness() public {
         vm.startPrank(owner);
-        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         registry.setCommitmentScheme(otherKey, keccakScheme);
         vm.stopPrank();
 
@@ -316,7 +315,7 @@ contract CommitmentSchemePluginTest is Test {
     ///      `Commitment._hash` follows, for the same reason.
     function test_unconfiguredChainRefusesRatherThanFallingBackToKeccak() public {
         vm.prank(owner);
-        bytes32 unconfigured = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        bytes32 unconfigured = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
 
         vm.expectRevert(ChainRegistry.NoCommitmentScheme.selector);
         registry.commitmentFor(unconfigured, _elements());

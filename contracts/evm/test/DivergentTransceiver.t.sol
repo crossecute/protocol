@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {
@@ -166,15 +165,9 @@ contract DivergentSymmetricTransceiverTest is Test {
     ///      account's address there under Ethereum's formula, not its own Era address.
     function test_aZkSyncHomePredictsItsReceiversTheEthereumWay() public {
         ZkSym t = _zk();
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         bytes32 provider = registry.addMessageProvider("test");
-        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         registry.setProviderDeployment(
             provider, PROVIDER_SALT, keccak256("transceiver"), t.CROSS_PROXY_INIT_CODE_HASH()
         );
@@ -192,15 +185,9 @@ contract DivergentSymmetricTransceiverTest is Test {
 
     function test_theDefaultCounterpartIsTheProvidersParityAddress() public {
         ZkSym t = _zk();
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         bytes32 provider = registry.addMessageProvider("test");
-        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
 
         vm.prank(t.owner());
         t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);

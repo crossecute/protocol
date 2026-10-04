@@ -6,13 +6,16 @@ import {Provenance} from "src/registry/Provenance.sol";
 /// @notice The slice of `ChainRegistry` a transceiver needs: where remote things live, and how
 ///         much each claim about them is worth.
 ///
-/// @dev Routes live on the transceiver. What it reads here is provenance, derived
+/// @dev Routes live on the transceiver. What it reads here is provenance, suspension, derived
 ///      counterpart addresses, location validation, and which chains must report their
 ///      receivers.
 interface IChainRegistryRefs {
     /// @notice What an address claim about `chainKey` is worth. Chain-scoped, so every
     ///         provider's transceiver reads the same answer.
     function provenanceFor(bytes32 chainKey) external view returns (Provenance);
+
+    /// @notice Whether every transceiver on this chain refuses `chainKey`.
+    function isSuspended(bytes32 chainKey) external view returns (bool);
 
     /// @notice The transceiver address this registry recomputes for `chainKey`, from the
     ///         deriver and inputs recorded for that chain. A transceiver stores the result.

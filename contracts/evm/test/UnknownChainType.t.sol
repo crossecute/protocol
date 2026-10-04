@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -42,9 +41,7 @@ contract UnknownChainTypeTest is Test {
     bytes account;
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
+        registry = new ChainRegistry(owner);
         chainId = Erc7930.encodeChainId(CT_UNKNOWN, hex"cafe");
         account = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"0011223344556677");
 
@@ -61,7 +58,7 @@ contract UnknownChainTypeTest is Test {
     ///      `ChainType.sol`.
     function test_anUndefinedChainTypeRegisters() public {
         vm.prank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unresolved);
 
         assertTrue(registry.hasChainKey(chainKey));
         assertEq(registry.chainIdentifier(chainKey), chainId);
@@ -73,8 +70,7 @@ contract UnknownChainTypeTest is Test {
     ///      be known rather than about what the address means.
     function test_theDirectoryWorksForAnUndefinedChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
-        registry.setProvenance(chainKey, Provenance.Attested);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Attested);
         vm.stopPrank();
 
         assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Attested));
@@ -84,24 +80,21 @@ contract UnknownChainTypeTest is Test {
         );
     }
 
-    /// @dev An unknown chain type has no default grade, and that is the safe direction. An
-    ///      undeclared `eip155` chain reads as `Derived`, because every EVM chain but zkSync
-    ///      and Tron shares Ethereum's formula; anything else reads as `Unresolved`, which
-    ///      no bar accepts, so it must be stated rather than guessed.
-    function test_anUndeclaredUnknownChainTypeHasNoGrade() public {
+    /// @dev Address parity is an `eip155` argument, so an unknown chain type cannot be graded
+    ///      `Derived`: a 20-byte EVM address means nothing there, and a transceiver that
+    ///      assumed one would address the void.
+    function test_anUndefinedChainTypeCannotBeGradedDerived() public {
         vm.prank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
-
-        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unresolved));
+        vm.expectRevert(ChainRegistry.NotEvmChain.selector);
+        registry.addChainKey(chainId, Provenance.Derived);
     }
 
     /// @dev The two per-chain extension points are wired by `chainKey`, not by chain type,
     ///      so both are available immediately.
     function test_validatorAndCapAttachToAnUndefinedChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Attested);
         registry.setValidator(chainKey, new WidthValidator());
-        registry.setProvenance(chainKey, Provenance.Attested);
         vm.stopPrank();
 
         // The validator is enforced wherever a location is checked, which is now the
@@ -116,17 +109,6 @@ contract UnknownChainTypeTest is Test {
 
     /* =============================== what does not ============================= */
 
-    /// @dev Address parity is an `eip155` argument, so an unknown chain type gets no
-    ///      default grade and therefore no default counterpart: a 20-byte EVM address means
-    ///      nothing here, and a hub that assumed one would address the void.
-    function test_thereIsNoDefaultGradeForAnUndefinedChainType() public {
-        vm.prank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
-
-        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unresolved));
-        assertTrue(registry.requiresReceiverCallback(chainKey));
-    }
-
     /// @dev The uniform derivation is closed, and this is the one place a new chain type
     ///      needs code rather than configuration. `supportsScheme` is a fixed dispatch, so
     ///      the stock deriver rejects every scheme for a type it does not know.
@@ -137,7 +119,7 @@ contract UnknownChainTypeTest is Test {
         }
 
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unresolved);
         registry.setDeriver(chainKey, IVmDeriver(address(d)));
         vm.expectRevert(ChainRegistry.SchemeNotSupported.selector);
         registry.setDeriveParams(chainKey, abi.encode(uint8(0), bytes("")));
@@ -170,8 +152,8 @@ contract UnknownChainTypeTest is Test {
 
         // And both register, as two unrelated chains.
         vm.startPrank(owner);
-        bytes32 a = registry.addChainKey(padded);
-        bytes32 b = registry.addChainKey(minimal);
+        bytes32 a = registry.addChainKey(padded, Provenance.Unresolved);
+        bytes32 b = registry.addChainKey(minimal, Provenance.Unresolved);
         vm.stopPrank();
 
         assertTrue(a != b);
@@ -184,6 +166,6 @@ contract UnknownChainTypeTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(Erc7930.NonMinimalChainRef.selector);
-        registry.addChainKey(padded);
+        registry.addChainKey(padded, Provenance.Derived);
     }
 }

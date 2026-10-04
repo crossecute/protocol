@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -121,14 +120,12 @@ contract SaltedDeploymentTest is Test {
     bytes32 constant SALT = keccak256("crossecute.lz.v1");
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
+        registry = new ChainRegistry(owner);
         factory = new MiniFactory();
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         registry.setCreate2Factory(chainKey, address(factory));
         vm.stopPrank();
     }
@@ -207,7 +204,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256("initcode"), keccak256("receiver"));
 
         vm.startPrank(owner);
-        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
@@ -282,7 +279,7 @@ contract SaltedDeploymentTest is Test {
 
         // Each is still the same address on every parity chain.
         vm.startPrank(owner);
-        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
@@ -424,8 +421,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256("initcode"), keccak256("receiver"));
 
         vm.startPrank(owner);
-        bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324));
-        registry.setProvenance(zk, Provenance.Attested);
+        bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
         vm.stopPrank();
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
@@ -436,7 +432,8 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256("initcode"), keccak256("receiver"));
 
         vm.prank(owner);
-        bytes32 sol = registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
+        bytes32 sol =
+            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unresolved);
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
         registry.predictTransceiver(sol, provider);
@@ -489,12 +486,10 @@ contract SaltedDeploymentTest is Test {
     /* ================================== helpers ================================ */
 
     function _freshRegistryWith(bytes32 salt, bytes32 initCodeHash) internal returns (ChainRegistry r) {
-        r = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
+        r = new ChainRegistry(owner);
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");
-        r.addChainKey(Erc7930.encodeEvmChain(8453));
+        r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         r.setCreate2Factory(chainKey, address(factory));
         r.setProviderDeployment(provider, salt, initCodeHash, keccak256("receiver"));
         vm.stopPrank();

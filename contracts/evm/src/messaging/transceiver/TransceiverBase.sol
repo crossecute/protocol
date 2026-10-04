@@ -155,6 +155,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     error NoChainRegistry();
     /// @dev The route resolved to a known chain, but the sender is not its counterpart.
     error NotCounterpart(bytes32 chainKey);
+    /// @dev The registry has suspended the chain.
+    error ChainSuspended(bytes32 chainKey);
     /// @dev The chain's grade is below this transceiver's bar.
     error InsufficientCounterpartProvenance(bytes32 chainKey, Provenance grade);
     /// @dev Re-pointing a counterpart would redirect the destination; moving one is a redeploy.
@@ -596,13 +598,17 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
 
     /// @inheritdoc OutboundBase
     ///
-    /// @dev Applies the registry's per-chain grade, which every provider's transceiver reads
-    ///      alike. An unset counterpart on a `Derived` chain is `_parityAddress(chainKey)`:
-    ///      every transceiver of a provider is deployed through the same factory at the same
-    ///      salt, so they coincide wherever Ethereum's CREATE2 holds.
+    /// @dev Applies the registry's per-chain grade and suspension, which every provider's
+    ///      transceiver reads alike. Every bootstrap and report sent, and every delivery
+    ///      authenticated, goes through here, so a suspended chain is cut off both ways.
+    ///
+    /// @dev An unset counterpart on a `Derived` chain is `_parityAddress(chainKey)`: every
+    ///      transceiver of a provider is deployed through the same factory at the same salt,
+    ///      so they coincide wherever Ethereum's CREATE2 holds.
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
+        if (chainRegistry.isSuspended(chainKey)) revert ChainSuspended(chainKey);
 
         Provenance grade = chainRegistry.provenanceFor(chainKey);
         if (uint8(grade) < uint8(minCounterpartProvenance)) {

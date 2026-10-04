@@ -270,7 +270,8 @@ Then, per destination, add what the chain needs:
 - a `Scheme` or `ICommitmentScheme` plugin, if it does not hash with keccak256
 - an `IVmDeriver`, if its addresses can be recomputed here
 - an `IRefValidator`, if the envelope cannot express its value ranges
-- a `setProvenance` grade below `Derived`, if its addresses cannot be recomputed here at all
+- a grade below `Derived` when it is registered, if its addresses cannot be recomputed here at
+  all; the grade is write-once
 
 ## Message providers
 
@@ -341,8 +342,8 @@ What an operator or integrator has to know:
   one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
-- `ChainRegistry` is the one contract upgraded after deployment, so its storage is ERC-7201
-  namespaced. Accounts and transceivers keep sequential storage with no gaps, since no later
+- Nothing is upgraded after deployment. `ChainRegistry` is a plain contract with no proxy, so
+  accounts, transceivers, and the registry all keep sequential storage with no gaps: no later
   version ever has to match their layout.
 - OpenZeppelin 5.4.0 and forge-std 1.16.2, submodules pinned to exact commits and fetched
   from forks in the crossecute org, each holding its commit under its own tag, so a deleted
@@ -399,7 +400,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 630 passing
+cd contracts/evm && forge test        # 633 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

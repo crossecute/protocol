@@ -10,9 +10,9 @@ pragma solidity ^0.8.20;
 ///      signed transaction. `Attested`: it cannot, so the value came over a bridge and is
 ///      worth that bridge's security.
 ///
-/// @dev Checks are ordinal comparisons against a bar, and the registry's `provenanceOf` and a
-///      transceiver's `minCounterpartProvenance` persist in proxy storage. Inserting a grade renumbers
-///      every stored value above it after deployment: append, or migrate.
+/// @dev Checks are ordinal comparisons against a bar, and the registry's grades and a
+///      transceiver's `minCounterpartProvenance` persist in storage. Inserting a grade
+///      renumbers every stored value above it after deployment: append, or migrate.
 enum Provenance {
     Unresolved,
     Attested,

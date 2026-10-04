@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -113,9 +111,7 @@ contract InboundAuthTest is Test {
     bytes HOME_ROUTE = Erc7930.encodeEvmChain(1);
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
-        );
+        registry = new ChainRegistry(msig);
         node = new Node();
         node.initialize(msig, address(new Transmitter()), address(new MockReceiver()));
         owner = node.owner();
@@ -123,7 +119,7 @@ contract InboundAuthTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        homeKey = registry.addChainKey(HOME_ROUTE);
+        homeKey = registry.addChainKey(HOME_ROUTE, Provenance.Derived);
         registry.setLocalTransceiver(provider, address(node));
         vm.stopPrank();
 
@@ -180,8 +176,7 @@ contract InboundAuthTest is Test {
     ///      graded below `Derived` is the zkSync and Tron shape.
     function _wireReportingChain(uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId));
-        registry.setProvenance(chainKey, Provenance.Attested);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId), Provenance.Attested);
         vm.stopPrank();
         vm.startPrank(owner);
         node.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
@@ -262,6 +257,36 @@ contract InboundAuthTest is Test {
             )
         );
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
+    }
+
+    /// @dev Suspension cuts a chain off both ways: no report is accepted from it and no
+    ///      bootstrap goes to it. Lifting it restores both, since it only ever refused.
+    function test_aSuspendedChainIsRefusedBothWays() public {
+        address counterpart = address(0xC0DE);
+        bytes32 baseKey = _wireReportingChain(8453, counterpart);
+        _standUpAccount(8453);
+        bytes memory report =
+            Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
+
+        vm.prank(msig);
+        registry.setSuspended(baseKey, true);
+
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, baseKey));
+        node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
+
+        address second = address(0x7A12);
+        vm.startPrank(second);
+        Transmitter acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, baseKey));
+        acct.bootstrap(8453, new Call[](0), new bytes[](0));
+        vm.stopPrank();
+
+        vm.prank(msig);
+        registry.setSuspended(baseKey, false);
+        node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
+        assertEq(
+            Transmitter(payable(node.predictTransmitter(transmitter, bytes32(0)))).counterpartOn(baseKey).length, 20
+        );
     }
 
     /* ================================= envelope ================================ */

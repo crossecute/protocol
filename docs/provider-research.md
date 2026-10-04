@@ -212,7 +212,7 @@ That composes without any change to this protocol, since `ChainRegistry` already
 providers separately and each hub holds its own counterparts. It is also the arrangement
 that makes the trust argument worth having. A payload to Optimism trusts Optimism's bridge
 and nothing else, rather than trusting one attestation network with every destination at
-once. What it costs is N deployments, N `setProvenance` entries, and N sets of routes,
+once. What it costs is N deployments, N graded chain entries, and N sets of routes,
 which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
 
 ### Chain-level deployment permissioning, which breaks bootstrap and not sends

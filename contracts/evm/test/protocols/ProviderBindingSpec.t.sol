@@ -13,7 +13,6 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
 /// @notice The wrapper every provider's send test harness exposes: a thin subclass of the
@@ -421,16 +420,9 @@ abstract contract ProviderInboundSpec is Test {
 
     function _wire() internal returns (bytes32 chainKey) {
         TransceiverBase t = TransceiverBase(payable(_transceiver()));
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         bytes32 provider = registry.addMessageProvider("under-test");
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
-        registry.setProvenance(chainKey, Provenance.Attested);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Attested);
 
         vm.startPrank(t.owner());
         t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);

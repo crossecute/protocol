@@ -46,9 +46,7 @@ contract DestinationNamingTest is Test {
                 ))
         );
         msig = t.owner();
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
-        );
+        registry = new ChainRegistry(msig);
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
@@ -94,7 +92,7 @@ contract DestinationNamingTest is Test {
 
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
-        baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         t.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xC0DE)));
         t.setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
@@ -114,7 +112,7 @@ contract DestinationNamingTest is Test {
     function test_oneRouteCannotNameTwoChains() public {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, arbKey));
         t.setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
@@ -133,7 +131,7 @@ contract DestinationNamingTest is Test {
     ///      LayerZero-adjacent value and would send into the void.
     function test_unsetRouteRevertsRatherThanReadingAsZero() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key));
         t.routeTo(key);
@@ -143,8 +141,7 @@ contract DestinationNamingTest is Test {
     ///      the chain accepts no new counterpart until it is added back.
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        registry.setProvenance(key, Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
 
         registry.removeChainKey(key);
@@ -158,44 +155,31 @@ contract DestinationNamingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Lowering the grade still cuts a removed chain off: removal must not disable it.
+    /// @dev Suspension still cuts a removed chain off: removal must not disable it.
     function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
         registry.removeChainKey(key);
-
-        registry.setProvenance(key, Provenance.Attested);
+        registry.setSuspended(key, true);
         vm.stopPrank();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.InsufficientCounterpartProvenance.selector, key, Provenance.Attested)
-        );
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, key));
         t.counterpartOn(key);
     }
 
-    /// @dev A chain never registered has nothing to grade.
-    function test_aNeverRegisteredChainCannotBeGraded() public {
+    /// @dev A chain never registered has nothing to suspend.
+    function test_aNeverRegisteredChainCannotBeSuspended() public {
         vm.prank(msig);
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        registry.setProvenance(keccak256("never registered"), Provenance.Attested);
-    }
-
-    /// @dev An undeclared chain keeps its derived default after removal too.
-    function test_aRemovedUndeclaredChainKeepsItsDefaultGrade() public {
-        vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
-        registry.removeChainKey(key);
-        vm.stopPrank();
-
-        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived));
+        registry.setSuspended(keccak256("never registered"), true);
     }
 
     /// @dev The counterpart and the eid are configured separately and must be readable
     ///      separately: otherwise a half-wired chain cannot be diagnosed.
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
         vm.stopPrank();
 
@@ -245,7 +229,7 @@ contract DestinationNamingTest is Test {
     ///      the usual way to get one.
     function test_aRouteThatIsNotAChainIdentifierIsRefused() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10));
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, key));
         t.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();

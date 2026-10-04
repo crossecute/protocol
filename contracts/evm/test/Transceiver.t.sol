@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -117,13 +116,7 @@ contract SymmetricTransceiverTest is Test {
 
     function _chainWith(uint256 chainId, bool diverges, address transmitterImplementation) internal returns (Sym t) {
         vm.chainId(chainId);
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
@@ -147,8 +140,7 @@ contract SymmetricTransceiverTest is Test {
         for (uint256 i; i < 3; ++i) {
             if (chains[i] == chainId) continue;
             vm.stopPrank();
-            registry.addChainKey(_route(chains[i]));
-            if (chains[i] == ZK) registry.setProvenance(_key(ZK), Provenance.Attested);
+            registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Attested : Provenance.Derived);
             vm.startPrank(t.owner());
             t.setRoute(_key(chains[i]), _route(chains[i]));
             if (chains[i] == ZK) t.setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));

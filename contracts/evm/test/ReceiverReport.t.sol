@@ -10,7 +10,6 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -145,15 +144,9 @@ contract ReportingTransceiver is TransceiverBase {
 ///      `Derived`, with the default counterpart at the transceiver's own address.
 abstract contract WiresHome is Test {
     function _wire(ReportingTransceiver s) internal {
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         bytes32 provider = registry.addMessageProvider("test");
-        registry.addChainKey(Erc7930.encodeEvmChain(1));
+        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
 
         vm.startPrank(s.owner());
         s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
@@ -454,9 +447,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     uint256 constant REMOTE_CHAIN = 8453;
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
-        );
+        registry = new ChainRegistry(msig);
 
         // Each side is deployed under its own chain id, which it records as local.
         vm.chainId(REMOTE_CHAIN);
@@ -471,10 +462,9 @@ contract ReceiverReportRoundTripTest is WiresHome {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(homeSide));
-        remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN));
+        remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN), Provenance.Attested);
         // Graded `Attested`: the home cannot recompute an address there, which is both why
         // a report is needed and why the report is worth only the bridge that carried it.
-        registry.setProvenance(remoteKey, Provenance.Attested);
         vm.stopPrank();
 
         vm.startPrank(homeSide.owner());
@@ -653,12 +643,16 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      a stronger fact with a poorer one. The registry answers which chains may.
     function test_aDerivableChainMayNotReport() public {
         vm.prank(msig);
-        registry.setProvenance(remoteKey, Provenance.Derived);
-        assertFalse(registry.requiresReceiverCallback(remoteKey));
+        bytes32 derivedKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        assertFalse(registry.requiresReceiverCallback(derivedKey));
+        vm.startPrank(homeSide.owner());
+        homeSide.setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
+        homeSide.setCounterpart(derivedKey, Erc7930.encodeEvm(42161, address(remote)));
+        vm.stopPrank();
 
         bytes memory produced = _report();
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainDoesNotReport.selector, remoteKey));
-        homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainDoesNotReport.selector, derivedKey));
+        homeSide.arrive(Erc7930.encodeEvmChain(42161), abi.encodePacked(address(remote)), produced);
     }
 
     /// @dev A chain may only report addresses on itself. An ERC-7930 envelope names its own
@@ -666,7 +660,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
         vm.prank(msig);
-        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
@@ -677,7 +671,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     /// @dev And the account keeps the bootstrap presumption, so nothing was half-recorded.
     function test_aRejectedReportLeavesTheAccountUntouched() public {
         vm.prank(msig);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
@@ -724,9 +718,7 @@ contract BootstrapFeeTest is Test {
     address treasury;
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
-        );
+        registry = new ChainRegistry(msig);
         t = new HomeTransceiver();
         // One treasury per chain, named at deployment and never moved.
         treasury = address(new Treasury(msig));
@@ -735,9 +727,8 @@ contract BootstrapFeeTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(t));
-        divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING));
-        parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY));
-        registry.setProvenance(divergingKey, Provenance.Attested);
+        divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING), Provenance.Attested);
+        parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY), Provenance.Derived);
         vm.stopPrank();
 
         vm.startPrank(t.owner());

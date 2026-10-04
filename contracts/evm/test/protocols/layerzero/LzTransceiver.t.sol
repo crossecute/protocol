@@ -149,16 +149,9 @@ contract LzZkSyncTransceiverTest is Test {
                     )
                 ))
         );
-        ChainRegistry registry = ChainRegistry(
-            address(
-                new ERC1967Proxy(
-                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
-                )
-            )
-        );
+        ChainRegistry registry = new ChainRegistry(address(this));
         bytes32 provider = registry.addMessageProvider("layerzero");
-        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1));
-        registry.setProvenance(home, Provenance.Attested);
+        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
 
         vm.startPrank(t.owner());
         t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);

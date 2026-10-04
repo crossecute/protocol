@@ -32,9 +32,7 @@ contract HubCounterpartsTest is Test {
     bytes suiInterop;
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
+        registry = new ChainRegistry(owner);
         hub = OwnedTransceiver(
             payable(new ERC1967Proxy(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (owner))
@@ -45,9 +43,8 @@ contract HubCounterpartsTest is Test {
         suiInterop = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("pkg")));
 
         vm.startPrank(owner);
-        suiChainKey = registry.addChainKey(suiChain);
+        suiChainKey = registry.addChainKey(suiChain, Provenance.Attested);
         registry.setValidator(suiChainKey, new MoveValidator());
-        registry.setProvenance(suiChainKey, Provenance.Attested);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(hub));
         hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
@@ -127,7 +124,7 @@ contract HubCounterpartsTest is Test {
 
     function test_aCounterpartOnTheWrongChainIsRefused() public {
         vm.startPrank(owner);
-        registry.addChainKey(Erc7930.encodeEvmChain(1));
+        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         hub.setCounterpart(suiChainKey, Erc7930.encodeEvm(1, address(0xCAFE)));
         vm.stopPrank();

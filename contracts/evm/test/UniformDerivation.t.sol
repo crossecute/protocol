@@ -26,11 +26,7 @@ contract UniformDerivationTest is Test {
 
     function setUp() public {
         deriver = new VmDeriver();
-        // Behind a proxy: the implementation disables initializers in its constructor,
-        // matching the spec's assumption that every contract is an upgradeable proxy.
-        ChainRegistry impl = new ChainRegistry();
-        registry =
-            ChainRegistry(address(new ERC1967Proxy(address(impl), abi.encodeCall(ChainRegistry.initialize, (owner)))));
+        registry = new ChainRegistry(owner);
         vm.startPrank(owner);
         registry.addMessageProvider("layerzero");
         vm.stopPrank();
@@ -51,7 +47,11 @@ contract UniformDerivationTest is Test {
 
     function _wire(bytes memory chainIdentifier, bytes memory params, bytes32) internal returns (bytes32 chainKey) {
         vm.startPrank(owner);
-        chainKey = registry.addChainKey(chainIdentifier);
+        // An `eip155` chain is recomputed here; anything else is worth the bridge that says so.
+        Provenance grade = Erc7930.parseStrict(chainIdentifier).chainType == Erc7930.CT_EIP155
+            ? Provenance.Derived
+            : Provenance.Attested;
+        chainKey = registry.addChainKey(chainIdentifier, grade);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
         registry.setDeriveParams(chainKey, params);
         vm.stopPrank();
@@ -95,7 +95,6 @@ contract UniformDerivationTest is Test {
         assertEq(bytes32(io.addr), AddressDerive.solanaCreateProgramAddress(seeds, 255, programId));
 
         vm.startPrank(owner);
-        registry.setProvenance(chainKey, Provenance.Attested);
         hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
         hub.resolveCounterpart(chainKey, keccak256(params));
         vm.stopPrank();
@@ -117,7 +116,7 @@ contract UniformDerivationTest is Test {
     ///      so the scheme must be pinned per chain rather than inferred from chain type.
     function test_schemeIsCheckedAgainstChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1));
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
 
         // A Solana PDA is not a legal scheme on an eip155 chain.
@@ -140,7 +139,7 @@ contract UniformDerivationTest is Test {
 
         // A second chain with no deriver and no route at all.
         vm.prank(owner);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
 
         (bytes32[] memory keys, bytes[] memory interops) = registry.expectedTransceivers();
         assertEq(keys.length, 2);
