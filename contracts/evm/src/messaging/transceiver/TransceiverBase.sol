@@ -46,8 +46,8 @@ struct TransceiverConfig {
     /// Where bootstrap fees go and the report float leaves to. Write-once.
     address treasury;
     /// The routing `setRouting` would set, so that on any chain but the governor's home this
-    /// transceiver can accept the bootstrap that creates its owner. Zero leaves it to the
-    /// owner, which only the governor's home can do.
+    /// transceiver can accept the bootstrap that creates its owner; the home must be `Derived`
+    /// and not suspended. Zero leaves it to the owner, which only the governor's home can do.
     IChainRegistryRefs chainRegistry;
     bytes32 messageProvider;
     Provenance minCounterpartProvenance;
@@ -235,6 +235,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         // account here, which only a bootstrap from that home can create.
         if (address(c.chainRegistry) != address(0)) {
             _setRouting(c.chainRegistry, c.messageProvider, c.minCounterpartProvenance);
+            // Only the owner, which that bootstrap creates, could set a counterpart, so the
+            // home's must resolve now or the transceiver is never usable (#32).
+            if (governorHome != localChainKey) _counterpartOn(governorHome);
         }
         if (governorHome != localChainKey) _setRoute(governorHome, c.governorHome);
 

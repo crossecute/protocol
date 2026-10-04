@@ -39,7 +39,8 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
 
     /// @notice Set the peer for the governor's home eid to the counterpart there, which
     ///         LayerZero requires before it delivers the bootstrap that creates the owner.
-    /// @dev After the base initializer, which sets the registry this resolves through.
+    /// @dev After the base initializer, which sets the registry this resolves through and has
+    ///      refused a home whose counterpart does not resolve.
     function _initGovernorHomePeer(TransceiverConfig memory c, uint32 governorHomeEid) internal onlyInitializing {
         bytes32 home = keccak256(c.governorHome);
         if (governorHomeEid == 0 || home == localChainKey || address(c.chainRegistry) == address(0)) return;
