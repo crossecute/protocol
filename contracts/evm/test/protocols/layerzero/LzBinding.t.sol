@@ -53,29 +53,41 @@ contract LzHubHarness is LzHubTransceiver {
     }
 }
 
+/// @notice What the LayerZero send suite drives, on the hub and on the transceiver that is hub
+///         and spoke at once alike.
+interface ILzSendHarness is IHubSendHarness {
+    function setEid(bytes32 chainKey, uint32 eid) external;
+    function setPeer(uint32 eid, bytes32 peer) external;
+    function lzReceive(
+        Origin calldata origin,
+        bytes32 guid,
+        bytes calldata message,
+        address executor,
+        bytes calldata extraData
+    ) external payable;
+    function LZ_OPTIONS_ATTRIBUTE() external view returns (bytes4);
+}
+
 /// @notice The eid-resolution/quote/unconfigured-destination properties are
-///         `ProviderHubSendSpec`'s; this contract only supplies LayerZero's own mock and, in
+///         `ProviderHubSendSpec`'s; this suite only supplies LayerZero's own mock and, in
 ///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
-///         cover (the message bytes and value reach the endpoint unchanged).
-contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
+///         cover (the message bytes and value reach the endpoint unchanged). Run against each
+///         LayerZero transceiver through `_deploy`.
+abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec {
     MockLzEndpoint endpoint;
-    LzHubHarness hub;
-    address msig = address(0x5165);
+    ILzSendHarness hub;
+    address msig;
     bytes32 baseKey;
     uint32 constant BASE_EID = 30184;
 
+    /// @notice Deploy the transceiver under test against `endpoint`, returning it and its owner.
+    function _deploy() internal virtual returns (address transceiver, address owner);
+
     function setUp() public {
         endpoint = new MockLzEndpoint();
-        hub = LzHubHarness(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new LzHubHarness(address(endpoint))),
-                        abi.encodeCall(
-                            LzHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
-                        )
-                    )
-                ))
-        );
+        (address t, address owner) = _deploy();
+        hub = ILzSendHarness(t);
+        msig = owner;
         harness = IHubSendHarness(address(hub));
 
         vm.startPrank(msig);
@@ -184,6 +196,19 @@ contract LzSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderR
     /// @dev OApp refuses an eid with no peer before the binding's table is consulted.
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IOAppCore.NoPeer.selector, uint32(providerId));
+    }
+}
+
+contract LzSendTest is LzSendSuite {
+    function _deploy() internal override returns (address, address) {
+        address owner = address(0x5165);
+        address t = address(
+            new ERC1967Proxy(
+                address(new LzHubHarness(address(endpoint))),
+                abi.encodeCall(LzHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        return (t, owner);
     }
 }
 

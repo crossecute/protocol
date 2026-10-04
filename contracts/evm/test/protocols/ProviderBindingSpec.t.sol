@@ -18,6 +18,8 @@ import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.s
 import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SymmetricTransceiverBase} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {Envelope} from "src/messaging/Envelope.sol";
 
 /// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
 ///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -545,5 +547,121 @@ abstract contract ProviderHomeIdSpec is Test {
         (address impl, bytes memory init) = _spokeHomedAt(0);
         vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
         new ERC1967Proxy(impl, init);
+    }
+}
+
+/// @title ProviderSymmetricInboundSpec
+/// @notice What every binding's transceiver that is hub and spoke at once must satisfy on the
+///         way in: a bootstrap from a configured origin, arriving through the provider's own
+///         path, creates a receiver configured for that provider; a wrong sender is refused;
+///         and the float can be funded and leaves only to the treasury.
+/// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
+///      Forge's EVM, so their suites pin their own overrides instead.
+abstract contract ProviderSymmetricInboundSpec is Test {
+    event InboundHandled(bytes32 chainKey);
+
+    uint256 internal constant ORIGIN_CHAIN_ID = 8453;
+    /// @dev The origin's transceiver as this one records it. `Attested`, so no parity check.
+    address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
+    address internal constant ACCOUNT_OWNER = address(0xA11CE);
+    bytes32 internal constant ACCOUNT_SALT = keccak256("account");
+    address internal constant ORIGIN_TRANSMITTER = address(0x7A11);
+
+    /// @notice The transceiver under test, emitting `InboundHandled(origin)` as it handles a
+    ///         message, with a receiver implementation for its provider and a treasury.
+    function _transceiver() internal view virtual returns (address);
+
+    /// @notice Provider-side configuration for the origin: its provider id, and anything the
+    ///         provider needs to accept `ORIGIN_TRANSCEIVER` (a LayerZero peer). As the owner.
+    function _configureOrigin(bytes32 chainKey) internal virtual;
+
+    /// @notice Deliver `message` through the provider's own path, from `ORIGIN_CHAIN_ID`.
+    function _deliver(address sender, bytes memory message) internal virtual;
+
+    /// @notice The revert for a wrong sender: the base's by default.
+    function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
+    }
+
+    /// @notice Assert the receiver was configured for the provider before its payload ran
+    ///         (R6). Nothing to check by default.
+    function _assertReceiverConfigured(address receiver, address transmitter) internal view virtual {}
+
+    function _wire() internal returns (bytes32 chainKey) {
+        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+        ChainRegistry registry = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
+                )
+            )
+        );
+        bytes32 provider = registry.addMessageProvider("under-test");
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
+        registry.setProvenance(chainKey, Provenance.Attested);
+
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setCounterpart(chainKey, Erc7930.encodeEvm(ORIGIN_CHAIN_ID, ORIGIN_TRANSCEIVER));
+        t.setRoute(chainKey, Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
+        vm.stopPrank();
+        _configureOrigin(chainKey);
+    }
+
+    function _bootstrap() internal pure returns (bytes memory) {
+        return Envelope.encodeBootstrap(
+            ACCOUNT_OWNER, ACCOUNT_SALT, bytes32(uint256(uint160(ORIGIN_TRANSMITTER))), new Call[](0)
+        );
+    }
+
+    function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {
+        bytes32 chainKey = _wire();
+        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+
+        vm.expectEmit(true, true, true, true, address(t));
+        emit InboundHandled(chainKey);
+        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+
+        address receiver = t.predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
+        _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
+    }
+
+    function test_anotherSenderOnTheOriginIsRefused() public {
+        bytes32 chainKey = _wire();
+        vm.expectRevert(_wrongSenderRevert(chainKey, address(0xBAD)));
+        _deliver(address(0xBAD), _bootstrap());
+    }
+
+    /// @dev The report float is funded with a plain transfer (#17).
+    function test_itAcceptsAPlainTransfer() public {
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = _transceiver().call{value: 1 ether}("");
+        assertTrue(ok);
+    }
+
+    function test_theFloatLeavesOnlyToTheTreasury() public {
+        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+        address treasury = t.treasury();
+        vm.deal(address(t), 1 ether);
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.NotTreasury.selector, address(0xBAD)));
+        t.withdraw(1 ether);
+
+        uint256 before = treasury.balance;
+        vm.prank(treasury);
+        t.withdraw(0.4 ether);
+        assertEq(treasury.balance - before, 0.4 ether);
+    }
+
+    /// @dev C24 over configuration and a delivery.
+    function test_noWriteLandsOnAnotherField() public {
+        vm.startStateDiffRecording();
+        _wire();
+        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+        address[] memory accounts = new address[](1);
+        accounts[0] = _transceiver();
+        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
     }
 }
