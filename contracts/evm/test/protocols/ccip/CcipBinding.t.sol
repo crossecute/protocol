@@ -18,7 +18,7 @@ import {Client} from "@ccip/libraries/Client.sol";
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {
     ProviderIdTableSpec,
-    IHubSendHarness,
+    ISendHarness,
     ProviderWideSenderSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
@@ -29,12 +29,12 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 /// @notice The selector-resolution/quote/unconfigured-destination properties are
-///         `ProviderHubSendSpec`'s; this contract supplies the mock router and, in the two
+///         `ProviderSendSpec`'s; this contract supplies the mock router and, in the two
 ///         extra tests, the properties the spec doesn't cover: unlike LayerZero's peer
 ///         table, CCIP has no provider-side destination-address concept at all, so the
 ///         recipient's address half (unused by LayerZero) is exactly what becomes
 ///         `EVM2AnyMessage.receiver` here.
-interface ICcipSendHarness is IHubSendHarness {
+interface ICcipSendHarness is ISendHarness {
     function setSelector(bytes32 chainKey, uint64 selector) external;
     function ccipReceive(Client.Any2EVMMessage calldata message) external;
     function CCIP_EXTRA_ARGS_ATTRIBUTE() external view returns (bytes4);
@@ -56,7 +56,7 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
         (address t, address owner) = _deploy();
         hub = ICcipSendHarness(t);
         msig = owner;
-        harness = IHubSendHarness(address(hub));
+        harness = ISendHarness(address(hub));
 
         vm.startPrank(msig);
         baseKey = ChainKey.forEvm(8453);
@@ -146,7 +146,7 @@ abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec
         hub.setSelector(chainKey, uint64(providerId));
     }
 
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(router));
         hub.ccipReceive(
             Client.Any2EVMMessage({

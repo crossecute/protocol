@@ -19,7 +19,7 @@ import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
 import {
     ProviderIdTableSpec,
-    IHubSendHarness,
+    ISendHarness,
     ProviderWideSenderSpec,
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
@@ -71,7 +71,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-interface IWormholeSendHarness is IHubSendHarness {
+interface IWormholeSendHarness is ISendHarness {
     function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external;
     function executeVAAv1(bytes calldata multiSigVaa) external payable;
     function WORMHOLE_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
@@ -103,7 +103,7 @@ abstract contract WormholeSendSuite is
         (address t, address owner) = _deploy();
         hub = IWormholeSendHarness(t);
         msig = owner;
-        harness = IHubSendHarness(address(hub));
+        harness = ISendHarness(address(hub));
 
         vm.prank(msig);
         hub.setWormholeChain(ChainKey.forEvm(8453), BASE_WORMHOLE_CHAIN);
@@ -231,7 +231,7 @@ abstract contract WormholeSendSuite is
         hub.setWormholeChain(chainKey, uint16(providerId));
     }
 
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         hub.executeVAAv1(
             _vaa(1, uint16(providerId), address(0xC0DE), 0, _envelope(HOME_WORMHOLE_CHAIN, address(hub), ""))
         );

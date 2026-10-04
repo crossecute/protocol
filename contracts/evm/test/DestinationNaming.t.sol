@@ -5,7 +5,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
@@ -169,9 +169,7 @@ contract DestinationNamingTest is Test {
         vm.stopPrank();
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, key, Provenance.Attested
-            )
+            abi.encodeWithSelector(TransceiverBase.InsufficientCounterpartProvenance.selector, key, Provenance.Attested)
         );
         t.counterpartOn(key);
     }

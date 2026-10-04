@@ -8,7 +8,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
@@ -19,7 +19,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipSendSuite} from "test/protocols/ccip/CcipBinding.t.sol";
 
 function ccipConfig(address router) returns (TransceiverConfig memory) {
@@ -89,7 +89,7 @@ contract CcipTransceiverSendTest is CcipSendSuite {
 
 /// @notice CCIP's off-ramp asserts nothing about the sender, so the base's counterpart check is
 ///         what refuses a wrong one, and the router's gateway role is what admits the call.
-contract CcipTransceiverInboundTest is ProviderSymmetricInboundSpec {
+contract CcipTransceiverInboundTest is ProviderInboundSpec {
     address router = address(0xBEEF);
     CcipTransceiverHarness t;
     uint64 constant ORIGIN_SELECTOR = 15_971_525_489_660_198_786;

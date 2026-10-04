@@ -11,7 +11,7 @@ interface IOpStackMessengerSource {
     function messengerChainKey() external view returns (bytes32);
 }
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `receiveOpStackMessage`, so R3.1 is answered by absence rather than a
 ///      guard. Binds to `ICrossDomainMessenger`, not `OptimismPortal`: the messenger un-aliases
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
@@ -13,7 +13,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackSendSuite} from "test/protocols/op-stack/OpStackBinding.t.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -71,7 +71,7 @@ contract OpStackTransceiverSendTest is OpStackSendSuite {
 
 /// @notice The sender is `xDomainMessageSender()`, checked by the base against the paired
 ///         chain's counterpart; the messenger's gateway role is what admits the call.
-contract OpStackTransceiverInboundTest is ProviderSymmetricInboundSpec {
+contract OpStackTransceiverInboundTest is ProviderInboundSpec {
     MockCrossDomainMessenger messenger;
     OpStackTransceiverHarness t;
 

@@ -6,7 +6,7 @@ import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `executeVAAv1`, so R3.1 is answered by absence rather than a guard.
 ///      It is the Wormhole emitter its receivers authenticate.
 contract WormholeTransmitter is OwnableTransmitter {

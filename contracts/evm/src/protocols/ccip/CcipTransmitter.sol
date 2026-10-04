@@ -6,7 +6,7 @@ import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
 ///      absence rather than a guard.
 contract CcipTransmitter is OwnableTransmitter {

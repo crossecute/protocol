@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -82,6 +82,6 @@ contract HyperlaneTransceiver is HyperlaneTransceiverBase {
 
     function initialize(TransceiverConfig memory c) external initializer {
         __HyperlaneTransceiver_init();
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 }

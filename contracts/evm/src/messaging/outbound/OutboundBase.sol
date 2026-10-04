@@ -120,7 +120,7 @@ abstract contract OutboundBase is Roles {
 
     /// @notice Where the counterpart lives.
     /// @dev A hub overrides it to apply the registry's provenance bar, and to answer its own
-    ///      address on a `Derived` chain with no counterpart recorded; see `HubTransceiverBase`.
+    ///      address on a `Derived` chain with no counterpart recorded; see `TransceiverBase`.
     function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory counterpart) {
         counterpart = _counterparts[chainKey];
         if (counterpart.length == 0) revert NoCounterpartFor(chainKey);
@@ -158,7 +158,7 @@ abstract contract OutboundBase is Roles {
     /// @dev On a transceiver's `bootstrap` that is `msg.sender`, the only account it accepts.
     ///      Never the transceiver's `address(this)`, which would pool every user's excess.
     ///      `TransmitterBase` pays from its own balance and overrides this to itself, as
-    ///      `SymmetricTransceiverBase` does while a report pays from its float.
+    ///      `TransceiverBase` does while a report pays from its float.
     function _refundTo() internal view virtual returns (address) {
         return msg.sender;
     }

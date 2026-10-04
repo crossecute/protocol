@@ -6,7 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
@@ -17,7 +17,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneSendSuite} from "test/protocols/hyperlane/HyperlaneBinding.t.sol";
 
 function hyperlaneConfig(address mailbox) returns (TransceiverConfig memory) {
@@ -78,7 +78,7 @@ contract HyperlaneTransceiverSendTest is HyperlaneSendSuite {
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so the base's
 ///         counterpart check is what refuses a wrong one, and the Mailbox's gateway role is
 ///         what admits the call.
-contract HyperlaneTransceiverInboundTest is ProviderSymmetricInboundSpec {
+contract HyperlaneTransceiverInboundTest is ProviderInboundSpec {
     address mailbox = address(0xBEEF);
     HyperlaneTransceiverHarness t;
     uint32 constant ORIGIN_DOMAIN = 8453;

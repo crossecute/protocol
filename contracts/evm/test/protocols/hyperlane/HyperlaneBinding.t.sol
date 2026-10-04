@@ -18,7 +18,7 @@ import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.s
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {
     ProviderIdTableSpec,
-    IHubSendHarness,
+    ISendHarness,
     ProviderWideSenderSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
@@ -29,7 +29,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
-interface IHyperlaneSendHarness is IHubSendHarness {
+interface IHyperlaneSendHarness is ISendHarness {
     function setDomain(bytes32 chainKey, uint32 domain) external;
     function handle(uint32 origin, bytes32 sender, bytes calldata message) external payable;
     function HYPERLANE_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
@@ -55,7 +55,7 @@ abstract contract HyperlaneSendSuite is
         (address t, address owner) = _deploy();
         hub = IHyperlaneSendHarness(t);
         msig = owner;
-        harness = IHubSendHarness(address(hub));
+        harness = ISendHarness(address(hub));
 
         vm.prank(msig);
         hub.setDomain(ChainKey.forEvm(8453), BASE_DOMAIN);
@@ -167,7 +167,7 @@ abstract contract HyperlaneSendSuite is
         hub.setDomain(chainKey, uint32(providerId));
     }
 
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(mailbox));
         hub.handle(uint32(providerId), TypeCasts.addressToBytes32(address(0xC0DE)), "");
     }

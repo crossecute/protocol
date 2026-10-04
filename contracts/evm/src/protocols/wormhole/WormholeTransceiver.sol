@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -94,6 +94,6 @@ contract WormholeTransceiver is WormholeTransceiverBase {
 
     function initialize(TransceiverConfig memory c) external initializer {
         __WormholeTransceiver_init();
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 }

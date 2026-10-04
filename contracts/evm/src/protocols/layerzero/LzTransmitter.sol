@@ -11,7 +11,7 @@ import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
 ///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
 contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOncePeer {

@@ -4,26 +4,24 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {
-    ZkSyncSymmetricTransceiver,
-    TronSymmetricTransceiver
-} from "src/messaging/transceiver/DivergentSymmetricTransceiver.sol";
+    ZkSyncTransceiver,
+    TronTransceiver,
+    DivergentTransceiver
+} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {DivergentSymmetricTransceiver} from "src/messaging/transceiver/DivergentSymmetricTransceiver.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {SymHarness, Rcv, RecordingTransmitter} from "test/SymmetricTransceiver.t.sol";
+import {SymHarness, Rcv, RecordingTransmitter} from "test/Transceiver.t.sol";
 
-contract ZkSym is ZkSyncSymmetricTransceiver, SymHarness {
+contract ZkSym is ZkSyncTransceiver, SymHarness {
     function initialize(TransceiverConfig memory c, bytes32 hash) external initializer {
-        __DivergentSymmetric_init(c, hash);
+        __DivergentTransceiver_init(c, hash);
     }
 
     /// @dev The overrides below only name both bases, as Solidity requires where each supplies
@@ -31,7 +29,7 @@ contract ZkSym is ZkSyncSymmetricTransceiver, SymHarness {
     function _parityAddress(bytes32 chainKey)
         internal
         view
-        override(HubTransceiverBase, DivergentSymmetricTransceiver)
+        override(TransceiverBase, DivergentTransceiver)
         returns (address)
     {
         return super._parityAddress(chainKey);
@@ -40,24 +38,20 @@ contract ZkSym is ZkSyncSymmetricTransceiver, SymHarness {
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
-        override(TransceiverBase, ZkSyncSymmetricTransceiver)
+        override(TransceiverBase, ZkSyncTransceiver)
         returns (address)
     {
         return super.predictCrossAccount(owner, salt, homeChainKey);
     }
 
-    function _deployAccount(bytes32 salt)
-        internal
-        override(TransceiverBase, ZkSyncSymmetricTransceiver)
-        returns (address)
-    {
+    function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployAccount(salt);
     }
 }
 
-contract TronSym is TronSymmetricTransceiver, SymHarness {
+contract TronSym is TronTransceiver, SymHarness {
     function initialize(TransceiverConfig memory c, bytes32 hash) external initializer {
-        __DivergentSymmetric_init(c, hash);
+        __DivergentTransceiver_init(c, hash);
     }
 
     /// @dev The overrides below only name both bases, as Solidity requires where each supplies
@@ -65,7 +59,7 @@ contract TronSym is TronSymmetricTransceiver, SymHarness {
     function _parityAddress(bytes32 chainKey)
         internal
         view
-        override(HubTransceiverBase, DivergentSymmetricTransceiver)
+        override(TransceiverBase, DivergentTransceiver)
         returns (address)
     {
         return super._parityAddress(chainKey);
@@ -74,7 +68,7 @@ contract TronSym is TronSymmetricTransceiver, SymHarness {
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
-        override(TransceiverBase, TronSymmetricTransceiver)
+        override(TransceiverBase, TronTransceiver)
         returns (address)
     {
         return super.predictCrossAccount(owner, salt, homeChainKey);

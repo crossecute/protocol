@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
@@ -18,7 +18,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {
     WormholeSendSuite,
     UNUSED_EXECUTOR,
@@ -84,7 +84,7 @@ contract WormholeTransceiverSendTest is WormholeSendSuite {
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures authenticate the emitter, and
 ///         the base's counterpart check is what refuses a wrong one.
-contract WormholeTransceiverInboundTest is ProviderSymmetricInboundSpec {
+contract WormholeTransceiverInboundTest is ProviderInboundSpec {
     uint16 constant ORIGIN_WORMHOLE_CHAIN = 30;
     uint16 constant HERE = 2;
     MockWormholeCore core;

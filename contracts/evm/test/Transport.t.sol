@@ -9,7 +9,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {TransmitterBase, IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -86,23 +86,25 @@ contract MockReceiver is ReceiverBase {
     }
 }
 
-/// @dev Records the bootstrap the transmitter asked for.
-/// @dev A spoke-free stand-in for the hub: `TransceiverBase` with the two routing hooks
-///      answered directly, so `bootstrap`'s provenance lookup succeeds without a registry.
+/// @dev Records the bootstrap the transmitter asked for. The routing hooks are answered
+///      directly, so `bootstrap`'s provenance lookup succeeds without a registry.
 contract MockTransceiver is TransceiverBase {
     bytes public sentPayload;
     uint256 public bootCount;
     address public bootRefund;
 
-    address private _impl;
-
     function initialize(address, address impl) external initializer {
-        __TransceiverBase_init(new address[](0));
-        _impl = impl;
-    }
-
-    function _accountImplementation(bytes32) internal view override returns (address) {
-        return _impl;
+        __TransceiverBase_init(
+            TransceiverConfig({
+                gateways: new address[](0),
+                transmitterImplementation: impl,
+                receiverImplementation: impl,
+                governorOwner: address(0x5165),
+                governorSalt: bytes32(0),
+                governorHome: ChainKey.local(),
+                treasury: address(0x7EA5)
+            })
+        );
     }
 
     function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)

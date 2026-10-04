@@ -10,17 +10,15 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {UnsendableSymmetric} from "test/Unsendable.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {UnsendableTransceiver} from "test/Unsendable.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is ReceiverBase {
@@ -122,11 +120,9 @@ function transceiverConfig(
 }
 
 /// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
-contract MockTransceiver is UnsendableSymmetric {
+contract MockTransceiver is UnsendableTransceiver {
     function initialize(address governor, address receiverImplementation_) external initializer {
-        __SymmetricTransceiver_init(
-            transceiverConfig(governor, receiverImplementation_, address(0x7EA5), new address[](0))
-        );
+        __TransceiverBase_init(transceiverConfig(governor, receiverImplementation_, address(0x7EA5), new address[](0)));
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
@@ -147,14 +143,14 @@ contract MockTransceiver is UnsendableSymmetric {
 ///      two roles are named at initialization and ungrantable afterwards. If this gates
 ///      correctly, configuring is `Ownable` and the roles confer nothing, which is the split
 ///      the design turns on.
-contract MsigTransceiver is UnsendableSymmetric {
+contract MsigTransceiver is UnsendableTransceiver {
     function initialize(
         address governor,
         address treasury_,
         address[] calldata gateways_,
         address receiverImplementation_
     ) external initializer {
-        __SymmetricTransceiver_init(transceiverConfig(governor, receiverImplementation_, treasury_, gateways_));
+        __TransceiverBase_init(transceiverConfig(governor, receiverImplementation_, treasury_, gateways_));
     }
 
     /// @dev No blanket gateway answer here, unlike the other harnesses in this file. These
@@ -748,7 +744,7 @@ contract CommitFinalizeTest is Test {
     /// @dev The treasury is an address the deployment named, and there is no way to move it.
     ///      Fees leave in the transaction that charges them, so there is no `withdrawFees` to
     ///      gate and no setter for a compromised owner to reach. The report float leaves only
-    ///      at the treasury's own call (`ProviderSymmetricInboundSpec`).
+    ///      at the treasury's own call (`ProviderInboundSpec`).
     function test_theTreasuryIsFixedAndThereIsNoWithdrawal() public {
         MsigTransceiver m = _msigTransceiver();
         assertEq(m.treasury(), treasury);
@@ -767,7 +763,7 @@ contract CommitFinalizeTest is Test {
         gateways[0] = gateway;
 
         MsigTransceiver m = new MsigTransceiver();
-        vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
+        vm.expectRevert(TransceiverBase.NoTreasury.selector);
         m.initialize(msig, address(0), gateways, address(receiverImpl));
     }
 

@@ -15,8 +15,8 @@ import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackM
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
 import {
-    ProviderHubSendSpec,
-    IHubSendHarness,
+    ProviderSendSpec,
+    ISendHarness,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
     ProviderTransmitterSpec
@@ -24,12 +24,12 @@ import {
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
-interface IOpStackSendHarness is IHubSendHarness {
+interface IOpStackSendHarness is ISendHarness {
     function OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
 }
 
 /// @dev Run against each OP Stack transceiver through `_deploy`.
-abstract contract OpStackSendSuite is ProviderHubSendSpec, ProviderEvmRecipientSpec {
+abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec {
     MockCrossDomainMessenger messenger;
     IOpStackSendHarness hub;
     uint256 constant BASE = 8453;
@@ -40,7 +40,7 @@ abstract contract OpStackSendSuite is ProviderHubSendSpec, ProviderEvmRecipientS
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
         hub = IOpStackSendHarness(_deploy());
-        harness = IHubSendHarness(address(hub));
+        harness = ISendHarness(address(hub));
     }
 
     function _configuredRecipient() internal pure override returns (bytes memory) {

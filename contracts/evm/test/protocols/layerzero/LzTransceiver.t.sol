@@ -6,7 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
@@ -17,7 +17,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {ProviderSymmetricInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {LzSendSuite, LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
 
 function lzConfig(address endpoint) returns (TransceiverConfig memory) {
@@ -75,7 +75,7 @@ contract LzTransceiverSendTest is LzSendSuite {
     }
 }
 
-contract LzTransceiverInboundTest is ProviderSymmetricInboundSpec, LzWriteOncePeerCheck {
+contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
     MockLzEndpoint endpoint;
     LzTransceiverHarness t;
     uint32 constant ORIGIN_EID = 30184;

@@ -17,7 +17,7 @@ import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILa
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {
     ProviderIdTableSpec,
-    IHubSendHarness,
+    ISendHarness,
     ProviderWideSenderSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
@@ -32,7 +32,7 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 
 /// @notice What the LayerZero send suite drives, on the hub and on the transceiver that is hub
 ///         and spoke at once alike.
-interface ILzSendHarness is IHubSendHarness {
+interface ILzSendHarness is ISendHarness {
     function setEid(bytes32 chainKey, uint32 eid) external;
     function setPeer(uint32 eid, bytes32 peer) external;
     function lzReceive(
@@ -46,7 +46,7 @@ interface ILzSendHarness is IHubSendHarness {
 }
 
 /// @notice The eid-resolution/quote/unconfigured-destination properties are
-///         `ProviderHubSendSpec`'s; this suite only supplies LayerZero's own mock and, in
+///         `ProviderSendSpec`'s; this suite only supplies LayerZero's own mock and, in
 ///         `test_sendForwardsThePayloadAndValueUnchanged`, the one property the spec doesn't
 ///         cover (the message bytes and value reach the endpoint unchanged). Run against each
 ///         LayerZero transceiver through `_deploy`.
@@ -65,7 +65,7 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
         (address t, address owner) = _deploy();
         hub = ILzSendHarness(t);
         msig = owner;
-        harness = IHubSendHarness(address(hub));
+        harness = ISendHarness(address(hub));
 
         vm.startPrank(msig);
         baseKey = ChainKey.forEvm(8453);
@@ -159,7 +159,7 @@ abstract contract LzSendSuite is ProviderIdTableSpec, ProviderPayloadPricedSpec,
         hub.setEid(chainKey, uint32(providerId));
     }
 
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal override {
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
         vm.prank(address(endpoint));
         hub.lzReceive(
             Origin({srcEid: uint32(providerId), sender: bytes32(uint256(0xC0DE)), nonce: 1}),

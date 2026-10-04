@@ -11,26 +11,12 @@ import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {UnsendableHub} from "test/Unsendable.sol";
+import {OwnedTransceiver} from "test/Unsendable.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
-contract Hub is UnsendableHub {
-    function initialize(address owner_) external initializer {
-        // Through the hub's own initializer, because that is where the owner is set. The
-        // implementation only has to be non-zero: these suites never create an account.
-        __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
-
 contract UniformDerivationTest is Test {
     ChainRegistry registry;
     VmDeriver deriver;
@@ -49,7 +35,11 @@ contract UniformDerivationTest is Test {
         registry.addMessageProvider("layerzero");
         vm.stopPrank();
 
-        hub = Hub(address(new ERC1967Proxy(address(new Hub()), abi.encodeCall(Hub.initialize, (owner)))));
+        hub = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (owner))
+                ))
+        );
         vm.prank(owner);
         hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
     }
@@ -57,7 +47,7 @@ contract UniformDerivationTest is Test {
     /// @dev Wire one destination end to end and return its chainKey.
     /// @dev The hub is what records a counterpart now; the registry recomputes it and says
     ///      what it is worth. Both halves are exercised together.
-    Hub hub;
+    OwnedTransceiver hub;
 
     function _wire(bytes memory chainIdentifier, bytes memory params, bytes32) internal returns (bytes32 chainKey) {
         vm.startPrank(owner);
@@ -119,7 +109,7 @@ contract UniformDerivationTest is Test {
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(1), params, keccak256("eth.tx"));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
         hub.resolveCounterpart(chainKey, keccak256("something else"));
     }
 

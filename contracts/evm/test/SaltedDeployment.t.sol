@@ -16,8 +16,8 @@ import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {UnsendableSymmetric} from "test/Unsendable.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {UnsendableTransceiver} from "test/Unsendable.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 
 /// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
 contract MiniFactory {
@@ -62,9 +62,9 @@ function home() pure returns (bytes32) {
 /// @dev One transceiver, deployed from one initcode at one salt on every chain: it creates
 ///      transmitters for accounts homed where it runs and receivers for accounts homed
 ///      elsewhere.
-contract SaltedTransceiver is UnsendableSymmetric {
+contract SaltedTransceiver is UnsendableTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
-        __SymmetricTransceiver_init(
+        __TransceiverBase_init(
             TransceiverConfig({
                 gateways: new address[](0),
                 transmitterImplementation: transmitterImpl,

@@ -5,13 +5,12 @@ import {Test} from "forge-std/Test.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -75,7 +74,7 @@ function config(address governor, address transmitterImpl, address receiverImpl,
 /// @dev A transceiver whose divergence flag is an initializer choice, so both arms can be
 ///      exercised against otherwise identical contracts. A diverging one stands in for the
 ///      zkSync and Tron variants, whose account creation fails closed on Forge's EVM.
-contract ReportingTransceiver is SymmetricTransceiverBase {
+contract ReportingTransceiver is TransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -90,7 +89,7 @@ contract ReportingTransceiver is SymmetricTransceiverBase {
         external
         initializer
     {
-        __SymmetricTransceiver_init(config(governor, address(0xBEEF), impl, treasury_), addressesDiverge_);
+        __TransceiverBase_init(config(governor, address(0xBEEF), impl, treasury_), addressesDiverge_);
     }
 
     /// @dev Stands in for a dry float: a provider whose fee cannot be paid reverts here.
@@ -340,7 +339,7 @@ contract ReceiverReportTest is WiresHome {
     /// @dev A transceiver with no treasury could never release its float, so it is refused.
     function test_aZeroTreasuryIsRefused() public {
         ReportingTransceiver s = new ReportingTransceiver();
-        vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
+        vm.expectRevert(TransceiverBase.NoTreasury.selector);
         s.initialize(msig, address(impl), true, address(0));
     }
 
@@ -388,9 +387,9 @@ contract ReceiverReportTest is WiresHome {
 
 /// @dev The home side: a real transceiver, a real registry, and nothing hand-built.
 ///      Everything below feeds the reporting side's actual wire bytes into it.
-contract HomeTransceiver is SymmetricTransceiverBase {
+contract HomeTransceiver is TransceiverBase {
     function initialize(address governor, address treasury_, address transmitterImplementation_) external initializer {
-        __SymmetricTransceiver_init(config(governor, transmitterImplementation_, address(0xBEEF), treasury_));
+        __TransceiverBase_init(config(governor, transmitterImplementation_, address(0xBEEF), treasury_));
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -658,7 +657,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertFalse(registry.requiresReceiverCallback(remoteKey));
 
         bytes memory produced = _report();
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ChainDoesNotReport.selector, remoteKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainDoesNotReport.selector, remoteKey));
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
     }
 
@@ -671,7 +670,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ReportedChainMismatch.selector, remoteKey, otherKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ReportedChainMismatch.selector, remoteKey, otherKey));
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
     }
 
@@ -792,7 +791,7 @@ contract BootstrapFeeTest is Test {
     function test_underpayingTheFeeReverts() public {
         vm.deal(address(account), FEE);
         vm.prank(address(account));
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
         t.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
     }
 
@@ -888,7 +887,7 @@ contract BootstrapFeeTest is Test {
         vm.deal(address(a), 1 ether);
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.FeeTransferFailed.selector, rejecting, FEE));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.FeeTransferFailed.selector, rejecting, FEE));
         a.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 }

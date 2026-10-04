@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -18,7 +18,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      reaches; Optimism's and Base's canonical bridges run the same software but fail
 ///      independently. See `provider-research.md` §2. No zkSync or Tron variant: an OP Stack
 ///      chain uses Ethereum's CREATE2 formula.
-contract OpStackTransceiver is SymmetricTransceiverBase, IOpStackRecipient {
+contract OpStackTransceiver is TransceiverBase, IOpStackRecipient {
     bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
 
     /// @notice This chain's messenger for the pair, and the chainKey of the chain it reaches.
@@ -35,7 +35,7 @@ contract OpStackTransceiver is SymmetricTransceiverBase, IOpStackRecipient {
     /// @dev Grants `GATEWAY_ROLE` to `messenger`: `receiveOpStackMessage` is gated on it.
     function initialize(TransceiverConfig memory c) external initializer {
         grantRole(GATEWAY_ROLE, messenger);
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 
     /* ===================================== sending ===================================== */

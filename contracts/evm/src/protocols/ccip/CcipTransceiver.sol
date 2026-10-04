@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
@@ -81,6 +81,6 @@ contract CcipTransceiver is CcipTransceiverBase {
 
     function initialize(TransceiverConfig memory c) external initializer {
         __CcipTransceiver_init();
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 }

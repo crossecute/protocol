@@ -3,9 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -18,7 +16,7 @@ import {Call} from "src/messaging/Call.sol";
 import {MockTransmitter} from "test/Transport.t.sol";
 
 /// @dev The transport every test transceiver here shares: it records what it was asked to send.
-abstract contract SymHarness is SymmetricTransceiverBase {
+abstract contract SymHarness is TransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -56,13 +54,13 @@ abstract contract SymHarness is SymmetricTransceiverBase {
 
 contract Sym is SymHarness {
     function initialize(TransceiverConfig memory c) external initializer {
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 
     /// @dev A diverging chain on Forge's EVM, standing in for the zkSync and Tron variants,
     ///      whose account creation fails closed here.
     function initializeDiverging(TransceiverConfig memory c, bool diverges) external initializer {
-        __SymmetricTransceiver_init(c, diverges);
+        __TransceiverBase_init(c, diverges);
     }
 }
 
@@ -226,7 +224,7 @@ contract SymmetricTransceiverTest is Test {
         address transmitter = t.predictTransmitter(alice, SALT);
 
         vm.prank(transmitter);
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, _key(BASE)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, _key(BASE)));
         t.bootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
     }
 
@@ -239,7 +237,7 @@ contract SymmetricTransceiverTest is Test {
         vm.deal(address(account), 1 ether);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, _key(BASE)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, _key(BASE)));
         account.bootstrap(BASE, _calls(), new bytes[](0));
     }
 
@@ -265,7 +263,7 @@ contract SymmetricTransceiverTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SymmetricTransceiverBase.ParityBroken.selector, t.predictCrossAccount(alice, SALT, _key(BASE)), wrong
+                TransceiverBase.ParityBroken.selector, t.predictCrossAccount(alice, SALT, _key(BASE)), wrong
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
@@ -281,9 +279,7 @@ contract SymmetricTransceiverTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                SymmetricTransceiverBase.ParityBroken.selector,
-                t.predictCrossAccount(alice, SALT, _key(BASE)),
-                realTransmitter
+                TransceiverBase.ParityBroken.selector, t.predictCrossAccount(alice, SALT, _key(BASE)), realTransmitter
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
@@ -347,7 +343,7 @@ contract SymmetricTransceiverTest is Test {
         Sym t = _chain(ETH, false);
         vm.deal(address(t), 1 ether);
 
-        vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.NotTreasury.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTreasury.selector, address(this)));
         t.withdraw(1 ether);
 
         Treasury treasury = Treasury(payable(t.treasury()));
@@ -376,7 +372,7 @@ contract SymmetricTransceiverTest is Test {
         c.receiverImplementation = address(new Rcv());
         c.treasury = address(0);
         fresh = new Sym();
-        vm.expectRevert(HubTransceiverBase.NoTreasury.selector);
+        vm.expectRevert(TransceiverBase.NoTreasury.selector);
         fresh.initialize(c);
 
         c.treasury = address(1);

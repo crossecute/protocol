@@ -14,7 +14,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
 ///
 /// @dev One salt per provider, used on every chain, puts that provider's transceiver at one
-///      address everywhere: the property `HubTransceiverBase._counterpartOn` falls back on.
+///      address everywhere: the property `TransceiverBase._counterpartOn` falls back on.
 ///      The salt can be mined for leading zero bytes, which are cheaper in the calldata that
 ///      names the address.
 struct ProviderDeployment {
@@ -336,7 +336,7 @@ contract ChainRegistry is OwnableUpgradeable {
     /// @notice Whether accounts on `chainKey` must report their own address home.
     /// @dev True exactly where this contract cannot recompute addresses, so it cannot
     ///      disagree with the grades. Where a receiver landed is held by its transmitter, not
-    ///      here. The home's side of `SymmetricTransceiverBase.addressesDiverge`.
+    ///      here. The home's side of `TransceiverBase.addressesDiverge`.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
     }

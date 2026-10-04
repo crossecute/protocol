@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
@@ -45,7 +45,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
 
     /* =============================== account manufacture ============================== */
 
-    /// @inheritdoc SymmetricTransceiverBase
+    /// @inheritdoc TransceiverBase
     /// @dev A receiver's peer is its transmitter on the account's home, so it is armed with that
     ///      home's eid, from the same table that admitted the bootstrap.
     function _accountInitializer(
@@ -119,6 +119,6 @@ contract LzTransceiver is LzTransceiverBase {
 
     function initialize(TransceiverConfig memory c) external initializer {
         __LzTransceiver_init();
-        __SymmetricTransceiver_init(c);
+        __TransceiverBase_init(c);
     }
 }

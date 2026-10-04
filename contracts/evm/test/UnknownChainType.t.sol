@@ -9,8 +9,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {VmDeriver} from "src/derivation/VmDeriver.sol";
-import {IVmDeriver} from "src/derivation/VmDeriver.sol";
+import {VmDeriver, IVmDeriver} from "src/derivation/VmDeriver.sol";
 
 /// @dev Rejects any address that is not exactly 8 bytes, standing in for the value-range
 ///      rule a real CAIP-350 profile would bring.

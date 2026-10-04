@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {DivergentAccounts, ZkSyncAccounts, TronAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
 
-/// @title DivergentSymmetricTransceiver
+/// @title DivergentTransceiver
 /// @notice The combined transceiver on zkSync Era and Tron, whose account addresses differ
 ///         from Ethereum's CREATE2. The derivation is `DivergentAccounts`'.
 ///
@@ -14,14 +14,14 @@ import {DivergentAccounts, ZkSyncAccounts, TronAccounts} from "src/messaging/tra
 /// @dev This transceiver does not sit at its provider's address on other chains, so its default
 ///      counterpart on a `Derived` chain is derived from the registry's record of the provider's
 ///      deployment, not taken from `address(this)` or typed in.
-abstract contract DivergentSymmetricTransceiver is SymmetricTransceiverBase, DivergentAccounts {
+abstract contract DivergentTransceiver is TransceiverBase, DivergentAccounts {
     /// @dev Sets the derivation inputs first: the base derives the owner with them.
-    function __DivergentSymmetric_init(TransceiverConfig memory c, bytes32 accountBytecodeHash_)
+    function __DivergentTransceiver_init(TransceiverConfig memory c, bytes32 accountBytecodeHash_)
         internal
         onlyInitializing
     {
         __DivergentAccounts_init(accountBytecodeHash_);
-        __SymmetricTransceiver_init(c, true);
+        __TransceiverBase_init(c, true);
     }
 
     /// @notice Where this provider's transceiver sits on the `Derived` chain `chainKey`, from
@@ -33,9 +33,9 @@ abstract contract DivergentSymmetricTransceiver is SymmetricTransceiverBase, Div
     }
 }
 
-/// @title ZkSyncSymmetricTransceiver
+/// @title ZkSyncTransceiver
 /// @notice The combined transceiver on zkSync Era. See `ZkSyncAccounts`.
-abstract contract ZkSyncSymmetricTransceiver is DivergentSymmetricTransceiver, ZkSyncAccounts {
+abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncAccounts {
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view
@@ -51,9 +51,9 @@ abstract contract ZkSyncSymmetricTransceiver is DivergentSymmetricTransceiver, Z
     }
 }
 
-/// @title TronSymmetricTransceiver
+/// @title TronTransceiver
 /// @notice The combined transceiver on Tron. See `TronAccounts`.
-abstract contract TronSymmetricTransceiver is DivergentSymmetricTransceiver, TronAccounts {
+abstract contract TronTransceiver is DivergentTransceiver, TronAccounts {
     function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
         public
         view

@@ -6,23 +6,21 @@ import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {providerIdOf} from "src/protocols/ProviderChainId.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {providerIdOf, ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SymmetricTransceiverBase} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
 /// @notice The wrapper every provider's send test harness exposes: a thin subclass of the
 ///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
 ///         so a test can exercise the translation layer without going through the full
 ///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzTransceiverHarness`.
-interface IHubSendHarness {
+interface ISendHarness {
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
         payable
@@ -31,7 +29,7 @@ interface IHubSendHarness {
     function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256);
 }
 
-/// @title ProviderHubSendSpec
+/// @title ProviderSendSpec
 /// @notice The properties every native provider binding's hub send path must satisfy,
 ///         independent of which provider it is. A concrete per-provider suite (e.g.
 ///         `LzBinding.t.sol:LzSendTest`) inherits this and implements the hooks below against
@@ -44,9 +42,9 @@ interface IHubSendHarness {
 ///      Wormhole, and OP Stack. Each concrete suite still owns its own provider-specific mock
 ///      (e.g. `MockLzEndpoint`) and harness contract; this only fixes what that mock has to
 ///      support and what has to be true of it.
-abstract contract ProviderHubSendSpec is Test {
+abstract contract ProviderSendSpec is Test {
     /// @notice The harness under test, set in the concrete suite's `setUp`.
-    IHubSendHarness internal harness;
+    ISendHarness internal harness;
 
     /// @notice A recipient on a chain the concrete suite has configured a real destination
     ///         for (provider id/selector/domain, and a counterpart/peer), built with the same
@@ -106,8 +104,8 @@ abstract contract ProviderHubSendSpec is Test {
 
     /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
     function test_quoteIsView() public view {
-        (bool ok,) = address(harness)
-            .staticcall(abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
+        (bool ok,) =
+            address(harness).staticcall(abi.encodeCall(ISendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
         assertTrue(ok);
     }
 }
@@ -115,7 +113,7 @@ abstract contract ProviderHubSendSpec is Test {
 /// @title ProviderFeeSpec
 /// @notice For providers that charge a native fee at the source (all but OP Stack): what the
 ///         quote names is what the send pays, from `value`, and paying less is refused.
-abstract contract ProviderFeeSpec is ProviderHubSendSpec {
+abstract contract ProviderFeeSpec is ProviderSendSpec {
     /// @notice What the provider's mocks were paid, in total, for the last send.
     function _lastPaid() internal view virtual returns (uint256);
 
@@ -186,7 +184,7 @@ abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
 /// @title ProviderIdTableSpec
 /// @notice For hubs with a provider id table: what every transmitter reads on each send, through
 ///         the same `providerIdOf` it calls.
-abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
+abstract contract ProviderIdTableSpec is ProviderSendSpec {
     /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
     function _configuredProviderId() internal view virtual returns (uint256);
 
@@ -194,7 +192,7 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
 
     /// @notice Deliver to the hub through the provider's own path, from an origin id never set.
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal virtual;
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal virtual;
 
     /// @notice The exact revert for that delivery.
     function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
@@ -219,14 +217,14 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
     /// @dev C5, hub side: a delivery whose origin the table does not map is refused.
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
-        _deliverToHubFromUnmappedOrigin(999);
+        _deliverFromUnmappedOrigin(999);
     }
 }
 
 /// @title ProviderEvmRecipientSpec
 /// @notice For bindings that deliver to the recipient's address as an EVM address: a recipient
 ///         whose address is not 20 bytes is refused rather than truncated into another one.
-abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
+abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
     function test_aNonEvmWidthRecipientIsRefused() public {
         bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
         bytes memory recipient =
@@ -384,14 +382,14 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
     }
 }
 
-/// @title ProviderSymmetricInboundSpec
+/// @title ProviderInboundSpec
 /// @notice What every binding's transceiver that is hub and spoke at once must satisfy on the
 ///         way in: a bootstrap from a configured origin, arriving through the provider's own
 ///         path, creates a receiver configured for that provider; a wrong sender is refused;
 ///         and the float can be funded and leaves only to the treasury.
 /// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
 ///      Forge's EVM, so their suites pin their own overrides instead.
-abstract contract ProviderSymmetricInboundSpec is Test {
+abstract contract ProviderInboundSpec is Test {
     event InboundHandled(bytes32 chainKey);
 
     uint256 internal constant ORIGIN_CHAIN_ID = 8453;
@@ -414,7 +412,7 @@ abstract contract ProviderSymmetricInboundSpec is Test {
 
     /// @notice The revert for a wrong sender: the base's by default.
     function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
+        return abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, chainKey);
     }
 
     /// @notice Assert the receiver was configured for the provider before its payload ran
@@ -422,7 +420,7 @@ abstract contract ProviderSymmetricInboundSpec is Test {
     function _assertReceiverConfigured(address receiver, address transmitter) internal view virtual {}
 
     function _wire() internal returns (bytes32 chainKey) {
-        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
         ChainRegistry registry = ChainRegistry(
             address(
                 new ERC1967Proxy(
@@ -450,7 +448,7 @@ abstract contract ProviderSymmetricInboundSpec is Test {
 
     function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {
         bytes32 chainKey = _wire();
-        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
 
         vm.expectEmit(true, true, true, true, address(t));
         emit InboundHandled(chainKey);
@@ -475,12 +473,12 @@ abstract contract ProviderSymmetricInboundSpec is Test {
     }
 
     function test_theFloatLeavesOnlyToTheTreasury() public {
-        SymmetricTransceiverBase t = SymmetricTransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
         address treasury = t.treasury();
         vm.deal(address(t), 1 ether);
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.NotTreasury.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTreasury.selector, address(0xBAD)));
         t.withdraw(1 ether);
 
         uint256 before = treasury.balance;

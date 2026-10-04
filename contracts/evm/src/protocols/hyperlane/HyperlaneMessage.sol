@@ -20,7 +20,7 @@ library HyperlaneMessage {
     ///      the provider's default.
     uint256 internal constant DEFAULT_GAS_LIMIT = 50_000;
 
-    /// @dev Returns zero, ERC-7786's "sent" (see `ProviderHubSendSpec`); the Mailbox's message id
+    /// @dev Returns zero, ERC-7786's "sent" (see `ProviderSendSpec`); the Mailbox's message id
     ///      is in its `DispatchId` event.
     function dispatch(
         address mailbox,

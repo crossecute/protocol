@@ -7,7 +7,6 @@ import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {Executor} from "src/messaging/Executor.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 

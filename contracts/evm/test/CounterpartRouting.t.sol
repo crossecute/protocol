@@ -6,37 +6,21 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {UnsendableHub} from "test/Unsendable.sol";
-
-contract RoutingTransceiver is UnsendableHub {
-    function initialize(address owner_) external initializer {
-        // Through the hub's own initializer, because that is where the owner is set. The
-        // implementation only has to be non-zero: these suites never create an account.
-        __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
-    }
-
-    /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
+import {OwnedTransceiver} from "test/Unsendable.sol";
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
 ///         than assuming it shares its own address. That assumption holds on most EVM
 ///         chains and breaks on zkSync, Tron, and every non-EVM chain.
 contract CounterpartRoutingTest is Test {
     ChainRegistry registry;
-    RoutingTransceiver transceiver;
+    OwnedTransceiver transceiver;
 
     address msig = address(0x5165);
     bytes32 provider;
@@ -50,12 +34,10 @@ contract CounterpartRoutingTest is Test {
         registry = ChainRegistry(
             address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
         );
-        transceiver = RoutingTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
-                )
-            )
+        transceiver = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
+                ))
         );
 
         vm.startPrank(msig);
@@ -93,7 +75,7 @@ contract CounterpartRoutingTest is Test {
 
         vm.startPrank(msig);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xA)));
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.CounterpartAlreadySet.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, baseKey));
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xB)));
         vm.stopPrank();
     }
@@ -142,7 +124,7 @@ contract CounterpartRoutingTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
             )
         );
         transceiver.counterpartOn(solKey);
@@ -154,14 +136,12 @@ contract CounterpartRoutingTest is Test {
     }
 
     function test_routingRequiresRegistry() public {
-        RoutingTransceiver bare = RoutingTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
-                )
-            )
+        OwnedTransceiver bare = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
+                ))
         );
-        vm.expectRevert(HubTransceiverBase.NoChainRegistry.selector);
+        vm.expectRevert(TransceiverBase.NoChainRegistry.selector);
         bare.counterpartOn(keccak256("anything"));
     }
 
@@ -206,7 +186,7 @@ contract CounterpartRoutingTest is Test {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(block.chainid));
 
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, local));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, local));
         transceiver.counterpartOn(local);
     }
 
@@ -277,7 +257,7 @@ contract CounterpartRoutingTest is Test {
         // a default would be a guess rather than a shortcut.
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
             )
         );
         transceiver.counterpartOn(solKey);

@@ -60,7 +60,7 @@ library WormholeMessage {
 
     /// @dev `value` covers Core's message fee plus the Executor's price. The router refunds any
     ///      excess over its quote to `refundTo` (`OutboundBase._refundTo()`) and reverts
-    ///      `Underpaid` below it. Returns zero, ERC-7786's "sent" (see `ProviderHubSendSpec`);
+    ///      `Underpaid` below it. Returns zero, ERC-7786's "sent" (see `ProviderSendSpec`);
     ///      the Core sequence is in `LogMessagePublished`.
     function send(
         Route memory route,

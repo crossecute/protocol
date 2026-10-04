@@ -7,7 +7,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 /// @notice `TransmitterBase` with OpenZeppelin's `Ownable` as its authority, which every
 ///         binding uses. `TransmitterBase` itself stays ownership-agnostic (see its note).
 abstract contract OwnableTransmitter is TransmitterBase, OwnableUpgradeable {
-    /// @dev The `ITransmitterInit` shape `HubTransceiverBase` encodes.
+    /// @dev The `ITransmitterInit` shape `TransceiverBase` encodes.
     function initialize(address owner_, address transceiver_, bytes32 salt_) external virtual initializer {
         __OwnableTransmitter_init(owner_, transceiver_, salt_);
     }

@@ -9,15 +9,13 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {SymmetricTransceiverBase, TransceiverConfig} from "src/messaging/transceiver/SymmetricTransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {UnsendableSymmetric, UnsendableTransmitter} from "test/Unsendable.sol";
+import {UnsendableTransceiver, UnsendableTransmitter} from "test/Unsendable.sol";
 
 contract MockReceiver is ReceiverBase {
     /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
@@ -60,9 +58,9 @@ contract Transmitter is UnsendableTransmitter {
 
 /// @dev One transceiver, which is both ends: it creates receivers for accounts homed on an
 ///      origin it authenticates, and receives reports for accounts homed here.
-contract Node is UnsendableSymmetric {
+contract Node is UnsendableTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
-        __SymmetricTransceiver_init(
+        __TransceiverBase_init(
             TransceiverConfig({
                 gateways: new address[](0),
                 transmitterImplementation: transmitterImpl,
@@ -151,14 +149,14 @@ contract InboundAuthTest is Test {
     ///      counterpart. Both halves of the check are load-bearing.
     function test_theRightRouteFromTheWrongSenderIsRefused() public {
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, homeKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, homeKey));
         node.arrive(HOME_ROUTE, abi.encodePacked(address(0xBAD)), msg_);
     }
 
     function test_theRightSenderFromTheWrongRouteIsRefused() public {
         bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, baseKey));
         node.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
@@ -234,7 +232,7 @@ contract InboundAuthTest is Test {
         bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, baseKey));
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
@@ -260,7 +258,7 @@ contract InboundAuthTest is Test {
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Attested
+                TransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Attested
             )
         );
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
@@ -342,7 +340,7 @@ contract InboundAuthTest is Test {
         bytes32 wide = bytes32(uint256(0xBEEF) << 160);
         bytes memory m = Envelope.encodeBootstrap(transmitter, bytes32(0), wide, _boot());
 
-        vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.SourceTransmitterNotEvm.selector, wide));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.SourceTransmitterNotEvm.selector, wide));
         node.arrive(HOME_ROUTE, HOME_SENDER, m);
     }
 
