@@ -46,24 +46,22 @@ contract OpStackHubHarness is OpStackHubTransceiver {
     }
 }
 
-contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
+interface IOpStackSendHarness is IHubSendHarness {
+    function OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
+}
+
+/// @dev Run against each OP Stack transceiver through `_deploy`.
+abstract contract OpStackSendSuite is ProviderHubSendSpec, ProviderEvmRecipientSpec {
     MockCrossDomainMessenger messenger;
-    OpStackHubHarness hub;
+    IOpStackSendHarness hub;
     uint256 constant BASE = 8453;
+
+    /// @notice Deploy the transceiver under test against `messenger`, paired with `BASE`.
+    function _deploy() internal virtual returns (address transceiver);
 
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
-        hub = OpStackHubHarness(
-            address(
-                new ERC1967Proxy(
-                    address(new OpStackHubHarness(address(messenger), ChainKey.forEvm(BASE))),
-                    abi.encodeCall(
-                        OpStackHubTransceiver.initialize,
-                        (address(0x5165), address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
+        hub = IOpStackSendHarness(_deploy());
         harness = IHubSendHarness(address(hub));
     }
 
@@ -145,6 +143,19 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
         attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
         hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
+}
+
+contract OpStackSendTest is OpStackSendSuite {
+    function _deploy() internal override returns (address) {
+        return address(
+            new ERC1967Proxy(
+                address(new OpStackHubHarness(address(messenger), ChainKey.forEvm(BASE))),
+                abi.encodeCall(
+                    OpStackHubTransceiver.initialize, (address(0x5165), address(0), new address[](0), address(0xBEEF))
+                )
+            )
+        );
     }
 }
 

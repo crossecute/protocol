@@ -21,6 +21,7 @@ import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OpStackHubTransceiver} from "src/protocols/op-stack/OpStackHubTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackSpokeTransceiver} from "src/protocols/op-stack/OpStackSpokeTransceiver.sol";
+import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
@@ -57,9 +58,13 @@ contract ZeroEndpointTest is Test {
         }
     }
 
-    function test_opStackHubRefusesAZeroMessenger() public {
-        bytes memory code = type(OpStackHubTransceiver).creationCode;
-        _assertRefusesOnlyZero(code, abi.encode(address(0), bytes32(uint256(1))), abi.encode(E, bytes32(uint256(1))));
+    function test_opStackHubAndTransceiverRefuseAZeroMessenger() public {
+        bytes[2] memory code = [type(OpStackHubTransceiver).creationCode, type(OpStackTransceiver).creationCode];
+        for (uint256 i; i < code.length; ++i) {
+            _assertRefusesOnlyZero(
+                code[i], abi.encode(address(0), bytes32(uint256(1))), abi.encode(E, bytes32(uint256(1)))
+            );
+        }
     }
 
     /// @dev Core bridge, executor router, and quoter, each zeroed in turn.

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 
-/// @dev What a transmitter reads from the `OpStackHubTransceiver` that created it: the one
+/// @dev What a transmitter reads from the OP Stack transceiver that created it: the one
 ///      messenger it sends through, and the one chain that messenger reaches.
 interface IOpStackMessengerSource {
     function messenger() external view returns (address);
