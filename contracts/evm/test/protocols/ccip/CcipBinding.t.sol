@@ -61,25 +61,28 @@ contract CcipHubHarness is CcipHubTransceiver {
 ///         table, CCIP has no provider-side destination-address concept at all, so the
 ///         recipient's address half (unused by LayerZero) is exactly what becomes
 ///         `EVM2AnyMessage.receiver` here.
-contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
+interface ICcipSendHarness is IHubSendHarness {
+    function setSelector(bytes32 chainKey, uint64 selector) external;
+    function ccipReceive(Client.Any2EVMMessage calldata message) external;
+    function CCIP_EXTRA_ARGS_ATTRIBUTE() external view returns (bytes4);
+}
+
+/// @dev Run against each CCIP transceiver through `_deploy`.
+abstract contract CcipSendSuite is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderPayloadPricedSpec {
     MockCcipRouter router;
-    CcipHubHarness hub;
-    address msig = address(0x5165);
+    ICcipSendHarness hub;
+    address msig;
     bytes32 baseKey;
     uint64 constant BASE_SELECTOR = 15_971_525_489_660_198_786;
 
+    /// @notice Deploy the transceiver under test against `router`, returning it and its owner.
+    function _deploy() internal virtual returns (address transceiver, address owner);
+
     function setUp() public {
         router = new MockCcipRouter();
-        hub = CcipHubHarness(
-            payable(address(
-                    new ERC1967Proxy(
-                        address(new CcipHubHarness(address(router))),
-                        abi.encodeCall(
-                            CcipHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
-                        )
-                    )
-                ))
-        );
+        (address t, address owner) = _deploy();
+        hub = ICcipSendHarness(t);
+        msig = owner;
         harness = IHubSendHarness(address(hub));
 
         vm.startPrank(msig);
@@ -185,6 +188,19 @@ contract CcipSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Provider
 
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
+    }
+}
+
+contract CcipSendTest is CcipSendSuite {
+    function _deploy() internal override returns (address, address) {
+        address owner = address(0x5165);
+        address t = address(
+            new ERC1967Proxy(
+                address(new CcipHubHarness(address(router))),
+                abi.encodeCall(CcipHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF)))
+            )
+        );
+        return (t, owner);
     }
 }
 
