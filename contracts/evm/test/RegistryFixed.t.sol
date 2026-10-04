@@ -73,6 +73,15 @@ contract RegistryFixedTest is Test {
         assertEq(registry.create2Factory(key), address(0xFAC7));
     }
 
+    /// @dev Zero would record nothing and leave the slot open, so write-once would not hold.
+    function test_aZeroFactoryIsRefused() public {
+        vm.startPrank(owner);
+        bytes32 key = registry.addChainKey(BASE, Provenance.Derived);
+        vm.expectRevert(ChainRegistry.ZeroFactory.selector);
+        registry.setCreate2Factory(key, address(0));
+        vm.stopPrank();
+    }
+
     /// @dev Suspension only refuses, so it can be lifted; it is the owner's, as every change is.
     function test_suspensionIsTheOwnersAndCanBeLifted() public {
         vm.prank(owner);

@@ -166,6 +166,7 @@ contract ChainRegistry is Ownable {
     ///      destination might never match; see `Commitment._hash`.
     error NoCommitmentScheme();
     error NoQualifier();
+    error ZeroFactory();
 
     /* =============================== constructor =============================== */
 
@@ -330,9 +331,11 @@ contract ChainRegistry is Ownable {
     /// @dev Defaults to Arachnid's. For chains that run their own factory; a chain whose
     ///      CREATE2 formula differs (zkSync, Tron) is excluded by its provenance instead.
     ///      Write-once, since it moves every predicted transceiver on the chain; the same
-    ///      factory again is a no-op.
+    ///      factory again is a no-op. Zero is refused: it would record nothing and leave the
+    ///      slot open.
     function setCreate2Factory(bytes32 chainKey, address factory) external onlyOwner {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        if (factory == address(0)) revert ZeroFactory();
         address existing = _create2Factory[chainKey];
         if (existing != address(0)) {
             if (existing != factory) revert AlreadySet();
