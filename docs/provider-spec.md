@@ -36,7 +36,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | --- | --- |
 | [1. Terms](#1-terms) | what a provider, a binding, an account, a route and a counterpart are |
 | [2. Provider prerequisites](#2-provider-prerequisites-the-go-or-no-go-checklist) | P1-P15, the go or no-go checklist, before any code |
-| [3. The contract set](#3-the-contract-set) | the five or six files a binding is |
+| [3. The contract set](#3-the-contract-set) | the files a binding is |
 | [4. The seams](#4-the-seams) | every abstract member to answer, and where |
 | [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
 | [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
@@ -54,7 +54,8 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | **provider** | The third-party transport: LayerZero, Hyperlane, Wormhole, CCIP, Axelar. |
 | **binding** | The contracts in this repo that attach a provider to the protocol. |
 | **account** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
-| **transceiver** | The shared msig-owned contract, one per provider per chain. Hub at home, spoke elsewhere. |
+| **transceiver** | The shared contract, one per provider per chain, owned by the msig's own account there. It creates transmitters for accounts homed on its chain and receivers for accounts homed elsewhere. |
+| **home** | The chain an account was created on, chosen by its owner. Part of the account's address, and authenticated as the origin of its bootstrap. |
 | **route** | The provider's own name for a chain, opaque `bytes`: an eid, a domain, a chain id, a selector, a name string. |
 | **counterpart** | The address of the transceiver on the other chain, in that chain's own format. |
 | **chainKey** | `keccak256(canonical ERC-7930 chain identifier)`. The protocol's only chain name. |
@@ -63,12 +64,12 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
 - **Path A**, the steady state: account to its own account, direct. The transceiver is not
   in this path. Every account is therefore its own provider endpoint.
-- **Path B**, bootstrap: hub transceiver to spoke transceiver, once per (account, chain),
-  plus the spoke's report back. The transceiver is the endpoint here.
+- **Path B**, bootstrap: the home's transceiver to the destination's, once per (account,
+  chain), plus the destination's report back where it diverges. The transceiver is the
+  endpoint here.
 
-That is why a binding is four concrete contracts and not one adapter: the endpoint role
-lands on the transmitter, the receiver, the hub transceiver, and the spoke transceiver
-independently.
+That is why a binding is three concrete contracts and not one adapter: the endpoint role
+lands on the transmitter, the receiver, and the transceiver independently.
 
 ---
 
@@ -92,7 +93,7 @@ account up on however good the transport is.
 | **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
 | **P9** | **Quote that fee at source, as a `view`, on-chain** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. The transmitter prices every send and bootstrap in the same call and pays exactly the answer, so a provider without an on-chain quote cannot be sent through at all. See [R2](#r2-quote). |
 | **P10** | No deployment-time registration that changes an address | Anything requiring the account to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
-| **P11** | Send from inside a delivery callback, funded from contract balance | The spoke's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
+| **P11** | Send from inside a delivery callback, funded from contract balance | A diverging transceiver's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
@@ -117,16 +118,16 @@ but Axelar's are `view`.
 
 ## 3. The contract set
 
-A binding is five or six files under `src/protocols/<provider>/`, plus a
-`<P>DivergentSpokeTransceiver.sol` where the provider reaches zkSync or Tron.
+A binding is a handful of files under `src/protocols/<provider>/`, plus
+`<P>DivergentTransceiver.sol` where the provider reaches zkSync or Tron.
 
 | File | Extends | Role |
 | --- | --- | --- |
-| `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the three sending contracts. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
+| `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
-| `<P>Receiver.sol` | `ReceiverBase` | The per-user account on a spoke. Receives on path A. |
-| `<P>HubTransceiver.sol` | `ProviderHubTransceiver` (`HubTransceiverBase` + `ProviderChainId`) | Sends bootstrap, receives reports. `ProviderHubTransceiver` only where a provider-native chain id survives; under ERC-7786 a gateway binding has none. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
-| `<P>SpokeTransceiver.sol` | `SpokeTransceiverBase` | Receives bootstrap, sends the report. Holds the home chain's native id as one initializer value. The provider's wiring is an abstract `<P>SpokeBase` in the same file, which the zkSync/Tron variants inherit alongside `ZkSyncSpokeTransceiver`/`TronSpokeTransceiver`. |
+| `<P>Receiver.sol` | `ReceiverBase` | The per-user account on every other chain. Receives on path A. |
+| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; OP Stack, whose messenger reaches one chain, extends `TransceiverBase` directly, and under ERC-7786 a gateway binding has no id either. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
+| `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
 only the two accounts:
@@ -137,25 +138,26 @@ flowchart LR
     Gw -->|"the SDK's inbound callback"| Rx[Receiver]
 ```
 
-Path B runs once per chain, between the two transceivers, with the report coming back only
-where `addressesDiverge` is set:
+Path B runs once per chain, between the home's transceiver and the destination's, with the
+report coming back only where `addressesDiverge` is set:
 
 ```mermaid
 flowchart LR
-    Hub[Hub transceiver] -->|"_sendMessage"| Gw[provider gateway]
-    Gw -->|"inbound callback → _onInbound"| Spoke[Spoke transceiver]
-    Spoke -.->|"_reportReceiver"| Gw
-    Gw -.->|"_onInbound"| Hub
+    Home[Transceiver at home] -->|"_sendMessage"| Gw[provider gateway]
+    Gw -->|"inbound callback → _onInbound"| Dest[Transceiver at the destination]
+    Dest -.->|"_reportReceiver"| Gw
+    Gw -.->|"_onInbound"| Home
 ```
 
-Four contracts, one gateway, and the same two seams on every one of them: `_sendMessage`
+Three contracts, one gateway, and the same two seams on every one of them: `_sendMessage`
 outbound and the SDK's callback inbound.
 
-**`<P>Message` is not optional structure, it is the deduplication that keeps the four in
+**`<P>Message` is not optional structure, it is the deduplication that keeps them in
 agreement.** Fee handling, attribute decoding, the recipient byte form, and the sender byte
-form must be identical across all four. Otherwise authentication silently diverges between
-path A and path B, and a quote stops predicting its own send. Writing them once is what
-makes that structural. It declares no storage of its own, except where it owns replay (R3.5), in an ERC-7201 slot.
+form must be identical across the transmitter and the transceiver. Otherwise authentication
+silently diverges between path A and path B, and a quote stops predicting its own send.
+Writing them once is what makes that structural. It declares no storage of its own, except
+where it owns replay (R3.5), in an ERC-7201 slot.
 
 ---
 
@@ -163,10 +165,10 @@ makes that structural. It declares no storage of its own, except where it owns r
 
 Every abstract or virtual member a binding must answer, and where.
 
-### 4.1 Required on all four contracts
+### 4.1 Required on all three contracts
 
 The receiver does not inherit `OutboundBase` and never sends, so the first two rows bind
-the transmitter and both transceivers.
+the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
@@ -180,34 +182,28 @@ the transmitter and both transceivers.
 | --- | --- | --- |
 | `_owner()` | `TransmitterBase._owner` | Answer from the SDK's own ownership if it brings one, otherwise from `OwnableUpgradeable`. |
 | `_checkOwner()` | `TransmitterBase._checkOwner` | Same. Note `TransmitterBase` uses `onlyAccountOwner`, not `onlyOwner`, precisely so an SDK's `onlyOwner` does not collide. |
-| `initialize(address owner, address transceiver, bytes32 salt)` | `ITransmitterInit`, in `HubTransceiverBase.sol` | MUST exist with that exact signature, or the hub's `_accountInitializer` MUST be overridden to encode a different one. |
+| `initialize(address owner, address transceiver, bytes32 salt)` | `ITransmitterInit`, in `TransceiverBase.sol` | MUST exist with that exact signature, or the transceiver's `_accountInitializer` MUST be overridden to encode a different one. |
 
 ### 4.3 Required on the receiver
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
 | `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` LAST so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
-| an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the spoke for exactly this. |
+| an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the transceiver for exactly this. |
 | nothing else | | A binding MUST NOT expect the transceiver to reach a receiver after creation. `commit`, `cancel`, and `execute` are gated on the transmitter alone; the initializer is the transceiver's only call, ever. |
 
-### 4.4 Required on the hub transceiver
+### 4.4 Required on the transceiver
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `HubTransceiverBase` | There is no seam to answer. The owner is `__HubTransceiverBase_init`'s own argument, and `Ownable` refuses a zero. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
-| nothing for the roles | `Roles.grantRole` | Named in the initializer's `gateways` argument, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
-| `_accountInitializer(owner, salt, sourceTransmitter, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's initializer. There is no second chance: `CrossProxy` locks in the same call that arms it. |
-| nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. A binding adds a typed wrapper only if it keeps a provider-native value of its own; a gateway binding adds nothing, which is what `LzHubTransceiver` demonstrates by carrying no provider vocabulary at all. |
-
-### 4.5 Required on the spoke transceiver
-
-| Seam | Declared in | Obligation |
-| --- | --- | --- |
-| no authority at all | n/a | A spoke has no owner, and MUST NOT be given one: every value it holds is written in its initializer and has no setter, so an ownership system here would govern nothing while presenting a key worth stealing. The roles are as above. The float leaves through `withdraw`, callable only by `treasury()`: the account of a write-once owner and salt on this chain, which is an account address and not an owner. |
-| `_accountInitializer(owner, salt, sourceTransmitter, calls)` | `SpokeTransceiverBase._accountInitializer` | Override to fold provider setup into the receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. |
-| `initialize(...)` | convention | MUST pass the home chainKey, the home chain identifier, the hub's address and the treasury's owner and salt into `__SpokeTransceiverBase_init`, in the byte forms [R4](#r4-the-byte-forms-which-are-the-authentication) requires. Where a provider-native value survives, it goes through the codec first. |
-| `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so a contract that derives Ethereum's way hard-codes `false` and one that overrides the derivation hard-codes `true`, alongside the account bytecode hash its compiler produces. See `LzSpokeTransceiver` against `LzZkSyncSpokeTransceiver`. |
-| the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `_bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from contract balance. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the msig's own account on this chain. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
+| `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
+| `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
+| `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. There is no second chance: `CrossProxy` locks in the same call that arms it. |
+| the provider id table | `ProviderChainId`, via `ProviderTransceiver` | A typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`) over `_setProviderId`, write-once. The inbound callback maps the delivery's origin id back to a route with `_onProviderInbound`, so an unmapped origin reverts and a mapped one goes through the base's counterpart check. |
+| nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. |
+| the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `_bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from the transceiver's float. |
 
 **Why the receiver's initializer is the shape it is.** `__ReceiverBase_init` is
 `internal onlyInitializing` and the external `initialize` is a thin `initializer` wrapper,
@@ -224,7 +220,7 @@ So: own `initialize`, provider setup, `__ReceiverBase_init` last.
 
 **It also carries the account's owner where the SDK needs one.** A binding whose SDK wants
 an owner-gated config surface declares its own initializer signature carrying it and
-overrides `SpokeTransceiverBase._accountInitializer` to encode that selector. No address
+overrides `TransceiverBase._accountInitializer` to encode that selector. No address
 moves: initializer calldata is not in the initcode.
 
 ### 4.6 Deliberately absent
@@ -232,7 +228,7 @@ moves: initializer calldata is not in the initcode.
 A binding MUST NOT expect any of these, and MUST NOT add them.
 
 - **No authentication seam.** `_authenticateOrigin` is answered by
-  `HubTransceiverBase._authenticateOrigin` and `SpokeTransceiverBase._authenticateOrigin`, not by a binding. This is
+  `TransceiverBase._authenticateOrigin`, not by a binding. This is
   deliberate: a transceiver decides which cross-chain payloads are authentic, and leaving
   that per provider is how one provider ships without it.
 - **No message-type seam.** An account's channel carries one shape. Transceiver envelope
@@ -240,7 +236,8 @@ A binding MUST NOT expect any of these, and MUST NOT add them.
   message through untouched.
 - **No registry pointer on an account.** A transmitter holds no registry and knows no
   routes, by design. It resolves through its transceiver: see [R1](#r1-send).
-- **No provenance seam.** Grading is the registry's, applied at the hub.
+- **No provenance seam.** Grading and suspension are the registry's, applied by the base
+  transceiver in `_counterpartOn`.
 
 ---
 
@@ -366,7 +363,7 @@ vm.revertToState(snap);
 That is one call and an exact number, not a bound from bisection, because the refund lands
 back on `_refundTo()` and the delta is therefore the net. It is how
 [C11](#8-the-compliance-suite) checks that a quote equals what the send actually consumes,
-and how an operator sizes the balance a diverging spoke needs for its return report under
+and how an operator sizes the float a diverging transceiver needs for its return reports under
 [R7.5](#r7-fees-and-value).
 
 It is not a substitute for a missing quote. The transmitter prices each send on-chain
@@ -396,7 +393,7 @@ transmitter's balance, reverting `InsufficientBalance` when the balance cannot c
 Taken in the same transaction, the price cannot move between quote and send, so a signer
 approves a payload and never a price, and `msg.value` only tops the balance up. The cost is
 one extra provider read per message. `_sendMessage` stays a plain spend of the `value` it is
-handed, so a binding implements the same seam either way. The spoke's receiver report
+handed, so a binding implements the same seam either way. A transceiver's receiver report
 prices itself the same way.
 
 **R2.7 It MUST NOT be cached on-chain.** A stored quote is a stale quote.
@@ -473,7 +470,7 @@ do nothing else with the message.
 | Contract | Entry point | Then |
 | --- | --- | --- |
 | receiver | `receiveMessage(receiveId, sender, payload)` | `_onMessage(payload)`, after both checks below |
-| transceiver (hub or spoke) | the binding's callback | `_onInbound(route, sender, message)` |
+| transceiver | the binding's callback | `_onInbound(route, sender, message)`, through `_onProviderInbound` where the provider names the origin by its own id |
 | transmitter | none | MUST revert |
 
 **R3.0 `ReceiverBase.receiveMessage` is `external`, so it carries its own gate.** Two
@@ -561,7 +558,7 @@ difference is an `UnknownRoute` revert. The binding MUST produce both directions
 same codec function. Never hand-encode at one end.
 
 **R4.2** The `sender` bytes MUST be byte-identical to what the counterpart lookup returns.
-For an EVM counterpart that is 20 raw bytes: `HubTransceiverBase.counterpartOn` returns
+For an EVM counterpart that is 20 raw bytes: `TransceiverBase.counterpartOn` returns
 what `setCounterpart` stored, which is `Erc7930.parseStrict(interop).addr`, and the fallback
 returns `abi.encodePacked(_parityAddress(chainKey))`, the transceiver's own address unless it
 sits on zkSync or Tron, which derive it from the registry. Both are 20 bytes. A provider reporting a 32-byte
@@ -578,11 +575,9 @@ bytes memory sender = abi.encodePacked(address(uint160(uint256(origin.sender))))
 **R4.3** The narrowing MUST reject a non-EVM sender rather than truncate one. A 32-byte
 Solana pubkey cast down to 20 bytes is a forgery primitive, not a formatting bug.
 
-**R4.4** A spoke's `homeTransceiver()` is written once at initialization with no setter. The
-deployment MUST pass it in the same byte form the binding will produce inbound: the hub's
-20-byte address, which `SpokeTransceiverBase` enforces at initialization. There is no
-way to fix a mistake here but a redeploy: see the README's
-[Message providers](../README.md#message-providers).
+**R4.4** The governor home's route is given at initialization as a chain identifier, and
+the initializer refuses one that is not the canonical form of its key (`RouteKeyMismatch`):
+it names the home the owner is derived for, so a wrong one makes a transceiver nobody owns.
 
 ### R5. The route codec
 
@@ -594,9 +589,9 @@ silently reinterpret. Under ERC-7786 the route holds a chain's ERC-7930 identifi
 than a provider id, so this rule now binds only where a binding keeps a provider-native
 value of its own.
 
-**R5.2** The provider's native type MUST appear only in the binding's own files: the hub's
-typed setter over `ProviderChainId`, and the one fixed value a spoke or an SDK peer entry
-holds. It MUST NOT appear in any base contract or in the registry.
+**R5.2** The provider's native type MUST appear only in the binding's own files: the
+transceiver's typed setter and initializer argument over `ProviderChainId`, and an SDK peer
+entry. It MUST NOT appear in any base contract or in the registry.
 
 **R5.3** `ProviderChainId` stores ids as `uint256`, write-once and injective both ways. The
 typed setter bounds an id on the way in; readers get `uint256` from `providerIdFor` and
@@ -640,7 +635,7 @@ cost the bootstrap quote must include, which is [R2.3](#r2-quote) applied to pat
 **R7.1 The binding is told how much it may spend, and MUST NOT read `msg.value`.**
 `_sendMessage` takes the amount as its fourth argument, and that is the number to pay the
 provider. It is never `msg.value`: on a transmitter it is the quote and `msg.value` only
-tops up the balance, the hub takes its bootstrap fee off the top, and on a nested send
+tops up the balance, the transceiver takes its bootstrap fee off the top, and on a nested send
 `msg.value` is zero. In every case the payment comes from the sending contract's balance. A
 binding reading `msg.value` overpays the provider, or refunds the fee to the sender, or
 sends nothing.
@@ -675,16 +670,16 @@ than an argument; the send VALUE is the opposite case, and is passed (see
 **R7.3** A nested send (the receiver report, sent from inside a delivery callback) has
 `msg.value == 0` and MUST be funded from the sending contract's balance. A binding whose
 provider cannot do this MUST say so and the report path MUST fall back to a separately
-funded transaction. Spokes are funded for it out of band
-([§6](#6-configuration-a-compliant-deployment-performs), step 11).
+funded transaction. Each transceiver's float is funded for it out of band
+([§6](#6-configuration-a-compliant-deployment-performs)).
 
 **R7.4** The transmitter's `bootstrap` forwards exactly the transceiver's `quoteBootstrap`,
 from its balance. A binding MUST NOT retain a remainder on the transceiver.
 
 **R7.5** Where the report is sent from a contract balance, the binding SHOULD expose the
-report's own quote so an operator can size that balance. A spoke that runs dry fails every
-bootstrap on its chain at the return leg, and the failure is invisible from home until
-someone reads the registry and finds the slot unresolved.
+report's own quote (`reportPayload` with `quoteMessage`) so an operator can size that
+float. A transceiver that runs dry fails every bootstrap on its chain at the return leg, and
+the failure is invisible from home until someone finds the account unreachable there.
 
 ### R8. Storage and address parity
 
@@ -711,17 +706,16 @@ rather than transcribe it.
 ### R9. Write-once discipline
 
 **R9.1** The binding MUST NOT add a setter for any value the base makes write-once:
-`setRoute`, `setCounterpart`, `setProviderDeployment`, `receiverImplementation`,
-`transmitterImplementation`, `homeChainKey`, `homeRoute`, `homeTransceiver`, a resolved ref
-slot.
+`setRoute`, `setCounterpart`, the provider id table, `setRouting`'s registry and provider,
+`setProviderDeployment`, a chain's grade, `setCreate2Factory`, `receiverImplementation`,
+`transmitterImplementation`, `treasury`, `addressesDiverge`, a resolved ref slot.
 
 **R9.2** A typed wrapper around a write-once setter is the
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
 **R9.3** The binding MUST NOT expose an upgrade path that survives initialization. A
-transceiver locks upgrades in `__TransceiverBase_init`, which `__HubTransceiverBase_init` and
-`__SpokeTransceiverBase_init` call last, so a binding gets the lock by calling the base init
-it must call anyway and cannot ship a transceiver that never locked. If the SDK carries its
+transceiver locks upgrades in `__TransceiverBase_init`, so a binding gets the lock by calling
+the base init it must call anyway and cannot ship a transceiver that never locked. If the SDK carries its
 own upgrade mechanism, the binding MUST disable it: an upgrade path the base does not gate is
 one the lock does not close.
 
@@ -729,23 +723,21 @@ one the lock does not close.
 
 ## 6. Configuration a compliant deployment performs
 
-A binding is not compliant until its deployment story is expressible. In order, on the home
-chain unless noted:
+A binding is not compliant until its deployment story is expressible. Every chain runs the
+same steps, and the order matters: a chain other than the governor's home has no owner
+until a bootstrap from that home creates the governor's receiver there, so everything that
+bootstrap needs is fixed at deployment and everything else comes after it.
 
-| # | Call | Notes |
-| --- | --- | --- |
-| 1 | `ChainRegistry.addChainKey(identifier, provenance)` | Per chain, canonical ERC-7930. The grade is write-once and has no default: `Attested` for chains whose addresses cannot be recomputed here (zkSync and Tron are `eip155` with different CREATE2 formulas), which is also what turns `requiresReceiverCallback` on. Only an `eip155` chain can be `Derived`. |
-| 2 | `ChainRegistry.addMessageProvider(name)` | The `bytes32` is `keccak256(name)`. |
-| 3 | Deploy the hub transceiver proxy through the CREATE2 factory, upgrade, `initialize` | Proxy initcode must be identical on every chain. |
-| 4 | Deploy each spoke transceiver the same way, `initialize` with home chainKey, home route, hub address, and the msig's owner and salt as the treasury, so `treasury()` is the msig's own receiver there. The msig then bootstraps that receiver like any account | Every spoke in one deployment MUST be given the SAME home. Nothing on-chain cross-checks this, because a spoke has no view of its siblings. The deploy script is the only place it can be enforced. |
-| 5 | `ChainRegistry.setLocalTransceiver(provider, hub)` | Names the hub that speaks for a provider. |
-| 6 | `ChainRegistry.setProviderDeployment(provider, salt, transceiverInitCodeHash, accountInitCodeHash)` | Write-once. `accountInitCodeHash` per [R8.4](#r8-storage-and-address-parity). |
-| 7 | `<P>HubTransceiver.setRoute(chainKey, identifier)` per destination | Write-once, injective, and the identifier must be the canonical one that hashes to the chainKey (`RouteKeyMismatch` otherwise). |
-| 8 | `ChainRegistry.setCreate2Factory(chainKey, factory)` for zk-chains | Defaults to Arachnid's. Write-once. |
-| 9 | `<P>HubTransceiver.setCounterpart(chainKey, interop)`, or `resolveCounterpart(chainKey, paramsCommitment)` where a deriver is configured | Write-once, on the hub. Most EVM chains need neither: the hub falls back to its own address. |
-| 10 | `<P>HubTransceiver.setRouting(registry, provider, minCounterpartProvenance)` | The provenance dial. |
-| 11 | Fund each spoke transceiver for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains where the report is used. |
-| n/a | no lock step | There is nothing to call. Step 1's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Steps 2 onward are storage writes, which the lock does not touch. |
+| # | Where | Call | Notes |
+| --- | --- | --- | --- |
+| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
+| 2 | every chain | Deploy each provider's transceiver proxy through the CREATE2 factory at the provider's salt, upgrade, and `initialize(config, governorHomeId)` | Proxy initcode must be identical on every chain. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Nothing else may be needed before step 4. |
+| 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
+| 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
+| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
+| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, `setCreate2Factory` for zk-chains, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`) | The grade and the factory are write-once. Only an `eip155` chain can be `Derived`; zkSync and Tron are `Attested`, which is also what turns `requiresReceiverCallback` on. |
+| 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
+| n/a | | no lock step | There is nothing to call. Step 2's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Later steps are storage writes, which the lock does not touch. |
 
 There are no deploy scripts yet; `script/` holds only the vendoring drivers
 ([todo §3](todo.md#3-infrastructure)). The ordering above is their
@@ -762,11 +754,11 @@ Collected, because each of these is individually tempting.
 3. **No message-type tag on a payload**, and no second shape on an account's channel. The
    only kinds are `Envelope`'s, and a binding adds none.
 4. **No registry read from an account.** The chainKey derivation is pure; keeping the
-   directory dependency on one contract on one chain is what makes a transmitter a pure
+   directory dependency on the transceiver is what makes a transmitter a pure
    commit-and-forward contract.
 5. **No provider id outside the codec.** ([R5.2](#r5-the-route-codec))
 6. **No new write-once setters.** ([R9.1](#r9-write-once-discipline))
-7. **No second ownership authority** on a transceiver or an account. ([§4.4](#44-required-on-the-hub-transceiver))
+7. **No second ownership authority** on a transceiver or an account. ([§4.4](#44-required-on-the-transceiver))
 8. **No silent send.** `_sendMessage` either delivers to the provider or reverts.
 9. **No `encodePacked` on a route.** ([R5.1](#r5-the-route-codec))
 10. **No constructor arguments on `CrossProxy`,** and no compiler settings change. ([R8.1](#r8-storage-and-address-parity), [R8.3](#r8-storage-and-address-parity))
@@ -787,48 +779,47 @@ mixins applied only to those, rather than flags:
 
 | Spec | Applies to | Covers |
 | --- | --- | --- |
-| `ProviderHubSendSpec` | all five | C1, C2, C13, C14 |
+| `ProviderSendSpec` | all five | C1, C2, C13, C14 |
 | `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26 |
 | `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12 |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
-| `ProviderIdTableSpec` | the four hubs with an id table | C1 (transmitter lookup), C5 (hub), C28 |
+| `ProviderIdTableSpec` | the four transceivers with an id table | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all five | C9 |
 | `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account) |
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
-| `ProviderTransceiverInboundSpec` | all five | C4, C6, C7, C24 (hub and spoke) |
-| `ProviderSpokeOriginSpec` | CCIP, Hyperlane, Wormhole | C5 (spoke) |
-| `ProviderHomeIdSpec` | LayerZero, CCIP, Hyperlane, Wormhole | A spoke refuses a zero home id |
+| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver) |
+| `ProviderGovernorHomeSpec` | the four transceivers with an id table | The governor home's id and route are set at initialization (#28) |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
 
 | # | Property | Asserts | Covered by |
 | --- | --- | --- | --- |
-| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. | `ProviderHubSendSpec`; transmitter lookup `ProviderIdTableSpec` |
-| C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. | `ProviderHubSendSpec` |
+| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
+| C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. | `ProviderSendSpec` |
 | C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. | core `Transport.t.sol` `test_aRecipientThatIsNotThisAccountIsRefused` |
-| C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec` |
-| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`. | `ProviderIdTableSpec` (hub), `ProviderSpokeOriginSpec` (spoke), `ProviderReceiveSpec` (account) |
-| C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a hub, `NotHomeOrigin` on a spoke. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec` |
-| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. | `ProviderTransceiverInboundSpec` (asserts the chain key authentication accepted) |
+| C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
+| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`, or the id table's refusal of an unmapped origin. | `ProviderIdTableSpec` (transceiver), OP Stack's `test_nothingIsAcceptedBeforeThePairedChainIsRouted`, `ProviderReceiveSpec` (account) |
+| C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a transceiver. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
+| C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. | `ProviderInboundSpec` (asserts the chain key authentication accepted) |
 | C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. | core `DestinationNaming.t.sol`: the route is the chain identifier and the chainKey its hash |
 | C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). | `ProviderTransmitterSpec` |
 | C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). | `ProviderWideSenderSpec` |
 | C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §3](todo.md#3-infrastructure)) |
 | C12 | `quote_isTakenOverTheExactPayloadBytes` | Two payloads of different lengths quote differently, and the longer one's quote matches a send of the longer one. [R2.3](#r2-quote). | `ProviderPayloadPricedSpec` |
-| C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). | `ProviderHubSendSpec` |
-| C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). | `ProviderHubSendSpec` |
+| C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). | `ProviderSendSpec` |
+| C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). | `ProviderSendSpec` |
 | C15 | `quote_bootstrapDoesNotRequireTheCallerToBeTheAccount` | The quote is callable before the account exists. [R2](#r2-quote). | core `Transport.t.sol` `test_bootstrapQuoteDoesNotRequireTheCallerToBeTheAccount` |
 | C16 | `quote_underfundedSendReverts` | Sending less than the quote fails rather than half-delivering. | `ProviderFeeSpec` |
-| C17 | `bootstrap_createsTheAccountAtThePredictedAddress` | `predictCrossAccount` on the hub equals the deployed address on the spoke. | core `CommitFinalize.t.sol` `test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment` |
+| C17 | `bootstrap_createsTheAccountAtThePredictedAddress` | `predictCrossAccount` at home equals the deployed address on the destination. | core `CommitFinalize.t.sol` `test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment` |
 | C18 | `bootstrap_accountIsProviderConfiguredBeforeThePayloadRuns` | A payload whose first call sends must succeed. | `ProviderReceiveSpec` |
 | C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar is applied to the first message to a chain. | core `CounterpartRouting.t.sol` `test_counterpartBelowProvenanceBarIsRefused` |
 | C20 | `bootstrap_forSomebodyElsesAccountReverts` | `NotTheAccount`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheAccount` |
 | C21 | `parity_accountInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
-| C22 | `parity_hubAndSpokeProxiesShareInitcode` | The claim that puts hub and spokes at one address. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
+| C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
-| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderTransceiverInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
+| C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
 | C25 | `fees_excessRefundsToTheAccountNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec` (transceiver), core `Transport.t.sol` `test_pathARefundsToTheAccount` (transmitter). CCIP keeps an overpayment; OP Stack takes no value |
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
 | C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `CommitFinalize.t.sol` `test_initializingLocksUpgrades` |
@@ -924,9 +915,9 @@ contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
     }
 }
 
-contract GatewaySpokeTransceiver is SpokeTransceiverBase, GatewayEndpoint {
+contract GatewayTransceiver is TransceiverBase, GatewayEndpoint {
     /// R3.2: translating the callback into three arguments is the whole inbound job.
-    /// `_authenticateOrigin` is the base's, on both sides.
+    /// `_authenticateOrigin` is the base's.
     function receiveMessage(bytes32, bytes calldata sender, bytes calldata payload)
         external
         payable
@@ -944,9 +935,9 @@ contract GatewaySpokeTransceiver is SpokeTransceiverBase, GatewayEndpoint {
 }
 ```
 
-That split is why `_authenticateOrigin` needs no override on either side.
+That split is why `_authenticateOrigin` needs no override.
 `Erc7930.toChainIdentifier` reduces the sender envelope to exactly the bytes `setRoute`
-stored, so `chainKeyOfRoute` on a hub and `_isHome` on a spoke both match byte for byte
+stored, so `chainKeyOfRoute` matches byte for byte
 ([R4.1](#r4-the-byte-forms-which-are-the-authentication)). And `io.addr` is exactly the raw
 form the counterpart lookup returns
 ([R4.2](#r4-the-byte-forms-which-are-the-authentication)).
@@ -962,23 +953,22 @@ gateway address, a policy about two-step sends, and a quote the standard did not
 A binding is done when every line is true.
 
 **Contracts**
-- [ ] Five or six files under `src/protocols/<provider>/`, with the shared code in `<P>Message`
-      or the inherited SDK
-- [ ] `_sendMessage` overridden on the transmitter and both transceivers
-- [ ] `_quoteMessage` overridden on the same three, `view`, sharing the send's resolver
+- [ ] The files of [§3](#3-the-contract-set) under `src/protocols/<provider>/`, with the shared
+      code in `<P>Message` or the inherited SDK
+- [ ] `_sendMessage` overridden on the transmitter and the transceiver
+- [ ] `_quoteMessage` overridden on the same two, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
 - [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
-      `_onInbound` on the transceivers
+      `_onInbound` on the transceiver
 - [ ] Inbound reverts on the transmitter
-- [ ] Initialized with the msig as `owner` and the protocol's one `Treasury` as `treasury` on
-      the hub, the msig's owner and salt as the treasury on a spoke, and every
-      transport the deployment needs in `gateways`, none grantable afterwards
+- [ ] Initialized with the governor's owner, salt, and home, the chain's `Treasury`, the
+      registry and provider, the governor home's provider id, and every transport the
+      deployment needs in `gateways`, none grantable afterwards
 - [ ] No second ownership implementation in the tree, and no grant path added
 - [ ] `_accountInitializer` overridden wherever an account's initializer needs provider
       arguments the base shape does not carry
-- [ ] `ProviderChainId` and a typed setter on the hub, only where a provider-native id survives
-- [ ] A spoke refuses every origin chain but home through `ProviderOrigin.requireHome` before
-      calling `_onInbound`, held by `ProviderSpokeOriginSpec`
+- [ ] `ProviderChainId` and a typed setter on the transceiver, only where a provider-native id
+      survives, with inbound mapped through `_onProviderInbound`
 
 **Byte forms**
 - [ ] Route produced by one codec function in both directions
