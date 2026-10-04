@@ -88,7 +88,7 @@ contract SaltedTransceiver is UnsendableTransceiver {
 
     /// @dev Stands in for `_onInbound`, which authenticates and then reaches
     ///      `_bootstrapInbound`. Creates the account directly: the parity check and the report
-    ///      are `SymmetricTransceiver.t.sol`'s and `ReceiverReport.t.sol`'s, and these tests are
+    ///      are `Transceiver.t.sol`'s and `ReceiverReport.t.sol`'s, and these tests are
     ///      about where accounts land. The carried transmitter is where Ethereum's CREATE2
     ///      puts it at home, over this same address.
     function bootstrapFor(address owner_) external returns (address) {

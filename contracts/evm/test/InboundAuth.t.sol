@@ -296,7 +296,7 @@ contract InboundAuthTest is Test {
 
     /// @dev Every envelope leads with its kind, so a wrong shape is refused by name rather
     ///      than misread. The elements form, which an EVM chain has no decoder for, is
-    ///      `SymmetricTransceiver.t.sol`'s.
+    ///      `Transceiver.t.sol`'s.
     /// @dev A v1 body led with the owner, not a kind. Kinds start at 1, so the owner word is
     ///      refused as an unknown kind rather than decoded.
     function test_anUntaggedV1BodyIsRefused() public {

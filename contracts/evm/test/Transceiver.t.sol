@@ -89,7 +89,7 @@ contract RecordingTransmitter {
 ///      at one address on both because it is deployed from one initcode at one salt, as a
 ///      provider's transceivers are. Its `localChainKey` is read at deployment, so each copy
 ///      knows its own chain.
-contract SymmetricTransceiverTest is Test {
+contract TransceiverTest is Test {
     uint256 constant ETH = 1;
     uint256 constant BASE = 8453;
     uint256 constant ZK = 324;
@@ -236,7 +236,7 @@ contract SymmetricTransceiverTest is Test {
 
     /* ============================ a bootstrap end to end =========================== */
 
-    /// @dev The whole path between two symmetric transceivers: an account homed on Base
+    /// @dev The whole path between two transceivers: an account homed on Base
     ///      bootstraps Ethereum, and its receiver there lands on its transmitter's address and
     ///      answers to it.
     function test_aBootstrapCrossesBetweenTwoChains() public {

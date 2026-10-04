@@ -78,7 +78,7 @@ contract TronSym is TronTransceiver, SymHarness {
 /// @dev The zkSync and Tron transceivers. Forge runs Ethereum's EVM, so these pin that each
 ///      derives with its chain's formula, that the formula reaches the owner and the default
 ///      counterpart, and that account creation fails closed here rather than misdeploying.
-contract DivergentSymmetricTransceiverTest is Test {
+contract DivergentTransceiverTest is Test {
     bytes32 constant HASH = keccak256("zksolc CrossProxy");
     bytes32 constant SALT = keccak256("account");
     bytes32 constant PROVIDER_SALT = keccak256("provider");
