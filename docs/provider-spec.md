@@ -266,17 +266,17 @@ the read, on the transceiver an account already stores.
 
 **R1.2.1** Every `bytes` argument on the account's own surface MUST have a public builder
 that produces it, and a binding MUST NOT remove one. `Erc7930` is a library of `internal`
-functions, so an integrator cannot reach it. `recipientOn`, `chainIdentifierFor`,
-`payloadForCalls`, and `payloadForElements` are the only way to construct these values
-without reimplementing the encoding. A wrong interoperable address is a message addressed
+functions, so an integrator cannot reach it. `recipientOn` (for a destination this account
+has bootstrapped), `chainIdentifierFor`, `payloadForCalls`, and `payloadForElements` are the
+only way to construct these values without reimplementing the encoding. A wrong interoperable address is a message addressed
 nowhere, not a revert.
 
 **R1.3** The destination on path A is the counterpart the account recorded for that chain,
 which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
 own notion of a peer. Where the SDK insists on a peer table, the binding SHOULD populate it
-from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree wherever
-Ethereum's CREATE2 formula holds and differ on zkSync and Tron, where deriving the peer names
-an address that holds no receiver.
+from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree only where both
+this chain and the destination use Ethereum's CREATE2 formula, and differ wherever either is
+zkSync or Tron, where deriving the peer names an address that holds no receiver.
 
 **R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking

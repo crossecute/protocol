@@ -49,8 +49,10 @@ Every check on that path, in the order a message meets them:
 - `sendMessage(recipient, payload, attributes)` is `onlyAccountOwner`. The recipient is
   checked against the stored counterpart, not trusted, and the destination must already be
   bootstrapped.
-- `recipient` is `<erc7930: chain, address(this)>` and `payload` is `abi.encode(calls)`,
-  both built by the caller. The transmitter quotes them in the same call and `_sendMessage`
+- `recipient` is `<erc7930: chain, receiver>`, the receiver this account recorded for that
+  chain, which `recipientOn` returns, and `payload` is `abi.encode(calls)`, both built by the
+  caller. The receiver is the account's own address only when both chains use Ethereum's
+  CREATE2. The transmitter quotes them in the same call and `_sendMessage`
   hands them to the gateway with exactly that fee, paid from the transmitter's balance.
   Attached `msg.value` only tops the balance up.
 - `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
@@ -169,8 +171,9 @@ all happen in the inbound handler. Chains where deployment is not synchronous (S
 Move chains) need somewhere to hold the payload in between, which is a per-VM concern.
 
 After this, every subsequent message takes path A and the transceiver is not involved again.
-Nothing has to be pointed anywhere: the transmitter's peer is its own address, which is
-where its receiver sits on every parity chain, so it is derived rather than configured. The
+Nothing has to be pointed anywhere: the transmitter's peer is the receiver address its
+transceiver predicted at bootstrap, which is its own address wherever both chains use
+Ethereum's CREATE2, so it is derived rather than configured. The
 exception is LayerZero, which delivers to a peer the OApp stores: the owner records it once
 per destination with `setPeer`, and it cannot be changed after.
 
