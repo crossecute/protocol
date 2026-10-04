@@ -37,17 +37,15 @@ this file is the gap between that design and the tree.
 
 ## 3. Infrastructure
 
-- **No deploy scripts.** `script/` holds only the vendoring drivers. The Assumptions section
-  specifies an elaborate deploy story (Arachnid's factory, proxy with deployer-as-owner,
-  immediate upgrade, ProxyAdmin under the msig), with no code behind it. The CREATE2 parity
-  argument stands or falls on that initcode being byte-identical, and nothing pins it. The
-  scripts are also where the deployment-time provider decisions get made: the
-  [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
-  `accountInitCodeHash` assertion (R8.4), and how many gateways each transceiver's
-  initializer names, since a transceiver's gateways cannot be added to later.
-  The home chain comes from one environment variable that every script reads, so every spoke
-  in a deployment names the same home: nothing on-chain can check that, since a spoke has no
-  view of its siblings.
+- **No deploy scripts.** `script/` holds only the vendoring drivers. The deploy story in the
+  [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) (Arachnid's
+  factory, a per-chain timelock, a seeded registry, transceivers born accepting the governor's
+  home) has no code behind it. The CREATE2 parity argument stands or falls on that initcode
+  and those constructor arguments being byte-identical on every chain, and nothing pins them.
+  The scripts are also where the deployment-time provider decisions get made: the
+  `accountInitCodeHash` assertion (R8.4), how many gateways each transceiver's initializer
+  names (they cannot be added later), and the N × N tables every chain needs about every
+  other chain, generated from one source since nothing on-chain checks they agree.
 - **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
   says where every line is held). C21's script-side assertion waits on the deploy scripts.
   C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay

@@ -106,7 +106,7 @@ holds a security property rather than a translation. Binding to ICM rather than 
 is the way to avoid that on Avalanche.
 
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its
-own. Correlation never needed one: the hub derives the reporting account from the
+own. Correlation never needed one: the home derives the reporting account from the
 authenticated origin plus the stated `(owner, salt)`, and the account pins the first report.
 Idempotency does need one, and it exists at the transport for every candidate here except
 the two raw signature primitives. Adding a protocol-level id would put a field on every
@@ -143,17 +143,17 @@ capture.
 | **Arbitrum** | minutes, retryable ticket, auto-redeem when funded | **~7 days**, `ArbSys.sendTxToL1` then `Outbox.executeTransaction` after the challenge window | no |
 | **Avalanche ICM** | n/a: C-Chain and Avalanche L1s, not Ethereum | n/a | **seconds, any-to-any**, which is the one mesh in this table |
 
-**The asymmetry looks fatal and mostly is not.** This protocol is one-directional by
-construction: the hub sends and every destination is a leaf, and the ONLY return leg is the
+**The asymmetry looks fatal and mostly is not.** Each account is one-directional by
+construction: its home sends and every destination is a leaf, and the ONLY return leg is the
 receiver report. That report fires only where `addressesDiverge`, which is false on both
-rollup stacks, since they use Ethereum's CREATE2 formula and the hub computes an account's
-address before the first message. So an Ethereum-anchored deployment reaching OP Stack and
-Arbitrum spokes over their canonical bridges never needs the slow direction at all.
+rollup stacks, since they use Ethereum's CREATE2 formula and the home computes an account's
+address before the first message. So an account homed on Ethereum reaching OP Stack and
+Arbitrum chains over their canonical bridges never needs the slow direction at all.
 
-**It is fatal the other way round.** A deployment anchored ON an L2 with a spoke on its L1
-puts every bootstrap and every payload through the seven-day window. That is not a binding
-to write; it is a deployment topology to refuse, and it belongs in whatever `script/`
-eventually enforces "every spoke names the same home".
+**It is fatal the other way round.** An account homed ON an L2 that reaches its L1 over
+the canonical bridge puts every bootstrap and every payload through the seven-day window.
+Any chain can be an account's home, so nothing refuses this; it is a cost to state wherever
+an L2 is offered as a home, and a reason to reach the L1 over a mesh provider instead.
 
 ### Address aliasing, which is the concrete trap
 
@@ -206,10 +206,10 @@ token per destination.
 The five providers in §1 are meshes: one binding reaches every chain they support. These
 are not. A canonical bridge connects one L2 to one L1, and Avalanche Warp connects
 Avalanche L1s to each other and to nothing else. So a canonical strategy means **one
-provider registration and one hub transceiver per rollup**, not one for the stack.
+provider registration and one transceiver pair per rollup**, not one for the stack.
 
 That composes without any change to this protocol, since `ChainRegistry` already keys
-providers separately and each hub holds its own counterparts. It is also the arrangement
+providers separately and each transceiver holds its own counterparts. It is also the arrangement
 that makes the trust argument worth having. A payload to Optimism trusts Optimism's bridge
 and nothing else, rather than trusting one attestation network with every destination at
 once. What it costs is N deployments, N graded chain entries, and N sets of routes,
@@ -308,7 +308,7 @@ salt c0ffee01     0xb2e363e52060ca5f20a59fac76cf1960da1e80a1
 salt deadbeef…   0x70e2fc1339425ad82497b92828ac23248b804297
 ```
 
-So Aurora is `LzSpokeTransceiver` and nothing else: stock solc, so
+So Aurora is plain `LzTransceiver` and nothing else: stock solc, so
 `CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR PROPER is a
 different question and not this one: `ChainType.NEAR` is for a Rust receiver addressed by a
 named or implicit account, and unlike Move it is not blocked on dispatch, since
@@ -373,9 +373,8 @@ route table existed to hold.
 | `attributes` | passed straight through |
 
 The inbound split is the useful part: `Erc7930.toChainIdentifier` already reduces an
-account envelope to a bare chain identifier, which is exactly the `route` the hub's
-`chainKeyOfRoute` and the spoke's `_isHome` expect. `_authenticateOrigin` needs no override
-on either side.
+account envelope to a bare chain identifier, which is exactly the `route` the transceiver's
+`chainKeyOfRoute` expects. `_authenticateOrigin` needs no override.
 
 ### What ERC-7786 gives up
 
@@ -707,12 +706,11 @@ would inherit, and the one thing about its shape that is not like the other four
 takes no destination chain at all. Each OP Stack chain has its OWN dedicated
 `L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
 messenger contract you call, not an argument to it. This is the concrete form of what §2
-already concluded — "one hub transceiver per rollup, not one for the stack" — and it means
+already concluded, "one transceiver pair per rollup, not one for the stack", and it means
 [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol) does not apply to
-this binding at all. A hub transceiver for a given OP Stack chain holds that chain's
-messenger address as its own immutable and never needs a second entry; deploying to another
-OP Stack chain means deploying another hub transceiver instance, not adding a row to a
-table.
+this binding at all. `OpStackTransceiver` holds its messenger and the paired chain as
+immutables, the same contract on the L1 and on the OP Stack chain; reaching another OP Stack
+chain means another pair, registered as its own message provider, not a row in a table.
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
@@ -758,11 +756,10 @@ compared comes from.
 path stays unused by this binding entirely — it would only be needed by a binding built
 directly on `OptimismPortal`, which this is deliberately not.
 
-**No divergent-spoke variant, unlike the other four.** zkSync and Tron need
-`ZkSyncSpokeTransceiver`/`TronSpokeTransceiver` because their CREATE2 formulas differ from
-Ethereum's. An OP Stack chain runs standard `op-geth` and Ethereum's own CREATE2 formula, so
-it is always the parity case; there is no OP-Stack-flavoured divergence to name a contract
-for, and `OpStackDivergentSpokeTransceiver` would have nothing to override.
+**No divergent variant, unlike the other four.** zkSync and Tron need
+`ZkSyncTransceiver`/`TronTransceiver` because their CREATE2 formulas differ from Ethereum's.
+An OP Stack chain runs standard `op-geth` and Ethereum's own CREATE2 formula, so it is always
+the parity case; there is no OP-Stack-flavoured divergence to name a contract for.
 
 **No OZ dependency, no storage, same clean shape as CCIP's and Wormhole's interfaces.**
 `ICrossDomainMessenger` is a plain interface with zero imports. A transmitter stays plain

@@ -36,7 +36,7 @@ An element is bytes. The hash never looks inside one. The destination chainKey i
 first, so a payload approved for one chain cannot be finalized on another, and, usefully
 here, so the element format is namespaced per destination for free.
 
-**The hub's contracts therefore never need to understand a non-EVM call.** Every commitment
+**The home's contracts therefore never need to understand a non-EVM call.** Every commitment
 path hashes opaque bytes; Solana and Move payload construction happens entirely in off-chain
 tooling. There is no Borsh or BCS anywhere in Solidity, ever.
 
@@ -110,7 +110,7 @@ a second one ever existed.
 The three unparameterized forms are the **EVM scheme** (keccak256). The first seeds with
 `ChainKey.local()` and is what `ReceiverBase.finalize` recomputes, which is why it is
 `view` rather than `pure`: it reads `block.chainid`. The `Scheme` overloads are for the
-source side, where the hub builds a commitment a *different* VM will recompute. See below.
+source side, where the home builds a commitment a *different* VM will recompute. See below.
 
 This is asserted directly, not assumed: `test/PayloadEncoding.t.sol` includes a fuzz case
 over `(target, value, data, chainKey)`. If the two ever diverge, a payload approved in one
@@ -144,8 +144,8 @@ holding onto. `abi.decode` of the wrong shape does revert for these two layouts 
 in `test_theTwoEncodingsDoNotDecodeAsEachOther`), but that is a property of how they
 collide, not a promise the ABI decoder makes. What actually prevents a misread is that no
 path exists which sends opaque elements to an EVM receiver. If one is ever added (a
-transmitter running on a spoke, a destination that accepts both), the tag has to come back,
-because at that point direction stops determining shape. `Payload.sol` carries that
+destination that accepts both), the tag has to come back, because at that point the
+destination's VM stops determining shape. `Payload.sol` carries that
 tripwire in a comment.
 
 ### The receiver's entry point is `Call[]` only
@@ -211,7 +211,7 @@ neither, necessarily, is the hash. See `Scheme` below.
 
 It masks the output to 250 bits so the result fits in a felt, and it is what Cairo uses for
 entrypoint selectors. A Starknet receiver that computes the commitment with it will never
-match the hub. Full keccak256 is available but is the less obvious import.
+match the home. Full keccak256 is available but is the less obvious import.
 
 ## Commitments off the EVM
 
@@ -270,16 +270,16 @@ enum Scheme { Keccak256, Sha256, Blake2b256Scheme, Poseidon }
 This is a deliberate narrowing and it gives something up. A fully VM-native commitment
 would be TON's **cell hash** (sha256 over a cell tree, because a TVM cell holds only 1023
 bits and any real payload is therefore a tree), or Starknet's `poseidon_hash_span` over a
-felt array. Neither is a byte-oriented fold, and neither could be reproduced on the hub to
+felt array. Neither is a byte-oriented fold, and neither could be reproduced at home to
 show a signer what they are approving. Holding the fold fixed keeps both sides able to
 compute one value; the cost is that a non-EVM receiver implements a byte fold rather than
 its idiomatic digest.
 
-**The hub can still compute most of them**, which matters more than it first appears
+**The home can still compute most of them**, which matters more than it first appears
 because a preview is read through `eth_call` when a signer checks a payload, so gas is
 not charged in the path that matters.
 
-| Scheme | On the hub | Mutability |
+| Scheme | At home | Mutability |
 | --- | --- | --- |
 | `Keccak256` | opcode | `pure` |
 | `Sha256` | builtin (precompile 0x02) | `pure` |
@@ -317,7 +317,7 @@ previewed through `ChainRegistry.commitmentFor`, where the primitive is an
 one function wide; the registry seeds with the chainKey and folds per element itself. So "the
 fold is fixed, the primitive varies" is structural rather than conventional, and a wrong or
 hostile plugin can only produce a digest the destination refuses, never a differently-shaped
-one it accepts. Combined with **advisory on the hub, enforced on the destination** (a
+one it accepts. Combined with **advisory at home, enforced on the destination** (a
 receiver enforces with the keccak fold frozen into `ReceiverBase` and can never consult a
 lookup), that is the whole safety argument for letting the preview be swappable.
 
@@ -340,11 +340,11 @@ commitment binds to a chain for free there. Off the EVM that does not hold:
 
 So on the chains where the receiver address is least predictable, the chainKey also has to
 be written in at initialization. A mainnet/devnet mixup then produces a receiver that verifies nothing
-successfully and fails only on a live message. The mitigation is the one the spoke already
-uses for the mirror-image value: `SpokeTransceiverBase.homeChainKey` is a write-once
-initializer argument checked against the identifier passed beside it (`OutboundBase._setRoute`
-reverts `RouteKeyMismatch` unless the route is the canonical identifier the key hashes from),
-so the two halves cannot name different chains. A baked-in chainKey off the EVM wants the same
+successfully and fails only on a live message. The mitigation is the one the transceiver already
+uses for the mirror-image value: the governor's home is a write-once initializer argument
+given as a chain identifier and checked against the key it hashes to (`OutboundBase._requireNames`
+reverts `RouteKeyMismatch` unless it is the canonical identifier), so the two cannot name
+different chains. A baked-in chainKey off the EVM wants the same
 treatment: assert it against a derived value in that chain's own test suite.
 
 ### Executing is where the chains diverge
@@ -476,7 +476,7 @@ instruction.
 
 Matching hashes prove byte agreement, not semantic agreement. A mismatched *encoder* is
 fail-closed: the commitment does not match and nothing runs. A mismatched *decoder* is
-not: if the hub's tooling encodes "transfer 100 to A" and the destination reads "transfer
+not: if the home's tooling encodes "transfer 100 to A" and the destination reads "transfer
 1000 to B" out of those same bytes, the hash matches perfectly and the wrong thing executes.
 
 So vectors must assert the decoded fields individually, not that a blob round-trips. This
