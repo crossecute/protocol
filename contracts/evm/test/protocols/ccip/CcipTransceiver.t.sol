@@ -111,9 +111,28 @@ contract CcipTransceiverInboundTest is ProviderInboundSpec {
         t.setSelector(chainKey, ORIGIN_SELECTOR);
     }
 
-    function _deliver(address sender, bytes memory message) internal override {
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
         vm.prank(router);
-        t.ccipReceive(ccipMessage(ORIGIN_SELECTOR, sender, message));
+        CcipTransceiver(payable(transceiver)).ccipReceive(ccipMessage(ORIGIN_SELECTOR, sender, message));
+    }
+
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        override
+        returns (address)
+    {
+        TransceiverConfig memory c = ccipConfig(router);
+        c.governorOwner = governorOwner;
+        c.governorSalt = governorSalt;
+        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new CcipTransceiver(router)), abi.encodeCall(CcipTransceiver.initialize, (c, ORIGIN_SELECTOR))
+            )
+        );
     }
 
     /// @dev Only the router may deliver, whatever the message says.

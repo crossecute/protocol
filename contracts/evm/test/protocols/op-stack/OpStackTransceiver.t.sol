@@ -43,26 +43,27 @@ contract OpStackTransceiverHarness is OpStackTransceiver {
     }
 }
 
+function opStackConfig(address messenger) returns (TransceiverConfig memory) {
+    return TransceiverConfig({
+        gateways: new address[](0),
+        transmitterImplementation: address(0xBEEF),
+        receiverImplementation: address(new OpStackReceiver(messenger)),
+        governorOwner: address(0x5165),
+        governorSalt: bytes32(0),
+        governorHome: Erc7930.encodeEvmChain(1),
+        treasury: address(0x7EA5),
+        chainRegistry: IChainRegistryRefs(address(0)),
+        messageProvider: bytes32(0),
+        minCounterpartProvenance: Provenance.Unresolved
+    });
+}
+
 function deployOpStack(address messenger, uint256 pairedChainId) returns (OpStackTransceiverHarness) {
     return OpStackTransceiverHarness(
         payable(address(
                 new ERC1967Proxy(
                     address(new OpStackTransceiverHarness(messenger, ChainKey.forEvm(pairedChainId))),
-                    abi.encodeCall(
-                        OpStackTransceiver.initialize,
-                        (TransceiverConfig({
-                                gateways: new address[](0),
-                                transmitterImplementation: address(0xBEEF),
-                                receiverImplementation: address(new OpStackReceiver(messenger)),
-                                governorOwner: address(0x5165),
-                                governorSalt: bytes32(0),
-                                governorHome: Erc7930.encodeEvmChain(1),
-                                treasury: address(0x7EA5),
-                                chainRegistry: IChainRegistryRefs(address(0)),
-                                messageProvider: bytes32(0),
-                                minCounterpartProvenance: Provenance.Unresolved
-                            }))
-                    )
+                    abi.encodeCall(OpStackTransceiver.initialize, (opStackConfig(messenger)))
                 )
             ))
     );
@@ -93,8 +94,28 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec {
     /// @dev Nothing to configure: the paired chain is an implementation immutable.
     function _configureOrigin(bytes32) internal override {}
 
-    function _deliver(address sender, bytes memory message) internal override {
-        messenger.relay(sender, address(t), abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (message)));
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
+        messenger.relay(sender, transceiver, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (message)));
+    }
+
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        override
+        returns (address)
+    {
+        TransceiverConfig memory c = opStackConfig(address(messenger));
+        c.governorOwner = governorOwner;
+        c.governorSalt = governorSalt;
+        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new OpStackTransceiver(address(messenger), ChainKey.forEvm(ORIGIN_CHAIN_ID))),
+                abi.encodeCall(OpStackTransceiver.initialize, (c))
+            )
+        );
     }
 
     /// @dev R6: the receiver admits the messenger before its payload runs.

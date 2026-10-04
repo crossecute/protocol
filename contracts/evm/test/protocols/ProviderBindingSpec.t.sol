@@ -11,7 +11,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {unseeded} from "test/RegistrySeed.sol";
-import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -425,8 +425,21 @@ abstract contract ProviderInboundSpec is Test {
     ///         provider needs to accept `ORIGIN_TRANSCEIVER` (a LayerZero peer). As the owner.
     function _configureOrigin(bytes32 chainKey) internal virtual;
 
-    /// @notice Deliver `message` through the provider's own path, from `ORIGIN_CHAIN_ID`.
-    function _deliver(address sender, bytes memory message) internal virtual;
+    /// @notice Deliver `message` to `transceiver` through the provider's own path, from
+    ///         `ORIGIN_CHAIN_ID`.
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal virtual;
+
+    /// @notice Deploy the plain transceiver born knowing only the governor's home,
+    ///         `ORIGIN_CHAIN_ID`: `registry`, provider `keccak256("under-test")`, an `Attested`
+    ///         bar, and the provider's id for that home, with no owner call afterwards.
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        virtual
+        returns (address);
+
+    function _deliver(address sender, bytes memory message) internal {
+        _deliverTo(_transceiver(), sender, message);
+    }
 
     /// @notice The revert for a wrong sender: the base's by default.
     function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
@@ -455,6 +468,31 @@ abstract contract ProviderInboundSpec is Test {
         return Envelope.encodeBootstrap(
             ACCOUNT_OWNER, ACCOUNT_SALT, bytes32(uint256(uint160(ORIGIN_TRANSMITTER))), new Call[](0)
         );
+    }
+
+    /// @dev #28 end to end: a transceiver born knowing only the governor's home accepts the
+    ///      governor's bootstrap through the provider's own callback, and the receiver it
+    ///      creates is its owner. The sender is the default counterpart on a `Derived` home:
+    ///      this transceiver's own address.
+    function test_aBornConfiguredTransceiverAcceptsTheGovernorsBootstrap() public {
+        ChainRegistry registry = new ChainRegistry(
+            address(this),
+            RegistrySeed({
+                governorHome: Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID),
+                governorHomeGrade: Provenance.Derived,
+                providers: new ProviderSeed[](0)
+            })
+        );
+        address governor = address(0x5165);
+        address t = _deployBornConfigured(IChainRegistryRefs(address(registry)), governor, bytes32(0));
+        address owner = TransceiverBase(payable(t)).owner();
+        assertEq(owner.code.length, 0, "the owner does not exist yet");
+
+        _deliverTo(
+            t, t, Envelope.encodeBootstrap(governor, bytes32(0), bytes32(uint256(uint160(owner))), new Call[](0))
+        );
+
+        assertEq(ReceiverBase(payable(owner)).sourceTransmitter(), owner, "the bootstrap created the owner");
     }
 
     function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {

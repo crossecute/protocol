@@ -110,12 +110,33 @@ contract WormholeTransceiverInboundTest is ProviderInboundSpec {
         t.setWormholeChain(chainKey, ORIGIN_WORMHOLE_CHAIN);
     }
 
-    function _deliver(address sender, bytes memory message) internal override {
-        t.executeVAAv1(_vaaFrom(sender, HERE, message));
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
+        WormholeTransceiver(payable(transceiver))
+            .executeVAAv1(_vaa(1, ORIGIN_WORMHOLE_CHAIN, sender, sequence++, _envelope(HERE, transceiver, message)));
     }
 
     function _vaaFrom(address sender, uint16 targetChain, bytes memory message) internal returns (bytes memory) {
         return _vaa(1, ORIGIN_WORMHOLE_CHAIN, sender, sequence++, _envelope(targetChain, address(t), message));
+    }
+
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        override
+        returns (address)
+    {
+        TransceiverConfig memory c = wormholeConfig(address(core));
+        c.governorOwner = governorOwner;
+        c.governorSalt = governorSalt;
+        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new WormholeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
+                abi.encodeCall(WormholeTransceiver.initialize, (c, ORIGIN_WORMHOLE_CHAIN))
+            )
+        );
     }
 
     /// @dev R6: the receiver names the Core bridge its gateway before its payload runs.

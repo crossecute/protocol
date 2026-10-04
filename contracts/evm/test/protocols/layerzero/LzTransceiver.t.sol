@@ -100,14 +100,34 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
         vm.stopPrank();
     }
 
-    function _deliver(address sender, bytes memory message) internal override {
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
         vm.prank(address(endpoint));
-        t.lzReceive(
-            Origin({srcEid: ORIGIN_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
-            bytes32(0),
-            message,
-            address(0),
-            ""
+        LzTransceiver(payable(transceiver))
+            .lzReceive(
+                Origin({srcEid: ORIGIN_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
+                bytes32(0),
+                message,
+                address(0),
+                ""
+            );
+    }
+
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        override
+        returns (address)
+    {
+        TransceiverConfig memory c = lzConfig(address(endpoint));
+        c.governorOwner = governorOwner;
+        c.governorSalt = governorSalt;
+        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new LzTransceiver(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, ORIGIN_EID))
+            )
         );
     }
 

@@ -100,9 +100,29 @@ contract HyperlaneTransceiverInboundTest is ProviderInboundSpec {
         t.setDomain(chainKey, ORIGIN_DOMAIN);
     }
 
-    function _deliver(address sender, bytes memory message) internal override {
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
         vm.prank(mailbox);
-        t.handle(ORIGIN_DOMAIN, TypeCasts.addressToBytes32(sender), message);
+        HyperlaneTransceiver(payable(transceiver)).handle(ORIGIN_DOMAIN, TypeCasts.addressToBytes32(sender), message);
+    }
+
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        override
+        returns (address)
+    {
+        TransceiverConfig memory c = hyperlaneConfig(mailbox);
+        c.governorOwner = governorOwner;
+        c.governorSalt = governorSalt;
+        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Attested;
+        return address(
+            new ERC1967Proxy(
+                address(new HyperlaneTransceiver(mailbox)),
+                abi.encodeCall(HyperlaneTransceiver.initialize, (c, ORIGIN_DOMAIN))
+            )
+        );
     }
 
     /// @dev R6: the receiver admits the Mailbox before its payload runs.
