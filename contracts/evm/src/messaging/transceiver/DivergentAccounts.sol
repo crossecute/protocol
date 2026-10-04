@@ -25,9 +25,9 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 ///      `_deployAccount` with a one-line call into the helpers below.
 abstract contract DivergentAccounts is Initializable {
     /// The hash this chain's deployer keys an account address by, in that chain's own form.
-    /// @dev Write-once. Not `CROSS_PROXY_INIT_CODE_HASH`, which is solc's and neither chain
-    ///      consumes: zkSync hashes a zksolc artifact into an EraVM versioned hash, and Tron
-    ///      uses TRON-solc's initcode.
+    /// @dev Write-once. Not `CROSS_PROXY_INIT_CODE_HASH`, which hashes the local compiler's
+    ///      `creationCode` and is not what either deployer keys by: zkSync hashes a zksolc
+    ///      artifact into an EraVM versioned hash, and Tron uses TRON-solc's initcode.
     bytes32 public accountBytecodeHash;
 
     event AccountBytecodeHashSet(bytes32 accountBytecodeHash);

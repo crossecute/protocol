@@ -18,7 +18,7 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
     constructor(address router_) CcipTransceiverBase(router_) {}
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
-    ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
+    ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 accountBytecodeHash_)
         external
         initializer

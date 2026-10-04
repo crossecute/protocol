@@ -154,6 +154,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      prediction applies there.
     error CounterpartNotEvm(bytes32 chainKey);
     error NoChainRegistry();
+    /// @dev The registry holds no deployment record for this provider.
+    error NoProviderDeployment();
     /// @dev The route resolved to a known chain, but the sender is not its counterpart.
     error NotCounterpart(bytes32 chainKey);
     /// @dev The registry has suspended the chain.
@@ -285,11 +287,19 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     /// @dev Ethereum's CREATE2 over this provider's transceiver there, which is the counterpart
     ///      on that chain. It equals the account's own address only when this chain also uses
     ///      that formula, which is why a transmitter records this rather than `address(this)`.
+    ///
+    /// @dev The initcode hash is the destination's, not this compiler's: on zkSync and Tron
+    ///      `CROSS_PROXY_INIT_CODE_HASH` is the local compiler's and not what an EVM destination
+    ///      deploys (#30), so a diverging transceiver takes it from the provider's deployment
+    ///      record, which R8.4 holds equal to solc's.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
+        bytes32 initCodeHash = CROSS_PROXY_INIT_CODE_HASH;
+        if (addressesDiverge) {
+            initCodeHash = chainRegistry.providerDeployment(messageProvider).accountInitCodeHash;
+            if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
+        }
         return abi.encodePacked(
-            Create2.computeAddress(
-                accountSalt(owner, salt, localChainKey), CROSS_PROXY_INIT_CODE_HASH, _evmCounterpartOn(chainKey)
-            )
+            Create2.computeAddress(accountSalt(owner, salt, localChainKey), initCodeHash, _evmCounterpartOn(chainKey))
         );
     }
 

@@ -700,8 +700,9 @@ compiler settings. `bytecode_hash = "none"` and `cbor_metadata = false` are pinn
 included, which would otherwise put every derived address one comment edit away from moving.
 
 **R8.4** `ChainRegistry.setProviderDeployment`'s `accountInitCodeHash` MUST equal
-`TransceiverBase.CROSS_PROXY_INIT_CODE_HASH`. A binding's deploy script MUST assert this
-rather than transcribe it.
+`TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` as built by solc. A binding's deploy script MUST
+assert this rather than transcribe it. A diverging transceiver predicts its receivers on
+parity chains from this record, since its own constant comes from zksolc or TRON-solc.
 
 ### R9. Write-once discipline
 

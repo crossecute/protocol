@@ -17,7 +17,7 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
     constructor(address mailbox_) HyperlaneTransceiverBase(mailbox_) {}
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
-    ///        `CROSS_PROXY_INIT_CODE_HASH` (solc's, meaningless on Era).
+    ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(TransceiverConfig memory c, uint32 governorHomeDomain, bytes32 accountBytecodeHash_)
         external
         initializer
