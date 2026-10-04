@@ -200,6 +200,7 @@ src/
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
     inbound/      ReceiverBase                          what an account RECEIVES with
     transceiver/  TransceiverBase -> Hub -> Symmetric       hub and spoke in one
+                  Symmetric -> zkSync / Tron                with DivergentAccounts
       spoke/      SpokeTransceiverBase -> zkSync / Tron     until bindings move over
   account/        CrossProxy                                what both halves ARE
   treasury/       Treasury                     one per chain: fees and the report float
@@ -240,6 +241,7 @@ summary: the file is always the newer statement.
 | Why the treasury is one address on the hub, paid in the same transaction | `HubTransceiverBase._bootstrapSendValue` |
 | Why one transceiver is both hub and spoke, homing each account on its origin | `SymmetricTransceiverBase`         |
 | Why the report float leaves only at the treasury's call                  | `SymmetricTransceiverBase.withdraw`, `Treasury.collect` |
+| Why zkSync and Tron derive accounts their own way, and what is unverified  | `transceiver/DivergentAccounts.sol`   |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
@@ -397,7 +399,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 648 passing
+cd contracts/evm && forge test        # 655 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
