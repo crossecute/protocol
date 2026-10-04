@@ -47,8 +47,8 @@ interface IAccountTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
-    /// @notice Whether a destination reports its receiver address back, rather than the hub
-    ///         deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
+    /// @notice Whether a destination reports its receiver address back, rather than this
+    ///         chain deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
     ///         every non-EVM VM. Asked here because an account holds no registry.
     function reportsReceiver(bytes32 chainKey) external view returns (bool);
 
@@ -73,7 +73,8 @@ interface IAccountTransceiver {
 ///      `renounceOwnership` bricks the account, since every entry point is owner-gated. Left
 ///      available on purpose, so an owner can retire an account for good.
 ///
-/// @dev No registry pointer: chainKeys derive purely and the hub does the directory lookups.
+/// @dev No registry pointer: chainKeys derive purely and the transceiver does the directory
+///      lookups.
 ///
 /// @dev Commitments are hashed with the destination's chainKey, not this chain's:
 ///      `Commitment.hashCalls` seeds with the chain the receiver recomputes on.
@@ -133,7 +134,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     /// @notice Whether this account can be sent to on `destinationChainKey` yet.
     /// @dev Equals `isBootstrapped` where the receiver's address is known at dispatch. On
-    ///      zkSync, Tron, and every non-EVM VM it stays false until the spoke's report lands.
+    ///      zkSync, Tron, and every non-EVM VM it stays false until the destination's report lands.
     function isReachable(bytes32 destinationChainKey) external view returns (bool) {
         return hasCounterpart(destinationChainKey);
     }
@@ -146,8 +147,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     /// Destinations whose receiver address has been reported and is now fixed.
     ///
     /// @dev Single-shot, with no owner override: the receiver address decides where a payload
-    ///      lands. A wrong report is permanent for that destination, which requires the spoke
-    ///      on that chain to be compromised or misbuilt, losing the chain either way.
+    ///      lands. A wrong report is permanent for that destination, which requires the
+    ///      transceiver on that chain to be compromised or misbuilt, losing the chain either way.
     mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
 
     /// @notice Destinations this account has dispatched a bootstrap to.
@@ -560,7 +561,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     /// @inheritdoc OutboundBase
     /// @dev Path A: this account paid from its own balance. Path B refunds come here too, as
-    ///      the hub's caller.
+    ///      the transceiver's caller.
     function _refundTo() internal view override returns (address) {
         return address(this);
     }

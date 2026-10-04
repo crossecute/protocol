@@ -12,8 +12,8 @@ import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Call} from "src/messaging/Call.sol";
 
-/// @notice LayerZero on the transceiver that is hub and spoke at once, shared by the plain,
-///         zkSync, and Tron variants, which differ only in address derivation.
+/// @notice LayerZero on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+///         differ only in address derivation.
 ///
 /// @dev One OApp sends bootstraps and reports to any configured eid and receives both from
 ///      any. LayerZero delivers only from a set peer, so the owner sets one per eid, write-once

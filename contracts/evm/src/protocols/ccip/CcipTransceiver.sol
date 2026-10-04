@@ -9,8 +9,8 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-/// @notice CCIP on the transceiver that is hub and spoke at once, shared by the plain, zkSync,
-///         and Tron variants, which differ only in address derivation.
+/// @notice CCIP on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+///         differ only in address derivation.
 ///
 /// @dev One Router serves both directions (`ccipSend`/`getFee` and inbound `ccipReceive`), so
 ///      `GATEWAY_ROLE` names one address, granted at initialization rather than relying on the

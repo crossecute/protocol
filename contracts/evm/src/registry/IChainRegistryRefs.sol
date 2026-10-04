@@ -6,19 +6,16 @@ import {Provenance} from "src/registry/Provenance.sol";
 /// @notice The slice of `ChainRegistry` a transceiver needs: where remote things live, and how
 ///         much each claim about them is worth.
 ///
-/// @dev Read by the hub and by the transceiver that is hub and spoke in one, which has a
-///      registry on every chain. A v1 spoke has one counterpart, given at deployment, and none.
-///
-/// @dev Routes live on the transceiver. What the hub reads here is provenance, derived
+/// @dev Routes live on the transceiver. What it reads here is provenance, derived
 ///      counterpart addresses, location validation, and which chains must report their
 ///      receivers.
 interface IChainRegistryRefs {
     /// @notice What an address claim about `chainKey` is worth. Chain-scoped, so every
-    ///         provider's hub reads the same answer.
+    ///         provider's transceiver reads the same answer.
     function provenanceFor(bytes32 chainKey) external view returns (Provenance);
 
     /// @notice The transceiver address this registry recomputes for `chainKey`, from the
-    ///         deriver and inputs recorded for that chain. A hub stores the result.
+    ///         deriver and inputs recorded for that chain. A transceiver stores the result.
     function expectedTransceiver(bytes32 chainKey) external view returns (bytes memory);
 
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the recorded

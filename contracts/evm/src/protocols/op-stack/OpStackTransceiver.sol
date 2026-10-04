@@ -5,9 +5,9 @@ import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/Tran
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice OP Stack on the transceiver that is hub and spoke at once, for one chain pair: an
-///         OP Stack chain and its L1. The same contract runs on both sides, so an account
-///         homed on either reaches the other.
+/// @notice OP Stack on `TransceiverBase`, for one chain pair: an OP Stack chain and its L1.
+///         The same contract runs on both sides, so an account homed on either reaches the
+///         other.
 /// @dev `sendMessage` names no destination chain: each side's messenger reaches only its
 ///      paired chain, so the destination is which messenger is called, and `ProviderChainId`
 ///      does not apply. Reaching a second OP Stack chain means a second pair, registered as its

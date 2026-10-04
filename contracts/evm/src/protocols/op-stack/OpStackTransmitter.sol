@@ -22,8 +22,8 @@ contract OpStackTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
-        IOpStackMessengerSource hub = IOpStackMessengerSource(transceiver);
-        return OpStackMessage.send(hub.messenger(), hub.messengerChainKey(), recipient, payload, attributes, value);
+        IOpStackMessengerSource t = IOpStackMessengerSource(transceiver);
+        return OpStackMessage.send(t.messenger(), t.messengerChainKey(), recipient, payload, attributes, value);
     }
 
     /// @dev Zero: see `OpStackMessage`.

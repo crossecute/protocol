@@ -50,6 +50,6 @@ contract CcipTransmitter is OwnableTransmitter {
         return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
     }
 
-    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the hub,
-    ///         spokes, and receivers; the transmitter has no inbound entry point (R3.1).
+    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the
+    ///         transceiver and receivers; the transmitter has no inbound entry point (R3.1).
 }

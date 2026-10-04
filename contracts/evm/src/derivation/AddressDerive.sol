@@ -14,7 +14,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @dev Scope. Everything here bottoms out in `keccak256` (native) or `sha256` (0x02).
 ///      Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
 ///      EraVM does not support that precompile and rejects any unit importing it, which a
-///      zkSync spoke needs this file for. Sui lives in SuiDerive.sol because BLAKE2b needs the
+///      zkSync transceiver needs this file for. Sui lives in SuiDerive.sol because BLAKE2b needs the
 ///      0x09 precompile, which forces `view` rather than `pure`.
 ///      Not derivable on the EVM at any price: Aptos/Movement (SHA3-256, ~1e5 gas for
 ///      a hand-rolled Keccak-f), Starknet (Pedersen/Poseidon over the STARK curve),

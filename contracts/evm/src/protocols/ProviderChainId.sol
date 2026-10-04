@@ -24,9 +24,8 @@ function providerIdOf(address transceiver, bytes memory recipient) view returns 
 ///      the chain by the recipient (see `OutboundBase`'s note on the route slot). Only the
 ///      native bindings under `protocols/` use it.
 ///
-/// @dev On every transceiver with N destinations: the hub, and the one transceiver per chain
-///      that is hub and spoke at once. A v1 spoke has exactly one destination and takes its id
-///      as a fixed, write-once initializer argument instead, so it does not inherit this.
+/// @dev On every binding transceiver whose provider names chains by its own id. OP Stack's
+///      does not: each messenger reaches one chain.
 ///
 /// @dev Storage is `uint256` so one mapping backs every provider's narrower id type; each
 ///      binding's typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`)
@@ -44,7 +43,7 @@ function providerIdOf(address transceiver, bytes memory recipient) view returns 
 /// @dev Zero is the unset sentinel on both sides; no provider in scope ever names a live
 ///      chain 0 (verified in `docs/provider-research.md` §§4-5 and `docs/provider-research.md` §8).
 ///
-/// @dev Internal and ungated, like every other setter on `OutboundBase`: the inheriting hub
+/// @dev Internal and ungated, like every other setter on `OutboundBase`: the inheriting
 ///      transceiver wraps `_setProviderId` in its own authority.
 abstract contract ProviderChainId is IProviderIdTable {
     /// chainKey => the provider's own id for that chain. Zero means unset.
@@ -56,7 +55,7 @@ abstract contract ProviderChainId is IProviderIdTable {
 
     event ProviderIdSet(bytes32 indexed chainKey, uint256 providerId);
 
-    /// @dev Named distinctly from `OutboundBase.NoDestination`: every hub transceiver
+    /// @dev Named distinctly from `OutboundBase.NoDestination`: every binding transceiver
     ///      inherits both and would otherwise collide on the name.
     error NoProviderChainKey();
     error ZeroProviderId();

@@ -57,9 +57,8 @@ library HyperlaneMessage {
     }
 
     /// @dev Without an explicit `refundAddress`, the IGP and ProtocolFee hooks refund
-    ///      overpayment to the message sender, i.e. the contract calling `dispatch`. The hub
-    ///      has no `receive`, so that refund would revert the send; a transmitter, or a
-    ///      transceiver's report float, would keep the payer's excess. `refundTo` is
+    ///      overpayment to the message sender, i.e. the contract calling `dispatch`, and a
+    ///      transmitter or a transceiver would keep the payer's excess. `refundTo` is
     ///      `OutboundBase._refundTo()`.
     function hookMetadata(bytes[] memory attributes, address refundTo) internal pure returns (bytes memory) {
         return StandardHookMetadata.formatMetadata(0, gasLimitFrom(attributes), refundTo, "");

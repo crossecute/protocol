@@ -91,12 +91,12 @@ library Envelope {
 
     /// @notice Where the destination created a transmitter's receiver.
     ///
-    /// @dev Only chains whose addresses the hub cannot recompute send this: zkSync and Tron,
+    /// @dev Only chains whose addresses the home cannot recompute send this: zkSync and Tron,
     ///      whose CREATE2 formulas differ, and non-EVM chains such as Starknet.
     ///
     /// @dev No request id: the chain comes from the authenticated origin and `(owner, salt)`
-    ///      is stated here, which identifies the account the hub forwards the report to. The
-    ///      account refuses a second report.
+    ///      is stated here, which identifies the account the home's transceiver forwards the
+    ///      report to. The account refuses a second report.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the reporting chain.
     function encodeReceiverReport(address owner, bytes32 salt, bytes memory interop)
         internal

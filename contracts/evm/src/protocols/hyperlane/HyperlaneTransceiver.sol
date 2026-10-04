@@ -7,8 +7,8 @@ import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Hyperlane on the transceiver that is hub and spoke at once, shared by the plain,
-///         zkSync, and Tron variants, which differ only in address derivation.
+/// @notice Hyperlane on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+///         differ only in address derivation.
 ///
 /// @dev One Mailbox serves both `dispatch`/`quoteDispatch` and inbound `process`->`handle`,
 ///      so `GATEWAY_ROLE` names one address, granted at initialization rather than relying on

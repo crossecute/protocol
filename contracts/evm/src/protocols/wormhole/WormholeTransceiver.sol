@@ -7,8 +7,8 @@ import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Wormhole on the transceiver that is hub and spoke at once, shared by the plain,
-///         zkSync, and Tron variants, which differ only in address derivation.
+/// @notice Wormhole on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+///         differ only in address derivation.
 ///
 /// @dev The Wormhole chain id is its own `uint16` enumeration, not an EVM chain id, hence the
 ///      table. Transceivers share one address across parity chains, so the published payload's

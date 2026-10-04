@@ -41,7 +41,7 @@ contract Treasury is Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    /// @notice Accept fees. The hub forwards each with a plain `call` inside the bootstrap
+    /// @notice Accept fees. A transceiver forwards each with a plain `call` inside the bootstrap
     ///         that charges it, so without this every paid bootstrap would revert.
     receive() external payable {}
 

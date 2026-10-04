@@ -11,13 +11,12 @@ import {Roles} from "src/messaging/Roles.sol";
 ///
 /// @dev Split from `TransmitterBase` because a transceiver needs the mechanics but must not
 ///      have an account's owner. The setters are `internal` and ungated; each side wraps them
-///      in its own authority (`onlyOwner` on a hub, `onlyAccountOwner` on an account), and a
-///      spoke exposes none.
+///      in its own authority (`onlyOwner` on a transceiver, `onlyAccountOwner` on an account).
 ///
 /// @dev One table serves every sender: an ERC-7930 recipient is the route (chain) joined to
-///      the counterpart (address). A hub's counterpart is the far transceiver, a spoke's is
-///      the hub, and an account's is its own receiver, stored rather than assumed equal to
-///      this address, which is wrong wherever the CREATE2 formula differs from Ethereum's.
+///      the counterpart (address). A transceiver's counterpart is the provider's transceiver
+///      on that chain, and an account's is its own receiver, stored rather than assumed equal
+///      to this address, which is wrong wherever the CREATE2 formula differs from Ethereum's.
 ///
 /// @dev Leads the inheritance list on `TransmitterBase` and `TransceiverBase`, so its fields
 ///      take the first slots of both layouts (R8.2). `ReceiverBase` does not inherit it.
@@ -112,14 +111,12 @@ abstract contract OutboundBase is Roles {
     }
 
     /// @notice How the chain itself is named.
-    /// @dev A spoke overrides it: its one destination is fixed at initialization and every
-    ///      other key reverts.
     function _routeTo(bytes32 chainKey) internal view virtual returns (bytes memory) {
         return routeFor(chainKey);
     }
 
     /// @notice Where the counterpart lives.
-    /// @dev A hub overrides it to apply the registry's provenance bar, and to answer its own
+    /// @dev A transceiver overrides it to apply the registry's provenance bar, and to answer its own
     ///      address on a `Derived` chain with no counterpart recorded; see `TransceiverBase`.
     function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory counterpart) {
         counterpart = _counterparts[chainKey];
@@ -166,11 +163,11 @@ abstract contract OutboundBase is Roles {
     /// @notice Put the payload on the wire. No default, so a binding that omits it does not
     ///         compile.
     ///
-    /// @dev One primitive for every channel: a payload to an account, a bootstrap to a spoke,
+    /// @dev One primitive for every channel: a payload to an account, a bootstrap to a transceiver,
     ///      and a receiver report home are all `bytes` to an ERC-7930 address.
     ///
     /// @dev Spend `value`, never `msg.value`. On a transmitter `value` is the quote and
-    ///      `msg.value` only tops up the balance; the hub takes a bootstrap fee off the top; on
+    ///      `msg.value` only tops up the balance; a transceiver takes a bootstrap fee off the top; on
     ///      a nested send `msg.value` is zero.
     ///
     /// @param attributes Selector-prefixed values the gateway understands; it must refuse one
@@ -190,7 +187,7 @@ abstract contract OutboundBase is Roles {
     ///
     /// @dev `_sendMessage` never consults it. A transmitter's entry points call it in the same
     ///      transaction as the send and pay exactly the answer, so it has no time to go stale.
-    ///      The spoke's report does the same.
+    ///      A transceiver's receiver report does the same.
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
@@ -199,9 +196,9 @@ abstract contract OutboundBase is Roles {
 
     /// @notice What sending `payload` to `recipient` would cost, in this chain's native
     ///         currency.
-    /// @dev On every sender, not only accounts: a spoke's receiver report is paid from its
-    ///      balance, which someone has to price in order to fund. Ungated, since it spends and
-    ///      writes nothing; `TransmitterBase` overrides it to apply its send's checks.
+    /// @dev On every sender, not only accounts: a transceiver's receiver report is paid from
+    ///      its float, which someone has to price in order to fund. Ungated, since it spends
+    ///      and writes nothing; `TransmitterBase` overrides it to apply its send's checks.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         external
         view

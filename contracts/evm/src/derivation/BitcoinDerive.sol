@@ -7,11 +7,11 @@ pragma solidity ^0.8.20;
 /// @dev Split out of `AddressDerive` to keep `ripemd160` off EraVM, and that is a compile
 ///      constraint rather than a taste one. zkSync's compiler rejects the `ripemd160`
 ///      precompile outright, and it rejects the whole compilation unit rather than the
-///      unreachable function: a zkSync spoke needs `AddressDerive.zksyncCreate2` and would
+///      unreachable function: a zkSync transceiver needs `AddressDerive.zksyncCreate2` and would
 ///      otherwise drag `hash160` in with it and fail to build. Nothing else separated these,
 ///      since both halves are "hash bytes with a precompile".
 ///
-/// @dev Nothing on a spoke CALLS this. Bitcoin has no executor and no receiver: `bip122`
+/// @dev Nothing on a destination calls this. Bitcoin has no executor and no receiver: `bip122`
 ///      appears in the registry as a reference that can be validated and addressed, never
 ///      as a destination a payload runs on. Its only caller is `VmDeriver`, which is
 ///      home-chain machinery, so this file never reaches a chain that cannot compile it.

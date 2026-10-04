@@ -11,7 +11,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 /// @notice Which transports may carry this contract's messages, in either direction.
 ///
 /// @dev `GATEWAY_ROLE` names addresses, not powers: a gateway can neither configure a contract
-///      nor grant anything. Configuration is `Ownable` on the hub. Sending and receiving check
+///      nor grant anything. Configuration is `Ownable` on the transceiver. Sending and receiving check
 ///      the same role, so a contract cannot accept deliveries from one transport while sending
 ///      through another. `ReceiverBase` inherits this directly: it never sends, but the role
 ///      guards its external `receiveMessage`.

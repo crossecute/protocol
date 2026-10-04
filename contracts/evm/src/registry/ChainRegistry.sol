@@ -20,8 +20,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 struct ProviderDeployment {
     /// The mined salt, identical on every chain.
     bytes32 salt;
-    /// keccak256 of the transceiver proxy's initcode, which is byte-identical for a hub and a
-    /// spoke. Not an implementation's.
+    /// keccak256 of the transceiver proxy's initcode, byte-identical on every chain. Not an
+    /// implementation's.
     bytes32 transceiverInitCodeHash;
     /// keccak256 of `CrossProxy`'s initcode, the same for a transmitter and a receiver.
     bytes32 accountInitCodeHash;
