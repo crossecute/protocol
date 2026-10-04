@@ -393,7 +393,10 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     /// @dev True exactly where this contract cannot recompute an address (zkSync, Tron, every
     ///      non-EVM VM), from the same registry answer `_onDestinationReceiver` enforces. A hub
     ///      with no registry answers false; `_requireRoutable` then refuses the bootstrap.
+    ///      This chain is refused first: a transmitter's bootstrap asks this before anything
+    ///      else, and the registry need not list its own chain.
     function reportsReceiver(bytes32 chainKey) public view override returns (bool) {
+        if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) return false;
         return chainRegistry.requiresReceiverCallback(chainKey);
     }

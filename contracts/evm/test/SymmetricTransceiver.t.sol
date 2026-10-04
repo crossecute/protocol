@@ -15,6 +15,7 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
+import {MockTransmitter} from "test/Transport.t.sol";
 
 /// @dev The transport every test transceiver here shares: it records what it was asked to send.
 abstract contract SymHarness is SymmetricTransceiverBase {
@@ -107,6 +108,10 @@ contract SymmetricTransceiverTest is Test {
     ///      its owner for the two other chains. Ethereum and Base are `Derived`; zkSync is
     ///      `Attested`, with its transceiver at its own address.
     function _chain(uint256 chainId, bool diverges) internal returns (Sym t) {
+        return _chainWith(chainId, diverges, address(new RecordingTransmitter()));
+    }
+
+    function _chainWith(uint256 chainId, bool diverges, address transmitterImplementation) internal returns (Sym t) {
         vm.chainId(chainId);
         ChainRegistry registry = ChainRegistry(
             address(
@@ -122,7 +127,7 @@ contract SymmetricTransceiverTest is Test {
         t.initialize(
             TransceiverConfig({
                 gateways: new address[](0),
-                transmitterImplementation: address(new RecordingTransmitter()),
+                transmitterImplementation: transmitterImplementation,
                 receiverImplementation: address(new Rcv()),
                 governorOwner: msig,
                 governorSalt: bytes32(0),
@@ -217,6 +222,19 @@ contract SymmetricTransceiverTest is Test {
         vm.prank(transmitter);
         vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, _key(BASE)));
         t.bootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
+    }
+
+    /// @dev The same refusal through a real transmitter, whose bootstrap asks the transceiver
+    ///      about the destination before anything is sent.
+    function test_aTransmitterCannotBootstrapItsOwnChain() public {
+        Sym t = _chainWith(BASE, false, address(new MockTransmitter()));
+        vm.prank(alice);
+        MockTransmitter account = MockTransmitter(payable(t.createTransmitter(SALT)));
+        vm.deal(address(account), 1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.IsLocalChain.selector, _key(BASE)));
+        account.bootstrap(BASE, _calls(), new bytes[](0));
     }
 
     function test_theElementsFormIsRefusedOnAnEvmChain() public {
