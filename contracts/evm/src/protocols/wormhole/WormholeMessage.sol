@@ -10,6 +10,12 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @notice Send, quote, and inbound verification for every Wormhole binding contract, over
 ///         Core `publishMessage` plus Executor delivery (the Standard Relayer is deprecated).
 ///
+/// @dev `send` and `quote` are `public`, so they are deployed once and linked rather than
+///      inlined into every Wormhole contract: inlined, they put the zkSync and Tron transceivers
+///      over EIP-170 (#29). A linked call is a `DELEGATECALL`, so it runs in the caller's
+///      context and pays from the caller's balance as before. `verify` stays `internal`, since
+///      it returns a calldata slice.
+///
 /// @dev Published payload: `abi.encodePacked(uint16 targetChain, bytes32 targetAddress, payload)`.
 ///      A VAA names its emitter but no destination, and anyone may submit it anywhere; receivers
 ///      and transceivers each share one address across parity chains and trust the same sender,
@@ -69,7 +75,7 @@ library WormholeMessage {
         bytes[] memory attributes,
         uint256 value,
         address refundTo
-    ) internal returns (bytes32) {
+    ) public returns (bytes32) {
         bytes32 target = recipientOf(recipient);
         uint256 messageFee = ICoreBridge(route.coreBridge).messageFee();
         if (value < messageFee) revert InsufficientWormholeValue(value, messageFee);
@@ -102,7 +108,7 @@ library WormholeMessage {
     /// @dev Prices the request for the next sequence this contract will publish, which is the
     ///      one `send` would use.
     function quote(Route memory route, bytes memory recipient, bytes[] memory attributes, address refundTo)
-        internal
+        public
         view
         returns (uint256)
     {
