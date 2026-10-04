@@ -339,8 +339,9 @@ What an operator or integrator has to know:
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
-  `CcipInterfaceSupportTest` pins the override, so any inheritance change to the CCIP
-  contracts has to keep it.
+  `CcipInterfaceSupportTest` pins the receiver's answer and `CcipTransceiver.t.sol` the
+  transceiver's, on the plain and zkSync versions, so any inheritance change to the CCIP
+  contracts has to keep them.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA, and liveness does not
   depend on the Executor quoter, which is an implementation immutable.
 - **OP Stack sends carry no value and cost only gas.** The quote is zero, so a send spends

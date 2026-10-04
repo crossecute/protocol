@@ -19,8 +19,9 @@ interface IReportFloat {
 ///      where funds go next; each transceiver's write-once `treasury` decides where they arrive,
 ///      so a compromised withdrawal path cannot redirect fees at the source.
 ///
-/// @dev One per chain, shared by every provider there. A plain deployment: nothing derives an
-///      address from it, so it can be redeployed.
+/// @dev One per chain, shared by every provider there. Each transceiver names it once, at
+///      initialization, so a replacement would receive no fees or floats from transceivers
+///      already deployed: this one serves them for their whole life.
 contract Treasury is Ownable {
     using SafeERC20 for IERC20;
 
