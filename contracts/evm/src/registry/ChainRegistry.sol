@@ -10,6 +10,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {Move} from "src/addressing/Move.sol";
 
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
 ///
@@ -111,6 +112,12 @@ contract ChainRegistry is Ownable {
     /// chainKey => whether transceivers refuse it. See `setSuspended`.
     mapping(bytes32 => bool) private _suspended;
 
+    /// chainKey => messageProvider => abi-encoded `Move.MoveQualifier` for that provider's
+    /// transceiver there.
+    /// @dev A Move call target is `address::module::function`, so the address alone does not
+    ///      identify it. Advisory: only a destination executor off-chain reads it.
+    mapping(bytes32 => mapping(bytes32 => bytes)) private _qualifiers;
+
     /// chainKey => the primitive that chain's receiver hashes commitments with.
     /// @dev A mapping rather than the `Scheme` enum, which is compiled into every locked
     ///      transmitter and cannot grow. Mutable because nothing enforces with it: a receiver
@@ -132,12 +139,13 @@ contract ChainRegistry is Ownable {
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
     event SuspendedSet(bytes32 indexed chainKey, bool suspended);
+    event QualifierSet(bytes32 indexed chainKey, bytes32 indexed messageProvider, bytes32 qualifierHash);
     event CommitmentSchemeSet(bytes32 indexed chainKey, address scheme);
 
     /* ================================== errors ================================= */
 
     /// @dev A write-once value, once recorded, is fixed: a provider deployment, a chain's grade,
-    ///      or its CREATE2 factory.
+    ///      its CREATE2 factory, or a Move qualifier.
     error AlreadySet();
     /// @dev Only an `eip155` chain can be `Derived`: that is the grade the EVM CREATE2
     ///      prediction trusts.
@@ -157,6 +165,7 @@ contract ChainRegistry is Ownable {
     /// @dev No primitive registered for this chain. Reverting beats returning a digest the
     ///      destination might never match; see `Commitment._hash`.
     error NoCommitmentScheme();
+    error NoQualifier();
 
     /* =============================== constructor =============================== */
 
@@ -416,6 +425,34 @@ contract ChainRegistry is Ownable {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         _validatorOf[chainKey] = validator;
         emit ValidatorSet(chainKey, address(validator));
+    }
+
+    /* ============================ Move qualifiers ============================= */
+
+    /// @notice Attach a qualified name to a provider's transceiver on a Move chain.
+    /// @dev Write-once: the same qualifier again is a no-op and a different one reverts
+    ///      `AlreadySet`, since re-pointing a call target is re-pointing the counterpart.
+    function setQualifier(bytes32 chainKey, bytes32 messageProvider, Move.MoveQualifier calldata q) external onlyOwner {
+        bytes memory identifier = _chainIdentifier[chainKey];
+        if (identifier.length == 0) revert UnknownChainKey();
+        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
+        Move.validate(q, Erc7930.parseStrict(identifier).chainType);
+
+        bytes32 qh = Move.hash(q);
+        bytes memory existing = _qualifiers[chainKey][messageProvider];
+        if (existing.length != 0) {
+            if (Move.hash(abi.decode(existing, (Move.MoveQualifier))) != qh) revert AlreadySet();
+            return;
+        }
+        _qualifiers[chainKey][messageProvider] = abi.encode(q);
+        emit QualifierSet(chainKey, messageProvider, qh);
+    }
+
+    /// @notice The qualified name a destination executor needs to build the call.
+    function qualifier(bytes32 chainKey, bytes32 messageProvider) external view returns (Move.MoveQualifier memory q) {
+        bytes memory raw = _qualifiers[chainKey][messageProvider];
+        if (raw.length == 0) revert NoQualifier();
+        q = abi.decode(raw, (Move.MoveQualifier));
     }
 
     /* ========================== commitment preview ============================ */

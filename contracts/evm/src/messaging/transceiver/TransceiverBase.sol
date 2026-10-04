@@ -9,7 +9,6 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {Move} from "src/addressing/Move.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -122,11 +121,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///         report float leaves to. Write-once.
     address public treasury;
 
-    /// chainKey => abi-encoded `Move.MoveQualifier` for the counterpart there.
-    /// @dev A Move call target is `address::module::function`, so the address alone does not
-    ///      identify it. Declared, not derived, so it carries the chain's grade.
-    mapping(bytes32 => bytes) private _qualifiers;
-
     /// True only while a receiver report is being sent, which pays from this contract's float.
     bool private _reporting;
 
@@ -141,7 +135,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     event RoutingSet(address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance);
     event BootstrapFeeSet(bytes32 indexed chainKey, uint256 fee);
     event BootstrapFeePaid(bytes32 indexed chainKey, address indexed to, uint256 amount);
-    event QualifierSet(bytes32 indexed chainKey, bytes32 qualifierHash);
     event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account);
     event ReceiverReported(bytes32 indexed home, address indexed owner, bytes32 salt, address receiver);
     event Withdrawn(address indexed to, uint256 amount);
@@ -184,8 +177,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     /// @dev The caller sent less than the destination's fee.
     error InsufficientBootstrapFee(uint256 required, uint256 provided);
     error FeeTransferFailed(address to, uint256 amount);
-    error NoQualifier(bytes32 chainKey);
-    error QualifierMismatch(bytes32 chainKey);
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
     /// @dev A receiver homed on a `Derived` chain landed off its transmitter's address, so the
@@ -597,31 +588,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         bytes memory interop = chainRegistry.expectedTransceiver(chainKey);
         chainRegistry.validateLocation(chainKey, interop);
         _setCounterpart(chainKey, Erc7930.parseStrict(interop).addr);
-    }
-
-    /// @notice Attach a qualified name to a counterpart on a Move chain.
-    /// @dev The same qualifier again is a no-op; a different one reverts, since re-pointing a
-    ///      call target is re-pointing the counterpart.
-    function setQualifier(bytes32 chainKey, Move.MoveQualifier calldata q) external onlyOwner {
-        if (!hasCounterpart(chainKey)) revert NoCounterpartFor(chainKey);
-        if (address(chainRegistry) == address(0)) revert NoChainRegistry();
-        Move.validate(q, Erc7930.parseStrict(chainRegistry.chainIdentifier(chainKey)).chainType);
-
-        bytes32 qh = Move.hash(q);
-        bytes memory existing = _qualifiers[chainKey];
-        if (existing.length != 0 && Move.hash(abi.decode(existing, (Move.MoveQualifier))) != qh) {
-            revert QualifierMismatch(chainKey);
-        }
-
-        _qualifiers[chainKey] = abi.encode(q);
-        emit QualifierSet(chainKey, qh);
-    }
-
-    /// @notice The qualified name a destination executor needs to build the call.
-    function qualifier(bytes32 chainKey) external view returns (Move.MoveQualifier memory q) {
-        bytes memory raw = _qualifiers[chainKey];
-        if (raw.length == 0) revert NoQualifier(chainKey);
-        q = abi.decode(raw, (Move.MoveQualifier));
     }
 
     /* ================================= counterparts ================================ */

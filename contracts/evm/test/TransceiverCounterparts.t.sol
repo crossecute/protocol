@@ -13,7 +13,6 @@ import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OwnedTransceiver} from "test/Unsendable.sol";
 
@@ -133,22 +132,22 @@ contract TransceiverCounterpartsTest is Test {
 
     /* ============================== Move qualifiers ============================= */
 
-    /// @dev The qualifier follows the counterpart, because it qualifies one: a Move call
-    ///      target is `address::module::function`, and the address alone does not name it.
-    function test_aQualifierAttachesToACounterpart() public {
-        Move.MoveQualifier memory q = _qualifier();
-        vm.startPrank(owner);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
-        transceiver.setQualifier(suiChainKey, q);
-        vm.stopPrank();
+    /// @dev A Move call target is `address::module::function`, so the address alone does not
+    ///      name it. The registry holds the rest per provider: nothing on-chain reads it, and a
+    ///      transceiver has no room for it (#29).
+    function test_aQualifierIsRecordedPerProvider() public {
+        vm.prank(owner);
+        registry.setQualifier(suiChainKey, provider, _qualifier());
 
-        assertEq(transceiver.qualifier(suiChainKey).functionName, "receive_message");
+        assertEq(registry.qualifier(suiChainKey, provider).functionName, "receive_message");
     }
 
-    function test_aQualifierNeedsACounterpartFirst() public {
+    function test_aQualifierNeedsARegisteredProvider() public {
+        bytes32 unknown = keccak256("unknown");
+        Move.MoveQualifier memory q = _qualifier();
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, suiChainKey));
-        transceiver.setQualifier(suiChainKey, _qualifier());
+        vm.expectRevert(ChainRegistry.UnknownMessageProvider.selector);
+        registry.setQualifier(suiChainKey, unknown, q);
     }
 
     /// @dev Validated against the chain it sits on, so a malformed Move identifier never
@@ -157,10 +156,16 @@ contract TransceiverCounterpartsTest is Test {
         Move.MoveQualifier memory q = _qualifier();
         q.moduleName = "not a module name";
 
+        vm.prank(owner);
+        vm.expectRevert(Move.BadIdentifier.selector);
+        registry.setQualifier(suiChainKey, provider, q);
+    }
+
+    function test_anEvmChainCannotHaveAQualifier() public {
         vm.startPrank(owner);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
-        vm.expectRevert();
-        transceiver.setQualifier(suiChainKey, q);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        vm.expectRevert(Move.NotMoveChain.selector);
+        registry.setQualifier(baseKey, provider, _qualifier());
         vm.stopPrank();
     }
 
@@ -169,18 +174,17 @@ contract TransceiverCounterpartsTest is Test {
     function test_theQualifierIsIdempotentButNotRepointable() public {
         Move.MoveQualifier memory q = _qualifier();
         vm.startPrank(owner);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
-        transceiver.setQualifier(suiChainKey, q);
-        transceiver.setQualifier(suiChainKey, q);
+        registry.setQualifier(suiChainKey, provider, q);
+        registry.setQualifier(suiChainKey, provider, q);
 
         q.functionName = "something_else";
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.QualifierMismatch.selector, suiChainKey));
-        transceiver.setQualifier(suiChainKey, q);
+        vm.expectRevert(ChainRegistry.AlreadySet.selector);
+        registry.setQualifier(suiChainKey, provider, q);
         vm.stopPrank();
     }
 
     function test_readingAnAbsentQualifierReverts() public {
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NoQualifier.selector, suiChainKey));
-        transceiver.qualifier(suiChainKey);
+        vm.expectRevert(ChainRegistry.NoQualifier.selector);
+        registry.qualifier(suiChainKey, provider);
     }
 }
