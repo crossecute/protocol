@@ -60,6 +60,8 @@ In this repo:
 - Every message provider prices a payload per byte.
 - Lint with `forge lint`; for files under `src/`, also run it with
   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
+- Run `forge build --sizes src` after a change to a deployed contract: CI fails any over
+  EIP-170, and `forge test` does not check it.
 
 ## Generalize before duplicating
 

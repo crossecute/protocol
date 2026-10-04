@@ -432,6 +432,8 @@ cd contracts/evm && forge test        # 642 passing
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
 request (`.github/workflows/test.yml`). `src/` is linted a second time under the `lint-src`
 profile, which also enforces the detector heuristics the default profile leaves off for tests.
+`forge build --sizes src` fails if any contract exceeds EIP-170's 24,576-byte limit, which
+`forge test` does not check.
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).
