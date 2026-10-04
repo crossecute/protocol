@@ -429,9 +429,4 @@ contract TransceiverTest is Test {
         vm.expectRevert(TransceiverBase.ZeroOwner.selector);
         fresh.initialize(c);
     }
-
-    function test_initializationSealsTheTransceiver() public {
-        Sym t = _chain(ETH, false);
-        assertTrue(t.upgradesLocked());
-    }
 }

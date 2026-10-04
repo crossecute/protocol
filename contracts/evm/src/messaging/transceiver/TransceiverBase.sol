@@ -13,7 +13,8 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @notice What a transceiver needs from the transmitter logic it arms an account with.
@@ -73,9 +74,9 @@ struct TransceiverConfig {
 ///      configures and can move no money. `GATEWAY_ROLE` is fixed at initialization with no
 ///      revoke path, since a transceiver's transports serve every account on its chain; a
 ///      compromised transport means a new transceiver.
-abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeable, OwnableUpgradeable {
-    /// Once true, no further implementation change is possible. One-way.
-    bool public upgradesLocked;
+abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgradeable, IERC1822Proxiable {
+    /// This implementation's own address, so `proxiableUUID` can refuse a call through a proxy.
+    address private immutable _self = address(this);
 
     /// This chain's chainKey: the home of every account this transceiver creates as a
     /// transmitter.
@@ -124,7 +125,6 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     /// True only while a receiver report is being sent, which pays from this contract's float.
     bool private _reporting;
 
-    event UpgradesLocked();
     event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the account.
@@ -139,7 +139,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     event ReceiverReported(bytes32 indexed home, address indexed owner, bytes32 salt, address receiver);
     event Withdrawn(address indexed to, uint256 amount);
 
-    error UpgradesAreLocked();
+    /// @dev `proxiableUUID` was reached through a proxy rather than on the implementation.
+    error UnauthorizedCallContext();
     error ZeroOwner();
     /// @dev The caller is not the account `(owner, salt)` resolves to.
     error NotTheAccount(address owner, bytes32 salt, address caller);
@@ -197,18 +198,17 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         __TransceiverBase_init(c, false);
     }
 
-    /// @notice Configure, grant the gateways, and lock upgrades.
+    /// @notice Configure and grant the gateways.
     ///
     /// @dev `addressesDiverge_` is the contract's own fact: `DivergentTransceiver` passes true,
     ///      having set its derivation inputs first, since the owner is derived here with
     ///      `predictCrossAccount`.
     ///
     /// @dev A transceiver decides which payloads are authentic, so a live upgrade key would be
-    ///      a standing ability to forge any message. Locking here, inside the initializer,
-    ///      leaves no window in which the key exists, and no binding can ship an unlocked
-    ///      transceiver. The proxy's one upgrade is the `upgradeToAndCall` that runs this
-    ///      initializer, authorized against the stub it replaces. A bug here is fixed only by
-    ///      redeploying, which re-derives every account.
+    ///      a standing ability to forge any message. There is none: the proxy's one upgrade is
+    ///      the `upgradeToAndCall` that runs this initializer, authorized against the stub it
+    ///      replaces, and this contract has no upgrade function (see `proxiableUUID`). A bug
+    ///      here is fixed only by redeploying, which re-derives every account.
     function __TransceiverBase_init(TransceiverConfig memory c, bool addressesDiverge_) internal onlyInitializing {
         if (c.transmitterImplementation == address(0)) revert NoAccountImplementation();
         if (c.receiverImplementation == address(0)) revert NoAccountImplementation();
@@ -241,15 +241,17 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
                 grantRole(GATEWAY_ROLE, c.gateways[i]);
             }
         }
-
-        upgradesLocked = true;
-        emit UpgradesLocked();
     }
 
-    /// @dev Refuses unconditionally: the initializer sets the lock and an uninitialized
-    ///      transceiver has no owner to check against.
-    function _authorizeUpgrade(address) internal pure override {
-        revert UpgradesAreLocked();
+    /// @notice ERC-1822's answer that this is an implementation a UUPS proxy may install.
+    /// @dev The only part of UUPS a transceiver keeps. A stub proxy installs it once, through
+    ///      the `upgradeToAndCall` that runs the initializer, and the transceiver has no upgrade
+    ///      function of its own, so once installed no key exists that could replace it.
+    ///      Refused through a proxy, as OZ's `notDelegated` does, so a proxy is never installed
+    ///      as its own implementation.
+    function proxiableUUID() external view returns (bytes32) {
+        if (address(this) != _self) revert UnauthorizedCallContext();
+        return ERC1967Utils.IMPLEMENTATION_SLOT;
     }
 
     /* ============================== account manufacture ============================ */

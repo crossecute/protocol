@@ -7,6 +7,8 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -160,6 +162,19 @@ contract MsigTransceiver is UnsendableTransceiver {
     ///      tests read the member list itself, and OZ's `_grantRole` is a no-op when `hasRole`
     ///      already says yes, so an override that trusted every gateway would leave the list
     ///      empty and the tests measuring nothing.
+}
+
+/// @dev The stub a transceiver proxy is deployed with: UUPS, upgradeable once by its deployer.
+contract UupsStub is UUPSUpgradeable {
+    address private immutable _deployer;
+
+    constructor(address deployer) {
+        _deployer = deployer;
+    }
+
+    function _authorizeUpgrade(address) internal view override {
+        require(msg.sender == _deployer, "not the deployer");
+    }
 }
 
 contract CommitFinalizeTest is Test {
@@ -663,27 +678,40 @@ contract CommitFinalizeTest is Test {
         assertEq(t.receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev The transceiver arrives locked. Initializing is what locks it, so there is no
-    ///      window between "the real logic is in place" and "nobody can replace it", and no
-    ///      operator step that can be forgotten. Exercised behind a real proxy, since UUPS
-    ///      refuses upgrades outside one.
-    function test_initializingLocksUpgrades() public {
+    /// @dev A stub proxy installs the transceiver once, through the upgrade that runs its
+    ///      initializer, and from then on nothing can replace it: the transceiver has no
+    ///      upgrade function, so no authority holds a key to forge messages with.
+    function test_aStubInstallsTheTransceiverAndNothingReplacesIt() public {
+        UupsStub stub = new UupsStub(address(this));
+        address proxy = address(new ERC1967Proxy(address(stub), ""));
+        address impl = address(new MockTransceiver());
+
+        UupsStub(proxy)
+            .upgradeToAndCall(impl, abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl))));
+        MockTransceiver t_ = MockTransceiver(payable(proxy));
+        assertEq(t_.receiverImplementation(), address(receiverImpl), "installed and initialized");
+
+        address blockedImpl = address(new MockTransceiver());
+        address owner = t_.owner();
+        vm.prank(owner);
+        (bool upgraded,) = proxy.call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", blockedImpl, ""));
+        assertFalse(upgraded, "not even the owner can upgrade");
+    }
+
+    /// @dev Answered only on the implementation, so a proxy is never installed as its own
+    ///      implementation.
+    function test_proxiableUuidRefusesAProxy() public {
+        MockTransceiver impl = new MockTransceiver();
+        assertEq(impl.proxiableUUID(), ERC1967Utils.IMPLEMENTATION_SLOT);
+
         MockTransceiver proxied = MockTransceiver(
             payable(new ERC1967Proxy(
                     address(new MockTransceiver()),
                     abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
                 ))
         );
-        assertTrue(proxied.upgradesLocked(), "locked by the initializer, not by a later call");
-
-        // And the admin cannot reopen it: there is no operation that clears the flag, so the
-        // authority that would have held the upgrade key has nothing to hold.
-        // `new` is hoisted: a CREATE inside the pranked expression consumes the prank.
-        address blockedImpl = address(new MockTransceiver());
-        address owner = proxied.owner();
-        vm.prank(owner);
-        vm.expectRevert(TransceiverBase.UpgradesAreLocked.selector);
-        proxied.upgradeToAndCall(blockedImpl, "");
+        vm.expectRevert(TransceiverBase.UnauthorizedCallContext.selector);
+        proxied.proxiableUUID();
     }
 
     /* ============================== authorization ============================= */
@@ -699,9 +727,6 @@ contract CommitFinalizeTest is Test {
         vm.prank(m.owner());
         m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
         assertEq(address(m.chainRegistry()), address(0xDEED));
-
-        // And the lock it arrived with does not depend on that authority being asked.
-        assertTrue(m.upgradesLocked());
     }
 
     /// @dev The membership is whatever the initializer said, for life. The role has no role

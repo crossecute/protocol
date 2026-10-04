@@ -713,11 +713,10 @@ rather than transcribe it.
 **R9.2** A typed wrapper around a write-once setter is the
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
-**R9.3** The binding MUST NOT expose an upgrade path that survives initialization. A
-transceiver locks upgrades in `__TransceiverBase_init`, so a binding gets the lock by calling
-the base init it must call anyway and cannot ship a transceiver that never locked. If the SDK carries its
-own upgrade mechanism, the binding MUST disable it: an upgrade path the base does not gate is
-one the lock does not close.
+**R9.3** The binding MUST NOT expose an upgrade path that survives installation.
+`TransceiverBase` has no upgrade function, only `proxiableUUID` so a UUPS stub can install
+it once, so a binding has nothing to lock. If the SDK carries its own upgrade mechanism, the
+binding MUST disable it: the base cannot close an upgrade path it does not know about.
 
 ---
 
@@ -737,7 +736,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
 | 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, `setCreate2Factory` for zk-chains, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`) | The grade and the factory are write-once. Only an `eip155` chain can be `Derived`; zkSync and Tron are `Attested`, which is also what turns `requiresReceiverCallback` on. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
-| n/a | | no lock step | There is nothing to call. Step 2's `upgradeToAndCall` runs the initializer, which locks: a transceiver is sealed before it is ever configured. Later steps are storage writes, which the lock does not touch. |
+| n/a | | no lock step | There is nothing to call. Step 2's `upgradeToAndCall` is the stub's one upgrade, and it runs the initializer; the transceiver it installs has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
 There are no deploy scripts yet; `script/` holds only the vendoring drivers
 ([todo §3](todo.md#3-infrastructure)). The ordering above is their

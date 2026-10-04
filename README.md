@@ -51,9 +51,10 @@ confirms its destination, and the same bytes cannot be replayed onto another cha
 **What it costs.** The home chain and the message provider enter the trust path. A halt at
 home delays everything, and a provider that can forge a message can drive an account. No
 shared failure is what N independent multisigs buy with N of everything else. The exposure
-is narrowed where it can be. A transceiver's upgrade key dies in the call that initializes
-it, and an account's in the call that arms it, so neither is ever live and replaceable, and
-the registry has no upgrade path at all. No shared contract sits in the path of a normal
+is narrowed where it can be. A transceiver's one upgrade is the call that installs and
+initializes it, after which it has no upgrade function; an account's upgrade key dies in the
+call that arms it; and the registry has no upgrade path at all. None is ever live and
+replaceable. No shared contract sits in the path of a normal
 message.
 
 The rest of the bill, stated plainly:
@@ -363,10 +364,11 @@ What an operator or integrator has to know:
   `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
   comments included, which would otherwise put every derived address one comment edit
   away from moving.
-- Transceivers are deployed as upgradeable proxies and the upgrade that installs the real
-  implementation runs the initializer that locks upgrades. A transceiver decides which
-  cross-chain payloads are authentic, so a live upgrade key is a standing ability to forge
-  one, and there is no window in which it exists.
+- Transceivers are deployed as proxies over a UUPS stub, and the stub's one upgrade installs
+  the real implementation and runs its initializer. The implementation keeps only
+  `proxiableUUID` from UUPS and has no upgrade function, so once installed nothing can
+  replace it. A transceiver decides which cross-chain payloads are authentic, so a live
+  upgrade key is a standing ability to forge one, and there is no window in which it exists.
 - Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
   state in which one has real logic and a live upgrade key.
 - Nothing is upgraded after deployment. `ChainRegistry` is a plain contract with no proxy, so
