@@ -98,9 +98,6 @@ contract SymmetricTransceiverTest is Test {
     address alice = address(0xA11CE);
     address zkTransceiver = address(0x2C);
 
-    ChainRegistry registry;
-    Treasury treasury;
-
     function _key(uint256 chainId) internal pure returns (bytes32) {
         return ChainKey.forEvm(chainId);
     }
@@ -114,14 +111,14 @@ contract SymmetricTransceiverTest is Test {
     ///      `Attested`, with its transceiver at its own address.
     function _chain(uint256 chainId, bool diverges) internal returns (Sym t) {
         vm.chainId(chainId);
-        registry = ChainRegistry(
+        ChainRegistry registry = ChainRegistry(
             address(
                 new ERC1967Proxy(
                     address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
                 )
             )
         );
-        treasury = new Treasury(address(this));
+        Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
         t = new Sym{salt: TRANSCEIVER_SALT}();
@@ -314,6 +311,7 @@ contract SymmetricTransceiverTest is Test {
         vm.expectRevert(abi.encodeWithSelector(SymmetricTransceiverBase.NotTreasury.selector, address(this)));
         t.withdraw(1 ether);
 
+        Treasury treasury = Treasury(payable(t.treasury()));
         treasury.collect(IReportFloat(address(t)), 1 ether);
         assertEq(address(treasury).balance, 1 ether);
         assertEq(address(t).balance, 0);
