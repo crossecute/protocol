@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
@@ -113,9 +114,16 @@ contract MockTransceiver is TransceiverBase {
         return "";
     }
 
-    /// @dev Stands in for the registry lookup a real hub's `_route` performs.
-    function _counterpartOn(bytes32) internal pure override returns (bytes memory) {
-        return abi.encodePacked(address(0xC0DE));
+    /// @dev The transceiver on every destination: this address, as on any parity chain,
+    ///      unless a test moves it.
+    address public there = address(this);
+
+    function setThere(address there_) external {
+        there = there_;
+    }
+
+    function _counterpartOn(bytes32) internal view override returns (bytes memory) {
+        return abi.encodePacked(there);
     }
 
     function _routeTo(bytes32) internal pure override returns (bytes memory) {
@@ -562,6 +570,33 @@ contract TransportTest is Test {
         vm.deal(at, 1 ether);
     }
 
+    /// @dev Where the destination's transceiver is not at this account's transceiver's
+    ///      address, as on a zkSync or Tron home, the receiver is not at this account's
+    ///      address either. The transmitter records where the transceiver predicts it, and
+    ///      `recipientOn` returns that.
+    function test_theTransmitterRecordsThePredictedReceiverNotItself() public {
+        (MockTransceiver t, MockTransmitter acct) = _account();
+        address there = address(0xC0DE);
+        t.setThere(there);
+
+        vm.prank(owner);
+        acct.bootstrap(DEST, _calls(), new bytes[](0));
+
+        address receiver = Create2.computeAddress(
+            t.accountSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
+        );
+        assertEq(acct.destinationReceiverOn(ChainKey.forEvm(DEST)), abi.encodePacked(receiver));
+        assertTrue(receiver != address(acct), "not its own address");
+        assertEq(acct.recipientOn(DEST), Erc7930.encodeEvm(DEST, receiver));
+    }
+
+    /// @dev There is no recipient before the receiver is known.
+    function test_recipientOnRefusesAnUnknownReceiver() public {
+        uint256 elsewhere = 10;
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, ChainKey.forEvm(elsewhere)));
+        transmitter.recipientOn(elsewhere);
+    }
+
     /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it,
     ///      so the only account anyone can stand up is the one that answers to them.
     function test_bootstrapRefusesACallerThatIsNotTheAccount() public {
@@ -926,15 +961,14 @@ contract TransportTest is Test {
     /// @dev The two builders name one chain, which is what lets a caller pick an entry point
     ///      on ergonomics rather than on reach. `chainIdentifierFor` is `bootstrapTo`'s
     ///      argument and `recipientOn` is `sendMessage`'s, and the second is the first with
-    ///      this account's address appended, so a destination reached by either spelling
-    ///      resolves to the same chainKey.
+    ///      this account's recorded receiver appended, so a destination reached by either
+    ///      spelling resolves to the same chainKey.
     ///
     ///      It is a real check rather than a tautology because `Erc7930` is a library of
     ///      `internal` functions: off-chain callers cannot reach it, so these two are the
     ///      only way to build either value, and nothing else pins them to each other.
-    function testFuzz_theTwoDestinationBuildersAgree(uint256 chainId) public view {
-        vm.assume(chainId != 0);
-
+    function test_theTwoDestinationBuildersAgree() public view {
+        uint256 chainId = DEST;
         bytes memory identifier = transmitter.chainIdentifierFor(chainId);
         bytes memory recipient = transmitter.recipientOn(chainId);
 
@@ -1096,7 +1130,7 @@ contract DivergingDestinationTest is Test {
     ///      cannot both be live and a stale caller fails loudly.
     function test_correctionRevokesTheHomeAddress() public {
         bytes32 key = ChainKey.forEvm(ZKSYNC);
-        bytes memory stale = transmitter.recipientOn(ZKSYNC);
+        bytes memory stale = Erc7930.encodeEvm(ZKSYNC, address(transmitter));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
         vm.prank(address(hub));

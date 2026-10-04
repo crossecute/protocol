@@ -69,6 +69,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
     ///      overrode one and not the other.
     error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
+    /// @dev The counterpart on that chain is not a 20-byte EVM address, so no EVM CREATE2
+    ///      prediction applies there.
+    error CounterpartNotEvm(bytes32 chainKey);
 
     /* ================================== routing ================================ */
 
@@ -100,6 +103,23 @@ abstract contract TransceiverBase is Initializable, OutboundBase, UUPSUpgradeabl
         returns (address)
     {
         return Create2.computeAddress(accountSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, address(this));
+    }
+
+    /// @notice Where `(owner, salt)`'s receiver will sit on `chainKey`, for an account homed on
+    ///         this chain, where `chainKey` derives addresses with Ethereum's CREATE2.
+    /// @dev Ethereum's CREATE2 over this provider's transceiver there, which is the counterpart
+    ///      on that chain. It equals the account's own address only when this chain also uses
+    ///      that formula, which is why a transmitter records this rather than `address(this)`.
+    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
+        bytes memory there = _counterpartOn(chainKey);
+        if (there.length != 20) revert CounterpartNotEvm(chainKey);
+        // forge-lint: disable-next-line(unsafe-typecast) length checked above
+        address transceiverThere = address(bytes20(there));
+        return abi.encodePacked(
+            Create2.computeAddress(
+                accountSalt(owner, salt, localChainKey), CROSS_PROXY_INIT_CODE_HASH, transceiverThere
+            )
+        );
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.

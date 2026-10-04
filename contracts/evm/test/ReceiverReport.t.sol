@@ -522,7 +522,7 @@ contract ReceiverReportRoundTripTest is Test {
 
         // Both hoisted: an external call inside the pranked expression consumes the prank,
         // and one inside `expectRevert`'s next call would be the call it measures.
-        bytes memory recipient = account.recipientOn(SPOKE_CHAIN);
+        bytes memory recipient = Erc7930.encodeEvm(SPOKE_CHAIN, address(account));
         bytes memory payload = account.payloadForCalls(new Call[](0));
 
         vm.prank(owner);

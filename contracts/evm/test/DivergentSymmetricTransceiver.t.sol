@@ -169,6 +169,34 @@ contract DivergentSymmetricTransceiverTest is Test {
     /// @dev This transceiver is not at its provider's address on parity chains, so the
     ///      default counterpart there is the registry's prediction, and nothing until the
     ///      provider's deployment is recorded.
+    /// @dev A transmitter homed on zkSync records this as its receiver on a parity chain: the
+    ///      account's address there under Ethereum's formula, not its own Era address.
+    function test_aZkSyncHomePredictsItsReceiversTheEthereumWay() public {
+        ZkSym t = _zk();
+        ChainRegistry registry = ChainRegistry(
+            address(
+                new ERC1967Proxy(
+                    address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (address(this)))
+                )
+            )
+        );
+        bytes32 provider = registry.addMessageProvider("test");
+        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        registry.setProviderDeployment(
+            provider, PROVIDER_SALT, keccak256("transceiver"), t.CROSS_PROXY_INIT_CODE_HASH()
+        );
+        vm.prank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+
+        address there = registry.predictTransceiver(base, provider);
+        address receiver = Create2.computeAddress(
+            t.accountSalt(alice, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
+        );
+
+        assertEq(t.predictReceiver(base, alice, SALT), abi.encodePacked(receiver));
+        assertTrue(receiver != t.predictCrossAccount(alice, SALT, t.localChainKey()), "not the Era address");
+    }
+
     function test_theDefaultCounterpartIsTheProvidersParityAddress() public {
         ZkSym t = _zk();
         ChainRegistry registry = ChainRegistry(

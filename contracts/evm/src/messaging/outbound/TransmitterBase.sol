@@ -55,6 +55,9 @@ interface IAccountTransceiver {
     /// @notice The chain identifier the msig configured a destination under, including one
     ///         this account has not bootstrapped yet.
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
+
+    /// @notice Where this account's receiver will sit on a chain that does not report it.
+    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
 }
 
 /// @title TransmitterBase
@@ -247,10 +250,15 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         return false;
     }
 
-    /// @notice The ERC-7930 address of this account on `destinationChainId`: the recipient
-    ///         `sendMessage` expects on a parity chain.
+    /// @notice The recipient `sendMessage` takes for this account on `destinationChainId`: its
+    ///         recorded receiver there, as an ERC-7930 address. Reverts until the receiver is
+    ///         known.
+    /// @dev Not this account's own address: the two differ wherever this chain or the
+    ///      destination derives addresses differently from Ethereum.
     function recipientOn(uint256 destinationChainId) public view returns (bytes memory) {
-        return Erc7930.encodeEvm(destinationChainId, address(this));
+        bytes32 chainKey = ChainKey.forEvm(destinationChainId);
+        _requireBootstrapped(chainKey);
+        return _recipientOn(chainKey);
     }
 
     /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapTo`'s first
@@ -462,8 +470,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     ///      record. A revert unwinds it with everything else.
     ///
     /// @dev Records the receiver only where its address is already known (the chain does not
-    ///      report). On a reporting chain the destination stays unreachable until the report
-    ///      arrives, rather than addressed at a guess.
+    ///      report), as the transceiver predicts it there: this account's own address only when
+    ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
+    ///      unreachable until the report arrives, rather than addressed at a guess.
     function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
         if (transceiver == address(0)) revert NoTransceiver();
         // Reduced to the bare chain identifier the route table holds, so the send accepts
@@ -475,8 +484,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, route);
 
-        if (!IAccountTransceiver(transceiver).reportsReceiver(chainKey)) {
-            _setCounterpart(chainKey, abi.encodePacked(address(this)));
+        IAccountTransceiver t = IAccountTransceiver(transceiver);
+        if (!t.reportsReceiver(chainKey)) {
+            _setCounterpart(chainKey, t.predictReceiver(chainKey, _owner(), accountSalt));
         }
 
         emit DestinationBootstrapped(chainKey);
