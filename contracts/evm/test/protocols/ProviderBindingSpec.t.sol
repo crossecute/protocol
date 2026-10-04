@@ -7,7 +7,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";

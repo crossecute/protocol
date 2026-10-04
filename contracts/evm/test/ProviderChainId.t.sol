@@ -13,10 +13,6 @@ contract ProviderChainIdHarness is ProviderChainId {
         _setProviderId(chainKey, providerId);
     }
 
-    function providerIdFor(bytes32 chainKey) external view returns (uint256) {
-        return _providerIdFor(chainKey);
-    }
-
     function chainKeyOfProvider(uint256 providerId) external view returns (bytes32) {
         return _chainKeyOfProvider(providerId);
     }

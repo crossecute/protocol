@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
