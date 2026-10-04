@@ -300,7 +300,7 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
     ///
     /// @dev Applies the registry's per-chain grade, which every provider's hub reads alike.
     ///
-    /// @dev An unset counterpart on a `Derived` chain is `_parityAddress()`: every transceiver
+    /// @dev An unset counterpart on a `Derived` chain is `_parityAddress(chainKey)`: every transceiver
     ///      of a provider is deployed through the same factory at the same salt, so they
     ///      coincide wherever Ethereum's CREATE2 holds.
     function _counterpartOn(bytes32 chainKey) internal view override returns (bytes memory) {
@@ -314,16 +314,16 @@ abstract contract HubTransceiverBase is TransceiverBase, OwnableUpgradeable {
 
         if (!hasCounterpart(chainKey)) {
             if (grade != Provenance.Derived) revert NoCounterpartFor(chainKey);
-            return abi.encodePacked(_parityAddress());
+            return abi.encodePacked(_parityAddress(chainKey));
         }
         return OutboundBase._counterpartOn(chainKey);
     }
 
-    /// @notice Where this provider's transceiver sits on every chain that uses Ethereum's
-    ///         CREATE2: the default counterpart on a `Derived` chain.
+    /// @notice Where this provider's transceiver sits on `chainKey`, a chain that uses
+    ///         Ethereum's CREATE2: the default counterpart there.
     /// @dev This contract's own address wherever that formula holds here too. A transceiver on
-    ///      zkSync or Tron sits elsewhere, so it overrides this with the standard address.
-    function _parityAddress() internal view virtual returns (address) {
+    ///      zkSync or Tron sits elsewhere, so it derives the address from the registry instead.
+    function _parityAddress(bytes32) internal view virtual returns (address) {
         return address(this);
     }
 

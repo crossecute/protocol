@@ -563,8 +563,8 @@ same codec function. Never hand-encode at one end.
 **R4.2** The `sender` bytes MUST be byte-identical to what the counterpart lookup returns.
 For an EVM counterpart that is 20 raw bytes: `HubTransceiverBase.counterpartOn` returns
 what `setCounterpart` stored, which is `Erc7930.parseStrict(interop).addr`, and the fallback
-returns `abi.encodePacked(_parityAddress())`, the transceiver's own address unless it sits on
-zkSync or Tron. Both are 20 bytes. A provider reporting a 32-byte
+returns `abi.encodePacked(_parityAddress(chainKey))`, the transceiver's own address unless it
+sits on zkSync or Tron, which derive it from the registry. Both are 20 bytes. A provider reporting a 32-byte
 left-padded sender MUST be narrowed by the binding.
 
 ```solidity
