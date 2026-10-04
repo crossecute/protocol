@@ -12,7 +12,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///
 /// @dev Published payload: `abi.encodePacked(uint16 targetChain, bytes32 targetAddress, payload)`.
 ///      A VAA names its emitter but no destination, and anyone may submit it anywhere; receivers
-///      share one CREATE2 address across parity chains and trust the same source transmitter,
+///      and transceivers each share one address across parity chains and trust the same sender,
 ///      so without this prefix a VAA addressed to one chain would execute on every other.
 library WormholeMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes

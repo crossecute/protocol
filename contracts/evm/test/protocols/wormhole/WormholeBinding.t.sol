@@ -98,29 +98,38 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
     return abi.encodePacked(targetChain, _universal(target), inner);
 }
 
-contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, ProviderFeeSpec, ProviderRefundSpec {
+interface IWormholeSendHarness is IHubSendHarness {
+    function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external;
+    function executeVAAv1(bytes calldata multiSigVaa) external payable;
+    function WORMHOLE_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
+}
+
+/// @dev Run against each Wormhole transceiver through `_deploy`.
+abstract contract WormholeSendSuite is
+    ProviderIdTableSpec,
+    ProviderEvmRecipientSpec,
+    ProviderFeeSpec,
+    ProviderRefundSpec
+{
     uint256 constant CORE_MESSAGE_FEE = 1 gwei;
     MockWormholeCore core;
     MockExecutorQuoterRouter router;
-    WormholeHubHarness hub;
-    address msig = address(0x5165);
+    IWormholeSendHarness hub;
+    address msig;
     address quoter = address(0x0907);
     uint16 constant HOME_WORMHOLE_CHAIN = 2;
     uint16 constant BASE_WORMHOLE_CHAIN = 30;
 
+    /// @notice Deploy the transceiver under test against `core`, `router`, and `quoter`,
+    ///         returning it and its owner.
+    function _deploy() internal virtual returns (address transceiver, address owner);
+
     function setUp() public {
         core = new MockWormholeCore(HOME_WORMHOLE_CHAIN);
         router = new MockExecutorQuoterRouter();
-        hub = WormholeHubHarness(
-            address(
-                new ERC1967Proxy(
-                    address(new WormholeHubHarness(address(core), address(router), quoter)),
-                    abi.encodeCall(
-                        WormholeHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
+        (address t, address owner) = _deploy();
+        hub = IWormholeSendHarness(t);
+        msig = owner;
         harness = IHubSendHarness(address(hub));
 
         vm.prank(msig);
@@ -257,6 +266,21 @@ contract WormholeSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, Prov
 
     function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
+    }
+}
+
+contract WormholeSendTest is WormholeSendSuite {
+    function _deploy() internal override returns (address, address) {
+        address owner = address(0x5165);
+        address t = address(
+            new ERC1967Proxy(
+                address(new WormholeHubHarness(address(core), address(router), quoter)),
+                abi.encodeCall(
+                    WormholeHubTransceiver.initialize, (owner, address(0), new address[](0), address(0xBEEF))
+                )
+            )
+        );
+        return (t, owner);
     }
 }
 

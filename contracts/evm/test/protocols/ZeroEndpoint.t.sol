@@ -24,6 +24,7 @@ import {OpStackSpokeTransceiver} from "src/protocols/op-stack/OpStackSpokeTransc
 import {WormholeHubTransceiver} from "src/protocols/wormhole/WormholeHubTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeSpokeTransceiver} from "src/protocols/wormhole/WormholeSpokeTransceiver.sol";
+import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 
 /// @notice Every provider endpoint a constructor takes is immutable, so each refuses zero.
@@ -63,9 +64,10 @@ contract ZeroEndpointTest is Test {
 
     /// @dev Core bridge, executor router, and quoter, each zeroed in turn.
     function test_wormholeRefusesAnyZeroEndpoint() public {
-        bytes[3] memory code = [
+        bytes[4] memory code = [
             type(WormholeHubTransceiver).creationCode,
             type(WormholeSpokeTransceiver).creationCode,
+            type(WormholeTransceiver).creationCode,
             type(WormholeTransmitter).creationCode
         ];
         for (uint256 i; i < code.length; ++i) {
