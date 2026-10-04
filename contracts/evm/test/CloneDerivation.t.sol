@@ -12,7 +12,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DivergentSpokeTransceiver} from "src/messaging/transceiver/spoke/DivergentSpokeTransceiver.sol";
+import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
 import {LzSpokeTransceiver} from "src/protocols/layerzero/LzSpokeTransceiver.sol";
 import {
     LzZkSyncSpokeTransceiver,
@@ -358,7 +358,7 @@ contract DivergentSpokeTest is Test {
         bytes32 homeKey = ChainKey.forEvm(1);
 
         ZkSpoke s = new ZkSpoke(ENDPOINT);
-        vm.expectRevert(DivergentSpokeTransceiver.ZeroAccountBytecodeHash.selector);
+        vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
         s.initialize(new address[](0), impl, homeKey, homeId, hub, address(0x7EA5), bytes32(0), bytes32(0), uint32(1));
 
         ZkSpoke ok = _zk();
