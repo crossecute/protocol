@@ -16,17 +16,13 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 
-/// @dev A symmetric transceiver whose transport records what it was asked to send.
-contract Sym is SymmetricTransceiverBase {
+/// @dev The transport every test transceiver here shares: it records what it was asked to send.
+abstract contract SymHarness is SymmetricTransceiverBase {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
     uint256 public sentCount;
     address public sentRefundTo;
-
-    function initialize(TransceiverConfig memory c) external initializer {
-        __SymmetricTransceiver_init(c);
-    }
 
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory, uint256 value)
         internal
@@ -55,10 +51,11 @@ contract Sym is SymmetricTransceiverBase {
     function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
     }
+}
 
-    /// @dev A harness trusts any gateway, which no deployment may do.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
+contract Sym is SymHarness {
+    function initialize(TransceiverConfig memory c) external initializer {
+        __SymmetricTransceiver_init(c);
     }
 }
 
