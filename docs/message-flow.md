@@ -226,7 +226,8 @@ currency as an explicit asset.
 Who inherits what:
 
 ```
-Roles           ← OutboundBase, ReceiverBase
+Roles           ← TransceiverBase, RolesEnumerable
+RolesEnumerable ← TransmitterBase, ReceiverBase
 Executor        ← TransmitterBase, ReceiverBase
 ReentrancyGuard ← ReceiverBase
 
@@ -244,7 +245,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 
 | Contract | What it is | Public surface |
 | --- | --- | --- |
-| `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. `grantRole` is `onlyInitializing`, so membership arrives while a contract is armed and never afterwards. | `hasRole`, `getRoleMembers` |
+| `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. `grantRole` is `onlyInitializing`, so membership arrives while a contract is armed and never afterwards. `RolesEnumerable` adds on-chain enumeration for accounts; a transceiver's fixed set is read from its `RoleGranted` logs. | `hasRole`; `getRoleMembers` on accounts |
 | `messaging/Executor.sol` | The shared execution loop. In order, all or nothing, reverting with `CallFailed(index, reason)`. | `isAllowed(address, bytes4)`, open by default |
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
@@ -268,8 +269,9 @@ chain and an account holds no registry.
 
 **One role covers both directions.** A contract accepting deliveries from one address while
 sending through another would trust two transports and authenticate against one, and nothing
-would say so. `ReceiverBase` inherits `Roles` directly rather than through `OutboundBase`,
-because a receiver never sends yet has the strictest need to know which gateway is real.
+would say so. `OutboundBase` carries no role: each contract inherits one, a transceiver
+`Roles` and an account `RolesEnumerable`, and a receiver never sends yet has the strictest
+need to know which gateway is real.
 
 **Only an account holds approvals.** `ReceiverBase` gates `commit`, `cancel`, and `execute`
 on its source transmitter or a payload it is already executing. A transceiver holds no

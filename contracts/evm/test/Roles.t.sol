@@ -7,7 +7,7 @@ import {IAccessControlEnumerable} from "@openzeppelin/contracts/access/extension
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-import {Roles} from "src/messaging/Roles.sol";
+import {Roles, RolesEnumerable} from "src/messaging/Roles.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
@@ -40,7 +40,9 @@ contract RoleTransmitter is UnsendableTransmitter {
 }
 
 /// @dev The role graph on its own, with no messaging around it.
-contract RoleHarness is Roles {
+contract PlainRoleHarness is Roles {}
+
+contract RoleHarness is RolesEnumerable {
     function initialize(address[] calldata gateways) external initializer {
         for (uint256 i; i < gateways.length; ++i) {
             if (gateways[i] != address(0)) grantRole(GATEWAY_ROLE, gateways[i]);
@@ -315,6 +317,14 @@ contract RolesTest is Test {
 
         h.revokeGateway(a);
         assertEq(h.getRoleMemberCount(gatewayRole), 0);
+    }
+
+    /// @dev A transceiver's plain `Roles` does not enumerate (#29): its members are fixed at
+    ///      initialization and read from the `RoleGranted` logs, so it must not claim to.
+    function test_thePlainRolesDoNotAnnounceEnumeration() public {
+        PlainRoleHarness h = new PlainRoleHarness();
+        assertFalse(h.supportsInterface(type(IAccessControlEnumerable).interfaceId));
+        assertTrue(h.supportsInterface(type(IAccessControl).interfaceId));
     }
 
     /// @dev Announced, so a monitor can discover the enumeration rather than be told about it.

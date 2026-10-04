@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {RolesEnumerable} from "src/messaging/Roles.sol";
 import {ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -78,7 +79,7 @@ interface IAccountTransceiver {
 ///
 /// @dev Commitments are hashed with the destination's chainKey, not this chain's:
 ///      `Commitment.hashCalls` seeds with the chain the receiver recomputes on.
-abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC7786GatewaySource {
+abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerable, Executor, IERC7786GatewaySource {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
     /// The caller-chosen half of this account's CREATE2 salt, stored because `bootstrap` must

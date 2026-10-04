@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -732,14 +733,21 @@ contract CommitFinalizeTest is Test {
     /// @dev The membership is whatever the initializer said, for life. The role has no role
     ///      admin and `DEFAULT_ADMIN_ROLE` is never granted, so `grantRole` has no caller that
     ///      can succeed: not the owner, not the msig, not a gateway.
+    ///      A transceiver's set is not enumerable on-chain (#29), so it is read from the
+    ///      `RoleGranted` logs of the initialization, which are the only grants there are.
     function test_theRoleCannotBeGrantedAfterInitialization() public {
+        vm.recordLogs();
         MsigTransceiver m = _msigTransceiver();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        assertEq(m.getRoleMemberCount(m.DEFAULT_ADMIN_ROLE()), 0, "nothing sits above it");
-
-        address[] memory gateways = m.getRoleMembers(m.GATEWAY_ROLE());
-        assertEq(gateways.length, 1, "exactly what was named, and nothing acquired since");
-        assertEq(gateways[0], gateway);
+        uint256 grants;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(m) || logs[i].topics[0] != IAccessControl.RoleGranted.selector) continue;
+            ++grants;
+            assertEq(logs[i].topics[1], m.GATEWAY_ROLE(), "only the gateway role, nothing above it");
+            assertEq(address(uint160(uint256(logs[i].topics[2]))), gateway, "exactly what was named");
+        }
+        assertEq(grants, 1);
 
         // The owner is the strongest caller there is here, and it still cannot.
         // Hoisted: an external call inside a pranked expression consumes the prank.
@@ -766,7 +774,7 @@ contract CommitFinalizeTest is Test {
         vm.expectRevert();
         m.revokeRole(gatewayRole, gateway);
 
-        assertEq(m.getRoleMembers(gatewayRole).length, 1, "still exactly what it was given");
+        assertTrue(m.hasRole(gatewayRole, gateway), "still exactly what it was given");
     }
 
     /// @dev The treasury is an address the deployment named, and there is no way to move it.

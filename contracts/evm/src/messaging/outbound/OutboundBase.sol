@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {Roles} from "src/messaging/Roles.sol";
 
 /// @title OutboundBase
 /// @notice The sending half: who this contract's counterpart is on each chain, how to
@@ -24,7 +23,7 @@ import {Roles} from "src/messaging/Roles.sol";
 /// @dev Entry points validate their arguments and call `_sendMessage` directly. A gateway
 ///      source emits `MessageSent`; path B is not one, so `TransceiverBase` emits
 ///      `BootstrapSent` instead.
-abstract contract OutboundBase is Roles {
+abstract contract OutboundBase {
     /// chainKey => that chain's canonical ERC-7930 chain identifier.
     /// @dev Held by the sender, not the registry: on the execute-on-arrival path nothing else
     ///      binds the destination, so a registry that could misroute could run a payload on

@@ -16,11 +16,11 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      through another. `ReceiverBase` inherits this directly: it never sends, but the role
 ///      guards its external `receiveMessage`.
 ///
-/// @dev Enumerable so an operator can read the whole member set, which is fixed at
-///      initialization. `AccessControlEnumerableUpgradeable` compiles at `paris` only through
-///      OZ 5.4, since 5.5's `Arrays` uses `mcopy`; a bump past 5.4 breaks this inheritance
-///      first (README, Assumptions).
-abstract contract Roles is AccessControlEnumerableUpgradeable {
+/// @dev Not enumerable here: a transceiver's members are fixed at initialization, each grant
+///      emits `RoleGranted`, and enumeration would cost every transceiver a kilobyte it does
+///      not have under EIP-170 (#29). Accounts, whose receivers can revoke, add it through
+///      `RolesEnumerable`.
+abstract contract Roles is AccessControlUpgradeable {
     /// @notice May deliver a message to this contract and carry one out of it. The only role.
     /// @dev Namespaced so a provider SDK's own role of the same name cannot share its members.
     bytes32 public constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
@@ -34,25 +34,68 @@ abstract contract Roles is AccessControlEnumerableUpgradeable {
     ///
     /// @dev `public` because it overrides OZ's `grantRole`; a separate entry point would leave
     ///      the inherited one reachable.
-    function grantRole(bytes32 role, address account)
-        public
-        virtual
-        override(AccessControlUpgradeable, IAccessControl)
-        onlyInitializing
-    {
+    function grantRole(bytes32 role, address account) public virtual override onlyInitializing {
         _grantRole(role, account);
     }
 
     /// @notice Whether `account` holds `role`.
-    /// @dev Re-declared so an override below names one base rather than both
-    ///      `AccessControlUpgradeable` and `IAccessControl`.
+    /// @dev Re-declared so an override below names one base.
+    function hasRole(bytes32 role, address account) public view virtual override returns (bool) {
+        return super.hasRole(role, account);
+    }
+}
+
+/// @title RolesEnumerable
+/// @notice `Roles`, with the member set readable on-chain, for accounts: a receiver can drop a
+///         gateway through `revokeGateway`, so what remains is worth reading directly.
+/// @dev `AccessControlEnumerableUpgradeable` compiles at `paris` only through OZ 5.4, since
+///      5.5's `Arrays` uses `mcopy`; a bump past 5.4 breaks this inheritance first (README,
+///      Assumptions).
+abstract contract RolesEnumerable is Roles, AccessControlEnumerableUpgradeable {
+    function grantRole(bytes32 role, address account)
+        public
+        virtual
+        override(Roles, AccessControlUpgradeable, IAccessControl)
+        onlyInitializing
+    {
+        super.grantRole(role, account);
+    }
+
     function hasRole(bytes32 role, address account)
         public
         view
         virtual
-        override(AccessControlUpgradeable, IAccessControl)
+        override(Roles, AccessControlUpgradeable, IAccessControl)
         returns (bool)
     {
         return super.hasRole(role, account);
+    }
+
+    function _grantRole(bytes32 role, address account)
+        internal
+        virtual
+        override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        returns (bool)
+    {
+        return super._grantRole(role, account);
+    }
+
+    function _revokeRole(bytes32 role, address account)
+        internal
+        virtual
+        override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        returns (bool)
+    {
+        return super._revokeRole(role, account);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
     }
 }

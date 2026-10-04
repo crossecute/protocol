@@ -3,9 +3,7 @@ pragma solidity ^0.8.0;
 
 import {CcipTransceiverBase} from "src/protocols/ccip/CcipTransceiver.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {
-    AccessControlEnumerableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {
     DivergentTransceiver,
     ZkSyncTransceiver,
@@ -54,7 +52,7 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(AccessControlEnumerableUpgradeable, CcipTransceiverBase)
+        override(AccessControlUpgradeable, CcipTransceiverBase)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
@@ -95,7 +93,7 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(AccessControlEnumerableUpgradeable, CcipTransceiverBase)
+        override(AccessControlUpgradeable, CcipTransceiverBase)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);

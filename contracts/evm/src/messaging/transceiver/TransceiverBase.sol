@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {Roles} from "src/messaging/Roles.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
@@ -73,7 +74,7 @@ struct TransceiverConfig {
 ///      configures and can move no money. `GATEWAY_ROLE` is fixed at initialization with no
 ///      revoke path, since a transceiver's transports serve every account on its chain; a
 ///      compromised transport means a new transceiver.
-abstract contract TransceiverBase is Initializable, OutboundBase, OwnableUpgradeable, IERC1822Proxiable {
+abstract contract TransceiverBase is Initializable, OutboundBase, Roles, OwnableUpgradeable, IERC1822Proxiable {
     /// This implementation's own address, so `proxiableUUID` can refuse a call through a proxy.
     address private immutable _self = address(this);
 

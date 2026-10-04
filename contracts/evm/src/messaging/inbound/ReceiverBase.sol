@@ -9,7 +9,7 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {Roles} from "src/messaging/Roles.sol";
+import {RolesEnumerable} from "src/messaging/Roles.sol";
 import {IERC7786Recipient} from "src/messaging/IErc7786.sol";
 
 /// @notice Two-step execution: approve a hash now, supply the matching array later.
@@ -62,7 +62,7 @@ interface IReceiverInit is ICommitFinalize, ICancel, IExecute {
 abstract contract ReceiverBase is
     Initializable,
     Executor,
-    Roles,
+    RolesEnumerable,
     ReentrancyGuardUpgradeable,
     IReceiverInit,
     IERC7786Recipient
