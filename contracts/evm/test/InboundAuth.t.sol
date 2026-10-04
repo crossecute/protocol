@@ -70,8 +70,7 @@ contract Node is UnsendableSymmetric {
                 governorOwner: governor,
                 governorSalt: bytes32(0),
                 governorHome: ChainKey.local(),
-                treasury: address(0x7EA5),
-                addressesDiverge: false
+                treasury: address(0x7EA5)
             })
         );
     }

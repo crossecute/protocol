@@ -21,8 +21,6 @@ struct TransceiverConfig {
     bytes32 governorHome;
     /// Where bootstrap fees go and the report float leaves to. Write-once.
     address treasury;
-    /// True only where account addresses here differ from Ethereum's CREATE2: zkSync and Tron.
-    bool addressesDiverge;
 }
 
 /// @title SymmetricTransceiverBase
@@ -42,7 +40,8 @@ abstract contract SymmetricTransceiverBase is HubTransceiverBase {
     address public receiverImplementation;
 
     /// Whether account addresses here differ from Ethereum's CREATE2. When true, every receiver
-    /// created here is reported to its home, which cannot derive it. Write-once.
+    /// created here is reported to its home, which cannot derive it. Write-once, and set by the
+    /// contract rather than its caller, so it cannot disagree with `predictCrossAccount`.
     bool public addressesDiverge;
 
     /// True only while a receiver report is being sent, which pays from this contract's float.
@@ -62,9 +61,15 @@ abstract contract SymmetricTransceiverBase is HubTransceiverBase {
     error NotTreasury(address caller);
     error WithdrawFailed(uint256 amount);
 
-    /// @dev A divergent variant must set its derivation inputs before calling this, since the
-    ///      owner is derived here with `predictCrossAccount`.
+    /// @notice For a transceiver that derives account addresses Ethereum's way.
     function __SymmetricTransceiver_init(TransceiverConfig memory c) internal onlyInitializing {
+        __SymmetricTransceiver_init(c, false);
+    }
+
+    /// @dev `addressesDiverge_` is the contract's own fact: `DivergentSymmetricTransceiver`
+    ///      passes true, having set its derivation inputs first, since the owner is derived here
+    ///      with `predictCrossAccount`.
+    function __SymmetricTransceiver_init(TransceiverConfig memory c, bool addressesDiverge_) internal onlyInitializing {
         if (c.receiverImplementation == address(0)) revert NoAccountImplementation();
         if (c.treasury == address(0)) revert NoTreasury();
         if (c.governorOwner == address(0)) revert ZeroOwner();
@@ -72,8 +77,8 @@ abstract contract SymmetricTransceiverBase is HubTransceiverBase {
         receiverImplementation = c.receiverImplementation;
         emit ReceiverImplementationSet(c.receiverImplementation);
 
-        addressesDiverge = c.addressesDiverge;
-        emit AddressesDivergeSet(c.addressesDiverge);
+        addressesDiverge = addressesDiverge_;
+        emit AddressesDivergeSet(addressesDiverge_);
 
         // Last, and the transceiver is sealed. See `TransceiverBase.__TransceiverBase_init`.
         __HubTransceiverBase_init(

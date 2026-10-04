@@ -91,7 +91,7 @@ contract DivergentSymmetricTransceiverTest is Test {
     address msig = address(0x5165);
     address alice = address(0xA11CE);
 
-    function _config(bool diverges) internal returns (TransceiverConfig memory) {
+    function _config() internal returns (TransceiverConfig memory) {
         return TransceiverConfig({
             gateways: new address[](0),
             transmitterImplementation: address(new RecordingTransmitter()),
@@ -99,14 +99,13 @@ contract DivergentSymmetricTransceiverTest is Test {
             governorOwner: msig,
             governorSalt: bytes32(0),
             governorHome: ChainKey.forEvm(1),
-            treasury: address(0x7EA5),
-            addressesDiverge: diverges
+            treasury: address(0x7EA5)
         });
     }
 
     function _zk() internal returns (ZkSym t) {
         t = new ZkSym();
-        t.initialize(_config(false), HASH);
+        t.initialize(_config(), HASH);
     }
 
     /* ================================= derivation ================================= */
@@ -121,7 +120,7 @@ contract DivergentSymmetricTransceiverTest is Test {
 
     function testFuzz_tronDerivesTheTronWay(address o, bytes32 salt, bytes32 home) public {
         TronSym t = new TronSym();
-        t.initialize(_config(false), HASH);
+        t.initialize(_config(), HASH);
         assertEq(
             t.predictCrossAccount(o, salt, home),
             AddressDerive.tronCreate2(address(t), t.accountSalt(o, salt, home), HASH)
@@ -148,7 +147,7 @@ contract DivergentSymmetricTransceiverTest is Test {
 
     function test_aZeroBytecodeHashIsRefused() public {
         ZkSym t = new ZkSym();
-        TransceiverConfig memory c = _config(false);
+        TransceiverConfig memory c = _config();
         vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
         t.initialize(c, bytes32(0));
     }

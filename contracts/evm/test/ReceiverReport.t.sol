@@ -57,7 +57,7 @@ function home() pure returns (bytes32) {
     return ChainKey.forEvm(1);
 }
 
-function config(address governor, address transmitterImpl, address receiverImpl, bool diverges, address treasury)
+function config(address governor, address transmitterImpl, address receiverImpl, address treasury)
     pure
     returns (TransceiverConfig memory)
 {
@@ -68,8 +68,7 @@ function config(address governor, address transmitterImpl, address receiverImpl,
         governorOwner: governor,
         governorSalt: bytes32(0),
         governorHome: home(),
-        treasury: treasury,
-        addressesDiverge: diverges
+        treasury: treasury
     });
 }
 
@@ -91,7 +90,7 @@ contract ReportingTransceiver is SymmetricTransceiverBase {
         external
         initializer
     {
-        __SymmetricTransceiver_init(config(governor, address(0xBEEF), impl, addressesDiverge_, treasury_));
+        __SymmetricTransceiver_init(config(governor, address(0xBEEF), impl, treasury_), addressesDiverge_);
     }
 
     /// @dev Stands in for a dry float: a provider whose fee cannot be paid reverts here.
@@ -391,7 +390,7 @@ contract ReceiverReportTest is WiresHome {
 ///      Everything below feeds the reporting side's actual wire bytes into it.
 contract HomeTransceiver is SymmetricTransceiverBase {
     function initialize(address governor, address treasury_, address transmitterImplementation_) external initializer {
-        __SymmetricTransceiver_init(config(governor, transmitterImplementation_, address(0xBEEF), false, treasury_));
+        __SymmetricTransceiver_init(config(governor, transmitterImplementation_, address(0xBEEF), treasury_));
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.

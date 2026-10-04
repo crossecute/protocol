@@ -58,6 +58,12 @@ contract Sym is SymHarness {
     function initialize(TransceiverConfig memory c) external initializer {
         __SymmetricTransceiver_init(c);
     }
+
+    /// @dev A diverging chain on Forge's EVM, standing in for the zkSync and Tron variants,
+    ///      whose account creation fails closed here.
+    function initializeDiverging(TransceiverConfig memory c, bool diverges) external initializer {
+        __SymmetricTransceiver_init(c, diverges);
+    }
 }
 
 contract Rcv is ReceiverBase {}
@@ -124,7 +130,7 @@ contract SymmetricTransceiverTest is Test {
         bytes32 provider = registry.addMessageProvider("test");
 
         t = new Sym{salt: TRANSCEIVER_SALT}();
-        t.initialize(
+        t.initializeDiverging(
             TransceiverConfig({
                 gateways: new address[](0),
                 transmitterImplementation: transmitterImplementation,
@@ -132,9 +138,9 @@ contract SymmetricTransceiverTest is Test {
                 governorOwner: msig,
                 governorSalt: bytes32(0),
                 governorHome: _key(ETH),
-                treasury: address(treasury),
-                addressesDiverge: diverges
-            })
+                treasury: address(treasury)
+            }),
+            diverges
         );
 
         uint256[3] memory chains = [ETH, BASE, ZK];
@@ -360,8 +366,7 @@ contract SymmetricTransceiverTest is Test {
             governorOwner: msig,
             governorSalt: bytes32(0),
             governorHome: _key(ETH),
-            treasury: address(1),
-            addressesDiverge: false
+            treasury: address(1)
         });
 
         Sym fresh = new Sym();

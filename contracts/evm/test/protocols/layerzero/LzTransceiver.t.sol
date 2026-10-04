@@ -28,8 +28,7 @@ function lzConfig(address endpoint) returns (TransceiverConfig memory) {
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
         governorHome: ChainKey.forEvm(1),
-        treasury: address(0x7EA5),
-        addressesDiverge: false
+        treasury: address(0x7EA5)
     });
 }
 

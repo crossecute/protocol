@@ -117,8 +117,7 @@ function transceiverConfig(
         governorOwner: governor,
         governorSalt: bytes32(0),
         governorHome: home(),
-        treasury: treasury,
-        addressesDiverge: false
+        treasury: treasury
     });
 }
 

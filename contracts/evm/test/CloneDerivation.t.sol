@@ -241,8 +241,7 @@ function config(address receiverImplementation) pure returns (TransceiverConfig 
         governorOwner: address(0x5165),
         governorSalt: bytes32(0),
         governorHome: home(),
-        treasury: address(0x7EA5),
-        addressesDiverge: false
+        treasury: address(0x7EA5)
     });
 }
 
@@ -416,6 +415,18 @@ contract AddressAliasTest is Test {
     }
 }
 
+/// @dev `TransceiverConfig` as it was before #26.
+struct ConfigWithFlag {
+    address[] gateways;
+    address transmitterImplementation;
+    address receiverImplementation;
+    address governorOwner;
+    bytes32 governorSalt;
+    bytes32 governorHome;
+    address treasury;
+    bool addressesDiverge;
+}
+
 /// @dev The flag and the formula cannot disagree, because neither is an argument any more.
 ///      A transceiver that reported divergence while deriving addresses Ethereum's way, or the
 ///      reverse, was the one state that cannot be right; picking the contract picks both.
@@ -424,16 +435,32 @@ contract DivergenceIsNotConfigurableTest is Test {
     bytes32 constant HASH = keccak256("artifact");
     address ENDPOINT = address(new MockLzEndpoint());
 
-    /// @dev Asks for divergence, which the plain transceiver must not take from its caller.
-    function _asking(bool diverges) internal returns (TransceiverConfig memory c) {
-        c = config(address(new MinimalAccount()));
-        c.addressesDiverge = diverges;
+    function _config() internal returns (TransceiverConfig memory) {
+        return config(address(new MinimalAccount()));
     }
 
-    function test_theParityTransceiverDerivesTheEthereumWay() public {
+    /// @dev #26: the flag was a config field, so a plain transceiver could be initialized to
+    ///      report every receiver while deriving Ethereum's way. The field is gone, and with it
+    ///      the initializer that took it: the old shape, well formed, finds no function.
+    function test_theParityTransceiverCannotBeToldToDiverge() public {
         LzTransceiver s = new LzTransceiver(ENDPOINT);
-        s.initialize(_asking(false));
+        TransceiverConfig memory c = _config();
+        ConfigWithFlag memory old = ConfigWithFlag(
+            c.gateways,
+            c.transmitterImplementation,
+            c.receiverImplementation,
+            c.governorOwner,
+            c.governorSalt,
+            c.governorHome,
+            c.treasury,
+            true
+        );
+        bytes4 withFlag =
+            bytes4(keccak256("initialize((address[],address,address,address,bytes32,bytes32,address,bool))"));
+        (bool ok,) = address(s).call(abi.encodeWithSelector(withFlag, old));
+        assertFalse(ok, "no initializer takes the flag");
 
+        s.initialize(_config());
         assertFalse(s.addressesDiverge());
         assertEq(
             s.predictCrossAccount(owner, bytes32(0), home()),
@@ -444,14 +471,14 @@ contract DivergenceIsNotConfigurableTest is Test {
         );
     }
 
-    /// @dev The variants force the flag on whatever the config says.
+    /// @dev The variants set the flag themselves.
     function test_theDivergentTransceiversAlwaysReportDivergence() public {
         LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
-        zk.initialize(_asking(false), HASH);
+        zk.initialize(_config(), HASH);
         LzTronTransceiver tron = new LzTronTransceiver(ENDPOINT);
-        tron.initialize(_asking(false), HASH);
+        tron.initialize(_config(), HASH);
 
-        assertTrue(zk.addressesDiverge(), "forced, and true");
+        assertTrue(zk.addressesDiverge(), "set by the variant, and true");
         assertTrue(tron.addressesDiverge());
         assertEq(zk.accountBytecodeHash(), HASH, "the initializer wired it");
         assertEq(tron.accountBytecodeHash(), HASH);
@@ -467,7 +494,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     ///      acquire it later: the initializer refuses zero, which is the only way in.
     function test_thereIsNoSetterForTheBytecodeHash() public {
         LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
-        zk.initialize(_asking(true), HASH);
+        zk.initialize(_config(), HASH);
 
         (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));
         assertFalse(ok, "no setter on the ABI");

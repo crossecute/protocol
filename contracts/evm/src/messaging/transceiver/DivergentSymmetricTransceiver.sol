@@ -21,8 +21,7 @@ abstract contract DivergentSymmetricTransceiver is SymmetricTransceiverBase, Div
         onlyInitializing
     {
         __DivergentAccounts_init(accountBytecodeHash_);
-        c.addressesDiverge = true;
-        __SymmetricTransceiver_init(c);
+        __SymmetricTransceiver_init(c, true);
     }
 
     /// @notice Where this provider's transceiver sits on the `Derived` chain `chainKey`, from
