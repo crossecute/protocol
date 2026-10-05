@@ -358,8 +358,9 @@ What an operator or integrator has to know:
 
 ## Assumptions
 
-- All contracts are created through Arachnid's CREATE2 factory with a salt: `0x4e59..`
-  where it exists; zk-chains use their own.
+- All contracts are created through Arachnid's CREATE2 factory (`0x4e59..`) with a salt. A
+  chain is `Derived` only if its transceivers were deployed through it; zkSync and Tron, whose
+  CREATE2 formulas differ, and any chain without it are `Attested`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
   byte-identical initcode on every chain, so the target must not vary. Optimizer settings
