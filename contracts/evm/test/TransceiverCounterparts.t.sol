@@ -43,11 +43,11 @@ contract TransceiverCounterpartsTest is Test {
         suiInterop = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("pkg")));
 
         vm.startPrank(owner);
-        suiChainKey = registry.addChainKey(suiChain, Provenance.Attested);
+        suiChainKey = registry.addChainKey(suiChain, Provenance.Unique);
         registry.setValidator(suiChainKey, new MoveValidator());
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         vm.stopPrank();
     }
 
@@ -64,7 +64,7 @@ contract TransceiverCounterpartsTest is Test {
         transceiver.setCounterpart(suiChainKey, suiInterop);
 
         assertEq(transceiver.counterpartOn(suiChainKey), Erc7930.parseStrict(suiInterop).addr);
-        assertEq(uint8(registry.provenanceFor(suiChainKey)), uint8(Provenance.Attested));
+        assertEq(uint8(registry.provenanceFor(suiChainKey)), uint8(Provenance.Unique));
     }
 
     /// @dev Two providers, two addresses, one grade. That is the whole reason the two halves
@@ -81,7 +81,7 @@ contract TransceiverCounterpartsTest is Test {
 
         vm.startPrank(owner);
         bytes32 p2 = registry.addMessageProvider("hyperlane");
-        second.setRouting(IChainRegistryRefs(address(registry)), p2, Provenance.Attested);
+        second.setRouting(IChainRegistryRefs(address(registry)), p2, Provenance.Unique);
         transceiver.setCounterpart(suiChainKey, suiInterop);
         second.setCounterpart(suiChainKey, other);
         vm.stopPrank();
@@ -92,7 +92,7 @@ contract TransceiverCounterpartsTest is Test {
         );
         assertEq(
             uint8(registry.provenanceFor(suiChainKey)),
-            uint8(Provenance.Attested),
+            uint8(Provenance.Unique),
             "one grade, and neither transceiver can move it"
         );
     }
@@ -124,7 +124,7 @@ contract TransceiverCounterpartsTest is Test {
 
     function test_aCounterpartOnTheWrongChainIsRefused() public {
         vm.startPrank(owner);
-        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Predetermined);
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         transceiver.setCounterpart(suiChainKey, Erc7930.encodeEvm(1, address(0xCAFE)));
         vm.stopPrank();
@@ -163,7 +163,7 @@ contract TransceiverCounterpartsTest is Test {
 
     function test_anEvmChainCannotHaveAQualifier() public {
         vm.startPrank(owner);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.expectRevert(Move.NotMoveChain.selector);
         registry.setQualifier(baseKey, provider, _qualifier());
         vm.stopPrank();

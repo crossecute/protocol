@@ -18,7 +18,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      0x09 precompile, which forces `view` rather than `pure`.
 ///      Not derivable on the EVM at any price: Aptos/Movement (SHA3-256, ~1e5 gas for
 ///      a hand-rolled Keccak-f), Starknet (Pedersen/Poseidon over the STARK curve),
-///      Bitcoin P2TR (secp256k1 point addition). Route those through the attested path.
+///      Bitcoin P2TR (secp256k1 point addition). Route those through the `Unique` path.
 library AddressDerive {
     /* ====================================================================== */
     /*                                  EVM                                    */

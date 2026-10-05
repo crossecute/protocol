@@ -121,7 +121,7 @@ function transceiverConfig(
         treasury: treasury,
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -695,10 +695,10 @@ contract CommitFinalizeTest is Test {
         MsigTransceiver m = _msigTransceiver();
 
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Predetermined);
 
         vm.prank(m.owner());
-        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Predetermined);
         assertEq(address(m.chainRegistry()), address(0xDEED));
     }
 

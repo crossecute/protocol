@@ -297,10 +297,10 @@ Then, per destination, add what the chain needs:
 - a `Scheme` or `ICommitmentScheme` plugin, if it does not hash with keccak256
 - an `IVmDeriver`, if its addresses can be recomputed here
 - an `IRefValidator`, if the envelope cannot express its value ranges
-- a grade below `Derived` when it is registered, if its addresses cannot be recomputed here at
-  all; the grade is write-once. An EVM chain is `Derived` only if its transceivers are
-  deployed through `CrossProxyDeployer`, which needs Arachnid's factory. One without that
-  factory is `Attested` in every registry, and grades every other chain `Attested` in its own
+- a grade below `Predetermined` when it is registered, if its addresses cannot be recomputed
+  here at all; the grade is write-once. An EVM chain is `Predetermined` only if its transceivers
+  are deployed through `CrossProxyDeployer`, which needs Arachnid's factory. One without that
+  factory is `Unique` in every registry, and grades every other chain `Unique` in its own
 
 ## Message providers
 
@@ -361,8 +361,8 @@ What an operator or integrator has to know:
 
 - Contracts are created through Arachnid's CREATE2 factory (`0x4e59..`) with a salt,
   transceivers through `CrossProxyDeployer`, which that factory places at one address. A
-  chain is `Derived` only if its transceivers were deployed that way; zkSync and Tron, whose
-  CREATE2 formulas differ, and any chain without Arachnid's factory are `Attested`.
+  chain is `Predetermined` only if its transceivers were deployed that way; zkSync and Tron, whose
+  CREATE2 formulas differ, and any chain without Arachnid's factory are `Unique`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
   byte-identical initcode on every chain, so the target must not vary. Optimizer settings

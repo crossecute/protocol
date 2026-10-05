@@ -110,8 +110,8 @@ contract TransceiverTest is Test {
     }
 
     /// @dev Stands this chain up: a registry, a treasury, and the transceiver, configured by
-    ///      its owner for the two other chains. Ethereum and Base are `Derived`; zkSync is
-    ///      `Attested`, with its transceiver at its own address.
+    ///      its owner for the two other chains. Ethereum and Base are `Predetermined`; zkSync is
+    ///      `Unique`, with its transceiver at its own address.
     function _chain(uint256 chainId, bool diverges) internal returns (Sym t) {
         return _chainWith(chainId, diverges, address(new RecordingTransmitter()));
     }
@@ -132,17 +132,17 @@ contract TransceiverTest is Test {
             treasury: address(treasury),
             chainRegistry: IChainRegistryRefs(address(0)),
             messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unresolved
+            minCounterpartProvenance: Provenance.Unknown
         });
         t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
         uint256[3] memory chains = [ETH, BASE, ZK];
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         for (uint256 i; i < 3; ++i) {
             if (chains[i] == chainId) continue;
             vm.stopPrank();
-            registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Attested : Provenance.Derived);
+            registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Unique : Provenance.Predetermined);
             vm.startPrank(t.owner());
             t.setRoute(_key(chains[i]), _route(chains[i]));
             if (chains[i] == ZK) t.setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));
@@ -209,7 +209,7 @@ contract TransceiverTest is Test {
         providers[0] = ProviderSeed("test", address(this), TRANSCEIVER_SALT, crossProxyInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
-            RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Derived, providers: providers})
+            RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Predetermined, providers: providers})
         );
         Sym base = _deploySym(
             abi.encodeCall(
@@ -224,7 +224,7 @@ contract TransceiverTest is Test {
                     treasury: address(new Treasury(address(this))),
                     chainRegistry: IChainRegistryRefs(address(registry)),
                     messageProvider: keccak256("test"),
-                    minCounterpartProvenance: Provenance.Attested
+                    minCounterpartProvenance: Provenance.Unique
                 })
             )
         );
@@ -308,7 +308,7 @@ contract TransceiverTest is Test {
 
     /* ================================== parity =================================== */
 
-    /// @dev From a `Derived` home the receiver must sit on its transmitter's address.
+    /// @dev From a `Predetermined` home the receiver must sit on its transmitter's address.
     function test_aReceiverOffItsTransmitterIsRefusedFromADerivedHome() public {
         Sym t = _chain(ETH, false);
         address wrong = address(0xBAD);
@@ -340,7 +340,7 @@ contract TransceiverTest is Test {
 
     /// @dev A zkSync home keeps its transmitter at a zkSync address, so the receiver here is
     ///      elsewhere by design and answers to the carried address.
-    function test_anAttestedHomeIsNotHeldToParity() public {
+    function test_aUniqueHomeIsNotHeldToParity() public {
         Sym t = _chain(ETH, false);
         address zkTransmitter = address(0x2CA11);
         bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(zkTransmitter), _calls());
@@ -418,7 +418,7 @@ contract TransceiverTest is Test {
             treasury: address(1),
             chainRegistry: IChainRegistryRefs(address(0)),
             messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unresolved
+            minCounterpartProvenance: Provenance.Unknown
         });
 
         Sym fresh = new Sym();

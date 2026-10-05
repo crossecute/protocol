@@ -12,8 +12,8 @@ import {DivergentAccounts, ZkSyncAccounts, TronAccounts} from "src/messaging/tra
 ///      `addressesDiverge` is set here rather than taken from the caller.
 ///
 /// @dev This transceiver does not sit at its provider's address on other chains, so its default
-///      counterpart on a `Derived` chain is derived from the registry's record of the provider's
-///      deployment, not taken from `address(this)` or typed in.
+///      counterpart on a `Predetermined` chain is derived from the registry's record of the
+///      provider's deployment, not taken from `address(this)` or typed in.
 abstract contract DivergentTransceiver is TransceiverBase, DivergentAccounts {
     /// @dev Sets the derivation inputs first: the base derives the owner with them.
     function __DivergentTransceiver_init(TransceiverConfig memory c, bytes32 accountBytecodeHash_)
@@ -24,7 +24,7 @@ abstract contract DivergentTransceiver is TransceiverBase, DivergentAccounts {
         __TransceiverBase_init(c, true);
     }
 
-    /// @notice Where this provider's transceiver sits on the `Derived` chain `chainKey`, from
+    /// @notice Where this provider's transceiver sits on the `Predetermined` chain `chainKey`, from
     ///         the registry's write-once deployment record.
     /// @dev Reverts while the provider's deployment is unrecorded, so nothing authenticates or
     ///      is sent to a guessed address.

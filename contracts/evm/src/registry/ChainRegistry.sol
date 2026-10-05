@@ -57,7 +57,7 @@ contract ChainRegistry is Ownable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /// @notice `CrossProxyDeployer`, deployed through Arachnid's factory at salt zero, so at the
-    ///         same address on every standard EVM chain. A `Derived` chain is one whose
+    ///         same address on every standard EVM chain. A `Predetermined` chain is one whose
     ///         transceivers were deployed through it (#33).
     /// @dev A literal, since a zkSync or Tron registry's compiler would derive another;
     ///      `CrossProxyDeployer.t.sol` pins it to solc's build.
@@ -93,7 +93,7 @@ contract ChainRegistry is Ownable {
     /// Starknet felts.
     mapping(bytes32 => IRefValidator) private _validatorOf;
     /// chainKey => what an address claim about this chain is worth, given at registration.
-    /// @dev `Attested` for chains this contract cannot recompute: Starknet (Pedersen), and
+    /// @dev `Unique` for chains this contract cannot recompute: Starknet (Pedersen), and
     ///      zkSync and Tron (different CREATE2).
     mapping(bytes32 => Provenance) private _provenanceOf;
     /// chainKey => whether transceivers refuse it. See `setSuspended`.
@@ -133,7 +133,7 @@ contract ChainRegistry is Ownable {
     /// @dev A write-once value, once recorded, is fixed: a provider deployment, a chain's grade,
     ///      its CREATE2 factory, or a Move qualifier.
     error AlreadySet();
-    /// @dev Only an `eip155` chain can be `Derived`: that is the grade the EVM CREATE2
+    /// @dev Only an `eip155` chain can be `Predetermined`: that is the grade the EVM CREATE2
     ///      prediction trusts.
     error NotEvmChain();
     error NoCounterpart();
@@ -193,7 +193,8 @@ contract ChainRegistry is Ownable {
         if (_chainIdentifier[chainKey].length != 0) {
             if (_provenanceOf[chainKey] != provenance) revert AlreadySet();
         } else {
-            if (provenance == Provenance.Derived && Erc7930.parseStrict(canonical).chainType != Erc7930.CT_EIP155) {
+            if (provenance == Provenance.Predetermined && Erc7930.parseStrict(canonical).chainType != Erc7930.CT_EIP155)
+            {
                 revert NotEvmChain();
             }
             _chainIdentifier[chainKey] = canonical;
@@ -346,13 +347,13 @@ contract ChainRegistry is Ownable {
             );
     }
 
-    /// @dev Plain CREATE2 derivation holds only on a chain graded `Derived`.
+    /// @dev Plain CREATE2 derivation holds only on a chain graded `Predetermined`.
     function _requireEvmDerivable(bytes32 chainKey) private view {
         if (!_isEvmDerivable(chainKey)) revert NoCounterpart();
     }
 
     function _isEvmDerivable(bytes32 chainKey) private view returns (bool) {
-        return uint8(provenanceFor(chainKey)) >= uint8(Provenance.Derived);
+        return uint8(provenanceFor(chainKey)) >= uint8(Provenance.Predetermined);
     }
 
     /// @notice What an address claim about `chainKey` is worth, as given at registration.

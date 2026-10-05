@@ -41,7 +41,7 @@ contract CounterpartRoutingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         vm.stopPrank();
     }
 
@@ -51,7 +51,7 @@ contract CounterpartRoutingTest is Test {
     ///      question for both. So this writes the address here and reads the grade there.
     function test_theTransceiverStoresTheAddressAndTheRegistryGradesTheChain() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.stopPrank();
 
         address expected = AddressDerive.create2(FACTORY, SALT, INIT_CODE_HASH);
@@ -61,7 +61,7 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(expected));
         assertEq(
             uint8(registry.provenanceFor(baseKey)),
-            uint8(Provenance.Derived),
+            uint8(Provenance.Predetermined),
             "an eip155 chain is derivable unless declared otherwise"
         );
     }
@@ -70,7 +70,7 @@ contract CounterpartRoutingTest is Test {
     ///      chain authenticates against, so re-pointing one redirects the whole destination.
     function test_aCounterpartIsWriteOnce() public {
         vm.prank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
 
         vm.startPrank(msig);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xA)));
@@ -84,8 +84,8 @@ contract CounterpartRoutingTest is Test {
     ///      address well-formed is a property of the chain.
     function test_aCounterpartOnTheWrongChainIsRefused() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(42161, address(0xA)));
@@ -96,8 +96,8 @@ contract CounterpartRoutingTest is Test {
     ///      derivation, which is why no redeploy or repointing is ever needed.
     function test_sameAddressAcrossEvmChains() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -108,7 +108,7 @@ contract CounterpartRoutingTest is Test {
         );
     }
 
-    /// @dev A chain the registry grades `Attested` is refused while the bar is `Derived`.
+    /// @dev A chain the registry grades `Unique` is refused while the bar is `Predetermined`.
     ///      This is the dial that decides whether Solana or Sui are reachable at all.
     function test_counterpartBelowProvenanceBarIsRefused() public {
         bytes memory solChain = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
@@ -116,20 +116,20 @@ contract CounterpartRoutingTest is Test {
             Erc7930.encode(ChainType.SOLANA, hex"0102030405060708", abi.encodePacked(keccak256("prog")));
 
         vm.startPrank(msig);
-        bytes32 solKey = registry.addChainKey(solChain, Provenance.Attested);
+        bytes32 solKey = registry.addChainKey(solChain, Provenance.Unique);
         transceiver.setCounterpart(solKey, solAccount);
         vm.stopPrank();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unique
             )
         );
         transceiver.counterpartOn(solKey);
 
         // Lowering the bar makes it reachable: explicitly, not by accident.
         vm.prank(msig);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         assertEq(transceiver.counterpartOn(solKey).length, 32);
     }
 
@@ -154,8 +154,8 @@ contract CounterpartRoutingTest is Test {
         bytes memory snChain = Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"));
 
         vm.startPrank(msig);
-        bytes32 snKey = registry.addChainKey(snChain, Provenance.Attested);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 snKey = registry.addChainKey(snChain, Provenance.Unique);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.stopPrank();
 
         assertTrue(registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here");
@@ -168,11 +168,11 @@ contract CounterpartRoutingTest is Test {
     ///      CREATE2 formula differs. One fact, read two ways, rather than two flags.
     function test_theReportingFlagFollowsTheProvenanceCap() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
         vm.stopPrank();
-        assertFalse(registry.requiresReceiverCallback(baseKey), "eip155, Derived");
-        assertTrue(registry.requiresReceiverCallback(zkKey), "eip155, graded below Derived");
+        assertFalse(registry.requiresReceiverCallback(baseKey), "eip155, Predetermined");
+        assertTrue(registry.requiresReceiverCallback(zkKey), "eip155, graded below Predetermined");
     }
 
     /// @dev This chain is never a counterpart: sends and inbound authentication both resolve
@@ -181,7 +181,7 @@ contract CounterpartRoutingTest is Test {
     function test_thisChainIsNeverACounterpart() public {
         bytes32 local = transceiver.localChainKey();
         vm.prank(msig);
-        registry.addChainKey(Erc7930.encodeEvmChain(block.chainid), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(block.chainid), Provenance.Predetermined);
 
         vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, local));
         transceiver.counterpartOn(local);
@@ -211,7 +211,7 @@ contract CounterpartRoutingTest is Test {
     ///      and a per-chain table would be rows all saying the same thing.
     function test_anUnsetRouteDefaultsToTheLocalTransceiver() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -224,8 +224,8 @@ contract CounterpartRoutingTest is Test {
     ///      whole point of the parity argument.
     function test_theDefaultCoversEveryEvmChainAtOnce() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -236,7 +236,7 @@ contract CounterpartRoutingTest is Test {
     ///      parity does not hold.
     function test_anExplicitCounterpartOverridesTheDefault() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         registry.setLocalTransceiver(provider, address(transceiver));
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
         vm.stopPrank();
@@ -247,15 +247,15 @@ contract CounterpartRoutingTest is Test {
     function test_thereIsNoDefaultOnANonEvmChain() public {
         vm.startPrank(msig);
         bytes32 solKey =
-            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unresolved);
+            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unknown);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
-        // Unresolved, which no bar accepts: nothing here can derive a Solana address, so
+        // Unknown, which no bar accepts: nothing here can derive a Solana address, so
         // a default would be a guess rather than a shortcut.
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unknown
             )
         );
         transceiver.counterpartOn(solKey);
@@ -264,17 +264,17 @@ contract CounterpartRoutingTest is Test {
     /// @dev The zkSync and Tron case. Both are `eip155`, so the chain type alone says
     ///      parity might hold, and both have different CREATE2 formulas, so it does not. The
     ///      grade already records "addresses there cannot be recomputed here", so a grade
-    ///      below `Derived` withdraws the default rather than needing a second flag that
+    ///      below `Predetermined` withdraws the default rather than needing a second flag that
     ///      could disagree with it.
-    function test_aChainGradedBelowDerivedGetsNoDefault() public {
+    function test_aChainGradedBelowPredeterminedGetsNoDefault() public {
         vm.startPrank(msig);
-        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
         registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         vm.stopPrank();
 
         // The default withdraws: the transceiver's own address is only the right answer where
-        // Ethereum's formula holds, which is exactly what `Derived` records.
+        // Ethereum's formula holds, which is exactly what `Predetermined` records.
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, zkKey));
         transceiver.counterpartOn(zkKey);
 
@@ -291,7 +291,7 @@ contract CounterpartRoutingTest is Test {
     ///      transceiver that speaks for a provider, but nothing on the send path reads it.
     function test_theTransceiverIsItsOwnDefault() public {
         vm.prank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
 
         assertEq(
             transceiver.counterpartOn(baseKey),
@@ -310,6 +310,6 @@ contract CounterpartRoutingTest is Test {
 
     function test_setRoutingIsOwnerGated() public {
         vm.expectRevert();
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
     }
 }

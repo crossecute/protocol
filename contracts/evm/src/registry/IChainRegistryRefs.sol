@@ -43,7 +43,7 @@ interface IChainRegistryRefs {
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory);
 
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the recorded
-    ///         factory, salt, and initcode hash. Reverts for a chain not graded `Derived`.
+    ///         factory, salt, and initcode hash. Reverts for a chain not graded `Predetermined`.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) external view returns (address);
 
     /// @notice The canonical ERC-7930 chain identifier `chainKey` hashes from.

@@ -44,8 +44,9 @@ struct TransceiverConfig {
     /// Where bootstrap fees go and the report float leaves to. Write-once.
     address treasury;
     /// The routing `setRouting` would set, so that on any chain but the governor's home this
-    /// transceiver can accept the bootstrap that creates its owner; the home must be `Derived`
-    /// and not suspended. Zero leaves it to the owner, which only the governor's home can do.
+    /// transceiver can accept the bootstrap that creates its owner; the home must be
+    /// `Predetermined` and not suspended. Zero leaves it to the owner, which only the governor's
+    /// home can do.
     IChainRegistryRefs chainRegistry;
     bytes32 messageProvider;
     Provenance minCounterpartProvenance;
@@ -102,8 +103,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     /// keccak256 of this transceiver's message provider name, e.g. "layerzero".
     bytes32 public messageProvider;
     /// The weakest counterpart provenance this transceiver will send to or accept from.
-    /// @dev A parity-chain counterpart is `Derived`. Solana, Sui, Aptos, Starknet, zkSync, and
-    ///      Tron reach only `Attested`, so this decides whether this transceiver talks to them.
+    /// @dev A parity-chain counterpart is `Predetermined`. Solana, Sui, Aptos, Starknet, zkSync,
+    ///      and Tron reach only `Unique`, so this decides whether this transceiver talks to them.
     Provenance public minCounterpartProvenance;
 
     /// chainKey => what standing an account up there costs, on top of the message fee.
@@ -175,8 +176,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     error FeeTransferFailed(address to, uint256 amount);
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
-    /// @dev A receiver homed on a `Derived` chain landed off its transmitter's address, so the
-    ///      origin's provider id, route, or transceiver address disagree with this chain's.
+    /// @dev A receiver homed on a `Predetermined` chain landed off its transmitter's address, so
+    ///      the origin's provider id, route, or transceiver address disagree with this chain's.
     ///      Refused on the first bootstrap rather than leaving every such account unreachable.
     error ParityBroken(address receiver, address sourceTransmitter);
     error NotTreasury(address caller);
@@ -613,9 +614,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      transceiver reads alike. Every bootstrap and report sent, and every delivery
     ///      authenticated, goes through here, so a suspended chain is cut off both ways.
     ///
-    /// @dev An unset counterpart on a `Derived` chain is `_parityAddress(chainKey)`: every
+    /// @dev An unset counterpart on a `Predetermined` chain is `_parityAddress(chainKey)`: every
     ///      transceiver of a provider is a `CrossProxy` deployed through `CrossProxyDeployer` by
-    ///      one caller at one salt, which is what `Derived` means (#33).
+    ///      one caller at one salt, which is what `Predetermined` means (#33).
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
@@ -627,7 +628,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         }
 
         if (!hasCounterpart(chainKey)) {
-            if (grade != Provenance.Derived) revert NoCounterpartFor(chainKey);
+            if (grade != Provenance.Predetermined) revert NoCounterpartFor(chainKey);
             return abi.encodePacked(_parityAddress(chainKey));
         }
         return OutboundBase._counterpartOn(chainKey);
@@ -694,7 +695,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      carries them, reachable only from an authenticated `_onInbound`.
     ///
     /// @dev Where this chain diverges, the home cannot derive the receiver, so it is reported.
-    ///      Otherwise, if the home is `Derived`, the receiver must sit at its transmitter's
+    ///      Otherwise, if the home is `Predetermined`, the receiver must sit at its transmitter's
     ///      address; a home graded below that (zkSync, Tron) has its transmitter elsewhere.
     function _bootstrapInbound(
         address owner,
@@ -706,7 +707,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls);
         if (addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
-        } else if (receiver != sourceTransmitter && chainRegistry.provenanceFor(home) == Provenance.Derived) {
+        } else if (receiver != sourceTransmitter && chainRegistry.provenanceFor(home) == Provenance.Predetermined) {
             revert ParityBroken(receiver, sourceTransmitter);
         }
     }
@@ -743,7 +744,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     /// @dev Written to the account, not the registry, because the transmitter is what
     ///      addresses that receiver and the registry is out of the send path. The registry
     ///      still decides which chains may report (`requiresReceiverCallback`), so a chain this
-    ///      one derives cannot replace a `Derived` fact with a reported one.
+    ///      one derives cannot replace a `Predetermined` fact with a reported one.
     ///
     /// @dev The destination cannot choose the account: `chainKey` is authenticated and the
     ///      account is `predictCrossAccount` of the stated pair, the derivation `bootstrap`

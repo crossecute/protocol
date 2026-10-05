@@ -98,7 +98,7 @@ contract DivergentTransceiverTest is Test {
             treasury: address(0x7EA5),
             chainRegistry: IChainRegistryRefs(address(0)),
             messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unresolved
+            minCounterpartProvenance: Provenance.Unknown
         });
     }
 
@@ -172,9 +172,9 @@ contract DivergentTransceiverTest is Test {
         ZkSym t = _zk();
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
-        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.prank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
 
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.predictReceiver(base, alice, SALT);
@@ -196,10 +196,10 @@ contract DivergentTransceiverTest is Test {
         ZkSym t = _zk();
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
-        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 base = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
 
         vm.prank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
 
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.counterpartOn(base);
