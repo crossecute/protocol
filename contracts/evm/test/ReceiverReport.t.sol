@@ -70,7 +70,7 @@ function config(address governor, address transmitterImpl, address receiverImpl,
         treasury: treasury,
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -145,15 +145,15 @@ contract ReportingTransceiver is TransceiverBase {
 }
 
 /// @dev Routes a reporting transceiver to the home, so a report has somewhere to go:
-///      `Derived`, with the default counterpart at the transceiver's own address.
+///      `Predetermined`, with the default counterpart at the transceiver's own address.
 abstract contract WiresHome is Test {
     function _wire(ReportingTransceiver s) internal {
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("test");
-        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Predetermined);
 
         vm.startPrank(s.owner());
-        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         s.setRoute(home(), Erc7930.encodeEvmChain(1));
         vm.stopPrank();
     }
@@ -191,8 +191,8 @@ contract ReceiverReportTest is WiresHome {
         assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0, "but the account exists");
     }
 
-    /// @dev And it would be a downgrade, not merely waste. A derivation is `Derived`;
-    ///      anything arriving over a bridge is graded `Attested`, which is strictly less.
+    /// @dev And it would be a downgrade, not merely waste. A derivation is `Predetermined`;
+    ///      anything arriving over a bridge is graded `Unique`, which is strictly less.
     function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
         ReportingTransceiver s = _remote(false);
         address predicted = s.predictCrossAccount(owner, SALT, home());
@@ -445,7 +445,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     bytes32 remoteKey;
 
     /// @dev A chain the home cannot derive addresses on, because that is the only kind that
-    ///      may report. It is `eip155` and capped below `Derived`, which is exactly the
+    ///      may report. It is `eip155` and capped below `Predetermined`, which is exactly the
     ///      zkSync and Tron shape: nothing about the chain type separates it from Base, and
     ///      the cap is what records that its CREATE2 formula differs.
     uint256 constant REMOTE_CHAIN = 8453;
@@ -466,13 +466,13 @@ contract ReceiverReportRoundTripTest is WiresHome {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(homeSide));
-        remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN), Provenance.Attested);
-        // Graded `Attested`: the home cannot recompute an address there, which is both why
+        remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN), Provenance.Unique);
+        // Graded `Unique`: the home cannot recompute an address there, which is both why
         // a report is needed and why the report is worth only the bridge that carried it.
         vm.stopPrank();
 
         vm.startPrank(homeSide.owner());
-        homeSide.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        homeSide.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         homeSide.setCounterpart(remoteKey, Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)));
         homeSide.setRoute(remoteKey, Erc7930.encodeEvmChain(REMOTE_CHAIN));
         vm.stopPrank();
@@ -642,12 +642,12 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertEq(account.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
-    /// @dev A chain the home can derive may not report. Its own derivation is `Derived` and a
-    ///      claim over a bridge is weaker, so accepting one would let a remote chain replace
-    ///      a stronger fact with a poorer one. The registry answers which chains may.
+    /// @dev A chain the home can derive may not report. Its own derivation is `Predetermined` and a
+    ///      claim over a bridge is weaker, so accepting one would let a remote chain replace a
+    ///      stronger fact with a poorer one. The registry answers which chains may.
     function test_aDerivableChainMayNotReport() public {
         vm.prank(msig);
-        bytes32 derivedKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 derivedKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         assertFalse(registry.requiresReceiverCallback(derivedKey));
         vm.startPrank(homeSide.owner());
         homeSide.setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
@@ -664,7 +664,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
         vm.prank(msig);
-        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 otherKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
@@ -675,7 +675,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     /// @dev And the account keeps the bootstrap presumption, so nothing was half-recorded.
     function test_aRejectedReportLeavesTheAccountUntouched() public {
         vm.prank(msig);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
         vm.expectRevert();
@@ -731,12 +731,12 @@ contract BootstrapFeeTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(t));
-        divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING), Provenance.Attested);
-        parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY), Provenance.Derived);
+        divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING), Provenance.Unique);
+        parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY), Provenance.Predetermined);
         vm.stopPrank();
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         t.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
         t.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
         t.setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
@@ -871,7 +871,7 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(h.owner());
-        h.setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Attested);
+        h.setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Unique);
         h.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
         h.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
         h.setBootstrapFee(divergingKey, FEE);

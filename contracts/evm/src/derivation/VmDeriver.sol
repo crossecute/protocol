@@ -61,7 +61,7 @@ interface IVmDeriver {
 ///        - Bitcoin P2TR: taproot output keys need secp256k1 point addition; ecrecover
 ///          is not a general curve operation.
 ///      These revert with `UnsupportedScheme`. Route them through the registry's
-///      committed or attested path: that is exactly what the provenance grades are for.
+///      committed or `Unique` path: that is exactly what the provenance grades are for.
 contract VmDeriver is IVmDeriver {
     /// @notice Which derivation to run. The chain type says which VM; this says which
     ///         formula within it.

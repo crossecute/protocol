@@ -15,7 +15,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {CrossProxy} from "src/account/CrossProxy.sol";
 import {CrossProxyDeployer, crossProxySalt} from "src/account/CrossProxyDeployer.sol";
-import {crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -64,7 +64,7 @@ contract SaltedTransceiver is UnsendableTransceiver {
                 treasury: address(0x7EA5),
                 chainRegistry: IChainRegistryRefs(address(0)),
                 messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unresolved
+                minCounterpartProvenance: Provenance.Unknown
             }),
             _diverges()
         );
@@ -118,7 +118,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.stopPrank();
     }
 
@@ -198,7 +198,7 @@ contract SaltedDeploymentTest is Test {
         _record(keccak256("initcode"));
 
         vm.startPrank(owner);
-        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         vm.stopPrank();
 
         assertEq(
@@ -258,7 +258,7 @@ contract SaltedDeploymentTest is Test {
 
         // Each is still the same address on every parity chain.
         vm.startPrank(owner);
-        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         vm.stopPrank();
 
         assertEq(a, registry.predictCrossAccount(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
@@ -380,11 +380,11 @@ contract SaltedDeploymentTest is Test {
     /// @dev The derivation is only honest where the formula holds. zkSync and Tron are
     ///      `eip155` with different CREATE2 formulas, and their provenance cap is what
     ///      excludes them.
-    function test_aChainCappedBelowDerivedIsNotPredicted() public {
+    function test_aChainCappedBelowPredeterminedIsNotPredicted() public {
         _record(keccak256("initcode"));
 
         vm.startPrank(owner);
-        bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
+        bytes32 zk = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
         vm.stopPrank();
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
@@ -396,7 +396,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.prank(owner);
         bytes32 sol =
-            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unresolved);
+            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unknown);
 
         vm.expectRevert(ChainRegistry.NoCounterpart.selector);
         registry.predictTransceiver(sol, provider);
@@ -436,14 +436,14 @@ contract SaltedDeploymentTest is Test {
 
     /* ========================= the recorded derivation ========================= */
 
-    /// @dev A recorded deployment states its inputs rather than assuming parity. A
-    ///      transceiver's own fallback (its own address, on a chain graded `Derived`) reaches
-    ///      the same answer by assuming the remote deployment matches the local one. This
-    ///      reaches it by arithmetic over the deployer, the recorded caller and salt, and the
-    ///      initcode hash that sat in the signed calldata that recorded them, and it works
-    ///      before any transceiver exists. Deriving against the deployer this suite deployed
-    ///      through Arachnid's factory pins the registry's literal address of it.
-    ///      The zkSync and Tron variants derive their default counterpart from it.
+    /// @dev A recorded deployment states its inputs rather than assuming parity. A transceiver's
+    ///      own fallback (its own address, on a chain graded `Predetermined`) reaches the same
+    ///      answer by assuming the remote deployment matches the local one. This reaches it by
+    ///      arithmetic over the deployer, the recorded caller and salt, and the initcode hash that
+    ///      sat in the signed calldata that recorded them, and it works before any transceiver
+    ///      exists. Deriving against the deployer this suite deployed through Arachnid's factory
+    ///      pins the registry's literal address of it. The zkSync and Tron variants derive their
+    ///      default counterpart from it.
     function test_theRecordedDerivationStatesItsInputs() public {
         _record(_crossProxyInitCodeHash());
 
@@ -460,7 +460,7 @@ contract SaltedDeploymentTest is Test {
         r = new ChainRegistry(owner, unseeded());
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");
-        r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         r.setProviderDeployment(provider, address(this), salt, initCodeHash);
         vm.stopPrank();
     }

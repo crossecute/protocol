@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
-import {crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 
 contract Logic {
     uint256 public value;

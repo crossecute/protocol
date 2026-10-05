@@ -33,14 +33,14 @@ contract RegistryFixedTest is Test {
     ///      at registration: the same grade again is a no-op, another one is refused.
     function test_aGradeIsWriteOnce() public {
         vm.startPrank(owner);
-        bytes32 key = registry.addChainKey(BASE, Provenance.Derived);
-        assertEq(registry.addChainKey(BASE, Provenance.Derived), key, "the same grade again");
+        bytes32 key = registry.addChainKey(BASE, Provenance.Predetermined);
+        assertEq(registry.addChainKey(BASE, Provenance.Predetermined), key, "the same grade again");
 
         vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.addChainKey(BASE, Provenance.Attested);
+        registry.addChainKey(BASE, Provenance.Unique);
         vm.stopPrank();
 
-        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived));
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Predetermined));
         (bool regrade,) = address(registry).call(abi.encodeWithSignature("setProvenance(bytes32,uint8)", key, 1));
         assertFalse(regrade, "no setter on the ABI");
     }
@@ -48,13 +48,13 @@ contract RegistryFixedTest is Test {
     /// @dev Removal does not reopen it: a chain added back keeps the grade it was given.
     function test_aGradeSurvivesRemoval() public {
         vm.startPrank(owner);
-        bytes32 key = registry.addChainKey(BASE, Provenance.Attested);
+        bytes32 key = registry.addChainKey(BASE, Provenance.Unique);
         registry.removeChainKey(key);
 
         vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.addChainKey(BASE, Provenance.Derived);
+        registry.addChainKey(BASE, Provenance.Predetermined);
 
-        registry.addChainKey(BASE, Provenance.Attested);
+        registry.addChainKey(BASE, Provenance.Unique);
         vm.stopPrank();
         assertTrue(registry.hasChainKey(key), "back in the directory, under its first grade");
     }
@@ -62,7 +62,7 @@ contract RegistryFixedTest is Test {
     /// @dev Suspension only refuses, so it can be lifted; it is the owner's, as every change is.
     function test_suspensionIsTheOwnersAndCanBeLifted() public {
         vm.prank(owner);
-        bytes32 key = registry.addChainKey(BASE, Provenance.Derived);
+        bytes32 key = registry.addChainKey(BASE, Provenance.Predetermined);
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
         registry.setSuspended(key, true);

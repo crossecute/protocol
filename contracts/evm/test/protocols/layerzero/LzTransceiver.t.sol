@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
@@ -32,7 +32,7 @@ function lzConfig(address endpoint) returns (TransceiverConfig memory) {
         treasury: address(0x7EA5),
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -123,7 +123,7 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
         c.chainRegistry = registry;
         c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Attested;
+        c.minCounterpartProvenance = Provenance.Unique;
         return address(
             deployTransceiver(
                 address(new LzTransceiver(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, ORIGIN_EID))
@@ -175,10 +175,10 @@ contract LzZkSyncTransceiverTest is Test {
         );
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("layerzero");
-        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
+        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Unique);
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         t.setRoute(home, Erc7930.encodeEvmChain(1));
         t.setCounterpart(home, Erc7930.encodeEvm(1, address(0xC0DE)));
         t.setEid(home, HOME_EID);
@@ -218,7 +218,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
         TransceiverConfig memory c = lzConfig(address(endpoint));
         c.chainRegistry = registry;
         c.messageProvider = keccak256("layerzero");
-        c.minCounterpartProvenance = Provenance.Attested;
+        c.minCounterpartProvenance = Provenance.Unique;
         return address(
             deployTransceiver(
                 address(new LzTransceiverHarness(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, eid))
@@ -231,7 +231,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
             address(this),
             RegistrySeed({
                 governorHome: Erc7930.encodeEvmChain(1),
-                governorHomeGrade: Provenance.Derived,
+                governorHomeGrade: Provenance.Predetermined,
                 providers: new ProviderSeed[](0)
             })
         );
@@ -247,13 +247,15 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({
-                governorHome: Erc7930.encodeEvmChain(1), governorHomeGrade: Provenance.Derived, providers: providers
+                governorHome: Erc7930.encodeEvmChain(1),
+                governorHomeGrade: Provenance.Predetermined,
+                providers: providers
             })
         );
         TransceiverConfig memory c = lzConfig(address(endpoint));
         c.chainRegistry = IChainRegistryRefs(address(registry));
         c.messageProvider = keccak256("layerzero");
-        c.minCounterpartProvenance = Provenance.Attested;
+        c.minCounterpartProvenance = Provenance.Unique;
         address t = address(
             deployTransceiver(
                 address(new LzZkSyncHarness(address(endpoint))),

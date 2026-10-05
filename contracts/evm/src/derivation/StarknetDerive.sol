@@ -29,7 +29,7 @@ pragma solidity ^0.8.20;
 ///        arithmetic over a 252-bit prime, at 1e5-1e6 gas with a silent-failure mode.
 ///
 ///        Recommendation: do not build it. The payoff is upgrading Starknet from
-///        `Attested` to `Derived`, and the address can be recorded from a signed payload
+///        `Unique` to `Predetermined`, and the address can be recorded from a signed payload
 ///        instead, where the grade states the weaker guarantee rather than hiding it.
 library StarknetDerive {
     /// @dev FIELD_PRIME = 2^251 + 17 * 2^192 + 1

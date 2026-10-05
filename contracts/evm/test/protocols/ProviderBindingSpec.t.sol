@@ -412,7 +412,7 @@ abstract contract ProviderInboundSpec is Test {
     event InboundHandled(bytes32 chainKey);
 
     uint256 internal constant ORIGIN_CHAIN_ID = 8453;
-    /// @dev The origin's transceiver as this one records it. `Attested`, so no parity check.
+    /// @dev The origin's transceiver as this one records it. `Unique`, so no parity check.
     address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
     address internal constant ACCOUNT_OWNER = address(0xA11CE);
     bytes32 internal constant ACCOUNT_SALT = keccak256("account");
@@ -431,7 +431,7 @@ abstract contract ProviderInboundSpec is Test {
     function _deliverTo(address transceiver, address sender, bytes memory message) internal virtual;
 
     /// @notice Deploy the plain transceiver born knowing only the governor's home,
-    ///         `ORIGIN_CHAIN_ID`: `registry`, provider `keccak256("under-test")`, an `Attested`
+    ///         `ORIGIN_CHAIN_ID`: `registry`, provider `keccak256("under-test")`, a `Unique`
     ///         bar, and the provider's id for that home, with no owner call afterwards.
     function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
         internal
@@ -455,10 +455,10 @@ abstract contract ProviderInboundSpec is Test {
         TransceiverBase t = TransceiverBase(payable(_transceiver()));
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Attested);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Unique);
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         t.setCounterpart(chainKey, Erc7930.encodeEvm(ORIGIN_CHAIN_ID, ORIGIN_TRANSCEIVER));
         t.setRoute(chainKey, Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
         vm.stopPrank();
@@ -473,10 +473,10 @@ abstract contract ProviderInboundSpec is Test {
 
     /// @dev #28 end to end: a transceiver born knowing only the governor's home accepts the
     ///      governor's bootstrap through the provider's own callback, and the receiver it
-    ///      creates is its owner. The sender is the default counterpart on a `Derived` home:
+    ///      creates is its owner. The sender is the default counterpart on a `Predetermined` home:
     ///      this transceiver's own address.
     function test_aBornConfiguredTransceiverAcceptsTheGovernorsBootstrap() public {
-        address t = _deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Derived))), GOVERNOR, 0);
+        address t = _deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Predetermined))), GOVERNOR, 0);
         address owner = TransceiverBase(payable(t)).owner();
         assertEq(owner.code.length, 0, "the owner does not exist yet");
 
@@ -487,8 +487,8 @@ abstract contract ProviderInboundSpec is Test {
 
     /// @dev #32: only the owner the bootstrap creates could set a counterpart, so a home whose
     ///      counterpart does not resolve at birth is refused rather than left unusable.
-    function test_aGovernorHomeBelowDerivedIsRefusedAtBirth() public {
-        ChainRegistry registry = _seeded(Provenance.Attested);
+    function test_aGovernorHomeBelowPredeterminedIsRefusedAtBirth() public {
+        ChainRegistry registry = _seeded(Provenance.Unique);
         vm.expectRevert(
             abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, ChainKey.forEvm(ORIGIN_CHAIN_ID))
         );
@@ -496,7 +496,7 @@ abstract contract ProviderInboundSpec is Test {
     }
 
     function test_aSuspendedGovernorHomeIsRefusedAtBirth() public {
-        ChainRegistry registry = _seeded(Provenance.Derived);
+        ChainRegistry registry = _seeded(Provenance.Predetermined);
         bytes32 home = ChainKey.forEvm(ORIGIN_CHAIN_ID);
         registry.setSuspended(home, true);
         vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, home));
@@ -522,7 +522,7 @@ abstract contract ProviderInboundSpec is Test {
         );
     }
 
-    /// @dev Sent from the default counterpart on a `Derived` home with no deployment record,
+    /// @dev Sent from the default counterpart on a `Predetermined` home with no deployment record,
     ///      the transceiver's own address.
     function _governorsBootstrap(address owner) internal pure returns (bytes memory) {
         return Envelope.encodeBootstrap(GOVERNOR, bytes32(0), bytes32(uint256(uint160(owner))), new Call[](0));

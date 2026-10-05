@@ -235,7 +235,7 @@ function config(address receiverImplementation) pure returns (TransceiverConfig 
         treasury: address(0x7EA5),
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 

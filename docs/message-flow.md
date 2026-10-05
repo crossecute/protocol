@@ -135,7 +135,7 @@ Hop by hop:
 - That deploys `CrossProxy` at `accountSalt(owner, salt, origin)`, by CREATE2 with no
   constructor arguments, and calls `upgradeInitializeAndLock(receiverImpl,
   initialize(transmitter, calls))`, which installs the logic, executes the calls, and drops
-  the upgrade key in one call. From a home graded `Derived` the receiver must sit at the
+  the upgrade key in one call. From a home graded `Predetermined` the receiver must sit at the
   carried transmitter's address, or the bootstrap reverts `ParityBroken`: an origin whose
   provider id, route, or transceiver address disagree with this chain's fails its first
   bootstrap rather than every account.
@@ -250,7 +250,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Derived` (`ParityBroken`). Its default counterpart on a `Derived` chain is its own address. Owned by the msig's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `accountSalt`, `predictCrossAccount`, `predictReceiver`, `createTransmitter`, `predictTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `reportsReceiver`, `reportPayload`, `withdraw`, `receive()`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `CROSS_PROXY_INIT_CODE_HASH` |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the msig's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `accountSalt`, `predictCrossAccount`, `predictReceiver`, `createTransmitter`, `predictTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `reportsReceiver`, `reportPayload`, `withdraw`, `receive()`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash` |
 | `messaging/transceiver/DivergentAccounts.sol` | The zkSync and Tron account formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `accountBytecodeHash` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
@@ -287,11 +287,11 @@ transceiver has no `_execute`, so an authenticated counterpart can make it do ex
 of "the payload is checked" or "the caller is checked" holds, and each entry point picks a
 different one.
 
-**Provenance is two useful values and a null.** `Derived` means this chain can recompute an
-address on that one, because both deployed their transceivers through `CrossProxyDeployer`,
-which Arachnid's factory puts at one address; a chain without Arachnid's factory is `Attested`
-in every registry, its own included. `Attested` means it cannot and was told, so the value is
-worth exactly the bridge that carried it. `Unresolved` means nothing has been declared and no bar accepts
+**Provenance is two useful values and a null.** `Predetermined` means this chain can recompute
+an address on that one, because both deployed their transceivers through `CrossProxyDeployer`,
+which Arachnid's factory puts at one address; a chain without Arachnid's factory is `Unique` in
+every registry, its own included. `Unique` means it cannot and was told, so the value is worth
+exactly the bridge that carried it. `Unknown` means nothing has been declared and no bar accepts
 it. The order is the semantics, so inserting a grade would renumber the rest.
 
 The addressing, derivation, and registry trees are not covered here. See

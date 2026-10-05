@@ -59,7 +59,7 @@ contract UnknownChainTypeTest is Test {
     ///      `ChainType.sol`.
     function test_anUndefinedChainTypeRegisters() public {
         vm.prank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unresolved);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unknown);
 
         assertTrue(registry.hasChainKey(chainKey));
         assertEq(registry.chainIdentifier(chainKey), chainId);
@@ -71,10 +71,10 @@ contract UnknownChainTypeTest is Test {
     ///      be known rather than about what the address means.
     function test_theDirectoryWorksForAnUndefinedChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Attested);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unique);
         vm.stopPrank();
 
-        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Attested));
+        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unique));
         assertTrue(
             registry.requiresReceiverCallback(chainKey),
             "nothing here can derive an address on a chain type it does not know"
@@ -82,19 +82,19 @@ contract UnknownChainTypeTest is Test {
     }
 
     /// @dev Address parity is an `eip155` argument, so an unknown chain type cannot be graded
-    ///      `Derived`: a 20-byte EVM address means nothing there, and a transceiver that
+    ///      `Predetermined`: a 20-byte EVM address means nothing there, and a transceiver that
     ///      assumed one would address the void.
-    function test_anUndefinedChainTypeCannotBeGradedDerived() public {
+    function test_anUndefinedChainTypeCannotBeGradedPredetermined() public {
         vm.prank(owner);
         vm.expectRevert(ChainRegistry.NotEvmChain.selector);
-        registry.addChainKey(chainId, Provenance.Derived);
+        registry.addChainKey(chainId, Provenance.Predetermined);
     }
 
     /// @dev The two per-chain extension points are wired by `chainKey`, not by chain type,
     ///      so both are available immediately.
     function test_validatorAndCapAttachToAnUndefinedChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Attested);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unique);
         registry.setValidator(chainKey, new WidthValidator());
         vm.stopPrank();
 
@@ -120,7 +120,7 @@ contract UnknownChainTypeTest is Test {
         }
 
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unresolved);
+        bytes32 chainKey = registry.addChainKey(chainId, Provenance.Unknown);
         registry.setDeriver(chainKey, IVmDeriver(address(d)));
         vm.expectRevert(ChainRegistry.SchemeNotSupported.selector);
         registry.setDeriveParams(chainKey, abi.encode(uint8(0), bytes("")));
@@ -153,8 +153,8 @@ contract UnknownChainTypeTest is Test {
 
         // And both register, as two unrelated chains.
         vm.startPrank(owner);
-        bytes32 a = registry.addChainKey(padded, Provenance.Unresolved);
-        bytes32 b = registry.addChainKey(minimal, Provenance.Unresolved);
+        bytes32 a = registry.addChainKey(padded, Provenance.Unknown);
+        bytes32 b = registry.addChainKey(minimal, Provenance.Unknown);
         vm.stopPrank();
 
         assertTrue(a != b);
@@ -167,6 +167,6 @@ contract UnknownChainTypeTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(Erc7930.NonMinimalChainRef.selector);
-        registry.addChainKey(padded, Provenance.Derived);
+        registry.addChainKey(padded, Provenance.Predetermined);
     }
 }

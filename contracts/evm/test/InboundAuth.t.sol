@@ -69,7 +69,7 @@ contract Node is UnsendableTransceiver {
                 treasury: address(0x7EA5),
                 chainRegistry: IChainRegistryRefs(address(0)),
                 messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unresolved
+                minCounterpartProvenance: Provenance.Unknown
             })
         );
     }
@@ -108,7 +108,8 @@ contract InboundAuthTest is Test {
     address transmitter = address(0x7A11);
     bytes32 provider;
 
-    /// Chain 1, a `Derived` origin whose transceiver shares this one's address. Set in `setUp`.
+    /// Chain 1, a `Predetermined` origin whose transceiver shares this one's address. Set in
+    /// `setUp`.
     bytes32 homeKey;
     bytes HOME_SENDER;
     bytes HOME_ROUTE = Erc7930.encodeEvmChain(1);
@@ -122,12 +123,12 @@ contract InboundAuthTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        homeKey = registry.addChainKey(HOME_ROUTE, Provenance.Derived);
+        homeKey = registry.addChainKey(HOME_ROUTE, Provenance.Predetermined);
         registry.setLocalTransceiver(provider, address(node));
         vm.stopPrank();
 
         vm.startPrank(owner);
-        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         node.setRoute(homeKey, HOME_ROUTE);
         vm.stopPrank();
     }
@@ -176,10 +177,10 @@ contract InboundAuthTest is Test {
     /* ================================== reports ================================== */
 
     /// @dev A chain that reports is one this contract cannot derive an account on: `eip155`
-    ///      graded below `Derived` is the zkSync and Tron shape.
+    ///      graded below `Predetermined` is the zkSync and Tron shape.
     function _wireReportingChain(uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId), Provenance.Attested);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId), Provenance.Unique);
         vm.stopPrank();
         vm.startPrank(owner);
         node.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
@@ -234,12 +235,12 @@ contract InboundAuthTest is Test {
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
-    /// @dev The provenance bar gates the inbound path too. A chain whose counterpart is
-    ///      only `Attested` cannot drive a transceiver that demands `Derived`, however well-formed
+    /// @dev The provenance bar gates the inbound path too. A chain whose counterpart is only
+    ///      `Unique` cannot drive a transceiver that demands `Predetermined`, however well-formed
     ///      its message is.
     function test_theProvenanceBarAppliesToInbound() public {
         address counterpart = address(0xC0DE);
-        // Graded `Attested`: the chain's addresses cannot be recomputed here, so any
+        // Graded `Unique`: the chain's addresses cannot be recomputed here, so any
         // claim about them is worth exactly the bridge that carried it.
         bytes32 chainKey = _wireReportingChain(8453, counterpart);
         _standUpAccount(8453);
@@ -251,12 +252,12 @@ contract InboundAuthTest is Test {
 
         // Raise it, and the same well-formed message from the same contract is refused.
         vm.prank(owner);
-        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
+        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         bytes memory report2 =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Attested
+                TransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Unique
             )
         );
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);

@@ -39,12 +39,12 @@ this file is the gap between that design and the tree.
   creation), so the cost of being wrong is a redeploy rather than a loss. zkSync Era's
   derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
   check.
-- **Arachnid's factory on every target chain.** A chain is `Derived` only if its
+- **Arachnid's factory on every target chain.** A chain is `Predetermined` only if its
   transceivers were deployed through `CrossProxyDeployer`, which Arachnid's factory places
   (#33). Which target chains have it
-  is not checked. A chain without it is `Attested` in every registry and grades every other
-  chain `Attested` in its own, so its transceivers cannot be born configured: the governor's
-  home is not `Derived` from there, and `initialize` refuses that (#32). Supporting one needs
+  is not checked. A chain without it is `Unique` in every registry and grades every other
+  chain `Unique` in its own, so its transceivers cannot be born configured: the governor's
+  home is not `Predetermined` from there, and `initialize` refuses that (#32). Supporting one needs
   a way to seed the home's counterpart on that chain, such as an explicit counterpart in the
   registry seed.
 - **EIP-152 on every target chain.** Any chain can be a home, and the BLAKE2b commitment
@@ -79,15 +79,6 @@ this file is the gap between that design and the tree.
   (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
   collision inside a single call, so two fields an initializer sets together are covered
   only by the suites that read them back.
-- **Reentrancy across a transceiver's roles is untested.** One transceiver sends bootstraps
-  with an account's `msg.value` and, inside a delivery, sends reports from its float. No test
-  has one transaction do both, such as a bootstrap payload that runs on a receiver on the
-  same chain and calls back into the transceiver. Only `ReceiverBase` has a reentrancy guard.
-- **The grade names say how, not what.** `Derived` means a chain's transceivers share this
-  chain's address through `CrossProxyDeployer`, so an address there can be computed here;
-  `Attested` means it is given rather than computed. Rename them to what they mean before
-  the docs and deploy scripts depend on them further. `Provenance`
-  values persist in storage, so a rename is a source change only and keeps the order.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.

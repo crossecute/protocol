@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployAccount} from "test/DeployCrossProxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -136,11 +136,11 @@ contract OpStackReceiveTest is ProviderReceiveSpec {
         receiver = OpStackReceiver(payable(_deployReceiver(new Call[](0))));
     }
 
-    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
-    ///      constructor has no code yet, so a payload calling back into it would see none.
     function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
-        proxy = address(new ERC1967Proxy(address(new OpStackReceiver(address(messenger))), ""));
-        OpStackReceiver(payable(proxy)).initialize(sourceTransmitter, calls);
+        proxy = deployAccount(
+            address(new OpStackReceiver(address(messenger))),
+            abi.encodeCall(OpStackReceiver.initialize, (sourceTransmitter, calls))
+        );
     }
 
     function _entry(bytes memory payload) internal pure returns (bytes memory) {
@@ -202,7 +202,7 @@ contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
 
     function _transmitter() internal override returns (address) {
         return address(
-            new ERC1967Proxy(
+            deployAccount(
                 address(new OpStackTransmitter()),
                 abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
             )

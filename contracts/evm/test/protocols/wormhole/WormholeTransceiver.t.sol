@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -39,7 +39,7 @@ function wormholeConfig(address coreBridge) returns (TransceiverConfig memory) {
         treasury: address(0x7EA5),
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -130,7 +130,7 @@ contract WormholeTransceiverInboundTest is ProviderInboundSpec {
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
         c.chainRegistry = registry;
         c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Attested;
+        c.minCounterpartProvenance = Provenance.Unique;
         return address(
             deployTransceiver(
                 address(new WormholeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
@@ -211,10 +211,10 @@ contract WormholeZkSyncTransceiverTest is Test {
         );
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("wormhole");
-        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Attested);
+        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Unique);
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         t.setRoute(home, Erc7930.encodeEvmChain(1));
         t.setCounterpart(home, Erc7930.encodeEvm(1, address(0xC0DE)));
         t.setWormholeChain(home, HOME_WORMHOLE_CHAIN);

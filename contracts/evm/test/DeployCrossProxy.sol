@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 
 address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
@@ -23,4 +24,12 @@ function crossProxyDeployer() returns (CrossProxyDeployer) {
 ///         deploys fresh, so two fixtures in one test do not collide.
 function deployTransceiver(address implementation, bytes memory data) returns (address) {
     return crossProxyDeployer().deploy(bytes32(uint256(uint160(implementation))), implementation, data);
+}
+
+/// @notice An account as a transceiver deploys one: a `CrossProxy` whose deployer, here the
+///         calling test, arms it with `implementation` and locks it in one call. The proxy
+///         exists before its initializer runs, so a payload calling back into it sees code.
+function deployAccount(address implementation, bytes memory data) returns (address proxy) {
+    proxy = address(new CrossProxy());
+    ICrossProxy(proxy).upgradeInitializeAndLock(implementation, data);
 }

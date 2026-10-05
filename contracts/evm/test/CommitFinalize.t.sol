@@ -9,7 +9,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {ICrossProxy} from "src/account/CrossProxy.sol";
-import {deployTransceiver, crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {deployTransceiver, crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -121,7 +121,7 @@ function transceiverConfig(
         treasury: treasury,
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -695,10 +695,10 @@ contract CommitFinalizeTest is Test {
         MsigTransceiver m = _msigTransceiver();
 
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Predetermined);
 
         vm.prank(m.owner());
-        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Derived);
+        m.setRouting(IChainRegistryRefs(address(0xDEED)), bytes32(0), Provenance.Predetermined);
         assertEq(address(m.chainRegistry()), address(0xDEED));
     }
 

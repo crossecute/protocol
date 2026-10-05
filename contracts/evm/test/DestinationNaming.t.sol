@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -51,7 +51,7 @@ contract DestinationNamingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Derived);
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         vm.stopPrank();
     }
 
@@ -93,7 +93,7 @@ contract DestinationNamingTest is Test {
 
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
-        baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         t.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xC0DE)));
         t.setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
@@ -113,7 +113,7 @@ contract DestinationNamingTest is Test {
     function test_oneRouteCannotNameTwoChains() public {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, arbKey));
         t.setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
@@ -132,7 +132,7 @@ contract DestinationNamingTest is Test {
     ///      LayerZero-adjacent value and would send into the void.
     function test_unsetRouteRevertsRatherThanReadingAsZero() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key));
         t.routeTo(key);
@@ -142,13 +142,13 @@ contract DestinationNamingTest is Test {
     ///      the chain accepts no new counterpart until it is added back.
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
 
         registry.removeChainKey(key);
 
         assertFalse(registry.hasChainKey(key));
-        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Derived), "the declared grade stays");
+        assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Predetermined), "the declared grade stays");
         assertEq(t.counterpartOn(key), abi.encodePacked(address(0xC0DE)), "the transceiver still resolves it");
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
@@ -159,7 +159,7 @@ contract DestinationNamingTest is Test {
     /// @dev Suspension still cuts a removed chain off: removal must not disable it.
     function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
         registry.removeChainKey(key);
         registry.setSuspended(key, true);
@@ -180,7 +180,7 @@ contract DestinationNamingTest is Test {
     ///      separately: otherwise a half-wired chain cannot be diagnosed.
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
         vm.stopPrank();
 
@@ -230,7 +230,7 @@ contract DestinationNamingTest is Test {
     ///      the usual way to get one.
     function test_aRouteThatIsNotAChainIdentifierIsRefused() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Derived);
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, key));
         t.setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();

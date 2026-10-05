@@ -6,5 +6,5 @@ import {Provenance} from "src/registry/Provenance.sol";
 
 /// @notice A registry that is born knowing nothing, for suites that configure it as its owner.
 function unseeded() pure returns (RegistrySeed memory) {
-    return RegistrySeed({governorHome: "", governorHomeGrade: Provenance.Unresolved, providers: new ProviderSeed[](0)});
+    return RegistrySeed({governorHome: "", governorHomeGrade: Provenance.Unknown, providers: new ProviderSeed[](0)});
 }

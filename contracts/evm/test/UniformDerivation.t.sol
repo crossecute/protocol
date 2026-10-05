@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
 import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
@@ -38,7 +38,7 @@ contract UniformDerivationTest is Test {
                 ))
         );
         vm.prank(owner);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Predetermined);
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
@@ -50,15 +50,15 @@ contract UniformDerivationTest is Test {
         vm.startPrank(owner);
         // An `eip155` chain is recomputed here; anything else is worth the bridge that says so.
         Provenance grade = Erc7930.parseStrict(chainIdentifier).chainType == Erc7930.CT_EIP155
-            ? Provenance.Derived
-            : Provenance.Attested;
+            ? Provenance.Predetermined
+            : Provenance.Unique;
         chainKey = registry.addChainKey(chainIdentifier, grade);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
         registry.setDeriveParams(chainKey, params);
         vm.stopPrank();
     }
 
-    function test_evmCreate2_derivesAndStoresAsDerived() public {
+    function test_evmCreate2_derivesAndStoresAsPredetermined() public {
         address factory = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
         bytes32 salt = keccak256("crossecute.transceiver.v1");
         bytes32 initCodeHash = keccak256("initcode");
@@ -76,7 +76,9 @@ contract UniformDerivationTest is Test {
         transceiver.resolveCounterpart(chainKey, keccak256(params));
 
         assertEq(transceiver.counterpartOn(chainKey), abi.encodePacked(want));
-        assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Derived), "an eip155 chain, recomputed here");
+        assertEq(
+            uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Predetermined), "an eip155 chain, recomputed here"
+        );
     }
 
     /// @dev The point of normalizing: Solana configures through the same three calls and
@@ -96,7 +98,7 @@ contract UniformDerivationTest is Test {
         assertEq(bytes32(io.addr), AddressDerive.solanaCreateProgramAddress(seeds, 255, programId));
 
         vm.startPrank(owner);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
         transceiver.resolveCounterpart(chainKey, keccak256(params));
         vm.stopPrank();
         assertEq(transceiver.counterpartOn(chainKey).length, 32);
@@ -117,7 +119,7 @@ contract UniformDerivationTest is Test {
     ///      so the scheme must be pinned per chain rather than inferred from chain type.
     function test_schemeIsCheckedAgainstChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Predetermined);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
 
         // A Solana PDA is not a legal scheme on an eip155 chain.
@@ -140,7 +142,7 @@ contract UniformDerivationTest is Test {
 
         // A second chain with no deriver and no route at all.
         vm.prank(owner);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
         (bytes32[] memory keys, bytes[] memory interops) = registry.expectedTransceivers();
         assertEq(keys.length, 2);

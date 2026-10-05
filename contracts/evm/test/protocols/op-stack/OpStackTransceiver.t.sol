@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -54,7 +54,7 @@ function opStackConfig(address messenger) returns (TransceiverConfig memory) {
         treasury: address(0x7EA5),
         chainRegistry: IChainRegistryRefs(address(0)),
         messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unresolved
+        minCounterpartProvenance: Provenance.Unknown
     });
 }
 
@@ -109,7 +109,7 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec {
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
         c.chainRegistry = registry;
         c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Attested;
+        c.minCounterpartProvenance = Provenance.Unique;
         return address(
             deployTransceiver(
                 address(new OpStackTransceiver(address(messenger), ChainKey.forEvm(ORIGIN_CHAIN_ID))),
