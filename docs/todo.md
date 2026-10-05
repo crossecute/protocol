@@ -79,10 +79,6 @@ this file is the gap between that design and the tree.
   (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
   collision inside a single call, so two fields an initializer sets together are covered
   only by the suites that read them back.
-- **Reentrancy across a transceiver's roles is untested.** One transceiver sends bootstraps
-  with an account's `msg.value` and, inside a delivery, sends reports from its float. No test
-  has one transaction do both, such as a bootstrap payload that runs on a receiver on the
-  same chain and calls back into the transceiver. Only `ReceiverBase` has a reentrancy guard.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.

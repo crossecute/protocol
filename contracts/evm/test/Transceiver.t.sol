@@ -24,6 +24,19 @@ abstract contract SymHarness is TransceiverBase {
     uint256 public sentCount;
     address public sentRefundTo;
 
+    struct Sent {
+        bytes payload;
+        uint256 value;
+        address refundTo;
+    }
+
+    /// Every send in order, for tests where one transaction sends more than once.
+    Sent[] internal _sends;
+
+    function sendAt(uint256 i) external view returns (Sent memory) {
+        return _sends[i];
+    }
+
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory, uint256 value)
         internal
         override
@@ -34,6 +47,7 @@ abstract contract SymHarness is TransceiverBase {
         sentPayload = payload;
         sentValue = value;
         sentRefundTo = _refundTo();
+        _sends.push(Sent(payload, value, sentRefundTo));
         ++sentCount;
         return bytes32(0);
     }
@@ -83,6 +97,26 @@ contract RecordingTransmitter {
         require(msg.sender == transceiver, "not the transceiver");
         reportedChain = chainKey;
         reportedReceiver = receiver;
+    }
+}
+
+/// @dev Transmitter logic that bootstraps when its owner says so.
+contract BootstrappingTransmitter {
+    address public owner;
+    address public transceiver;
+    bytes32 public salt;
+
+    function initialize(address owner_, address transceiver_, bytes32 salt_) external {
+        owner = owner_;
+        transceiver = transceiver_;
+        salt = salt_;
+    }
+
+    function bootstrapTo(bytes32 destination) external payable {
+        require(msg.sender == owner, "not the owner");
+        TransceiverBase(payable(transceiver)).bootstrap{value: msg.value}(
+            destination, owner, salt, new Call[](0), new bytes[](0)
+        );
     }
 }
 
@@ -375,6 +409,58 @@ contract TransceiverTest is Test {
         vm.prank(transmitter);
         t.bootstrap{value: quote}(_key(BASE), alice, SALT, _calls(), new bytes[](0));
         assertEq(t.sentRefundTo(), transmitter);
+    }
+
+    /// @dev One transaction in which the transceiver sends both a bootstrap and a report. A
+    ///      diverging chain creates a receiver whose first payload, run inside the delivery,
+    ///      creates a transmitter for that receiver and bootstraps through it, paid from the
+    ///      receiver's balance (funded before it existed, as a counterfactual address can be). Then
+    ///      the delivery's report goes out from the float. Each send keeps its own payer: the
+    ///      nested bootstrap pays its fee to the treasury and refunds its caller, and the report
+    ///      pays its quote and refunds the float.
+    ///
+    ///      Reentry while the report itself is being sent, when `_refundTo` answers the float,
+    ///      could only come from the provider endpoint, which every binding trusts.
+    function test_aBootstrapNestedInADeliveryKeepsItsOwnPayer() public {
+        Sym t = _chainWith(ETH, true, address(new BootstrappingTransmitter()));
+        vm.deal(address(t), 1 ether);
+        uint256 fee = 0.01 ether;
+        vm.prank(t.owner());
+        t.setBootstrapFee(_key(BASE), fee);
+
+        address receiver = t.predictCrossAccount(alice, SALT, _key(BASE));
+        bytes32 nestedSalt = keccak256("nested");
+        address nested = t.predictTransmitter(receiver, nestedSalt);
+        uint256 paid = 0.05 ether;
+        vm.deal(receiver, paid);
+
+        Call[] memory calls = new Call[](2);
+        calls[0] = Call(address(t), 0, abi.encodeCall(TransceiverBase.createTransmitter, (nestedSalt)));
+        calls[1] = Call(nested, paid, abi.encodeCall(BootstrappingTransmitter.bootstrapTo, (_key(BASE))));
+        uint256 treasuryBefore = t.treasury().balance;
+
+        t.arrive(
+            _route(BASE),
+            abi.encodePacked(address(t)),
+            Envelope.encodeBootstrap(alice, SALT, _word(address(0x7A)), calls)
+        );
+
+        assertEq(t.sentCount(), 2, "the nested bootstrap, then the report");
+        SymHarness.Sent memory bootstrap = t.sendAt(0);
+        assertEq(
+            bootstrap.payload,
+            Envelope.encodeBootstrap(receiver, nestedSalt, _word(nested), new Call[](0)),
+            "first the receiver's own bootstrap"
+        );
+        assertEq(bootstrap.value, paid - fee, "sent with what its payer paid, less the fee");
+        assertEq(bootstrap.refundTo, nested, "refunded to its caller, not the float");
+        assertEq(t.treasury().balance - treasuryBefore, fee, "and the fee reached the treasury");
+
+        SymHarness.Sent memory report = t.sendAt(1);
+        bytes memory expected = t.reportPayload(alice, SALT, receiver);
+        assertEq(report.payload, expected, "then the report");
+        assertEq(report.value, expected.length, "at its quote");
+        assertEq(report.refundTo, address(t), "refunded to the float");
     }
 
     /// @dev The same contract receives reports for the accounts homed here.
