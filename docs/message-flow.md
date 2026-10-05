@@ -288,9 +288,10 @@ of "the payload is checked" or "the caller is checked" holds, and each entry poi
 different one.
 
 **Provenance is two useful values and a null.** `Derived` means this chain can recompute an
-address on that one, because both deployed their transceivers through `CrossProxyDeployer` at
-one address; a chain without that factory is `Attested` in every registry, its own included. `Attested` means it cannot and was told, so the value is worth exactly
-the bridge that carried it. `Unresolved` means nothing has been declared and no bar accepts
+address on that one, because both deployed their transceivers through `CrossProxyDeployer`,
+which Arachnid's factory puts at one address; a chain without Arachnid's factory is `Attested`
+in every registry, its own included. `Attested` means it cannot and was told, so the value is
+worth exactly the bridge that carried it. `Unresolved` means nothing has been declared and no bar accepts
 it. The order is the semantics, so inserting a grade would renumber the rest.
 
 The addressing, derivation, and registry trees are not covered here. See
