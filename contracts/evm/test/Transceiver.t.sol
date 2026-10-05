@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {crossProxyDeployer} from "test/DeployTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";
@@ -95,7 +96,6 @@ contract TransceiverTest is Test {
     uint256 constant ZK = 324;
     bytes32 constant SALT = keccak256("account");
     bytes32 constant TRANSCEIVER_SALT = keccak256("provider");
-    address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     address msig = address(0x5165);
     address alice = address(0xA11CE);
@@ -122,22 +122,19 @@ contract TransceiverTest is Test {
         Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
-        t = _deploySym();
-        t.initializeDiverging(
-            TransceiverConfig({
-                gateways: new address[](0),
-                transmitterImplementation: transmitterImplementation,
-                receiverImplementation: address(new Rcv()),
-                governorOwner: msig,
-                governorSalt: bytes32(0),
-                governorHome: _route(ETH),
-                treasury: address(treasury),
-                chainRegistry: IChainRegistryRefs(address(0)),
-                messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unresolved
-            }),
-            diverges
-        );
+        TransceiverConfig memory c = TransceiverConfig({
+            gateways: new address[](0),
+            transmitterImplementation: transmitterImplementation,
+            receiverImplementation: address(new Rcv()),
+            governorOwner: msig,
+            governorSalt: bytes32(0),
+            governorHome: _route(ETH),
+            treasury: address(treasury),
+            chainRegistry: IChainRegistryRefs(address(0)),
+            messageProvider: bytes32(0),
+            minCounterpartProvenance: Provenance.Unresolved
+        });
+        t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
         uint256[3] memory chains = [ETH, BASE, ZK];
         vm.startPrank(t.owner());
@@ -153,12 +150,10 @@ contract TransceiverTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev Through Arachnid's factory, as on every `Derived` chain, so the seeded deployment
-    ///      record predicts where it lands.
-    function _deploySym() internal returns (Sym) {
-        (bool ok, bytes memory at) = ARACHNID.call(abi.encodePacked(TRANSCEIVER_SALT, type(Sym).creationCode));
-        require(ok && at.length == 20, "arachnid");
-        return Sym(payable(address(bytes20(at))));
+    /// @dev As production deploys a transceiver, so the seeded deployment record predicts where
+    ///      it lands: a `CrossProxy` through `CrossProxyDeployer`, armed in the same call.
+    function _deploySym(bytes memory init) internal returns (Sym) {
+        return Sym(payable(crossProxyDeployer().deploy(TRANSCEIVER_SALT, address(new Sym()), init)));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {
@@ -206,30 +201,32 @@ contract TransceiverTest is Test {
         vm.prank(governor);
         eth.bootstrap(_key(BASE), msig, bytes32(0), _calls(), new bytes[](0));
         bytes memory sent = eth.sentPayload();
-        bytes32 accountInitCodeHash = eth.CROSS_PROXY_INIT_CODE_HASH();
+        bytes32 crossProxyInitCodeHash = eth.CROSS_PROXY_INIT_CODE_HASH();
 
         vm.revertToState(world);
         vm.chainId(BASE);
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, keccak256(type(Sym).creationCode), accountInitCodeHash);
+        providers[0] = ProviderSeed("test", address(this), TRANSCEIVER_SALT, crossProxyInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Derived, providers: providers})
         );
-        Sym base = _deploySym();
-        base.initialize(
-            TransceiverConfig({
-                gateways: new address[](0),
-                transmitterImplementation: address(new RecordingTransmitter()),
-                receiverImplementation: address(new Rcv()),
-                governorOwner: msig,
-                governorSalt: bytes32(0),
-                governorHome: _route(ETH),
-                treasury: address(new Treasury(address(this))),
-                chainRegistry: IChainRegistryRefs(address(registry)),
-                messageProvider: keccak256("test"),
-                minCounterpartProvenance: Provenance.Attested
-            })
+        Sym base = _deploySym(
+            abi.encodeCall(
+                Sym.initialize,
+                TransceiverConfig({
+                    gateways: new address[](0),
+                    transmitterImplementation: address(new RecordingTransmitter()),
+                    receiverImplementation: address(new Rcv()),
+                    governorOwner: msig,
+                    governorSalt: bytes32(0),
+                    governorHome: _route(ETH),
+                    treasury: address(new Treasury(address(this))),
+                    chainRegistry: IChainRegistryRefs(address(registry)),
+                    messageProvider: keccak256("test"),
+                    minCounterpartProvenance: Provenance.Attested
+                })
+            )
         );
         assertEq(address(base), address(eth), "one address on both chains");
         assertEq(registry.predictTransceiver(_key(ETH), keccak256("test")), address(base), "where the record predicts");

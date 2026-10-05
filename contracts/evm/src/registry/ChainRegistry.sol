@@ -12,14 +12,15 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Move} from "src/addressing/Move.sol";
+import {crossProxySalt} from "src/account/CrossProxyDeployer.sol";
 
 /// @notice A provider a registry is born knowing, with the CREATE2 inputs its contracts
 ///         deploy from.
 struct ProviderSeed {
     string name;
+    address deployedBy;
     bytes32 salt;
-    bytes32 transceiverInitCodeHash;
-    bytes32 accountInitCodeHash;
+    bytes32 crossProxyInitCodeHash;
 }
 
 /// @notice What a registry is born knowing: enough for a transceiver on this chain to accept,
@@ -49,16 +50,18 @@ struct RegistrySeed {
 ///      account's payload.
 ///
 /// @dev Fixed: no proxy and no upgrade path, and a transceiver's pointer to it is write-once.
-///      A chain's grade and its CREATE2 factory are write-once too; the plugins (validator,
+///      A chain's grade is write-once too; the plugins (validator,
 ///      deriver, derive params, commitment scheme) stay rebindable so their mistakes can be
 ///      fixed, and every change waits out the owning timelock.
 contract ChainRegistry is Ownable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    /// @notice Arachnid's deterministic deployment proxy, at the same address on every
-    ///         standard EVM chain. A `Derived` chain is one whose transceivers were deployed
-    ///         through it, so it is the only factory derived against (#33).
-    address internal constant ARACHNID_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    /// @notice `CrossProxyDeployer`, deployed through Arachnid's factory at salt zero, so at the
+    ///         same address on every standard EVM chain. A `Derived` chain is one whose
+    ///         transceivers were deployed through it (#33).
+    /// @dev A literal, since a zkSync or Tron registry's compiler would derive another;
+    ///      `CrossProxyDeployer.t.sol` pins it to solc's build.
+    address internal constant CROSS_PROXY_DEPLOYER = 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C;
 
     /* ================================= storage ================================= */
 
@@ -116,7 +119,7 @@ contract ChainRegistry is Ownable {
     event MessageProviderRemoved(bytes32 indexed messageProvider);
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
     event ProviderDeploymentSet(
-        bytes32 indexed messageProvider, bytes32 salt, bytes32 transceiverInitCodeHash, bytes32 accountInitCodeHash
+        bytes32 indexed messageProvider, address deployedBy, bytes32 salt, bytes32 crossProxyInitCodeHash
     );
     event DeriverSet(bytes32 indexed chainKey, address deriver);
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
@@ -137,6 +140,7 @@ contract ChainRegistry is Ownable {
     /// @dev No salt recorded for this provider.
     error NoProviderDeployment();
     error ZeroSalt();
+    error ZeroDeployedBy();
     error ZeroInitCodeHash();
     error UnknownChainKey();
     error UnknownMessageProvider();
@@ -159,9 +163,7 @@ contract ChainRegistry is Ownable {
         if (seed.governorHome.length != 0) _addChainKey(seed.governorHome, seed.governorHomeGrade);
         for (uint256 i; i < seed.providers.length; ++i) {
             ProviderSeed memory p = seed.providers[i];
-            _setProviderDeployment(
-                _addMessageProvider(p.name), p.salt, p.transceiverInitCodeHash, p.accountInitCodeHash
-            );
+            _setProviderDeployment(_addMessageProvider(p.name), p.deployedBy, p.salt, p.crossProxyInitCodeHash);
         }
     }
 
@@ -273,40 +275,37 @@ contract ChainRegistry is Ownable {
     ///      match the deployment yields predictions that match nothing.
     function setProviderDeployment(
         bytes32 messageProvider,
+        address deployedBy,
         bytes32 salt,
-        bytes32 transceiverInitCodeHash,
-        bytes32 accountInitCodeHash
+        bytes32 crossProxyInitCodeHash
     ) external onlyOwner {
-        _setProviderDeployment(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
+        _setProviderDeployment(messageProvider, deployedBy, salt, crossProxyInitCodeHash);
     }
 
     function _setProviderDeployment(
         bytes32 messageProvider,
+        address deployedBy,
         bytes32 salt,
-        bytes32 transceiverInitCodeHash,
-        bytes32 accountInitCodeHash
+        bytes32 crossProxyInitCodeHash
     ) private {
         if (!_messageProviders.contains(messageProvider)) {
             revert UnknownMessageProvider();
         }
+        if (deployedBy == address(0)) revert ZeroDeployedBy();
         if (salt == bytes32(0)) revert ZeroSalt();
-        if (transceiverInitCodeHash == bytes32(0) || accountInitCodeHash == bytes32(0)) {
-            revert ZeroInitCodeHash();
-        }
+        if (crossProxyInitCodeHash == bytes32(0)) revert ZeroInitCodeHash();
 
         ProviderDeployment storage d = _deployment[messageProvider];
         if (d.salt != bytes32(0)) {
-            if (
-                d.salt != salt || d.transceiverInitCodeHash != transceiverInitCodeHash
-                    || d.accountInitCodeHash != accountInitCodeHash
-            ) revert AlreadySet();
+            if (d.deployedBy != deployedBy || d.salt != salt || d.crossProxyInitCodeHash != crossProxyInitCodeHash) {
+                revert AlreadySet();
+            }
             return;
         }
 
-        _deployment[messageProvider] = ProviderDeployment({
-            salt: salt, transceiverInitCodeHash: transceiverInitCodeHash, accountInitCodeHash: accountInitCodeHash
-        });
-        emit ProviderDeploymentSet(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
+        _deployment[messageProvider] =
+            ProviderDeployment({deployedBy: deployedBy, salt: salt, crossProxyInitCodeHash: crossProxyInitCodeHash});
+        emit ProviderDeploymentSet(messageProvider, deployedBy, salt, crossProxyInitCodeHash);
     }
 
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
@@ -315,13 +314,14 @@ contract ChainRegistry is Ownable {
 
     /* ========================= PATH 2: salted derivation ======================= */
 
-    /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from Arachnid's
-    ///         factory and the recorded salt and initcode hash.
+    /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from
+    ///         `CROSS_PROXY_DEPLOYER` and the recorded caller, salt, and initcode hash.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
         _requireEvmDerivable(chainKey);
-        return AddressDerive.create2(ARACHNID_FACTORY, d.salt, d.transceiverInitCodeHash);
+        return
+            AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(d.deployedBy, d.salt), d.crossProxyInitCodeHash);
     }
 
     /// @notice Where an owner's account lands on `chainKey`, before it exists: the
@@ -341,7 +341,9 @@ contract ChainRegistry is Ownable {
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
         return
-            AddressDerive.create2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), d.accountInitCodeHash);
+            AddressDerive.create2(
+                transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), d.crossProxyInitCodeHash
+            );
     }
 
     /// @dev Plain CREATE2 derivation holds only on a chain graded `Derived`.

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -70,7 +70,7 @@ contract WormholeTransceiverHarness is WormholeTransceiver {
 function deployWormhole(address core, address router, address quoter) returns (WormholeTransceiverHarness) {
     return WormholeTransceiverHarness(
         payable(address(
-                new ERC1967Proxy(
+                deployTransceiver(
                     address(new WormholeTransceiverHarness(core, router, quoter)),
                     abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(core), uint16(0)))
                 )
@@ -132,7 +132,7 @@ contract WormholeTransceiverInboundTest is ProviderInboundSpec {
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new WormholeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(WormholeTransceiver.initialize, (c, ORIGIN_WORMHOLE_CHAIN))
             )
@@ -200,7 +200,7 @@ contract WormholeZkSyncTransceiverTest is Test {
         router = new MockExecutorQuoterRouter();
         t = WormholeZkSyncHarness(
             payable(address(
-                    new ERC1967Proxy(
+                    deployTransceiver(
                         address(new WormholeZkSyncHarness(address(core), address(router), address(0x0907))),
                         abi.encodeCall(
                             WormholeZkSyncTransceiver.initialize,
@@ -245,7 +245,7 @@ contract WormholeZkSyncTransceiverTest is Test {
 contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec {
     function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new WormholeTransceiver(address(0xBEEF), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
                 abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(address(0xBEEF)), uint16(id)))
             )

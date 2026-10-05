@@ -7,9 +7,9 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ICrossProxy} from "src/account/CrossProxy.sol";
+import {deployTransceiver, crossProxyDeployer} from "test/DeployTransceiver.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -163,19 +163,6 @@ contract MsigTransceiver is UnsendableTransceiver {
     ///      tests read the member list itself, and OZ's `_grantRole` is a no-op when `hasRole`
     ///      already says yes, so an override that trusted every gateway would leave the list
     ///      empty and the tests measuring nothing.
-}
-
-/// @dev The stub a transceiver proxy is deployed with: UUPS, upgradeable once by its deployer.
-contract UupsStub is UUPSUpgradeable {
-    address private immutable _deployer;
-
-    constructor(address deployer) {
-        _deployer = deployer;
-    }
-
-    function _authorizeUpgrade(address) internal view override {
-        require(msg.sender == _deployer, "not the deployer");
-    }
 }
 
 contract CommitFinalizeTest is Test {
@@ -679,40 +666,25 @@ contract CommitFinalizeTest is Test {
         assertEq(t.receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev A stub proxy installs the transceiver once, through the upgrade that runs its
-    ///      initializer, and from then on nothing can replace it: the transceiver has no
+    /// @dev `CrossProxyDeployer` installs the transceiver and locks it in one call, and from
+    ///      then on nothing can replace it: the proxy has no admin and the transceiver has no
     ///      upgrade function, so no authority holds a key to forge messages with.
-    function test_aStubInstallsTheTransceiverAndNothingReplacesIt() public {
-        UupsStub stub = new UupsStub(address(this));
-        address proxy = address(new ERC1967Proxy(address(stub), ""));
-        address impl = address(new MockTransceiver());
-
-        UupsStub(proxy)
-            .upgradeToAndCall(impl, abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl))));
+    function test_theDeployerInstallsTheTransceiverAndNothingReplacesIt() public {
+        address proxy = deployTransceiver(
+            address(new MockTransceiver()), abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
+        );
         MockTransceiver t_ = MockTransceiver(payable(proxy));
         assertEq(t_.receiverImplementation(), address(receiverImpl), "installed and initialized");
+        assertEq(vm.load(proxy, ERC1967Utils.ADMIN_SLOT), bytes32(0), "and locked");
 
         address blockedImpl = address(new MockTransceiver());
         address owner = t_.owner();
         vm.prank(owner);
         (bool upgraded,) = proxy.call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", blockedImpl, ""));
         assertFalse(upgraded, "not even the owner can upgrade");
-    }
-
-    /// @dev Answered only on the implementation, so a proxy is never installed as its own
-    ///      implementation.
-    function test_proxiableUuidRefusesAProxy() public {
-        MockTransceiver impl = new MockTransceiver();
-        assertEq(impl.proxiableUUID(), ERC1967Utils.IMPLEMENTATION_SLOT);
-
-        MockTransceiver proxied = MockTransceiver(
-            payable(new ERC1967Proxy(
-                    address(new MockTransceiver()),
-                    abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
-                ))
-        );
-        vm.expectRevert(TransceiverBase.UnauthorizedCallContext.selector);
-        proxied.proxiableUUID();
+        vm.prank(address(crossProxyDeployer()));
+        (upgraded,) = proxy.call(abi.encodeCall(ICrossProxy.upgradeInitializeAndLock, (blockedImpl, "")));
+        assertFalse(upgraded, "nor its deployer");
     }
 
     /* ============================== authorization ============================= */

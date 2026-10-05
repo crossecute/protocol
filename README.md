@@ -227,7 +227,8 @@ src/
     inbound/      ReceiverBase                          what an account RECEIVES with
     transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
                   DivergentAccounts                         zkSync and Tron derivation
-  account/        CrossProxy                                what both halves ARE
+  account/        CrossProxy                                what both halves, and transceivers, ARE
+                  CrossProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
 ```
@@ -298,8 +299,8 @@ Then, per destination, add what the chain needs:
 - an `IRefValidator`, if the envelope cannot express its value ranges
 - a grade below `Derived` when it is registered, if its addresses cannot be recomputed here at
   all; the grade is write-once. An EVM chain is `Derived` only if its transceivers are
-  deployed through Arachnid's factory. One without it is `Attested` in every registry, and
-  grades every other chain `Attested` in its own
+  deployed through `CrossProxyDeployer`, which needs Arachnid's factory. One without that
+  factory is `Attested` in every registry, and grades every other chain `Attested` in its own
 
 ## Message providers
 
@@ -358,9 +359,10 @@ What an operator or integrator has to know:
 
 ## Assumptions
 
-- All contracts are created through Arachnid's CREATE2 factory (`0x4e59..`) with a salt. A
-  chain is `Derived` only if its transceivers were deployed through it; zkSync and Tron, whose
-  CREATE2 formulas differ, and any chain without it are `Attested`.
+- Contracts are created through Arachnid's CREATE2 factory (`0x4e59..`) with a salt,
+  transceivers through `CrossProxyDeployer`, which that factory places at one address. A
+  chain is `Derived` only if its transceivers were deployed that way; zkSync and Tron, whose
+  CREATE2 formulas differ, and any chain without Arachnid's factory are `Attested`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
   byte-identical initcode on every chain, so the target must not vary. Optimizer settings
@@ -368,13 +370,12 @@ What an operator or integrator has to know:
   `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
   comments included, which would otherwise put every derived address one comment edit
   away from moving.
-- Transceivers are deployed as proxies over a UUPS stub, and the stub's one upgrade installs
-  the real implementation and runs its initializer. The implementation keeps only
-  `proxiableUUID` from UUPS and has no upgrade function, so once installed nothing can
-  replace it. A transceiver decides which cross-chain payloads are authentic, so a live
-  upgrade key is a standing ability to forge one, and there is no window in which it exists.
-- Accounts are `CrossProxy` and lock in the same call that arms them. There is no reachable
-  state in which one has real logic and a live upgrade key.
+- Transceivers and accounts are all `CrossProxy`, and each locks in the same call that arms
+  it. `CrossProxyDeployer` deploys a transceiver, installs its implementation, runs its
+  initializer, and zeroes the admin in one call, under a salt bound to its caller so nobody
+  else can take the address first. The implementation has no upgrade function. A
+  transceiver decides which cross-chain payloads are authentic, so a live upgrade key would
+  be a standing ability to forge one, and there is no reachable state in which one exists.
 - Nothing is upgraded after deployment. `ChainRegistry` is a plain contract with no proxy, so
   accounts, transceivers, and the registry all keep sequential storage with no gaps: no later
   version ever has to match their layout.
@@ -430,7 +431,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 658 passing
+cd contracts/evm && forge test        # 661 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

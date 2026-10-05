@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
@@ -65,7 +65,7 @@ contract CcipTransceiverHarness is CcipTransceiver {
 function deployCcip(address router) returns (CcipTransceiverHarness) {
     return CcipTransceiverHarness(
         payable(address(
-                new ERC1967Proxy(
+                deployTransceiver(
                     address(new CcipTransceiverHarness(router)),
                     abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(router), uint64(0)))
                 )
@@ -129,7 +129,7 @@ contract CcipTransceiverInboundTest is ProviderInboundSpec {
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new CcipTransceiver(router)), abi.encodeCall(CcipTransceiver.initialize, (c, ORIGIN_SELECTOR))
             )
         );
@@ -181,7 +181,7 @@ contract CcipZkSyncTransceiverTest is Test {
         router = new MockCcipRouter();
         t = CcipZkSyncHarness(
             payable(address(
-                    new ERC1967Proxy(
+                    deployTransceiver(
                         address(new CcipZkSyncHarness(address(router))),
                         abi.encodeCall(
                             CcipZkSyncTransceiver.initialize,
@@ -227,7 +227,7 @@ contract CcipZkSyncTransceiverTest is Test {
 contract CcipGovernorHomeTest is ProviderGovernorHomeSpec {
     function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new CcipTransceiver(address(0xBEEF))),
                 abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(address(0xBEEF)), uint64(id)))
             )

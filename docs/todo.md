@@ -40,7 +40,8 @@ this file is the gap between that design and the tree.
   derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
   check.
 - **Arachnid's factory on every target chain.** A chain is `Derived` only if its
-  transceivers were deployed through Arachnid's factory (#33). Which target chains have it
+  transceivers were deployed through `CrossProxyDeployer`, which Arachnid's factory places
+  (#33). Which target chains have it
   is not checked. A chain without it is `Attested` in every registry and grades every other
   chain `Attested` in its own, so its transceivers cannot be born configured: the governor's
   home is not `Derived` from there, and `initialize` refuses that (#32). Supporting one needs
@@ -63,19 +64,15 @@ this file is the gap between that design and the tree.
 
 - **No deploy scripts.** `script/` holds only the vendoring drivers. The deploy story in the
   [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) (Arachnid's
-  factory, a per-chain timelock, a seeded registry, transceivers born accepting the governor's
+  factory, `CrossProxyDeployer`, a per-chain timelock, a seeded registry, transceivers born accepting the governor's
   home) has no code behind it. The CREATE2 parity argument stands or falls on that initcode
   and those constructor arguments being byte-identical on every chain, and nothing pins them.
   The scripts are also where the deployment-time provider decisions get made: the
-  `accountInitCodeHash` assertion (R8.4), how many gateways each transceiver's initializer
+  `crossProxyInitCodeHash` and `deployedBy` assertions (R8.4), how many gateways each transceiver's initializer
   names (they cannot be added later), the N × N tables every chain needs about every
   other chain, generated from one source since nothing on-chain checks they agree, and the
   `WormholeMessage` library every Wormhole contract links, deployed before them (on zkSync
   and Tron, linked when that chain's bytecode is built).
-  They must also arm each transceiver's stub proxy in the deployment transaction, or make the
-  stub deployer-only: a counterpart on a `Derived` chain is the address alone, so whoever
-  arms the stub at that address on a chain the routes name authenticates as the provider's
-  transceiver there.
 - **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
   says where every line is held). C21's script-side assertion waits on the deploy scripts.
   C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
@@ -87,7 +84,7 @@ this file is the gap between that design and the tree.
   has one transaction do both, such as a bootstrap payload that runs on a receiver on the
   same chain and calls back into the transceiver. Only `ReceiverBase` has a reentrancy guard.
 - **The grade names say how, not what.** `Derived` means a chain's transceivers share this
-  chain's address through Arachnid's factory, so an address there can be computed here;
+  chain's address through `CrossProxyDeployer`, so an address there can be computed here;
   `Attested` means it is given rather than computed. Rename them to what they mean before
   the docs and deploy scripts depend on them further. `Provenance`
   values persist in storage, so a rename is a source change only and keeps the order.

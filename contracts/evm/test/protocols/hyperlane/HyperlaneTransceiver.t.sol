@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 
@@ -63,7 +63,7 @@ contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
 function deployHyperlane(address mailbox) returns (HyperlaneTransceiverHarness) {
     return HyperlaneTransceiverHarness(
         payable(address(
-                new ERC1967Proxy(
+                deployTransceiver(
                     address(new HyperlaneTransceiverHarness(mailbox)),
                     abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(mailbox), uint32(0)))
                 )
@@ -118,7 +118,7 @@ contract HyperlaneTransceiverInboundTest is ProviderInboundSpec {
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new HyperlaneTransceiver(mailbox)),
                 abi.encodeCall(HyperlaneTransceiver.initialize, (c, ORIGIN_DOMAIN))
             )
@@ -171,7 +171,7 @@ contract HyperlaneZkSyncTransceiverTest is Test {
         mailbox = new MockHyperlaneMailbox();
         t = HyperlaneZkSyncHarness(
             payable(address(
-                    new ERC1967Proxy(
+                    deployTransceiver(
                         address(new HyperlaneZkSyncHarness(address(mailbox))),
                         abi.encodeCall(
                             HyperlaneZkSyncTransceiver.initialize,
@@ -214,7 +214,7 @@ contract HyperlaneZkSyncTransceiverTest is Test {
 contract HyperlaneGovernorHomeTest is ProviderGovernorHomeSpec {
     function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new HyperlaneTransceiver(address(0xBEEF))),
                 abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(address(0xBEEF)), uint32(id)))
             )

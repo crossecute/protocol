@@ -699,8 +699,9 @@ compiler settings. `bytecode_hash = "none"` and `cbor_metadata = false` are pinn
 `foundry.toml` because solc's default trailer carries an IPFS hash of the source, comments
 included, which would otherwise put every derived address one comment edit away from moving.
 
-**R8.4** `ChainRegistry.setProviderDeployment`'s `accountInitCodeHash` MUST equal
-`TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` as built by solc. A binding's deploy script MUST
+**R8.4** `ChainRegistry.setProviderDeployment`'s `crossProxyInitCodeHash` MUST equal
+`TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and its `deployedBy` MUST be
+the account that called `CrossProxyDeployer.deploy` for the provider's transceivers. A binding's deploy script MUST
 assert this rather than transcribe it. A diverging transceiver predicts its receivers on
 parity chains from this record, since its own constant comes from zksolc or TRON-solc.
 
@@ -715,8 +716,8 @@ parity chains from this record, since its own constant comes from zksolc or TRON
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
 **R9.3** The binding MUST NOT expose an upgrade path that survives installation.
-`TransceiverBase` has no upgrade function, only `proxiableUUID` so a UUPS stub can install
-it once, so a binding has nothing to lock. If the SDK carries its own upgrade mechanism, the
+`TransceiverBase` has no upgrade function, and the `CrossProxy` it runs in has no admin once
+`CrossProxyDeployer` has armed it, so a binding has nothing to lock. If the SDK carries its own upgrade mechanism, the
 binding MUST disable it: the base cannot close an upgrade path it does not know about.
 
 ---
@@ -730,14 +731,14 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
-| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Derived` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through Arachnid's factory, as on every `Derived` chain. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
-| 2 | every chain | Deploy each provider's transceiver proxy through the CREATE2 factory at the provider's salt, upgrade, and `initialize(config, governorHomeId)` | Proxy initcode must be identical on every chain. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library, which is deployed first. Nothing else may be needed before step 4. |
+| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Derived` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Derived` chain. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
+| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library, which is deployed first. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
-| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through Arachnid's factory can be `Derived`; zkSync, Tron, and any chain without that factory are `Attested`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Attested` in its own registry, since none shares its addresses. |
+| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Derived`; zkSync, Tron, and any chain without Arachnid's factory are `Attested`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Attested` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
-| n/a | | no lock step | There is nothing to call. Step 2's `upgradeToAndCall` is the stub's one upgrade, and it runs the initializer; the transceiver it installs has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
+| n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
 There are no deploy scripts yet; `script/` holds only the vendoring drivers
 ([todo §3](todo.md#3-infrastructure)). The ordering above is their
@@ -816,7 +817,7 @@ below. The column says where each line is held.
 | C18 | `bootstrap_accountIsProviderConfiguredBeforeThePayloadRuns` | A payload whose first call sends must succeed. | `ProviderReceiveSpec` |
 | C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar is applied to the first message to a chain. | core `CounterpartRouting.t.sol` `test_counterpartBelowProvenanceBarIsRefused` |
 | C20 | `bootstrap_forSomebodyElsesAccountReverts` | `NotTheAccount`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheAccount` |
-| C21 | `parity_accountInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
+| C21 | `parity_crossProxyInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
 | C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
@@ -982,7 +983,7 @@ A binding is done when every line is true.
 
 **Parity**
 - [ ] `CrossProxy` initcode unchanged, compiler settings unchanged
-- [ ] `accountInitCodeHash` asserted against `CROSS_PROXY_INIT_CODE_HASH` in the script
+- [ ] `crossProxyInitCodeHash` asserted against `CROSS_PROXY_INIT_CODE_HASH` in the script
 - [ ] SDK storage namespaced or layout pinned
 
 **Process**

@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -40,7 +40,7 @@ contract DestinationNamingTest is Test {
     function setUp() public {
         t = LzTransceiver(
             payable(address(
-                    new ERC1967Proxy(
+                    deployTransceiver(
                         address(new LzTransceiver(ENDPOINT)),
                         abi.encodeCall(LzTransceiver.initialize, (lzConfig(ENDPOINT), uint32(0)))
                     )
