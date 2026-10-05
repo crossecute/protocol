@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -61,7 +61,7 @@ function opStackConfig(address messenger) returns (TransceiverConfig memory) {
 function deployOpStack(address messenger, uint256 pairedChainId) returns (OpStackTransceiverHarness) {
     return OpStackTransceiverHarness(
         payable(address(
-                new ERC1967Proxy(
+                deployTransceiver(
                     address(new OpStackTransceiverHarness(messenger, ChainKey.forEvm(pairedChainId))),
                     abi.encodeCall(OpStackTransceiver.initialize, (opStackConfig(messenger)))
                 )
@@ -111,7 +111,7 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec {
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new OpStackTransceiver(address(messenger), ChainKey.forEvm(ORIGIN_CHAIN_ID))),
                 abi.encodeCall(OpStackTransceiver.initialize, (c))
             )

@@ -12,14 +12,15 @@ interface ICrossProxy {
 }
 
 /// @title CrossProxy
-/// @notice The proxy every crossecute account is deployed as: transmitter and receiver alike.
+/// @notice The proxy every crossecute account is deployed as, transmitter and receiver alike,
+///         and every transceiver, through `CrossProxyDeployer`.
 ///
 /// @dev No constructor arguments, so its initcode is one constant and a transmitter (from its
 ///      home's transceiver) and a receiver (from another chain's) at the same deployer address
 ///      and salt land on one address. An EIP-1167 clone embeds its implementation in the initcode and could not.
 ///
 /// @dev The single admin operation upgrades, initializes, and zeroes the admin in one call, so
-///      no account ever has a live upgrade key and real logic at once.
+///      no account or transceiver ever has a live upgrade key and real logic at once.
 ///
 /// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
 ///      Once the admin is zeroed every call delegates, as in a plain ERC-1967 proxy.

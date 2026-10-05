@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -34,7 +34,7 @@ contract CounterpartRoutingTest is Test {
     function setUp() public {
         registry = new ChainRegistry(msig, unseeded());
         transceiver = OwnedTransceiver(
-            payable(new ERC1967Proxy(
+            payable(deployTransceiver(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
                 ))
         );
@@ -135,7 +135,7 @@ contract CounterpartRoutingTest is Test {
 
     function test_routingRequiresRegistry() public {
         OwnedTransceiver bare = OwnedTransceiver(
-            payable(new ERC1967Proxy(
+            payable(deployTransceiver(
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
                 ))
         );

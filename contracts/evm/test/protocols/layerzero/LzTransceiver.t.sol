@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {deployTransceiver} from "test/DeployTransceiver.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
@@ -63,7 +63,7 @@ contract LzTransceiverHarness is LzTransceiver {
 function deployLz(address endpoint) returns (LzTransceiverHarness) {
     return LzTransceiverHarness(
         payable(address(
-                new ERC1967Proxy(
+                deployTransceiver(
                     address(new LzTransceiverHarness(endpoint)),
                     abi.encodeCall(LzTransceiver.initialize, (lzConfig(endpoint), uint32(0)))
                 )
@@ -125,7 +125,7 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new LzTransceiver(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, ORIGIN_EID))
             )
         );
@@ -167,7 +167,7 @@ contract LzZkSyncTransceiverTest is Test {
         endpoint = new MockLzEndpoint();
         t = LzZkSyncHarness(
             payable(address(
-                    new ERC1967Proxy(
+                    deployTransceiver(
                         address(new LzZkSyncHarness(address(endpoint))),
                         abi.encodeCall(LzZkSyncTransceiver.initialize, (lzConfig(address(endpoint)), uint32(0), HASH))
                     )
@@ -220,7 +220,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
         c.messageProvider = keccak256("layerzero");
         c.minCounterpartProvenance = Provenance.Attested;
         return address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new LzTransceiverHarness(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, eid))
             )
         );
@@ -255,7 +255,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
         c.messageProvider = keccak256("layerzero");
         c.minCounterpartProvenance = Provenance.Attested;
         address t = address(
-            new ERC1967Proxy(
+            deployTransceiver(
                 address(new LzZkSyncHarness(address(endpoint))),
                 abi.encodeCall(LzZkSyncTransceiver.initialize, (c, HOME_EID, keccak256("zksolc")))
             )
