@@ -7,8 +7,8 @@ pragma solidity ^0.8.20;
 ///      from `ChainRegistry.provenanceFor`, so two transceivers cannot disagree about one chain.
 ///
 /// @dev Ordered by strength. `Derived`: this chain can recompute the address from inputs in a
-///      signed transaction, because both chains' transceivers were deployed through Arachnid's
-///      factory at one address. `Attested`: it cannot, so the value came over a bridge and is
+///      signed transaction, because both chains' transceivers were deployed through
+///      `CrossProxyDeployer`, which Arachnid's factory puts at one address. `Attested`: it cannot, so the value came over a bridge and is
 ///      worth that bridge's security. A chain without Arachnid's factory shares no address with
 ///      any other, so it is `Attested` in every registry and grades every other chain
 ///      `Attested` in its own (#33).

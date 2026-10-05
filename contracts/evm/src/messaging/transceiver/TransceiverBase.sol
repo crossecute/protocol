@@ -298,7 +298,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
         bytes32 initCodeHash = CROSS_PROXY_INIT_CODE_HASH;
         if (addressesDiverge) {
-            initCodeHash = chainRegistry.providerDeployment(messageProvider).accountInitCodeHash;
+            initCodeHash = chainRegistry.providerDeployment(messageProvider).crossProxyInitCodeHash;
             if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
         }
         return abi.encodePacked(

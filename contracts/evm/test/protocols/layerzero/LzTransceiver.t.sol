@@ -243,7 +243,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
     ///      registry's prediction from the provider's deployment record.
     function test_aDivergentTransceiversGovernorHomePeerIsThePredictedOne() public {
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256("transceiver"), keccak256("account"));
+        providers[0] = ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256("account"));
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({

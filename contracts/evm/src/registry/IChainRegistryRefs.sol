@@ -5,18 +5,19 @@ import {Provenance} from "src/registry/Provenance.sol";
 
 /// @notice The CREATE2 inputs a message provider's contracts deploy from.
 ///
-/// @dev One salt per provider, used on every chain, puts that provider's transceiver at one
-///      address everywhere: the property `TransceiverBase._counterpartOn` falls back on.
-///      The salt can be mined for leading zero bytes, which are cheaper in the calldata that
-///      names the address.
+/// @dev One caller and salt per provider, used through `CrossProxyDeployer` on every chain, put
+///      that provider's transceiver at one address everywhere: the property
+///      `TransceiverBase._counterpartOn` falls back on. The salt can be mined for leading zero
+///      bytes, which are cheaper in the calldata that names the address.
 struct ProviderDeployment {
-    /// The mined salt, identical on every chain.
+    /// The account that called `CrossProxyDeployer.deploy`, the same on every chain.
+    address deployedBy;
+    /// The mined salt it passed, identical on every chain.
     bytes32 salt;
-    /// keccak256 of the transceiver proxy's initcode, byte-identical on every chain. Not an
-    /// implementation's.
-    bytes32 transceiverInitCodeHash;
-    /// keccak256 of `CrossProxy`'s initcode, the same for a transmitter and a receiver.
-    bytes32 accountInitCodeHash;
+    /// keccak256 of `CrossProxy`'s initcode as solc builds it: transceivers and accounts are
+    /// both `CrossProxy`. Recorded rather than computed, since a zkSync or Tron registry's
+    /// own compiler builds a different one.
+    bytes32 crossProxyInitCodeHash;
 }
 
 /// @notice The slice of `ChainRegistry` a transceiver needs: where remote things live, and how

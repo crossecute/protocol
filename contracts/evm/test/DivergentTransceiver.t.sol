@@ -82,6 +82,8 @@ contract DivergentTransceiverTest is Test {
     bytes32 constant HASH = keccak256("zksolc CrossProxy");
     bytes32 constant SALT = keccak256("account");
     bytes32 constant PROVIDER_SALT = keccak256("provider");
+    /// @dev Whoever deployed the provider's transceivers on parity chains.
+    address constant DEPLOYED_BY = address(0xDE91);
     address msig = address(0x5165);
     address alice = address(0xA11CE);
 
@@ -178,7 +180,7 @@ contract DivergentTransceiverTest is Test {
         t.predictReceiver(base, alice, SALT);
 
         bytes32 solcHash = keccak256("solc CrossProxy");
-        registry.setProviderDeployment(provider, PROVIDER_SALT, keccak256("transceiver"), solcHash);
+        registry.setProviderDeployment(provider, DEPLOYED_BY, PROVIDER_SALT, solcHash);
 
         address there = registry.predictTransceiver(base, provider);
         address receiver = Create2.computeAddress(t.accountSalt(alice, SALT, t.localChainKey()), solcHash, there);
@@ -202,9 +204,7 @@ contract DivergentTransceiverTest is Test {
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.counterpartOn(base);
 
-        registry.setProviderDeployment(
-            provider, PROVIDER_SALT, keccak256("transceiver"), t.CROSS_PROXY_INIT_CODE_HASH()
-        );
+        registry.setProviderDeployment(provider, DEPLOYED_BY, PROVIDER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
         address expected = registry.predictTransceiver(base, provider);
         assertEq(t.counterpartOn(base), abi.encodePacked(expected));
         assertTrue(expected != address(t), "not this contract's own address");
