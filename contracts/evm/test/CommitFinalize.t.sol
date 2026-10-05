@@ -9,7 +9,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {ICrossProxy} from "src/account/CrossProxy.sol";
-import {deployTransceiver, crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {deployTransceiver, crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";

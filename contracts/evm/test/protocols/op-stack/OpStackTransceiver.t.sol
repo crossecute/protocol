@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";

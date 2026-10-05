@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {TypeCasts} from "@hyperlane/libs/TypeCasts.sol";
 

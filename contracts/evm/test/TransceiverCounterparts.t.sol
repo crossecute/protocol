@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";

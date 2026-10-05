@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";

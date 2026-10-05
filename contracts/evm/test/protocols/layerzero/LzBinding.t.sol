@@ -3,7 +3,8 @@ pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {deployAccount} from "test/DeployCrossProxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -236,11 +237,11 @@ contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck {
         receiver = LzReceiver(payable(_deployReceiver(new Call[](0))));
     }
 
-    /// @dev Initialized in a second call, as `CrossProxy` is: a proxy initialized from its own
-    ///      constructor has no code yet, so a payload calling back into it would see none.
     function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
-        proxy = address(new ERC1967Proxy(address(new LzReceiver(address(endpoint))), ""));
-        ILzReceiverInit(proxy).initialize(sourceTransmitter, calls, HOME_EID);
+        proxy = deployAccount(
+            address(new LzReceiver(address(endpoint))),
+            abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, HOME_EID))
+        );
     }
 
     function _origin(address sender, uint32 eid) internal pure returns (Origin memory) {
@@ -299,8 +300,12 @@ contract LzInitValidationTest is Test {
 
     function test_receiverRejectsZeroHomeEid() public {
         address impl = address(new LzReceiver(ENDPOINT));
+        address proxy = address(new CrossProxy());
         vm.expectRevert(LzHomePeer.ZeroHomeEid.selector);
-        new ERC1967Proxy(impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0)));
+        ICrossProxy(proxy)
+            .upgradeInitializeAndLock(
+                impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0))
+            );
     }
 }
 
@@ -309,7 +314,7 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerChe
 
     function _transmitter() internal override returns (address) {
         return address(
-            new ERC1967Proxy(
+            deployAccount(
                 address(new LzTransmitter(address(endpoint))),
                 abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
             )

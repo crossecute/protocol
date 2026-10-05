@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployTransceiver.sol";
+import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";

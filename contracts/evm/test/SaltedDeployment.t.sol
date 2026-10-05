@@ -15,7 +15,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {CrossProxy} from "src/account/CrossProxy.sol";
 import {CrossProxyDeployer, crossProxySalt} from "src/account/CrossProxyDeployer.sol";
-import {crossProxyDeployer} from "test/DeployTransceiver.sol";
+import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
