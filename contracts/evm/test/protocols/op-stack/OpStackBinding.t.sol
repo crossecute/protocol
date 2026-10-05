@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -11,60 +10,37 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 
-import {OpStackHubTransceiver} from "src/protocols/op-stack/OpStackHubTransceiver.sol";
-import {OpStackSpokeTransceiver} from "src/protocols/op-stack/OpStackSpokeTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
 import {
-    ProviderHubSendSpec,
-    IHubSendHarness,
+    ProviderSendSpec,
+    ISendHarness,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
-    ProviderTransmitterSpec,
-    ProviderTransceiverInboundSpec
+    ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 
-/// @notice Exposes `_sendMessage`/`_quoteMessage` directly (bootstrap/ownership machinery is
-///         covered by `test/Transport.t.sol`).
-contract OpStackHubHarness is OpStackHubTransceiver {
-    constructor(address messenger, bytes32 chainKey) OpStackHubTransceiver(messenger, chainKey) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
+interface IOpStackSendHarness is ISendHarness {
+    function OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
 }
 
-contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
+/// @dev Run against each OP Stack transceiver through `_deploy`.
+abstract contract OpStackSendSuite is ProviderSendSpec, ProviderEvmRecipientSpec {
     MockCrossDomainMessenger messenger;
-    OpStackHubHarness hub;
+    IOpStackSendHarness transceiver;
     uint256 constant BASE = 8453;
+
+    /// @notice Deploy the transceiver under test against `messenger`, paired with `BASE`.
+    function _deploy() internal virtual returns (address transceiver);
 
     function setUp() public {
         messenger = new MockCrossDomainMessenger();
-        hub = OpStackHubHarness(
-            address(
-                new ERC1967Proxy(
-                    address(new OpStackHubHarness(address(messenger), ChainKey.forEvm(BASE))),
-                    abi.encodeCall(
-                        OpStackHubTransceiver.initialize,
-                        (address(0x5165), address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
-        harness = IHubSendHarness(address(hub));
+        transceiver = IOpStackSendHarness(_deploy());
+        harness = ISendHarness(address(transceiver));
     }
 
     function _configuredRecipient() internal pure override returns (bytes memory) {
@@ -85,21 +61,21 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
 
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(messenger.sentLength(), 1);
-        assertEq(messenger.sent(0).sender, address(hub));
+        assertEq(messenger.sent(0).sender, address(transceiver));
         assertEq(messenger.sent(0).target, address(0xC0DE));
     }
 
     function test_messageIsTheEntryPointCallWithThePayload() public {
-        hub.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         assertEq(messenger.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
         assertEq(messenger.sent(0).value, 0);
     }
 
     function test_minGasLimitDefaultsAndFollowsTheAttribute() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(900_000));
-        hub.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        attrs[0] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(900_000));
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
         assertEq(messenger.sent(0).minGasLimit, OpStackMessage.DEFAULT_MIN_GAS_LIMIT);
         assertEq(messenger.sent(1).minGasLimit, 900_000);
     }
@@ -108,7 +84,7 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
     function test_nonzeroValueIsRefused() public {
         vm.deal(address(this), 1 ether);
         vm.expectRevert(abi.encodeWithSelector(OpStackMessage.OpStackValueNotSupported.selector, 1));
-        hub.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
+        transceiver.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
     }
 
     /// @dev A recipient on another chain must not be delivered through this messenger, which
@@ -119,7 +95,7 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
                 OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(BASE)
             )
         );
-        hub.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
+        transceiver.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
     }
 
     function test_quoteRevertsForAnotherMessengersChain() public {
@@ -128,23 +104,23 @@ contract OpStackSendTest is ProviderHubSendSpec, ProviderEvmRecipientSpec {
                 OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(BASE)
             )
         );
-        hub.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
+        transceiver.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
     }
 
     /// @dev A malformed first attribute is reported even when an extra follows it.
     function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
         bytes[] memory attrs = new bytes[](2);
         attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        attrs[1] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(1));
+        attrs[1] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(1));
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_minGasLimitAboveUint32IsRefused() public {
         bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(hub.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
+        attrs[0] = abi.encodePacked(transceiver.OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE(), uint256(type(uint32).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        hub.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 }
 
@@ -221,71 +197,6 @@ contract OpStackReceiveTest is ProviderReceiveSpec {
     }
 }
 
-contract OpStackTransceiverReceiveTest is Test {
-    MockCrossDomainMessenger messenger;
-    OpStackSpokeTransceiver spoke;
-    OpStackHubTransceiver hub;
-    address homeTransceiver = address(0xD00D);
-
-    function setUp() public {
-        messenger = new MockCrossDomainMessenger();
-        spoke = OpStackSpokeTransceiver(
-            payable(new ERC1967Proxy(
-                    address(new OpStackSpokeTransceiver(address(messenger))),
-                    abi.encodeCall(
-                        OpStackSpokeTransceiver.initialize,
-                        (
-                            new address[](0),
-                            address(0xC0DE),
-                            ChainKey.forEvm(1),
-                            Erc7930.encodeEvmChain(1),
-                            abi.encodePacked(homeTransceiver),
-                            address(0x7EA5),
-                            bytes32(0)
-                        )
-                    )
-                ))
-        );
-        hub = OpStackHubTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new OpStackHubTransceiver(address(messenger), ChainKey.forEvm(8453))),
-                    abi.encodeCall(
-                        OpStackHubTransceiver.initialize, (address(this), address(0), new address[](0), address(0xBEEF))
-                    )
-                )
-            )
-        );
-    }
-
-    function test_hubAndSpokeGrantTheMessengerTheGatewayRole() public view {
-        assertTrue(hub.hasRole(hub.GATEWAY_ROLE(), address(messenger)));
-        assertTrue(spoke.hasRole(spoke.GATEWAY_ROLE(), address(messenger)));
-    }
-
-    function test_spokeRejectsANonHubSender() public {
-        vm.expectRevert();
-        messenger.relay(address(0xBAD), address(spoke), abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function test_spokeRejectsAnyCallerButTheMessenger() public {
-        vm.expectRevert();
-        spoke.receiveOpStackMessage("");
-    }
-
-    /// @dev The hub's only origin is the messenger's chain; with no route recorded for it,
-    ///      nothing is accepted.
-    function test_hubRejectsDeliveryBeforeItsChainIsRouted() public {
-        vm.expectRevert();
-        messenger.relay(address(0xC0DE), address(hub), abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function test_hubRejectsAnyCallerButTheMessenger() public {
-        vm.expectRevert();
-        hub.receiveOpStackMessage("");
-    }
-}
-
 contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
     address messenger = address(0xBEEF);
 
@@ -307,77 +218,3 @@ contract OpStackTransmitterInboundTest is ProviderTransmitterSpec {
     }
 }
 
-contract OpStackInboundHubHarness is OpStackHubTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address m, bytes32 k) OpStackHubTransceiver(m, k) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract OpStackInboundSpokeHarness is OpStackSpokeTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address m) OpStackSpokeTransceiver(m) {}
-
-    function _handleInbound(bytes32 chainKey, bytes calldata) internal override {
-        emit InboundHandled(chainKey);
-    }
-}
-
-contract OpStackTransceiverInboundTest is ProviderTransceiverInboundSpec {
-    /// @dev One messenger per pair of chains: the hub's reaches `SPOKE_CHAIN_ID`, the spoke's home.
-    MockCrossDomainMessenger hubMessenger = new MockCrossDomainMessenger();
-    MockCrossDomainMessenger spokeMessenger = new MockCrossDomainMessenger();
-    address msig = address(0x5165);
-    address hub;
-    address spoke;
-
-    function setUp() public {
-        hub = address(
-            new ERC1967Proxy(
-                address(new OpStackInboundHubHarness(address(hubMessenger), ChainKey.forEvm(SPOKE_CHAIN_ID))),
-                abi.encodeCall(OpStackHubTransceiver.initialize, (msig, address(0), new address[](0), address(0xBEEF)))
-            )
-        );
-        spoke = address(
-            new ERC1967Proxy(
-                address(new OpStackInboundSpokeHarness(address(spokeMessenger))),
-                abi.encodeCall(
-                    OpStackSpokeTransceiver.initialize,
-                    (
-                        new address[](0),
-                        address(0xC0DE),
-                        ChainKey.forEvm(HOME_CHAIN_ID),
-                        Erc7930.encodeEvmChain(HOME_CHAIN_ID),
-                        abi.encodePacked(HUB_TRANSCEIVER),
-                        address(0x7EA5),
-                        bytes32(0)
-                    )
-                )
-            )
-        );
-    }
-
-    function _hub() internal view override returns (address) {
-        return hub;
-    }
-
-    function _hubOwner() internal view override returns (address) {
-        return msig;
-    }
-
-    function _spoke() internal view override returns (address) {
-        return spoke;
-    }
-
-    function _deliverToHub(address sender) internal override {
-        hubMessenger.relay(sender, hub, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-
-    function _deliverToSpoke(address sender) internal override {
-        spokeMessenger.relay(sender, spoke, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, ("")));
-    }
-}

@@ -125,6 +125,17 @@ contract CommitmentSchemeTest is Test {
 
     /// @dev An empty array would be the seed alone, a valid approval of nothing, so every
     ///      fold refuses one.
+    /// @dev #27: a chain without EIP-152 has an empty account at 0x09, which answers a call
+    ///      with success and no data. That must revert, not hash to zeros.
+    function test_aMissingBlake2fPrecompileReverts() public {
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+        vm.mockCall(address(0x09), bytes(""), bytes(""));
+
+        vm.expectRevert(Blake2b256.PrecompileFailed.selector);
+        h.hashElements(Scheme.Blake2b256Scheme, DEST, elements);
+    }
+
     function test_anEmptyArrayIsRefusedUnderEveryScheme() public {
         bytes[] memory none = new bytes[](0);
         Scheme[3] memory schemes = [Scheme.Keccak256, Scheme.Sha256, Scheme.Blake2b256Scheme];

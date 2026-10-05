@@ -7,12 +7,12 @@ import {Blake2b256} from "src/derivation/Blake2b256.sol";
 
 /// @notice The hash a destination computes its commitments with.
 ///
-/// @dev The fold is fixed and only the primitive varies, so the hub can reproduce any
+/// @dev The fold is fixed and only the primitive varies, so the home can reproduce any
 ///      destination's commitment for a signer. The cost is that a non-EVM receiver implements
 ///      a byte fold rather than its native digest (TON's cell hash, Starknet's
 ///      `poseidon_hash_span`).
 ///
-/// @dev An EVM receiver only ever uses keccak256; the others are for the hub building a
+/// @dev An EVM receiver only ever uses keccak256; the others are for the home building a
 ///      commitment another VM will recompute.
 enum Scheme {
     /// EVM. The opcode.

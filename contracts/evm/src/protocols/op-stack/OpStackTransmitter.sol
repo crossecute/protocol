@@ -4,14 +4,14 @@ pragma solidity ^0.8.0;
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 
-/// @dev What a transmitter reads from the `OpStackHubTransceiver` that created it: the one
+/// @dev What a transmitter reads from the OP Stack transceiver that created it: the one
 ///      messenger it sends through, and the one chain that messenger reaches.
 interface IOpStackMessengerSource {
     function messenger() external view returns (address);
     function messengerChainKey() external view returns (bytes32);
 }
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `receiveOpStackMessage`, so R3.1 is answered by absence rather than a
 ///      guard. Binds to `ICrossDomainMessenger`, not `OptimismPortal`: the messenger un-aliases
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See
@@ -22,8 +22,8 @@ contract OpStackTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
-        IOpStackMessengerSource hub = IOpStackMessengerSource(transceiver);
-        return OpStackMessage.send(hub.messenger(), hub.messengerChainKey(), recipient, payload, attributes, value);
+        IOpStackMessengerSource t = IOpStackMessengerSource(transceiver);
+        return OpStackMessage.send(t.messenger(), t.messengerChainKey(), recipient, payload, attributes, value);
     }
 
     /// @dev Zero: see `OpStackMessage`.

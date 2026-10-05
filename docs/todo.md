@@ -20,6 +20,11 @@ this file is the gap between that design and the tree.
   Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
   records the failed relay and anyone can replay it with more gas); the others are not
   known to be.
+- **The report float is not sized.** A zkSync or Tron transceiver pays every return report
+  from its own float, in its own currency, for accounts homed on any chain, while each home
+  charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
+  pays; the float is funded out of band, and how much it needs depends on traffic from every
+  home.
 
 ## 2. Chain checks before mainnet
 
@@ -28,31 +33,64 @@ this file is the gap between that design and the tree.
   Arachnid's factory so the chain's own engine answers, does not transfer, because that
   factory relies on a pre-signed Ethereum transaction and is absent from Tron and Shasta. A
   one-afternoon empirical check that de-risks a whole chain family. Now load-bearing rather
-  than merely tidy: `TronSpokeTransceiver` commits to `0x41` through
-  `AddressDerive.tronCreate2`, so this check is what decides whether that spoke works. It
-  fails closed if wrong (`AccountAddressMismatch` on every account creation), so the cost of
-  being wrong is a redeploy rather than a loss. zkSync Era's override
-  (`ZkSyncSpokeTransceiver`) is unverified the same way and needs the same one-account check.
+  than merely tidy: `TronAccounts`, which every Tron transceiver uses, commits to `0x41`
+  through `AddressDerive.tronCreate2`, so this check is what decides whether a Tron
+  transceiver works. It fails closed if wrong (`AccountAddressMismatch` on every account
+  creation), so the cost of being wrong is a redeploy rather than a loss. zkSync Era's
+  derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
+  check.
+- **Arachnid's factory on every target chain.** A chain is `Derived` only if its
+  transceivers were deployed through Arachnid's factory (#33). Which target chains have it
+  is not checked. A chain without it is `Attested` in every registry and grades every other
+  chain `Attested` in its own, so its transceivers cannot be born configured: the governor's
+  home is not `Derived` from there, and `initialize` refuses that (#32). Supporting one needs
+  a way to seed the home's counterpart on that chain, such as an explicit counterpart in the
+  registry seed.
+- **EIP-152 on every target chain.** Any chain can be a home, and the BLAKE2b commitment
+  scheme needs the precompile at `0x09`. Without it `Blake2b256` fails closed (the scheme
+  reverts), so the cost is the feature, not funds, but which target chains have it is not
+  verified.
+- **Not every pair is a lane.** CCIP lanes, Wormhole Executor quotes, and Hyperlane routes
+  exist per pair, and every transceiver now has routes to nearly every chain. What each
+  provider's quote does for an unconnected pair is not checked; a bootstrap there should
+  revert at the quote rather than on the provider. One test per binding.
+- **Hyperlane's verification is the destination's.** The destination Mailbox's ISM decides
+  what counts as verified for every origin that chain accepts, so each origin added on a
+  chain is held to that chain's ISM. Which ISM each target chain's Mailbox uses is not
+  checked.
 
 ## 3. Infrastructure
 
-- **No deploy scripts.** `script/` holds only the vendoring drivers. The Assumptions section
-  specifies an elaborate deploy story (Arachnid's factory, proxy with deployer-as-owner,
-  immediate upgrade, ProxyAdmin under the msig), with no code behind it. The CREATE2 parity
-  argument stands or falls on that initcode being byte-identical, and nothing pins it. The
-  scripts are also where the deployment-time provider decisions get made: the
-  [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) order, the
-  `accountInitCodeHash` assertion (R8.4), and how many gateways each transceiver's
-  initializer names, since a transceiver's gateways cannot be added to later.
-  The home chain comes from one environment variable that every script reads, so every spoke
-  in a deployment names the same home: nothing on-chain can check that, since a spoke has no
-  view of its siblings.
+- **No deploy scripts.** `script/` holds only the vendoring drivers. The deploy story in the
+  [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) (Arachnid's
+  factory, a per-chain timelock, a seeded registry, transceivers born accepting the governor's
+  home) has no code behind it. The CREATE2 parity argument stands or falls on that initcode
+  and those constructor arguments being byte-identical on every chain, and nothing pins them.
+  The scripts are also where the deployment-time provider decisions get made: the
+  `accountInitCodeHash` assertion (R8.4), how many gateways each transceiver's initializer
+  names (they cannot be added later), the N × N tables every chain needs about every
+  other chain, generated from one source since nothing on-chain checks they agree, and the
+  `WormholeMessage` library every Wormhole contract links, deployed before them (on zkSync
+  and Tron, linked when that chain's bytecode is built).
+  They must also arm each transceiver's stub proxy in the deployment transaction, or make the
+  stub deployer-only: a counterpart on a `Derived` chain is the address alone, so whoever
+  arms the stub at that address on a chain the routes name authenticates as the provider's
+  transceiver there.
 - **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
   says where every line is held). C21's script-side assertion waits on the deploy scripts.
   C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
   (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
   collision inside a single call, so two fields an initializer sets together are covered
   only by the suites that read them back.
+- **Reentrancy across a transceiver's roles is untested.** One transceiver sends bootstraps
+  with an account's `msg.value` and, inside a delivery, sends reports from its float. No test
+  has one transaction do both, such as a bootstrap payload that runs on a receiver on the
+  same chain and calls back into the transceiver. Only `ReceiverBase` has a reentrancy guard.
+- **The grade names say how, not what.** `Derived` means a chain's transceivers share this
+  chain's address through Arachnid's factory, so an address there can be computed here;
+  `Attested` means it is given rather than computed. Rename them to what they mean before
+  the docs and deploy scripts depend on them further. `Provenance`
+  values persist in storage, so a rename is a source change only and keeps the order.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.
@@ -100,3 +138,22 @@ blocks it.
   [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
+
+## 5. Post-launch: Superchain interop
+
+OP Stack stays the pairwise L1-to-L2 binding. Superchain interop's
+`L2ToL2CrossDomainMessenger` fits the one-transceiver-per-chain shape and becomes a separate
+provider once it is on mainnet. Before building it:
+
+- **L2 to L2 only.** Ethereum is not in the interop set, so an Ethereum home still needs the
+  pairwise binding.
+- **Dependency sets.** A message executes only if its source is in the destination's
+  dependency set, so the routes must match each chain's set, and a bootstrap outside it must
+  revert at the quote.
+- **Someone must relay.** `sendMessage` is non-payable and `relayMessage` permissionless, so
+  delivery depends on an autorelayer or on this protocol relaying.
+- **Retry and expiry are unverified.** A message relays at most once (`successfulMessages`);
+  whether a reverted relay can be retried, and whether a 7-day expiry on the source log
+  applies, is not settled. [Failure handling](message-flow.md#failure-handling) assumes
+  indefinite retry, so this is the provider checklist's work
+  ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).

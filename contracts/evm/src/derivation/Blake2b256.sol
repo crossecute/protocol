@@ -101,7 +101,10 @@ library Blake2b256 {
         out = new bytes(64);
         bool ok;
         assembly {
+            // A chain without EIP-152 has an empty account at 0x09: the call succeeds and
+            // returns nothing, so the size is checked too, or every digest would be zero.
             ok := staticcall(gas(), 0x09, add(input, 32), 213, add(out, 32), 64)
+            ok := and(ok, eq(returndatasize(), 64))
         }
         if (!ok) revert PrecompileFailed();
     }

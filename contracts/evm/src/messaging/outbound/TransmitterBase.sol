@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {RolesEnumerable} from "src/messaging/Roles.sol";
 import {ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -47,14 +48,17 @@ interface IAccountTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
-    /// @notice Whether a destination reports its receiver address back, rather than the hub
-    ///         deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
+    /// @notice Whether a destination reports its receiver address back, rather than this
+    ///         chain deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
     ///         every non-EVM VM. Asked here because an account holds no registry.
     function reportsReceiver(bytes32 chainKey) external view returns (bool);
 
     /// @notice The chain identifier the msig configured a destination under, including one
     ///         this account has not bootstrapped yet.
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
+
+    /// @notice Where this account's receiver will sit on a chain that does not report it.
+    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
 }
 
 /// @title TransmitterBase
@@ -70,11 +74,12 @@ interface IAccountTransceiver {
 ///      `renounceOwnership` bricks the account, since every entry point is owner-gated. Left
 ///      available on purpose, so an owner can retire an account for good.
 ///
-/// @dev No registry pointer: chainKeys derive purely and the hub does the directory lookups.
+/// @dev No registry pointer: chainKeys derive purely and the transceiver does the directory
+///      lookups.
 ///
 /// @dev Commitments are hashed with the destination's chainKey, not this chain's:
 ///      `Commitment.hashCalls` seeds with the chain the receiver recomputes on.
-abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC7786GatewaySource {
+abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerable, Executor, IERC7786GatewaySource {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
     /// The caller-chosen half of this account's CREATE2 salt, stored because `bootstrap` must
@@ -130,7 +135,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     /// @notice Whether this account can be sent to on `destinationChainKey` yet.
     /// @dev Equals `isBootstrapped` where the receiver's address is known at dispatch. On
-    ///      zkSync, Tron, and every non-EVM VM it stays false until the spoke's report lands.
+    ///      zkSync, Tron, and every non-EVM VM it stays false until the destination's report lands.
     function isReachable(bytes32 destinationChainKey) external view returns (bool) {
         return hasCounterpart(destinationChainKey);
     }
@@ -143,8 +148,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     /// Destinations whose receiver address has been reported and is now fixed.
     ///
     /// @dev Single-shot, with no owner override: the receiver address decides where a payload
-    ///      lands. A wrong report is permanent for that destination, which requires the spoke
-    ///      on that chain to be compromised or misbuilt, losing the chain either way.
+    ///      lands. A wrong report is permanent for that destination, which requires the
+    ///      transceiver on that chain to be compromised or misbuilt, losing the chain either way.
     mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
 
     /// @notice Destinations this account has dispatched a bootstrap to.
@@ -247,10 +252,15 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
         return false;
     }
 
-    /// @notice The ERC-7930 address of this account on `destinationChainId`: the recipient
-    ///         `sendMessage` expects on a parity chain.
+    /// @notice The recipient `sendMessage` takes for this account on `destinationChainId`: its
+    ///         recorded receiver there, as an ERC-7930 address. Reverts until the receiver is
+    ///         known.
+    /// @dev Not this account's own address: the two differ wherever this chain or the
+    ///      destination derives addresses differently from Ethereum.
     function recipientOn(uint256 destinationChainId) public view returns (bytes memory) {
-        return Erc7930.encodeEvm(destinationChainId, address(this));
+        bytes32 chainKey = ChainKey.forEvm(destinationChainId);
+        _requireBootstrapped(chainKey);
+        return _recipientOn(chainKey);
     }
 
     /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapTo`'s first
@@ -462,18 +472,23 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
     ///      record. A revert unwinds it with everything else.
     ///
     /// @dev Records the receiver only where its address is already known (the chain does not
-    ///      report). On a reporting chain the destination stays unreachable until the report
-    ///      arrives, rather than addressed at a guess.
+    ///      report), as the transceiver predicts it there: this account's own address only when
+    ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
+    ///      unreachable until the report arrives, rather than addressed at a guess.
     function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
         if (transceiver == address(0)) revert NoTransceiver();
-        chainKey = ChainKey.fromIdentifier(identifier);
+        // Reduced to the bare chain identifier the route table holds, so the send accepts
+        // exactly what the quote does: an account envelope names the same chain.
+        bytes memory route = Erc7930.toChainIdentifier(identifier);
+        chainKey = keccak256(route);
         _requireNotBootstrapped(chainKey);
 
         _bootstrapDispatched[chainKey] = true;
-        _setRoute(chainKey, identifier);
+        _setRoute(chainKey, route);
 
-        if (!IAccountTransceiver(transceiver).reportsReceiver(chainKey)) {
-            _setCounterpart(chainKey, abi.encodePacked(address(this)));
+        IAccountTransceiver t = IAccountTransceiver(transceiver);
+        if (!t.reportsReceiver(chainKey)) {
+            _setCounterpart(chainKey, t.predictReceiver(chainKey, _owner(), accountSalt));
         }
 
         emit DestinationBootstrapped(chainKey);
@@ -547,7 +562,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, Executor, IERC
 
     /// @inheritdoc OutboundBase
     /// @dev Path A: this account paid from its own balance. Path B refunds come here too, as
-    ///      the hub's caller.
+    ///      the transceiver's caller.
     function _refundTo() internal view override returns (address) {
         return address(this);
     }

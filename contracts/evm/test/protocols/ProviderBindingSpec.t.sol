@@ -6,24 +6,23 @@ import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {ProviderOrigin} from "src/protocols/ProviderOrigin.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
+import {providerIdOf, ProviderChainId, IProviderIdTable} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
+import {unseeded} from "test/RegistrySeed.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
-import {SpokeTransceiverBase} from "src/messaging/transceiver/spoke/SpokeTransceiverBase.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {Envelope} from "src/messaging/Envelope.sol";
 
-/// @notice The wrapper every provider's hub-send test harness exposes: a thin subclass of the
-///         real hub transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
+/// @notice The wrapper every provider's send test harness exposes: a thin subclass of the
+///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
 ///         so a test can exercise the translation layer without going through the full
-///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzHubHarness`.
-interface IHubSendHarness {
+///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzTransceiverHarness`.
+interface ISendHarness {
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
         payable
@@ -32,8 +31,8 @@ interface IHubSendHarness {
     function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256);
 }
 
-/// @title ProviderHubSendSpec
-/// @notice The properties every native provider binding's hub send path must satisfy,
+/// @title ProviderSendSpec
+/// @notice The properties every native provider binding's transceiver send path must satisfy,
 ///         independent of which provider it is. A concrete per-provider suite (e.g.
 ///         `LzBinding.t.sol:LzSendTest`) inherits this and implements the hooks below against
 ///         its own mock provider endpoint; the test bodies run unchanged.
@@ -45,9 +44,9 @@ interface IHubSendHarness {
 ///      Wormhole, and OP Stack. Each concrete suite still owns its own provider-specific mock
 ///      (e.g. `MockLzEndpoint`) and harness contract; this only fixes what that mock has to
 ///      support and what has to be true of it.
-abstract contract ProviderHubSendSpec is Test {
+abstract contract ProviderSendSpec is Test {
     /// @notice The harness under test, set in the concrete suite's `setUp`.
-    IHubSendHarness internal harness;
+    ISendHarness internal harness;
 
     /// @notice A recipient on a chain the concrete suite has configured a real destination
     ///         for (provider id/selector/domain, and a counterpart/peer), built with the same
@@ -107,8 +106,8 @@ abstract contract ProviderHubSendSpec is Test {
 
     /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
     function test_quoteIsView() public view {
-        (bool ok,) = address(harness)
-            .staticcall(abi.encodeCall(IHubSendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
+        (bool ok,) =
+            address(harness).staticcall(abi.encodeCall(ISendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
         assertTrue(ok);
     }
 }
@@ -116,7 +115,7 @@ abstract contract ProviderHubSendSpec is Test {
 /// @title ProviderFeeSpec
 /// @notice For providers that charge a native fee at the source (all but OP Stack): what the
 ///         quote names is what the send pays, from `value`, and paying less is refused.
-abstract contract ProviderFeeSpec is ProviderHubSendSpec {
+abstract contract ProviderFeeSpec is ProviderSendSpec {
     /// @notice What the provider's mocks were paid, in total, for the last send.
     function _lastPaid() internal view virtual returns (uint256);
 
@@ -185,22 +184,23 @@ abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
 }
 
 /// @title ProviderIdTableSpec
-/// @notice For hubs with a provider id table: what every transmitter reads on each send, through
+/// @notice For transceivers with a provider id table: what every transmitter reads on each send, through
 ///         the same `providerIdOf` it calls.
-abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
+abstract contract ProviderIdTableSpec is ProviderSendSpec {
     /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
     function _configuredProviderId() internal view virtual returns (uint256);
 
-    /// @notice Call the hub's typed setter, as its owner.
+    /// @notice Call the transceiver's typed setter, as its owner.
     function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
 
-    /// @notice Deliver to the hub through the provider's own path, from an origin id never set.
-    function _deliverToHubFromUnmappedOrigin(uint256 providerId) internal virtual;
+    /// @notice Deliver to the transceiver through the provider's own path, from an origin id
+    ///         never set.
+    function _deliverFromUnmappedOrigin(uint256 providerId) internal virtual;
 
     /// @notice The exact revert for that delivery.
     function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
 
-    function test_transmittersReadTheConfiguredIdFromTheHub() public {
+    function test_transmittersReadTheConfiguredIdFromTheTransceiver() public {
         assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
         vm.expectRevert(
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
@@ -217,17 +217,17 @@ abstract contract ProviderIdTableSpec is ProviderHubSendSpec {
         _setProviderIdAsOwner(chainKey, _configuredProviderId() + 1);
     }
 
-    /// @dev C5, hub side: a delivery whose origin the table does not map is refused.
+    /// @dev C5, transceiver side: a delivery whose origin the table does not map is refused.
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
-        _deliverToHubFromUnmappedOrigin(999);
+        _deliverFromUnmappedOrigin(999);
     }
 }
 
 /// @title ProviderEvmRecipientSpec
 /// @notice For bindings that deliver to the recipient's address as an EVM address: a recipient
 ///         whose address is not 20 bytes is refused rather than truncated into another one.
-abstract contract ProviderEvmRecipientSpec is ProviderHubSendSpec {
+abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
     function test_aNonEvmWidthRecipientIsRefused() public {
         bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
         bytes memory recipient =
@@ -385,165 +385,197 @@ abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
     }
 }
 
-/// @title ProviderTransceiverInboundSpec
-/// @notice C4, C6, C7 for transceivers: the route and sender bytes a binding hands `_onInbound`
-///         authenticate the configured counterpart exactly, and nothing else on that chain.
-/// @dev The harnesses override `_handleInbound` to emit `InboundHandled`, so what is asserted is
-///      the chain the base's own authentication accepted, not a stand-in for it.
-abstract contract ProviderTransceiverInboundSpec is Test {
+/// @title ProviderInboundSpec
+/// @title ProviderGovernorHomeSpec
+/// @notice #28: on any chain but the governor's home, the transceiver's owner is created by a
+///         bootstrap from that home, so a binding with a provider id table names the home's id
+///         at initialization rather than leaving it to an owner that does not exist yet.
+abstract contract ProviderGovernorHomeSpec is Test {
+    /// @notice Deploy the plain transceiver with `id` as the governor home's provider id and
+    ///         Ethereum as the governor's home.
+    function _deployWithGovernorHomeId(uint256 id) internal virtual returns (address);
+
+    function test_theGovernorHomeIdIsNamedAtInitialization() public {
+        address t = _deployWithGovernorHomeId(7);
+        assertEq(IProviderIdTable(t).providerIdFor(ChainKey.forEvm(1)), 7);
+        assertEq(TransceiverBase(payable(t)).routeFor(ChainKey.forEvm(1)), Erc7930.encodeEvmChain(1), "and its route");
+    }
+}
+
+/// @notice What every binding's transceiver must satisfy on the
+///         way in: a bootstrap from a configured origin, arriving through the provider's own
+///         path, creates a receiver configured for that provider; a wrong sender is refused;
+///         and the float can be funded and leaves only to the treasury.
+/// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
+///      Forge's EVM, so their suites pin their own overrides instead.
+abstract contract ProviderInboundSpec is Test {
     event InboundHandled(bytes32 chainKey);
 
-    uint256 internal constant HOME_CHAIN_ID = 1;
-    uint256 internal constant SPOKE_CHAIN_ID = 8453;
-    /// @dev The spoke's counterpart as the hub records it, and the hub as the spoke records it.
-    address internal constant SPOKE_TRANSCEIVER = address(0xC0DE);
-    address internal constant HUB_TRANSCEIVER = address(0xD00D);
+    uint256 internal constant ORIGIN_CHAIN_ID = 8453;
+    /// @dev The origin's transceiver as this one records it. `Attested`, so no parity check.
+    address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
+    address internal constant ACCOUNT_OWNER = address(0xA11CE);
+    bytes32 internal constant ACCOUNT_SALT = keccak256("account");
+    address internal constant ORIGIN_TRANSMITTER = address(0x7A11);
 
-    /// @notice A hub harness, owned by `_hubOwner()`, whose id table maps `SPOKE_CHAIN_ID`.
-    function _hub() internal view virtual returns (address);
-    function _hubOwner() internal view virtual returns (address);
+    /// @notice The transceiver under test, emitting `InboundHandled(origin)` as it handles a
+    ///         message, with a receiver implementation for its provider and a treasury.
+    function _transceiver() internal view virtual returns (address);
 
-    /// @notice A spoke harness homed on `HOME_CHAIN_ID`, with `HUB_TRANSCEIVER` as its hub.
-    function _spoke() internal view virtual returns (address);
+    /// @notice Provider-side configuration for the origin: its provider id, and anything the
+    ///         provider needs to accept `ORIGIN_TRANSCEIVER` (a LayerZero peer). As the owner.
+    function _configureOrigin(bytes32 chainKey) internal virtual;
 
-    /// @notice Deliver to the hub through the provider's own path, from `SPOKE_CHAIN_ID`.
-    function _deliverToHub(address sender) internal virtual;
+    /// @notice Deliver `message` to `transceiver` through the provider's own path, from
+    ///         `ORIGIN_CHAIN_ID`.
+    function _deliverTo(address transceiver, address sender, bytes memory message) internal virtual;
 
-    /// @notice Deliver to the spoke through the provider's own path, from home.
-    function _deliverToSpoke(address sender) internal virtual;
+    /// @notice Deploy the plain transceiver born knowing only the governor's home,
+    ///         `ORIGIN_CHAIN_ID`: `registry`, provider `keccak256("under-test")`, an `Attested`
+    ///         bar, and the provider's id for that home, with no owner call afterwards.
+    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
+        internal
+        virtual
+        returns (address);
 
-    /// @notice Provider-side configuration the hub needs to accept `SPOKE_TRANSCEIVER` (a
-    ///         LayerZero peer). None by default.
-    function _configureProviderPeer() internal virtual {}
-
-    /// @notice The revert for a wrong sender. The base's own by default; LayerZero's peer check
-    ///         refuses it first (its R3.3 exception).
-    function _hubWrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(HubTransceiverBase.NotCounterpart.selector, chainKey);
+    function _deliver(address sender, bytes memory message) internal {
+        _deliverTo(_transceiver(), sender, message);
     }
 
-    function _spokeWrongSenderRevert(address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(SpokeTransceiverBase.NotHomeOrigin.selector);
+    /// @notice The revert for a wrong sender: the base's by default.
+    function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, chainKey);
     }
 
-    function _wireHub() internal returns (bytes32 chainKey) {
-        address owner = _hubOwner();
-        ChainRegistry registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (owner))))
-        );
-        HubTransceiverBase hub = HubTransceiverBase(payable(_hub()));
-        vm.startPrank(owner);
+    /// @notice Assert the receiver was configured for the provider before its payload ran
+    ///         (R6). Nothing to check by default.
+    function _assertReceiverConfigured(address receiver, address transmitter) internal view virtual {}
+
+    function _wire() internal returns (bytes32 chainKey) {
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
-        hub.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
-        registry.setLocalTransceiver(provider, address(hub));
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
-        registry.setProvenance(chainKey, Provenance.Attested);
-        hub.setCounterpart(chainKey, Erc7930.encodeEvm(SPOKE_CHAIN_ID, SPOKE_TRANSCEIVER));
-        hub.setRoute(chainKey, Erc7930.encodeEvmChain(SPOKE_CHAIN_ID));
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Attested);
+
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
+        t.setCounterpart(chainKey, Erc7930.encodeEvm(ORIGIN_CHAIN_ID, ORIGIN_TRANSCEIVER));
+        t.setRoute(chainKey, Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
         vm.stopPrank();
-        _configureProviderPeer();
+        _configureOrigin(chainKey);
     }
 
-    function test_hubAcceptsItsCounterpartThroughTheBinding() public {
-        bytes32 chainKey = _wireHub();
-        vm.expectEmit(true, true, true, true, _hub());
+    function _bootstrap() internal pure returns (bytes memory) {
+        return Envelope.encodeBootstrap(
+            ACCOUNT_OWNER, ACCOUNT_SALT, bytes32(uint256(uint160(ORIGIN_TRANSMITTER))), new Call[](0)
+        );
+    }
+
+    /// @dev #28 end to end: a transceiver born knowing only the governor's home accepts the
+    ///      governor's bootstrap through the provider's own callback, and the receiver it
+    ///      creates is its owner. The sender is the default counterpart on a `Derived` home:
+    ///      this transceiver's own address.
+    function test_aBornConfiguredTransceiverAcceptsTheGovernorsBootstrap() public {
+        address t = _deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Derived))), GOVERNOR, 0);
+        address owner = TransceiverBase(payable(t)).owner();
+        assertEq(owner.code.length, 0, "the owner does not exist yet");
+
+        _deliverTo(t, t, _governorsBootstrap(owner));
+
+        assertEq(ReceiverBase(payable(owner)).sourceTransmitter(), owner, "the bootstrap created the owner");
+    }
+
+    /// @dev #32: only the owner the bootstrap creates could set a counterpart, so a home whose
+    ///      counterpart does not resolve at birth is refused rather than left unusable.
+    function test_aGovernorHomeBelowDerivedIsRefusedAtBirth() public {
+        ChainRegistry registry = _seeded(Provenance.Attested);
+        vm.expectRevert(
+            abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, ChainKey.forEvm(ORIGIN_CHAIN_ID))
+        );
+        this.deployBornConfigured(IChainRegistryRefs(address(registry)));
+    }
+
+    function test_aSuspendedGovernorHomeIsRefusedAtBirth() public {
+        ChainRegistry registry = _seeded(Provenance.Derived);
+        bytes32 home = ChainKey.forEvm(ORIGIN_CHAIN_ID);
+        registry.setSuspended(home, true);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, home));
+        this.deployBornConfigured(IChainRegistryRefs(address(registry)));
+    }
+
+    address internal constant GOVERNOR = address(0x5165);
+
+    /// @dev External so that an expected revert attaches to the deployment, not the first
+    ///      contract `_deployBornConfigured` creates on the way.
+    function deployBornConfigured(IChainRegistryRefs registry) external returns (address) {
+        return _deployBornConfigured(registry, GOVERNOR, 0);
+    }
+
+    function _seeded(Provenance homeGrade) internal returns (ChainRegistry) {
+        return new ChainRegistry(
+            address(this),
+            RegistrySeed({
+                governorHome: Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID),
+                governorHomeGrade: homeGrade,
+                providers: new ProviderSeed[](0)
+            })
+        );
+    }
+
+    /// @dev Sent from the default counterpart on a `Derived` home with no deployment record,
+    ///      the transceiver's own address.
+    function _governorsBootstrap(address owner) internal pure returns (bytes memory) {
+        return Envelope.encodeBootstrap(GOVERNOR, bytes32(0), bytes32(uint256(uint160(owner))), new Call[](0));
+    }
+
+    function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {
+        bytes32 chainKey = _wire();
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+
+        vm.expectEmit(true, true, true, true, address(t));
         emit InboundHandled(chainKey);
-        _deliverToHub(SPOKE_TRANSCEIVER);
+        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+
+        address receiver = t.predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
+        _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
 
-    function test_hubRefusesAnotherSenderOnTheCounterpartsChain() public {
-        bytes32 chainKey = _wireHub();
-        vm.expectRevert(_hubWrongSenderRevert(chainKey, address(0xBAD)));
-        _deliverToHub(address(0xBAD));
+    function test_anotherSenderOnTheOriginIsRefused() public {
+        bytes32 chainKey = _wire();
+        vm.expectRevert(_wrongSenderRevert(chainKey, address(0xBAD)));
+        _deliver(address(0xBAD), _bootstrap());
     }
 
-    function test_spokeAcceptsItsHubThroughTheBinding() public {
-        vm.expectEmit(true, true, true, true, _spoke());
-        emit InboundHandled(ChainKey.forEvm(HOME_CHAIN_ID));
-        _deliverToSpoke(HUB_TRANSCEIVER);
-    }
-
-    function test_spokeRefusesAnotherSenderFromHome() public {
-        vm.expectRevert(_spokeWrongSenderRevert(address(0xBAD)));
-        _deliverToSpoke(address(0xBAD));
-    }
-
-    /// @dev The report is paid from the spoke's balance, so an operator has to be able to
-    ///      fund it with a plain transfer (#17).
-    function test_spokeAcceptsAPlainTransfer() public {
+    /// @dev The report float is funded with a plain transfer (#17).
+    function test_itAcceptsAPlainTransfer() public {
         vm.deal(address(this), 1 ether);
-        (bool ok,) = _spoke().call{value: 1 ether}("");
+        (bool ok,) = _transceiver().call{value: 1 ether}("");
         assertTrue(ok);
-        assertEq(_spoke().balance, 1 ether);
     }
 
-    /// @dev The float leaves only at the treasury's call and only to the treasury, so the
-    ///      binding must pass its initializer's treasury through to the base.
-    function test_spokeFloatLeavesOnlyToTheTreasury() public {
-        SpokeTransceiverBase spoke = SpokeTransceiverBase(payable(_spoke()));
-        address treasury = spoke.treasury();
-        vm.deal(address(spoke), 1 ether);
+    function test_theFloatLeavesOnlyToTheTreasury() public {
+        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+        address treasury = t.treasury();
+        vm.deal(address(t), 1 ether);
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(SpokeTransceiverBase.NotTreasury.selector, address(0xBAD)));
-        spoke.withdraw(1 ether);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTreasury.selector, address(0xBAD)));
+        t.withdraw(1 ether);
 
         uint256 before = treasury.balance;
         vm.prank(treasury);
-        spoke.withdraw(0.4 ether);
+        t.withdraw(0.4 ether);
         assertEq(treasury.balance - before, 0.4 ether);
-        assertEq(address(spoke).balance, 0.6 ether);
     }
 
-    /// @dev C24 over the hub's configuration after `initialize` and a delivery to each side.
+    /// @dev C24 over configuration and a delivery.
     function test_noWriteLandsOnAnotherField() public {
         vm.startStateDiffRecording();
-        _wireHub();
-        _deliverToHub(SPOKE_TRANSCEIVER);
-        _deliverToSpoke(HUB_TRANSCEIVER);
-        address[] memory accounts = new address[](2);
-        accounts[0] = _hub();
-        accounts[1] = _spoke();
+        _wire();
+        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+        address[] memory accounts = new address[](1);
+        accounts[0] = _transceiver();
         SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
-    }
-}
-
-/// @title ProviderSpokeOriginSpec
-/// @notice Every spoke variant (base, zkSync, Tron) of a binding whose provider reports the
-///         origin chain refuses the hub's own address from any chain but home.
-/// @dev LayerZero is not held to this: its per-eid peer refuses the delivery inside OApp.
-///      OP Stack has no origin to report: one messenger connects exactly two chains.
-abstract contract ProviderSpokeOriginSpec is Test {
-    /// @notice Deploys each spoke variant with the same home.
-    function _spokes() internal virtual returns (address[] memory);
-
-    /// @notice The provider's id for a chain that is not home.
-    function _otherOrigin() internal view virtual returns (uint256);
-
-    /// @notice Deliver an empty message to `spoke`, through the provider's own gateway, with the
-    ///         hub's address as sender and `origin` as the reported source chain.
-    function _deliverFromHubOn(address spoke, uint256 origin) internal virtual;
-
-    function test_everySpokeVariantRefusesTheHubFromAnotherOrigin() public {
-        address[] memory spokes = _spokes();
-        assertEq(spokes.length, 3);
-        for (uint256 i; i < spokes.length; ++i) {
-            vm.expectRevert(abi.encodeWithSelector(ProviderOrigin.UnexpectedOrigin.selector, _otherOrigin()));
-            _deliverFromHubOn(spokes[i], _otherOrigin());
-        }
-    }
-}
-
-/// @title ProviderHomeIdSpec
-/// @notice A spoke refuses a zero home id, which no provider assigns to a live chain.
-/// @dev For every binding whose spoke is homed by a provider-native id (all but OP Stack).
-abstract contract ProviderHomeIdSpec is Test {
-    /// @notice A spoke implementation, and initializer calldata homing it at `homeId`.
-    function _spokeHomedAt(uint256 homeId) internal virtual returns (address impl, bytes memory init);
-
-    function test_aSpokeRefusesAZeroHomeId() public {
-        (address impl, bytes memory init) = _spokeHomedAt(0);
-        vm.expectRevert(ProviderOrigin.ZeroHomeId.selector);
-        new ERC1967Proxy(impl, init);
     }
 }

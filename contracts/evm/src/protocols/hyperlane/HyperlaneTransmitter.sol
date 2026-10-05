@@ -3,10 +3,10 @@ pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `handle` implemented, so R3.1 is answered by absence rather than a
 ///      guard. Plain `OwnableUpgradeable`, not Hyperlane's `MailboxClient`, which pins OZ
 ///      4.9.3's zero-arg `__Ownable_init()` (see

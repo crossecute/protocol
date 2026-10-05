@@ -6,37 +6,22 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {UnsendableHub} from "test/Unsendable.sol";
-
-contract RoutingTransceiver is UnsendableHub {
-    function initialize(address owner_) external initializer {
-        // Through the hub's own initializer, because that is where the owner is set. The
-        // implementation only has to be non-zero: these suites never create an account.
-        __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
-    }
-
-    /// @dev Stands in for `_onInbound`, which decodes the payload and self-calls.
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
+import {OwnedTransceiver} from "test/Unsendable.sol";
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
 ///         than assuming it shares its own address. That assumption holds on most EVM
 ///         chains and breaks on zkSync, Tron, and every non-EVM chain.
 contract CounterpartRoutingTest is Test {
     ChainRegistry registry;
-    RoutingTransceiver transceiver;
+    OwnedTransceiver transceiver;
 
     address msig = address(0x5165);
     bytes32 provider;
@@ -47,15 +32,11 @@ contract CounterpartRoutingTest is Test {
     bytes32 constant INIT_CODE_HASH = keccak256("lz-transceiver-initcode");
 
     function setUp() public {
-        registry = ChainRegistry(
-            address(new ERC1967Proxy(address(new ChainRegistry()), abi.encodeCall(ChainRegistry.initialize, (msig))))
-        );
-        transceiver = RoutingTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
-                )
-            )
+        registry = new ChainRegistry(msig, unseeded());
+        transceiver = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
+                ))
         );
 
         vm.startPrank(msig);
@@ -64,13 +45,13 @@ contract CounterpartRoutingTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev The hub holds the address, the registry holds what it is worth. A location is
+    /// @dev The transceiver holds the address, the registry holds what it is worth. A location is
     ///      per provider, because two providers deploy two transceivers to one chain; the
     ///      grade is per chain, because how well an address there can be known is the same
     ///      question for both. So this writes the address here and reads the grade there.
-    function test_theHubStoresTheAddressAndTheRegistryGradesTheChain() public {
+    function test_theTransceiverStoresTheAddressAndTheRegistryGradesTheChain() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         vm.stopPrank();
 
         address expected = AddressDerive.create2(FACTORY, SALT, INIT_CODE_HASH);
@@ -89,11 +70,11 @@ contract CounterpartRoutingTest is Test {
     ///      chain authenticates against, so re-pointing one redirects the whole destination.
     function test_aCounterpartIsWriteOnce() public {
         vm.prank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
 
         vm.startPrank(msig);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xA)));
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.CounterpartAlreadySet.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, baseKey));
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xB)));
         vm.stopPrank();
     }
@@ -103,8 +84,8 @@ contract CounterpartRoutingTest is Test {
     ///      address well-formed is a property of the chain.
     function test_aCounterpartOnTheWrongChainIsRefused() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(42161, address(0xA)));
@@ -115,8 +96,8 @@ contract CounterpartRoutingTest is Test {
     ///      derivation, which is why no redeploy or repointing is ever needed.
     function test_sameAddressAcrossEvmChains() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -135,14 +116,13 @@ contract CounterpartRoutingTest is Test {
             Erc7930.encode(ChainType.SOLANA, hex"0102030405060708", abi.encodePacked(keccak256("prog")));
 
         vm.startPrank(msig);
-        bytes32 solKey = registry.addChainKey(solChain);
-        registry.setProvenance(solKey, Provenance.Attested);
+        bytes32 solKey = registry.addChainKey(solChain, Provenance.Attested);
         transceiver.setCounterpart(solKey, solAccount);
         vm.stopPrank();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Attested
             )
         );
         transceiver.counterpartOn(solKey);
@@ -154,14 +134,12 @@ contract CounterpartRoutingTest is Test {
     }
 
     function test_routingRequiresRegistry() public {
-        RoutingTransceiver bare = RoutingTransceiver(
-            address(
-                new ERC1967Proxy(
-                    address(new RoutingTransceiver()), abi.encodeCall(RoutingTransceiver.initialize, (msig))
-                )
-            )
+        OwnedTransceiver bare = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
+                ))
         );
-        vm.expectRevert(HubTransceiverBase.NoChainRegistry.selector);
+        vm.expectRevert(TransceiverBase.NoChainRegistry.selector);
         bare.counterpartOn(keccak256("anything"));
     }
 
@@ -176,8 +154,8 @@ contract CounterpartRoutingTest is Test {
         bytes memory snChain = Erc7930.encodeChainId(ChainType.STARKNET, bytes("SN_MAIN"));
 
         vm.startPrank(msig);
-        bytes32 snKey = registry.addChainKey(snChain);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 snKey = registry.addChainKey(snChain, Provenance.Attested);
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         vm.stopPrank();
 
         assertTrue(registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here");
@@ -190,12 +168,23 @@ contract CounterpartRoutingTest is Test {
     ///      CREATE2 formula differs. One fact, read two ways, rather than two flags.
     function test_theReportingFlagFollowsTheProvenanceCap() public {
         vm.startPrank(msig);
-        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324));
-        assertFalse(registry.requiresReceiverCallback(zkKey), "eip155, uncapped");
-
-        registry.setProvenance(zkKey, Provenance.Attested);
-        assertTrue(registry.requiresReceiverCallback(zkKey), "capped below Derived");
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
         vm.stopPrank();
+        assertFalse(registry.requiresReceiverCallback(baseKey), "eip155, Derived");
+        assertTrue(registry.requiresReceiverCallback(zkKey), "eip155, graded below Derived");
+    }
+
+    /// @dev This chain is never a counterpart: sends and inbound authentication both resolve
+    ///      through `_counterpartOn`, so neither a bootstrap to this chain nor a message
+    ///      claiming to come from it gets anywhere, whatever the registry says.
+    function test_thisChainIsNeverACounterpart() public {
+        bytes32 local = transceiver.localChainKey();
+        vm.prank(msig);
+        registry.addChainKey(Erc7930.encodeEvmChain(block.chainid), Provenance.Derived);
+
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, local));
+        transceiver.counterpartOn(local);
     }
 
     /// @dev Reachable only from an authenticated delivery, so it has no selector at all.
@@ -216,13 +205,13 @@ contract CounterpartRoutingTest is Test {
     /* =========================== the default counterpart ======================== */
 
     /// @dev The common case needs no configuration at all. A transceiver is deployed as a
-    ///      proxy through Nick's factory, so hub and spoke share initcode and salt and
-    ///      land on one address wherever Ethereum's CREATE2 formula holds. The local
+    ///      proxy through Nick's factory, so every chain's transceiver shares initcode and salt
+    ///      and lands on one address wherever Ethereum's CREATE2 formula holds. The local
     ///      transceiver's own address is therefore the right answer for every such chain,
     ///      and a per-chain table would be rows all saying the same thing.
     function test_anUnsetRouteDefaultsToTheLocalTransceiver() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -235,8 +224,8 @@ contract CounterpartRoutingTest is Test {
     ///      whole point of the parity argument.
     function test_theDefaultCoversEveryEvmChainAtOnce() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
+        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -247,7 +236,7 @@ contract CounterpartRoutingTest is Test {
     ///      parity does not hold.
     function test_anExplicitCounterpartOverridesTheDefault() public {
         vm.startPrank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
         registry.setLocalTransceiver(provider, address(transceiver));
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
         vm.stopPrank();
@@ -257,7 +246,8 @@ contract CounterpartRoutingTest is Test {
 
     function test_thereIsNoDefaultOnANonEvmChain() public {
         vm.startPrank(msig);
-        bytes32 solKey = registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"));
+        bytes32 solKey =
+            registry.addChainKey(Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708"), Provenance.Unresolved);
         registry.setLocalTransceiver(provider, address(transceiver));
         vm.stopPrank();
 
@@ -265,26 +255,25 @@ contract CounterpartRoutingTest is Test {
         // a default would be a guess rather than a shortcut.
         vm.expectRevert(
             abi.encodeWithSelector(
-                HubTransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
+                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unresolved
             )
         );
         transceiver.counterpartOn(solKey);
     }
 
-    /// @dev The zkSYNC and Tron case. Both are `eip155`, so the chain type alone says
-    ///      parity might hold, and both have different CREATE2 formulas, so it does not.
-    ///      `setProvenance` is already the dial that records "addresses here cannot be
-    ///      recomputed on the hub", so a cap below `Derived` withdraws the default rather
-    ///      than needing a second flag that could disagree with it.
+    /// @dev The zkSync and Tron case. Both are `eip155`, so the chain type alone says
+    ///      parity might hold, and both have different CREATE2 formulas, so it does not. The
+    ///      grade already records "addresses there cannot be recomputed here", so a grade
+    ///      below `Derived` withdraws the default rather than needing a second flag that
+    ///      could disagree with it.
     function test_aChainGradedBelowDerivedGetsNoDefault() public {
         vm.startPrank(msig);
-        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324));
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Attested);
         registry.setLocalTransceiver(provider, address(transceiver));
-        registry.setProvenance(zkKey, Provenance.Attested);
         transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Attested);
         vm.stopPrank();
 
-        // The default withdraws: the hub's own address is only the right answer where
+        // The default withdraws: the transceiver's own address is only the right answer where
         // Ethereum's formula holds, which is exactly what `Derived` records.
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, zkKey));
         transceiver.counterpartOn(zkKey);
@@ -295,14 +284,14 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(zkKey), abi.encodePacked(address(0xACE5)));
     }
 
-    /// @dev The hub is its own fallback now, so there is nothing to be missing. The
+    /// @dev The transceiver is its own fallback, so there is nothing to be missing. The
     ///      registry used to answer the default out of `localTransceiver`, which meant a
-    ///      provider with none had no counterpart anywhere; the hub answers it from
-    ///      `address(this)`, which it always has. `localTransceiver` still names the hub
-    ///      that speaks for a provider, but nothing on the send path reads it.
-    function test_theHubIsItsOwnDefault() public {
+    ///      provider with none had no counterpart anywhere; the transceiver answers it from
+    ///      `address(this)`, which it always has. `localTransceiver` still names the
+    ///      transceiver that speaks for a provider, but nothing on the send path reads it.
+    function test_theTransceiverIsItsOwnDefault() public {
         vm.prank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453));
+        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
 
         assertEq(
             transceiver.counterpartOn(baseKey),

@@ -7,8 +7,8 @@ import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Send, quote, and `EVM2AnyMessage` construction for every CCIP sender (transmitter,
-///         hub, and each spoke variant). The id `ccipSend` returns is discarded: senders
-///         return a zero sendId, ERC-7786's "sent" (see `ProviderHubSendSpec`); the id is in
+///         and the transceiver and its variants). The id `ccipSend` returns is discarded: senders
+///         return a zero sendId, ERC-7786's "sent" (see `ProviderSendSpec`); the id is in
 ///         the on-ramp's send event.
 library CcipMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes

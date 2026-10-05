@@ -5,16 +5,23 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/// @notice A transceiver's report float, which leaves only at its treasury's call.
+interface IReportFloat {
+    function withdraw(uint256 amount) external;
+}
+
 /// @title Treasury
-/// @notice Where the hub's bootstrap fees land, and the one contract that can move them out.
+/// @notice Where a chain's bootstrap fees and report float land, and the one contract that can
+///         move them out.
 ///
-/// @dev A destination, not an authority: it configures nothing and reaches no account. Its
-///      owner (the crossecute msig) decides where fees go next; the hub's write-once `treasury`
-///      decides where they arrive, so a compromised withdrawal path cannot redirect fees at the
-///      source.
+/// @dev A destination, not an authority: it configures nothing and reaches no account. Its one
+///      outgoing call pulls a transceiver's float, which can only come here. Its owner decides
+///      where funds go next; each transceiver's write-once `treasury` decides where they arrive,
+///      so a compromised withdrawal path cannot redirect fees at the source.
 ///
-/// @dev One, on the home chain, where bootstraps are charged. A plain deployment: nothing
-///      derives an address from it, so it can be redeployed.
+/// @dev One per chain, shared by every provider there. Each transceiver names it once, at
+///      initialization, so a replacement would receive no fees or floats from transceivers
+///      already deployed: this one serves them for their whole life.
 contract Treasury is Ownable {
     using SafeERC20 for IERC20;
 
@@ -24,6 +31,9 @@ contract Treasury is Ownable {
     /// @notice An ERC-20 balance left this treasury.
     event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);
 
+    /// @notice A transceiver's report float was pulled in.
+    event FloatCollected(address indexed from, uint256 amount);
+
     /// @dev A withdrawal to the zero address would burn the balance.
     error ZeroRecipient();
 
@@ -32,9 +42,16 @@ contract Treasury is Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    /// @notice Accept fees. The hub forwards each with a plain `call` inside the bootstrap
+    /// @notice Accept fees. A transceiver forwards each with a plain `call` inside the bootstrap
     ///         that charges it, so without this every paid bootstrap would revert.
     receive() external payable {}
+
+    /// @notice Pull `amount` of a transceiver's report float into this treasury.
+    /// @dev The transceiver pays only its treasury, so the owner chooses when, not where.
+    function collect(IReportFloat from, uint256 amount) external onlyOwner {
+        emit FloatCollected(address(from), amount);
+        from.withdraw(amount);
+    }
 
     /// @notice Send `amount` of native currency to `to`.
     function withdraw(address to, uint256 amount) external onlyOwner {

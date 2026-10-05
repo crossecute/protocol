@@ -3,23 +3,47 @@ pragma solidity ^0.8.0;
 
 import {Provenance} from "src/registry/Provenance.sol";
 
-/// @notice The slice of `ChainRegistry` a hub transceiver needs: where remote things
-///         live, and how much each claim about them is worth.
+/// @notice The CREATE2 inputs a message provider's contracts deploy from.
 ///
-/// @dev The registry exists only on the home chain, so this stays out of the shared
-///      transceiver base: a spoke has one counterpart, given at deployment, and no registry.
+/// @dev One salt per provider, used on every chain, puts that provider's transceiver at one
+///      address everywhere: the property `TransceiverBase._counterpartOn` falls back on.
+///      The salt can be mined for leading zero bytes, which are cheaper in the calldata that
+///      names the address.
+struct ProviderDeployment {
+    /// The mined salt, identical on every chain.
+    bytes32 salt;
+    /// keccak256 of the transceiver proxy's initcode, byte-identical on every chain. Not an
+    /// implementation's.
+    bytes32 transceiverInitCodeHash;
+    /// keccak256 of `CrossProxy`'s initcode, the same for a transmitter and a receiver.
+    bytes32 accountInitCodeHash;
+}
+
+/// @notice The slice of `ChainRegistry` a transceiver needs: where remote things live, and how
+///         much each claim about them is worth.
 ///
-/// @dev Routes live on the transceiver. What the hub reads here is provenance, derived
+/// @dev Routes live on the transceiver. What it reads here is provenance, suspension, derived
 ///      counterpart addresses, location validation, and which chains must report their
 ///      receivers.
 interface IChainRegistryRefs {
     /// @notice What an address claim about `chainKey` is worth. Chain-scoped, so every
-    ///         provider's hub reads the same answer.
+    ///         provider's transceiver reads the same answer.
     function provenanceFor(bytes32 chainKey) external view returns (Provenance);
 
+    /// @notice Whether every transceiver on this chain refuses `chainKey`.
+    function isSuspended(bytes32 chainKey) external view returns (bool);
+
     /// @notice The transceiver address this registry recomputes for `chainKey`, from the
-    ///         deriver and inputs recorded for that chain. A hub stores the result.
+    ///         deriver and inputs recorded for that chain. A transceiver stores the result.
     function expectedTransceiver(bytes32 chainKey) external view returns (bytes memory);
+
+    /// @notice The CREATE2 inputs `messageProvider`'s contracts deploy from; a zero salt means
+    ///         none is recorded.
+    function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory);
+
+    /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the recorded
+    ///         factory, salt, and initcode hash. Reverts for a chain not graded `Derived`.
+    function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) external view returns (address);
 
     /// @notice The canonical ERC-7930 chain identifier `chainKey` hashes from.
     function chainIdentifier(bytes32 chainKey) external view returns (bytes memory);

@@ -33,7 +33,7 @@ library OpStackMessage {
     /// @param messengerChainKey The one chain `messenger` reaches. The destination is which
     ///        messenger is called, not an argument to it, so a recipient on any other chain
     ///        would otherwise be delivered to the same address on this one.
-    /// @return Zero, ERC-7786's "sent" (see `ProviderHubSendSpec`); the messenger's nonce is in
+    /// @return Zero, ERC-7786's "sent" (see `ProviderSendSpec`); the messenger's nonce is in
     ///         its `SentMessage` event.
     function send(
         address messenger,

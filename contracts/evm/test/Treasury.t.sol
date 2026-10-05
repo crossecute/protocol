@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {Treasury} from "src/treasury/Treasury.sol";
+import {Treasury, IReportFloat} from "src/treasury/Treasury.sol";
 
 /// @dev The smallest ERC-20 that behaves, plus one that returns nothing on transfer, which is
 ///      the shape `SafeERC20` exists for and the shape a bare `transfer` gets wrong.
@@ -57,6 +57,21 @@ contract Rejector {
 }
 
 /// @notice A destination for fees, and one authority over it.
+/// @dev A float that pays only the treasury it was given, as a transceiver's does.
+contract Float is IReportFloat {
+    address public immutable treasury;
+
+    constructor(address treasury_) payable {
+        treasury = treasury_;
+    }
+
+    function withdraw(uint256 amount) external {
+        require(msg.sender == treasury, "not the treasury");
+        (bool ok,) = treasury.call{value: amount}("");
+        require(ok);
+    }
+}
+
 contract TreasuryTest is Test {
     Treasury treasury;
 
@@ -68,7 +83,7 @@ contract TreasuryTest is Test {
         vm.deal(address(treasury), 10 ether);
     }
 
-    /// @dev The hub forwards a bootstrap fee with a plain value transfer, so a treasury that
+    /// @dev A transceiver forwards a bootstrap fee with a plain value transfer, so a treasury that
     ///      could not receive one would revert every bootstrap that charges a fee.
     function test_itAcceptsAPlainTransfer() public {
         (bool ok,) = address(treasury).call{value: 1 ether}("");
@@ -92,6 +107,25 @@ contract TreasuryTest is Test {
         t.mint(address(treasury), 100);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
         treasury.withdrawERC20(t, payee, 100);
+    }
+
+    /// @dev A transceiver pays its float only to its treasury, which cannot otherwise make a
+    ///      call, so the treasury's owner pulls it in.
+    function test_theOwnerCollectsAFloat() public {
+        Float f = new Float{value: 2 ether}(address(treasury));
+        uint256 before = address(treasury).balance;
+
+        vm.prank(msig);
+        treasury.collect(f, 2 ether);
+
+        assertEq(address(treasury).balance, before + 2 ether);
+        assertEq(address(f).balance, 0);
+    }
+
+    function test_nobodyElseCollects() public {
+        Float f = new Float{value: 2 ether}(address(treasury));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        treasury.collect(f, 2 ether);
     }
 
     function test_theOwnerMovesTokens() public {

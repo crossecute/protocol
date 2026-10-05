@@ -9,28 +9,15 @@ import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {HubTransceiverBase} from "src/messaging/transceiver/HubTransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {UnsendableHub} from "test/Unsendable.sol";
+import {OwnedTransceiver} from "test/Unsendable.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
-contract Hub is UnsendableHub {
-    function initialize(address owner_) external initializer {
-        // Through the hub's own initializer, because that is where the owner is set. The
-        // implementation only has to be non-zero: these suites never create an account.
-        __HubTransceiverBase_init(owner_, address(0), new address[](0), address(0x1E19));
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
-
 contract UniformDerivationTest is Test {
     ChainRegistry registry;
     VmDeriver deriver;
@@ -40,28 +27,32 @@ contract UniformDerivationTest is Test {
 
     function setUp() public {
         deriver = new VmDeriver();
-        // Behind a proxy: the implementation disables initializers in its constructor,
-        // matching the spec's assumption that every contract is an upgradeable proxy.
-        ChainRegistry impl = new ChainRegistry();
-        registry =
-            ChainRegistry(address(new ERC1967Proxy(address(impl), abi.encodeCall(ChainRegistry.initialize, (owner)))));
+        registry = new ChainRegistry(owner, unseeded());
         vm.startPrank(owner);
         registry.addMessageProvider("layerzero");
         vm.stopPrank();
 
-        hub = Hub(address(new ERC1967Proxy(address(new Hub()), abi.encodeCall(Hub.initialize, (owner)))));
+        transceiver = OwnedTransceiver(
+            payable(new ERC1967Proxy(
+                    address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (owner))
+                ))
+        );
         vm.prank(owner);
-        hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Derived);
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
-    /// @dev The hub is what records a counterpart now; the registry recomputes it and says
+    /// @dev The transceiver is what records a counterpart now; the registry recomputes it and says
     ///      what it is worth. Both halves are exercised together.
-    Hub hub;
+    OwnedTransceiver transceiver;
 
     function _wire(bytes memory chainIdentifier, bytes memory params, bytes32) internal returns (bytes32 chainKey) {
         vm.startPrank(owner);
-        chainKey = registry.addChainKey(chainIdentifier);
+        // An `eip155` chain is recomputed here; anything else is worth the bridge that says so.
+        Provenance grade = Erc7930.parseStrict(chainIdentifier).chainType == Erc7930.CT_EIP155
+            ? Provenance.Derived
+            : Provenance.Attested;
+        chainKey = registry.addChainKey(chainIdentifier, grade);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
         registry.setDeriveParams(chainKey, params);
         vm.stopPrank();
@@ -80,11 +71,11 @@ contract UniformDerivationTest is Test {
         bytes memory interop = registry.expectedTransceiver(chainKey);
         assertEq(Erc7930.toAddress(Erc7930.parseStrict(interop)), want);
 
-        // The hub records the recomputed value; the registry says what it is worth.
+        // The transceiver records the recomputed value; the registry says what it is worth.
         vm.prank(owner);
-        hub.resolveCounterpart(chainKey, keccak256(params));
+        transceiver.resolveCounterpart(chainKey, keccak256(params));
 
-        assertEq(hub.counterpartOn(chainKey), abi.encodePacked(want));
+        assertEq(transceiver.counterpartOn(chainKey), abi.encodePacked(want));
         assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Derived), "an eip155 chain, recomputed here");
     }
 
@@ -105,11 +96,10 @@ contract UniformDerivationTest is Test {
         assertEq(bytes32(io.addr), AddressDerive.solanaCreateProgramAddress(seeds, 255, programId));
 
         vm.startPrank(owner);
-        registry.setProvenance(chainKey, Provenance.Attested);
-        hub.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
-        hub.resolveCounterpart(chainKey, keccak256(params));
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Attested);
+        transceiver.resolveCounterpart(chainKey, keccak256(params));
         vm.stopPrank();
-        assertEq(hub.counterpartOn(chainKey).length, 32);
+        assertEq(transceiver.counterpartOn(chainKey).length, 32);
     }
 
     /// @dev The inputs were written in an earlier transaction, so the signers approving
@@ -119,15 +109,15 @@ contract UniformDerivationTest is Test {
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(1), params, keccak256("eth.tx"));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HubTransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
-        hub.resolveCounterpart(chainKey, keccak256("something else"));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
+        transceiver.resolveCounterpart(chainKey, keccak256("something else"));
     }
 
     /// @dev Ethereum, zkSync, and Tron are all eip155 with different CREATE2 formulas,
     ///      so the scheme must be pinned per chain rather than inferred from chain type.
     function test_schemeIsCheckedAgainstChainType() public {
         vm.startPrank(owner);
-        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1));
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Derived);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
 
         // A Solana PDA is not a legal scheme on an eip155 chain.
@@ -150,7 +140,7 @@ contract UniformDerivationTest is Test {
 
         // A second chain with no deriver and no route at all.
         vm.prank(owner);
-        registry.addChainKey(Erc7930.encodeEvmChain(42161));
+        registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
 
         (bytes32[] memory keys, bytes[] memory interops) = registry.expectedTransceivers();
         assertEq(keys.length, 2);

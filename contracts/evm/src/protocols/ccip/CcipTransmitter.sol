@@ -3,10 +3,10 @@ pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
 ///      absence rather than a guard.
 contract CcipTransmitter is OwnableTransmitter {
@@ -50,6 +50,6 @@ contract CcipTransmitter is OwnableTransmitter {
         return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
     }
 
-    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the hub,
-    ///         spokes, and receivers; the transmitter has no inbound entry point (R3.1).
+    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the
+    ///         transceiver and receivers; the transmitter has no inbound entry point (R3.1).
 }

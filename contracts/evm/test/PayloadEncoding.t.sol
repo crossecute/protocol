@@ -177,7 +177,8 @@ contract PayloadEncodingTest is Test {
     /// There is no tag, and nothing needs one. The form is a property of the destination:
     /// an EVM chain always gets `Call[]`, everything else always gets `bytes[]`. Both
     /// sides know which before a byte is written, so a field saying so would carry a value
-    /// each already holds: the same reason `Envelope` has no message-type field.
+    /// each already holds. `Envelope` is tagged instead, since a transceiver channel carries
+    /// several kinds.
     function test_theFormIsDecidedByTheDestination() public view {
         assertTrue(harness.isTypedDestination(Erc7930.encodeEvmChain(8453)), "an EVM destination takes typed calls");
         assertFalse(
@@ -213,7 +214,7 @@ contract PayloadEncodingTest is Test {
     }
 
     /// ...but it still hashes, which is the property that keeps the commitment layer
-    /// portable: the hub can approve a payload for a VM whose calls it cannot parse.
+    /// portable: the home can approve a payload for a VM whose calls it cannot parse.
     function test_aNonEvmElementStillCommits() public view {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";

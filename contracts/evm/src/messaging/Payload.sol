@@ -12,8 +12,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 ///      shape its VM implies, so there is no form tag.
 ///
 /// @dev That relies on no path sending opaque elements to an EVM receiver, not on
-///      `abi.decode` rejecting the wrong shape. A path that could (a transmitter on a spoke, a
-///      destination accepting both) needs the tag back.
+///      `abi.decode` rejecting the wrong shape. A destination that could accept both needs the
+///      tag back.
 ///
 /// @dev Both forms of one payload commit to one hash: `Commitment` folds per-element hashes
 ///      and `Calls.encode` produces exactly the opaque element.

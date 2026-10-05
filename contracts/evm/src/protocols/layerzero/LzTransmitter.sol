@@ -7,11 +7,11 @@ import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {providerIdOf} from "src/protocols/ProviderHubTransceiver.sol";
+import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 
-/// @notice Per-user transmitter, created by `HubTransceiverBase.createTransmitter`.
+/// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
 ///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
 contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOncePeer {
