@@ -343,7 +343,7 @@ contract TransceiverTest is Test {
     /* ================================== parity =================================== */
 
     /// @dev From a `Predetermined` home the receiver must sit on its transmitter's address.
-    function test_aReceiverOffItsTransmitterIsRefusedFromADerivedHome() public {
+    function test_aReceiverOffItsTransmitterIsRefusedFromAPredeterminedHome() public {
         Sym t = _chain(ETH, false);
         address wrong = address(0xBAD);
         bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(wrong), _calls());
