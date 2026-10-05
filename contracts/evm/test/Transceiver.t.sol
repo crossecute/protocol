@@ -95,6 +95,7 @@ contract TransceiverTest is Test {
     uint256 constant ZK = 324;
     bytes32 constant SALT = keccak256("account");
     bytes32 constant TRANSCEIVER_SALT = keccak256("provider");
+    address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     address msig = address(0x5165);
     address alice = address(0xA11CE);
@@ -121,7 +122,7 @@ contract TransceiverTest is Test {
         Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
-        t = new Sym{salt: TRANSCEIVER_SALT}();
+        t = _deploySym();
         t.initializeDiverging(
             TransceiverConfig({
                 gateways: new address[](0),
@@ -150,6 +151,14 @@ contract TransceiverTest is Test {
             if (chains[i] == ZK) t.setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));
         }
         vm.stopPrank();
+    }
+
+    /// @dev Through Arachnid's factory, as on every `Derived` chain, so the seeded deployment
+    ///      record predicts where it lands.
+    function _deploySym() internal returns (Sym) {
+        (bool ok, bytes memory at) = ARACHNID.call(abi.encodePacked(TRANSCEIVER_SALT, type(Sym).creationCode));
+        require(ok && at.length == 20, "arachnid");
+        return Sym(payable(address(bytes20(at))));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {
@@ -207,10 +216,7 @@ contract TransceiverTest is Test {
             address(this),
             RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Derived, providers: providers})
         );
-        // The record is what places the counterpart on Ethereum (#31): this contract deployed
-        // both transceivers, so it stands as the factory there.
-        registry.setCreate2Factory(_key(ETH), address(this));
-        Sym base = new Sym{salt: TRANSCEIVER_SALT}();
+        Sym base = _deploySym();
         base.initialize(
             TransceiverConfig({
                 gateways: new address[](0),
@@ -226,6 +232,7 @@ contract TransceiverTest is Test {
             })
         );
         assertEq(address(base), address(eth), "one address on both chains");
+        assertEq(registry.predictTransceiver(_key(ETH), keccak256("test")), address(base), "where the record predicts");
         assertEq(base.owner().code.length, 0, "the owner does not exist yet");
 
         base.arrive(_route(ETH), abi.encodePacked(address(base)), sent);
@@ -332,24 +339,6 @@ contract TransceiverTest is Test {
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
-    }
-
-    /// @dev A `Derived` chain with its own CREATE2 factory holds the provider's transceiver
-    ///      off this address; once the deployment is recorded the default counterpart follows
-    ///      the registry's prediction there (#31).
-    function test_theDefaultCounterpartFollowsAChainsOwnFactory() public {
-        Sym t = _chain(ETH, false);
-        ChainRegistry registry = ChainRegistry(address(t.chainRegistry()));
-        assertEq(t.counterpartOn(_key(BASE)), abi.encodePacked(address(t)), "this address before a record");
-
-        registry.setCreate2Factory(_key(BASE), address(0xFAC7));
-        registry.setProviderDeployment(
-            t.messageProvider(), TRANSCEIVER_SALT, keccak256("transceiver"), t.CROSS_PROXY_INIT_CODE_HASH()
-        );
-        address there = registry.predictTransceiver(_key(BASE), t.messageProvider());
-
-        assertEq(t.counterpartOn(_key(BASE)), abi.encodePacked(there));
-        assertTrue(there != address(t), "not this contract's own address");
     }
 
     /// @dev A zkSync home keeps its transmitter at a zkSync address, so the receiver here is

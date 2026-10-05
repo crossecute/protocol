@@ -20,7 +20,9 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {UnsendableTransceiver} from "test/Unsendable.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 
-/// @dev Stands in for Arachnid's proxy: CREATE2 with a caller-supplied salt and initcode.
+/// @dev Etched at Arachnid's address, where the registry derives: CREATE2 with a
+///      caller-supplied salt and initcode, as Arachnid's proxy does. `arm` is not Arachnid's;
+///      it stands in for arming a `CrossProxy` transceiver, which the deploy scripts have to do.
 contract MiniFactory {
     function deploy(bytes32 salt, bytes memory initCode) external returns (address a) {
         assembly {
@@ -123,15 +125,16 @@ contract SaltedDeploymentTest is Test {
     bytes32 chainKey;
 
     bytes32 constant SALT = keccak256("crossecute.lz.v1");
+    address constant ARACHNID = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     function setUp() public {
         registry = new ChainRegistry(owner, unseeded());
-        factory = new MiniFactory();
+        vm.etch(ARACHNID, address(new MiniFactory()).code);
+        factory = MiniFactory(ARACHNID);
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        registry.setCreate2Factory(chainKey, address(factory));
         vm.stopPrank();
     }
 
@@ -210,7 +213,6 @@ contract SaltedDeploymentTest is Test {
 
         vm.startPrank(owner);
         bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
-        registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
         assertEq(
@@ -285,7 +287,6 @@ contract SaltedDeploymentTest is Test {
         // Each is still the same address on every parity chain.
         vm.startPrank(owner);
         bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Derived);
-        registry.setCreate2Factory(arb, address(factory));
         vm.stopPrank();
 
         assertEq(a, registry.predictCrossAccount(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
@@ -481,9 +482,7 @@ contract SaltedDeploymentTest is Test {
 
         assertEq(
             registry.predictTransceiver(chainKey, provider),
-            AddressDerive.create2(
-                registry.create2Factory(chainKey), SALT, keccak256(type(SaltedTransceiver).creationCode)
-            ),
+            AddressDerive.create2(ARACHNID, SALT, keccak256(type(SaltedTransceiver).creationCode)),
             "arithmetic over the recorded inputs, not a local address"
         );
     }
@@ -495,7 +494,6 @@ contract SaltedDeploymentTest is Test {
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");
         r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Derived);
-        r.setCreate2Factory(chainKey, address(factory));
         r.setProviderDeployment(provider, salt, initCodeHash, keccak256("receiver"));
         vm.stopPrank();
     }

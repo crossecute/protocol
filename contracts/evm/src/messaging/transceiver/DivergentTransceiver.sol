@@ -26,8 +26,8 @@ abstract contract DivergentTransceiver is TransceiverBase, DivergentAccounts {
 
     /// @notice Where this provider's transceiver sits on the `Derived` chain `chainKey`, from
     ///         the registry's write-once deployment record.
-    /// @dev Reverts while the provider's deployment is unrecorded, where the base would fall
-    ///      back to `address(this)`, which is never right here.
+    /// @dev Reverts while the provider's deployment is unrecorded, so nothing authenticates or
+    ///      is sent to a guessed address.
     function _parityAddress(bytes32 chainKey) internal view virtual override returns (address) {
         return chainRegistry.predictTransceiver(chainKey, messageProvider);
     }

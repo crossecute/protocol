@@ -632,8 +632,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      authenticated, goes through here, so a suspended chain is cut off both ways.
     ///
     /// @dev An unset counterpart on a `Derived` chain is `_parityAddress(chainKey)`: every
-    ///      transceiver of a provider is deployed at one salt and initcode, through the
-    ///      chain's recorded CREATE2 factory.
+    ///      transceiver of a provider is deployed through Arachnid's factory at one salt and
+    ///      initcode, which is what `Derived` means (#33).
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
@@ -653,12 +653,10 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
 
     /// @notice Where this provider's transceiver sits on `chainKey`, a chain that uses
     ///         Ethereum's CREATE2: the default counterpart there.
-    /// @dev The registry's prediction once the provider's deployment is recorded, which follows
-    ///      a chain whose CREATE2 factory differs from this one's (#31). Before that, this
-    ///      contract's own address, right only where the factory is the same.
-    function _parityAddress(bytes32 chainKey) internal view virtual returns (address) {
-        if (chainRegistry.providerDeployment(messageProvider).salt == bytes32(0)) return address(this);
-        return chainRegistry.predictTransceiver(chainKey, messageProvider);
+    /// @dev This contract's own address wherever that formula holds here too. A transceiver on
+    ///      zkSync or Tron sits elsewhere, so it derives the address from the registry instead.
+    function _parityAddress(bytes32) internal view virtual returns (address) {
+        return address(this);
     }
 
     /* =================================== inbound =================================== */

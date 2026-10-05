@@ -56,7 +56,8 @@ contract ChainRegistry is Ownable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /// @notice Arachnid's deterministic deployment proxy, at the same address on every
-    ///         standard EVM chain. The default for `create2Factory`.
+    ///         standard EVM chain. A `Derived` chain is one whose transceivers were deployed
+    ///         through it, so it is the only factory derived against (#33).
     address internal constant ARACHNID_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /* ================================= storage ================================= */
@@ -72,8 +73,6 @@ contract ChainRegistry is Ownable {
     mapping(bytes32 => string) private _messageProviderName;
     /// messageProvider => the CREATE2 inputs its transceiver and accounts deploy from.
     mapping(bytes32 => ProviderDeployment) private _deployment;
-    /// chainKey => the CREATE2 factory to derive against. Zero means `ARACHNID_FACTORY`.
-    mapping(bytes32 => address) private _create2Factory;
 
     /// messageProvider => the transceiver on this chain that serves it.
     mapping(bytes32 => address) private _localTransceiver;
@@ -119,7 +118,6 @@ contract ChainRegistry is Ownable {
     event ProviderDeploymentSet(
         bytes32 indexed messageProvider, bytes32 salt, bytes32 transceiverInitCodeHash, bytes32 accountInitCodeHash
     );
-    event Create2FactorySet(bytes32 indexed chainKey, address factory);
     event DeriverSet(bytes32 indexed chainKey, address deriver);
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
@@ -151,7 +149,6 @@ contract ChainRegistry is Ownable {
     ///      destination might never match; see `Commitment._hash`.
     error NoCommitmentScheme();
     error NoQualifier();
-    error ZeroFactory();
 
     /* =============================== constructor =============================== */
 
@@ -312,42 +309,19 @@ contract ChainRegistry is Ownable {
         emit ProviderDeploymentSet(messageProvider, salt, transceiverInitCodeHash, accountInitCodeHash);
     }
 
-    /// @notice The CREATE2 factory to derive against on one chain.
-    /// @dev Defaults to Arachnid's. For chains that run their own factory; a chain whose
-    ///      CREATE2 formula differs (zkSync, Tron) is excluded by its provenance instead.
-    ///      Write-once, since it moves every predicted transceiver on the chain; the same
-    ///      factory again is a no-op. Zero is refused: it would record nothing and leave the
-    ///      slot open.
-    function setCreate2Factory(bytes32 chainKey, address factory) external onlyOwner {
-        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
-        if (factory == address(0)) revert ZeroFactory();
-        address existing = _create2Factory[chainKey];
-        if (existing != address(0)) {
-            if (existing != factory) revert AlreadySet();
-            return;
-        }
-        _create2Factory[chainKey] = factory;
-        emit Create2FactorySet(chainKey, factory);
-    }
-
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
         return _deployment[messageProvider];
     }
 
-    function create2Factory(bytes32 chainKey) public view returns (address) {
-        address f = _create2Factory[chainKey];
-        return f == address(0) ? ARACHNID_FACTORY : f;
-    }
-
     /* ========================= PATH 2: salted derivation ======================= */
 
-    /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the
-    ///         recorded factory, salt, and initcode hash.
+    /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from Arachnid's
+    ///         factory and the recorded salt and initcode hash.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
         _requireEvmDerivable(chainKey);
-        return AddressDerive.create2(create2Factory(chainKey), d.salt, d.transceiverInitCodeHash);
+        return AddressDerive.create2(ARACHNID_FACTORY, d.salt, d.transceiverInitCodeHash);
     }
 
     /// @notice Where an owner's account lands on `chainKey`, before it exists: the

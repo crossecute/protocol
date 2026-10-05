@@ -272,9 +272,8 @@ nowhere, not a revert.
 which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
 own notion of a peer. Where the SDK insists on a peer table, the binding SHOULD populate it
 from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree only where both
-this chain and the destination use Ethereum's CREATE2 formula and the same CREATE2 factory,
-and differ wherever either is zkSync or Tron, where deriving the peer names an address that
-holds no receiver.
+this chain and the destination use Ethereum's CREATE2 formula, and differ wherever either is
+zkSync or Tron, where deriving the peer names an address that holds no receiver.
 
 **R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking
@@ -709,7 +708,7 @@ parity chains from this record, since its own constant comes from zksolc or TRON
 
 **R9.1** The binding MUST NOT add a setter for any value the base makes write-once:
 `setRoute`, `setCounterpart`, the provider id table, `setRouting`'s registry and provider,
-`setProviderDeployment`, a chain's grade, `setCreate2Factory`, `receiverImplementation`,
+`setProviderDeployment`, a chain's grade, `receiverImplementation`,
 `transmitterImplementation`, `treasury`, `addressesDiverge`, a resolved ref slot.
 
 **R9.2** A typed wrapper around a write-once setter is the
@@ -731,12 +730,12 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
-| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Derived` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through the default CREATE2 factory, since the seed records no factory and the record decides the counterpart. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
+| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Derived` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through Arachnid's factory, as on every `Derived` chain. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
 | 2 | every chain | Deploy each provider's transceiver proxy through the CREATE2 factory at the provider's salt, upgrade, and `initialize(config, governorHomeId)` | Proxy initcode must be identical on every chain. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library, which is deployed first. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
-| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, predicted from its deployment record through that chain's factory. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
-| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, `setCreate2Factory` for zk-chains, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade, the factory, and a qualifier are write-once. Only an `eip155` chain can be `Derived`; zkSync and Tron are `Attested`, which is also what turns `requiresReceiverCallback` on. |
+| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
+| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through Arachnid's factory can be `Derived`; zkSync, Tron, and any chain without that factory are `Attested`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Attested` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `upgradeToAndCall` is the stub's one upgrade, and it runs the initializer; the transceiver it installs has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 

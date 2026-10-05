@@ -297,7 +297,9 @@ Then, per destination, add what the chain needs:
 - an `IVmDeriver`, if its addresses can be recomputed here
 - an `IRefValidator`, if the envelope cannot express its value ranges
 - a grade below `Derived` when it is registered, if its addresses cannot be recomputed here at
-  all; the grade is write-once
+  all; the grade is write-once. An EVM chain is `Derived` only if its transceivers are
+  deployed through Arachnid's factory. One without it is `Attested` in every registry, and
+  grades every other chain `Attested` in its own
 
 ## Message providers
 
@@ -427,7 +429,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 661 passing
+cd contracts/evm && forge test        # 658 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
