@@ -16,6 +16,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackSendSuite} from "test/protocols/op-stack/OpStackBinding.t.sol";
 
@@ -43,27 +44,14 @@ contract OpStackTransceiverHarness is OpStackTransceiver {
     }
 }
 
-function opStackConfig(address messenger) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new OpStackReceiver(messenger)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
-
 function deployOpStack(address messenger, uint256 pairedChainId) returns (OpStackTransceiverHarness) {
     return OpStackTransceiverHarness(
         payable(address(
                 deployTransceiver(
                     address(new OpStackTransceiverHarness(messenger, ChainKey.forEvm(pairedChainId))),
-                    abi.encodeCall(OpStackTransceiver.initialize, (opStackConfig(messenger)))
+                    abi.encodeCall(
+                        OpStackTransceiver.initialize, (transceiverConfig(address(new OpStackReceiver(messenger))))
+                    )
                 )
             ))
     );
@@ -103,7 +91,7 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec {
         override
         returns (address)
     {
-        TransceiverConfig memory c = opStackConfig(address(messenger));
+        TransceiverConfig memory c = transceiverConfig(address(new OpStackReceiver(address(messenger))));
         c.governorOwner = governorOwner;
         c.governorSalt = governorSalt;
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);

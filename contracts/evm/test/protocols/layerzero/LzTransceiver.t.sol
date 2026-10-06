@@ -18,23 +18,9 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {LzSendSuite, LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
-
-function lzConfig(address endpoint) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new LzReceiver(endpoint)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract LzTransceiverHarness is LzTransceiver {
@@ -65,7 +51,9 @@ function deployLz(address endpoint) returns (LzTransceiverHarness) {
         payable(address(
                 deployTransceiver(
                     address(new LzTransceiverHarness(endpoint)),
-                    abi.encodeCall(LzTransceiver.initialize, (lzConfig(endpoint), uint32(0)))
+                    abi.encodeCall(
+                        LzTransceiver.initialize, (transceiverConfig(address(new LzReceiver(endpoint))), uint32(0))
+                    )
                 )
             ))
     );
@@ -117,7 +105,7 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
         override
         returns (address)
     {
-        TransceiverConfig memory c = lzConfig(address(endpoint));
+        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
         c.governorOwner = governorOwner;
         c.governorSalt = governorSalt;
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
@@ -169,7 +157,10 @@ contract LzZkSyncTransceiverTest is Test {
             payable(address(
                     deployTransceiver(
                         address(new LzZkSyncHarness(address(endpoint))),
-                        abi.encodeCall(LzZkSyncTransceiver.initialize, (lzConfig(address(endpoint)), uint32(0), HASH))
+                        abi.encodeCall(
+                            LzZkSyncTransceiver.initialize,
+                            (transceiverConfig(address(new LzReceiver(address(endpoint)))), uint32(0), HASH)
+                        )
                     )
                 ))
         );
@@ -215,7 +206,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
     }
 
     function _deploy(uint32 eid, IChainRegistryRefs registry) internal returns (address) {
-        TransceiverConfig memory c = lzConfig(address(endpoint));
+        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
         c.chainRegistry = registry;
         c.messageProvider = keccak256("layerzero");
         c.minCounterpartProvenance = Provenance.Unique;
@@ -252,7 +243,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
                 providers: providers
             })
         );
-        TransceiverConfig memory c = lzConfig(address(endpoint));
+        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
         c.chainRegistry = IChainRegistryRefs(address(registry));
         c.messageProvider = keccak256("layerzero");
         c.minCounterpartProvenance = Provenance.Unique;

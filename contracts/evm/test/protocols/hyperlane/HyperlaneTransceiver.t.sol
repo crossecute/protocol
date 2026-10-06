@@ -18,23 +18,9 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneSendSuite} from "test/protocols/hyperlane/HyperlaneBinding.t.sol";
-
-function hyperlaneConfig(address mailbox) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new HyperlaneReceiver(mailbox)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
@@ -65,7 +51,10 @@ function deployHyperlane(address mailbox) returns (HyperlaneTransceiverHarness) 
         payable(address(
                 deployTransceiver(
                     address(new HyperlaneTransceiverHarness(mailbox)),
-                    abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(mailbox), uint32(0)))
+                    abi.encodeCall(
+                        HyperlaneTransceiver.initialize,
+                        (transceiverConfig(address(new HyperlaneReceiver(mailbox))), uint32(0))
+                    )
                 )
             ))
     );
@@ -110,7 +99,7 @@ contract HyperlaneTransceiverInboundTest is ProviderInboundSpec {
         override
         returns (address)
     {
-        TransceiverConfig memory c = hyperlaneConfig(mailbox);
+        TransceiverConfig memory c = transceiverConfig(address(new HyperlaneReceiver(mailbox)));
         c.governorOwner = governorOwner;
         c.governorSalt = governorSalt;
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
@@ -175,7 +164,11 @@ contract HyperlaneZkSyncTransceiverTest is Test {
                         address(new HyperlaneZkSyncHarness(address(mailbox))),
                         abi.encodeCall(
                             HyperlaneZkSyncTransceiver.initialize,
-                            (hyperlaneConfig(address(mailbox)), uint32(0), keccak256("zksolc"))
+                            (
+                                transceiverConfig(address(new HyperlaneReceiver(address(mailbox)))),
+                                uint32(0),
+                                keccak256("zksolc")
+                            )
                         )
                     )
                 ))
@@ -216,7 +209,10 @@ contract HyperlaneGovernorHomeTest is ProviderGovernorHomeSpec {
         return address(
             deployTransceiver(
                 address(new HyperlaneTransceiver(address(0xBEEF))),
-                abi.encodeCall(HyperlaneTransceiver.initialize, (hyperlaneConfig(address(0xBEEF)), uint32(id)))
+                abi.encodeCall(
+                    HyperlaneTransceiver.initialize,
+                    (transceiverConfig(address(new HyperlaneReceiver(address(0xBEEF)))), uint32(id))
+                )
             )
         );
     }

@@ -14,7 +14,8 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {lzConfig} from "test/protocols/layerzero/LzTransceiver.t.sol";
+import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
 ///         a chainKey across the protocol, and the provider's own id only at the edge.
@@ -42,7 +43,9 @@ contract DestinationNamingTest is Test {
             payable(address(
                     deployTransceiver(
                         address(new LzTransceiver(ENDPOINT)),
-                        abi.encodeCall(LzTransceiver.initialize, (lzConfig(ENDPOINT), uint32(0)))
+                        abi.encodeCall(
+                            LzTransceiver.initialize, (transceiverConfig(address(new LzReceiver(ENDPOINT))), uint32(0))
+                        )
                     )
                 ))
         );

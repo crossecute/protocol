@@ -19,6 +19,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {
     WormholeSendSuite,
@@ -27,21 +28,6 @@ import {
     _envelope,
     _universal
 } from "test/protocols/wormhole/WormholeBinding.t.sol";
-
-function wormholeConfig(address coreBridge) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new WormholeReceiver(coreBridge)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract WormholeTransceiverHarness is WormholeTransceiver {
@@ -72,7 +58,10 @@ function deployWormhole(address core, address router, address quoter) returns (W
         payable(address(
                 deployTransceiver(
                     address(new WormholeTransceiverHarness(core, router, quoter)),
-                    abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(core), uint16(0)))
+                    abi.encodeCall(
+                        WormholeTransceiver.initialize,
+                        (transceiverConfig(address(new WormholeReceiver(core))), uint16(0))
+                    )
                 )
             ))
     );
@@ -124,7 +113,7 @@ contract WormholeTransceiverInboundTest is ProviderInboundSpec {
         override
         returns (address)
     {
-        TransceiverConfig memory c = wormholeConfig(address(core));
+        TransceiverConfig memory c = transceiverConfig(address(new WormholeReceiver(address(core))));
         c.governorOwner = governorOwner;
         c.governorSalt = governorSalt;
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
@@ -204,7 +193,11 @@ contract WormholeZkSyncTransceiverTest is Test {
                         address(new WormholeZkSyncHarness(address(core), address(router), address(0x0907))),
                         abi.encodeCall(
                             WormholeZkSyncTransceiver.initialize,
-                            (wormholeConfig(address(core)), uint16(0), keccak256("zksolc"))
+                            (
+                                transceiverConfig(address(new WormholeReceiver(address(core)))),
+                                uint16(0),
+                                keccak256("zksolc")
+                            )
                         )
                     )
                 ))
@@ -247,7 +240,10 @@ contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec {
         return address(
             deployTransceiver(
                 address(new WormholeTransceiver(address(0xBEEF), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
-                abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(address(0xBEEF)), uint16(id)))
+                abi.encodeCall(
+                    WormholeTransceiver.initialize,
+                    (transceiverConfig(address(new WormholeReceiver(address(0xBEEF)))), uint16(id))
+                )
             )
         );
     }

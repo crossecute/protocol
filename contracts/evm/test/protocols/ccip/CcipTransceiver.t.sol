@@ -20,23 +20,9 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
+import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipSendSuite} from "test/protocols/ccip/CcipBinding.t.sol";
-
-function ccipConfig(address router) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new CcipReceiver(router)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract CcipTransceiverHarness is CcipTransceiver {
@@ -67,7 +53,9 @@ function deployCcip(address router) returns (CcipTransceiverHarness) {
         payable(address(
                 deployTransceiver(
                     address(new CcipTransceiverHarness(router)),
-                    abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(router), uint64(0)))
+                    abi.encodeCall(
+                        CcipTransceiver.initialize, (transceiverConfig(address(new CcipReceiver(router))), uint64(0))
+                    )
                 )
             ))
     );
@@ -121,7 +109,7 @@ contract CcipTransceiverInboundTest is ProviderInboundSpec {
         override
         returns (address)
     {
-        TransceiverConfig memory c = ccipConfig(router);
+        TransceiverConfig memory c = transceiverConfig(address(new CcipReceiver(router)));
         c.governorOwner = governorOwner;
         c.governorSalt = governorSalt;
         c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
@@ -185,7 +173,11 @@ contract CcipZkSyncTransceiverTest is Test {
                         address(new CcipZkSyncHarness(address(router))),
                         abi.encodeCall(
                             CcipZkSyncTransceiver.initialize,
-                            (ccipConfig(address(router)), uint64(0), keccak256("zksolc"))
+                            (
+                                transceiverConfig(address(new CcipReceiver(address(router)))),
+                                uint64(0),
+                                keccak256("zksolc")
+                            )
                         )
                     )
                 ))
@@ -229,7 +221,10 @@ contract CcipGovernorHomeTest is ProviderGovernorHomeSpec {
         return address(
             deployTransceiver(
                 address(new CcipTransceiver(address(0xBEEF))),
-                abi.encodeCall(CcipTransceiver.initialize, (ccipConfig(address(0xBEEF)), uint64(id)))
+                abi.encodeCall(
+                    CcipTransceiver.initialize,
+                    (transceiverConfig(address(new CcipReceiver(address(0xBEEF)))), uint64(id))
+                )
             )
         );
     }
