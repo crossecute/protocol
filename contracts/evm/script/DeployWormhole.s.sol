@@ -5,8 +5,8 @@ import {DeployProvider} from "script/DeployProvider.s.sol";
 import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 
-/// @notice `WORMHOLE_CORE`, `WORMHOLE_EXECUTOR_ROUTER`, `WORMHOLE_QUOTER`, and
-///         `WORMHOLE_GOVERNOR_HOME_CHAIN`. See `DeployProvider`.
+/// @notice `WORMHOLE_CORE`, `WORMHOLE_EXECUTOR_ROUTER`, and `WORMHOLE_QUOTER`. See
+///         `DeployProvider`.
 contract DeployWormhole is DeployProvider {
     function _providerName() internal pure override returns (string memory) {
         return "wormhole";
@@ -30,8 +30,6 @@ contract DeployWormhole is DeployProvider {
     }
 
     function _deploy(TransceiverDeployment memory d) internal override returns (address) {
-        return WormholeDeploy.transceiver(
-            d, vm.envAddress("WORMHOLE_CORE"), uint16(_governorHomeId("WORMHOLE_GOVERNOR_HOME_CHAIN"))
-        );
+        return WormholeDeploy.transceiver(d, vm.envAddress("WORMHOLE_CORE"), uint16(_governorHomeId()));
     }
 }

@@ -69,8 +69,10 @@ this file is the gap between that design and the tree.
   `script/deploy/` functions the test suites also deploy through
   ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
   step 1 (the per-chain timelock, the seeded registry, the treasury, so the timelock design is
-  enforced by nothing), steps 3 to 7, and the N × N tables every chain needs about every other
-  chain, generated from one source since nothing on-chain checks they agree. How many gateways
+  enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain needs about every
+  other chain. Their source exists: `contracts/evm/deploy/` holds each chain's derivation, from
+  which every pair's grade follows, and each provider's ids, checked by every test and
+  deployment. Nothing generates the payloads from it yet. How many gateways
   each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be added
   later. zkSync and Tron have deploy functions the tests use but no production script: their
   bytecode is built by zksolc and TRON-solc, which these scripts do not drive. The provider

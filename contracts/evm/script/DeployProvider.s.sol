@@ -8,6 +8,9 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {Provenance} from "src/registry/Provenance.sol";
 
 /// @title DeployProvider
 /// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
@@ -18,7 +21,7 @@ import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 ///      `CHAIN_REGISTRY`, `TREASURY`, `GOVERNOR_OWNER`, `GOVERNOR_SALT` (default zero),
 ///      `GOVERNOR_HOME_CHAIN_ID`, `MIN_COUNTERPART_PROVENANCE` (0 Unknown, 1 Unique,
 ///      2 Predetermined), and `GATEWAYS` (default none; they cannot be added later).
-///      Each provider's script names its own.
+///      Each provider's script names its endpoints. Provider ids come from `deploy/`.
 ///
 /// @dev The checks every deployment shares live in `script/deploy/`, which the tests deploy
 ///      through. What is checked here holds only in production: the salt and caller are the
@@ -38,7 +41,9 @@ abstract contract DeployProvider is Script {
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         (address receiverImpl, address transmitterImpl, address transceiverImpl) = _implementations();
-        TransceiverDeployment memory d = _fromRecord(deployer, transceiverImpl, _config(receiverImpl, transmitterImpl));
+        TransceiverConfig memory c = _config(receiverImpl, transmitterImpl);
+        _checkChains(ChainRegistry(address(c.chainRegistry)));
+        TransceiverDeployment memory d = _fromRecord(deployer, transceiverImpl, c);
         transceiver = _deploy(d);
         vm.stopBroadcast();
     }
@@ -74,10 +79,25 @@ abstract contract DeployProvider is Script {
         return TransceiverDeployment({deployedBy: deployer, salt: r.salt, implementation: implementation, config: c});
     }
 
+    /// @notice This chain and the governor's home are configured, this chain is a parity chain
+    ///         (zkSync and Tron are built by other compilers), the home is `Predetermined` from
+    ///         here as birth requires, and the registry's grades agree with `deploy/`.
+    function _checkChains(ChainRegistry registry) internal view {
+        ChainEntry[] memory cs = ChainConfig.chains(ChainConfig.defaultDir());
+        ChainEntry memory local = ChainConfig.chainWithId(cs, block.chainid);
+        check(local.derivation == Derivation.Parity, "this chain is a parity chain");
+        ChainEntry memory home = ChainConfig.chainWithId(cs, vm.envUint("GOVERNOR_HOME_CHAIN_ID"));
+        check(ChainConfig.gradeOf(local, home) == Provenance.Predetermined, "the governor's home is Predetermined");
+        ChainConfig.checkRegistryGrades(registry, cs, local);
+    }
+
     /// @notice The provider's id for the governor's home, which the bootstrap that creates the
     ///         owner arrives under. Required unless this chain is the home.
-    function _governorHomeId(string memory name) internal view returns (uint256 id) {
-        id = vm.envOr(name, uint256(0));
-        if (vm.envUint("GOVERNOR_HOME_CHAIN_ID") != block.chainid) check(id != 0, name);
+    function _governorHomeId() internal view returns (uint256 id) {
+        string memory dir = ChainConfig.defaultDir();
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        uint256 home = vm.envUint("GOVERNOR_HOME_CHAIN_ID");
+        id = ChainConfig.providerId(dir, cs, _providerName(), ChainConfig.chainWithId(cs, home));
+        if (home != block.chainid) check(id != 0, "the provider reaches the governor's home");
     }
 }

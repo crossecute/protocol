@@ -746,7 +746,8 @@ test suites deploy through too, so every check a deployment makes also runs in e
 Those shared checks hold the proxy to its predicted address, locked on its implementation;
 the transceiver to its configuration, gateways, and governor's home; and, where the registry
 records the provider's deployment, R8.4. The production script adds what holds only on chain:
-the salt and caller are the record's, and the governor home's provider id is given. Steps 1
+the salt and caller are the record's; the chain, the governor's home, and the provider ids are
+in `deploy/`; and the registry's grades agree with it. Steps 1
 and 3 to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
 ordering above is their specification.
 

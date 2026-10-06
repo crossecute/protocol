@@ -5,7 +5,7 @@ import {DeployProvider} from "script/DeployProvider.s.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 
-/// @notice `LZ_ENDPOINT`, and `LZ_GOVERNOR_HOME_EID`. See `DeployProvider`.
+/// @notice `LZ_ENDPOINT`. See `DeployProvider`.
 contract DeployLz is DeployProvider {
     function _providerName() internal pure override returns (string memory) {
         return "layerzero";
@@ -21,6 +21,6 @@ contract DeployLz is DeployProvider {
     }
 
     function _deploy(TransceiverDeployment memory d) internal override returns (address) {
-        return LzDeploy.transceiver(d, uint32(_governorHomeId("LZ_GOVERNOR_HOME_EID")));
+        return LzDeploy.transceiver(d, uint32(_governorHomeId()));
     }
 }
