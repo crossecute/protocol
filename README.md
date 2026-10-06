@@ -232,7 +232,14 @@ src/
                   CrossProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
+script/
+  deploy/         shared deploy checks, one deploy per provider    tests deploy through these
+  Deploy*.s.sol   production entry points, one per provider
+  vendor/         provenance drivers for hand-copied SDK files
+deploy/           chains.toml, providers/*.toml: chain facts, provider ids
 ```
+
+Paths under `script/` and `deploy/` are relative to `contracts/evm/`.
 
 Dependencies run one way: `addressing` is a leaf, and nothing above it is imported by
 anything below:
@@ -277,7 +284,9 @@ summary: the file is always the newer statement.
 
 ## Adding a chain type
 
-Two steps, and the second is the one nothing will remind you about.
+A chain of a type the protocol already has, such as another standard EVM chain, needs no new
+contracts: see [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md). A new type
+takes two steps, and the second is the one nothing will remind you about.
 
 1. **Allocate the `ChainType` constant** in `addressing/ChainType.sol`, and nowhere else.
    Every value used in the repo is allocated in that one file, because a ChainType is
@@ -443,8 +452,10 @@ profile, which also enforces the detector heuristics the default profile leaves 
 
 Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
 reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the
-salt and deployer from the chain registry's record. The test suites deploy through the same
-functions under `script/deploy/`, so a deployment makes every check the tests do.
+salt and deployer from the chain registry's record, and provider ids from `deploy/`. The test
+suites deploy through the same functions under `script/deploy/`, so a deployment makes every
+check the tests do. [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md) says
+what adding a chain takes.
 
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and only the transceiver step of a chain's deployment is scripted. Both are tracked
