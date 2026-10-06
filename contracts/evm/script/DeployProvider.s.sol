@@ -10,7 +10,6 @@ import {check} from "script/deploy/CrossProxyDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {Provenance} from "src/registry/Provenance.sol";
 
 /// @title DeployProvider
 /// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
