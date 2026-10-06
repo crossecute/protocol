@@ -396,9 +396,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      which is what lets the owner and salt travel in the message without a caller
     ///      claiming another identity. An account homed elsewhere bootstraps from its own home.
     ///
-    /// @dev The only send `minCounterpartProvenance` gates, through `_requireRoutable`: it bars
-    ///      the first message to a chain, after which the account sends to its receiver
-    ///      directly.
+    /// @dev `minCounterpartProvenance` applies here through `_requireRoutable`, as it does to
+    ///      every message this transceiver sends to or accepts from a chain (`_counterpartOn`).
+    ///      An account's later sends leave from its transmitter, which does not read it.
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,

@@ -338,7 +338,8 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   chain; the same owner and salt homed on two chains are two accounts.
 - Approvals are an unordered map of hash to outstanding count. Nothing has a position, so
   nothing can block.
-- Provenance gates bootstrap, the first message to a chain, rather than every send.
+- The provenance bar gates what a transceiver sends and accepts (a bootstrap, a receiver
+  report, an inbound delivery), not an account's later sends, which leave from its transmitter.
 - A destination is bootstrapped exactly once per account, and a send to one that has not
   been is refused locally rather than paid for and failed on arrival.
 
