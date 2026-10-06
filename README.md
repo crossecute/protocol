@@ -61,7 +61,8 @@ The rest of the bill, stated plainly:
 - **A home cannot move.** It is part of the account's address. A team that wants another
   home makes another account.
 - **Configuration is N × N.** Every chain's transceiver needs every other chain's route and
-  provider id, which deploy scripts have to generate from one source.
+  provider id. Their one source is `contracts/evm/deploy/`; nothing turns it into the
+  governance payloads yet.
 - **A registry bug means new transceivers.** The registry is fixed and a transceiver's pointer
   to it is write-once, so a fix moves that chain's accounts.
 - **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then
@@ -361,7 +362,8 @@ What an operator or integrator has to know:
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
   would bridge it rather than spend it. `OpStackTransceiver` is one contract per L1 and OP
   Stack chain pair, the same on both sides, registered as its own message provider; it
-  refuses recipients on any chain but its pair.
+  refuses recipients on any chain but its pair. #41 replaces this with one transceiver per
+  chain serving every pair; not yet implemented.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
@@ -369,9 +371,10 @@ What an operator or integrator has to know:
 
 ## Assumptions
 
-- Contracts are created through Arachnid's CREATE2 factory (`0x4e59..`) with a salt,
-  transceivers through `CrossProxyDeployer`, which that factory places at one address. A
-  chain is `Predetermined` only if its transceivers were deployed that way; zkSync and Tron, whose
+- `CrossProxyDeployer` is created through Arachnid's CREATE2 factory (`0x4e59..`), which puts
+  it at one address on every standard EVM chain; transceivers are created through
+  `CrossProxyDeployer`, and accounts by their transceiver's own CREATE2. A chain is
+  `Predetermined` only if its transceivers were deployed that way; zkSync and Tron, whose
   CREATE2 formulas differ, and any chain without Arachnid's factory are `Unique`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
   (Shanghai) is absent on zkSync, Tron, and several L2s, and CREATE2 parity requires
@@ -407,7 +410,7 @@ What an operator or integrator has to know:
   chain's grade, and so whether it reports its receivers, is given when it is registered and
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
-  owner, where the msig's accounts under two providers propose and cancel, so a compromised
+  owner, where the governor's accounts under two providers propose and cancel, so a compromised
   provider can freeze them but not take them. That step is not scripted yet, so nothing
   enforces that design today.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,

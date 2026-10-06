@@ -1,7 +1,8 @@
 # Call encoding
 
-Status: design. Covers how a call array is serialized for the wire and what the
-commitment is computed over, on EVM and elsewhere.
+Status: the EVM side is built and tested; everything off the EVM is design. Covers how a call
+array is serialized for the wire and what the commitment is computed over, on EVM and
+elsewhere.
 
 ## Two things, kept separate
 
@@ -296,7 +297,8 @@ digest, so it is not written from memory. It reverts with `SchemeNotComputable` 
 than falling back to keccak, because a silent fallback would hand back a well-formed
 commitment that a Starknet receiver can never match, failing only on a live message.
 `Commitment.isComputable(scheme)` is the ask-before-you-build read, and it is false only for
-`Poseidon`. Until it is ported and checked against `test/vectors/starknet.json`, a Starknet
+`Poseidon`. Until it is ported and checked against Starknet vectors (not built yet;
+[`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)), a Starknet
 commitment is computed off-chain and carried in an opaque element that calls that receiver's
 own `commit`, which is the same mechanism every deferred payload uses.
 
@@ -323,8 +325,8 @@ lookup), that is the whole safety argument for letting the preview be swappable.
 
 Getting the primitive wrong therefore fails closed, the same way building a commitment with
 the local chainKey does. It is not free: an unmatched commitment sits outstanding until a
-`cancel` crosses, which is why a plugin is checked against `test/vectors/` rather than
-trusted. It no longer blocks anything else, since approvals are unordered.
+`cancel` crosses, which is why no plugin is to be configured for a chain before it is checked
+against that chain's vectors (not built yet; [`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)). It no longer blocks anything else, since approvals are unordered.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured, which is exactly why the
@@ -399,25 +401,23 @@ wrong layer.
 Three claims argued in the contracts are EVM properties presented as protocol properties,
 and the Move case is where each of them breaks.
 
-**"These accounts are full-power and answer to one owner, the same way a Safe on Ethereum
-does"** (`messaging/Executor.sol`). That is the justification for `isAllowed` defaulting to
-`true` and for
-treating the call policy as a self-imposed restriction rather than a defence. On a Move
+**"Accounts are full-power and answer to one owner, like a Safe"** (`messaging/Executor.sol`).
+That is the justification for `isAllowed` defaulting to `true` and for treating the call
+policy as a self-imposed restriction rather than a defence. On a Move
 chain the receiver is vocabulary-limited whether anyone wants it to be or not, so the
 premise is false there, and the merkle-policy work is moot, because **the vocabulary is
 the policy**. Non-EVM receivers are constrained accounts by construction.
 
-**"Deployed as an argument-free `CrossProxy` at a CREATE2 address derived from
-`(owner, salt, home)`"** (`account/CrossProxy.sol`, `TransceiverBase.accountSalt`). Move modules
+**One argument-free `CrossProxy` per account, at a CREATE2 address derived from
+`(owner, salt, home)`** (`account/CrossProxy.sol`, `TransceiverBase.accountSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
 Move deployment is one module holding a table keyed by owner. The one-account-per-owner
 model, and the single address that goes with it, does not survive the trip.
 
-**"A payload that can never execute strands itself at its own transmitter's receiver, which
-is one-per-transmitter by construction, and blocks nobody"** (`TransceiverBase`). That rests
-on one contract per owner. Under a shared Move module it becomes bookkeeping again,
-which is the thing that section says it was avoiding. Whatever a Move receiver does about
-isolation has to be argued separately rather than inherited.
+**Approvals live in each account's own receiver, so an unrelayed payload stalls nothing**
+(`inbound/ReceiverBase.sol`). That rests on one receiver per transmitter. Under a shared Move
+module every owner's approvals sit in one module, so isolation becomes bookkeeping again, and
+whatever a Move receiver does about it has to be argued separately rather than inherited.
 
 Finally, `Call.value` is the concrete case of the general rule already stated above: every
 other VM moves native currency as an explicit asset or resource, so value is an **operation
@@ -441,6 +441,8 @@ non-overlapping toolchains, so they cannot import each other. The interface betw
 a file.
 
 ### The vector corpus
+
+Not built yet ([`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)). The planned layout:
 
 ```
 test/vectors/

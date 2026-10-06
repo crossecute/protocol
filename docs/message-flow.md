@@ -31,8 +31,8 @@ on its chain and receivers for accounts homed elsewhere. Everything below reads 
    run-later sends a payload whose single element calls the receiver's own `commit`. A
    payload carries no message-type tag; only transceiver envelopes carry a kind.
 
-The transceiver has exactly two jobs: standing up a receiver on a chain that has none, and
-reporting back where it landed.
+Beyond creating transmitters at home, the transceiver has two jobs on the wire: standing up a
+receiver on a chain that has none, and reporting back where it landed.
 
 ## The two paths
 
@@ -211,7 +211,7 @@ use, so payload-building tooling that already speaks those formats works without
 code. Which form a destination receives follows from its chain type; see
 [`encoding.md`](encoding.md).
 
-A bare commit costs 320 bytes encoded this way, against 32 for the hash it carries. That is
+A bare commit costs 288 bytes encoded this way, against 32 for the hash it carries. That is
 ABI padding and offsets, not information. It amortizes across payloads with real calldata
 in them, and it is not worth packed encoding to avoid.
 
@@ -226,15 +226,14 @@ currency as an explicit asset.
 Who inherits what:
 
 ```
-Roles           ← TransceiverBase, RolesEnumerable
-RolesEnumerable ← TransmitterBase, ReceiverBase
-Executor        ← TransmitterBase, ReceiverBase
-ReentrancyGuard ← ReceiverBase
+Roles                      ← TransceiverBase, RolesEnumerable
+RolesEnumerable            ← TransmitterBase, ReceiverBase
+Executor                   ← TransmitterBase, ReceiverBase
+ReentrancyGuardUpgradeable ← ReceiverBase
 
-OutboundBase                  → TransmitterBase          the home account
-                                ReceiverBase             the destination account
-OutboundBase                  → TransceiverBase          → DivergentTransceiver
-                                                              → ZkSyncTransceiver / TronTransceiver
+OutboundBase → TransmitterBase                  the home account
+OutboundBase → TransceiverBase → DivergentTransceiver → ZkSyncTransceiver / TronTransceiver
+ReceiverBase                                    the destination account; not an OutboundBase
 ```
 
 `TransceiverBase` is the only contract with both a send side and a receive side, and its
@@ -250,7 +249,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the msig's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `accountSalt`, `predictCrossAccount`, `predictReceiver`, `createTransmitter`, `predictTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `reportsReceiver`, `reportPayload`, `withdraw`, `receive()`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `CROSS_PROXY_INIT_CODE_HASH` |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `accountSalt`, `predictCrossAccount`, `predictReceiver`, `createTransmitter`, `predictTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `reportsReceiver`, `reportPayload`, `withdraw`, `receive()`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash` |
 | `messaging/transceiver/DivergentAccounts.sol` | The zkSync and Tron account formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `accountBytecodeHash` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
@@ -291,8 +290,9 @@ different one.
 an address on that one, because both deployed their transceivers through `CrossProxyDeployer`,
 which Arachnid's factory puts at one address; a chain without Arachnid's factory is `Unique` in
 every registry, its own included. `Unique` means it cannot and was told, so the value is worth
-exactly the bridge that carried it. `Unknown` means nothing has been declared and no bar accepts
-it. The order is the semantics, so inserting a grade would renumber the rest.
+exactly the bridge that carried it. `Unknown` means nothing has been declared; the registry
+accepts it, and only a bar of `Unknown`, which is no bar, lets a transceiver use it. The order
+is the semantics, so inserting a grade would renumber the rest.
 
 The addressing, derivation, and registry trees are not covered here. See
 [`encoding.md`](encoding.md) for the commitment layer and `registry/ChainRegistry.sol` for
