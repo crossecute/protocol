@@ -69,10 +69,8 @@ this file is the gap between that design and the tree.
   and those constructor arguments being byte-identical on every chain, and nothing pins them.
   The scripts are also where the deployment-time provider decisions get made: the
   `crossProxyInitCodeHash` and `deployedBy` assertions (R8.4), how many gateways each transceiver's initializer
-  names (they cannot be added later), the N × N tables every chain needs about every
-  other chain, generated from one source since nothing on-chain checks they agree, and the
-  `WormholeMessage` library every Wormhole contract links, deployed before them (on zkSync
-  and Tron, linked when that chain's bytecode is built).
+  names (they cannot be added later), and the N × N tables every chain needs about every
+  other chain, generated from one source since nothing on-chain checks they agree.
 - **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
   says where every line is held). C21's script-side assertion waits on the deploy scripts.
   C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
