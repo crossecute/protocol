@@ -79,12 +79,15 @@ library ChainConfig {
         }
     }
 
-    /// @notice The grade `registryChain`'s registry gives `graded`. Two chains share addresses,
-    ///         and so are `Predetermined` to each other, only when both are parity chains; any
-    ///         other pair is `Unique`, a non-parity chain grading itself included (#33).
-    ///         Configuration never assigns `Unknown`.
+    /// @notice The grade `registryChain`'s registry gives `graded`: `Predetermined` when
+    ///         `graded` is a parity chain and `registryChain` is not `other`, else `Unique`.
+    /// @dev A parity chain's transceivers sit where the provider's record predicts. A plain
+    ///      transceiver finds that address at its own, and a zkSync or Tron one derives it from
+    ///      the record (`DivergentTransceiver._parityAddress`). A plain transceiver on an `other`
+    ///      chain sits elsewhere, so it can use no parity address (#33). A non-parity chain is
+    ///      `Unique` in every registry, its own included. Configuration never assigns `Unknown`.
     function gradeOf(ChainEntry memory registryChain, ChainEntry memory graded) internal pure returns (Provenance) {
-        return registryChain.derivation == Derivation.Parity && graded.derivation == Derivation.Parity
+        return graded.derivation == Derivation.Parity && registryChain.derivation != Derivation.Other
             ? Provenance.Predetermined
             : Provenance.Unique;
     }

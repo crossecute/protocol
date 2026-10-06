@@ -287,9 +287,11 @@ of "the payload is checked" or "the caller is checked" holds, and each entry poi
 different one.
 
 **Provenance is two useful values and a null.** `Predetermined` means this chain can recompute
-an address on that one, because both deployed their transceivers through `CrossProxyDeployer`,
-which Arachnid's factory puts at one address; a chain without Arachnid's factory is `Unique` in
-every registry, its own included. `Unique` means it cannot and was told, so the value is worth
+an address on that one, because that chain deployed its transceivers through
+`CrossProxyDeployer`, which Arachnid's factory puts at one address, and this chain's transceiver
+knows where: at its own address, or on zkSync and Tron from the provider's deployment record.
+A chain without Arachnid's factory is `Unique` in every registry, its own included, and grades
+every other chain `Unique` in its own. `Unique` means it cannot and was told, so the value is worth
 exactly the bridge that carried it. `Unknown` means nothing has been declared; the registry
 accepts it, and only a bar of `Unknown`, which is no bar, lets a transceiver use it. The order
 is the semantics, so inserting a grade would renumber the rest.
