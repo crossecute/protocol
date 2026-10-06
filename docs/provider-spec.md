@@ -51,12 +51,12 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
 | Term | Meaning |
 | --- | --- |
-| **provider** | The third-party transport: LayerZero, Hyperlane, Wormhole, CCIP, Axelar. |
+| **provider** | The third-party transport: LayerZero, CCIP, Hyperlane, Wormhole, OP Stack. |
 | **binding** | The contracts in this repo that attach a provider to the protocol. |
 | **account** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
-| **transceiver** | The shared contract, one per provider per chain, owned by the msig's own account there. It creates transmitters for accounts homed on its chain and receivers for accounts homed elsewhere. |
+| **transceiver** | The shared contract, one per provider per chain, owned by the governor's own account there. It creates transmitters for accounts homed on its chain and receivers for accounts homed elsewhere. |
 | **home** | The chain an account was created on, chosen by its owner. Part of the account's address, and authenticated as the origin of its bootstrap. |
-| **route** | The provider's own name for a chain, opaque `bytes`: an eid, a domain, a chain id, a selector, a name string. |
+| **route** | A chain's canonical ERC-7930 chain identifier, stored per chainKey by `setRoute`. A provider's own name for the chain (an eid, a selector, a domain) is a separate provider id, in `ProviderChainId`. |
 | **counterpart** | The address of the transceiver on the other chain, in that chain's own format. |
 | **chainKey** | `keccak256(canonical ERC-7930 chain identifier)`. The protocol's only chain name. |
 
@@ -109,10 +109,10 @@ else it gives up.
 means, and they are the claim the entire redesign rests on. Verify them against the
 provider's actual code, not its documentation, before writing anything else.
 
-Every provider in scope satisfies P9 today: LayerZero's `endpoint.quote(MessagingParams,
-address) -> MessagingFee`, Hyperlane's `quoteDispatch`, CCIP's `getFee`, Wormhole's
-`quoteEVMDeliveryPrice`, Axelar's off-chain gas estimator with an on-chain equivalent. All
-but Axelar's are `view`.
+Every binding here quotes on-chain with a `view`: LayerZero's `endpoint.quote`, CCIP's
+`getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the Executor
+quoter router's `quoteExecution`. OP Stack's quote is zero: a deposit is paid in burned gas,
+not value.
 
 ---
 
@@ -196,7 +196,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the msig's own account on this chain. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
 | nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
@@ -223,7 +223,7 @@ an owner-gated config surface declares its own initializer signature carrying it
 overrides `TransceiverBase._accountInitializer` to encode that selector. No address
 moves: initializer calldata is not in the initcode.
 
-### 4.6 Deliberately absent
+### 4.5 Deliberately absent
 
 A binding MUST NOT expect any of these, and MUST NOT add them.
 
@@ -262,7 +262,7 @@ each chain's ERC-7930 IDENTIFIER now rather than a provider's private id, and it
 `TransceiverBase._recipientOn` on the way in.
 
 **R1.2** An account MUST NOT hold a route table of its own: a user adding a destination is
-a msig configuration change, not a per-account migration. `IAccountTransceiver.routeTo` is
+a governance configuration change, not a per-account migration. `IAccountTransceiver.routeTo` is
 the read, on the transceiver an account already stores.
 
 **R1.2.1** Every `bytes` argument on the account's own surface MUST have a public builder
@@ -376,8 +376,9 @@ send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, transmitter, calls)`, the same
-function `sendMessage` puts on the wire, not over an estimate of the length. Every provider prices
-per byte. This is what makes a quote a number the send can pay rather than a number it must
+function `sendMessage` puts on the wire, not over an estimate of the length. LayerZero, CCIP,
+and Hyperlane price per byte; Wormhole's Executor and OP Stack do not, and the rule costs them
+nothing. This is what makes a quote a number the send can pay rather than a number it must
 pad, and it is why the public surface below takes exactly `sendMessage`'s arguments.
 
 **R2.4 It MUST use the same route, destination, and options resolution as the send.** Any
@@ -473,7 +474,7 @@ do nothing else with the message.
 
 | Contract | Entry point | Then |
 | --- | --- | --- |
-| receiver | `receiveMessage(receiveId, sender, payload)` | `_onMessage(payload)`, after both checks below |
+| receiver | `receiveMessage(receiveId, sender, payload)` over an ERC-7786 gateway, or the binding's callback | `_onMessageFrom(sender, payload)`, which checks the source transmitter and calls `_onMessage(payload)` |
 | transceiver | the binding's callback | `_onInbound(route, sender, message)`, through `_onProviderInbound` where the provider names the origin by its own id |
 | transmitter | none | MUST revert |
 
@@ -487,7 +488,7 @@ another's receiver.
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
 later chance.** `Roles.grantRole` is `onlyInitializing`, so after the arming call there is
-nobody a grant could come from. Not the transceiver that created it, not the msig, and not
+nobody a grant could come from. Not the transceiver that created it, not the governor, and not
 the account's own owner. A binding therefore calls `grantRole(GATEWAY_ROLE, endpoint)` from its
 own `initialize`, ahead of `__ReceiverBase_init`, where the rest of its provider setup already
 goes. The same applies to a transmitter, and to a transceiver, whose gateways normally arrive
@@ -585,13 +586,11 @@ it names the home the owner is derived for, so a wrong one makes a transceiver n
 
 ### R5. The route codec
 
-**R5.1** The route MUST be encoded with fixed-width `abi.encode`, never `encodePacked`. The
-registry and the transceiver hold a LayerZero `uint32`, a Hyperlane `uint32`, a Wormhole
-`uint16`, and a CCIP `uint64` in the same `bytes` slot, so the width has to travel with the
-value. A value configured at the wrong width MUST fail loudly in `abi.decode` rather than
-silently reinterpret. Under ERC-7786 the route holds a chain's ERC-7930 identifier rather
-than a provider id, so this rule now binds only where a binding keeps a provider-native
-value of its own.
+**R5.1** A route is the chain's canonical ERC-7930 chain identifier, and `setRoute` refuses
+any other form of it (`RouteKeyMismatch`). A binding that keeps a provider-native value in
+`bytes` of its own MUST encode it with fixed-width `abi.encode`, never `encodePacked`, so a
+value at the wrong width fails loudly in `abi.decode` rather than silently reinterpreting.
+Provider ids need none of this: `ProviderChainId` stores them as `uint256` (R5.3).
 
 **R5.2** The provider's native type MUST appear only in the binding's own files: the
 transceiver's typed setter and initializer argument over `ProviderChainId`, and an SDK peer
@@ -611,14 +610,14 @@ own configuration is gated on its owner, which the transceiver is not.
 **R6.2** The initializer MUST configure the provider before the bootstrap payload runs. A
 payload can itself send, and it can call arbitrary targets.
 
-**R6.3** The reentrancy guard MUST be initialized first, before any provider call and
-before the payload. A proxy runs no constructor, so the guard is uninitialized until that
-line.
+**R6.3** `__ReceiverBase_init` initializes the reentrancy guard before it runs the payload. A
+proxy runs no constructor, so the guard is uninitialized until then, and a binding's provider
+setup, which runs earlier, MUST NOT call back into the account.
 
 **R6.4 Any provider-side authority over an account MUST be the account itself.** Where an
 SDK takes a delegate, an owner, or a configurator at initialization, the binding passes
 `address(this)`, which inside `upgradeInitializeAndLock`'s delegatecall is the account. It
-MUST NOT be the transceiver, the msig, or an operator.
+MUST NOT be the transceiver, the governor, or an operator.
 
 The account locks in the same call that arms it and its own configuration is owner-gated, so
 any address named here is an authority nobody can revoke and the account cannot override.
@@ -705,8 +704,9 @@ included, which would otherwise put every derived address one comment edit away 
 
 **R8.4** `ChainRegistry.setProviderDeployment`'s `crossProxyInitCodeHash` MUST equal
 `TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and its `deployedBy` MUST be
-the account that called `CrossProxyDeployer.deploy` for the provider's transceivers. A binding's deploy script MUST
-assert this rather than transcribe it. A diverging transceiver predicts its receivers on
+the account that called `CrossProxyDeployer.deploy` for the provider's transceivers. The
+shared deploy asserts this for every binding (`script/deploy/TransceiverDeploy.sol`) rather
+than transcribing it. A diverging transceiver predicts its receivers on
 parity chains from this record, since its own constant comes from zksolc or TRON-solc.
 
 ### R9. Write-once discipline
@@ -735,11 +735,11 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
-| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
+| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Deployed through Arachnid's factory with identical arguments, each sits at one address on every standard EVM chain. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
 | 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library (#29); `forge script` deploys it first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
-| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
+| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |
 | 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
@@ -813,8 +813,8 @@ below. The column says where each line is held.
 
 | # | Property | Asserts | Covered by |
 | --- | --- | --- | --- |
-| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider saw the route `setRoute` stored, byte for byte. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
-| C2 | `send_toUnconfiguredDestinationReverts` | `NoRouteFor`, not a default. | `ProviderSendSpec` |
+| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider was handed the destination the recipient's chain resolves to: its id for that chain, or for OP Stack its paired messenger. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
+| C2 | `send_toUnconfiguredDestinationReverts` | Reverts rather than falling back to a default. | `ProviderSendSpec` |
 | C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. | core `Transport.t.sol` `test_aRecipientThatIsNotThisAccountIsRefused` |
 | C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
 | C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`, or the id table's refusal of an unmapped origin. | `ProviderIdTableSpec` (transceiver), OP Stack's `test_nothingIsAcceptedBeforeThePairedChainIsRouted`, `ProviderReceiveSpec` (account) |
@@ -839,16 +839,16 @@ below. The column says where each line is held.
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
 | C25 | `fees_excessRefundsToTheAccountNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec` (transceiver), core `Transport.t.sol` `test_pathARefundsToTheAccount` (transmitter). CCIP keeps an overpayment; OP Stack takes no value |
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
-| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `CommitFinalize.t.sol` `test_initializingLocksUpgrades` |
+| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `CrossProxy.t.sol` `test_theDeployerCannotUpgradeAgain` (accounts), `CrossProxyDeployer.t.sol` `test_itArmsAndLocksInTheDeployingCall` (transceivers) |
 | C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). | core setters (`DestinationNaming.t.sol`, `SaltedDeployment.t.sol`, `ProviderChainId.t.sol`); the binding's typed setter `ProviderIdTableSpec` |
 | C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. | Wormhole, which owns replay: `test_aReplayedVaaIsRejected`. Others: the transport's, fork test not built |
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerAccount`. Others: fork test not built |
 
-**C11, C29 and C30 want FORK tests, against the real endpoint.** A mock provider does
+**C11 and C29 to C31 want FORK tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness
-dedupes, prices, and retries. It proves nothing about the transport, which is where all
-three properties actually live. Run them against a forked chain with the provider's real
+dedupes, prices, and retries. It proves nothing about the transport, which is where those
+properties actually live. Run them against a forked chain with the provider's real
 deployment, or accept that P7 and P9 remain documented assumptions.
 
 **C29 is the one nobody writes.** It tests a property of somebody else's contract, which
@@ -862,9 +862,10 @@ catches them. C11 is the only thing that ties the quote to the send: a binding w
 two drift compiles, deploys, passes every other test, and overcharges or underfunds every
 message it ever carries.
 
-The suite is separate from and does not replace `test/vectors/`, which covers the
-commitment half and is
-[load-bearing for the scheme plugins](todo.md#4-post-launch-non-evm-destinations).
+The suite is separate from, and does not replace, the `test/vectors/` corpus planned for the
+commitment half, which is
+[load-bearing for the scheme plugins](todo.md#4-post-launch-non-evm-destinations) and not
+built yet.
 
 ---
 
@@ -961,7 +962,7 @@ form the counterpart lookup returns
 
 Note what is absent. There is no codec, because a recipient names its own chain and the
 route slot holds that chain's identifier. There is no peer table, because an account's peer
-is its own address and `TransmitterBase` checks it. There is no inbound authentication,
+is the receiver it recorded at bootstrap, and `TransmitterBase` checks it. There is no inbound authentication,
 because `receiveMessage` performs both halves before `_onMessage` runs. What remains is a
 gateway address, a policy about two-step sends, and a quote the standard did not define.
 
@@ -975,7 +976,7 @@ A binding is done when every line is true.
 - [ ] `_sendMessage` overridden on the transmitter and the transceiver
 - [ ] `_quoteMessage` overridden on the same two, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
-- [ ] `GATEWAY_ROLE` granted in every account's initializer, and inbound routed into
+- [ ] `GATEWAY_ROLE` granted in every receiver's initializer, and inbound routed into
       `_onInbound` on the transceiver
 - [ ] Inbound reverts on the transmitter
 - [ ] Initialized with the governor's owner, salt, and home, the chain's `Treasury`, the
@@ -988,9 +989,10 @@ A binding is done when every line is true.
       survives, with inbound mapped through `_onProviderInbound`
 
 **Byte forms**
-- [ ] Route produced by one codec function in both directions
+- [ ] Inbound origin mapped through `routeFor`, or `_onProviderInbound` for a provider id,
+      never a hand-built route
 - [ ] Sender narrowed to the registry's exact form, wide senders rejected
-- [ ] Fixed-width `abi.encode` everywhere a route is built
+- [ ] Fixed-width `abi.encode` for any provider-native value kept in `bytes`
 
 **Value**
 - [ ] The `value` argument pays the fee, never `msg.value`, and excess refunds to `_refundTo()`
@@ -999,11 +1001,13 @@ A binding is done when every line is true.
 
 **Parity**
 - [ ] `CrossProxy` initcode unchanged, compiler settings unchanged
-- [ ] `crossProxyInitCodeHash` asserted against `CROSS_PROXY_INIT_CODE_HASH` in the script
+- [ ] Deployed through `script/deploy/`, which asserts R8.4
 - [ ] SDK storage namespaced or layout pinned
 
 **Process**
 - [ ] Every SDK-side authentication documented as a written exception
 - [ ] No new setter for any write-once value
-- [ ] `script/` deploys in the order of [§6](#6-configuration-a-compliant-deployment-performs)
+- [ ] A `<P>Deploy` library under `script/deploy/` over `TransceiverDeploy`, a production
+      script over `DeployProvider`, and the provider's ids in `deploy/providers/`, in the
+      order of [§6](#6-configuration-a-compliant-deployment-performs)
 - [ ] The §8 specs that apply to it pass, with the binding's suite inheriting each one
