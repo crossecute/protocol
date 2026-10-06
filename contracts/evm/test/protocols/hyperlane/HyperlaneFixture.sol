@@ -4,11 +4,10 @@ pragma solidity ^0.8.20;
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
-import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
-import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {ProviderIdFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
@@ -58,15 +57,15 @@ abstract contract HyperlaneFixture is ProviderIdFixture {
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new HyperlaneReceiver(address(mailbox)));
+        return HyperlaneDeploy.receiverImplementation(address(mailbox));
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return address(new HyperlaneTransmitter(address(mailbox)));
+        return HyperlaneDeploy.transmitterImplementation(address(mailbox));
     }
 
-    function _initialize(TransceiverConfig memory c, uint256 homeId) internal pure override returns (bytes memory) {
-        return abi.encodeCall(HyperlaneTransceiver.initialize, (c, uint32(homeId)));
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return HyperlaneDeploy.transceiver(d, address(mailbox), uint32(homeId));
     }
 
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)

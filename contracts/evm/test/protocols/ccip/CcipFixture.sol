@@ -5,10 +5,9 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {CcipDeploy} from "script/deploy/CcipDeploy.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
-import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
-import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {ProviderIdFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
@@ -69,15 +68,15 @@ abstract contract CcipFixture is ProviderIdFixture {
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new CcipReceiver(address(router)));
+        return CcipDeploy.receiverImplementation(address(router));
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return address(new CcipTransmitter(address(router)));
+        return CcipDeploy.transmitterImplementation(address(router));
     }
 
-    function _initialize(TransceiverConfig memory c, uint256 homeId) internal pure override returns (bytes memory) {
-        return abi.encodeCall(CcipTransceiver.initialize, (c, uint64(homeId)));
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return CcipDeploy.transceiver(d, address(router), uint64(homeId));
     }
 
     function _gateway() internal view override returns (address) {

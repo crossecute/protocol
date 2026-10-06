@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {CcipDeploy} from "script/deploy/CcipDeploy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-
-import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 
 import {
     ProviderZkSyncSpec,
@@ -29,8 +28,12 @@ contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
         return address(new CcipZkSyncHarness(address(router)));
     }
 
-    function _initializeZkSync(TransceiverConfig memory c, bytes32 hash) internal pure override returns (bytes memory) {
-        return abi.encodeCall(CcipZkSyncTransceiver.initialize, (c, uint64(0), hash));
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+        internal
+        override
+        returns (address)
+    {
+        return CcipDeploy.zkSyncTransceiver(d, address(router), 0, accountBytecodeHash);
     }
 
     function _assertReportSent() internal view override {

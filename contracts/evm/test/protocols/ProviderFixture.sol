@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployCrossProxy.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -52,9 +52,9 @@ abstract contract ProviderFixture is Test {
 
     function _transmitterImplementation() internal virtual returns (address);
 
-    /// @notice The plain transceiver's initializer for `c`, naming `homeId` as the governor
-    ///         home's provider id.
-    function _initialize(TransceiverConfig memory c, uint256 homeId) internal view virtual returns (bytes memory);
+    /// @notice Deploy the plain transceiver through the provider's deploy script, naming
+    ///         `homeId` as the governor home's provider id.
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal virtual returns (address);
 
     /// @notice The address the provider delivers through: its endpoint, router, mailbox, Core
     ///         bridge, or messenger.
@@ -92,8 +92,23 @@ abstract contract ProviderFixture is Test {
         return transceiverConfig(_receiverImplementation());
     }
 
+    /// @notice A deployment from this contract, salted by the implementation, which each
+    ///         fixture deploys fresh, so two deployments in one test do not collide.
+    function _deployment(address implementation, TransceiverConfig memory c)
+        internal
+        view
+        returns (TransceiverDeployment memory)
+    {
+        return TransceiverDeployment({
+            deployedBy: address(this),
+            salt: bytes32(uint256(uint160(implementation))),
+            implementation: implementation,
+            config: c
+        });
+    }
+
     function _deployTransceiver(TransceiverConfig memory c, uint256 homeId) internal returns (address) {
-        return deployTransceiver(_transceiverImplementation(), _initialize(c, homeId));
+        return _deploy(_deployment(_transceiverImplementation(), c), homeId);
     }
 }
 

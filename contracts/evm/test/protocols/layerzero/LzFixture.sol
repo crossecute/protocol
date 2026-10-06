@@ -4,12 +4,13 @@ pragma solidity ^0.8.20;
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
-import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {LzDeploy} from "script/deploy/LzDeploy.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
-import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
-import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
+import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
@@ -59,15 +60,15 @@ abstract contract LzFixture is ProviderIdFixture {
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new LzReceiver(address(endpoint)));
+        return LzDeploy.receiverImplementation(address(endpoint));
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return address(new LzTransmitter(address(endpoint)));
+        return LzDeploy.transmitterImplementation(address(endpoint));
     }
 
-    function _initialize(TransceiverConfig memory c, uint256 homeId) internal pure override returns (bytes memory) {
-        return abi.encodeCall(LzTransceiver.initialize, (c, uint32(homeId)));
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return LzDeploy.transceiver(d, uint32(homeId));
     }
 
     /// @dev A receiver's peer is its transmitter on the account's home.

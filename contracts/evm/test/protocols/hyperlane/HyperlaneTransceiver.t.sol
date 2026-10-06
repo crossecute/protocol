@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-
-import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
 
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
@@ -21,8 +20,12 @@ contract HyperlaneZkSyncTransceiverTest is ProviderZkSyncSpec, HyperlaneFixture 
         return address(new HyperlaneZkSyncHarness(address(mailbox)));
     }
 
-    function _initializeZkSync(TransceiverConfig memory c, bytes32 hash) internal pure override returns (bytes memory) {
-        return abi.encodeCall(HyperlaneZkSyncTransceiver.initialize, (c, uint32(0), hash));
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+        internal
+        override
+        returns (address)
+    {
+        return HyperlaneDeploy.zkSyncTransceiver(d, address(mailbox), 0, accountBytecodeHash);
     }
 
     function _assertReportSent() internal view override {

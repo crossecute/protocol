@@ -3,7 +3,8 @@ pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
-import {deployAccount, deployTransceiver} from "test/DeployCrossProxy.sol";
+import {deployAccount} from "test/DeployCrossProxy.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -636,18 +637,18 @@ abstract contract ProviderZkSyncSpec is ProviderIdFixture {
     ///         `_reportReceiver`.
     function _zkSyncImplementation() internal virtual returns (address);
 
-    function _initializeZkSync(TransceiverConfig memory c, bytes32 accountBytecodeHash)
+    /// @notice Deploy `d` as the zkSync transceiver through the provider's deploy script.
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
         internal
-        view
         virtual
-        returns (bytes memory);
+        returns (address);
 
     /// @notice Assert the provider's mock recorded the last report addressed to
     ///         `HOME_TRANSCEIVER` on `REMOTE_CHAIN_ID`, refunding any excess to `zk`.
     function _assertReportSent() internal view virtual;
 
     function setUp() public virtual {
-        zk = deployTransceiver(_zkSyncImplementation(), _initializeZkSync(_config(), keccak256("zksolc")));
+        zk = _deployZkSync(_deployment(_zkSyncImplementation(), _config()), keccak256("zksolc"));
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);

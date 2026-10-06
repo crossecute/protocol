@@ -4,11 +4,10 @@ pragma solidity ^0.8.20;
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
-import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
-import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
@@ -93,20 +92,24 @@ abstract contract WormholeFixture is ProviderIdFixture {
     /// @dev A fresh sequence per VAA, so a second delivery is a new message, not a replay.
     uint64 internal sequence;
 
+    function _endpoints() internal view returns (WormholeDeploy.Endpoints memory) {
+        return WormholeDeploy.Endpoints(address(core), address(router), QUOTER);
+    }
+
     function _transceiverImplementation() internal override returns (address) {
         return address(new WormholeTransceiverHarness(address(core), address(router), QUOTER));
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new WormholeReceiver(address(core)));
+        return WormholeDeploy.receiverImplementation(_endpoints());
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return address(new WormholeTransmitter(address(core), address(router), QUOTER));
+        return WormholeDeploy.transmitterImplementation(_endpoints());
     }
 
-    function _initialize(TransceiverConfig memory c, uint256 homeId) internal pure override returns (bytes memory) {
-        return abi.encodeCall(WormholeTransceiver.initialize, (c, uint16(homeId)));
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return WormholeDeploy.transceiver(d, address(core), uint16(homeId));
     }
 
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)

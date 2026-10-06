@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
-import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
-import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
@@ -47,15 +46,15 @@ abstract contract OpStackFixture is ProviderFixture {
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new OpStackReceiver(address(messenger)));
+        return OpStackDeploy.receiverImplementation(address(messenger));
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return address(new OpStackTransmitter());
+        return OpStackDeploy.transmitterImplementation();
     }
 
-    function _initialize(TransceiverConfig memory c, uint256) internal pure override returns (bytes memory) {
-        return abi.encodeCall(OpStackTransceiver.initialize, (c));
+    function _deploy(TransceiverDeployment memory d, uint256) internal override returns (address) {
+        return OpStackDeploy.transceiver(d, address(messenger), ChainKey.forEvm(REMOTE_CHAIN_ID));
     }
 
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)

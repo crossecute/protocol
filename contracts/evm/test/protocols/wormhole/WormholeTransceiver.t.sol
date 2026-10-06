@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
-import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
@@ -64,8 +64,12 @@ contract WormholeZkSyncTransceiverTest is ProviderZkSyncSpec, WormholeFixture {
         return address(new WormholeZkSyncHarness(address(core), address(router), QUOTER));
     }
 
-    function _initializeZkSync(TransceiverConfig memory c, bytes32 hash) internal pure override returns (bytes memory) {
-        return abi.encodeCall(WormholeZkSyncTransceiver.initialize, (c, uint16(0), hash));
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+        internal
+        override
+        returns (address)
+    {
+        return WormholeDeploy.zkSyncTransceiver(d, address(core), 0, accountBytecodeHash);
     }
 
     function _assertReportSent() internal view override {

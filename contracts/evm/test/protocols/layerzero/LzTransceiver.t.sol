@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {deployTransceiver} from "test/DeployCrossProxy.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {OAppReceiverUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -50,8 +50,12 @@ contract LzZkSyncTransceiverTest is ProviderZkSyncSpec, LzFixture {
         return address(new LzZkSyncHarness(address(endpoint)));
     }
 
-    function _initializeZkSync(TransceiverConfig memory c, bytes32 hash) internal pure override returns (bytes memory) {
-        return abi.encodeCall(LzZkSyncTransceiver.initialize, (c, uint32(0), hash));
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+        internal
+        override
+        returns (address)
+    {
+        return LzDeploy.zkSyncTransceiver(d, 0, accountBytecodeHash);
     }
 
     function _assertReportSent() internal view override {
@@ -96,12 +100,12 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
         ProviderSeed[] memory providers = new ProviderSeed[](1);
         providers[0] = ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256("account"));
         ChainRegistry registry = _homeSeed(providers);
-        address t = deployTransceiver(
-            address(new LzZkSyncHarness(address(endpoint))),
-            abi.encodeCall(
-                LzZkSyncTransceiver.initialize,
-                (_registryConfig(IChainRegistryRefs(address(registry))), HOME_EID, keccak256("zksolc"))
-            )
+        address t = LzDeploy.zkSyncTransceiver(
+            _deployment(
+                address(new LzZkSyncHarness(address(endpoint))), _registryConfig(IChainRegistryRefs(address(registry)))
+            ),
+            HOME_EID,
+            keccak256("zksolc")
         );
 
         address there = registry.predictTransceiver(ChainKey.forEvm(1), keccak256("layerzero"));
