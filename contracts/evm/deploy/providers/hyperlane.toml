@@ -1,0 +1,13 @@
+# Hyperlane domain ids, keyed by chain name in ../chains.toml. A chain the provider does not
+# reach has no entry.
+# Source: https://github.com/hyperlane-xyz/hyperlane-registry, chains/<name>/metadata.yaml
+# `domainId`, 2026-10-06.
+
+id_bits = 32
+
+[ids]
+ethereum = 1
+base = 8453
+arbitrum = 42161
+optimism = 10
+zksync = 324

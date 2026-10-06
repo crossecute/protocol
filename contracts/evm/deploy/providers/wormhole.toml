@@ -1,0 +1,12 @@
+# Wormhole chain ids, keyed by chain name in ../chains.toml. A chain the provider does not
+# reach has no entry: zkSync Era has no Wormhole chain id or Core bridge in either SDK.
+# Source: https://github.com/wormhole-foundation/wormhole-solidity-sdk/blob/main/src/constants/Chains.sol,
+# 2026-10-06.
+
+id_bits = 16
+
+[ids]
+ethereum = 2
+base = 30
+arbitrum = 23
+optimism = 24

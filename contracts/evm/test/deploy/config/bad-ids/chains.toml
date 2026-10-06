@@ -1,0 +1,7 @@
+[chains.a]
+chain_id = 1
+derivation = "parity"
+
+[chains.b]
+chain_id = 2
+derivation = "zksync"

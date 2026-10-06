@@ -732,7 +732,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
 | 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Identical arguments on every standard EVM chain put each at one address. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
-| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library, which is deployed first. Nothing else may be needed before step 4. |
+| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's contracts link the `WormholeMessage` library (#29); `forge script` deploys it first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check the deploy scripts have to make from one source. |
@@ -740,9 +740,16 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
-There are no deploy scripts yet; `script/` holds only the vendoring drivers
-([todo §3](todo.md#3-infrastructure)). The ordering above is their
-specification.
+Step 2 is scripted for each provider on a standard EVM chain: `script/Deploy<Provider>.s.sol`
+reads the chain's inputs from the environment and deploys through `script/deploy/`, which the
+test suites deploy through too, so every check a deployment makes also runs in every test.
+Those shared checks hold the proxy to its predicted address, locked on its implementation;
+the transceiver to its configuration, gateways, and governor's home; and, where the registry
+records the provider's deployment, R8.4. The production script adds what holds only on chain:
+the salt and caller are the record's; the chain, the governor's home, and the provider ids are
+in `deploy/`; and the registry's grades agree with it. Steps 1
+and 3 to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
+ordering above is their specification.
 
 ---
 
@@ -773,24 +780,29 @@ Collected, because each of these is individually tempting.
 ## 8. The compliance suite
 
 A binding is compliant when it passes the shared specs in
-`test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract a binding's
-suite inherits and parameterizes through `virtual` hooks: how its provider delivers, what its
-mocks were paid, which revert it expects. Properties that hold for only some providers are
-mixins applied only to those, rather than flags:
+`test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract that a
+binding's suite inherits together with the binding's one fixture: a `<Provider>Fixture`
+extending `ProviderFixture` (`test/protocols/ProviderFixture.sol`), which says how to deploy
+the provider's contracts against its mocks, how it delivers, and what it charges. A suite adds
+only what its specs ask of the provider beyond that, such as what its mocks were paid or
+which revert it expects. Properties that hold for only some providers are mixins applied only
+to those, rather than flags:
 
 | Spec | Applies to | Covers |
 | --- | --- | --- |
-| `ProviderSendSpec` | all five | C1, C2, C13, C14 |
-| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26 |
-| `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12 |
+| `ProviderSendSpec` | all five | C1, C2, C13, C14; an unknown or malformed attribute is refused |
+| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
+| `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the four transceivers with an id table | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all five | C9 |
-| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account) |
+| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
-| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver) |
+| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver); only the provider delivers |
+| `ProviderGatewayRoleSpec` | all but LayerZero (OApp checks the endpoint itself) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the four transceivers with an id table | The governor home's id and route are set at initialization (#28) |
+| `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, and any excess returns to the float |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
@@ -817,7 +829,7 @@ below. The column says where each line is held.
 | C18 | `bootstrap_accountIsProviderConfiguredBeforeThePayloadRuns` | A payload whose first call sends must succeed. | `ProviderReceiveSpec` |
 | C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar is applied to the first message to a chain. | core `CounterpartRouting.t.sol` `test_counterpartBelowProvenanceBarIsRefused` |
 | C20 | `bootstrap_forSomebodyElsesAccountReverts` | `NotTheAccount`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheAccount` |
-| C21 | `parity_crossProxyInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; the script-side assertion waits on deploy scripts |
+| C21 | `parity_crossProxyInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; script side, `script/deploy/TransceiverDeploy.sol`, tested by `test/deploy/DeployChecks.t.sol` |
 | C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation` |
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |

@@ -41,8 +41,10 @@ this file is the gap between that design and the tree.
   check.
 - **Arachnid's factory on every target chain.** A chain is `Predetermined` only if its
   transceivers were deployed through `CrossProxyDeployer`, which Arachnid's factory places
-  (#33). Which target chains have it
-  is not checked. A chain without it is `Unique` in every registry and grades every other
+  (#33). Ethereum, Base, Arbitrum One, OP Mainnet, and zkSync Era all have its code at its
+  address (checked over RPC, 2026-10-06, recorded in `contracts/evm/deploy/chains.toml`); a
+  chain added later is checked when it is. Code there is not enough on its own: zkSync Era has
+  it, but EraVM places `CrossProxyDeployer` elsewhere. A chain without it is `Unique` in every registry and grades every other
   chain `Unique` in its own, so its transceivers cannot be born configured: the governor's
   home is not `Predetermined` from there, and `initialize` refuses that (#32). Supporting one needs
   a way to seed the home's counterpart on that chain, such as an explicit counterpart in the
@@ -62,23 +64,26 @@ this file is the gap between that design and the tree.
 
 ## 3. Infrastructure
 
-- **No deploy scripts.** `script/` holds only the vendoring drivers. The deploy story in the
-  [spec's §6](provider-spec.md#6-configuration-a-compliant-deployment-performs) (Arachnid's
-  factory, `CrossProxyDeployer`, a per-chain timelock, a seeded registry, transceivers born accepting the governor's
-  home) has no code behind it. The CREATE2 parity argument stands or falls on that initcode
-  and those constructor arguments being byte-identical on every chain, and nothing pins them.
-  The scripts are also where the deployment-time provider decisions get made: the
-  `crossProxyInitCodeHash` and `deployedBy` assertions (R8.4), how many gateways each transceiver's initializer
-  names (they cannot be added later), the N × N tables every chain needs about every
-  other chain, generated from one source since nothing on-chain checks they agree, and the
-  `WormholeMessage` library every Wormhole contract links, deployed before them (on zkSync
-  and Tron, linked when that chain's bytecode is built).
-- **The compliance suite has two gaps** ([spec §8](provider-spec.md#8-the-compliance-suite)
-  says where every line is held). C21's script-side assertion waits on the deploy scripts.
-  C11 and C29 to C31 against real endpoints are the fork tests below; Wormhole's own replay
-  (C29 to C31) is already tested, since the binding owns it. C24's check cannot see a
-  collision inside a single call, so two fields an initializer sets together are covered
-  only by the suites that read them back.
+- **Deploy scripts cover step 2 only.** `script/Deploy<Provider>.s.sol` deploys each
+  provider's account implementations and transceiver on a standard EVM chain, through the
+  `script/deploy/` functions the test suites also deploy through
+  ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
+  step 1 (the per-chain timelock, the seeded registry, the treasury, so the timelock design is
+  enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
+  needs about every other chain. Their source exists: `contracts/evm/deploy/` holds each
+  chain's derivation, from which every pair's grade follows, and each provider's ids, checked
+  by every test and deployment. Nothing generates the payloads from it yet. How many gateways
+  each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be
+  added later. Wormhole's contracts link `WormholeMessage` (#29), which `forge script` deploys
+  first through Arachnid's factory. zkSync and Tron have deploy functions the tests use but no
+  production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
+  TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
+  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack`.
+- **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
+  where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
+  below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.
+  C24's check cannot see a collision inside a single call, so two fields an initializer sets
+  together are covered only by the suites that read them back.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.

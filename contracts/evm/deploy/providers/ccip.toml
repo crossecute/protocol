@@ -1,0 +1,13 @@
+# CCIP chain selectors, keyed by chain name in ../chains.toml. A chain the provider does not
+# reach has no entry. Selectors exceed TOML's signed 64-bit integers, so they are strings.
+# Source: https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml,
+# 2026-10-06.
+
+id_bits = 64
+
+[ids]
+ethereum = "5009297550715157269"
+base = "15971525489660198786"
+arbitrum = "4949039107694359620"
+optimism = "3734403246176062136"
+zksync = "1562403441176082196"

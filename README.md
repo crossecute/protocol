@@ -232,7 +232,14 @@ src/
                   CrossProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
+script/
+  deploy/         shared deploy checks, one deploy per provider    tests deploy through these
+  Deploy*.s.sol   production entry points, one per provider
+  vendor/         provenance drivers for hand-copied SDK files
+deploy/           chains.toml, providers/*.toml: chain facts, provider ids
 ```
+
+Paths under `script/` and `deploy/` are relative to `contracts/evm/`.
 
 Dependencies run one way: `addressing` is a leaf, and nothing above it is imported by
 anything below:
@@ -277,7 +284,9 @@ summary: the file is always the newer statement.
 
 ## Adding a chain type
 
-Two steps, and the second is the one nothing will remind you about.
+A chain of a type the protocol already has, such as another standard EVM chain, needs no new
+contracts: see [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md). A new type
+takes two steps, and the second is the one nothing will remind you about.
 
 1. **Allocate the `ChainType` constant** in `addressing/ChainType.sol`, and nowhere else.
    Every value used in the repo is allocated in that one file, because a ChainType is
@@ -399,7 +408,7 @@ What an operator or integrator has to know:
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
   owner, where the msig's accounts under two providers propose and cancel, so a compromised
-  provider can freeze them but not take them. There are no deploy scripts yet, so nothing
+  provider can freeze them but not take them. That step is not scripted yet, so nothing
   enforces that design today.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
   so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
@@ -432,7 +441,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 662 passing
+cd contracts/evm && forge test        # 702 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
@@ -441,5 +450,13 @@ profile, which also enforces the detector heuristics the default profile leaves 
 `forge build --sizes src` fails if any contract exceeds EIP-170's 24,576-byte limit, which
 `forge test` does not check.
 
+Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
+reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the
+salt and deployer from the chain registry's record, and provider ids from `deploy/`. The test
+suites deploy through the same functions under `script/deploy/`, so a deployment makes every
+check the tests do. [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md) says
+what adding a chain takes.
+
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
-provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).
+provider, and only the transceiver step of a chain's deployment is scripted. Both are tracked
+in [`docs/todo.md`](docs/todo.md).

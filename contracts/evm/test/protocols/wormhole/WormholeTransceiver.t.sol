@@ -1,162 +1,42 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployCrossProxy.sol";
+import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
+import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
-import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
-import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
-import {unseeded} from "test/RegistrySeed.sol";
-import {ChainRegistry} from "src/registry/ChainRegistry.sol";
-import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {Provenance} from "src/registry/Provenance.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 
-import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {
-    WormholeSendSuite,
-    UNUSED_EXECUTOR,
-    _vaa,
-    _envelope,
-    _universal
-} from "test/protocols/wormhole/WormholeBinding.t.sol";
-
-function wormholeConfig(address coreBridge) returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: address(new WormholeReceiver(coreBridge)),
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
-
-/// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
-contract WormholeTransceiverHarness is WormholeTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address core, address router, address quoter) WormholeTransceiver(core, router, quoter) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-
-    function _handleInbound(bytes32 origin, bytes calldata message) internal override {
-        emit InboundHandled(origin);
-        super._handleInbound(origin, message);
-    }
-}
-
-function deployWormhole(address core, address router, address quoter) returns (WormholeTransceiverHarness) {
-    return WormholeTransceiverHarness(
-        payable(address(
-                deployTransceiver(
-                    address(new WormholeTransceiverHarness(core, router, quoter)),
-                    abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(core), uint16(0)))
-                )
-            ))
-    );
-}
-
-/// @notice `WormholeSendSuite` against the plain transceiver.
-contract WormholeTransceiverSendTest is WormholeSendSuite {
-    function _deploy() internal override returns (address, address) {
-        WormholeTransceiverHarness t = deployWormhole(address(core), address(router), quoter);
-        return (address(t), t.owner());
-    }
-}
+    ProviderZkSyncSpec,
+    ProviderGatewayRoleSpec,
+    ProviderGovernorHomeSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
+import {WormholeFixture, WormholeZkSyncHarness, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures authenticate the emitter, and
 ///         the base's counterpart check is what refuses a wrong one.
-contract WormholeTransceiverInboundTest is ProviderInboundSpec {
-    uint16 constant ORIGIN_WORMHOLE_CHAIN = 30;
-    uint16 constant HERE = 2;
-    MockWormholeCore core;
-    WormholeTransceiverHarness t;
-    /// @dev A fresh sequence per VAA, so a second delivery is a new message, not a replay.
-    uint64 sequence;
-
-    function setUp() public {
-        core = new MockWormholeCore(HERE);
-        t = deployWormhole(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR);
-    }
-
-    function _transceiver() internal view override returns (address) {
-        return address(t);
-    }
-
-    function _configureOrigin(bytes32 chainKey) internal override {
-        vm.prank(t.owner());
-        t.setWormholeChain(chainKey, ORIGIN_WORMHOLE_CHAIN);
-    }
-
-    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
-        WormholeTransceiver(payable(transceiver))
-            .executeVAAv1(_vaa(1, ORIGIN_WORMHOLE_CHAIN, sender, sequence++, _envelope(HERE, transceiver, message)));
+contract WormholeTransceiverInboundTest is ProviderGatewayRoleSpec, WormholeFixture {
+    function _bypassRevert(address) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(WormholeMessage.InvalidVaa.selector, "VM version incompatible");
     }
 
     function _vaaFrom(address sender, uint16 targetChain, bytes memory message) internal returns (bytes memory) {
-        return _vaa(1, ORIGIN_WORMHOLE_CHAIN, sender, sequence++, _envelope(targetChain, address(t), message));
-    }
-
-    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
-        internal
-        override
-        returns (address)
-    {
-        TransceiverConfig memory c = wormholeConfig(address(core));
-        c.governorOwner = governorOwner;
-        c.governorSalt = governorSalt;
-        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
-        c.chainRegistry = registry;
-        c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Unique;
-        return address(
-            deployTransceiver(
-                address(new WormholeTransceiver(address(core), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
-                abi.encodeCall(WormholeTransceiver.initialize, (c, ORIGIN_WORMHOLE_CHAIN))
-            )
-        );
-    }
-
-    /// @dev R6: the receiver names the Core bridge its gateway before its payload runs.
-    function _assertReceiverConfigured(address receiver, address) internal view override {
-        WormholeReceiver r = WormholeReceiver(payable(receiver));
-        assertTrue(r.hasRole(r.GATEWAY_ROLE(), address(core)));
-    }
-
-    function test_theCoreBridgeIsTheGatewayWithNoneListed() public view {
-        assertTrue(t.hasRole(t.GATEWAY_ROLE(), address(core)));
+        return _vaa(1, BASE_WORMHOLE_CHAIN, sender, sequence++, _envelope(targetChain, transceiver, message));
     }
 
     function test_aReplayedVaaIsRejected() public {
         _wire();
-        bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE, _bootstrap());
-        t.executeVAAv1(vaa);
+        bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE_WORMHOLE_CHAIN, _bootstrap());
+        IVaaV1Receiver(transceiver).executeVAAv1(vaa);
         (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(vaa);
-        assertTrue(t.vaaConsumed(v.hash));
+        assertTrue(WormholeTransceiver(payable(transceiver)).vaaConsumed(v.hash));
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.VaaAlreadyConsumed.selector, v.hash));
-        t.executeVAAv1(vaa);
+        IVaaV1Receiver(transceiver).executeVAAv1(vaa);
     }
 
     /// @dev Transceivers share one address across parity chains; a VAA for another chain must
@@ -165,90 +45,39 @@ contract WormholeTransceiverInboundTest is ProviderInboundSpec {
         _wire();
         bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, 31, _bootstrap());
         vm.expectRevert(
-            abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), _universal(address(t)))
+            abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), toBytes32(transceiver))
         );
-        t.executeVAAv1(vaa);
+        IVaaV1Receiver(transceiver).executeVAAv1(vaa);
     }
 
     function test_aVaaCoreRejectsIsRefused() public {
         _wire();
         core.setInvalid(true);
-        bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE, _bootstrap());
+        bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE_WORMHOLE_CHAIN, _bootstrap());
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.InvalidVaa.selector, "VM signature invalid"));
-        t.executeVAAv1(vaa);
+        IVaaV1Receiver(transceiver).executeVAAv1(vaa);
     }
 }
 
-contract WormholeZkSyncHarness is WormholeZkSyncTransceiver {
-    constructor(address core, address router, address quoter) WormholeZkSyncTransceiver(core, router, quoter) {}
-
-    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
-        _reportReceiver(home, owner, salt, receiver);
-    }
-}
-
-/// @notice A report is sent inside a delivery, at `msg.value == 0`, from the float, and the
-///         Executor's excess refund must return to the float, not the relayer.
-contract WormholeZkSyncTransceiverTest is Test {
-    MockWormholeCore core;
-    MockExecutorQuoterRouter router;
-    WormholeZkSyncHarness t;
-    uint16 constant HOME_WORMHOLE_CHAIN = 2;
-
-    function setUp() public {
-        core = new MockWormholeCore(55);
-        router = new MockExecutorQuoterRouter();
-        t = WormholeZkSyncHarness(
-            payable(address(
-                    deployTransceiver(
-                        address(new WormholeZkSyncHarness(address(core), address(router), address(0x0907))),
-                        abi.encodeCall(
-                            WormholeZkSyncTransceiver.initialize,
-                            (wormholeConfig(address(core)), uint16(0), keccak256("zksolc"))
-                        )
-                    )
-                ))
-        );
-        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
-        bytes32 provider = registry.addMessageProvider("wormhole");
-        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Unique);
-
-        vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setRoute(home, Erc7930.encodeEvmChain(1));
-        t.setCounterpart(home, Erc7930.encodeEvm(1, address(0xC0DE)));
-        t.setWormholeChain(home, HOME_WORMHOLE_CHAIN);
-        vm.stopPrank();
+contract WormholeZkSyncTransceiverTest is ProviderZkSyncSpec, WormholeFixture {
+    function _zkSyncImplementation() internal override returns (address) {
+        return address(new WormholeZkSyncHarness(address(core), address(router), QUOTER));
     }
 
-    function test_itAlwaysDiverges() public view {
-        assertTrue(t.addressesDiverge());
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+        internal
+        override
+        returns (address)
+    {
+        return WormholeDeploy.zkSyncTransceiver(d, address(core), 0, accountBytecodeHash);
     }
 
-    function test_aReportSpendsFromTheFloatAndRefundsToIt() public {
-        core.setMessageFee(0.001 ether);
-        router.setFee(0.01 ether);
-        vm.deal(address(t), 1 ether);
-
-        vm.prank(makeAddr("relayer"));
-        t.reportPublic(ChainKey.forEvm(1), address(0xA11CE), bytes32(0), address(0x2C));
-
+    function _assertReportSent() internal view override {
         MockExecutorQuoterRouter.Request memory r = router.requests(0);
-        assertEq(r.dstChain, HOME_WORMHOLE_CHAIN, "to the account's home");
-        assertEq(r.dstAddr, _universal(address(0xC0DE)), "to its transceiver there");
-        assertEq(core.published(0).value + r.paid, 0.011 ether, "the quoted fee, paid from the float");
-        assertEq(r.refundAddr, address(t), "an excess returns to the float, not the relayer");
-        assertEq(address(t).balance, 0.989 ether);
+        assertEq(r.dstChain, BASE_WORMHOLE_CHAIN, "to the account's home");
+        assertEq(r.dstAddr, toBytes32(HOME_TRANSCEIVER), "to its transceiver there");
+        assertEq(r.refundAddr, zk, "an excess returns to the float, not the relayer");
     }
 }
 
-contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec {
-    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
-        return address(
-            deployTransceiver(
-                address(new WormholeTransceiver(address(0xBEEF), UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
-                abi.encodeCall(WormholeTransceiver.initialize, (wormholeConfig(address(0xBEEF)), uint16(id)))
-            )
-        );
-    }
-}
+contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec, WormholeFixture {}
