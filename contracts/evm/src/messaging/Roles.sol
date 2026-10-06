@@ -28,7 +28,7 @@ abstract contract Roles is AccessControlUpgradeable {
     /// @notice Grant a role. The only grant path, and it closes when initialization does.
     ///
     /// @dev `onlyInitializing` replaces OZ's admin gate. No role has an admin, so after arming
-    ///      no caller can add a member: not the owner, the msig, the creating transceiver, or a
+    ///      no caller can add a member: not the owner, the governor, the creating transceiver, or a
     ///      member. The window includes the bootstrap payload, which `__ReceiverBase_init` runs
     ///      while initializing, so an owner's first payload can name its account's gateway.
     ///

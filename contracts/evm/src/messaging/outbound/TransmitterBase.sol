@@ -53,7 +53,7 @@ interface IAccountTransceiver {
     ///         every non-EVM VM. Asked here because an account holds no registry.
     function reportsReceiver(bytes32 chainKey) external view returns (bool);
 
-    /// @notice The chain identifier the msig configured a destination under, including one
+    /// @notice The chain identifier the governor configured a destination under, including one
     ///         this account has not bootstrapped yet.
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
 
