@@ -17,12 +17,14 @@ Every grade follows from this, so it comes first. It is the chain's `derivation`
 | Derivation | What it is | Graded by others | Grades others | Consequences |
 | --- | --- | --- | --- | --- |
 | `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by parity chains | `Predetermined` if they are parity | Accounts share their address with every parity chain; the deploy scripts support it |
-| `zksync` | EraVM's CREATE2 | `Unique` | `Unique`, itself included | Its transceivers report every receiver home, paid from a float; no production script yet |
-| `tron` | TVM's CREATE2 (`0x41` prefix) | `Unique` | `Unique`, itself included | As zkSync |
+| `zksync` | EraVM's CREATE2 | `Unique` | `Predetermined` if they are parity; otherwise `Unique`, itself included | Its transceivers report every receiver home, paid from a float; no production script yet |
+| `tron` | TVM's CREATE2 (`0x41` prefix) | `Unique` | as zkSync | As zkSync |
 | `other` | EVM without Arachnid's factory | `Unique` | `Unique`, itself included | Its transceivers cannot be born configured (the governor's home is not `Predetermined` from it, which `initialize` refuses); unsupported until the home's counterpart can be seeded ([todo §2](../../../docs/todo.md#2-chain-checks-before-mainnet)) |
 
-Two chains are `Predetermined` to each other only when both are parity chains
-(`ChainConfig.gradeOf`). Code at Arachnid's address does not settle it: zkSync Era returns
+A chain is `Predetermined` from another exactly when it is a parity chain and the grading chain
+is not `other` (`ChainConfig.gradeOf`): a zkSync or Tron transceiver finds a parity chain's
+transceiver from the provider's deployment record, but a plain transceiver on an `other` chain
+sits off the shared address and can use no parity address (#33). Code at Arachnid's address does not settle it: zkSync Era returns
 the same 69 bytes there as Ethereum, but EraVM's CREATE2 would put `CrossProxyDeployer`
 elsewhere. Classify a chain by its VM, then let the deploy's own check confirm it:
 `crossProxyDeployer()` refuses a chain where the deployer does not land where Ethereum's
