@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 
+import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
@@ -45,6 +46,15 @@ function ccipMessage(uint64 selector, bytes32 sender, bytes memory data) pure re
         data: data,
         destTokenAmounts: new Client.EVMTokenAmount[](0)
     });
+}
+
+/// @notice Exposes the report seam.
+contract CcipZkSyncHarness is CcipZkSyncTransceiver {
+    constructor(address router_) CcipZkSyncTransceiver(router_) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
+    }
 }
 
 /// @notice CCIP's off-ramp asserts nothing about the sender: the router's gateway role admits

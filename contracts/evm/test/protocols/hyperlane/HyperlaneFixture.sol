@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
+import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
@@ -33,6 +34,15 @@ contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
+    }
+}
+
+/// @notice Exposes the report seam.
+contract HyperlaneZkSyncHarness is HyperlaneZkSyncTransceiver {
+    constructor(address mailbox_) HyperlaneZkSyncTransceiver(mailbox_) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
     }
 }
 

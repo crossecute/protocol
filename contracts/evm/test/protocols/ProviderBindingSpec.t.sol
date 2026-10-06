@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployAccount, deployTransceiver} from "test/DeployCrossProxy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -616,5 +616,63 @@ abstract contract ProviderInboundSpec is ProviderFixture {
 abstract contract ProviderGatewayRoleSpec is ProviderInboundSpec {
     function test_theGatewayHoldsItsRoleWithNoneListed() public view {
         assertTrue(IAccessControl(transceiver).hasRole(GATEWAY_ROLE, _gateway()));
+    }
+}
+
+interface IReportHarness {
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external;
+}
+
+/// @title ProviderZkSyncSpec
+/// @notice A zkSync transceiver always diverges, so it reports each receiver it creates to the
+///         account's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
+///         paid from the float, and any overpayment must return to the float, not the relayer.
+abstract contract ProviderZkSyncSpec is ProviderIdFixture {
+    address internal constant HOME_TRANSCEIVER = address(0xC0DE);
+
+    address internal zk;
+
+    /// @notice A new implementation of the zkSync transceiver, wrapped so `reportPublic` reaches
+    ///         `_reportReceiver`.
+    function _zkSyncImplementation() internal virtual returns (address);
+
+    function _initializeZkSync(TransceiverConfig memory c, bytes32 accountBytecodeHash)
+        internal
+        view
+        virtual
+        returns (bytes memory);
+
+    /// @notice Assert the provider's mock recorded the last report addressed to
+    ///         `HOME_TRANSCEIVER` on `REMOTE_CHAIN_ID`, refunding any excess to `zk`.
+    function _assertReportSent() internal view virtual;
+
+    function setUp() public virtual {
+        zk = deployTransceiver(_zkSyncImplementation(), _initializeZkSync(_config(), keccak256("zksolc")));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
+        bytes32 provider = registry.addMessageProvider("under-test");
+        bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
+
+        TransceiverBase t = TransceiverBase(payable(zk));
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        t.setRoute(home, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        t.setCounterpart(home, Erc7930.encodeEvm(REMOTE_CHAIN_ID, HOME_TRANSCEIVER));
+        vm.stopPrank();
+        _configureRemote(zk, HOME_TRANSCEIVER);
+    }
+
+    function test_itAlwaysDiverges() public view {
+        assertTrue(TransceiverBase(payable(zk)).addressesDiverge());
+    }
+
+    function test_aReportSpendsFromTheFloat() public {
+        _setProviderFee(0.01 ether);
+        vm.deal(zk, 1 ether);
+
+        vm.prank(makeAddr("relayer"));
+        IReportHarness(zk).reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
+
+        assertEq(zk.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
+        _assertReportSent();
     }
 }

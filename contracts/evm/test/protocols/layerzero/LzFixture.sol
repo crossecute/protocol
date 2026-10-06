@@ -7,6 +7,7 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
+import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 
@@ -34,6 +35,15 @@ contract LzTransceiverHarness is LzTransceiver {
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
+    }
+}
+
+/// @notice Exposes the report seam.
+contract LzZkSyncHarness is LzZkSyncTransceiver {
+    constructor(address endpoint_) LzZkSyncTransceiver(endpoint_) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
     }
 }
 

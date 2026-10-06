@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
+import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
@@ -66,6 +67,15 @@ contract WormholeTransceiverHarness is WormholeTransceiver {
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
+    }
+}
+
+/// @notice Exposes the report seam.
+contract WormholeZkSyncHarness is WormholeZkSyncTransceiver {
+    constructor(address core_, address router_, address quoter_) WormholeZkSyncTransceiver(core_, router_, quoter_) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
     }
 }
 

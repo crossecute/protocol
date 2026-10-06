@@ -795,6 +795,7 @@ to those, rather than flags:
 | `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver); only the provider delivers |
 | `ProviderGatewayRoleSpec` | all but LayerZero (OApp checks the endpoint itself) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the four transceivers with an id table | The governor home's id and route are set at initialization (#28) |
+| `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, and any excess returns to the float |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
