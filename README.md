@@ -399,7 +399,7 @@ What an operator or integrator has to know:
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
   owner, where the msig's accounts under two providers propose and cancel, so a compromised
-  provider can freeze them but not take them. There are no deploy scripts yet, so nothing
+  provider can freeze them but not take them. That step is not scripted yet, so nothing
   enforces that design today.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
   so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
@@ -432,7 +432,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 678 passing
+cd contracts/evm && forge test        # 688 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
@@ -441,5 +441,11 @@ profile, which also enforces the detector heuristics the default profile leaves 
 `forge build --sizes src` fails if any contract exceeds EIP-170's 24,576-byte limit, which
 `forge test` does not check.
 
+Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
+reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the
+salt and deployer from the chain registry's record. The test suites deploy through the same
+functions under `script/deploy/`, so a deployment makes every check the tests do.
+
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
-provider, and there are no deploy scripts. Both are tracked in [`docs/todo.md`](docs/todo.md).
+provider, and only the transceiver step of a chain's deployment is scripted. Both are tracked
+in [`docs/todo.md`](docs/todo.md).

@@ -740,9 +740,15 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
-There are no deploy scripts yet; `script/` holds only the vendoring drivers
-([todo §3](todo.md#3-infrastructure)). The ordering above is their
-specification.
+Step 2 is scripted for each provider on a standard EVM chain: `script/Deploy<Provider>.s.sol`
+reads the chain's inputs from the environment and deploys through `script/deploy/`, which the
+test suites deploy through too, so every check a deployment makes also runs in every test.
+Those shared checks hold the proxy to its predicted address, locked on its implementation;
+the transceiver to its configuration, gateways, and governor's home; and, where the registry
+records the provider's deployment, R8.4. The production script adds what holds only on chain:
+the salt and caller are the record's, and the governor home's provider id is given. Steps 1
+and 3 to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
+ordering above is their specification.
 
 ---
 
