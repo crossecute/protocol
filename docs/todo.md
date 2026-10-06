@@ -69,16 +69,16 @@ this file is the gap between that design and the tree.
   `script/deploy/` functions the test suites also deploy through
   ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
   step 1 (the per-chain timelock, the seeded registry, the treasury, so the timelock design is
-  enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain needs about every
-  other chain. Their source exists: `contracts/evm/deploy/` holds each chain's derivation, from
-  which every pair's grade follows, and each provider's ids, checked by every test and
-  deployment. Nothing generates the payloads from it yet. How many gateways
-  each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be added
-  later. Wormhole's contracts link `WormholeMessage` (#29), which `forge script` deploys first
-  through Arachnid's factory; zkSync and Tron link it when their bytecode is built. zkSync and Tron have deploy functions the tests use but no production script: their
-  bytecode is built by zksolc and TRON-solc, which these scripts do not drive. The provider
-  names `ccip`, `wormhole`, and `op-stack` are the scripts' choice, and the registry's
-  write-once record is keyed by them.
+  enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
+  needs about every other chain. Their source exists: `contracts/evm/deploy/` holds each
+  chain's derivation, from which every pair's grade follows, and each provider's ids, checked
+  by every test and deployment. Nothing generates the payloads from it yet. How many gateways
+  each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be
+  added later. Wormhole's contracts link `WormholeMessage` (#29), which `forge script` deploys
+  first through Arachnid's factory. zkSync and Tron have deploy functions the tests use but no
+  production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
+  TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
+  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack`.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.
