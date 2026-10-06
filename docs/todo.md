@@ -70,7 +70,8 @@ this file is the gap between that design and the tree.
   enforced by nothing), steps 3 to 7, and the N × N tables every chain needs about every other
   chain, generated from one source since nothing on-chain checks they agree. How many gateways
   each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be added
-  later. zkSync and Tron have deploy functions the tests use but no production script: their
+  later. Wormhole's contracts link `WormholeMessage` (#29), which `forge script` deploys first
+  through Arachnid's factory; zkSync and Tron link it when their bytecode is built. zkSync and Tron have deploy functions the tests use but no production script: their
   bytecode is built by zksolc and TRON-solc, which these scripts do not drive. The provider
   names `ccip`, `wormhole`, and `op-stack` are the scripts' choice, and the registry's
   write-once record is keyed by them.
