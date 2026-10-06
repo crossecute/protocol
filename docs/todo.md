@@ -12,12 +12,12 @@ this file is the gap between that design and the tree.
 
 ## 1. Measurements before mainnet
 
-- **No provider's default gas is measured.** With no gas attribute, Hyperlane sends 50,000
-  (the IGP default, written explicitly because the refund field follows it), the Wormhole
-  Executor 200,000, and OP Stack's `minGasLimit` 200,000. `_reportReceiver` always sends with
-  no attributes, and a bootstrap does unless its caller passes one; none of these defaults is
-  measured against either.
-  Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
+- **No provider's default gas is measured.** With no gas attribute, LayerZero sends empty
+  options (its executor's own limit applies), CCIP empty `extraArgs` (its 200,000 default),
+  Hyperlane 50,000 (the IGP default, written explicitly because the refund field follows it),
+  the Wormhole Executor 200,000, and OP Stack's `minGasLimit` 200,000. `_reportReceiver` always
+  sends with no attributes, and a bootstrap does unless its caller passes one; none of these
+  defaults is measured against either. Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
   records the failed relay and anyone can replay it with more gas); the others are not
   known to be.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
@@ -44,11 +44,11 @@ this file is the gap between that design and the tree.
   (#33). Ethereum, Base, Arbitrum One, OP Mainnet, and zkSync Era all have its code at its
   address (checked over RPC, 2026-10-06, recorded in `contracts/evm/deploy/chains.toml`); a
   chain added later is checked when it is. Code there is not enough on its own: zkSync Era has
-  it, but EraVM places `CrossProxyDeployer` elsewhere. A chain without it is `Unique` in every registry and grades every other
-  chain `Unique` in its own, so its transceivers cannot be born configured: the governor's
-  home is not `Predetermined` from there, and `initialize` refuses that (#32). Supporting one needs
-  a way to seed the home's counterpart on that chain, such as an explicit counterpart in the
-  registry seed.
+  it, but EraVM places `CrossProxyDeployer` elsewhere. A chain without it is `Unique` in every
+  registry and grades every other chain `Unique` in its own, so its transceivers cannot be
+  born configured: the governor's home is not `Predetermined` from there, and `initialize`
+  refuses that (#32). Supporting one needs a way to seed the home's counterpart on that chain,
+  such as an explicit counterpart in the registry seed.
 - **EIP-152 on every target chain.** Any chain can be a home, and the BLAKE2b commitment
   scheme needs the precompile at `0x09`. Without it `Blake2b256` fails closed (the scheme
   reverts), so the cost is the feature, not funds, but which target chains have it is not
@@ -79,6 +79,10 @@ this file is the gap between that design and the tree.
   production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
   TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
   the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack`.
+- **OP Stack reaches one L2 per chain (#41).** Each transceiver is bound to one paired chain,
+  and a chain has one transceiver per provider, so Ethereum's reaches one OP Stack L2. Decided:
+  one transceiver per chain, holding a write-once messenger per paired chain, with a
+  delivery's origin taken from which messenger called. Not implemented.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.
@@ -134,12 +138,12 @@ blocks it.
 
 ## 5. Post-launch: Superchain interop
 
-OP Stack stays the pairwise L1-to-L2 binding. Superchain interop's
+OP Stack stays the L1-to-L2 binding (#41). Superchain interop's
 `L2ToL2CrossDomainMessenger` fits the one-transceiver-per-chain shape and becomes a separate
 provider once it is on mainnet. Before building it:
 
 - **L2 to L2 only.** Ethereum is not in the interop set, so an Ethereum home still needs the
-  pairwise binding.
+  L1-to-L2 binding.
 - **Dependency sets.** A message executes only if its source is in the destination's
   dependency set, so the routes must match each chain's set, and a bootstrap outside it must
   revert at the quote.

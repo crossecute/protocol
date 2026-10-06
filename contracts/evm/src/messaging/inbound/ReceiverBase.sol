@@ -146,9 +146,9 @@ abstract contract ReceiverBase is
     ///      carries a self-call to `commit`. An empty array is allowed here, unlike in
     ///      `execute`, since creating the receiver is the intent.
     ///
-    /// @dev Separate so a binding can configure its provider after the reentrancy guard and
-    ///      before the payload runs, from inside its own `initializer`; `super.initialize`
-    ///      would run the payload first. The transceiver's reach into a receiver ends here.
+    /// @dev Separate so a binding can configure its provider before the payload runs, from
+    ///      inside its own `initializer` and ahead of this call; `super.initialize` would run the
+    ///      payload first. The transceiver's reach into a receiver ends here.
     function __ReceiverBase_init(address sourceTransmitter_, Call[] calldata calls) internal onlyInitializing {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
 

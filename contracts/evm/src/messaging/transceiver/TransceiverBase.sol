@@ -35,7 +35,7 @@ struct TransceiverConfig {
     address[] gateways;
     address transmitterImplementation;
     address receiverImplementation;
-    /// The crossecute msig's own account, named by its owner, salt, and home: its transmitter
+    /// The governor's account, named by its owner, salt, and home: its transmitter
     /// on that home, its receiver everywhere else. It owns this transceiver.
     address governorOwner;
     bytes32 governorSalt;
@@ -68,8 +68,8 @@ struct TransceiverConfig {
 ///      `commit`. No approvals are held here, so no origin can approve or cancel on another's
 ///      behalf.
 ///
-/// @dev Owned by the crossecute msig's own account on this chain, derived at initialization
-///      rather than typed, and configured by payloads the msig sends from its home. The owner
+/// @dev Owned by the governor's account on this chain, derived at initialization
+///      rather than typed, and configured by payloads the governor sends from its home. The owner
 ///      configures and can move no money. `GATEWAY_ROLE` is fixed at initialization with no
 ///      revoke path, since a transceiver's transports serve every account on its chain; a
 ///      compromised transport means a new transceiver.
@@ -396,9 +396,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      which is what lets the owner and salt travel in the message without a caller
     ///      claiming another identity. An account homed elsewhere bootstraps from its own home.
     ///
-    /// @dev The only send `minCounterpartProvenance` gates, through `_requireRoutable`: it bars
-    ///      the first message to a chain, after which the account sends to its receiver
-    ///      directly.
+    /// @dev `minCounterpartProvenance` applies here through `_requireRoutable`, as it does to
+    ///      every message this transceiver sends to or accepts from a chain (`_counterpartOn`).
+    ///      An account's later sends leave from its transmitter, which does not read it.
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,

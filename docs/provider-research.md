@@ -213,7 +213,13 @@ providers separately and each transceiver holds its own counterparts. It is also
 that makes the trust argument worth having. A payload to Optimism trusts Optimism's bridge
 and nothing else, rather than trusting one attestation network with every destination at
 once. What it costs is N deployments, N graded chain entries, and N sets of routes,
-which is the operational load `defaultCounterpart`-style ergonomics exist to keep bearable.
+which is the operational load a default counterpart exists to keep bearable.
+
+**Reversed for OP Stack (#41), not yet implemented.** One transceiver per messaging layer per
+chain is the rule, so Ethereum's OP Stack transceiver is to serve every OP Stack L2 through a
+per-chain messenger table. The trust argument above survives if a delivery's origin is
+decided by which messenger called, never by the message: a compromised Base bridge can then
+only deliver as Base. The binding still serves one pair until #41 lands.
 
 ### Chain-level deployment permissioning, which breaks bootstrap and not sends
 
@@ -634,7 +640,7 @@ recording rather than assuming.
 **Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
 (bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
 way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
-would require. (Checked against the implementation for Phase 5: `executeDelivery` refuses a hash
+would require. (Checked against the implementation: `executeDelivery` refuses a hash
 already in `deliverySuccessBlock`; a failed delivery can be retried. A reverting
 `receiveWormholeMessages` does not revert the delivery transaction. The implementation was
 read at `wormhole-foundation/wormhole` `932a2e0a2c`, the parent of the commit that deleted
@@ -642,7 +648,7 @@ it from that repo.)
 
 **The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
 and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)
-(Phase 0 of the provider-bindings work) was built `uint256`-widened rather than sized to any
+was built `uint256`-widened rather than sized to any
 one provider: a fourth candidate slots into the existing table with no changes to it.
 
 **The trust assumption moves, and is worth weighing on its own rather than assumed away.**
@@ -655,7 +661,7 @@ also third parties, so this is not unique to Wormhole, but it is a fact to grade
 `Provenance` already grades a counterpart's address claim, not to wave through because the
 signature underneath is sound.
 
-### Update (Phase 5): the Standard Relayer is deprecated; the binding uses Core + Executor
+### Update: the Standard Relayer is deprecated; the binding uses Core + Executor
 
 Wormhole now marks the Standard Relayer deprecated and points integrators to the Executor
 framework (`wormhole-docs`, `protocol/infrastructure/relayers/relayer.md` and
@@ -711,6 +717,7 @@ already concluded, "one transceiver pair per rollup, not one for the stack", and
 this binding at all. `OpStackTransceiver` holds its messenger and the paired chain as
 immutables, the same contract on the L1 and on the OP Stack chain; reaching another OP Stack
 chain means another pair, registered as its own message provider, not a row in a table.
+#41 reverses this (see §2); not yet implemented.
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
@@ -721,7 +728,7 @@ with an off-chain gas price to produce a `msg.value`. This confirms §2's findin
 usable, since a transmitter now prices every send on-chain
 ([R2.6](provider-spec.md#r2-quote)).
 
-**Correction (Phase 6): the native quote is zero, not missing.** Checked against
+**Correction: the native quote is zero, not missing.** Checked against
 `CrossDomainMessenger.sendMessage` and `ResourceMetering` at the same commit: a deposit's L2
 gas is paid by burning L1 gas in the sending transaction, and `sendMessage` forwards
 `msg.value` to the target as bridged ETH (`relayMessage` calls the target with `_value`).
@@ -819,8 +826,8 @@ question for accounts specifically.
 **`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
 is not initialized here on purpose. It should be initialized in the child contract to
 accommodate the different version of Ownable."* Since it derives OZ's `OwnableUpgradeable`,
-the same one `LzTransmitter` uses today, `__Ownable_init(owner)` plus `__OApp_init(delegate)`
-composes rather than collides, and `TransmitterBase`'s ownership seam means the base is
+the same one `LzTransmitter` uses, `__Ownable_init(owner)` plus
+`__OAppSender_init(address(this))` composes rather than collides, and `TransmitterBase`'s ownership seam means the base is
 unaffected either way.
 
 ### Where each seam attaches

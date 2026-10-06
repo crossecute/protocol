@@ -277,6 +277,29 @@ contract ReceiverReportTest is WiresHome {
         );
     }
 
+    /// @dev The provenance bar covers the report as it covers the bootstrap (#40): a home graded
+    ///      below it is not sent to, and the account creation reverts with it, so the bootstrap
+    ///      can be retried once the bar or the grade allows it.
+    function test_aReportToAHomeBelowTheBarIsRefused() public {
+        ReportingTransceiver s = new ReportingTransceiver();
+        s.initialize(msig, address(impl), true, address(0x7EA5));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
+        bytes32 provider = registry.addMessageProvider("test");
+        registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Unique);
+        vm.startPrank(s.owner());
+        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
+        s.setRoute(home(), Erc7930.encodeEvmChain(1));
+        vm.stopPrank();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TransceiverBase.InsufficientCounterpartProvenance.selector, home(), Provenance.Unique
+            )
+        );
+        s.inbound(owner, SALT, new Call[](0));
+        assertEq(s.predictCrossAccount(owner, SALT, home()).code.length, 0, "no account");
+    }
+
     /// @notice The report is priced, not handed the balance.
     ///
     /// @dev It used to send `address(this).balance`, which told the provider "take what you
