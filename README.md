@@ -8,14 +8,14 @@ A team on six chains runs six multisigs: six addresses, six signer sets to keep 
 six proposals per change, six sets of funded signers. Everything below follows from
 reducing that to one.
 
-**A signer is removed once, not N times.** The signer set exists only in the home-chain
-multisig. Receivers elsewhere never learn who the signers are: they authenticate the
-origin address, fixed by CREATE2 at creation and unmoved by a signer change. Rotating a
-compromised key is one transaction, not N with a live attacker in the gaps.
+**A signer is removed once, not N times.** The signer set exists only in the multisig on the
+account's home, whichever chain the team picks. Receivers elsewhere never learn who the signers
+are: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a signer
+change. Rotating a compromised key is one transaction, not N with a live attacker in the gaps.
 
-**One decision, one authorization, one fan-out.** A change touching six chains is one
-payload, approved once, dispatched from one home-chain transaction. Team and DAO process
-stops scaling with the number of chains.
+**One decision, one authorization, one fan-out.** A change touching six chains is one payload,
+approved once, dispatched from one transaction on the account's home. Team and DAO process stops
+scaling with the number of chains.
 
 The atomicity is in the authorization, not the settlement: messages land when their bridges
 deliver, and a revert on one chain leaves that chain behind until retry rather than rolling
@@ -24,9 +24,9 @@ removes is divergence at the point of decision: six chains cannot hold six diffe
 payloads when only one was approved.
 
 **No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
-deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here
-every operation starts on the home chain, so one interface covers all of them, and a chain
-needs no Safe at all: the authority on every other chain is the account this protocol deploys.
+deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here every
+operation starts on the account's home, so one interface covers all of them, and a chain needs
+no Safe at all: the authority on every other chain is the account this protocol deploys.
 
 **Gas is funded in one place.** A multisig only one person can afford to execute is not
 decentralized, so an operable Safe per chain means N signers funded on M chains in M
@@ -38,9 +38,9 @@ currency draws on the receiver's address, which is derivable and fundable before
 receiver exists: topped up once, not per signer.
 
 **One admin address everywhere.** The same CREATE2 address holds the account on every
-supported chain, which unifies access control. Chain exceptions that do not use Ethereum's
-CREATE2 formula, such as Tron and zkSync, derive their own address and report it back to
-the home chain.
+supported chain, which unifies access control. Chains whose CREATE2 formula differs from
+EIP-1014's, such as Tron and zkSync, derive their own address and report it back to the
+account's home.
 
 **One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
 and M chains means M batches reviewed separately plus the work of confirming they agree.
@@ -48,14 +48,13 @@ Here it is one batch, reviewed in totality. The commitment folds the destination
 in with the calls, so an approval names what runs _and_ where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
-**What it costs.** The home chain and the message provider enter the trust path. A halt at
-home delays everything, and a provider that can forge a message can drive an account. No
-shared failure is what N independent multisigs buy with N of everything else. The exposure
-is narrowed where it can be. A transceiver's one upgrade is the call that installs and
-initializes it, after which it has no upgrade function; an account's upgrade key dies in the
-call that arms it; and the registry has no upgrade path at all. None is ever live and
-replaceable. No shared contract sits in the path of a normal
-message.
+**What it costs.** The account's home chain and the message provider enter the trust path. A
+halt at home delays everything, and a provider that can forge a message can drive an account. No
+shared failure is what N independent multisigs buy with N of everything else. The exposure is
+narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes
+it, after which it has no upgrade function; an account's upgrade key dies in the call that arms
+it; and the registry has no upgrade path at all. None is ever live and replaceable. No shared
+contract sits in the path of a normal message.
 
 The rest of the bill, stated plainly:
 
@@ -199,10 +198,12 @@ derives Sui addresses and previews BLAKE2b commitments with the EIP-152 precompi
 those plugins are configured; on a chain without it they revert rather than answer wrongly,
 and which target chains have it is unverified.
 
-**One multisig, on Ethereum only.** Every transceiver is owned by the crossecute msig's own
-account on its chain, derived at initialization rather than typed, and configured by payloads
-the msig sends from Ethereum like any other account's. No Safe, key, or deployer handover is
-needed on any other chain.
+**Governance is an account like any other.** Every transceiver is owned by the governor's
+own account on its chain, derived at initialization from the governor's owner, salt, and
+home rather than typed, and configured by payloads sent from that home like any other
+account's. The governor's home is a deployment parameter, not a fixed chain; it has to be
+`Predetermined` from every chain, since each transceiver is born accepting the bootstrap
+that creates its owner. No Safe, key, or deployer handover is needed on any other chain.
 
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a

@@ -64,9 +64,9 @@ library AddressDerive {
     }
 
     /// @notice Creation-code hash of an EIP-1167 minimal proxy for `implementation`.
-    /// @dev This is what lets Ethereum predict a receiver address on a destination chain:
-    ///      receivers are clones, so their address is CREATE2 over the destination
-    ///      transceiver (deployer), the transmitter-derived salt, and this hash.
+    /// @dev For a destination whose contracts are EIP-1167 clones, reached through
+    ///      `VmDeriver`'s clone schemes: the address is CREATE2 over the deployer, the salt, and
+    ///      this hash. This protocol's own accounts are `CrossProxy`, not clones.
     ///
     ///      The 55-byte layout is EIP-1167 verbatim: 10 bytes of creation code, then the
     ///      45-byte runtime with the implementation address spliced in at byte 20:
