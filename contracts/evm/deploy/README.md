@@ -16,7 +16,7 @@ Every grade follows from this, so it comes first. It is the chain's `derivation`
 
 | Derivation | What it is | Graded by others | Grades others | Consequences |
 | --- | --- | --- | --- | --- |
-| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by parity chains | `Predetermined` if they are parity | Accounts share their address with every parity chain; the deploy scripts support it |
+| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by every chain but `other` | `Predetermined` if they are parity | Accounts share their address with every parity chain; the deploy scripts support it |
 | `zksync` | EraVM's CREATE2 | `Unique` | `Predetermined` if they are parity; otherwise `Unique`, itself included | Its transceivers report every receiver home, paid from a float; no production script yet |
 | `tron` | TVM's CREATE2 (`0x41` prefix) | `Unique` | as zkSync | As zkSync |
 | `other` | EVM without Arachnid's factory | `Unique` | `Unique`, itself included | Its transceivers cannot be born configured (the governor's home is not `Predetermined` from it, which `initialize` refuses); unsupported until the home's counterpart can be seeded ([todo §2](../../../docs/todo.md#2-chain-checks-before-mainnet)) |
