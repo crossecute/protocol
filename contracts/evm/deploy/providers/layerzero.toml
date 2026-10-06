@@ -1,0 +1,13 @@
+# LayerZero V2 endpoint ids (eids), keyed by chain name in ../chains.toml. A chain the provider
+# does not reach has no entry.
+# Source: https://metadata.layerzero-api.com/v1/metadata/deployments, `version: 2` mainnet
+# deployments, 2026-10-06.
+
+id_bits = 32
+
+[ids]
+ethereum = 30101
+base = 30184
+arbitrum = 30110
+optimism = 30111
+zksync = 30165

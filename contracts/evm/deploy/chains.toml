@@ -1,0 +1,33 @@
+# Every chain the protocol deploys to, keyed by the name provider files use.
+# `script/deploy/ChainConfig.sol` reads this; README.md here says what adding a chain takes.
+#
+# `derivation` is how the chain places contracts, which decides every grade (see README.md):
+#   "parity"  a standard EVM chain where Arachnid's factory places `CrossProxyDeployer`, so every
+#             provider's transceiver, and every account, has the address it has everywhere else
+#   "zksync"  EraVM's CREATE2, so nothing it deploys shares an address with a parity chain
+#   "tron"    TVM's CREATE2 (0x41 prefix), likewise
+#   "other"   an EVM chain without Arachnid's factory
+#
+# Arachnid's factory has the same code at its address on all five chains below, zkSync Era
+# included (checked over each chain's public RPC, 2026-10-06), so its presence alone does not
+# make a chain "parity".
+
+[chains.ethereum]
+chain_id = 1
+derivation = "parity"
+
+[chains.base]
+chain_id = 8453
+derivation = "parity"
+
+[chains.arbitrum]
+chain_id = 42161
+derivation = "parity"
+
+[chains.optimism]
+chain_id = 10
+derivation = "parity"
+
+[chains.zksync]
+chain_id = 324
+derivation = "zksync"

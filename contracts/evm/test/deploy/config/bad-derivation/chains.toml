@@ -1,0 +1,3 @@
+[chains.a]
+chain_id = 1
+derivation = "evm"

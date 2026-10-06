@@ -41,8 +41,10 @@ this file is the gap between that design and the tree.
   check.
 - **Arachnid's factory on every target chain.** A chain is `Predetermined` only if its
   transceivers were deployed through `CrossProxyDeployer`, which Arachnid's factory places
-  (#33). Which target chains have it
-  is not checked. A chain without it is `Unique` in every registry and grades every other
+  (#33). Ethereum, Base, Arbitrum One, OP Mainnet, and zkSync Era all have its code at its
+  address (checked over RPC, 2026-10-06, recorded in `contracts/evm/deploy/chains.toml`); a
+  chain added later is checked when it is. Code there is not enough on its own: zkSync Era has
+  it, but EraVM places `CrossProxyDeployer` elsewhere. A chain without it is `Unique` in every registry and grades every other
   chain `Unique` in its own, so its transceivers cannot be born configured: the governor's
   home is not `Predetermined` from there, and `initialize` refuses that (#32). Supporting one needs
   a way to seed the home's counterpart on that chain, such as an explicit counterpart in the
