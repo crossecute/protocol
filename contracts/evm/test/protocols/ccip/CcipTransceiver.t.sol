@@ -4,12 +4,8 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {deployTransceiver} from "test/DeployCrossProxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {unseeded} from "test/RegistrySeed.sol";
@@ -21,130 +17,13 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
-import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
-import {CcipSendSuite} from "test/protocols/ccip/CcipBinding.t.sol";
+import {ProviderGatewayRoleSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 
-/// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
-contract CcipTransceiverHarness is CcipTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address router_) CcipTransceiver(router_) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-
-    function _handleInbound(bytes32 origin, bytes calldata message) internal override {
-        emit InboundHandled(origin);
-        super._handleInbound(origin, message);
-    }
-}
-
-function deployCcip(address router) returns (CcipTransceiverHarness) {
-    return CcipTransceiverHarness(
-        payable(address(
-                deployTransceiver(
-                    address(new CcipTransceiverHarness(router)),
-                    abi.encodeCall(
-                        CcipTransceiver.initialize, (transceiverConfig(address(new CcipReceiver(router))), uint64(0))
-                    )
-                )
-            ))
-    );
-}
-
-function ccipMessage(uint64 selector, address sender, bytes memory data) pure returns (Client.Any2EVMMessage memory) {
-    return Client.Any2EVMMessage({
-        messageId: bytes32(0),
-        sourceChainSelector: selector,
-        sender: abi.encode(sender),
-        data: data,
-        destTokenAmounts: new Client.EVMTokenAmount[](0)
-    });
-}
-
-/// @notice `CcipSendSuite` against the plain transceiver.
-contract CcipTransceiverSendTest is CcipSendSuite {
-    function _deploy() internal override returns (address, address) {
-        CcipTransceiverHarness t = deployCcip(address(router));
-        return (address(t), t.owner());
-    }
-}
-
-/// @notice CCIP's off-ramp asserts nothing about the sender, so the base's counterpart check is
-///         what refuses a wrong one, and the router's gateway role is what admits the call.
-contract CcipTransceiverInboundTest is ProviderInboundSpec {
-    address router = address(0xBEEF);
-    CcipTransceiverHarness t;
-    uint64 constant ORIGIN_SELECTOR = 15_971_525_489_660_198_786;
-
-    function setUp() public {
-        t = deployCcip(router);
-    }
-
-    function _transceiver() internal view override returns (address) {
-        return address(t);
-    }
-
-    function _configureOrigin(bytes32 chainKey) internal override {
-        vm.prank(t.owner());
-        t.setSelector(chainKey, ORIGIN_SELECTOR);
-    }
-
-    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
-        vm.prank(router);
-        CcipTransceiver(payable(transceiver)).ccipReceive(ccipMessage(ORIGIN_SELECTOR, sender, message));
-    }
-
-    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
-        internal
-        override
-        returns (address)
-    {
-        TransceiverConfig memory c = transceiverConfig(address(new CcipReceiver(router)));
-        c.governorOwner = governorOwner;
-        c.governorSalt = governorSalt;
-        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
-        c.chainRegistry = registry;
-        c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Unique;
-        return address(
-            deployTransceiver(
-                address(new CcipTransceiver(router)), abi.encodeCall(CcipTransceiver.initialize, (c, ORIGIN_SELECTOR))
-            )
-        );
-    }
-
-    /// @dev Only the router may deliver, whatever the message says.
-    function test_onlyTheRouterDelivers() public {
-        _wire();
-        // Read before the prank: an external call inside the expected error would consume it.
-        bytes32 role = t.GATEWAY_ROLE();
-        bytes memory message = _bootstrap();
-
-        vm.prank(address(0xBAD));
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, address(0xBAD), role)
-        );
-        t.ccipReceive(ccipMessage(ORIGIN_SELECTOR, ORIGIN_TRANSCEIVER, message));
-    }
-
-    /// @dev The router is granted the gateway role by the initializer, not by the deployment
-    ///      remembering to list it.
-    function test_theRouterIsTheGatewayWithNoneListed() public view {
-        assertTrue(t.hasRole(t.GATEWAY_ROLE(), router));
-    }
-
+contract CcipTransceiverInboundTest is ProviderGatewayRoleSpec, CcipFixture {
     /// @dev Answering false makes the off-ramp mark a message executed without delivering it.
     function test_itAnswersSupportsInterface() public view {
+        IERC165 t = IERC165(transceiver);
         assertTrue(t.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
         assertTrue(t.supportsInterface(type(IERC165).interfaceId));
         assertFalse(t.supportsInterface(bytes4(0xdeadbeef)));
@@ -216,16 +95,4 @@ contract CcipZkSyncTransceiverTest is Test {
     }
 }
 
-contract CcipGovernorHomeTest is ProviderGovernorHomeSpec {
-    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
-        return address(
-            deployTransceiver(
-                address(new CcipTransceiver(address(0xBEEF))),
-                abi.encodeCall(
-                    CcipTransceiver.initialize,
-                    (transceiverConfig(address(new CcipReceiver(address(0xBEEF)))), uint64(id))
-                )
-            )
-        );
-    }
-}
+contract CcipGovernorHomeTest is ProviderGovernorHomeSpec, CcipFixture {}

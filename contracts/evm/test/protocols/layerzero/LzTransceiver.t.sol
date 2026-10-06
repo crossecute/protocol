@@ -3,11 +3,10 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {deployTransceiver} from "test/DeployCrossProxy.sol";
-import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {OAppReceiverUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {unseeded} from "test/RegistrySeed.sol";
@@ -18,119 +17,29 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
+import {transceiverConfig, toBytes32} from "test/protocols/ProviderFixture.sol";
 import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
-import {LzSendSuite, LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
+import {LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
+import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 
-/// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
-contract LzTransceiverHarness is LzTransceiver {
-    event InboundHandled(bytes32 chainKey);
-
-    constructor(address endpoint) LzTransceiver(endpoint) {}
-
-    function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
-        external
-        payable
-        returns (bytes32)
-    {
-        return _sendMessage(recipient, payload, attributes, value);
-    }
-
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
-    }
-
-    function _handleInbound(bytes32 origin, bytes calldata message) internal override {
-        emit InboundHandled(origin);
-        super._handleInbound(origin, message);
-    }
-}
-
-function deployLz(address endpoint) returns (LzTransceiverHarness) {
-    return LzTransceiverHarness(
-        payable(address(
-                deployTransceiver(
-                    address(new LzTransceiverHarness(endpoint)),
-                    abi.encodeCall(
-                        LzTransceiver.initialize, (transceiverConfig(address(new LzReceiver(endpoint))), uint32(0))
-                    )
-                )
-            ))
-    );
-}
-
-/// @notice `LzSendSuite` against the plain transceiver.
-contract LzTransceiverSendTest is LzSendSuite {
-    function _deploy() internal override returns (address, address) {
-        LzTransceiverHarness t = deployLz(address(endpoint));
-        return (address(t), t.owner());
-    }
-}
-
-contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck {
-    MockLzEndpoint endpoint;
-    LzTransceiverHarness t;
-    uint32 constant ORIGIN_EID = 30184;
-
-    function setUp() public {
-        endpoint = new MockLzEndpoint();
-        t = deployLz(address(endpoint));
-    }
-
-    function _transceiver() internal view override returns (address) {
-        return address(t);
-    }
-
-    function _configureOrigin(bytes32 chainKey) internal override {
-        vm.startPrank(t.owner());
-        t.setEid(chainKey, ORIGIN_EID);
-        t.setPeer(ORIGIN_EID, bytes32(uint256(uint160(ORIGIN_TRANSCEIVER))));
-        vm.stopPrank();
-    }
-
-    function _deliverTo(address transceiver, address sender, bytes memory message) internal override {
-        vm.prank(address(endpoint));
-        LzTransceiver(payable(transceiver))
-            .lzReceive(
-                Origin({srcEid: ORIGIN_EID, sender: bytes32(uint256(uint160(sender))), nonce: 1}),
-                bytes32(0),
-                message,
-                address(0),
-                ""
-            );
-    }
-
-    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
-        internal
-        override
-        returns (address)
-    {
-        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
-        c.governorOwner = governorOwner;
-        c.governorSalt = governorSalt;
-        c.governorHome = Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID);
-        c.chainRegistry = registry;
-        c.messageProvider = keccak256("under-test");
-        c.minCounterpartProvenance = Provenance.Unique;
-        return address(
-            deployTransceiver(
-                address(new LzTransceiver(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, ORIGIN_EID))
-            )
-        );
-    }
-
+contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck, LzFixture {
     /// @dev R3.3: OApp refuses any sender but the eid's peer before the base runs.
     function _wrongSenderRevert(bytes32, address sender) internal pure override returns (bytes memory) {
-        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, ORIGIN_EID, bytes32(uint256(uint160(sender))));
+        return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, BASE_EID, toBytes32(sender));
+    }
+
+    function _bypassRevert(address caller) internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(OAppReceiverUpgradeable.OnlyEndpoint.selector, caller);
     }
 
     /// @dev R6: the receiver's peer is its transmitter on the home eid, set before its payload.
     function _assertReceiverConfigured(address receiver, address transmitter) internal view override {
-        assertEq(IOAppCore(receiver).peers(ORIGIN_EID), bytes32(uint256(uint160(transmitter))));
+        super._assertReceiverConfigured(receiver, transmitter);
+        assertEq(IOAppCore(receiver).peers(BASE_EID), toBytes32(transmitter));
     }
 
     function test_peersAreWriteOnceAndTheOwners() public {
-        _assertPeerIsWriteOnce(address(t), t.owner(), ORIGIN_EID);
+        _assertPeerIsWriteOnce(transceiver, TransceiverBase(payable(transceiver)).owner(), BASE_EID);
     }
 }
 
@@ -197,45 +106,18 @@ contract LzZkSyncTransceiverTest is Test {
 
 /// @notice LayerZero delivers only from a set peer, so the governor home's eid is born with its
 ///         peer too: the transceiver there, which on a parity chain is this address.
-contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
-    MockLzEndpoint endpoint = new MockLzEndpoint();
+contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
     uint32 constant HOME_EID = 30101;
 
-    function _deployWithGovernorHomeId(uint256 id) internal override returns (address) {
-        return _deploy(uint32(id), IChainRegistryRefs(address(0)));
-    }
-
-    function _deploy(uint32 eid, IChainRegistryRefs registry) internal returns (address) {
-        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
+    function _registryConfig(IChainRegistryRefs registry) internal returns (TransceiverConfig memory c) {
+        c = _config();
         c.chainRegistry = registry;
         c.messageProvider = keccak256("layerzero");
         c.minCounterpartProvenance = Provenance.Unique;
-        return address(
-            deployTransceiver(
-                address(new LzTransceiverHarness(address(endpoint))), abi.encodeCall(LzTransceiver.initialize, (c, eid))
-            )
-        );
     }
 
-    function test_theGovernorHomePeerIsBornSet() public {
-        ChainRegistry registry = new ChainRegistry(
-            address(this),
-            RegistrySeed({
-                governorHome: Erc7930.encodeEvmChain(1),
-                governorHomeGrade: Provenance.Predetermined,
-                providers: new ProviderSeed[](0)
-            })
-        );
-        address t = _deploy(HOME_EID, IChainRegistryRefs(address(registry)));
-        assertEq(IOAppCore(t).peers(HOME_EID), bytes32(uint256(uint160(t))));
-    }
-
-    /// @dev On zkSync the transceiver on the home is not at this address, so the peer is the
-    ///      registry's prediction from the provider's deployment record.
-    function test_aDivergentTransceiversGovernorHomePeerIsThePredictedOne() public {
-        ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256("account"));
-        ChainRegistry registry = new ChainRegistry(
+    function _homeSeed(ProviderSeed[] memory providers) internal returns (ChainRegistry) {
+        return new ChainRegistry(
             address(this),
             RegistrySeed({
                 governorHome: Erc7930.encodeEvmChain(1),
@@ -243,26 +125,37 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec {
                 providers: providers
             })
         );
-        TransceiverConfig memory c = transceiverConfig(address(new LzReceiver(address(endpoint))));
-        c.chainRegistry = IChainRegistryRefs(address(registry));
-        c.messageProvider = keccak256("layerzero");
-        c.minCounterpartProvenance = Provenance.Unique;
-        address t = address(
-            deployTransceiver(
-                address(new LzZkSyncHarness(address(endpoint))),
-                abi.encodeCall(LzZkSyncTransceiver.initialize, (c, HOME_EID, keccak256("zksolc")))
+    }
+
+    function test_theGovernorHomePeerIsBornSet() public {
+        ChainRegistry registry = _homeSeed(new ProviderSeed[](0));
+        address t = _deployTransceiver(_registryConfig(IChainRegistryRefs(address(registry))), HOME_EID);
+        assertEq(IOAppCore(t).peers(HOME_EID), toBytes32(t));
+    }
+
+    /// @dev On zkSync the transceiver on the home is not at this address, so the peer is the
+    ///      registry's prediction from the provider's deployment record.
+    function test_aDivergentTransceiversGovernorHomePeerIsThePredictedOne() public {
+        ProviderSeed[] memory providers = new ProviderSeed[](1);
+        providers[0] = ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256("account"));
+        ChainRegistry registry = _homeSeed(providers);
+        address t = deployTransceiver(
+            address(new LzZkSyncHarness(address(endpoint))),
+            abi.encodeCall(
+                LzZkSyncTransceiver.initialize,
+                (_registryConfig(IChainRegistryRefs(address(registry))), HOME_EID, keccak256("zksolc"))
             )
         );
 
         address there = registry.predictTransceiver(ChainKey.forEvm(1), keccak256("layerzero"));
         assertTrue(there != t, "not this address");
-        assertEq(IOAppCore(t).peers(HOME_EID), bytes32(uint256(uint160(there))));
+        assertEq(IOAppCore(t).peers(HOME_EID), toBytes32(there));
     }
 
     /// @dev The peer needs the registry to resolve the counterpart, so with none it is the
     ///      owner's to set later, like the rest.
     function test_withNoRegistryThePeerIsLeftToTheOwner() public {
-        address t = _deploy(HOME_EID, IChainRegistryRefs(address(0)));
+        address t = _deployTransceiver(_registryConfig(IChainRegistryRefs(address(0))), HOME_EID);
         assertEq(IOAppCore(t).peers(HOME_EID), bytes32(0));
     }
 }

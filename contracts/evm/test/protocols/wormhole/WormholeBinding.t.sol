@@ -2,13 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
 
-import {ChainKey} from "src/addressing/ChainKey.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
@@ -19,148 +15,60 @@ import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
 import {
     ProviderIdTableSpec,
-    ISendHarness,
     ProviderWideSenderSpec,
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
+import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
 
-/// @dev Executor router and quoter for contracts these tests never send from. Only being
-///      nonzero matters: the constructors refuse zero.
-address constant UNUSED_EXECUTOR = address(0xE0);
-
-function _universal(address a) pure returns (bytes32) {
-    return bytes32(uint256(uint160(a)));
-}
-
-/// @dev VAA v1 with `sigCount` zeroed 66-byte signatures (the mock Core does not check them)
-///      and a payload already wrapped in the binding's destination envelope.
-function _vaa(uint8 sigCount, uint16 emitterChain, address emitter, uint64 sequence, bytes memory payload)
-    pure
-    returns (bytes memory)
-{
-    return _vaa(sigCount, emitterChain, _universal(emitter), sequence, payload);
-}
-
-function _vaa(uint8 sigCount, uint16 emitterChain, bytes32 emitter, uint64 sequence, bytes memory payload)
-    pure
-    returns (bytes memory)
-{
-    return abi.encodePacked(
-        uint8(1),
-        uint32(0),
-        sigCount,
-        new bytes(uint256(sigCount) * 66),
-        uint32(1_700_000_000),
-        uint32(0),
-        emitterChain,
-        emitter,
-        sequence,
-        uint8(1),
-        payload
-    );
-}
-
-function _envelope(uint16 targetChain, address target, bytes memory inner) pure returns (bytes memory) {
-    return abi.encodePacked(targetChain, _universal(target), inner);
-}
-
-interface IWormholeSendHarness is ISendHarness {
-    function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external;
-    function executeVAAv1(bytes calldata multiSigVaa) external payable;
-    function WORMHOLE_GAS_LIMIT_ATTRIBUTE() external view returns (bytes4);
-}
-
-/// @dev Run against each Wormhole transceiver through `_deploy`.
-abstract contract WormholeSendSuite is
+contract WormholeTransceiverSendTest is
     ProviderIdTableSpec,
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
-    ProviderRefundSpec
+    ProviderRefundSpec,
+    WormholeFixture
 {
-    uint256 constant CORE_MESSAGE_FEE = 1 gwei;
-    MockWormholeCore core;
-    MockExecutorQuoterRouter router;
-    IWormholeSendHarness transceiver;
-    address msig;
-    address quoter = address(0x0907);
-    uint16 constant HOME_WORMHOLE_CHAIN = 2;
-    uint16 constant BASE_WORMHOLE_CHAIN = 30;
-
-    /// @notice Deploy the transceiver under test against `core`, `router`, and `quoter`,
-    ///         returning it and its owner.
-    function _deploy() internal virtual returns (address deployed, address owner);
-
-    function setUp() public {
-        core = new MockWormholeCore(HOME_WORMHOLE_CHAIN);
-        router = new MockExecutorQuoterRouter();
-        (address t, address owner) = _deploy();
-        transceiver = IWormholeSendHarness(t);
-        msig = owner;
-        harness = ISendHarness(address(transceiver));
-
-        vm.prank(msig);
-        transceiver.setWormholeChain(ChainKey.forEvm(8453), BASE_WORMHOLE_CHAIN);
-    }
-
-    function _configuredRecipient() internal pure override returns (bytes memory) {
-        return Erc7930.encodeEvm(8453, address(0xC0DE));
-    }
-
-    function _unconfiguredRecipient() internal pure override returns (bytes memory) {
-        return Erc7930.encodeEvm(1, address(0xC0DE));
-    }
-
-    function _configuredProviderId() internal pure override returns (uint256) {
-        return BASE_WORMHOLE_CHAIN;
-    }
-
-    function _setProviderFee(uint256 fee) internal override {
-        router.setFee(fee);
-        core.setMessageFee(CORE_MESSAGE_FEE);
-    }
-
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(router.requestsLength(), 1);
         assertEq(router.requests(0).dstChain, BASE_WORMHOLE_CHAIN);
     }
 
-    function _gasLimitAttribute(uint256 gasLimit) internal view returns (bytes[] memory attrs) {
+    function _supportedAttribute() internal pure override returns (bytes memory) {
+        return abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, uint256(1));
+    }
+
+    function _gasLimitAttribute(uint256 gasLimit) internal pure returns (bytes[] memory attrs) {
         attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(transceiver.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), gasLimit);
+        attrs[0] = abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, gasLimit);
     }
 
     function test_publishedPayloadNamesItsDestination() public {
-        transceiver.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         MockWormholeCore.Published memory p = core.published(0);
-        assertEq(p.emitter, address(transceiver));
-        assertEq(p.payload, _envelope(BASE_WORMHOLE_CHAIN, address(0xC0DE), "payload"));
+        assertEq(p.emitter, address(harness));
+        assertEq(p.payload, _envelope(BASE_WORMHOLE_CHAIN, REMOTE_COUNTERPART, "payload"));
         assertEq(p.consistencyLevel, 1);
     }
 
     function test_executionRequestNamesTheVaaAndTheRecipient() public {
         address payer = address(0xFEE);
         vm.prank(payer);
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         MockExecutorQuoterRouter.Request memory r = router.requests(0);
-        assertEq(r.dstAddr, _universal(address(0xC0DE)));
+        assertEq(r.dstAddr, toBytes32(REMOTE_COUNTERPART));
         assertEq(r.refundAddr, payer);
-        assertEq(r.quoterAddr, quoter);
+        assertEq(r.quoterAddr, QUOTER);
         assertEq(
-            r.requestBytes,
-            RequestLib.encodeVaaMultiSigRequest(HOME_WORMHOLE_CHAIN, _universal(address(transceiver)), 0)
+            r.requestBytes, RequestLib.encodeVaaMultiSigRequest(HERE_WORMHOLE_CHAIN, toBytes32(address(harness)), 0)
         );
     }
 
     function test_gasLimitDefaultsAndFollowsTheAttribute() public {
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(750_000), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(750_000), 0);
         assertEq(router.requests(0).relayInstructions, abi.encodePacked(uint8(1), uint128(200_000), uint128(0)));
         assertEq(router.requests(1).relayInstructions, abi.encodePacked(uint8(1), uint128(750_000), uint128(0)));
     }
@@ -168,7 +76,7 @@ abstract contract WormholeSendSuite is
     function test_quoteIsMessageFeePlusExecutionPrice() public {
         core.setMessageFee(0.001 ether);
         router.setFee(0.01 ether);
-        assertEq(transceiver.quoteMessagePublic(_configuredRecipient(), "x"), 0.011 ether);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), 0.011 ether);
     }
 
     function test_valueSplitsBetweenCoreAndTheRouterWithExcessRefunded() public {
@@ -177,11 +85,11 @@ abstract contract WormholeSendSuite is
         address payer = address(0xFEE);
         vm.deal(payer, 1 ether);
         vm.prank(payer);
-        transceiver.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
+        harness.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
         assertEq(core.published(0).value, 0.001 ether);
         assertEq(router.requests(0).paid, 0.01 ether);
         assertEq(payer.balance, 0.989 ether);
-        assertEq(address(transceiver).balance, 0);
+        assertEq(address(harness).balance, 0);
     }
 
     function test_valueBelowTheMessageFeeIsRefused() public {
@@ -190,37 +98,16 @@ abstract contract WormholeSendSuite is
         vm.expectRevert(
             abi.encodeWithSelector(WormholeMessage.InsufficientWormholeValue.selector, 0.0005 ether, 0.001 ether)
         );
-        transceiver.sendMessagePublic{value: 0.0005 ether}(_configuredRecipient(), "x", new bytes[](0), 0.0005 ether);
+        harness.sendMessagePublic{value: 0.0005 ether}(_configuredRecipient(), "x", new bytes[](0), 0.0005 ether);
     }
 
     function test_gasLimitAboveUint128IsRefused() public {
         bytes[] memory attrs = _gasLimitAttribute(uint256(type(uint128).max) + 1);
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-    }
-
-    /// @dev A malformed first attribute is reported even when an extra follows it.
-    function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
-        bytes[] memory attrs = new bytes[](2);
-        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        attrs[1] = abi.encodePacked(transceiver.WORMHOLE_GAS_LIMIT_ATTRIBUTE(), uint256(1));
-        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-    }
-
-    function test_unknownAttributeIsRefused() public {
-        bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
-        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        transceiver.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     /// @dev Core's message fee plus what the Executor router kept (it refunds the rest).
-    /// @dev Core's message fee is paid alongside the Executor's, so the quote carries both.
-    function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
-        return providerFee + CORE_MESSAGE_FEE;
-    }
-
     function _lastPaid() internal view override returns (uint256) {
         return core.published(core.publishedLength() - 1).value + router.requests(router.requestsLength() - 1).paid;
     }
@@ -228,88 +115,26 @@ abstract contract WormholeSendSuite is
     function _lastRefundAddress() internal view override returns (address) {
         return router.requests(router.requestsLength() - 1).refundAddr;
     }
-
-    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal override {
-        vm.prank(msig);
-        transceiver.setWormholeChain(chainKey, uint16(providerId));
-    }
-
-    function _deliverFromUnmappedOrigin(uint256 providerId) internal override {
-        transceiver.executeVAAv1(
-            _vaa(1, uint16(providerId), address(0xC0DE), 0, _envelope(HOME_WORMHOLE_CHAIN, address(transceiver), ""))
-        );
-    }
-
-    function _unmappedOriginRevert(uint256 providerId) internal pure override returns (bytes memory) {
-        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
-    }
 }
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate
-///         the emitter, and `isSourceTransmitter` is the only sender check.
-contract WormholeReceiveTest is ProviderWideSenderSpec {
-    MockWormholeCore core;
-    WormholeReceiver receiver;
-    address sourceTransmitter = address(0xABCD);
-    uint16 constant HOME = 2;
-    uint16 constant HERE = 30;
-
-    function setUp() public {
-        core = new MockWormholeCore(HERE);
-        receiver = WormholeReceiver(payable(_deployReceiver(new Call[](0))));
-    }
-
-    function _deployReceiver(Call[] memory calls) internal override returns (address proxy) {
-        proxy = deployAccount(
-            address(new WormholeReceiver(address(core))),
-            abi.encodeCall(WormholeReceiver.initialize, (sourceTransmitter, calls))
-        );
-    }
-
-    function _validVaa(uint64 sequence) internal view returns (bytes memory) {
+///         the emitter, and `isSourceTransmitter` is the only sender check. `WormholeReceiver`
+///         keeps no origin state, so the unconfigured-origin case is the impersonator case.
+contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
+    function _validVaa(uint64 seq) internal view returns (bytes memory) {
         return _vaa(
-            1, HOME, sourceTransmitter, sequence, _envelope(HERE, address(receiver), Payload.encodeCalls(new Call[](0)))
+            1, BASE_WORMHOLE_CHAIN, SOURCE_TRANSMITTER, seq, _envelope(HERE_WORMHOLE_CHAIN, receiver, _emptyPayload())
         );
-    }
-
-    function _receiverUnderTest() internal view override returns (address) {
-        return address(receiver);
-    }
-
-    function _gateway() internal view override returns (address) {
-        return address(core);
-    }
-
-    function _deliverFromConfiguredSource() internal override {
-        vm.prank(address(0xE1EC));
-        receiver.executeVAAv1(_validVaa(0));
-    }
-
-    function _deliverFromImpersonator() internal override {
-        receiver.executeVAAv1(_vaa(1, HOME, address(0xBAD), 0, _envelope(HERE, address(receiver), "")));
-    }
-
-    /// @dev `WormholeReceiver` keeps no origin state (same as `CcipReceiver`), so the
-    ///      unconfigured-origin case is the impersonator case.
-    function _deliverFromUnconfiguredOrigin() internal override {
-        receiver.executeVAAv1(_vaa(1, 99, address(0xBAD), 0, _envelope(HERE, address(receiver), "")));
-    }
-
-    /// @dev There is no privileged caller to bypass: the equivalent is a VAA Core rejects.
-    function _deliverFromWrongCaller() internal override {
-        bytes memory vaa = _validVaa(0);
-        vaa[0] = 0x02;
-        receiver.executeVAAv1(vaa);
     }
 
     function test_aReplayedVaaIsRejected() public {
         bytes memory vaa = _validVaa(0);
-        receiver.executeVAAv1(vaa);
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
         (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(vaa);
         bytes32 hash = v.hash;
-        assertTrue(receiver.vaaConsumed(hash));
+        assertTrue(WormholeReceiver(payable(receiver)).vaaConsumed(hash));
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.VaaAlreadyConsumed.selector, hash));
-        receiver.executeVAAv1(vaa);
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
     }
 
     /// @dev C30: the consumed mark rolls back with a delivery that reverts, so the same VAA
@@ -318,13 +143,18 @@ contract WormholeReceiveTest is ProviderWideSenderSpec {
         Switch sw = new Switch();
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(sw), value: 0, data: abi.encodeCall(Switch.run, ())});
-        bytes memory vaa =
-            _vaa(1, HOME, sourceTransmitter, 0, _envelope(HERE, address(receiver), Payload.encodeCalls(calls)));
+        bytes memory vaa = _vaa(
+            1,
+            BASE_WORMHOLE_CHAIN,
+            SOURCE_TRANSMITTER,
+            0,
+            _envelope(HERE_WORMHOLE_CHAIN, receiver, Payload.encodeCalls(calls))
+        );
 
         vm.expectRevert();
-        receiver.executeVAAv1(vaa);
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
         sw.fix();
-        receiver.executeVAAv1(vaa);
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
         assertTrue(sw.ran());
     }
 
@@ -333,99 +163,86 @@ contract WormholeReceiveTest is ProviderWideSenderSpec {
     function test_theDedupeIsPerAccount() public {
         WormholeReceiver other = WormholeReceiver(payable(_deployReceiver(new Call[](0))));
         bytes memory first = _validVaa(0);
-        receiver.executeVAAv1(first);
+        WormholeReceiver(payable(receiver)).executeVAAv1(first);
         (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(first);
         assertFalse(other.vaaConsumed(v.hash));
         other.executeVAAv1(
-            _vaa(1, HOME, sourceTransmitter, 0, _envelope(HERE, address(other), Payload.encodeCalls(new Call[](0))))
+            _vaa(
+                1,
+                BASE_WORMHOLE_CHAIN,
+                SOURCE_TRANSMITTER,
+                0,
+                _envelope(HERE_WORMHOLE_CHAIN, address(other), Payload.encodeCalls(new Call[](0)))
+            )
         );
     }
 
     /// @dev Receivers share one address across parity chains; a VAA for another chain must not
     ///      run here.
     function test_aVaaForAnotherChainIsRejected() public {
-        bytes memory vaa =
-            _vaa(1, HOME, sourceTransmitter, 0, _envelope(31, address(receiver), Payload.encodeCalls(new Call[](0))));
-        vm.expectRevert(
-            abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), _universal(address(receiver)))
+        bytes memory vaa = _vaa(
+            1, BASE_WORMHOLE_CHAIN, SOURCE_TRANSMITTER, 0, _envelope(31, receiver, Payload.encodeCalls(new Call[](0)))
         );
-        receiver.executeVAAv1(vaa);
+        vm.expectRevert(
+            abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), toBytes32(receiver))
+        );
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
     }
 
     function test_aVaaForAnotherAddressIsRejected() public {
-        bytes memory vaa =
-            _vaa(1, HOME, sourceTransmitter, 0, _envelope(HERE, address(0xD1FF), Payload.encodeCalls(new Call[](0))));
-        vm.expectRevert(
-            abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, HERE, _universal(address(0xD1FF)))
+        bytes memory vaa = _vaa(
+            1,
+            BASE_WORMHOLE_CHAIN,
+            SOURCE_TRANSMITTER,
+            0,
+            _envelope(HERE_WORMHOLE_CHAIN, address(0xD1FF), Payload.encodeCalls(new Call[](0)))
         );
-        receiver.executeVAAv1(vaa);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WormholeMessage.WrongDestination.selector, HERE_WORMHOLE_CHAIN, toBytes32(address(0xD1FF))
+            )
+        );
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
     }
 
     /// @dev `revokeGateway(coreBridge)` must still disconnect Wormhole even though the Core
     ///      bridge never calls in.
     function test_revokingTheCoreBridgeGatewayDisconnectsWormhole() public {
-        vm.prank(sourceTransmitter);
-        receiver.revokeGateway(address(core));
+        vm.prank(SOURCE_TRANSMITTER);
+        WormholeReceiver(payable(receiver)).revokeGateway(address(core));
         vm.expectRevert(WormholeMessage.WormholeGatewayRevoked.selector);
-        receiver.executeVAAv1(_validVaa(0));
+        WormholeReceiver(payable(receiver)).executeVAAv1(_validVaa(0));
     }
 
     function test_aPayloadDifferentFromWhatCoreVerifiedIsRejected() public {
         core.setPayloadOverride("something else");
         vm.expectRevert(WormholeMessage.MalformedVaa.selector);
-        receiver.executeVAAv1(_validVaa(0));
+        WormholeReceiver(payable(receiver)).executeVAAv1(_validVaa(0));
     }
 
     function test_signatureCountSetsThePayloadOffset() public {
-        vm.expectEmit(false, false, false, true, address(receiver));
+        vm.expectEmit(false, false, false, true, receiver);
         emit Delivered(0);
-        receiver.executeVAAv1(
-            _vaa(13, HOME, sourceTransmitter, 0, _envelope(HERE, address(receiver), Payload.encodeCalls(new Call[](0))))
-        );
+        WormholeReceiver(payable(receiver))
+            .executeVAAv1(
+                _vaa(
+                    13,
+                    BASE_WORMHOLE_CHAIN,
+                    SOURCE_TRANSMITTER,
+                    0,
+                    _envelope(HERE_WORMHOLE_CHAIN, receiver, Payload.encodeCalls(new Call[](0)))
+                )
+            );
     }
 
     function test_nonzeroValueIsRejected() public {
         vm.deal(address(this), 1 ether);
         vm.expectRevert(WormholeMessage.UnexpectedValue.selector);
-        receiver.executeVAAv1{value: 1}(_validVaa(0));
-    }
-
-    function test_receiverGrantsTheCoreBridgeTheGatewayRole() public view {
-        assertTrue(receiver.hasRole(receiver.GATEWAY_ROLE(), address(core)));
-    }
-
-    function _deliverFromWideSender(bytes32 wide) internal override {
-        receiver.executeVAAv1(
-            _vaa(1, HOME, wide, 0, _envelope(HERE, address(receiver), Payload.encodeCalls(new Call[](0))))
-        );
-    }
-
-    function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
-        return abi.encodeWithSelector(ProviderAddress.UnsupportedSender.selector, wide);
+        WormholeReceiver(payable(receiver)).executeVAAv1{value: 1}(_validVaa(0));
     }
 }
 
-contract WormholeTransmitterInboundTest is ProviderTransmitterSpec {
-    address core = address(0xBEEF);
-
-    function _transmitter() internal override returns (address) {
-        return address(
-            deployAccount(
-                address(new WormholeTransmitter(core, UNUSED_EXECUTOR, UNUSED_EXECUTOR)),
-                abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
-            )
-        );
-    }
-
-    /// @dev Delivery is permissionless: anyone may submit a VAA.
-    function _deliveringGateway() internal pure override returns (address) {
-        return address(0xCAFE);
-    }
-
-    function _deliveryCall() internal pure override returns (bytes memory) {
-        return abi.encodeCall(IVaaV1Receiver.executeVAAv1, (_vaa(1, 2, address(0xABCD), 0, "")));
-    }
-}
+contract WormholeTransmitterInboundTest is ProviderTransmitterSpec, WormholeFixture {}
 
 /// @dev A payload target that fails until fixed, for C30.
 contract Switch {

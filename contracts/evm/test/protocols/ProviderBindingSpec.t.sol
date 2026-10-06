@@ -1,24 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
+import {ProviderFixture, ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {deployAccount} from "test/DeployCrossProxy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {providerIdOf, ProviderChainId, IProviderIdTable} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
+import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
-/// @notice The wrapper every provider's send test harness exposes: a thin subclass of the
+/// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
 ///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
 ///         so a test can exercise the translation layer without going through the full
 ///         registry-gated `TransmitterBase.sendMessage` entry point. See `LzTransceiverHarness`.
@@ -31,43 +35,45 @@ interface ISendHarness {
     function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256);
 }
 
+/// @dev The GATEWAY_ROLE every binding checks, read without an external call so an expected
+///      revert is not consumed by it.
+bytes32 constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
+
 /// @title ProviderSendSpec
 /// @notice The properties every native provider binding's transceiver send path must satisfy,
-///         independent of which provider it is. A concrete per-provider suite (e.g.
-///         `LzBinding.t.sol:LzSendTest`) inherits this and implements the hooks below against
-///         its own mock provider endpoint; the test bodies run unchanged.
+///         independent of which provider it is. A provider's send suite inherits this and its
+///         fixture; the test bodies run unchanged.
 ///
 /// @dev `_sendMessage`/`_quoteMessage` differ only in how they translate an ERC-7930
 ///      recipient into the provider's own destination id and price the send; that a
 ///      configured destination resolves correctly, an unconfigured one reverts, and the quote
 ///      matches what the send actually pays is identical across LayerZero, CCIP, Hyperlane,
-///      Wormhole, and OP Stack. Each concrete suite still owns its own provider-specific mock
-///      (e.g. `MockLzEndpoint`) and harness contract; this only fixes what that mock has to
-///      support and what has to be true of it.
-abstract contract ProviderSendSpec is Test {
-    /// @notice The harness under test, set in the concrete suite's `setUp`.
+///      Wormhole, and OP Stack.
+abstract contract ProviderSendSpec is ProviderFixture {
+    address internal constant REMOTE_COUNTERPART = address(0xC0DE);
+
     ISendHarness internal harness;
 
-    /// @notice A recipient on a chain the concrete suite has configured a real destination
-    ///         for (provider id/selector/domain, and a counterpart/peer), built with the same
-    ///         `Erc7930`/`ChainKey` helpers a real caller would use.
-    function _configuredRecipient() internal view virtual returns (bytes memory);
-
-    /// @notice A well-formed recipient on a chain nothing has configured.
-    function _unconfiguredRecipient() internal view virtual returns (bytes memory);
-
-    /// @notice Set the provider mock's fee for the next quote/send, in native currency.
-    function _setProviderFee(uint256 fee) internal virtual;
-
-    /// @notice Assert the provider mock recorded a send targeting the same provider-native
-    ///         destination `_configuredRecipient()` resolves to (e.g. LayerZero's
-    ///         `MockLzEndpoint.sent(0).dstEid`). This is where the translation is checked.
+    /// @notice Assert the provider mock recorded a send targeting the provider-native
+    ///         destination `_configuredRecipient()` resolves to. This is where the translation
+    ///         is checked.
     function _assertLastSendTargetedConfiguredDestination() internal view virtual;
 
-    /// @notice The quote expected when the provider mock charges `providerFee`. The provider's
-    ///         fee by default; a provider with no native fee (OP Stack) overrides it to zero.
-    function _expectedQuoteFor(uint256 providerFee) internal view virtual returns (uint256) {
-        return providerFee;
+    /// @notice A well-formed attribute the binding supports.
+    function _supportedAttribute() internal view virtual returns (bytes memory);
+
+    function setUp() public virtual {
+        harness = ISendHarness(_deployTransceiver(_config(), 0));
+        _configureRemote(address(harness), REMOTE_COUNTERPART);
+    }
+
+    function _configuredRecipient() internal pure returns (bytes memory) {
+        return Erc7930.encodeEvm(REMOTE_CHAIN_ID, REMOTE_COUNTERPART);
+    }
+
+    /// @notice A well-formed recipient on a chain nothing has configured.
+    function _unconfiguredRecipient() internal pure returns (bytes memory) {
+        return Erc7930.encodeEvm(1, REMOTE_COUNTERPART);
     }
 
     function test_sendResolvesTheConfiguredDestination() public {
@@ -110,6 +116,21 @@ abstract contract ProviderSendSpec is Test {
             address(harness).staticcall(abi.encodeCall(ISendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
         assertTrue(ok);
     }
+
+    function test_unknownAttributeIsRefused() public {
+        bytes[] memory attrs = new bytes[](1);
+        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
+
+    function test_malformedFirstAttributeIsReportedBeforeAnExtra() public {
+        bytes[] memory attrs = new bytes[](2);
+        attrs[0] = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
+        attrs[1] = _supportedAttribute();
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+    }
 }
 
 /// @title ProviderFeeSpec
@@ -144,6 +165,16 @@ abstract contract ProviderFeeSpec is ProviderSendSpec {
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), q);
         assertEq(_lastPaid(), q);
     }
+
+    /// @dev A bootstrap sends `msg.value` less the protocol fee, so a binding that requires
+    ///      `msg.value == value` reverts every bootstrap once a fee is configured.
+    function test_sendSpendsExactlyValueEvenWhenLessThanMsgValue() public {
+        _setProviderFee(0.01 ether);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "x");
+        vm.deal(address(this), 2 * q);
+        harness.sendMessagePublic{value: 2 * q}(_configuredRecipient(), "x", new bytes[](0), q);
+        assertEq(_lastPaid(), q);
+    }
 }
 
 /// @title ProviderRefundSpec
@@ -167,10 +198,13 @@ abstract contract ProviderRefundSpec is ProviderFeeSpec {
 }
 
 /// @title ProviderPayloadPricedSpec
-/// @notice C12 (R2.3), for providers that price by payload length (LayerZero, CCIP, Hyperlane;
-///         Wormhole's Executor and OP Stack do not).
+/// @notice C12 (R2.3), for providers that price by payload length and carry the payload as
+///         given (LayerZero, CCIP, Hyperlane; Wormhole wraps it and OP Stack does not price it).
 abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
     function _setProviderFeePerByte(uint256 perByte) internal virtual;
+
+    /// @notice The payload the provider's mock was handed for the last send.
+    function _lastSentBody() internal view virtual returns (bytes memory);
 
     function test_quoteIsTakenOverTheExactPayloadBytes() public {
         _setProviderFeePerByte(1 gwei);
@@ -181,27 +215,27 @@ abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
         harness.sendMessagePublic{value: long}(_configuredRecipient(), longer, new bytes[](0), long);
         assertEq(_lastPaid(), long);
     }
+
+    function test_sendForwardsThePayloadAndValueUnchanged() public {
+        _setProviderFee(0.01 ether);
+        vm.deal(address(this), 1 ether);
+        harness.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "payload", new bytes[](0), 0.01 ether);
+        assertEq(_lastSentBody(), "payload");
+        assertEq(_lastPaid(), 0.01 ether);
+    }
 }
 
 /// @title ProviderIdTableSpec
 /// @notice For transceivers with a provider id table: what every transmitter reads on each send, through
 ///         the same `providerIdOf` it calls.
-abstract contract ProviderIdTableSpec is ProviderSendSpec {
-    /// @notice The id the concrete suite set for `_configuredRecipient()`'s chain.
-    function _configuredProviderId() internal view virtual returns (uint256);
-
-    /// @notice Call the transceiver's typed setter, as its owner.
-    function _setProviderIdAsOwner(bytes32 chainKey, uint256 providerId) internal virtual;
-
-    /// @notice Deliver to the transceiver through the provider's own path, from an origin id
-    ///         never set.
-    function _deliverFromUnmappedOrigin(uint256 providerId) internal virtual;
-
-    /// @notice The exact revert for that delivery.
-    function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory);
+abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
+    /// @notice The exact revert for a delivery from an origin id never set.
+    function _unmappedOriginRevert(uint256 providerId) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderChainId.UnknownProviderId.selector, providerId);
+    }
 
     function test_transmittersReadTheConfiguredIdFromTheTransceiver() public {
-        assertEq(providerIdOf(address(harness), _configuredRecipient()), _configuredProviderId());
+        assertEq(providerIdOf(address(harness), _configuredRecipient()), _remoteProviderId());
         vm.expectRevert(
             abi.encodeWithSelector(ProviderChainId.NoProviderIdFor.selector, Erc7930.chainKey(_unconfiguredRecipient()))
         );
@@ -212,15 +246,18 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec {
     ///      redirect its future sends.
     function test_theTypedSetterIsWriteOnce() public {
         bytes32 chainKey = Erc7930.chainKey(_configuredRecipient());
-        _setProviderIdAsOwner(chainKey, _configuredProviderId());
+        address owner = TransceiverBase(payable(address(harness))).owner();
+        vm.prank(owner);
+        _setProviderId(address(harness), chainKey, _remoteProviderId());
         vm.expectRevert(abi.encodeWithSelector(ProviderChainId.ProviderIdAlreadySet.selector, chainKey));
-        _setProviderIdAsOwner(chainKey, _configuredProviderId() + 1);
+        vm.prank(owner);
+        _setProviderId(address(harness), chainKey, _remoteProviderId() + 1);
     }
 
     /// @dev C5, transceiver side: a delivery whose origin the table does not map is refused.
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
-        _deliverFromUnmappedOrigin(999);
+        _deliver(address(harness), 999, toBytes32(REMOTE_COUNTERPART), "");
     }
 }
 
@@ -240,28 +277,25 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
 /// @title ProviderTransmitterSpec
 /// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
 ///         called by the provider's own gateway, finds nothing to run.
-abstract contract ProviderTransmitterSpec is Test {
+abstract contract ProviderTransmitterSpec is ProviderFixture {
     /// @notice A transmitter behind a proxy, initialized.
-    function _transmitter() internal virtual returns (address);
-
-    /// @notice The provider's delivery callback, encoded as its gateway would call it.
-    function _deliveryCall() internal view virtual returns (bytes memory);
-
-    function _deliveringGateway() internal view virtual returns (address);
+    function _transmitter() internal returns (address) {
+        return deployAccount(
+            _transmitterImplementation(),
+            abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
+        );
+    }
 
     function test_inboundToATransmitterReverts() public {
         address transmitter = _transmitter();
-        vm.prank(_deliveringGateway());
-        (bool ok,) = transmitter.call(_deliveryCall());
-        assertFalse(ok);
+        vm.expectRevert();
+        _deliver(transmitter, _remoteProviderId(), toBytes32(address(0xABCD)), "");
     }
 }
 
 /// @notice Called from a receiver's bootstrap payload: fails unless the receiver already
 ///         lets `gateway` deliver.
 contract ProviderConfiguredProbe {
-    bytes32 constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
-
     error GatewayNotYetConfigured(address gateway);
 
     function requireGateway(address gateway) external view {
@@ -273,57 +307,53 @@ contract ProviderConfiguredProbe {
 /// @notice The properties every native provider binding's receive path must satisfy,
 ///         independent of which provider it is: the configured source is accepted, an
 ///         impersonator is rejected, an unconfigured origin is rejected, and a caller that is
-///         not the provider's own gateway/endpoint/mailbox/router/relayer/messenger is
-///         rejected. A concrete suite (e.g. `LzBinding.t.sol:LzReceiveTest`) inherits this and
-///         drives its own receiver and mock through the four scenarios below.
+///         not the provider's own gateway is rejected.
 ///
-/// @dev How each scenario is triggered is provider-specific: LayerZero's peer check runs
-///      inside the vendored OApp SDK before this protocol's own code sees the call, while
-///      Hyperlane/CCIP/Wormhole/OP Stack check `GATEWAY_ROLE` in their own inbound entry
-///      point. This spec asserts only the observable property (revert, or `Delivered`), never
-///      where the check runs — that distinction is a per-provider fact worth its own comment
-///      in the concrete suite, not something this spec can verify.
-abstract contract ProviderReceiveSpec is Test {
+/// @dev LayerZero's peer check runs inside the vendored OApp SDK before this protocol's own
+///      code sees the call, while Hyperlane/CCIP/Wormhole/OP Stack check `GATEWAY_ROLE` in
+///      their own inbound entry point. This spec asserts only the observable property (revert,
+///      or `Delivered`), never where the check runs.
+abstract contract ProviderReceiveSpec is ProviderFixture {
     event Delivered(uint256 callCount);
 
-    /// @notice The receiver under test, so `Delivered` can be matched to its exact emitter.
-    function _receiverUnderTest() internal view virtual returns (address);
+    address internal constant SOURCE_TRANSMITTER = address(0xABCD);
 
-    /// @notice Deliver a payload exactly as the provider's real transport would, from the one
-    ///         source this receiver was configured to trust. Results in `Delivered(0)`.
-    /// @dev No payload argument: what counts as a validly-encoded empty payload is a property
-    ///      of the destination chain's own wire format (`Payload.encodeCalls`, here), which
-    ///      the concrete suite already knows and this spec has no business choosing.
-    function _deliverFromConfiguredSource() internal virtual;
+    address internal receiver;
 
-    /// @notice Deliver through the same call path as above, but as any source other than the
-    ///         configured one. Reverts.
-    function _deliverFromImpersonator() internal virtual;
-
-    /// @notice Deliver as though from a real, correctly-authenticated message whose origin
-    ///         (chain/domain/eid/selector) was never configured on this receiver. Reverts.
-    function _deliverFromUnconfiguredOrigin() internal virtual;
-
-    /// @notice Call the receiver's inbound entry point directly, bypassing the provider's own
-    ///         gateway/endpoint/mailbox/router/relayer/messenger entirely. Reverts.
-    function _deliverFromWrongCaller() internal virtual;
-
-    /// @notice The address this receiver's initializer granted `GATEWAY_ROLE`.
-    function _gateway() internal view virtual returns (address);
+    function setUp() public virtual {
+        receiver = _deployReceiver(new Call[](0));
+    }
 
     /// @notice A new receiver behind a proxy whose initializer runs `calls` as its bootstrap
     ///         payload.
-    function _deployReceiver(Call[] memory calls) internal virtual returns (address);
+    function _deployReceiver(Call[] memory calls) internal returns (address) {
+        return deployAccount(_receiverImplementation(), _initializeReceiver(SOURCE_TRANSMITTER, calls));
+    }
+
+    function _emptyPayload() internal pure returns (bytes memory) {
+        return Payload.encodeCalls(new Call[](0));
+    }
+
+    function _deliverFrom(address sender) internal {
+        _deliver(receiver, _remoteProviderId(), toBytes32(sender), _emptyPayload());
+    }
+
+    /// @notice Deliver a correctly-authenticated message from an origin this receiver was never
+    ///         configured for. A receiver that keeps no origin state has no such case, and the
+    ///         impersonator stands in.
+    function _deliverFromUnconfiguredOrigin() internal virtual {
+        _deliverFrom(address(0xBAD));
+    }
 
     function test_theConfiguredSourceIsAccepted() public {
-        vm.expectEmit(false, false, false, true, _receiverUnderTest());
+        vm.expectEmit(false, false, false, true, receiver);
         emit Delivered(0);
-        _deliverFromConfiguredSource();
+        _deliverFrom(SOURCE_TRANSMITTER);
     }
 
     function test_anImpersonatorIsRejected() public {
         vm.expectRevert();
-        _deliverFromImpersonator();
+        _deliverFrom(address(0xBAD));
     }
 
     function test_anUnconfiguredOriginIsRejected() public {
@@ -333,7 +363,11 @@ abstract contract ProviderReceiveSpec is Test {
 
     function test_anythingButTheProvidersOwnGatewayIsRejected() public {
         vm.expectRevert();
-        _deliverFromWrongCaller();
+        _deliverBypassingGateway(receiver, toBytes32(SOURCE_TRANSMITTER), _emptyPayload());
+    }
+
+    function test_theReceiverGrantsTheGatewayItsRole() public view {
+        assertTrue(IAccessControl(receiver).hasRole(GATEWAY_ROLE, _gateway()));
     }
 
     /// @dev C18: the bootstrap payload runs inside the receiver's one initializer call, so the
@@ -349,19 +383,18 @@ abstract contract ProviderReceiveSpec is Test {
     /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut
     ///      delivery even where the provider authenticates before this protocol's code runs.
     function test_aRevokedGatewayCannotDeliver() public {
-        ReceiverBase receiver = ReceiverBase(payable(_receiverUnderTest()));
-        vm.prank(receiver.sourceTransmitter());
-        receiver.revokeGateway(_gateway());
+        vm.prank(SOURCE_TRANSMITTER);
+        ReceiverBase(payable(receiver)).revokeGateway(_gateway());
         vm.expectRevert();
-        _deliverFromConfiguredSource();
+        _deliverFrom(SOURCE_TRANSMITTER);
     }
 
     /// @dev C24 for the account, which holds the provider's delivery state beside its own.
     function test_aDeliveryWritesOverNoOtherField() public {
         vm.startStateDiffRecording();
-        _deliverFromConfiguredSource();
+        _deliverFrom(SOURCE_TRANSMITTER);
         address[] memory accounts = new address[](1);
-        accounts[0] = _receiverUnderTest();
+        accounts[0] = receiver;
         SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
     }
 }
@@ -371,75 +404,53 @@ abstract contract ProviderReceiveSpec is Test {
 ///         the configured source, is refused rather than truncated into it. For providers that
 ///         report the sender in more than 20 bytes (all but OP Stack).
 abstract contract ProviderWideSenderSpec is ProviderReceiveSpec {
-    /// @notice Deliver through the provider's own path, from `wide`, as its gateway would.
-    function _deliverFromWideSender(bytes32 wide) internal virtual;
-
     /// @notice The exact revert expected, so the test cannot pass by failing for another reason.
-    function _wideSenderRevert(bytes32 wide) internal view virtual returns (bytes memory);
+    function _wideSenderRevert(bytes32 wide) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(ProviderAddress.UnsupportedSender.selector, wide);
+    }
 
     function test_aWideSenderIsRejectedNotTruncated() public {
-        address source = ReceiverBase(payable(_receiverUnderTest())).sourceTransmitter();
-        bytes32 wide = bytes32(uint256(uint160(source)) | (uint256(1) << 200));
+        bytes32 wide = toBytes32(SOURCE_TRANSMITTER) | bytes32(uint256(1) << 200);
         vm.expectRevert(_wideSenderRevert(wide));
-        _deliverFromWideSender(wide);
+        _deliver(receiver, _remoteProviderId(), wide, _emptyPayload());
     }
 }
 
-/// @title ProviderInboundSpec
 /// @title ProviderGovernorHomeSpec
 /// @notice #28: on any chain but the governor's home, the transceiver's owner is created by a
 ///         bootstrap from that home, so a binding with a provider id table names the home's id
 ///         at initialization rather than leaving it to an owner that does not exist yet.
-abstract contract ProviderGovernorHomeSpec is Test {
-    /// @notice Deploy the plain transceiver with `id` as the governor home's provider id and
-    ///         Ethereum as the governor's home.
-    function _deployWithGovernorHomeId(uint256 id) internal virtual returns (address);
-
+abstract contract ProviderGovernorHomeSpec is ProviderIdFixture {
     function test_theGovernorHomeIdIsNamedAtInitialization() public {
-        address t = _deployWithGovernorHomeId(7);
+        address t = _deployTransceiver(_config(), 7);
         assertEq(IProviderIdTable(t).providerIdFor(ChainKey.forEvm(1)), 7);
         assertEq(TransceiverBase(payable(t)).routeFor(ChainKey.forEvm(1)), Erc7930.encodeEvmChain(1), "and its route");
     }
 }
 
-/// @notice What every binding's transceiver must satisfy on the
-///         way in: a bootstrap from a configured origin, arriving through the provider's own
-///         path, creates a receiver configured for that provider; a wrong sender is refused;
-///         and the float can be funded and leaves only to the treasury.
+/// @title ProviderInboundSpec
+/// @notice What every binding's transceiver must satisfy on the way in: a bootstrap from a
+///         configured origin, arriving through the provider's own path, creates a receiver
+///         configured for that provider; a wrong sender is refused; and the float can be funded
+///         and leaves only to the treasury.
 /// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
 ///      Forge's EVM, so their suites pin their own overrides instead.
-abstract contract ProviderInboundSpec is Test {
+abstract contract ProviderInboundSpec is ProviderFixture {
     event InboundHandled(bytes32 chainKey);
 
-    uint256 internal constant ORIGIN_CHAIN_ID = 8453;
     /// @dev The origin's transceiver as this one records it. `Unique`, so no parity check.
     address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
     address internal constant ACCOUNT_OWNER = address(0xA11CE);
     bytes32 internal constant ACCOUNT_SALT = keccak256("account");
     address internal constant ORIGIN_TRANSMITTER = address(0x7A11);
+    address internal constant GOVERNOR = address(0x5165);
 
     /// @notice The transceiver under test, emitting `InboundHandled(origin)` as it handles a
-    ///         message, with a receiver implementation for its provider and a treasury.
-    function _transceiver() internal view virtual returns (address);
+    ///         message.
+    address internal transceiver;
 
-    /// @notice Provider-side configuration for the origin: its provider id, and anything the
-    ///         provider needs to accept `ORIGIN_TRANSCEIVER` (a LayerZero peer). As the owner.
-    function _configureOrigin(bytes32 chainKey) internal virtual;
-
-    /// @notice Deliver `message` to `transceiver` through the provider's own path, from
-    ///         `ORIGIN_CHAIN_ID`.
-    function _deliverTo(address transceiver, address sender, bytes memory message) internal virtual;
-
-    /// @notice Deploy the plain transceiver born knowing only the governor's home,
-    ///         `ORIGIN_CHAIN_ID`: `registry`, provider `keccak256("under-test")`, a `Unique`
-    ///         bar, and the provider's id for that home, with no owner call afterwards.
-    function _deployBornConfigured(IChainRegistryRefs registry, address governorOwner, bytes32 governorSalt)
-        internal
-        virtual
-        returns (address);
-
-    function _deliver(address sender, bytes memory message) internal {
-        _deliverTo(_transceiver(), sender, message);
+    function setUp() public virtual {
+        transceiver = _deployTransceiver(_config(), 0);
     }
 
     /// @notice The revert for a wrong sender: the base's by default.
@@ -447,40 +458,74 @@ abstract contract ProviderInboundSpec is Test {
         return abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, chainKey);
     }
 
-    /// @notice Assert the receiver was configured for the provider before its payload ran
-    ///         (R6). Nothing to check by default.
-    function _assertReceiverConfigured(address receiver, address transmitter) internal view virtual {}
+    /// @notice The revert when `caller` calls the delivery entry point directly.
+    function _bypassRevert(address caller) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, caller, GATEWAY_ROLE);
+    }
+
+    /// @notice R6: the receiver was configured for the provider before its payload ran.
+    function _assertReceiverConfigured(address receiver, address) internal view virtual {
+        assertTrue(IAccessControl(receiver).hasRole(GATEWAY_ROLE, _gateway()));
+    }
+
+    function _deliverTo(address to, address sender, bytes memory message) internal {
+        _deliver(to, _remoteProviderId(), toBytes32(sender), message);
+    }
 
     function _wire() internal returns (bytes32 chainKey) {
-        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(transceiver));
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
-        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID), Provenance.Unique);
+        chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
 
         vm.startPrank(t.owner());
         t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setCounterpart(chainKey, Erc7930.encodeEvm(ORIGIN_CHAIN_ID, ORIGIN_TRANSCEIVER));
-        t.setRoute(chainKey, Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID));
+        t.setCounterpart(chainKey, Erc7930.encodeEvm(REMOTE_CHAIN_ID, ORIGIN_TRANSCEIVER));
+        t.setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
         vm.stopPrank();
-        _configureOrigin(chainKey);
+        _configureRemote(transceiver, ORIGIN_TRANSCEIVER);
     }
 
     function _bootstrap() internal pure returns (bytes memory) {
-        return Envelope.encodeBootstrap(
-            ACCOUNT_OWNER, ACCOUNT_SALT, bytes32(uint256(uint160(ORIGIN_TRANSMITTER))), new Call[](0)
+        return Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), new Call[](0));
+    }
+
+    /// @notice The plain transceiver born knowing only the governor's home, `REMOTE_CHAIN_ID`:
+    ///         `registry`, provider `keccak256("under-test")`, a `Unique` bar, and the
+    ///         provider's id for that home, with no owner call afterwards.
+    /// @dev External so that an expected revert attaches to the deployment, not the first
+    ///      contract created on the way.
+    function deployBornConfigured(IChainRegistryRefs registry) external returns (address) {
+        TransceiverConfig memory c = _config();
+        c.governorOwner = GOVERNOR;
+        c.governorHome = Erc7930.encodeEvmChain(REMOTE_CHAIN_ID);
+        c.chainRegistry = registry;
+        c.messageProvider = keccak256("under-test");
+        c.minCounterpartProvenance = Provenance.Unique;
+        return _deployTransceiver(c, _remoteProviderId());
+    }
+
+    function _seeded(Provenance homeGrade) internal returns (ChainRegistry) {
+        return new ChainRegistry(
+            address(this),
+            RegistrySeed({
+                governorHome: Erc7930.encodeEvmChain(REMOTE_CHAIN_ID),
+                governorHomeGrade: homeGrade,
+                providers: new ProviderSeed[](0)
+            })
         );
     }
 
     /// @dev #28 end to end: a transceiver born knowing only the governor's home accepts the
     ///      governor's bootstrap through the provider's own callback, and the receiver it
-    ///      creates is its owner. The sender is the default counterpart on a `Predetermined` home:
-    ///      this transceiver's own address.
+    ///      creates is its owner. The sender is the default counterpart on a `Predetermined`
+    ///      home with no deployment record: this transceiver's own address.
     function test_aBornConfiguredTransceiverAcceptsTheGovernorsBootstrap() public {
-        address t = _deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Predetermined))), GOVERNOR, 0);
+        address t = this.deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Predetermined))));
         address owner = TransceiverBase(payable(t)).owner();
         assertEq(owner.code.length, 0, "the owner does not exist yet");
 
-        _deliverTo(t, t, _governorsBootstrap(owner));
+        _deliverTo(t, t, Envelope.encodeBootstrap(GOVERNOR, bytes32(0), toBytes32(owner), new Call[](0)));
 
         assertEq(ReceiverBase(payable(owner)).sourceTransmitter(), owner, "the bootstrap created the owner");
     }
@@ -490,51 +535,26 @@ abstract contract ProviderInboundSpec is Test {
     function test_aGovernorHomeBelowPredeterminedIsRefusedAtBirth() public {
         ChainRegistry registry = _seeded(Provenance.Unique);
         vm.expectRevert(
-            abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, ChainKey.forEvm(ORIGIN_CHAIN_ID))
+            abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, ChainKey.forEvm(REMOTE_CHAIN_ID))
         );
         this.deployBornConfigured(IChainRegistryRefs(address(registry)));
     }
 
     function test_aSuspendedGovernorHomeIsRefusedAtBirth() public {
         ChainRegistry registry = _seeded(Provenance.Predetermined);
-        bytes32 home = ChainKey.forEvm(ORIGIN_CHAIN_ID);
+        bytes32 home = ChainKey.forEvm(REMOTE_CHAIN_ID);
         registry.setSuspended(home, true);
         vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, home));
         this.deployBornConfigured(IChainRegistryRefs(address(registry)));
     }
 
-    address internal constant GOVERNOR = address(0x5165);
-
-    /// @dev External so that an expected revert attaches to the deployment, not the first
-    ///      contract `_deployBornConfigured` creates on the way.
-    function deployBornConfigured(IChainRegistryRefs registry) external returns (address) {
-        return _deployBornConfigured(registry, GOVERNOR, 0);
-    }
-
-    function _seeded(Provenance homeGrade) internal returns (ChainRegistry) {
-        return new ChainRegistry(
-            address(this),
-            RegistrySeed({
-                governorHome: Erc7930.encodeEvmChain(ORIGIN_CHAIN_ID),
-                governorHomeGrade: homeGrade,
-                providers: new ProviderSeed[](0)
-            })
-        );
-    }
-
-    /// @dev Sent from the default counterpart on a `Predetermined` home with no deployment record,
-    ///      the transceiver's own address.
-    function _governorsBootstrap(address owner) internal pure returns (bytes memory) {
-        return Envelope.encodeBootstrap(GOVERNOR, bytes32(0), bytes32(uint256(uint160(owner))), new Call[](0));
-    }
-
     function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {
         bytes32 chainKey = _wire();
-        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(transceiver));
 
         vm.expectEmit(true, true, true, true, address(t));
         emit InboundHandled(chainKey);
-        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
         address receiver = t.predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
@@ -544,18 +564,27 @@ abstract contract ProviderInboundSpec is Test {
     function test_anotherSenderOnTheOriginIsRefused() public {
         bytes32 chainKey = _wire();
         vm.expectRevert(_wrongSenderRevert(chainKey, address(0xBAD)));
-        _deliver(address(0xBAD), _bootstrap());
+        _deliverTo(transceiver, address(0xBAD), _bootstrap());
+    }
+
+    /// @dev Only the provider may deliver, whatever the message says.
+    function test_onlyTheGatewayDelivers() public {
+        _wire();
+        bytes memory message = _bootstrap();
+        vm.expectRevert(_bypassRevert(address(0xBAD)));
+        vm.prank(address(0xBAD));
+        _deliverBypassingGateway(transceiver, toBytes32(ORIGIN_TRANSCEIVER), message);
     }
 
     /// @dev The report float is funded with a plain transfer (#17).
     function test_itAcceptsAPlainTransfer() public {
         vm.deal(address(this), 1 ether);
-        (bool ok,) = _transceiver().call{value: 1 ether}("");
+        (bool ok,) = transceiver.call{value: 1 ether}("");
         assertTrue(ok);
     }
 
     function test_theFloatLeavesOnlyToTheTreasury() public {
-        TransceiverBase t = TransceiverBase(payable(_transceiver()));
+        TransceiverBase t = TransceiverBase(payable(transceiver));
         address treasury = t.treasury();
         vm.deal(address(t), 1 ether);
 
@@ -573,9 +602,19 @@ abstract contract ProviderInboundSpec is Test {
     function test_noWriteLandsOnAnotherField() public {
         vm.startStateDiffRecording();
         _wire();
-        _deliver(ORIGIN_TRANSCEIVER, _bootstrap());
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
         address[] memory accounts = new address[](1);
-        accounts[0] = _transceiver();
+        accounts[0] = transceiver;
         SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+    }
+}
+
+/// @title ProviderGatewayRoleSpec
+/// @notice For transceivers whose provider holds `GATEWAY_ROLE` (all but LayerZero, where OApp
+///         checks the endpoint itself): the initializer grants it, not the deployment
+///         remembering to list it.
+abstract contract ProviderGatewayRoleSpec is ProviderInboundSpec {
+    function test_theGatewayHoldsItsRoleWithNoneListed() public view {
+        assertTrue(IAccessControl(transceiver).hasRole(GATEWAY_ROLE, _gateway()));
     }
 }

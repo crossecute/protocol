@@ -773,23 +773,27 @@ Collected, because each of these is individually tempting.
 ## 8. The compliance suite
 
 A binding is compliant when it passes the shared specs in
-`test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract a binding's
-suite inherits and parameterizes through `virtual` hooks: how its provider delivers, what its
-mocks were paid, which revert it expects. Properties that hold for only some providers are
-mixins applied only to those, rather than flags:
+`test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract that a
+binding's suite inherits together with the binding's one fixture: a `<Provider>Fixture`
+extending `ProviderFixture` (`test/protocols/ProviderFixture.sol`), which says how to deploy
+the provider's contracts against its mocks, how it delivers, and what it charges. A suite adds
+only what its specs ask of the provider beyond that, such as what its mocks were paid or
+which revert it expects. Properties that hold for only some providers are mixins applied only
+to those, rather than flags:
 
 | Spec | Applies to | Covers |
 | --- | --- | --- |
-| `ProviderSendSpec` | all five | C1, C2, C13, C14 |
-| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26 |
-| `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12 |
+| `ProviderSendSpec` | all five | C1, C2, C13, C14; an unknown or malformed attribute is refused |
+| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
+| `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the four transceivers with an id table | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all five | C9 |
-| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account) |
+| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
-| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver) |
+| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver); only the provider delivers |
+| `ProviderGatewayRoleSpec` | all but LayerZero (OApp checks the endpoint itself) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the four transceivers with an id table | The governor home's id and route are set at initialization (#28) |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
