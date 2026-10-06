@@ -85,6 +85,9 @@ governor's home that is not `Predetermined` from it, and a registry whose grades
 this configuration. Every deployment then checks the proxy's address and lock, the
 transceiver's configuration, and the registry's record (R8.4).
 
+Wormhole's contracts link the `WormholeMessage` library (#29). `forge script` deploys it before
+them, through Arachnid's factory, so it has one address on every parity chain.
+
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
 bytecode comes from zksolc and TRON-solc. OP Stack deploys one pair per chain (#41).
 
