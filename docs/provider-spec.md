@@ -172,7 +172,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning the gateway's `sendId`, and MUST pay the provider from `value` rather than from `msg.value`. There is no default: a contract that omits it does not compile. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
+| `_sendMessage(bytes recipient, bytes payload, bytes[] attributes, uint256 value)` | `OutboundBase` | MUST override, returning zero once the provider has the message ([R1](#r1-send)), and MUST pay the provider from `value` rather than from `msg.value`. There is no default: a contract that omits it does not compile. See [R1](#r1-send) and [R7.1](#r7-fees-and-value). |
 | `_quoteMessage(bytes recipient, bytes payload, bytes[] attributes)` | `OutboundBase` | MUST override, `view`, same arguments as the send. There is no default; a provider that cannot quote on-chain overrides it to revert `QuoteNotImplemented`, which also reverts every send, since the entry points price themselves. See [R2](#r2-quote). |
 | the provider's inbound callback | the SDK | MUST route into exactly one protocol funnel and nothing else. See [R3](#r3-receive). |
 
@@ -246,10 +246,14 @@ A binding MUST NOT expect any of these, and MUST NOT add them.
 ### R1. Send
 
 `_sendMessage` MUST put `payload` on the wire addressed to `recipient`, and MUST revert if
-it cannot. It MUST return the gateway's `sendId`, and MUST NOT discard a non-zero one
-silently. A non-zero id means the gateway has further, unstandardised work to do before the
-message is away. A binding either performs that second step or refuses gateways that need
-one, and says which in its NatSpec.
+it cannot. It returns ERC-7786's `sendId`, which is zero once the message is away:
+`TransmitterBase.sendMessage` emits `MessageSent` with this value and returns it, and ERC-7786
+reads a non-zero id as a further step still owed. A native binding MUST return zero and MUST
+NOT return its provider's own message id (LayerZero's guid, CCIP's `messageId`), which stays
+in the provider's events; `ProviderSendSpec.test_aCompletedSendReturnsZero` holds this. A
+binding over an ERC-7786 gateway returns that gateway's `sendId`, MUST NOT discard a
+non-zero one silently, and either performs the second step or refuses gateways that need
+one, saying which in its NatSpec ([§9](#9-worked-skeleton-an-erc-7786-gateway-binding)).
 
 **R1.1 The recipient arrives built, and the binding MUST NOT re-derive it.** It is a
 binary interoperable address naming its own chain, so there is no chain id to resolve and

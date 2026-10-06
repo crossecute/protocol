@@ -178,8 +178,9 @@ abstract contract OutboundBase {
     ///
     /// @param attributes Selector-prefixed values the gateway understands; it must refuse one
     ///        it does not (see `supportsAttribute`).
-    /// @return sendId The gateway's. Under ERC-7786 a non-zero id means further action is
-    ///         required, so a binding either handles that step or refuses such gateways.
+    /// @return sendId Zero once the provider has the message, ERC-7786's "sent"; never the
+    ///         provider's own message id. Over an ERC-7786 gateway it is that gateway's, and a
+    ///         non-zero one is a further step the binding either performs or refuses.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         virtual
