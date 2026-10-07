@@ -61,7 +61,7 @@ this file is the gap between that design and the tree.
   enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
   needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
   deploy functions the tests use but no production script: their bytecode, with
-  `WormholeMessage` linked, is built by zksolc and TRON-solc, which these scripts do not drive.
+  `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these scripts do not drive.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an

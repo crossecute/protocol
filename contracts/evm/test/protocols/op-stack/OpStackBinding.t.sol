@@ -16,7 +16,8 @@ import {
     ProviderIdTableSpec,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackFixture} from "test/protocols/op-stack/OpStackFixture.sol";
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
@@ -112,3 +113,5 @@ contract OpStackReceiveTest is ProviderReceiveSpec, OpStackFixture {
 }
 
 contract OpStackTransmitterInboundTest is ProviderTransmitterSpec, OpStackFixture {}
+
+contract OpStackTransmitterSendTest is ProviderTransmitterSendSpec, OpStackFixture {}

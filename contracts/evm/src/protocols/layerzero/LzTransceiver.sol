@@ -5,7 +5,6 @@ import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
-import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
@@ -86,7 +85,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
-        _lzSend(dstEid, payload, LzMessage.options(attributes), MessagingFee(value, 0), _refundTo());
+        LzMessage.send(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, value, _refundTo());
         return bytes32(0);
     }
 
@@ -98,15 +97,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
-        return _quote(dstEid, payload, LzMessage.options(attributes), false).nativeFee;
-    }
-
-    /// @dev The vendored default requires `msg.value == _nativeFee`, which fails both a
-    ///      bootstrap that pays a fee (`value` is `msg.value` less it) and a report, which is
-    ///      sent inside a delivery at `msg.value == 0` from this contract's float. `value` is
-    ///      already the amount to pay; `endpoint.send` reverts if the balance is short.
-    function _payNative(uint256 _nativeFee) internal pure override returns (uint256) {
-        return _nativeFee;
+        return LzMessage.quote(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes);
     }
 
     /* ==================================== receiving ==================================== */

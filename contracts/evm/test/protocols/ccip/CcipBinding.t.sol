@@ -15,7 +15,8 @@ import {
     ProviderWideSenderSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 
@@ -100,3 +101,5 @@ contract CcipInterfaceSupportTest is Test {
 }
 
 contract CcipTransmitterInboundTest is ProviderTransmitterSpec, CcipFixture {}
+
+contract CcipTransmitterSendTest is ProviderTransmitterSendSpec, CcipFixture {}

@@ -21,6 +21,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
 /// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
@@ -261,6 +262,57 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
         _deliver(address(harness), 999, toBytes32(REMOTE_COUNTERPART), "");
+    }
+}
+
+/// @title ProviderTransmitterSendSpec
+/// @notice An account's own send (path A) through the binding's transmitter, paid from the
+///         account's balance whatever `msg.value` is (R7.1).
+abstract contract ProviderTransmitterSendSpec is ProviderIdFixture {
+    address internal constant ACCOUNT_OWNER = address(0xA11CE);
+    address payable internal account;
+
+    /// @notice What the provider needs set on the account before it can send to the remote
+    ///         chain, as its owner.
+    function _prepareAccount(address account_) internal virtual {}
+
+    /// @dev The remote chain is `Predetermined`, so the account's receiver there shares its
+    ///      address and the transceiver's counterpart is the transceiver's own.
+    function setUp() public virtual {
+        TransceiverConfig memory c = _config();
+        c.transmitterImplementation = _transmitterImplementation();
+        address transceiver = _deployTransceiver(c, 0);
+        TransceiverBase t = TransceiverBase(payable(transceiver));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
+        bytes32 provider = registry.addMessageProvider("under-test");
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Predetermined);
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        t.setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        vm.stopPrank();
+        _configureRemote(transceiver, transceiver);
+
+        vm.prank(ACCOUNT_OWNER);
+        account = payable(t.createTransmitter(bytes32(0)));
+        vm.deal(account, 1 ether);
+        _prepareAccount(account);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), new bytes[](0));
+    }
+
+    function test_aFundedAccountSendsWithNoValueAttached() public {
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
+        bytes memory payload = Payload.encodeCalls(calls);
+        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        _setProviderFee(0.01 ether);
+        uint256 quote = TransmitterBase(account).quoteMessage(recipient, payload, new bytes[](0));
+        uint256 before = account.balance;
+
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).sendMessage(recipient, payload, new bytes[](0));
+
+        assertEq(before - account.balance, quote, "the quote, from the balance");
     }
 }
 

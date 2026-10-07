@@ -19,7 +19,8 @@ import {
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
@@ -258,3 +259,5 @@ contract Switch {
         ran = true;
     }
 }
+
+contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFixture {}

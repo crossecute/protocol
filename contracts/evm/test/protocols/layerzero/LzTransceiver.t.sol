@@ -43,8 +43,8 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck, 
     }
 }
 
-/// @notice Without `LzTransceiverBase._payNative` a report would revert `NotEnoughNative` on
-///         every zkSync and Tron account.
+/// @notice A report is sent at `msg.value == 0` from the float, which OApp's `_lzSend` would
+///         refuse with `NotEnoughNative`; `LzMessage.send` pays the endpoint directly (#55).
 contract LzZkSyncTransceiverTest is ProviderZkSyncSpec, LzFixture {
     function _zkSyncImplementation() internal override returns (address) {
         return address(new LzZkSyncHarness(address(endpoint)));

@@ -13,7 +13,8 @@ import {
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
 
@@ -102,3 +103,5 @@ contract HyperlaneTransceiverSendTest is
 contract HyperlaneReceiveTest is ProviderWideSenderSpec, HyperlaneFixture {}
 
 contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec, HyperlaneFixture {}
+
+contract HyperlaneTransmitterSendTest is ProviderTransmitterSendSpec, HyperlaneFixture {}
