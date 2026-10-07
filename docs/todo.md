@@ -12,14 +12,14 @@ this file is the gap between that design and the tree.
 
 ## 1. Measurements before mainnet
 
-- **No provider's default gas is measured.** With no gas attribute, LayerZero sends empty
-  options (its executor's own limit applies), CCIP empty `extraArgs` (its 200,000 default),
-  Hyperlane 50,000 (the IGP default, written explicitly because the refund field follows it),
-  the Wormhole Executor 200,000, and OP Stack's `minGasLimit` 200,000. `_reportReceiver` always
-  sends with no attributes, and a bootstrap does unless its caller passes one; none of these
-  defaults is measured against either. Hyperlane's is probably too low. An OP Stack
-  underestimate is recoverable (the messenger records the failed relay and anyone can replay
-  it with more gas); the others are not known to be.
+[`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
+(2026-10-07).
+
+- **No default destination gas covers a bootstrap** (#52). Creating an account costs 590,000
+  to 650,000 gas on every binding; the defaults are 200,000 (CCIP, Wormhole, OP Stack) and
+  50,000 (Hyperlane), and a report, which always uses the default, costs up to about 135,000.
+  LayerZero's default, empty options, reverts at the quote on every real endpoint (#50), so
+  every LayerZero report fails. EraVM's costs are not measurable in Forge.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
@@ -28,34 +28,30 @@ this file is the gap between that design and the tree.
 
 ## 2. Chain checks before mainnet
 
-- **Tron CREATE2 against a Shasta deployment**, to resolve the 0x41-vs-0xff docs
-  contradiction. It needs a FUNDED deployment: the trick that settled Aurora, `eth_call`ing
-  Arachnid's factory so the chain's own engine answers, does not transfer, because that
-  factory relies on a pre-signed Ethereum transaction and is absent from Tron and Shasta. A
-  one-afternoon empirical check that de-risks a whole chain family. Now load-bearing rather
-  than merely tidy: `TronAccounts`, which every Tron transceiver uses, commits to `0x41`
-  through `AddressDerive.tronCreate2`, so this check is what decides whether a Tron
-  transceiver works. It fails closed if wrong (`AccountAddressMismatch` on every account
-  creation), so the cost of being wrong is a redeploy rather than a loss. zkSync Era's
-  derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
-  check.
+- **No Wormhole quoter router on any configured chain** (#53). The binding quotes and sends
+  through `ExecutorQuoterRouter`, which Wormhole's SDK lists only on Polygon and Monad.
+- **LayerZero cannot reach zkSync** (#51). Its pathways default to a dead DVN, and the
+  transceiver, its own delegate, has no way to set DVNs.
+- **A Hyperlane domain with no route quotes 0** instead of reverting, and the dispatch would
+  never be delivered. Nothing in the deploy refuses such a domain; the check is manual
+  ([CHECKS §3](../contracts/evm/deploy/CHECKS.md#3-lanes)). All 20 configured pairs quote.
+- **One account deployed on zkSync Era and on Shasta.** The formulas are checked: zkSync's
+  matches `ContractDeployer.getNewAddressCreate2` on mainnet, and Tron's `0x41` preimage is
+  java-tron's own (`WalletUtil.generateContractAddress2`), which settles the docs
+  contradiction. Still unverified is the `accountBytecodeHash` each transceiver is born with,
+  from zksolc and TRON-solc, which needs a funded deployment. It fails closed if wrong
+  (`AccountAddressMismatch` on every account creation), so the cost is a redeploy.
 - **A chain without Arachnid's factory is unsupported.** It is `Unique` in every registry and
   grades every other chain `Unique` in its own (#33), so its transceivers cannot be born
   configured: the governor's home is not `Predetermined` from there, and `initialize` refuses
   that (#32). Supporting one needs a way to seed the home's counterpart on that chain, such as
   an explicit counterpart in the registry seed.
-- **EIP-152 on every target chain.** Any chain can be a home, and the BLAKE2b commitment
-  scheme needs the precompile at `0x09`. Without it `Blake2b256` fails closed (the scheme
-  reverts), so the cost is the feature, not funds, but which target chains have it is not
-  verified.
-- **Not every pair is a lane.** CCIP lanes, Wormhole Executor quotes, and Hyperlane routes
-  exist per pair, and every transceiver now has routes to nearly every chain. What each
-  provider's quote does for an unconnected pair is not checked; a bootstrap there should
-  revert at the quote rather than on the provider. One test per binding.
-- **Hyperlane's verification is the destination's.** The destination Mailbox's ISM decides
-  what counts as verified for every origin that chain accepts, so each origin added on a
-  chain is held to that chain's ISM. Which ISM each target chain's Mailbox uses is not
-  checked.
+- **zkSync and Tron cannot compute BLAKE2b commitments.** EraVM has no EIP-152, and Tron's
+  `0x09` is `BatchValidateSign`, with BLAKE2F off on mainnet; `Blake2b256` fails closed on
+  both. An account homed there cannot use the BLAKE2b scheme.
+- **Hyperlane's verification can change.** Each destination's default ISM is mapped per origin
+  in [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination); the
+  Mailbox owner can replace it, so it is rechecked before mainnet.
 
 ## 3. Infrastructure
 
