@@ -17,9 +17,9 @@ this file is the gap between that design and the tree.
   Hyperlane 50,000 (the IGP default, written explicitly because the refund field follows it),
   the Wormhole Executor 200,000, and OP Stack's `minGasLimit` 200,000. `_reportReceiver` always
   sends with no attributes, and a bootstrap does unless its caller passes one; none of these
-  defaults is measured against either. Hyperlane's is probably too low. An OP Stack underestimate is recoverable (the messenger
-  records the failed relay and anyone can replay it with more gas); the others are not
-  known to be.
+  defaults is measured against either. Hyperlane's is probably too low. An OP Stack
+  underestimate is recoverable (the messenger records the failed relay and anyone can replay
+  it with more gas); the others are not known to be.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
@@ -39,16 +39,11 @@ this file is the gap between that design and the tree.
   creation), so the cost of being wrong is a redeploy rather than a loss. zkSync Era's
   derivation (`ZkSyncAccounts`) is unverified the same way and needs the same one-account
   check.
-- **Arachnid's factory on every target chain.** A chain is `Predetermined` only if its
-  transceivers were deployed through `CrossProxyDeployer`, which Arachnid's factory places
-  (#33). Ethereum, Base, Arbitrum One, OP Mainnet, and zkSync Era all have its code at its
-  address (checked over RPC, 2026-10-06, recorded in `contracts/evm/deploy/chains.toml`); a
-  chain added later is checked when it is. Code there is not enough on its own: zkSync Era has
-  it, but EraVM places `CrossProxyDeployer` elsewhere. A chain without it is `Unique` in every
-  registry and grades every other chain `Unique` in its own, so its transceivers cannot be
-  born configured: the governor's home is not `Predetermined` from there, and `initialize`
-  refuses that (#32). Supporting one needs a way to seed the home's counterpart on that chain,
-  such as an explicit counterpart in the registry seed.
+- **A chain without Arachnid's factory is unsupported.** It is `Unique` in every registry and
+  grades every other chain `Unique` in its own (#33), so its transceivers cannot be born
+  configured: the governor's home is not `Predetermined` from there, and `initialize` refuses
+  that (#32). Supporting one needs a way to seed the home's counterpart on that chain, such as
+  an explicit counterpart in the registry seed.
 - **EIP-152 on every target chain.** Any chain can be a home, and the BLAKE2b commitment
   scheme needs the precompile at `0x09`. Without it `Blake2b256` fails closed (the scheme
   reverts), so the cost is the feature, not funds, but which target chains have it is not
@@ -64,27 +59,17 @@ this file is the gap between that design and the tree.
 
 ## 3. Infrastructure
 
-- **Deploy scripts cover step 2 only.** `script/Deploy<Provider>.s.sol` deploys each
-  provider's account implementations and transceiver on a standard EVM chain, through the
-  `script/deploy/` functions the test suites also deploy through
+- **Deploy scripts cover step 2 only**
   ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
   step 1 (the per-chain timelock, the seeded registry, the treasury, so the timelock design is
   enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
-  needs about every other chain. Their source exists: `contracts/evm/deploy/` holds each
-  chain's derivation, from which every pair's grade follows, and each provider's ids, checked
-  by every test and deployment. Nothing generates the payloads from it yet. How many gateways
-  each transceiver's initializer names is the deployer's `GATEWAYS` input; they cannot be
-  added later. Wormhole's contracts link `WormholeMessage` (#29), which `forge script` deploys
-  first through Arachnid's factory. zkSync and Tron have deploy functions the tests use but no
-  production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
-  TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
-  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, `op-stack-l1-l2`, and
-  `op-stack-l2-l2`.
+  needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
+  deploy functions the tests use but no production script: their bytecode, with
+  `WormholeMessage` linked, is built by zksolc and TRON-solc, which these scripts do not drive.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
-  below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.
-  C24's check cannot see a collision inside a single call, so two fields an initializer sets
-  together are covered only by the suites that read them back.
+  below. C24's check cannot see a collision inside a single call, so two fields an
+  initializer sets together are covered only by the suites that read them back.
 - **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
   C31 for every provider but Wormhole, test the transport rather than the binding, so until
   they run against each provider's real deployment, P7 and P9 remain documented assumptions.
@@ -136,23 +121,15 @@ blocks it.
 ## 5. Post-launch: Superchain interop
 
 `op-stack-l2-l2` is built over the `L2ToL2CrossDomainMessenger` predeploy and tested against a
-mock. It is not deployable until interop is live: `deploy/providers/op-stack-l2-l2.toml` lists
-no chain, and every deploy refuses a chain whose predeploy has no code. Before listing one:
+mock, and deploys with an interop L2 as its governor's home. It is not deployable until interop
+is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing one:
 
-- **Its governor's home is an L2 (decided).** A transceiver is born accepting a bootstrap only
-  from its governor's home, and only interop chains reach one another over this provider, so
-  `op-stack-l2-l2` is deployed with an interop L2 as its home while the other providers keep
-  theirs; the production script refuses any other. That home is its own governance account.
-  A chain's registry is seeded with one governor's home, and a transceiver is born only
-  against a home its registry grades `Predetermined`, so on a chain seeded with another home,
-  governance registers the L2 home there before `op-stack-l2-l2` deploys.
-- **Dependency sets.** A message executes only if its source is in the destination's
-  dependency set, so a chain is routed only within its set; a send to an unrouted chain
-  reverts, quote included. Which chains share a set is not recorded in `deploy/`.
+- **Dependency sets are not recorded.** A message executes only if its source is in the
+  destination's dependency set, so a chain may be routed only within its set. Which chains
+  share a set is not in `deploy/`.
 - **Someone must relay.** `sendMessage` is non-payable and `relayMessage` permissionless, so
   delivery depends on an autorelayer or on this protocol relaying.
-- **Expiry is unverified.** A message relays at most once (`successfulMessages`), and a
-  reverted relay can be relayed again (the predeploy's own NatSpec). Whether a source log
-  expires after some window is not settled. [Failure handling](message-flow.md#failure-handling)
-  assumes indefinite retry, so this is the provider checklist's work
+- **Expiry is unverified.** Whether a source log expires after some window, ending its retry,
+  is not settled. [Failure handling](message-flow.md#failure-handling) assumes indefinite
+  retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
