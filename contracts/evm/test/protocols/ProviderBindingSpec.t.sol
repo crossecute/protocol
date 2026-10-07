@@ -70,6 +70,14 @@ abstract contract ProviderSendSpec is ProviderFixture {
         _configureRemote(address(harness), REMOTE_COUNTERPART);
     }
 
+    /// @notice Send `payload` to the configured recipient, paying its quote as a real send does.
+    /// @dev Quoted without `attributes`: no mock prices destination gas.
+    function _sendPaid(bytes memory payload, bytes[] memory attributes) internal returns (bytes32) {
+        uint256 fee = harness.quoteMessagePublic(_configuredRecipient(), payload);
+        vm.deal(address(this), address(this).balance + fee);
+        return harness.sendMessagePublic{value: fee}(_configuredRecipient(), payload, attributes, fee);
+    }
+
     function _configuredRecipient() internal pure returns (bytes memory) {
         return Erc7930.encodeEvm(REMOTE_CHAIN_ID, REMOTE_COUNTERPART);
     }
@@ -82,7 +90,7 @@ abstract contract ProviderSendSpec is ProviderFixture {
     }
 
     function test_sendResolvesTheConfiguredDestination() public {
-        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        _sendPaid("payload", new bytes[](0));
         _assertLastSendTargetedConfiguredDestination();
     }
 
@@ -99,8 +107,8 @@ abstract contract ProviderSendSpec is ProviderFixture {
     ///      available in the provider's events. Checks a second send too: a provider counter
     ///      (a nonce or sequence) starts at zero and would pass on the first alone.
     function test_aCompletedSendReturnsZero() public {
-        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
-        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
+        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
+        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
     }
 
     function test_sendRevertsForAnUnconfiguredDestination() public {
@@ -324,21 +332,21 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
 abstract contract ProviderDefaultGasSpec is ProviderSendSpec, ProviderGasFixture {
     function test_aBootstrapGetsTheBootstrapDefault() public {
         bytes memory payload = Envelope.encodeBootstrap(address(0xA11CE), bytes32(0), bytes32(0), new Call[](0));
-        harness.sendMessagePublic(_configuredRecipient(), payload, new bytes[](0), 0);
+        _sendPaid(payload, new bytes[](0));
         assertEq(_lastGasLimit(), DeliveryGas.BOOTSTRAP);
     }
 
     function test_aReportGetsTheReportDefault() public {
         bytes memory payload =
             Envelope.encodeReceiverReport(address(0xA11CE), bytes32(0), Erc7930.encodeEvm(1, address(0x2C)));
-        harness.sendMessagePublic(_configuredRecipient(), payload, new bytes[](0), 0);
+        _sendPaid(payload, new bytes[](0));
         assertEq(_lastGasLimit(), DeliveryGas.REPORT);
     }
 
     function test_aGasAttributeReplacesTheDefault() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = _gasAttribute(750_000);
-        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        _sendPaid("x", attrs);
         assertEq(_lastGasLimit(), 750_000);
     }
 }

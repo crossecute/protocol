@@ -31,9 +31,6 @@ this file is the gap between that design and the tree.
   through `ExecutorQuoterRouter`, which Wormhole's SDK lists only on Polygon and Monad.
 - **LayerZero cannot reach zkSync** (#51). Its pathways default to a dead DVN, and the
   transceiver, its own delegate, has no way to set DVNs.
-- **A Hyperlane domain with no route quotes 0** instead of reverting, and the dispatch would
-  never be delivered. Nothing in the deploy refuses such a domain; the check is manual
-  ([CHECKS §3](../contracts/evm/deploy/CHECKS.md#3-lanes)). All 20 configured pairs quote.
 - **One account deployed on zkSync Era and on Shasta.** The formulas are checked: zkSync's
   matches `ContractDeployer.getNewAddressCreate2` on mainnet, and Tron's `0x41` preimage is
   java-tron's own (`WalletUtil.generateContractAddress2`), which settles the docs

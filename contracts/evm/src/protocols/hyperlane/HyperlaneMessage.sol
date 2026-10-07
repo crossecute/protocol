@@ -11,6 +11,8 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///         identical across every Hyperlane sender (`HyperlaneTransmitter`,
 ///         `HyperlaneTransceiver`, and its zkSync/Tron variants).
 library HyperlaneMessage {
+    error NoHyperlaneRoute(uint32 domain);
+
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.hyperlane.gasLimit"));
 
@@ -26,6 +28,7 @@ library HyperlaneMessage {
         address refundTo,
         uint256 defaultGas
     ) internal returns (bytes32) {
+        quote(mailbox, domain, recipient, payload, attributes, refundTo, defaultGas);
         // The message id is in the mailbox's event; sends return 0.
         // forge-lint: disable-start(unused-return)
         IMailbox(mailbox).dispatch{value: value}(
@@ -35,6 +38,9 @@ library HyperlaneMessage {
         return bytes32(0);
     }
 
+    /// @dev A domain the Mailbox's default hook does not route falls back to a hook that charges
+    ///      nothing and pays no relayer, so its dispatch succeeds and is never delivered (#56).
+    ///      Zero is never a real quote, so it is refused here, which `dispatch` runs first.
     function quote(
         address mailbox,
         uint32 domain,
@@ -43,9 +49,10 @@ library HyperlaneMessage {
         bytes[] memory attributes,
         address refundTo,
         uint256 defaultGas
-    ) internal view returns (uint256) {
-        return IMailbox(mailbox)
+    ) internal view returns (uint256 fee) {
+        fee = IMailbox(mailbox)
             .quoteDispatch(domain, recipientOf(recipient), payload, hookMetadata(attributes, refundTo, defaultGas));
+        if (fee == 0) revert NoHyperlaneRoute(domain);
     }
 
     function recipientOf(bytes memory recipient) internal pure returns (bytes32) {

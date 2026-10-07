@@ -36,8 +36,18 @@ contract MockHyperlaneMailbox {
         feePerByte = perByte;
     }
 
-    function quoteDispatch(uint32, bytes32, bytes calldata body, bytes calldata) public view returns (uint256) {
-        return fee + feePerByte * body.length;
+    /// @notice Domains with no route, which quote zero as the real Mailbox's fallback hook does.
+    mapping(uint32 => bool) public unrouted;
+
+    function setUnrouted(uint32 domain) external {
+        unrouted[domain] = true;
+    }
+
+    /// @dev At least 1 wei on a routed domain: a real routed domain always charges for its relay.
+    function quoteDispatch(uint32 domain, bytes32, bytes calldata body, bytes calldata) public view returns (uint256) {
+        if (unrouted[domain]) return 0;
+        uint256 price = fee + feePerByte * body.length;
+        return price == 0 ? 1 : price;
     }
 
     function dispatch(uint32 destinationDomain, bytes32 recipientAddress, bytes calldata body, bytes calldata metadata)
