@@ -102,6 +102,8 @@ contract ReportingTransceiver is TransceiverBase {
 
     error NoBalanceForTheReport();
 
+    address internal constant PROVIDER = address(0xFEE5);
+
     /// @dev A provider that charges, so the report is priced rather than handed the whole
     ///      balance. `_reportReceiver` quotes this and sends exactly it.
     uint256 public reportFee;
@@ -123,6 +125,9 @@ contract ReportingTransceiver is TransceiverBase {
         // What a real binding does with the value it was handed: refuse if the balance
         // cannot cover the fee the quote named.
         if (value > address(this).balance) revert NoBalanceForTheReport();
+        // The provider keeps what it was paid.
+        (bool paid,) = PROVIDER.call{value: value}("");
+        require(paid);
         sentRecipient = recipient;
         sentPayload = payload;
         sentValue = value;
@@ -225,6 +230,29 @@ contract ReceiverReportTest is WiresHome {
         );
     }
 
+    /// @dev The float pays only for a report that completes. A delivery cut short at any gas
+    ///      reverts whole, the report's payment with it, so whoever picks the gas cannot make
+    ///      the float pay for nothing.
+    function testFuzz_aDeliveryOutOfGasPaysNothing(uint256 gas) public {
+        ReportingTransceiver s = _remote(true);
+        s.setReportFee(0.01 ether);
+        vm.deal(address(s), 1 ether);
+        address created = s.predictCrossAccount(owner, SALT, home());
+        gas = bound(gas, 30_000, 1_500_000);
+
+        // forge-lint: disable-next-line(return-bomb) the harness returns nothing
+        (bool ok,) = address(s).call{gas: gas}(abi.encodeCall(s.inbound, (owner, SALT, new Call[](0))));
+
+        if (ok) {
+            assertEq(address(s).balance, 0.99 ether, "the quoted fee, for a report sent");
+            assertEq(s.sentCount(), 1);
+        } else {
+            assertEq(address(s).balance, 1 ether, "nothing left the float");
+            assertEq(s.sentCount(), 0);
+            assertEq(created.code.length, 0, "and no account");
+        }
+    }
+
     /// @dev The report names `(owner, salt)`, not the address alone: the home derives the
     ///      account from it plus the authenticated origin, so no request id is needed.
     function test_theReportCarriesThePairTheHomeKeysOn() public {
@@ -314,7 +342,7 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentValue(), 0.1 ether, "exactly the quote");
-        assertEq(address(s).balance, 5 ether, "and the float is untouched by the accounting");
+        assertEq(address(s).balance, 4.9 ether, "and the float pays that, not its balance");
     }
 
     /// @dev The helper is what makes the quote reachable. The payload is built inside a
@@ -498,6 +526,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
         homeSide.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         homeSide.setCounterpart(remoteKey, Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)));
         homeSide.setRoute(remoteKey, Erc7930.encodeEvmChain(REMOTE_CHAIN));
+        // A reporting destination refuses a free bootstrap.
+        homeSide.setBootstrapFee(remoteKey, 1);
         vm.stopPrank();
 
         // The account the report is about. It has to exist and to have been stood up on the
@@ -779,6 +809,20 @@ contract BootstrapFeeTest is Test {
         vm.prank(owner);
         account.bootstrap(PARITY, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, 0);
+    }
+
+    /// @dev The destination pays the report from its float, so a free bootstrap would let anyone
+    ///      drain it. The send and its quote both refuse.
+    function test_aReportingDestinationWithNoFeeIsRefused() public {
+        vm.prank(t.owner());
+        t.setBootstrapFee(divergingKey, 0);
+
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NoBootstrapFee.selector, divergingKey));
+        account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NoBootstrapFee.selector, divergingKey));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
     /// @dev The fee moves in the transaction that charges it. Nothing accrues on the transceiver, so
