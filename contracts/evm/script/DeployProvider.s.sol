@@ -6,6 +6,7 @@ import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
@@ -80,13 +81,18 @@ abstract contract DeployProvider is Script {
 
     /// @notice This chain and the governor's home are configured, this chain is a parity chain
     ///         (zkSync and Tron are built by other compilers), the home is `Predetermined` from
-    ///         here as birth requires, and the registry's grades agree with `deploy/`.
+    ///         here as birth requires, the registry has the home, and its grades agree with
+    ///         `deploy/`.
     function _checkChains(ChainRegistry registry) internal view {
         ChainEntry[] memory cs = ChainConfig.chains(ChainConfig.defaultDir());
         ChainEntry memory local = ChainConfig.chainWithId(cs, block.chainid);
         check(local.derivation == Derivation.Parity, "this chain is a parity chain");
         ChainEntry memory home = ChainConfig.chainWithId(cs, vm.envUint("GOVERNOR_HOME_CHAIN_ID"));
         check(ChainConfig.gradeOf(local, home) == Provenance.Predetermined, "the governor's home is Predetermined");
+        // The initializer would revert `UnknownChainKey` without saying which chain is missing.
+        if (home.chainId != block.chainid) {
+            check(registry.hasChainKey(ChainKey.forEvm(home.chainId)), "the registry has the governor's home");
+        }
         ChainConfig.checkRegistryGrades(registry, cs, local);
     }
 

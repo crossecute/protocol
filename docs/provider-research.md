@@ -30,7 +30,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [4. CCIP](#4-ccip-as-a-native-binding) | `smartcontractkit/ccip`, `ccip-develop` branch, commit `171f9f0c` | Chainlink changes `CCIPReceiver`'s authentication, `Client`'s struct shapes, or the Router/OnRamp/OffRamp split |
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
 | [6. Wormhole](#6-wormhole-core-vs-the-relayer-are-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
-| [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`) | Optimism changes `relayMessage`'s calling convention or how `xDomainMessageSender` is scoped |
+| [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`); commit `dfe4f947` (`IL2ToL2CrossDomainMessenger.sol`, `ICrossL2Inbox.sol`) | Optimism changes `relayMessage`'s calling convention, how `xDomainMessageSender` or `crossDomainMessageSource` is scoped, or interop's message format |
 | [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace, its peer check, or `_payNative`'s `msg.value` rule |
 
 ---
@@ -215,11 +215,14 @@ and nothing else, rather than trusting one attestation network with every destin
 once. What it costs is N deployments, N graded chain entries, and N sets of routes,
 which is the operational load a default counterpart exists to keep bearable.
 
-**Reversed for OP Stack (#41), not yet implemented.** One transceiver per messaging layer per
-chain is the rule, so Ethereum's OP Stack transceiver is to serve every OP Stack L2 through a
-per-chain messenger table. The trust argument above survives if a delivery's origin is
-decided by which messenger called, never by the message: a compromised Base bridge can then
-only deliver as Base. The binding still serves one pair until #41 lands.
+**Reversed for OP Stack (#41).** One transceiver per messaging layer per chain is the rule, so
+`op-stack-l1-l2`'s transceiver on Ethereum serves every OP Stack chain through a write-once
+table of the messenger that reaches each. The trust argument above survives because a
+delivery's origin is the chain of the messenger that called, never anything in the message:
+a compromised Base bridge can only deliver as Base. L2 to L2 is a separate provider,
+`op-stack-l2-l2`, over Superchain interop's `L2ToL2CrossDomainMessenger` predeploy, which
+names a destination by its chain id and reports the source chain on delivery
+(`crossDomainMessageSource`).
 
 ### Chain-level deployment permissioning, which breaks bootstrap and not sends
 
@@ -711,13 +714,12 @@ would inherit, and the one thing about its shape that is not like the other four
 `sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable`
 takes no destination chain at all. Each OP Stack chain has its OWN dedicated
 `L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
-messenger contract you call, not an argument to it. This is the concrete form of what §2
-already concluded, "one transceiver pair per rollup, not one for the stack", and it means
-[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol) does not apply to
-this binding at all. `OpStackTransceiver` holds its messenger and the paired chain as
-immutables, the same contract on the L1 and on the OP Stack chain; reaching another OP Stack
-chain means another pair, registered as its own message provider, not a row in a table.
-#41 reverses this (see §2); not yet implemented.
+messenger contract you call, not an argument to it. So `op-stack-l1-l2` names a chain by the
+address of the messenger that reaches it, as its row in
+[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol): on the L1 one row per
+OP Stack chain, and on each OP Stack chain one row, the L1, reached through the
+`L2CrossDomainMessenger` predeploy. The same `OpStackTransceiver` runs on both sides. It
+began as one pair per registered provider; #41 replaced that (see §2).
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
@@ -898,7 +900,7 @@ Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derive
 as "the account" at all: an architecture question upstream of "add a binding," not a peer
 of the five in `provider-research.md`.
 
-**Not required by, and must not block, the five bindings that exist.** Recorded here
+**Not required by, and must not block, the six bindings that exist.** Recorded here
 so it isn't rediscovered under time pressure. The next step, if ever pursued, is
 source-verified research in the format above, of `v1.signer`
 and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier

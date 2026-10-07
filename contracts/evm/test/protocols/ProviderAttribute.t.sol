@@ -21,6 +21,10 @@ contract ProviderAttributeHarness {
     {
         return ProviderAttribute.uintValue(attributes, selector, max, defaultValue);
     }
+
+    function none(bytes[] memory attributes) external pure {
+        ProviderAttribute.none(attributes);
+    }
 }
 
 contract ProviderAttributeTest is Test {
@@ -40,6 +44,18 @@ contract ProviderAttributeTest is Test {
 
     function _expectUnsupported(bytes memory attribute) internal {
         vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attribute));
+    }
+
+    /* =================================== none ==================================== */
+
+    function test_noneAcceptsNoAttributes() public view {
+        h.none(new bytes[](0));
+    }
+
+    function test_noneRefusesTheFirstAttribute() public {
+        bytes memory first = abi.encodePacked(SEL, uint256(1));
+        _expectUnsupported(first);
+        h.none(_attrs(first, hex"00"));
     }
 
     /* =================================== body ==================================== */

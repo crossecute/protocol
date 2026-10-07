@@ -24,8 +24,8 @@ function providerIdOf(address transceiver, bytes memory recipient) view returns 
 ///      the chain by the recipient (see `OutboundBase`'s note on the route slot). Only the
 ///      native bindings under `protocols/` use it.
 ///
-/// @dev On every binding transceiver whose provider names chains by its own id. OP Stack's
-///      does not: each messenger reaches one chain.
+/// @dev On every binding transceiver whose provider names chains by its own id. For
+///      `op-stack-l1-l2` the id is the address of the messenger that reaches the chain.
 ///
 /// @dev Storage is `uint256` so one mapping backs every provider's narrower id type; each
 ///      binding's typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`)

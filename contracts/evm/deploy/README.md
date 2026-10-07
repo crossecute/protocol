@@ -54,8 +54,11 @@ Before mainnet, from [todo §2](../../../docs/todo.md#2-chain-checks-before-main
   `chain_id` and `derivation`.
 - [`providers/<provider>.toml`](providers): one line per provider that reaches the chain, keyed
   by that name. Take each id from the provider's own registry; the header of each file names
-  it. Leave a provider out where it does not reach the chain. OP Stack has no id table and no
-  file.
+  it. Leave a provider out where it does not reach the chain. `op-stack-l1-l2`'s ids are
+  messenger addresses, which depend on the chain they are read from, so its file has its own
+  shape: add the chain's `L1CrossDomainMessenger` under `[l1_messengers]` if it is an OP Stack
+  chain. `op-stack-l2-l2` has no ids; add the chain to its `chains` list once interop is live
+  on it.
 
 Then run `forge test`. `test/deploy/ChainConfig.t.sol` reads both and refuses a duplicate
 chain id, an unknown derivation, a provider key that is not a configured chain, and an id that
@@ -83,15 +86,20 @@ and each provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a
 gateways cannot be added later. Provider ids come from this directory.
 
 Before deploying, the script refuses a chain missing from `chains.toml` or not parity, a
-governor's home that is not `Predetermined` from it, and a registry whose grades disagree with
-this configuration. Every deployment then checks the proxy's address and lock, the
+governor's home that is not `Predetermined` from it, and a registry that has not registered
+the home or whose grades disagree with this configuration. Every deployment then checks the proxy's address and lock, the
 transceiver's configuration, and the registry's record (R8.4).
 
 Wormhole's contracts link the `WormholeMessage` library (#29). `forge script` deploys it before
 them, through Arachnid's factory, so it has one address on every parity chain.
 
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
-bytecode comes from zksolc and TRON-solc. OP Stack deploys one pair per chain (#41).
+bytecode comes from zksolc and TRON-solc.
+
+`op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home on an
+L2 it lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. Where the
+chain's registry was seeded with another home, register the L2 home there first. It lists none
+until interop is live ([todo §5](../../../docs/todo.md#5-post-launch-superchain-interop)).
 
 ## 5. Bring it into the protocol
 

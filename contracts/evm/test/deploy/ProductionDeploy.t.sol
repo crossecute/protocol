@@ -15,22 +15,19 @@ import {DeployCcip} from "script/DeployCcip.s.sol";
 import {DeployHyperlane} from "script/DeployHyperlane.s.sol";
 import {DeployWormhole} from "script/DeployWormhole.s.sol";
 import {DeployOpStack} from "script/DeployOpStack.s.sol";
+import {DeployOpStackInterop} from "script/DeployOpStackInterop.s.sol";
 
-/// @notice Each production script, run as a broadcast against mocks at fixed addresses and a
-///         registry seeded with every provider's record, on a chain `deploy/chains.toml`
-///         configures, lands its transceiver where the registry predicts. Each provider's
-///         governor home id is read from `deploy/providers/`.
+/// @notice What every production-script test shares: the environment, a chain
+///         `deploy/chains.toml` configures, and a registry seeded with every provider's record.
 /// @dev `vm.setEnv` is process-wide and tests run in parallel, so every test sets the same
-///      values: mocks and the registry sit at fixed addresses, and the registry records all five
-///      providers.
-abstract contract ProductionDeploySpec is Test {
+///      values: mocks and the registry sit at fixed addresses, and the registry records every
+///      provider.
+abstract contract ProductionDeploySpecBase is Test {
     address internal constant REGISTRY = address(0x5EED0000);
     address internal constant BROADCASTER = DEFAULT_SENDER;
     uint256 internal constant HOME_CHAIN_ID = 1;
     /// @dev Base, a parity chain in deploy/chains.toml.
     uint256 internal constant LOCAL_CHAIN_ID = 8453;
-
-    function _script() internal virtual returns (DeployProvider);
 
     /// @dev Each script reads its production inputs from the environment, which is how a
     ///      broadcast receives them; the values are identical in every test.
@@ -39,10 +36,8 @@ abstract contract ProductionDeploySpec is Test {
         vm.setEnv(name, value);
     }
 
-    function _providerName() internal pure virtual returns (string memory);
-
     /// @notice Place the provider's mocks and set its own variables.
-    function _setUpProvider() internal virtual;
+    function _setUpProvider() internal virtual {}
 
     function setUp() public {
         // The scripts deploy only to a chain in deploy/chains.toml.
@@ -55,16 +50,20 @@ abstract contract ProductionDeploySpec is Test {
         _setUpProvider();
     }
 
-    /// @notice The registry at `REGISTRY`, homed on `HOME_CHAIN_ID`, recording all five providers
+    /// @notice The registry at `REGISTRY`, homed on `HOME_CHAIN_ID`, recording every provider
     ///         as deployed by `deployedBy`.
     function _seedRegistry(address deployedBy) internal {
         _seedRegistry(deployedBy, Provenance.Predetermined);
     }
 
     function _seedRegistry(address deployedBy, Provenance homeGrade) internal {
-        string[5] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack"];
-        ProviderSeed[] memory providers = new ProviderSeed[](5);
-        for (uint256 i; i < 5; ++i) {
+        _seedRegistry(deployedBy, homeGrade, HOME_CHAIN_ID);
+    }
+
+    function _seedRegistry(address deployedBy, Provenance homeGrade, uint256 homeChainId) internal {
+        string[6] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack-l1-l2", "op-stack-l2-l2"];
+        ProviderSeed[] memory providers = new ProviderSeed[](6);
+        for (uint256 i; i < 6; ++i) {
             providers[i] = ProviderSeed(
                 names[i], deployedBy, keccak256(bytes(names[i])), keccak256(type(CrossProxy).creationCode)
             );
@@ -74,7 +73,7 @@ abstract contract ProductionDeploySpec is Test {
             abi.encode(
                 address(this),
                 RegistrySeed({
-                    governorHome: Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                    governorHome: Erc7930.encodeEvmChain(homeChainId),
                     governorHomeGrade: homeGrade,
                     providers: providers
                 })
@@ -82,6 +81,15 @@ abstract contract ProductionDeploySpec is Test {
             REGISTRY
         );
     }
+}
+
+/// @notice Each production script, run as a broadcast against mocks at fixed addresses, lands its
+///         transceiver where the registry predicts. Each provider's governor home id is read
+///         from `deploy/providers/`.
+abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
+    function _script() internal virtual returns (DeployProvider);
+
+    function _providerName() internal pure virtual returns (string memory);
 
     function test_theTransceiverLandsWhereTheRegistryPredicts() public {
         _seedRegistry(BROADCASTER);
@@ -97,6 +105,15 @@ abstract contract ProductionDeploySpec is Test {
         _seedRegistry(BROADCASTER, Provenance.Unique);
         DeployProvider script = _script();
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "registry grades agree with chains.toml"));
+        script.run();
+    }
+
+    /// @dev A registry seeded with another home has not registered this one, and the deploy
+    ///      says so rather than failing inside the initializer.
+    function test_aRegistryWithoutTheGovernorsHomeIsRefused() public {
+        _seedRegistry(BROADCASTER, Provenance.Predetermined, 10);
+        DeployProvider script = _script();
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the registry has the governor's home"));
         script.run();
     }
 
@@ -178,12 +195,25 @@ contract DeployOpStackTest is ProductionDeploySpec {
     }
 
     function _providerName() internal pure override returns (string memory) {
-        return "op-stack";
+        return "op-stack-l1-l2";
     }
 
-    function _setUpProvider() internal override {
-        deployCodeTo("MockCrossDomainMessenger.sol:MockCrossDomainMessenger", address(0xE0006));
-        _setEnv("OP_STACK_MESSENGER", vm.toString(address(0xE0006)));
-        _setEnv("OP_STACK_PAIRED_CHAIN_ID", vm.toString(HOME_CHAIN_ID));
+    /// @dev No inputs of its own: on Base, the governor home (Ethereum) is reached through the
+    ///      predeploy named in deploy/.
+    function _setUpProvider() internal override {}
+}
+
+/// @notice `op-stack-l2-l2` waits for interop: its configuration lists no chain yet, so the
+///         production script refuses every one, even with the predeploy in place.
+contract DeployOpStackInteropTest is ProductionDeploySpecBase {
+    function test_noChainRunsInteropYet() public {
+        deployCodeTo(
+            "MockL2ToL2CrossDomainMessenger.sol:MockL2ToL2CrossDomainMessenger",
+            0x4200000000000000000000000000000000000023
+        );
+        _seedRegistry(BROADCASTER);
+        DeployOpStackInterop script = new DeployOpStackInterop();
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "this chain runs op-stack-l2-l2"));
+        script.run();
     }
 }

@@ -6,7 +6,8 @@ The two paths a message takes, the wire formats, and how the contracts fit toget
 `bootstrap`, the quote surface, the inbound funnel, and the reentrancy guard. The send and
 receive surfaces are ERC-7786's: `TransmitterBase` is an `IERC7786GatewaySource` and
 `ReceiverBase` an `IERC7786Recipient`. Native bindings for LayerZero, CCIP, Hyperlane,
-Wormhole, and OP Stack live under `src/protocols/`, tested against mocks of each provider;
+Wormhole, and OP Stack (`op-stack-l1-l2` and, over interop, `op-stack-l2-l2`) live under
+`src/protocols/`, tested against mocks of each provider;
 nothing has crossed a real bridge yet. What a binding must implement is in
 [`provider-spec.md`](provider-spec.md).
 
