@@ -132,7 +132,7 @@ connect should revert at the quote. The configured pairs, checked 2026-10-07:
 
 | Provider | Configured pairs that quote | A pair with no lane |
 | --- | --- | --- |
-| LayerZero | all 12 among the four parity chains, with `lzReceive` options at 200,000 and 1,000,000 gas; empty options revert on all 20 (#50, why the binding never sends them) | zkSync pairs revert at quote for the dead-DVN default (#51) |
+| LayerZero | all 12 among the four parity chains, with `lzReceive` options at 200,000 and 1,000,000 gas; empty options revert on all 20 (#50, why the binding never sends them); Ethereum to zkSync once LayerZero Labs' DVN is pinned (`test/fork/LzDvnFork.t.sol`) | zkSync pairs revert at quote on the dead-DVN default until a DVN is pinned (#51) |
 | CCIP | all 20 | reverts `UnsupportedDestinationChain` (`0xae236d9c`) |
 | Hyperlane | all 20 | the Mailbox quotes 0; the binding refuses that quote and the send (#56) |
 | Wormhole | not quotable: no quoter router (#53) | |
@@ -194,9 +194,27 @@ a message-id multisig. zkSync routes straight to a message-id multisig. Threshol
 The Mailbox owner can change any of this. The binding implements no ISM of its own
 (`HyperlaneReceiver`).
 
-LayerZero: the OApp's DVNs and executor are the endpoint defaults, which LayerZero sets, and
-every pathway touching zkSync defaults to a dead DVN. The transceiver is its own delegate with
-no way to call `setConfig` (#51).
+LayerZero: an OApp follows the endpoint's default DVNs and executor, which LayerZero sets,
+except where a DVN is pinned. Every pathway touching zkSync defaults to the dead DVN, so both
+ends pin LayerZero Labs' DVN alone (#51):
+
+- each transceiver, by `setDvn(eid, dvn)` with its own chain's DVN, write-once; a zkSync
+  transceiver is born with it for the governor home's eid (`LZ_GOVERNOR_HOME_DVN`);
+- each receiver, at creation, for its home's eid, from its transceiver;
+- each transmitter that sends to zkSync, by its owner, after naming itself delegate.
+
+LayerZero Labs' messaging DVN on each chain (metadata API, 2026-10-07; not the lzRead one):
+
+| Chain | DVN |
+| --- | --- |
+| ethereum | `0x589dEDbD617e0CBcB916A9223F4d1300c294236b` |
+| base | `0x9e059a54699a285714207b43b055483e78faac25` |
+| arbitrum | `0x2f55c492897526677c5b68fb199ea31e2c126416` |
+| optimism | `0x6a02d83e8d433304bba74ef1c427913958187142` |
+| zksync | `0x620a9df73d2f1015ea75aea1067227f9013f5c51` |
+
+The Ethereum side is checked on a fork. The zkSync side cannot be, since Forge does not run
+EraVM, and needs a zkSync Sepolia run.
 
 ### 6. OP Stack messengers pair up
 

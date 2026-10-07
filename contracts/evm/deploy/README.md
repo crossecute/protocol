@@ -86,6 +86,9 @@ Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage
 deploys each before them, through Arachnid's factory, so it has one address on every parity
 chain.
 
+LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway defaults to the
+dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
+
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
 bytecode comes from zksolc and TRON-solc.
 
