@@ -132,6 +132,15 @@ library Erc7930 {
         }
     }
 
+    /// @notice The EVM chain id an `eip155` address names; `encodeEvmChain`'s inverse.
+    /// @dev `parseStrict` has already bounded the reference to a minimal 1 to 32 bytes.
+    function evmChainId(Interop memory io) internal pure returns (uint256 id) {
+        if (io.chainType != CT_EIP155 || io.chainRef.length == 0) revert NotEvm();
+        for (uint256 i; i < io.chainRef.length; ++i) {
+            id = (id << 8) | uint8(io.chainRef[i]);
+        }
+    }
+
     /// @notice The Chain Identifier form of an interop address: same chain, no account.
     /// @dev This is what makes `chainKey` stable across every address on a chain.
     function toChainIdentifier(bytes memory raw) internal pure returns (bytes memory) {

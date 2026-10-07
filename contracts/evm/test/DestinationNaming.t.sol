@@ -257,4 +257,19 @@ contract DestinationNamingTest is Test {
         vm.assume(chainId != 0);
         assertEq(ChainKey.fromIdentifier(Erc7930.encodeEvmChain(chainId)), ChainKey.forEvm(chainId));
     }
+
+    function testFuzz_anEvmChainIdRoundTrips(uint256 chainId) public pure {
+        vm.assume(chainId != 0);
+        assertEq(Erc7930.evmChainId(Erc7930.parseStrict(Erc7930.encodeEvm(chainId, address(0xC0DE)))), chainId);
+    }
+
+    function test_aNonEvmChainHasNoEvmChainId() public {
+        bytes memory starknet = Erc7930.encode(Erc7930.CT_STARKNET, bytes("SN_MAIN"), new bytes(32));
+        vm.expectRevert(Erc7930.NotEvm.selector);
+        this.evmChainIdOf(starknet);
+    }
+
+    function evmChainIdOf(bytes memory raw) external pure returns (uint256) {
+        return Erc7930.evmChainId(Erc7930.parseStrict(raw));
+    }
 }

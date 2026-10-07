@@ -51,6 +51,11 @@ library ProviderAttribute {
         if (attributes.length > 1) revert UnsupportedAttribute(attributes[1]);
     }
 
+    /// @notice For a binding that supports no attribute: the first given is refused.
+    function none(bytes[] memory attributes) internal pure {
+        if (attributes.length != 0) revert UnsupportedAttribute(attributes[0]);
+    }
+
     /// @dev Callers check `attribute.length >= 4` first.
     function _selectorOf(bytes memory attribute) private pure returns (bytes4 selector) {
         assembly {
