@@ -78,9 +78,9 @@ abstract contract ZkSyncAccounts is DivergentAccounts {
 /// @title TronAccounts
 /// @notice Tron, which diverges in the formula only.
 ///
-/// @dev EIP-1014's preimage with `0x41` in place of `0xff`. Tron's documentation conflicts on
-///      which byte the high-level `new {salt:}` form uses (see `AddressDerive.tronCreate2`);
-///      until one account is deployed on Shasta and compared, a Tron deployment is unverified.
+/// @dev EIP-1014's preimage with `0x41` in place of `0xff`, as java-tron computes it (see
+///      `AddressDerive.tronCreate2`). The TRON-solc bytecode hash is unverified until one
+///      account is deployed on Shasta and compared.
 ///
 /// @dev Tron runs raw-initcode CREATE2, so the base's `_deployAccount` stands.
 abstract contract TronAccounts is DivergentAccounts {

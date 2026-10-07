@@ -325,7 +325,9 @@ named or implicit account, and unlike Move it is not blocked on dispatch, since
 
 **The same trick does not settle Tron.** Arachnid's factory relies on a pre-signed Ethereum
 transaction and is absent from both Tron mainnet and Shasta, so there is no live CREATE2
-factory to `eth_call`. That check still needs a funded deployment.
+factory to `eth_call`. java-tron's source settles the formula instead
+([CHECKS §1](../contracts/evm/deploy/CHECKS.md#1-contracts-land-where-the-protocol-expects));
+the account bytecode hash still needs a funded deployment.
 
 **Avalanche is the odd one and the interesting one.** ICM is a real mesh, sub-minute and
 bidirectional, which is a better shape than anything else here; it just cannot reach
