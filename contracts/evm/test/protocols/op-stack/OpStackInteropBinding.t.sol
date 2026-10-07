@@ -7,10 +7,8 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {
-    OpStackInteropMessage,
-    IOpStackInteropRecipient
-} from "src/protocols/op-stack-interop/OpStackInteropMessage.sol";
+import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
+import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {
     ProviderSendSpec,
@@ -18,7 +16,7 @@ import {
     ProviderEvmRecipientSpec,
     ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {OpStackInteropFixture} from "test/protocols/op-stack-interop/OpStackInteropFixture.sol";
+import {OpStackInteropFixture} from "test/protocols/op-stack/OpStackInteropFixture.sol";
 
 /// @notice The destination is the recipient's chain id, handed to the one messenger.
 contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpec, OpStackInteropFixture {
@@ -36,16 +34,13 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
 
     function test_messageIsTheEntryPointCallWithThePayload() public {
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
-        assertEq(
-            MESSENGER.sent(0).message,
-            abi.encodeCall(IOpStackInteropRecipient.receiveInteropMessage, (bytes("payload")))
-        );
+        assertEq(MESSENGER.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
     }
 
     /// @dev `sendMessage` is not payable, so value can only be refused.
     function test_nonzeroValueIsRefused() public {
         vm.deal(address(this), 1 ether);
-        vm.expectRevert(abi.encodeWithSelector(OpStackInteropMessage.InteropValueNotSupported.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(OpStackMessage.OpStackValueNotSupported.selector, 1));
         harness.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
     }
 
@@ -69,7 +64,7 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
 contract OpStackInteropReceiveTest is ProviderReceiveSpec, OpStackInteropFixture {
     function test_aSenderClaimedInsideTheMessageIsIgnored() public {
         bytes memory claimed = abi.encodePacked(
-            abi.encodeCall(IOpStackInteropRecipient.receiveInteropMessage, (Payload.encodeCalls(new Call[](0)))),
+            abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (Payload.encodeCalls(new Call[](0)))),
             abi.encode(SOURCE_TRANSMITTER)
         );
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
@@ -80,7 +75,7 @@ contract OpStackInteropReceiveTest is ProviderReceiveSpec, OpStackInteropFixture
     function test_theMessengerCallingOutsideARelayIsRejected() public {
         vm.prank(address(MESSENGER));
         vm.expectRevert();
-        IOpStackInteropRecipient(receiver).receiveInteropMessage(Payload.encodeCalls(new Call[](0)));
+        IOpStackRecipient(receiver).receiveOpStackMessage(Payload.encodeCalls(new Call[](0)));
     }
 }
 

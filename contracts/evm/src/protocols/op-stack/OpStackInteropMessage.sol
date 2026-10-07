@@ -6,15 +6,11 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-
-/// @notice The inbound entry point every `op-stack-l2-l2` contract exposes. `sendMessage`
-///         delivers `abi.encodeCall(receiveInteropMessage, (payload))` as the target's calldata.
-interface IOpStackInteropRecipient {
-    function receiveInteropMessage(bytes calldata payload) external;
-}
+import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 /// @notice Send and inbound-context logic shared by every `op-stack-l2-l2` contract, over the
-///         Superchain interop `L2ToL2CrossDomainMessenger`.
+///         Superchain interop `L2ToL2CrossDomainMessenger`. Its contracts take messages at
+///         `op-stack-l1-l2`'s entry point, `IOpStackRecipient`, and refuse value with its error.
 ///
 /// @dev No fee and no options: `sendMessage` is not payable and takes no gas limit, since the
 ///      relay is a separate transaction whose sender chooses the gas. Delivery therefore depends
@@ -25,7 +21,6 @@ library OpStackInteropMessage {
     /// @notice The predeploy, at one address on every OP Stack chain that runs interop.
     address internal constant MESSENGER = 0x4200000000000000000000000000000000000023;
 
-    error InteropValueNotSupported(uint256 value);
     error InteropToThisChain();
 
     /// @param routes The transceiver, whose `routeTo` reverts for a chain it has no route to:
@@ -40,7 +35,7 @@ library OpStackInteropMessage {
         uint256 value
     ) internal returns (bytes32) {
         (uint256 destination, address target) = _check(routes, recipient, attributes, value);
-        bytes memory message = abi.encodeCall(IOpStackInteropRecipient.receiveInteropMessage, (payload));
+        bytes memory message = abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload));
         // forge-lint: disable-next-line(unused-return) the hash is in the messenger's event; sends return 0
         IL2ToL2CrossDomainMessenger(MESSENGER).sendMessage(destination, target, message);
         return bytes32(0);
@@ -65,7 +60,7 @@ library OpStackInteropMessage {
         view
         returns (uint256 destination, address target)
     {
-        if (value != 0) revert InteropValueNotSupported(value);
+        if (value != 0) revert OpStackMessage.OpStackValueNotSupported(value);
         ProviderAttribute.none(attributes);
         // forge-lint: disable-next-line(unused-return) called for its revert on an unrouted chain
         IAccountTransceiver(routes).routeTo(Erc7930.chainKey(recipient));

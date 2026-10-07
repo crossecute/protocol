@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {OpStackInteropTransceiver} from "src/protocols/op-stack-interop/OpStackInteropTransceiver.sol";
-import {OpStackInteropReceiver} from "src/protocols/op-stack-interop/OpStackInteropReceiver.sol";
-import {OpStackInteropTransmitter} from "src/protocols/op-stack-interop/OpStackInteropTransmitter.sol";
-import {OpStackInteropMessage} from "src/protocols/op-stack-interop/OpStackInteropMessage.sol";
+import {OpStackInteropTransceiver} from "src/protocols/op-stack/OpStackInteropTransceiver.sol";
+import {OpStackInteropReceiver} from "src/protocols/op-stack/OpStackInteropReceiver.sol";
+import {OpStackInteropTransmitter} from "src/protocols/op-stack/OpStackInteropTransmitter.sol";
+import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
 import {VM, check} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {TransceiverDeployment, deployTransceiverProxy} from "script/deploy/TransceiverDeploy.sol";

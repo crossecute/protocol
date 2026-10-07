@@ -3,10 +3,8 @@ pragma solidity ^0.8.0;
 
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {
-    OpStackInteropMessage,
-    IOpStackInteropRecipient
-} from "src/protocols/op-stack-interop/OpStackInteropMessage.sol";
+import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
+import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 /// @notice Superchain interop on `TransceiverBase`: the `op-stack-l2-l2` provider, between OP
 ///         Stack chains. Ethereum to an OP Stack chain is `op-stack-l1-l2`.
@@ -21,8 +19,8 @@ import {
 ///      message, and it must be routed here.
 ///
 /// @dev No zkSync or Tron variant: an OP Stack chain uses Ethereum's CREATE2 formula.
-contract OpStackInteropTransceiver is TransceiverBase, IOpStackInteropRecipient {
-    /// @dev Grants `GATEWAY_ROLE` to the messenger: `receiveInteropMessage` is gated on it.
+contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
+    /// @dev Grants `GATEWAY_ROLE` to the messenger: `receiveOpStackMessage` is gated on it.
     function initialize(TransceiverConfig memory c) external initializer {
         grantRole(GATEWAY_ROLE, OpStackInteropMessage.MESSENGER);
         __TransceiverBase_init(c);
@@ -50,7 +48,7 @@ contract OpStackInteropTransceiver is TransceiverBase, IOpStackInteropRecipient 
 
     /* ==================================== receiving ==================================== */
 
-    function receiveInteropMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
+    function receiveOpStackMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
         (address sender, uint256 source) = OpStackInteropMessage.context();
         _onInbound(routeFor(ChainKey.forEvm(source)), abi.encodePacked(sender), payload);
     }

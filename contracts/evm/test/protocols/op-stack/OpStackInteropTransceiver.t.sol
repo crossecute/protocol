@@ -5,7 +5,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {ProviderGatewayRoleSpec} from "test/protocols/ProviderBindingSpec.t.sol";
-import {OpStackInteropFixture} from "test/protocols/op-stack-interop/OpStackInteropFixture.sol";
+import {OpStackInteropFixture} from "test/protocols/op-stack/OpStackInteropFixture.sol";
 import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
 
 /// @notice The origin is the source chain the messenger reports, and the sender its

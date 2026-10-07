@@ -7,13 +7,11 @@ import {Call} from "src/messaging/Call.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OpStackInteropTransceiver} from "src/protocols/op-stack-interop/OpStackInteropTransceiver.sol";
-import {
-    OpStackInteropMessage,
-    IOpStackInteropRecipient
-} from "src/protocols/op-stack-interop/OpStackInteropMessage.sol";
+import {OpStackInteropTransceiver} from "src/protocols/op-stack/OpStackInteropTransceiver.sol";
+import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
+import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
-import {MockL2ToL2CrossDomainMessenger} from "test/protocols/op-stack-interop/MockL2ToL2CrossDomainMessenger.sol";
+import {MockL2ToL2CrossDomainMessenger} from "test/protocols/op-stack/MockL2ToL2CrossDomainMessenger.sol";
 import {ProviderFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -96,12 +94,12 @@ abstract contract OpStackInteropFixture is ProviderFixture {
             originId,
             address(uint160(uint256(sender))),
             to,
-            abi.encodeCall(IOpStackInteropRecipient.receiveInteropMessage, (message))
+            abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (message))
         );
     }
 
     function _deliverBypassingGateway(address to, bytes32, bytes memory message) internal override {
-        IOpStackInteropRecipient(to).receiveInteropMessage(message);
+        IOpStackRecipient(to).receiveOpStackMessage(message);
     }
 
     /// @dev `sendMessage` is not payable; the relay pays for itself.

@@ -2,11 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {OpStackInteropMessage} from "src/protocols/op-stack-interop/OpStackInteropMessage.sol";
+import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
 
 /// @notice Per-user transmitter for `op-stack-l2-l2`, created by
 ///         `TransceiverBase.createTransmitter`.
-/// @dev Sender-only: no `receiveInteropMessage`, so R3.1 is answered by absence rather than a
+/// @dev Sender-only: no `receiveOpStackMessage`, so R3.1 is answered by absence rather than a
 ///      guard.
 contract OpStackInteropTransmitter is OwnableTransmitter {
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
