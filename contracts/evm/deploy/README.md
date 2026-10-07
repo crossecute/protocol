@@ -96,8 +96,9 @@ them, through Arachnid's factory, so it has one address on every parity chain.
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
 bytecode comes from zksolc and TRON-solc.
 
-`op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home it
-lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. It lists none
+`op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home on an
+L2 it lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. Where the
+chain's registry was seeded with another home, register the L2 home there first. It lists none
 until interop is live ([todo §5](../../../docs/todo.md#5-post-launch-superchain-interop)).
 
 ## 5. Bring it into the protocol

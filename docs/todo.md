@@ -139,11 +139,13 @@ blocks it.
 mock. It is not deployable until interop is live: `deploy/providers/op-stack-l2-l2.toml` lists
 no chain, and every deploy refuses a chain whose predeploy has no code. Before listing one:
 
-- **The governor's home must run interop.** A transceiver is born accepting a bootstrap only
-  from the governor's home, and only interop chains reach one another over this provider. With
-  the home on Ethereum, `op-stack-l2-l2`'s transceivers could never be given an owner, and the
-  production script refuses that. Deploying it means the governor's home is an interop chain,
-  or this provider's transceivers get another way to their owner.
+- **Its governor's home is an L2 (decided).** A transceiver is born accepting a bootstrap only
+  from its governor's home, and only interop chains reach one another over this provider, so
+  `op-stack-l2-l2` is deployed with an interop L2 as its home while the other providers keep
+  theirs; the production script refuses any other. That home is its own governance account.
+  A chain's registry is seeded with one governor's home, and a transceiver is born only
+  against a home its registry grades `Predetermined`, so on a chain seeded with another home,
+  governance registers the L2 home there before `op-stack-l2-l2` deploys.
 - **Dependency sets.** A message executes only if its source is in the destination's
   dependency set, so a chain is routed only within its set; a send to an unrouted chain
   reverts, quote included. Which chains share a set is not recorded in `deploy/`.
