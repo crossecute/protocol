@@ -57,6 +57,10 @@ abstract contract ProductionDeploySpecBase is Test {
     }
 
     function _seedRegistry(address deployedBy, Provenance homeGrade) internal {
+        _seedRegistry(deployedBy, homeGrade, HOME_CHAIN_ID);
+    }
+
+    function _seedRegistry(address deployedBy, Provenance homeGrade, uint256 homeChainId) internal {
         string[6] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack-l1-l2", "op-stack-l2-l2"];
         ProviderSeed[] memory providers = new ProviderSeed[](6);
         for (uint256 i; i < 6; ++i) {
@@ -69,7 +73,7 @@ abstract contract ProductionDeploySpecBase is Test {
             abi.encode(
                 address(this),
                 RegistrySeed({
-                    governorHome: Erc7930.encodeEvmChain(HOME_CHAIN_ID),
+                    governorHome: Erc7930.encodeEvmChain(homeChainId),
                     governorHomeGrade: homeGrade,
                     providers: providers
                 })
@@ -101,6 +105,15 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
         _seedRegistry(BROADCASTER, Provenance.Unique);
         DeployProvider script = _script();
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "registry grades agree with chains.toml"));
+        script.run();
+    }
+
+    /// @dev A registry seeded with another home has not registered this one, and the deploy
+    ///      says so rather than failing inside the initializer.
+    function test_aRegistryWithoutTheGovernorsHomeIsRefused() public {
+        _seedRegistry(BROADCASTER, Provenance.Predetermined, 10);
+        DeployProvider script = _script();
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the registry has the governor's home"));
         script.run();
     }
 

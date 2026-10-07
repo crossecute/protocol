@@ -86,8 +86,8 @@ and each provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a
 gateways cannot be added later. Provider ids come from this directory.
 
 Before deploying, the script refuses a chain missing from `chains.toml` or not parity, a
-governor's home that is not `Predetermined` from it, and a registry whose grades disagree with
-this configuration. Every deployment then checks the proxy's address and lock, the
+governor's home that is not `Predetermined` from it, and a registry that has not registered
+the home or whose grades disagree with this configuration. Every deployment then checks the proxy's address and lock, the
 transceiver's configuration, and the registry's record (R8.4).
 
 Wormhole's contracts link the `WormholeMessage` library (#29). `forge script` deploys it before
