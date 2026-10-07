@@ -72,9 +72,11 @@ abstract contract ProviderSendSpec is ProviderFixture {
         return Erc7930.encodeEvm(REMOTE_CHAIN_ID, REMOTE_COUNTERPART);
     }
 
-    /// @notice A well-formed recipient on a chain nothing has configured.
+    /// @notice A well-formed recipient on a chain nothing has configured: not the remote chain,
+    ///         and not the governor's home (chain 1 in every fixture), which a transceiver is born
+    ///         routed to.
     function _unconfiguredRecipient() internal pure returns (bytes memory) {
-        return Erc7930.encodeEvm(1, REMOTE_COUNTERPART);
+        return Erc7930.encodeEvm(424242, REMOTE_COUNTERPART);
     }
 
     function test_sendResolvesTheConfiguredDestination() public {
