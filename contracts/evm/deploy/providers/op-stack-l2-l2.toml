@@ -1,0 +1,8 @@
+# op-stack-l2-l2's chains: the OP Stack chains running Superchain interop, keyed by chains.toml
+# name. Interop names a chain by its chain id, so there are no provider ids. Read by
+# `OpStackInteropConfig` in script/deploy/OpStackInteropDeploy.sol.
+#
+# Empty until interop is live: DeployOpStackInterop refuses a chain not listed and a governor's
+# home not listed, and every deploy refuses a chain whose L2ToL2CrossDomainMessenger predeploy
+# has no code. List a chain once interop is live on it and its dependency set is known.
+chains = []

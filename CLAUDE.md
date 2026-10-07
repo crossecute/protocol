@@ -58,7 +58,7 @@ In this repo:
   home key and a provider id, the addresses of one provider's transceivers.
 - A send and its quote are the paired operations most likely to drift.
 - LayerZero, CCIP, and Hyperlane price a payload per byte, so a change to a payload's size is a
-  cost change on those three; Wormhole's Executor and OP Stack do not.
+  cost change on those three; Wormhole's Executor and the two OP Stack providers do not.
 - Lint with `forge lint`; for files under `src/`, also run it with
   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
 - Run `forge build --sizes src` after a change to a deployed contract: CI fails any over

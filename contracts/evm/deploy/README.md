@@ -57,7 +57,8 @@ Before mainnet, from [todo §2](../../../docs/todo.md#2-chain-checks-before-main
   it. Leave a provider out where it does not reach the chain. `op-stack-l1-l2`'s ids are
   messenger addresses, which depend on the chain they are read from, so its file has its own
   shape: add the chain's `L1CrossDomainMessenger` under `[l1_messengers]` if it is an OP Stack
-  chain.
+  chain. `op-stack-l2-l2` has no ids; add the chain to its `chains` list once interop is live
+  on it.
 
 Then run `forge test`. `test/deploy/ChainConfig.t.sol` reads both and refuses a duplicate
 chain id, an unknown derivation, a provider key that is not a configured chain, and an id that
@@ -94,6 +95,10 @@ them, through Arachnid's factory, so it has one address on every parity chain.
 
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
 bytecode comes from zksolc and TRON-solc.
+
+`op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home it
+lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. It lists none
+until interop is live ([todo §5](../../../docs/todo.md#5-post-launch-superchain-interop)).
 
 ## 5. Bring it into the protocol
 

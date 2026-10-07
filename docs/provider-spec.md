@@ -51,7 +51,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
 | Term | Meaning |
 | --- | --- |
-| **provider** | The third-party transport: LayerZero, CCIP, Hyperlane, Wormhole, OP Stack. |
+| **provider** | The third-party transport: LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack as two providers, `op-stack-l1-l2` and `op-stack-l2-l2`. |
 | **binding** | The contracts in this repo that attach a provider to the protocol. |
 | **account** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
 | **transceiver** | The shared contract, one per provider per chain, owned by the governor's own account there. It creates transmitters for accounts homed on its chain and receivers for accounts homed elsewhere. |
@@ -111,8 +111,8 @@ provider's actual code, not its documentation, before writing anything else.
 
 Every binding here quotes on-chain with a `view`: LayerZero's `endpoint.quote`, CCIP's
 `getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the Executor
-quoter router's `quoteExecution`. OP Stack's quote is zero: a deposit is paid in burned gas,
-not value.
+quoter router's `quoteExecution`. Both OP Stack quotes are zero: a deposit is paid in burned gas,
+and an interop message by its relayer.
 
 ---
 
@@ -126,7 +126,7 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ReceiverBase` | The per-user account on every other chain. Receives on path A. |
-| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain, and under ERC-7786 a gateway binding has no id at all. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
+| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
 | `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
@@ -377,7 +377,7 @@ send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, transmitter, calls)`, the same
 function `sendMessage` puts on the wire, not over an estimate of the length. LayerZero, CCIP,
-and Hyperlane price per byte; Wormhole's Executor and OP Stack do not, and the rule costs them
+and Hyperlane price per byte; Wormhole's Executor and the two OP Stack providers do not, and the rule costs them
 nothing. This is what makes a quote a number the send can pay rather than a number it must
 pad, and it is why the public surface below takes exactly `sendMessage`'s arguments.
 
@@ -794,17 +794,17 @@ to those, rather than flags:
 
 | Spec | Applies to | Covers |
 | --- | --- | --- |
-| `ProviderSendSpec` | all five | C1, C2, C13, C14; an unknown or malformed attribute is refused |
-| `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
+| `ProviderSendSpec` | all six | C1, C2, C13, C14; an unknown or malformed attribute is refused |
+| `ProviderFeeSpec` | all but the two OP Stack providers (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
 | `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
-| `ProviderTransmitterSpec` | all five | C9 |
-| `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
-| `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
-| `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver); only the provider delivers |
-| `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
+| `ProviderTransmitterSpec` | all six | C9 |
+| `ProviderReceiveSpec` | all six | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
+| `ProviderWideSenderSpec` | all but the two OP Stack providers (sender is an address) | C10 |
+| `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver); only the provider delivers |
+| `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole, `op-stack-l2-l2` (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
 | `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, and any excess returns to the float |
 

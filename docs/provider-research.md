@@ -220,7 +220,9 @@ which is the operational load a default counterpart exists to keep bearable.
 table of the messenger that reaches each. The trust argument above survives because a
 delivery's origin is the chain of the messenger that called, never anything in the message:
 a compromised Base bridge can only deliver as Base. L2 to L2 is a separate provider,
-`op-stack-l2-l2`.
+`op-stack-l2-l2`, over Superchain interop's `L2ToL2CrossDomainMessenger` predeploy, which
+names a destination by its chain id and reports the source chain on delivery
+(`crossDomainMessageSource`).
 
 ### Chain-level deployment permissioning, which breaks bootstrap and not sends
 

@@ -5,7 +5,7 @@ what rather than by size.
 
 [`message-flow.md`](message-flow.md) and [`encoding.md`](encoding.md) describe the design;
 this file is the gap between that design and the tree.
-[`provider-spec.md`](provider-spec.md) is what the five bindings under
+[`provider-spec.md`](provider-spec.md) is what the six bindings under
 `contracts/evm/src/protocols/` are held to; what they mean for an operator is in the README.
 
 ---
@@ -78,7 +78,8 @@ this file is the gap between that design and the tree.
   first through Arachnid's factory. zkSync and Tron have deploy functions the tests use but no
   production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
   TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
-  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack-l1-l2`.
+  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, `op-stack-l1-l2`, and
+  `op-stack-l2-l2`.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.
@@ -134,19 +135,22 @@ blocks it.
 
 ## 5. Post-launch: Superchain interop
 
-OP Stack stays the L1-to-L2 binding (#41). Superchain interop's
-`L2ToL2CrossDomainMessenger` fits the one-transceiver-per-chain shape and becomes a separate
-provider once it is on mainnet. Before building it:
+`op-stack-l2-l2` is built over the `L2ToL2CrossDomainMessenger` predeploy and tested against a
+mock. It is not deployable until interop is live: `deploy/providers/op-stack-l2-l2.toml` lists
+no chain, and every deploy refuses a chain whose predeploy has no code. Before listing one:
 
-- **L2 to L2 only.** Ethereum is not in the interop set, so an Ethereum home still needs the
-  L1-to-L2 binding.
+- **The governor's home must run interop.** A transceiver is born accepting a bootstrap only
+  from the governor's home, and only interop chains reach one another over this provider. With
+  the home on Ethereum, `op-stack-l2-l2`'s transceivers could never be given an owner, and the
+  production script refuses that. Deploying it means the governor's home is an interop chain,
+  or this provider's transceivers get another way to their owner.
 - **Dependency sets.** A message executes only if its source is in the destination's
-  dependency set, so the routes must match each chain's set, and a bootstrap outside it must
-  revert at the quote.
+  dependency set, so a chain is routed only within its set; a send to an unrouted chain
+  reverts, quote included. Which chains share a set is not recorded in `deploy/`.
 - **Someone must relay.** `sendMessage` is non-payable and `relayMessage` permissionless, so
   delivery depends on an autorelayer or on this protocol relaying.
-- **Retry and expiry are unverified.** A message relays at most once (`successfulMessages`);
-  whether a reverted relay can be retried, and whether a 7-day expiry on the source log
-  applies, is not settled. [Failure handling](message-flow.md#failure-handling) assumes
-  indefinite retry, so this is the provider checklist's work
+- **Expiry is unverified.** A message relays at most once (`successfulMessages`), and a
+  reverted relay can be relayed again (the predeploy's own NatSpec). Whether a source log
+  expires after some window is not settled. [Failure handling](message-flow.md#failure-handling)
+  assumes indefinite retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).

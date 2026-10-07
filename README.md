@@ -67,7 +67,9 @@ The rest of the bill, stated plainly:
   to it is write-once, so a fix moves that chain's accounts.
 - **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then
   waits out a timelock.
-- **OP Stack stays L1 to L2.** An L2 home cannot reach other L2s over it.
+- **OP Stack is two providers.** `op-stack-l1-l2` connects Ethereum and each OP Stack chain;
+  `op-stack-l2-l2` connects OP Stack chains through Superchain interop, and is not deployable
+  until interop is live.
 
 ## Three transactions
 
@@ -315,7 +317,7 @@ Then, per destination, add what the chain needs:
 
 ## Message providers
 
-Five native bindings live under `src/protocols/`. Each is held to
+Six native bindings live under `src/protocols/`. Each is held to
 [`docs/provider-spec.md`](docs/provider-spec.md). Each is one transceiver per chain, with
 zkSync and Tron variants where the provider reaches those chains. On a transceiver, the
 delivery's origin names a chain and the sender must be that chain's counterpart. Where the
@@ -328,6 +330,7 @@ bindings differ is in who delivers a message to an account and what authenticate
 | Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
 | OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the account's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
+| OP Stack, L2 ↔ L2 | `receiveInteropMessage`, from the `L2ToL2CrossDomainMessenger` | `GATEWAY_ROLE` and `crossDomainMessageSender()` read during the relay | the messenger |
 
 What an operator or integrator has to know:
 
@@ -364,6 +367,10 @@ What an operator or integrator has to know:
   the messenger that reaches it, write-once: on Ethereum one `L1CrossDomainMessenger` per OP
   Stack chain, on each OP Stack chain the `L2CrossDomainMessenger` predeploy, which reaches
   only Ethereum. A delivery's origin is the chain of the messenger that called.
+- **OP Stack interop carries no value and no options, and needs a relayer.**
+  `op-stack-l2-l2`'s messenger takes no value and no gas limit, so the quote is zero and any
+  attribute is refused; the relay is a separate transaction whose sender picks the gas. A send
+  reaches only a routed chain, which should be one in the sender's dependency set.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
@@ -440,11 +447,12 @@ What an operator or integrator has to know:
 
 The EVM side is built and tested: account creation, the approval map, cancellation,
 execution, per-destination commitment schemes, both message paths end to end in-process,
-and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
+and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack (L1 ↔ L2, and L2 ↔ L2
+over interop).
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 709 passing
+cd contracts/evm && forge test        # 749 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
