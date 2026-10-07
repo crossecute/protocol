@@ -361,7 +361,7 @@ What an operator or integrator has to know:
   contracts has to keep them.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA, and liveness does not
   depend on the Executor quoter, which is an implementation immutable.
-- **OP Stack sends carry no value and cost only gas.** The quote is zero, so a send spends
+- **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
   would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,
   the messenger that reaches it, write-once: on Ethereum one `L1CrossDomainMessenger` per OP

@@ -714,14 +714,12 @@ would inherit, and the one thing about its shape that is not like the other four
 `sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable`
 takes no destination chain at all. Each OP Stack chain has its OWN dedicated
 `L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
-messenger contract you call, not an argument to it. This is the concrete form of what §2
-already concluded, "one transceiver pair per rollup, not one for the stack", and it means
-[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol) does not apply to
-this binding at all. `OpStackTransceiver` holds its messenger and the paired chain as
-immutables, the same contract on the L1 and on the OP Stack chain; reaching another OP Stack
-chain means another pair, registered as its own message provider, not a row in a table.
-#41 reversed this (see §2): the messenger that reaches each chain is now that chain's row in
-`ProviderChainId`.
+messenger contract you call, not an argument to it. So `op-stack-l1-l2` names a chain by the
+address of the messenger that reaches it, as its row in
+[`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol): on the L1 one row per
+OP Stack chain, and on each OP Stack chain one row, the L1, reached through the
+`L2CrossDomainMessenger` predeploy. The same `OpStackTransceiver` runs on both sides. It
+began as one pair per registered provider; #41 replaced that (see §2).
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
@@ -902,7 +900,7 @@ Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derive
 as "the account" at all: an architecture question upstream of "add a binding," not a peer
 of the five in `provider-research.md`.
 
-**Not required by, and must not block, the five bindings that exist.** Recorded here
+**Not required by, and must not block, the six bindings that exist.** Recorded here
 so it isn't rediscovered under time pressure. The next step, if ever pursued, is
 source-verified research in the format above, of `v1.signer`
 and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier
