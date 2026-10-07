@@ -41,7 +41,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
 | [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
 | [7. Prohibitions](#7-prohibitions) | the thirteen individually tempting mistakes |
-| [8. The compliance suite](#8-the-compliance-suite) | C1-C31, and which four would otherwise be found in production |
+| [8. The compliance suite](#8-the-compliance-suite) | C1-C32, and which four would otherwise be found in production |
 | [9. Worked skeleton](#9-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
 | [10. Checklist](#10-checklist) | every line true, and the binding is done |
 
@@ -283,8 +283,10 @@ zkSync or Tron, where deriving the peer names an address that holds no receiver.
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking
 the chain type.
 
-**R1.5** `attributes` are decoded only inside the binding, and an empty array MUST mean
-"the gateway's default" rather than zero gas. A binding MUST answer `supportsAttribute`
+**R1.5** `attributes` are decoded only inside the binding, and without a gas attribute the
+binding MUST send `_defaultGas(payload)`: `DeliveryGas.BOOTSTRAP` for a bootstrap,
+`REPORT` for a report, `PAYLOAD` for an account's payload. Never zero gas, and never the
+gateway's own default, which is not sized for an account creation (#52). A binding MUST answer `supportsAttribute`
 honestly, and a gateway that refuses an attribute it does not know is behaving correctly.
 
 **R1.6** A send to an unconfigured destination MUST revert, not succeed. `routeFor` reverts
@@ -799,6 +801,7 @@ to those, rather than flags:
 | `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |
+| `ProviderDefaultGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | C32 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all six | C9 |
 | `ProviderReceiveSpec` | all six | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
@@ -806,7 +809,7 @@ to those, rather than flags:
 | `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver); only the provider delivers |
 | `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole, `op-stack-l2-l2` (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
-| `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, and any excess returns to the float |
+| `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, at `DeliveryGas.REPORT`, and any excess returns to the float |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
@@ -844,6 +847,7 @@ below. The column says where each line is held.
 | C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. | Wormhole, which owns replay: `test_aReplayedVaaIsRejected`. Others: the transport's, fork test not built |
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerAccount`. Others: fork test not built |
+| C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it. [R1.5](#r1-send). | `ProviderDefaultGasSpec` |
 
 **C11 and C29 to C31 want FORK tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness

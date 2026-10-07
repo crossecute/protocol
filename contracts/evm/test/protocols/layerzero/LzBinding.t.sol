@@ -19,7 +19,8 @@ import {
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransmitterSendSpec
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
@@ -27,7 +28,13 @@ import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 
 /// @notice LayerZero delivers to the eid's peer, never to the recipient's address, so the
 ///         destination check is the eid alone.
-contract LzTransceiverSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec, LzFixture {
+contract LzTransceiverSendTest is
+    ProviderIdTableSpec,
+    ProviderPayloadPricedSpec,
+    ProviderRefundSpec,
+    ProviderDefaultGasSpec,
+    LzFixture
+{
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(endpoint.sentLength(), 1);
         (uint32 dstEid,,,,,) = endpoint.sent(0);

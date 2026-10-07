@@ -50,7 +50,16 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
-        LzMessage.send(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, value, _refundTo());
+        LzMessage.send(
+            address(endpoint),
+            dstEid,
+            _getPeerOrRevert(dstEid),
+            payload,
+            attributes,
+            _defaultGas(payload),
+            value,
+            _refundTo()
+        );
         return bytes32(0);
     }
 
@@ -62,7 +71,10 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
-        return LzMessage.quote(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes);
+        return
+            LzMessage.quote(
+                address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, _defaultGas(payload)
+            );
     }
 
     /// @notice One attribute, `LzMessage.OPTIONS_ATTRIBUTE`. Anything else is refused per ERC-7786.

@@ -29,7 +29,9 @@ contract HyperlaneTransmitter is OwnableTransmitter {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(providerIdOf(transceiver, recipient));
-        return HyperlaneMessage.dispatch(mailbox, domain, recipient, payload, attributes, value, _refundTo());
+        return HyperlaneMessage.dispatch(
+            mailbox, domain, recipient, payload, attributes, value, _refundTo(), _defaultGas(payload)
+        );
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -40,7 +42,8 @@ contract HyperlaneTransmitter is OwnableTransmitter {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(providerIdOf(transceiver, recipient));
-        return HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo());
+        return
+            HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo(), _defaultGas(payload));
     }
 
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;

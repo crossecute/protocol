@@ -31,30 +31,38 @@ library LzMessage {
         bytes32 peer,
         bytes memory payload,
         bytes[] memory attributes,
+        uint256 defaultGas,
         uint256 value,
         address refundTo
     ) public {
         // The guid is in the endpoint's event.
         // forge-lint: disable-start(unused-return)
         ILayerZeroEndpointV2(endpoint).send{value: value}(
-            MessagingParams(dstEid, peer, payload, options(attributes), false), refundTo
+            MessagingParams(dstEid, peer, payload, options(attributes, defaultGas), false), refundTo
         );
         // forge-lint: disable-end(unused-return)
     }
 
-    function quote(address endpoint, uint32 dstEid, bytes32 peer, bytes memory payload, bytes[] memory attributes)
-        public
-        view
-        returns (uint256)
-    {
+    function quote(
+        address endpoint,
+        uint32 dstEid,
+        bytes32 peer,
+        bytes memory payload,
+        bytes[] memory attributes,
+        uint256 defaultGas
+    ) public view returns (uint256) {
         return ILayerZeroEndpointV2(endpoint)
-        .quote(MessagingParams(dstEid, peer, payload, options(attributes), false), address(this))
+        .quote(MessagingParams(dstEid, peer, payload, options(attributes, defaultGas), false), address(this))
         .nativeFee;
     }
 
-    /// @dev Empty options is a valid default (LayerZero's executor applies its own gas limit),
-    ///      not a missing one.
-    function options(bytes[] memory attributes) internal pure returns (bytes memory out) {
-        (, out) = ProviderAttribute.body(attributes, OPTIONS_ATTRIBUTE, 0);
+    /// @dev Without the attribute: type-3 options with one executor `lzReceive` option carrying
+    ///      `defaultGas` and no value. Empty options revert in the send library
+    ///      (`LZ_ULN_InvalidWorkerOptions`), and no OApp here sets enforced options (#50).
+    function options(bytes[] memory attributes, uint256 defaultGas) internal pure returns (bytes memory out) {
+        bool present;
+        (present, out) = ProviderAttribute.body(attributes, OPTIONS_ATTRIBUTE, 0);
+        // forge-lint: disable-next-line(unsafe-typecast) a `DeliveryGas` constant
+        if (!present) out = abi.encodePacked(uint16(3), uint8(1), uint16(17), uint8(1), uint128(defaultGas));
     }
 }

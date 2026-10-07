@@ -31,16 +31,18 @@ contract WormholeTransmitter is OwnableTransmitter {
         override
         returns (bytes32 sendId)
     {
-        return WormholeMessage.send(_route(recipient), recipient, payload, attributes, value, _refundTo());
+        return WormholeMessage.send(
+            _route(recipient), recipient, payload, attributes, value, _refundTo(), _defaultGas(payload)
+        );
     }
 
-    function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo());
+        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo(), _defaultGas(payload));
     }
 
     bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;

@@ -2,7 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
-import {ProviderFixture, ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderFixture, ProviderIdFixture, ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -267,8 +268,8 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
 
 /// @title ProviderTransmitterSendSpec
 /// @notice An account's own send (path A) through the binding's transmitter, paid from the
-///         account's balance whatever `msg.value` is (R7.1).
-abstract contract ProviderTransmitterSendSpec is ProviderIdFixture {
+///         account's balance whatever `msg.value` is (R7.1), at the payload default gas.
+abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
     address internal constant ACCOUNT_OWNER = address(0xA11CE);
     address payable internal account;
 
@@ -313,6 +314,32 @@ abstract contract ProviderTransmitterSendSpec is ProviderIdFixture {
         TransmitterBase(account).sendMessage(recipient, payload, new bytes[](0));
 
         assertEq(before - account.balance, quote, "the quote, from the balance");
+        assertEq(_lastGasLimit(), DeliveryGas.PAYLOAD, "at the payload default");
+    }
+}
+
+/// @title ProviderDefaultGasSpec
+/// @notice Without a gas attribute a send carries its `DeliveryGas` default, chosen from the
+///         payload alone, and an attribute replaces it.
+abstract contract ProviderDefaultGasSpec is ProviderSendSpec, ProviderGasFixture {
+    function test_aBootstrapGetsTheBootstrapDefault() public {
+        bytes memory payload = Envelope.encodeBootstrap(address(0xA11CE), bytes32(0), bytes32(0), new Call[](0));
+        harness.sendMessagePublic(_configuredRecipient(), payload, new bytes[](0), 0);
+        assertEq(_lastGasLimit(), DeliveryGas.BOOTSTRAP);
+    }
+
+    function test_aReportGetsTheReportDefault() public {
+        bytes memory payload =
+            Envelope.encodeReceiverReport(address(0xA11CE), bytes32(0), Erc7930.encodeEvm(1, address(0x2C)));
+        harness.sendMessagePublic(_configuredRecipient(), payload, new bytes[](0), 0);
+        assertEq(_lastGasLimit(), DeliveryGas.REPORT);
+    }
+
+    function test_aGasAttributeReplacesTheDefault() public {
+        bytes[] memory attrs = new bytes[](1);
+        attrs[0] = _gasAttribute(750_000);
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        assertEq(_lastGasLimit(), 750_000);
     }
 }
 
@@ -682,7 +709,7 @@ interface IReportHarness {
 /// @notice A zkSync transceiver always diverges, so it reports each receiver it creates to the
 ///         account's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
 ///         paid from the float, and any overpayment must return to the float, not the relayer.
-abstract contract ProviderZkSyncSpec is ProviderIdFixture {
+abstract contract ProviderZkSyncSpec is ProviderGasFixture {
     address internal constant HOME_TRANSCEIVER = address(0xC0DE);
 
     address internal zk;
@@ -728,6 +755,7 @@ abstract contract ProviderZkSyncSpec is ProviderIdFixture {
         IReportHarness(zk).reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
 
         assertEq(zk.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
+        assertEq(_lastGasLimit(), DeliveryGas.REPORT, "the float pays for the report's fixed gas only");
         _assertReportSent();
     }
 }

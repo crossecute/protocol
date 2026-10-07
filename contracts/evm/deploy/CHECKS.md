@@ -132,7 +132,7 @@ connect should revert at the quote. The configured pairs, checked 2026-10-07:
 
 | Provider | Configured pairs that quote | A pair with no lane |
 | --- | --- | --- |
-| LayerZero | none with empty options (#50); with 200,000 `lzReceive` gas, all 12 among the four parity chains | zkSync pairs revert at quote for the dead-DVN default (#51) |
+| LayerZero | all 12 among the four parity chains, with `lzReceive` options at 200,000 and 1,000,000 gas; empty options revert on all 20 (#50, why the binding never sends them) | zkSync pairs revert at quote for the dead-DVN default (#51) |
 | CCIP | all 20 | reverts `UnsupportedDestinationChain` (`0xae236d9c`) |
 | Hyperlane | all 20 | quotes 0 and does not revert, so the deploy must check |
 | Wormhole | not quotable: no quoter router (#53) | |
@@ -168,9 +168,11 @@ that. Measured with the provider fixtures (mock gateways, cold storage):
 | Report arriving at the home transceiver | up to about 135,000 |
 | Payload to an existing receiver | under 16,000 plus its calls |
 
-The defaults are 50,000 (Hyperlane) and 200,000 (CCIP, Wormhole, OP Stack), so a bootstrap
-needs an explicit gas attribute today, and a Hyperlane report always runs out (#52). EraVM
-prices differently and Forge cannot measure it; zkSync needs its own number.
+Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
+250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
+1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
+attribute can exceed a lane's cap. EraVM prices differently and Forge cannot measure it;
+zkSync needs its own number.
 
 ### 5. Verification on the destination
 

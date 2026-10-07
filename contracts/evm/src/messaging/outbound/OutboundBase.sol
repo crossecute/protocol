@@ -186,6 +186,10 @@ abstract contract OutboundBase {
         virtual
         returns (bytes32 sendId);
 
+    /// @notice The destination gas `payload` is sent with when its attributes name none.
+    /// @dev A function of the payload alone, so a quote and its send always agree.
+    function _defaultGas(bytes memory payload) internal pure virtual returns (uint256);
+
     /// @notice What `_sendMessage` would cost, in this chain's native currency.
     ///
     /// @dev ERC-7786 defines no quote. It is `view` so it can be `eth_call`ed before the send,

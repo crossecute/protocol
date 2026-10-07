@@ -6,6 +6,7 @@ import {Roles} from "src/messaging/Roles.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -787,6 +788,13 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      bootstrap above all, refunds the account that paid.
     function _refundTo() internal view virtual override returns (address) {
         return _reporting ? address(this) : msg.sender;
+    }
+
+    /// @inheritdoc OutboundBase
+    /// @dev By the envelope, not `_reporting`, so `quoteMessage` prices a report as it is sent.
+    ///      A report's gas is fixed here because the float pays for it.
+    function _defaultGas(bytes memory payload) internal pure override returns (uint256) {
+        return Envelope.isReceiverReport(payload) ? DeliveryGas.REPORT : DeliveryGas.BOOTSTRAP;
     }
 
     /* =================================== the float ================================= */

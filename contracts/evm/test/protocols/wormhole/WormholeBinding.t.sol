@@ -20,7 +20,8 @@ import {
     ProviderFeeSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransmitterSendSpec
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
@@ -30,6 +31,7 @@ contract WormholeTransceiverSendTest is
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
     ProviderRefundSpec,
+    ProviderDefaultGasSpec,
     WormholeFixture
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
@@ -65,13 +67,6 @@ contract WormholeTransceiverSendTest is
         assertEq(
             r.requestBytes, RequestLib.encodeVaaMultiSigRequest(HERE_WORMHOLE_CHAIN, toBytes32(address(harness)), 0)
         );
-    }
-
-    function test_gasLimitDefaultsAndFollowsTheAttribute() public {
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        harness.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(750_000), 0);
-        assertEq(router.requests(0).relayInstructions, abi.encodePacked(uint8(1), uint128(200_000), uint128(0)));
-        assertEq(router.requests(1).relayInstructions, abi.encodePacked(uint8(1), uint128(750_000), uint128(0)));
     }
 
     function test_quoteIsMessageFeePlusExecutionPrice() public {

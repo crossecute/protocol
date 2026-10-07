@@ -24,10 +24,6 @@ library WormholeMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.gasLimit"));
 
-    /// @dev The Executor has no default; a gas instruction is required. Matches CCIP's own
-    ///      default; not measured against this protocol's delivery paths.
-    uint256 internal constant DEFAULT_GAS_LIMIT = 200_000;
-
     /// @dev `CONSISTENCY_LEVEL_FINALIZED` in the SDK's `constants/ConsistencyLevel.sol`.
     uint8 internal constant CONSISTENCY_FINALIZED = 1;
 
@@ -74,7 +70,8 @@ library WormholeMessage {
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value,
-        address refundTo
+        address refundTo,
+        uint256 defaultGas
     ) public returns (bytes32) {
         bytes32 target = recipientOf(recipient);
         uint256 messageFee = ICoreBridge(route.coreBridge).messageFee();
@@ -82,7 +79,7 @@ library WormholeMessage {
         uint64 sequence = ICoreBridge(route.coreBridge).publishMessage{value: messageFee}(
             0, abi.encodePacked(route.targetChain, target, payload), CONSISTENCY_FINALIZED
         );
-        _requestExecution(route, target, refundTo, sequence, gasLimitFrom(attributes), value - messageFee);
+        _requestExecution(route, target, refundTo, sequence, gasLimitFrom(attributes, defaultGas), value - messageFee);
         return bytes32(0);
     }
 
@@ -107,11 +104,13 @@ library WormholeMessage {
 
     /// @dev Prices the request for the next sequence this contract will publish, which is the
     ///      one `send` would use.
-    function quote(Route memory route, bytes memory recipient, bytes[] memory attributes, address refundTo)
-        public
-        view
-        returns (uint256)
-    {
+    function quote(
+        Route memory route,
+        bytes memory recipient,
+        bytes[] memory attributes,
+        address refundTo,
+        uint256 defaultGas
+    ) public view returns (uint256) {
         uint64 sequence = ICoreBridge(route.coreBridge).nextSequence(address(this));
         return ICoreBridge(route.coreBridge).messageFee()
             + IExecutorQuoterRouter(route.quoterRouter)
@@ -121,7 +120,7 @@ library WormholeMessage {
                 refundTo,
                 route.quoter,
                 _requestBytes(route.coreBridge, sequence),
-                relayInstructions(gasLimitFrom(attributes))
+                relayInstructions(gasLimitFrom(attributes, defaultGas))
             );
     }
 
@@ -142,10 +141,11 @@ library WormholeMessage {
     /// @notice One attribute: the destination gas limit, as
     ///         `abi.encodePacked(GAS_LIMIT_ATTRIBUTE, abi.encode(gasLimit))`, at most
     ///         `type(uint128).max`. Anything else is refused per ERC-7786.
-    function gasLimitFrom(bytes[] memory attributes) internal pure returns (uint128) {
+    /// @dev The Executor has no default, so without the attribute it is `defaultGas`.
+    function gasLimitFrom(bytes[] memory attributes, uint256 defaultGas) internal pure returns (uint128) {
         return
-            // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
-            uint128(ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint128).max, DEFAULT_GAS_LIMIT));
+        // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
+        uint128(ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint128).max, defaultGas));
     }
 
     /* ================================= receiving ================================== */

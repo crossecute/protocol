@@ -123,3 +123,20 @@ abstract contract ProviderIdFixture is ProviderFixture {
         _setProviderId(t, ChainKey.forEvm(REMOTE_CHAIN_ID), _remoteProviderId());
     }
 }
+
+/// @notice For providers whose sends carry a destination gas limit: every one but
+///         `op-stack-l2-l2`, whose relayer chooses the gas.
+abstract contract ProviderGasFixture is ProviderIdFixture {
+    /// @notice The destination gas the provider recorded for the last send.
+    function _lastGasLimit() internal view virtual returns (uint256);
+
+    /// @notice An attribute asking for `gas`, in the binding's own format.
+    function _gasAttribute(uint256 gas) internal pure virtual returns (bytes memory);
+
+    /// @notice The big-endian unsigned integer `width` bytes long at `offset` in `b`.
+    function _uintAt(bytes memory b, uint256 offset, uint256 width) internal pure returns (uint256 v) {
+        for (uint256 i; i < width; ++i) {
+            v = (v << 8) | uint8(b[offset + i]);
+        }
+    }
+}

@@ -10,7 +10,8 @@ import {Call} from "src/messaging/Call.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
-import {ProviderIdFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
@@ -47,7 +48,7 @@ contract HyperlaneZkSyncHarness is HyperlaneZkSyncTransceiver {
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender: the Mailbox's
 ///         gateway role admits the call, and the binding's own check refuses a wrong sender.
-abstract contract HyperlaneFixture is ProviderIdFixture {
+abstract contract HyperlaneFixture is ProviderGasFixture {
     uint32 internal constant BASE_DOMAIN = 8453;
 
     MockHyperlaneMailbox internal mailbox = new MockHyperlaneMailbox();
@@ -108,5 +109,14 @@ abstract contract HyperlaneFixture is ProviderIdFixture {
 
     function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
         return providerFee;
+    }
+
+    /// @dev `StandardHookMetadata`: variant (2), msgValue (32), then the gas limit (32).
+    function _lastGasLimit() internal view override returns (uint256) {
+        return _uintAt(mailbox.sent(mailbox.sentLength() - 1).metadata, 34, 32);
+    }
+
+    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
+        return abi.encodePacked(HyperlaneMessage.GAS_LIMIT_ATTRIBUTE, gas);
     }
 }

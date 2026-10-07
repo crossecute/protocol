@@ -11,7 +11,8 @@ import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.so
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
-import {ProviderIdFixture, defaultReceiverInit, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture, defaultReceiverInit, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
 /// @dev VAA v1 with `sigCount` zeroed 66-byte signatures (the mock Core does not check them)
 ///      and a payload already wrapped in the binding's destination envelope.
@@ -81,7 +82,7 @@ contract WormholeZkSyncHarness is WormholeZkSyncTransceiver {
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate
 ///         the emitter, so there is no gateway to bypass, and the equivalent is a VAA Core
 ///         rejects.
-abstract contract WormholeFixture is ProviderIdFixture {
+abstract contract WormholeFixture is ProviderGasFixture {
     uint16 internal constant HERE_WORMHOLE_CHAIN = 2;
     uint16 internal constant BASE_WORMHOLE_CHAIN = 30;
     uint256 internal constant CORE_MESSAGE_FEE = 1 gwei;
@@ -157,5 +158,14 @@ abstract contract WormholeFixture is ProviderIdFixture {
     /// @dev Core's message fee is paid alongside the Executor's, so the quote carries both.
     function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
         return providerFee + CORE_MESSAGE_FEE;
+    }
+
+    /// @dev A gas relay instruction: type (1), then the gas limit (16).
+    function _lastGasLimit() internal view override returns (uint256) {
+        return _uintAt(router.requests(router.requestsLength() - 1).relayInstructions, 1, 16);
+    }
+
+    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
+        return abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, gas);
     }
 }

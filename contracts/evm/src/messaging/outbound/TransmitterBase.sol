@@ -12,6 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
+import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 
 /// @title IAccountTransceiver
 /// @notice Everything an account needs from the transceiver whose address it stores.
@@ -565,6 +566,11 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      the transceiver's caller.
     function _refundTo() internal view override returns (address) {
         return address(this);
+    }
+
+    /// @inheritdoc OutboundBase
+    function _defaultGas(bytes memory) internal pure override returns (uint256) {
+        return DeliveryGas.PAYLOAD;
     }
 
     function __TransmitterBase_init(address owner_, address transceiver_, bytes32 salt_) internal onlyInitializing {

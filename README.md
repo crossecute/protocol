@@ -124,10 +124,11 @@ inside the delivery callback at the fee its own quote names, paid from the trans
 float, so an underfunded float reverts and takes the account creation with it: all or
 nothing, and retryable once it is funded. This runs once per chain.
 
-A bootstrap may carry the account's whole first payload. A large one should pass a gas
-attribute, since no provider's default gas has been measured against it, or carry only a
-call to the new receiver's own `commit`, so anyone can `finalize` the payload there later
-and pay for it.
+A bootstrap may carry the account's whole first payload. Without a gas attribute it is sent
+with 1,000,000 gas (`DeliveryGas.BOOTSTRAP`), which covers creating the account and a few
+calls on an EVM chain. A larger payload should pass a gas attribute, or carry only a call to
+the new receiver's own `commit`, so anyone can `finalize` the payload there later and pay
+for it.
 
 ### 3 · Sending a message
 

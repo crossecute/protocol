@@ -85,7 +85,16 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
-        LzMessage.send(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, value, _refundTo());
+        LzMessage.send(
+            address(endpoint),
+            dstEid,
+            _getPeerOrRevert(dstEid),
+            payload,
+            attributes,
+            _defaultGas(payload),
+            value,
+            _refundTo()
+        );
         return bytes32(0);
     }
 
@@ -97,7 +106,10 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(_providerIdOf(recipient));
-        return LzMessage.quote(address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes);
+        return
+            LzMessage.quote(
+                address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, _defaultGas(payload)
+            );
     }
 
     /* ==================================== receiving ==================================== */

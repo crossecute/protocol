@@ -16,7 +16,8 @@ import {
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderTransmitterSpec,
-    ProviderTransmitterSendSpec
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 
@@ -27,6 +28,7 @@ contract CcipTransceiverSendTest is
     ProviderIdTableSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
+    ProviderDefaultGasSpec,
     CcipFixture
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {

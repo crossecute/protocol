@@ -53,18 +53,19 @@ contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
         returns (bytes32)
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through an address setter
-        return OpStackMessage.send(address(uint160(_providerIdOf(recipient))), recipient, payload, attributes, value);
+        address messenger = address(uint160(_providerIdOf(recipient)));
+        return OpStackMessage.send(messenger, recipient, payload, attributes, value, _defaultGas(payload));
     }
 
     /// @dev Zero: see `OpStackMessage`.
-    function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
         override
         returns (uint256 nativeFee)
     {
         _providerIdOf(recipient);
-        return OpStackMessage.quote(recipient, attributes);
+        return OpStackMessage.quote(recipient, attributes, _defaultGas(payload));
     }
 
     /* ==================================== receiving ==================================== */

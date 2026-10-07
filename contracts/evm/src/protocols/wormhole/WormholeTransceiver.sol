@@ -58,16 +58,18 @@ abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver
         override
         returns (bytes32)
     {
-        return WormholeMessage.send(_route(recipient), recipient, payload, attributes, value, _refundTo());
+        return WormholeMessage.send(
+            _route(recipient), recipient, payload, attributes, value, _refundTo(), _defaultGas(payload)
+        );
     }
 
-    function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo());
+        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo(), _defaultGas(payload));
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {

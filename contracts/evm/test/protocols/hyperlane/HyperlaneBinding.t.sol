@@ -14,7 +14,8 @@ import {
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
-    ProviderTransmitterSendSpec
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
 
@@ -23,6 +24,7 @@ contract HyperlaneTransceiverSendTest is
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
+    ProviderDefaultGasSpec,
     HyperlaneFixture
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
@@ -47,11 +49,6 @@ contract HyperlaneTransceiverSendTest is
     function test_hookMetadataCarriesTheGasLimitAttributeAndRefundTarget() public {
         harness.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(400_000), 0);
         assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 400_000, address(this), ""));
-    }
-
-    function test_noAttributeMeansTheIgpDefaultGasLimit() public {
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 50_000, address(this), ""));
     }
 
     /// @dev Without `refundAddress` in the metadata the refund goes to the sending contract,

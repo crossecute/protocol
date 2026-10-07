@@ -22,11 +22,6 @@ library OpStackMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant MIN_GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.opstack.minGasLimit"));
 
-    /// @dev `sendMessage` requires a gas limit for the target call. Underestimating is
-    ///      recoverable: the messenger records the relay in `failedMessages` and anyone can
-    ///      replay it with more gas. Not measured against this protocol's delivery paths.
-    uint32 internal constant DEFAULT_MIN_GAS_LIMIT = 200_000;
-
     error OpStackValueNotSupported(uint256 value);
 
     /// @param messenger The messenger for the recipient's chain, from the transceiver's table:
@@ -38,21 +33,28 @@ library OpStackMessage {
         bytes memory recipient,
         bytes memory payload,
         bytes[] memory attributes,
-        uint256 value
+        uint256 value,
+        uint256 defaultGas
     ) internal returns (bytes32) {
         address target = _check(recipient, value);
         ICrossDomainMessenger(messenger)
             .sendMessage(
-                target, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload)), minGasLimitFrom(attributes)
+                target,
+                abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload)),
+                minGasLimitFrom(attributes, defaultGas)
             );
         return bytes32(0);
     }
 
     /// @dev Zero, after the same checks `send` applies. The caller has already looked up the
     ///      messenger, which reverts for a chain the table does not map.
-    function quote(bytes memory recipient, bytes[] memory attributes) internal pure returns (uint256) {
+    function quote(bytes memory recipient, bytes[] memory attributes, uint256 defaultGas)
+        internal
+        pure
+        returns (uint256)
+    {
         _check(recipient, 0);
-        minGasLimitFrom(attributes);
+        minGasLimitFrom(attributes, defaultGas);
         return 0;
     }
 
@@ -72,9 +74,10 @@ library OpStackMessage {
     /// @notice One attribute: the target's minimum gas, as
     ///         `abi.encodePacked(MIN_GAS_LIMIT_ATTRIBUTE, abi.encode(minGasLimit))`, at most
     ///         `type(uint32).max`. Anything else is refused per ERC-7786.
-    function minGasLimitFrom(bytes[] memory attributes) internal pure returns (uint32) {
-        uint256 v =
-            ProviderAttribute.uintValue(attributes, MIN_GAS_LIMIT_ATTRIBUTE, type(uint32).max, DEFAULT_MIN_GAS_LIMIT);
+    /// @dev An underestimate is recoverable: the messenger records the failed relay and anyone
+    ///      can replay it with more gas.
+    function minGasLimitFrom(bytes[] memory attributes, uint256 defaultGas) internal pure returns (uint32) {
+        uint256 v = ProviderAttribute.uintValue(attributes, MIN_GAS_LIMIT_ATTRIBUTE, type(uint32).max, defaultGas);
         // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
         return uint32(v);
     }

@@ -15,11 +15,10 @@ this file is the gap between that design and the tree.
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
 (2026-10-07).
 
-- **No default destination gas covers a bootstrap** (#52). Creating an account costs 590,000
-  to 650,000 gas on every binding; the defaults are 200,000 (CCIP, Wormhole, OP Stack) and
-  50,000 (Hyperlane), and a report, which always uses the default, costs up to about 135,000.
-  LayerZero's default, empty options, reverts at the quote on every real endpoint (#50), so
-  every LayerZero report fails. EraVM's costs are not measurable in Forge.
+- **EraVM's delivery costs are not measured.** The `DeliveryGas` defaults (1,000,000 for a
+  bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
+  590,000 to 650,000. A bootstrap to zkSync Era needs the same measurement on Era, which
+  Forge cannot run; zkSync Sepolia can.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
@@ -61,7 +60,8 @@ this file is the gap between that design and the tree.
   enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
   needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
   deploy functions the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these scripts do not drive.
+  `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these
+  scripts do not drive.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
