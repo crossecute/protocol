@@ -101,8 +101,9 @@ library Blake2b256 {
         out = new bytes(64);
         bool ok;
         assembly {
-            // A chain without EIP-152 has an empty account at 0x09: the call succeeds and
-            // returns nothing, so the size is checked too, or every digest would be zero.
+            // Without EIP-152, 0x09 may be empty (success, no data), revert (zkSync Era), or
+            // hold another precompile (Tron's BatchValidateSign returns 32 bytes), so the size
+            // is checked too, or a digest could be zeros or foreign output.
             ok := staticcall(gas(), 0x09, add(input, 32), 213, add(out, 32), 64)
             ok := and(ok, eq(returndatasize(), 64))
         }
