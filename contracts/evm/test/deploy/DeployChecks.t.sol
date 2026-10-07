@@ -21,7 +21,7 @@ contract DeployChecksTest is LzFixture {
 
     /// @dev External so that an expected revert attaches to the whole deploy.
     function deploy(TransceiverDeployment memory d) external returns (address) {
-        return LzDeploy.transceiver(d, HOME_EID);
+        return LzDeploy.transceiver(d, HOME_EID, address(0));
     }
 
     function _seeded(address deployedBy, bytes32 salt, bytes32 initCodeHash) internal returns (ChainRegistry) {

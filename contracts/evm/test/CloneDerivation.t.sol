@@ -270,12 +270,12 @@ contract DivergentTransceiverTest is Test {
 
     function _zk() internal returns (ZkHarness s) {
         s = new ZkHarness(ENDPOINT);
-        s.initialize(config(address(new MinimalAccount())), 0, HASH);
+        s.initialize(config(address(new MinimalAccount())), 0, address(0), HASH);
     }
 
     function _tron() internal returns (TronHarness s) {
         s = new TronHarness(ENDPOINT);
-        s.initialize(config(address(new MinimalAccount())), 0, HASH);
+        s.initialize(config(address(new MinimalAccount())), 0, address(0), HASH);
     }
 
     function testFuzz_zkSyncReproducesTheEraFormula(address o, bytes32 salt) public {
@@ -336,12 +336,12 @@ contract DivergentTransceiverTest is Test {
 
         ZkHarness s = new ZkHarness(ENDPOINT);
         vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
-        s.initialize(c, 0, bytes32(0));
+        s.initialize(c, 0, address(0), bytes32(0));
 
         ZkHarness ok = _zk();
         assertEq(ok.accountBytecodeHash(), HASH);
         vm.expectRevert();
-        ok.initialize(c, 0, keccak256("other"));
+        ok.initialize(c, 0, address(0), keccak256("other"));
     }
 }
 
@@ -455,7 +455,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         (bool ok,) = address(s).call(abi.encodeWithSelector(withFlag, old));
         assertFalse(ok, "no initializer takes the flag");
 
-        s.initialize(_config(), 0);
+        s.initialize(_config(), 0, address(0));
         assertFalse(s.addressesDiverge());
         assertEq(
             s.predictCrossAccount(owner, bytes32(0), home()),
@@ -469,9 +469,9 @@ contract DivergenceIsNotConfigurableTest is Test {
     /// @dev The variants set the flag themselves.
     function test_theDivergentTransceiversAlwaysReportDivergence() public {
         LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
-        zk.initialize(_config(), 0, HASH);
+        zk.initialize(_config(), 0, address(0), HASH);
         LzTronTransceiver tron = new LzTronTransceiver(ENDPOINT);
-        tron.initialize(_config(), 0, HASH);
+        tron.initialize(_config(), 0, address(0), HASH);
 
         assertTrue(zk.addressesDiverge(), "set by the variant, and true");
         assertTrue(tron.addressesDiverge());
@@ -489,7 +489,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     ///      acquire it later: the initializer refuses zero, which is the only way in.
     function test_thereIsNoSetterForTheBytecodeHash() public {
         LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
-        zk.initialize(_config(), 0, HASH);
+        zk.initialize(_config(), 0, address(0), HASH);
 
         (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));
         assertFalse(ok, "no setter on the ABI");

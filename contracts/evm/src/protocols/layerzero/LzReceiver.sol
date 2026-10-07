@@ -10,11 +10,13 @@ import {
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @dev Extends the base two-arg shape with the eid `sourceTransmitter` lives behind, so its
-///      peer can be set in the same locked initializer call.
+///      peer can be set in the same locked initializer call, and the DVN its creating
+///      transceiver pinned for that eid, or zero for LayerZero's defaults.
 interface ILzReceiverInit {
-    function initialize(address sourceTransmitter, Call[] calldata calls, uint32 homeEid) external;
+    function initialize(address sourceTransmitter, Call[] calldata calls, uint32 homeEid, address homeDvn) external;
 }
 
 /// @notice Per-user account on a non-home chain.
@@ -33,8 +35,10 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
         revert UseLzInitializer();
     }
 
-    /// @dev Provider setup runs before `__ReceiverBase_init`, which executes the payload.
-    function initialize(address sourceTransmitter_, Call[] calldata calls, uint32 homeEid)
+    /// @dev Provider setup runs before `__ReceiverBase_init`, which executes the payload. The
+    ///      receiver is its own delegate with no owner, so only its own payload calls to the
+    ///      endpoint change its config later.
+    function initialize(address sourceTransmitter_, Call[] calldata calls, uint32 homeEid, address homeDvn)
         external
         override
         initializer
@@ -42,6 +46,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
         __OAppReceiver_init(address(this));
         grantRole(GATEWAY_ROLE, address(endpoint));
         _initHomePeer(homeEid, sourceTransmitter_);
+        if (homeDvn != address(0)) LzMessage.pinReceiveDvn(address(endpoint), homeEid, homeDvn);
         __ReceiverBase_init(sourceTransmitter_, calls);
     }
 

@@ -29,25 +29,33 @@ library LzDeploy {
     }
 
     /// @param homeEid LayerZero's eid for the governor's home.
-    function transceiver(TransceiverDeployment memory d, uint32 homeEid) internal returns (address t) {
-        t = deployTransceiverProxy(d, abi.encodeCall(LzTransceiver.initialize, (d.config, homeEid)), address(0));
-        _checkHome(t, d.config, homeEid);
+    /// @param homeDvn This chain's DVN for the home's pathway, or zero for LayerZero's defaults.
+    function transceiver(TransceiverDeployment memory d, uint32 homeEid, address homeDvn) internal returns (address t) {
+        t = deployTransceiverProxy(
+            d, abi.encodeCall(LzTransceiver.initialize, (d.config, homeEid, homeDvn)), address(0)
+        );
+        _checkHome(t, d.config, homeEid, homeDvn);
     }
 
-    function zkSyncTransceiver(TransceiverDeployment memory d, uint32 homeEid, bytes32 accountBytecodeHash)
-        internal
-        returns (address t)
-    {
+    function zkSyncTransceiver(
+        TransceiverDeployment memory d,
+        uint32 homeEid,
+        address homeDvn,
+        bytes32 accountBytecodeHash
+    ) internal returns (address t) {
         t = deployTransceiverProxy(
-            d, abi.encodeCall(LzZkSyncTransceiver.initialize, (d.config, homeEid, accountBytecodeHash)), address(0)
+            d,
+            abi.encodeCall(LzZkSyncTransceiver.initialize, (d.config, homeEid, homeDvn, accountBytecodeHash)),
+            address(0)
         );
-        _checkHome(t, d.config, homeEid);
+        _checkHome(t, d.config, homeEid, homeDvn);
     }
 
     /// @dev LayerZero delivers only from a set peer, so where the registry resolves the home's
     ///      counterpart, the bootstrap that creates the owner needs that peer from birth.
-    function _checkHome(address t, TransceiverConfig memory c, uint32 homeEid) private view {
+    function _checkHome(address t, TransceiverConfig memory c, uint32 homeEid, address homeDvn) private view {
         checkGovernorHomeId(t, c, homeEid);
+        check(LzTransceiver(payable(t)).dvnOf(homeEid) == homeDvn, "the governor home's DVN is the one named");
         bytes32 home = keccak256(c.governorHome);
         TransceiverBase tb = TransceiverBase(payable(t));
         if (homeEid == 0 || home == tb.localChainKey() || address(c.chainRegistry) == address(0)) return;

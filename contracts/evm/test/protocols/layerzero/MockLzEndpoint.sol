@@ -6,9 +6,11 @@ import {
     MessagingFee,
     MessagingReceipt
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 
 /// @notice Minimal endpoint surface the bindings actually call: `quote`, `send`,
-///         `setDelegate`, `lzToken`. Not `ILayerZeroEndpointV2` itself — the call sites only
+///         `setDelegate`, `lzToken`, and the library and config calls `LzMessage` pins a DVN
+///         with, authorized as EndpointV2 does (the OApp or its delegate). Not `ILayerZeroEndpointV2` itself — the call sites only
 ///         check selector/calldata at the EVM level, so implementing the full 20-plus
 ///         function interface would be noise. Inbound delivery isn't simulated: tests drive
 ///         it with `vm.prank(address(endpoint))` + a direct `lzReceive` call.
@@ -88,5 +90,49 @@ contract MockLzEndpoint {
 
     function lzToken() external pure returns (address) {
         return address(0);
+    }
+
+    address public constant SEND_LIBRARY = address(0x5E9D);
+    address public constant RECEIVE_LIBRARY = address(0x7EC5);
+
+    mapping(address => mapping(uint32 => address)) public sendLibraryOf;
+    mapping(address => mapping(uint32 => address)) public receiveLibraryOf;
+    /// oapp => library => eid => config type => the bytes last set.
+    mapping(address => mapping(address => mapping(uint32 => mapping(uint32 => bytes)))) internal _configs;
+
+    /// @dev EndpointV2's `LZ_Unauthorized`.
+    error Unauthorized();
+
+    function _authorize(address oapp) internal view {
+        if (msg.sender != oapp && msg.sender != delegateOf[oapp]) revert Unauthorized();
+    }
+
+    function defaultSendLibrary(uint32) external pure returns (address) {
+        return SEND_LIBRARY;
+    }
+
+    function defaultReceiveLibrary(uint32) external pure returns (address) {
+        return RECEIVE_LIBRARY;
+    }
+
+    function setSendLibrary(address oapp, uint32 eid, address lib) external {
+        _authorize(oapp);
+        sendLibraryOf[oapp][eid] = lib;
+    }
+
+    function setReceiveLibrary(address oapp, uint32 eid, address lib, uint256) external {
+        _authorize(oapp);
+        receiveLibraryOf[oapp][eid] = lib;
+    }
+
+    function setConfig(address oapp, address lib, SetConfigParam[] calldata params) external {
+        _authorize(oapp);
+        for (uint256 i; i < params.length; ++i) {
+            _configs[oapp][lib][params[i].eid][params[i].configType] = params[i].config;
+        }
+    }
+
+    function configOf(address oapp, address lib, uint32 eid, uint32 configType) external view returns (bytes memory) {
+        return _configs[oapp][lib][eid][configType];
     }
 }

@@ -206,7 +206,7 @@ contract ConfiguredGradesBornConfigureTest is LzFixture {
         uint32 homeEid = uint32(ChainConfig.providerId(dir, cs, "layerzero", ethereum));
 
         LzDeploy.zkSyncTransceiver(
-            _deployment(address(new LzZkSyncHarness(address(endpoint))), c), homeEid, keccak256("zksolc")
+            _deployment(address(new LzZkSyncHarness(address(endpoint))), c), homeEid, address(0), keccak256("zksolc")
         );
     }
 }

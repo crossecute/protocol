@@ -69,7 +69,7 @@ abstract contract LzFixture is ProviderGasFixture {
     }
 
     function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
-        return LzDeploy.transceiver(d, uint32(homeId));
+        return LzDeploy.transceiver(d, uint32(homeId), address(0));
     }
 
     /// @dev A receiver's peer is its transmitter on the account's home.
@@ -79,7 +79,7 @@ abstract contract LzFixture is ProviderGasFixture {
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, BASE_EID));
+        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, BASE_EID, address(0)));
     }
 
     function _gateway() internal view override returns (address) {

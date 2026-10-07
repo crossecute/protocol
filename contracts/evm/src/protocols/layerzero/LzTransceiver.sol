@@ -5,6 +5,7 @@ import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OAppUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
@@ -24,6 +25,17 @@ import {Call} from "src/messaging/Call.sol";
 abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzWriteOncePeer, LzHomePeer {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
+    /// eid => the one DVN pinned for that pathway, both ways. Unset follows LayerZero's
+    /// defaults, which only a pathway defaulting to the dead DVN must not do (#51).
+    mapping(uint32 => address) public dvnOf;
+
+    event DvnPinned(uint32 indexed eid, address dvn);
+
+    error ZeroDvn();
+    error DvnAlreadyPinned(uint32 eid);
+    /// @dev The transceiver stays its own delegate, so its endpoint config changes only here.
+    error DelegateIsFixed();
+
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
@@ -31,9 +43,37 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     /// @dev The OApp is its own delegate (R6.4).
     /// @param governorHomeEid LayerZero's eid for the governor's home; see
     ///        `ProviderTransceiver._initGovernorHomeId`.
-    function __LzTransceiver_init(TransceiverConfig memory c, uint32 governorHomeEid) internal onlyInitializing {
+    /// @param governorHomeDvn This chain's DVN for the home's pathway, or zero for LayerZero's
+    ///        defaults. Needed at birth where the default is the dead DVN, since the bootstrap
+    ///        that creates the owner arrives over it.
+    function __LzTransceiver_init(TransceiverConfig memory c, uint32 governorHomeEid, address governorHomeDvn)
+        internal
+        onlyInitializing
+    {
         __OApp_init(address(this));
         _initGovernorHomeId(c.governorHome, governorHomeEid);
+        if (governorHomeDvn != address(0)) _pinDvn(governorHomeEid, governorHomeDvn);
+    }
+
+    /// @notice Verify the pathway to and from `eid` with `dvn` alone. Write-once.
+    function setDvn(uint32 eid, address dvn) external onlyOwner {
+        _pinDvn(eid, dvn);
+    }
+
+    function _pinDvn(uint32 eid, address dvn) private {
+        if (dvn == address(0)) revert ZeroDvn();
+        if (dvnOf[eid] != address(0)) revert DvnAlreadyPinned(eid);
+        dvnOf[eid] = dvn;
+        LzMessage.pinSendDvn(address(endpoint), eid, dvn);
+        LzMessage.pinReceiveDvn(address(endpoint), eid, dvn);
+        emit DvnPinned(eid, dvn);
+    }
+
+    /// @dev OApp's `setDelegate` is not virtual, so it is refused here: a delegate other than
+    ///      this contract could reconfigure every pathway, which `setDvn` keeps write-once.
+    function _checkOwner() internal view virtual override {
+        if (msg.sig == IOAppCore.setDelegate.selector) revert DelegateIsFixed();
+        super._checkOwner();
     }
 
     /// @notice Set the peer for the governor's home eid to the counterpart there, which
@@ -73,7 +113,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
         }
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 homeEid = uint32(_providerIdFor(homeChainKey));
-        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, homeEid));
+        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, homeEid, dvnOf[homeEid]));
     }
 
     /* ===================================== sending ===================================== */
@@ -134,8 +174,11 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
 contract LzTransceiver is LzTransceiverBase {
     constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
 
-    function initialize(TransceiverConfig memory c, uint32 governorHomeEid) external initializer {
-        __LzTransceiver_init(c, governorHomeEid);
+    function initialize(TransceiverConfig memory c, uint32 governorHomeEid, address governorHomeDvn)
+        external
+        initializer
+    {
+        __LzTransceiver_init(c, governorHomeEid, governorHomeDvn);
         __TransceiverBase_init(c);
         _initGovernorHomePeer(c, governorHomeEid);
     }
