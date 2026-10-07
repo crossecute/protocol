@@ -126,7 +126,7 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Where the SDK is inherited and already sends (LayerZero's OApp), it holds only the attribute. |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ReceiverBase` | The per-user account on every other chain. Receives on path A. |
-| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; OP Stack, whose messenger reaches one chain, extends `TransceiverBase` directly, and under ERC-7786 a gateway binding has no id either. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
+| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain, and under ERC-7786 a gateway binding has no id at all. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
 | `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
@@ -798,14 +798,14 @@ to those, rather than flags:
 | `ProviderFeeSpec` | all but OP Stack (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
 | `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
-| `ProviderIdTableSpec` | the four transceivers with an id table | C1 (transmitter lookup), C5 (transceiver), C28 |
+| `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all five | C9 |
 | `ProviderReceiveSpec` | all five | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
 | `ProviderWideSenderSpec` | all but OP Stack (sender is an address) | C10 |
 | `ProviderInboundSpec` | all five | C4, C6, C7, C24 (transceiver); only the provider delivers |
-| `ProviderGatewayRoleSpec` | all but LayerZero (OApp checks the endpoint itself) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
-| `ProviderGovernorHomeSpec` | the four transceivers with an id table | The governor home's id and route are set at initialization (#28) |
+| `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
+| `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
 | `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, and any excess returns to the float |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
@@ -813,11 +813,11 @@ below. The column says where each line is held.
 
 | # | Property | Asserts | Covered by |
 | --- | --- | --- | --- |
-| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider was handed the destination the recipient's chain resolves to: its id for that chain, or for OP Stack its paired messenger. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
+| C1 | `send_reachesTheProviderWithTheRightRoute` | The provider was handed the destination the recipient's chain resolves to: its id for that chain, which for `op-stack-l1-l2` is the messenger that reaches it. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
 | C2 | `send_toUnconfiguredDestinationReverts` | Reverts rather than falling back to a default. | `ProviderSendSpec` |
 | C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. | core `Transport.t.sol` `test_aRecipientThatIsNotThisAccountIsRefused` |
 | C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
-| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`, or the id table's refusal of an unmapped origin. | `ProviderIdTableSpec` (transceiver), OP Stack's `test_nothingIsAcceptedBeforeThePairedChainIsRouted`, `ProviderReceiveSpec` (account) |
+| C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`, or the id table's refusal of an unmapped origin. | `ProviderIdTableSpec` (transceiver), `op-stack-l1-l2`'s `test_nothingIsAcceptedFromAMessengerWhoseChainIsUnrouted`, `ProviderReceiveSpec` (account) |
 | C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a transceiver. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
 | C7 | `inbound_senderBytesMatchTheRegistryExactly` | The [R4.2](#r4-the-byte-forms-which-are-the-authentication) trap, directly. | `ProviderInboundSpec` (asserts the chain key authentication accepted) |
 | C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. | core `DestinationNaming.t.sol`: the route is the chain identifier and the chainKey its hash |

@@ -1,0 +1,18 @@
+# op-stack-l1-l2's provider id for a chain is the address of the messenger that reaches it,
+# which depends on the chain it is read from, so this file is not keyed like the others.
+# Read by `OpStackConfig` in script/deploy/OpStackDeploy.sol.
+#
+# Sources, 2026-10-06: the predeploy from optimism's Predeploys.sol (develop @ dfe4f947); each
+# L1CrossDomainMessenger from the L2's own predeploy (`OTHER_MESSENGER()`), whose answer
+# names 0x4200...0007 back on Ethereum; OP Mainnet's also matches its SystemConfig.
+
+# The chain every OP Stack chain here settles to.
+l1 = "ethereum"
+
+# On every OP Stack chain, the L2CrossDomainMessenger predeploy, which reaches only the L1.
+l2_messenger = "0x4200000000000000000000000000000000000007"
+
+# On the L1, each OP Stack chain's L1CrossDomainMessenger proxy, keyed by chains.toml name.
+[l1_messengers]
+base = "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa"
+optimism = "0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1"

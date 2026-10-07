@@ -13,20 +13,23 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {
-    ProviderSendSpec,
+    ProviderIdTableSpec,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
     ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackFixture} from "test/protocols/op-stack/OpStackFixture.sol";
+import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
+import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
-/// @notice The destination is which messenger is called, so the check is that this one was,
-///         addressed to the recipient.
-contract OpStackTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpec, OpStackFixture {
+/// @notice The destination is which messenger is called, so the check is that the one the table
+///         maps the recipient's chain to was, addressed to the recipient.
+contract OpStackTransceiverSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, OpStackFixture {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
-        assertEq(messenger.sentLength(), 1);
-        assertEq(messenger.sent(0).sender, address(harness));
-        assertEq(messenger.sent(0).target, REMOTE_COUNTERPART);
+        assertEq(MESSENGER.sentLength(), 1);
+        assertEq(MESSENGER.sent(0).sender, address(harness));
+        assertEq(MESSENGER.sent(0).target, REMOTE_COUNTERPART);
     }
 
     function _supportedAttribute() internal pure override returns (bytes memory) {
@@ -35,8 +38,8 @@ contract OpStackTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpe
 
     function test_messageIsTheEntryPointCallWithThePayload() public {
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
-        assertEq(messenger.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
-        assertEq(messenger.sent(0).value, 0);
+        assertEq(MESSENGER.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
+        assertEq(MESSENGER.sent(0).value, 0);
     }
 
     function test_minGasLimitDefaultsAndFollowsTheAttribute() public {
@@ -44,8 +47,8 @@ contract OpStackTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpe
         attrs[0] = abi.encodePacked(OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE, uint256(900_000));
         harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
         harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-        assertEq(messenger.sent(0).minGasLimit, OpStackMessage.DEFAULT_MIN_GAS_LIMIT);
-        assertEq(messenger.sent(1).minGasLimit, 900_000);
+        assertEq(MESSENGER.sent(0).minGasLimit, OpStackMessage.DEFAULT_MIN_GAS_LIMIT);
+        assertEq(MESSENGER.sent(1).minGasLimit, 900_000);
     }
 
     /// @dev Value handed to the messenger is bridged to the target, not spent as a fee.
@@ -55,24 +58,24 @@ contract OpStackTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpe
         harness.sendMessagePublic{value: 1}(_configuredRecipient(), "x", new bytes[](0), 1);
     }
 
-    /// @dev A recipient on another chain must not be delivered through this messenger, which
-    ///      would land it at the same address on this messenger's chain.
-    function test_aRecipientOnAnotherChainIsRefused() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(REMOTE_CHAIN_ID)
-            )
-        );
-        harness.sendMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x", new bytes[](0), 0);
-    }
+    /// @dev #41: Ethereum's transceiver reaches every OP Stack chain, each through its own
+    ///      `L1CrossDomainMessenger`.
+    function test_eachChainIsSentThroughItsOwnMessenger() public {
+        address second = address(0x4E55E8);
+        deployCodeTo("MockCrossDomainMessenger.sol:MockCrossDomainMessenger", second);
+        address owner = TransceiverBase(payable(address(harness))).owner();
+        vm.prank(owner);
+        OpStackTransceiver(payable(address(harness))).setMessenger(ChainKey.forEvm(10), second);
 
-    function test_quoteRevertsForAnotherMessengersChain() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OpStackMessage.NotThisMessengersChain.selector, ChainKey.forEvm(10), ChainKey.forEvm(REMOTE_CHAIN_ID)
-            )
+        harness.sendMessagePublic(Erc7930.encodeEvm(10, REMOTE_COUNTERPART), "to 10", new bytes[](0), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "to the remote", new bytes[](0), 0);
+
+        assertEq(MockCrossDomainMessenger(second).sentLength(), 1, "chain 10 through its messenger");
+        assertEq(
+            MockCrossDomainMessenger(second).sent(0).message,
+            abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("to 10")))
         );
-        harness.quoteMessagePublic(Erc7930.encodeEvm(10, address(0xC0DE)), "x");
+        assertEq(MESSENGER.sentLength(), 1, "the remote chain through its own");
     }
 
     function test_minGasLimitAboveUint32IsRefused() public {
@@ -84,9 +87,9 @@ contract OpStackTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpe
 }
 
 /// @notice The sharp edge: the sender is `xDomainMessageSender()`, never anything in the
-///         delivered calldata, which the origin-side caller wrote in full. A messenger relays
-///         only from its one paired chain, so the unconfigured-origin case is the impersonator
-///         case.
+///         delivered calldata, which the origin-side caller wrote in full. The receiver's one
+///         messenger relays only from its home, so the unconfigured-origin case is the
+///         impersonator case.
 contract OpStackReceiveTest is ProviderReceiveSpec, OpStackFixture {
     /// @dev `sendMessage` is permissionless: an attacker can put the transmitter's address
     ///      anywhere in the message they send. Only `xDomainMessageSender()` counts.
@@ -96,13 +99,13 @@ contract OpStackReceiveTest is ProviderReceiveSpec, OpStackFixture {
             abi.encode(SOURCE_TRANSMITTER)
         );
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
-        messenger.relay(address(0xBAD), receiver, claimed);
+        MESSENGER.relay(address(0xBAD), receiver, claimed);
     }
 
     /// @dev Outside a relay, `xDomainMessageSender()` reverts; a gateway calling in directly
     ///      cannot supply a sender either.
     function test_theMessengerCallingOutsideARelayIsRejected() public {
-        vm.prank(address(messenger));
+        vm.prank(REMOTE_MESSENGER);
         vm.expectRevert("CrossDomainMessenger: xDomainMessageSender is not set");
         OpStackReceiver(payable(receiver)).receiveOpStackMessage(Payload.encodeCalls(new Call[](0)));
     }

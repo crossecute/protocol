@@ -62,7 +62,7 @@ abstract contract ProductionDeploySpec is Test {
     }
 
     function _seedRegistry(address deployedBy, Provenance homeGrade) internal {
-        string[5] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack"];
+        string[5] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack-l1-l2"];
         ProviderSeed[] memory providers = new ProviderSeed[](5);
         for (uint256 i; i < 5; ++i) {
             providers[i] = ProviderSeed(
@@ -178,12 +178,10 @@ contract DeployOpStackTest is ProductionDeploySpec {
     }
 
     function _providerName() internal pure override returns (string memory) {
-        return "op-stack";
+        return "op-stack-l1-l2";
     }
 
-    function _setUpProvider() internal override {
-        deployCodeTo("MockCrossDomainMessenger.sol:MockCrossDomainMessenger", address(0xE0006));
-        _setEnv("OP_STACK_MESSENGER", vm.toString(address(0xE0006)));
-        _setEnv("OP_STACK_PAIRED_CHAIN_ID", vm.toString(HOME_CHAIN_ID));
-    }
+    /// @dev No inputs of its own: on Base, the governor home (Ethereum) is reached through the
+    ///      predeploy named in deploy/.
+    function _setUpProvider() internal override {}
 }

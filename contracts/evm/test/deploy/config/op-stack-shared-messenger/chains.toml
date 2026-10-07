@@ -1,0 +1,11 @@
+[chains.eth]
+chain_id = 1
+derivation = "parity"
+
+[chains.a]
+chain_id = 10
+derivation = "parity"
+
+[chains.b]
+chain_id = 8453
+derivation = "parity"

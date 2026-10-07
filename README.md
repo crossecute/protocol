@@ -327,7 +327,7 @@ bindings differ is in who delivers a message to an account and what authenticate
 | CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter | the off-ramp |
 | Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
-| OP Stack | `receiveOpStackMessage`, from the messenger | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
+| OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the account's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
 
 What an operator or integrator has to know:
 
@@ -360,10 +360,10 @@ What an operator or integrator has to know:
   depend on the Executor quoter, which is an implementation immutable.
 - **OP Stack sends carry no value and cost only gas.** The quote is zero, so a send spends
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
-  would bridge it rather than spend it. `OpStackTransceiver` is one contract per L1 and OP
-  Stack chain pair, the same on both sides, registered as its own message provider; it
-  refuses recipients on any chain but its pair. #41 replaces this with one transceiver per
-  chain serving every pair; not yet implemented.
+  would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,
+  the messenger that reaches it, write-once: on Ethereum one `L1CrossDomainMessenger` per OP
+  Stack chain, on each OP Stack chain the `L2CrossDomainMessenger` predeploy, which reaches
+  only Ethereum. A delivery's origin is the chain of the messenger that called.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
@@ -444,7 +444,7 @@ and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 704 passing
+cd contracts/evm && forge test        # 709 passing
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

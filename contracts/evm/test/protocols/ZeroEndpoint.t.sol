@@ -12,18 +12,20 @@ import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
-import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
-import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
+import {OpStackReceiver, IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
+import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {Call} from "src/messaging/Call.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 
-/// @notice Every provider endpoint a constructor takes is immutable, so each refuses zero.
+/// @notice Every provider endpoint a constructor takes is immutable, so each refuses zero, as
+///         does the messenger OP Stack's receiver takes at initialization.
 contract ZeroEndpointTest is Test {
     address constant E = address(0xE0);
 
     function test_singleEndpointConstructorsRefuseZero() public {
-        bytes[11] memory code = [
+        bytes[10] memory code = [
             type(CcipReceiver).creationCode,
             type(CcipTransceiver).creationCode,
             type(CcipTransmitter).creationCode,
@@ -33,7 +35,6 @@ contract ZeroEndpointTest is Test {
             type(LzReceiver).creationCode,
             type(LzTransceiver).creationCode,
             type(LzTransmitter).creationCode,
-            type(OpStackReceiver).creationCode,
             type(WormholeReceiver).creationCode
         ];
         for (uint256 i; i < code.length; ++i) {
@@ -41,12 +42,16 @@ contract ZeroEndpointTest is Test {
         }
     }
 
-    function test_opStackRefusesAZeroMessenger() public {
-        _assertRefusesOnlyZero(
-            type(OpStackTransceiver).creationCode,
-            abi.encode(address(0), bytes32(uint256(1))),
-            abi.encode(E, bytes32(uint256(1)))
-        );
+    /// @dev OP Stack's receiver takes its messenger at initialization rather than in its
+    ///      constructor, so it refuses zero there.
+    function test_opStackReceiverRefusesAZeroMessenger() public {
+        address impl = address(new OpStackReceiver());
+        address proxy = address(new CrossProxy());
+        vm.expectRevert(ProviderAddress.ZeroEndpoint.selector);
+        ICrossProxy(proxy)
+            .upgradeInitializeAndLock(
+                impl, abi.encodeCall(IOpStackReceiverInit.initialize, (address(0xABCD), new Call[](0), address(0)))
+            );
     }
 
     /// @dev Core bridge, executor router, and quoter, each zeroed in turn.

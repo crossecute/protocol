@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {ICrossDomainMessenger} from "@optimism/interfaces/universal/ICrossDomainMessenger.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -12,7 +11,8 @@ interface IOpStackRecipient {
     function receiveOpStackMessage(bytes calldata payload) external;
 }
 
-/// @notice Send and inbound-sender logic shared by every OP Stack binding contract.
+/// @notice Send and inbound-sender logic shared by every `op-stack-l1-l2` contract, over
+///         `CrossDomainMessenger`.
 ///
 /// @dev No native fee: an L1->L2 deposit pays for its L2 gas by burning L1 gas in the sending
 ///      transaction (`ResourceMetering`), and an L2->L1 message pays nothing at the source.
@@ -28,22 +28,19 @@ library OpStackMessage {
     uint32 internal constant DEFAULT_MIN_GAS_LIMIT = 200_000;
 
     error OpStackValueNotSupported(uint256 value);
-    error NotThisMessengersChain(bytes32 chainKey, bytes32 messengerChainKey);
 
-    /// @param messengerChainKey The one chain `messenger` reaches. The destination is which
-    ///        messenger is called, not an argument to it, so a recipient on any other chain
-    ///        would otherwise be delivered to the same address on this one.
+    /// @param messenger The messenger for the recipient's chain, from the transceiver's table:
+    ///        the destination is which messenger is called, not an argument to it.
     /// @return Zero, ERC-7786's "sent" (see `ProviderSendSpec`); the messenger's nonce is in
     ///         its `SentMessage` event.
     function send(
         address messenger,
-        bytes32 messengerChainKey,
         bytes memory recipient,
         bytes memory payload,
         bytes[] memory attributes,
         uint256 value
     ) internal returns (bytes32) {
-        address target = _check(messengerChainKey, recipient, value);
+        address target = _check(recipient, value);
         ICrossDomainMessenger(messenger)
             .sendMessage(
                 target, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload)), minGasLimitFrom(attributes)
@@ -51,13 +48,10 @@ library OpStackMessage {
         return bytes32(0);
     }
 
-    /// @dev Zero, after the same checks `send` applies, so it reverts wherever the send would.
-    function quote(bytes32 messengerChainKey, bytes memory recipient, bytes[] memory attributes)
-        internal
-        pure
-        returns (uint256)
-    {
-        _check(messengerChainKey, recipient, 0);
+    /// @dev Zero, after the same checks `send` applies. The caller has already looked up the
+    ///      messenger, which reverts for a chain the table does not map.
+    function quote(bytes memory recipient, bytes[] memory attributes) internal pure returns (uint256) {
+        _check(recipient, 0);
         minGasLimitFrom(attributes);
         return 0;
     }
@@ -70,10 +64,8 @@ library OpStackMessage {
         return ICrossDomainMessenger(msg.sender).xDomainMessageSender();
     }
 
-    function _check(bytes32 messengerChainKey, bytes memory recipient, uint256 value) private pure returns (address) {
+    function _check(bytes memory recipient, uint256 value) private pure returns (address) {
         if (value != 0) revert OpStackValueNotSupported(value);
-        bytes32 chainKey = Erc7930.chainKey(recipient);
-        if (chainKey != messengerChainKey) revert NotThisMessengersChain(chainKey, messengerChainKey);
         return ProviderAddress.evmRecipient(recipient);
     }
 

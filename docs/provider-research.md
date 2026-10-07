@@ -215,11 +215,12 @@ and nothing else, rather than trusting one attestation network with every destin
 once. What it costs is N deployments, N graded chain entries, and N sets of routes,
 which is the operational load a default counterpart exists to keep bearable.
 
-**Reversed for OP Stack (#41), not yet implemented.** One transceiver per messaging layer per
-chain is the rule, so Ethereum's OP Stack transceiver is to serve every OP Stack L2 through a
-per-chain messenger table. The trust argument above survives if a delivery's origin is
-decided by which messenger called, never by the message: a compromised Base bridge can then
-only deliver as Base. The binding still serves one pair until #41 lands.
+**Reversed for OP Stack (#41).** One transceiver per messaging layer per chain is the rule, so
+`op-stack-l1-l2`'s transceiver on Ethereum serves every OP Stack chain through a write-once
+table of the messenger that reaches each. The trust argument above survives because a
+delivery's origin is the chain of the messenger that called, never anything in the message:
+a compromised Base bridge can only deliver as Base. L2 to L2 is a separate provider,
+`op-stack-l2-l2`.
 
 ### Chain-level deployment permissioning, which breaks bootstrap and not sends
 
@@ -717,7 +718,8 @@ already concluded, "one transceiver pair per rollup, not one for the stack", and
 this binding at all. `OpStackTransceiver` holds its messenger and the paired chain as
 immutables, the same contract on the L1 and on the OP Stack chain; reaching another OP Stack
 chain means another pair, registered as its own message provider, not a row in a table.
-#41 reverses this (see §2); not yet implemented.
+#41 reversed this (see §2): the messenger that reaches each chain is now that chain's row in
+`ProviderChainId`.
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it

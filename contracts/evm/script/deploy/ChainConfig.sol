@@ -30,7 +30,7 @@ library ChainConfig {
 
     /// @notice Every configured chain, with unique nonzero chain ids and a known derivation.
     function chains(string memory dir) internal view returns (ChainEntry[] memory cs) {
-        string memory toml = _read(string.concat(dir, "/chains.toml"));
+        string memory toml = read(string.concat(dir, "/chains.toml"));
         string[] memory names = VM.parseTomlKeys(toml, ".chains");
         cs = new ChainEntry[](names.length);
         for (uint256 i; i < names.length; ++i) {
@@ -62,13 +62,13 @@ library ChainConfig {
         view
         returns (uint256 id)
     {
-        string memory toml = _read(string.concat(dir, "/providers/", provider, ".toml"));
+        string memory toml = read(string.concat(dir, "/providers/", provider, ".toml"));
         uint256 bits = VM.parseTomlUint(toml, ".id_bits");
         check(bits != 0 && bits <= 256, "id_bits is a width");
         string[] memory names = VM.parseTomlKeys(toml, ".ids");
         uint256[] memory ids = new uint256[](names.length);
         for (uint256 i; i < names.length; ++i) {
-            check(_hasName(cs, names[i]), "provider ids are keyed by chains.toml names");
+            check(hasChainNamed(cs, names[i]), "provider ids are keyed by chains.toml names");
             ids[i] = VM.parseTomlUint(toml, string.concat(".ids.", names[i]));
             check(ids[i] != 0, "provider id is nonzero");
             check(bits == 256 || ids[i] >> bits == 0, "provider id fits id_bits");
@@ -106,7 +106,7 @@ library ChainConfig {
     }
 
     /// @dev `fs_permissions` in foundry.toml limits reads to `deploy/` and the test configs.
-    function _read(string memory path) private view returns (string memory) {
+    function read(string memory path) internal view returns (string memory) {
         // forge-lint: disable-next-line(unsafe-cheatcode) reads the configuration, nothing else
         return VM.readFile(path);
     }
@@ -120,7 +120,7 @@ library ChainConfig {
         revert DeployCheck("derivation is parity, zksync, tron, or other");
     }
 
-    function _hasName(ChainEntry[] memory cs, string memory name) private pure returns (bool) {
+    function hasChainNamed(ChainEntry[] memory cs, string memory name) internal pure returns (bool) {
         for (uint256 i; i < cs.length; ++i) {
             if (keccak256(bytes(cs[i].name)) == keccak256(bytes(name))) return true;
         }

@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
+import {OpStackConfig} from "script/deploy/OpStackDeploy.sol";
 import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
@@ -112,8 +113,38 @@ contract ChainConfigTest is Test {
         assertEq(ChainConfig.providerId(dir, cs, "wormhole", base), _remoteId(new WormholeIds()));
     }
 
-    function _remoteId(IRemoteId f) internal view returns (uint256) {
+    function _remoteId(IRemoteId f) internal pure returns (uint256) {
         return f.remoteProviderId();
+    }
+
+    function opStackMessenger(string memory dir, uint256 localId, uint256 remoteId) external view returns (address) {
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        return
+            OpStackConfig.messenger(
+                dir, cs, ChainConfig.chainWithId(cs, localId), ChainConfig.chainWithId(cs, remoteId)
+            );
+    }
+
+    /// @dev #41: the L1 reaches each OP Stack chain through that chain's own messenger, and each
+    ///      reaches only the L1, through the predeploy.
+    function test_anOpStackMessengerDependsOnTheChainItIsReadFrom() public view {
+        string memory dir = ChainConfig.defaultDir();
+        assertEq(this.opStackMessenger(dir, 1, 8453), 0x866E82a600A1414e583f7F13623F1aC5d58b0Afa, "Ethereum to Base");
+        assertEq(this.opStackMessenger(dir, 1, 10), 0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1, "Ethereum to OP");
+        assertEq(this.opStackMessenger(dir, 8453, 1), 0x4200000000000000000000000000000000000007, "Base to Ethereum");
+        assertEq(this.opStackMessenger(dir, 8453, 10), address(0), "not L2 to L2: that is op-stack-l2-l2");
+        assertEq(this.opStackMessenger(dir, 42161, 1), address(0), "Arbitrum is not an OP Stack chain");
+        assertEq(this.opStackMessenger(dir, 1, 42161), address(0), "nor from Ethereum's side");
+    }
+
+    function test_twoOpStackChainsSharingAnL1MessengerAreRefused() public {
+        _expect("each OP Stack chain has its own L1 messenger");
+        this.opStackMessenger(_dir("op-stack-shared-messenger"), 1, 10);
+    }
+
+    function test_anOpStackChainNotInChainsTomlIsRefused() public {
+        _expect("OP Stack chains are keyed by chains.toml names");
+        this.opStackMessenger(_dir("op-stack-unknown-chain"), 1, 10);
     }
 
     function test_aDuplicateChainIdIsRefused() public {

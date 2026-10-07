@@ -78,11 +78,7 @@ this file is the gap between that design and the tree.
   first through Arachnid's factory. zkSync and Tron have deploy functions the tests use but no
   production script: their bytecode, with `WormholeMessage` linked, is built by zksolc and
   TRON-solc, which these scripts do not drive. The registry's write-once record is keyed by
-  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack`.
-- **OP Stack reaches one L2 per chain (#41).** Each transceiver is bound to one paired chain,
-  and a chain has one transceiver per provider, so Ethereum's reaches one OP Stack L2. Decided:
-  one transceiver per chain, holding a write-once messenger per paired chain, with a
-  delivery's origin taken from which messenger called. Not implemented.
+  the provider names `layerzero`, `ccip`, `hyperlane`, `wormhole`, and `op-stack-l1-l2`.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below; Wormhole's own replay (C29 to C31) is already tested, since the binding owns it.

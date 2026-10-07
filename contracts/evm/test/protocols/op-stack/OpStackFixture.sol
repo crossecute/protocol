@@ -4,18 +4,16 @@ pragma solidity ^0.8.20;
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
+import {IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {ProviderIdFixture} from "test/protocols/ProviderFixture.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract OpStackTransceiverHarness is OpStackTransceiver {
     event InboundHandled(bytes32 chainKey);
-
-    constructor(address messenger_, bytes32 messengerChainKey_) OpStackTransceiver(messenger_, messengerChainKey_) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -35,26 +33,32 @@ contract OpStackTransceiverHarness is OpStackTransceiver {
     }
 }
 
-/// @notice The messenger is paired with `REMOTE_CHAIN_ID`, an implementation immutable, so
-///         there is no provider id and nothing to configure. The sender is
-///         `xDomainMessageSender()`, never anything in the delivered calldata.
-abstract contract OpStackFixture is ProviderFixture {
-    MockCrossDomainMessenger internal messenger = new MockCrossDomainMessenger();
+/// @notice The messenger that reaches `REMOTE_CHAIN_ID` is its provider id, so the mock sits at a
+///         fixed address. The sender is `xDomainMessageSender()`, never anything in the
+///         delivered calldata.
+abstract contract OpStackFixture is ProviderIdFixture {
+    address internal constant REMOTE_MESSENGER = address(0x4E55E7);
+
+    MockCrossDomainMessenger internal constant MESSENGER = MockCrossDomainMessenger(REMOTE_MESSENGER);
+
+    constructor() {
+        deployCodeTo("MockCrossDomainMessenger.sol:MockCrossDomainMessenger", REMOTE_MESSENGER);
+    }
 
     function _transceiverImplementation() internal override returns (address) {
-        return address(new OpStackTransceiverHarness(address(messenger), ChainKey.forEvm(REMOTE_CHAIN_ID)));
+        return address(new OpStackTransceiverHarness());
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return OpStackDeploy.receiverImplementation(address(messenger));
+        return OpStackDeploy.receiverImplementation();
     }
 
     function _transmitterImplementation() internal override returns (address) {
         return OpStackDeploy.transmitterImplementation();
     }
 
-    function _deploy(TransceiverDeployment memory d, uint256) internal override returns (address) {
-        return OpStackDeploy.transceiver(d, address(messenger), ChainKey.forEvm(REMOTE_CHAIN_ID));
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return OpStackDeploy.transceiver(d, address(uint160(homeId)));
     }
 
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)
@@ -63,25 +67,37 @@ abstract contract OpStackFixture is ProviderFixture {
         override
         returns (bytes memory)
     {
-        return defaultReceiverInit(sourceTransmitter, calls);
+        return abi.encodeCall(IOpStackReceiverInit.initialize, (sourceTransmitter, calls, REMOTE_MESSENGER));
     }
 
-    function _gateway() internal view override returns (address) {
-        return address(messenger);
+    function _gateway() internal pure override returns (address) {
+        return REMOTE_MESSENGER;
     }
 
     function _remoteProviderId() internal pure override returns (uint256) {
-        return 0;
+        return uint160(REMOTE_MESSENGER);
     }
 
-    function _configureRemote(address, address) internal override {}
+    function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
+        OpStackTransceiver(payable(t)).setMessenger(chainKey, address(uint160(providerId)));
+    }
 
-    /// @dev The messenger reports a 20-byte sender, so a wider one cannot be expressed.
-    function _deliver(address to, uint256, bytes32 sender, bytes memory message) internal override {
+    function _configureRemote(address t, address) internal override {
+        _setRemoteProviderId(t);
+    }
+
+    /// @dev Relayed by the messenger at `originId`, given the mock's code if it has none. The
+    ///      messenger reports a 20-byte sender, so a wider one cannot be expressed.
+    function _deliver(address to, uint256 originId, bytes32 sender, bytes memory message) internal override {
         require(uint256(sender) >> 160 == 0, "OP Stack senders are addresses");
-        messenger.relay(
-            address(uint160(uint256(sender))), to, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (message))
-        );
+        address from = address(uint160(originId));
+        if (from.code.length == 0) vm.etch(from, REMOTE_MESSENGER.code);
+        MockCrossDomainMessenger(from)
+            .relay(
+                address(uint160(uint256(sender))),
+                to,
+                abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (message))
+            );
     }
 
     function _deliverBypassingGateway(address to, bytes32, bytes memory message) internal override {
