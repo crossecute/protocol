@@ -51,6 +51,9 @@ remappings = [
     # Hand-copied, not a submodule: one import-free interface from the optimism monorepo.
     # See contracts/evm/script/vendor/op-stack.sh.
     "@optimism/=lib/optimism/packages/contracts-bedrock/",
+    # The interop interface imports its sibling by contracts-bedrock's own root-relative
+    # path; scoped to lib/optimism/ so no other file sees an `interfaces/` remap.
+    "lib/optimism/:interfaces/=lib/optimism/packages/contracts-bedrock/interfaces/",
 ]
 
 # CI runs `forge fmt --check`. Forge's defaults, which most of the tree already followed.
