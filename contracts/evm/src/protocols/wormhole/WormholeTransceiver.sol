@@ -7,29 +7,31 @@ import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Wormhole on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
-///         differ only in address derivation.
+/// @notice Wormhole on `TransceiverBase`. Wormhole reaches neither zkSync Era nor Tron, so there
+///         are no divergent variants and no Wormhole transceiver sends a receiver report.
 ///
 /// @dev The Wormhole chain id is its own `uint16` enumeration, not an EVM chain id, hence the
 ///      table. Transceivers share one address across parity chains, so the published payload's
 ///      destination prefix (`WormholeMessage`) is what keeps a VAA for one chain from running
 ///      on another. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings`.
-abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver {
-    bytes4 public constant WORMHOLE_GAS_LIMIT_ATTRIBUTE = WormholeMessage.GAS_LIMIT_ATTRIBUTE;
+contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
+    bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
 
-    /// @notice Core bridge, Executor quoter router, and relay provider's quoter on this chain.
-    ///         On the implementation, so they never reach a derived account address.
+    /// @notice Core bridge and Executor on this chain. On the implementation, so they never
+    ///         reach a derived account address.
     address public immutable coreBridge;
-    address public immutable quoterRouter;
-    address public immutable quoter;
+    address public immutable executor;
 
-    constructor(address coreBridge_, address quoterRouter_, address quoter_) {
+    constructor(address coreBridge_, address executor_) {
         if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
-        if (quoterRouter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
-        if (quoter_ == address(0)) revert ProviderAddress.ZeroEndpoint();
+        if (executor_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
-        quoterRouter = quoterRouter_;
-        quoter = quoter_;
+        executor = executor_;
+    }
+
+    function initialize(TransceiverConfig memory c, uint16 governorHomeChain) external initializer {
+        __WormholeTransceiver_init(c, governorHomeChain);
+        __TransceiverBase_init(c);
     }
 
     /// @dev `executeVAAv1` requires the Core bridge to hold `GATEWAY_ROLE`, though it never
@@ -51,8 +53,7 @@ abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver
 
     /* ===================================== sending ===================================== */
 
-    /// @dev The Executor router refunds excess to `_refundTo`: the float during a report, the
-    ///      caller otherwise.
+    /// @dev The excess over the quote is refunded to `_refundTo`, the caller.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override
@@ -69,13 +70,13 @@ abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(_route(recipient), recipient, attributes, _refundTo(), _defaultGas(payload));
+        return WormholeMessage.quote(_route(recipient), attributes, _defaultGas(payload));
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint16 setter
         uint16 targetChain = uint16(_providerIdOf(recipient));
-        return WormholeMessage.Route(coreBridge, quoterRouter, quoter, targetChain);
+        return WormholeMessage.Route(coreBridge, executor, targetChain);
     }
 
     /* ==================================== receiving ==================================== */
@@ -91,17 +92,5 @@ abstract contract WormholeTransceiverBase is ProviderTransceiver, IVaaV1Receiver
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {
         return WormholeMessage.consumed(vaaHash);
-    }
-}
-
-/// @notice The Wormhole transceiver on every chain whose addresses match Ethereum's.
-contract WormholeTransceiver is WormholeTransceiverBase {
-    constructor(address coreBridge_, address quoterRouter_, address quoter_)
-        WormholeTransceiverBase(coreBridge_, quoterRouter_, quoter_)
-    {}
-
-    function initialize(TransceiverConfig memory c, uint16 governorHomeChain) external initializer {
-        __WormholeTransceiver_init(c, governorHomeChain);
-        __TransceiverBase_init(c);
     }
 }

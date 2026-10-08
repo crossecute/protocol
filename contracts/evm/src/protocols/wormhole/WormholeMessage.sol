@@ -2,17 +2,17 @@
 pragma solidity ^0.8.0;
 
 import {ICoreBridge, CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
-import {IExecutorQuoterRouter} from "@wormhole-sdk/interfaces/IExecutor.sol";
+import {IExecutor} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Send, quote, and inbound verification for every Wormhole binding contract, over
-///         Core `publishMessage` plus Executor delivery (the Standard Relayer is deprecated).
+///         Core `publishMessage` plus Executor delivery with a relay provider's signed quote
+///         (the Standard Relayer is deprecated).
 ///
 /// @dev `send` and `quote` are `public`, so they are deployed once and linked rather than
-///      inlined into every Wormhole contract: inlined, they put the zkSync and Tron transceivers
-///      over EIP-170 (#29). A linked call is a `DELEGATECALL`, so it runs in the caller's
+///      inlined into every Wormhole contract (#29). A linked call is a `DELEGATECALL`, so it runs in the caller's
 ///      context and pays from the caller's balance as before. `verify` stays `internal`, since
 ///      it returns a calldata slice.
 ///
@@ -22,7 +22,13 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      so without this prefix a VAA addressed to one chain would execute on every other.
 library WormholeMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
-    bytes4 internal constant GAS_LIMIT_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.gasLimit"));
+    bytes4 internal constant EXECUTION_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.execution"));
+
+    /// @dev The Executor's signed quote, version 1: header (prefix, quoter, payee, source chain,
+    ///      destination chain, expiry), then base fee, destination gas price, source and
+    ///      destination USD prices, and a 65-byte signature.
+    bytes4 internal constant EQ01 = "EQ01";
+    uint256 internal constant EQ01_LENGTH = 165;
 
     /// @dev `CONSISTENCY_LEVEL_FINALIZED` in the SDK's `constants/ConsistencyLevel.sol`.
     uint8 internal constant CONSISTENCY_FINALIZED = 1;
@@ -43,7 +49,12 @@ library WormholeMessage {
     bytes32 private constant CONSUMED_SLOT =
         keccak256(abi.encode(uint256(keccak256("crossecute.wormhole.consumed")) - 1)) & ~bytes32(uint256(0xff));
 
-    error InsufficientWormholeValue(uint256 value, uint256 messageFee);
+    error InsufficientWormholeValue(uint256 value, uint256 required);
+    error NoSignedQuote();
+    error UnsupportedQuote();
+    error QuoteForAnotherRoute(uint16 srcChain, uint16 dstChain);
+    error QuoteExpired(uint64 expiry);
+    error RefundFailed(address to, uint256 amount);
     error WormholeGatewayRevoked();
     error InvalidVaa(string reason);
     error MalformedVaa();
@@ -55,15 +66,21 @@ library WormholeMessage {
 
     struct Route {
         address coreBridge;
-        address quoterRouter;
-        address quoter;
+        address executor;
         uint16 targetChain;
     }
 
-    /// @dev `value` covers Core's message fee plus the Executor's price. The router refunds any
-    ///      excess over its quote to `refundTo` (`OutboundBase._refundTo()`) and reverts
-    ///      `Underpaid` below it. Returns zero, ERC-7786's "sent" (see `ProviderSendSpec`);
-    ///      the Core sequence is in `LogMessagePublished`.
+    /// @dev A send's execution terms: the caller's quote, the gas it buys, and their price.
+    struct Execution {
+        bytes signedQuote;
+        uint128 gasLimit;
+        uint256 price;
+    }
+
+    /// @dev Publishes, then requests execution with the caller's signed quote, paying the price
+    ///      `quote` computes from it and refunding the rest to `refundTo`: the Executor forwards
+    ///      all it is sent to the quote's payee and refunds nothing. Returns zero, ERC-7786's
+    ///      "sent" (see `ProviderSendSpec`); the Core sequence is in `LogMessagePublished`.
     function send(
         Route memory route,
         bytes memory recipient,
@@ -73,55 +90,96 @@ library WormholeMessage {
         address refundTo,
         uint256 defaultGas
     ) public returns (bytes32) {
-        bytes32 target = recipientOf(recipient);
+        Execution memory e = execution(route, attributes, defaultGas);
         uint256 messageFee = ICoreBridge(route.coreBridge).messageFee();
-        if (value < messageFee) revert InsufficientWormholeValue(value, messageFee);
+        if (value < messageFee + e.price) revert InsufficientWormholeValue(value, messageFee + e.price);
+
         uint64 sequence = ICoreBridge(route.coreBridge).publishMessage{value: messageFee}(
-            0, abi.encodePacked(route.targetChain, target, payload), CONSISTENCY_FINALIZED
+            0, abi.encodePacked(route.targetChain, recipientOf(recipient), payload), CONSISTENCY_FINALIZED
         );
-        _requestExecution(route, target, refundTo, sequence, gasLimitFrom(attributes, defaultGas), value - messageFee);
+        _requestExecution(route, recipient, refundTo, sequence, e);
+        _refund(refundTo, value - messageFee - e.price);
         return bytes32(0);
+    }
+
+    /// @notice Core's message fee plus the execution price, reverting wherever `send` would.
+    function quote(Route memory route, bytes[] memory attributes, uint256 defaultGas) public view returns (uint256) {
+        return ICoreBridge(route.coreBridge).messageFee() + execution(route, attributes, defaultGas).price;
+    }
+
+    /// @notice The terms `send` pays and `quote` prices, from the one attribute.
+    function execution(Route memory route, bytes[] memory attributes, uint256 defaultGas)
+        internal
+        view
+        returns (Execution memory e)
+    {
+        (e.signedQuote, e.gasLimit) = executionFrom(attributes, defaultGas);
+        e.price = executionPrice(route, e.signedQuote, e.gasLimit);
     }
 
     /// @dev Split out of `send` for stack depth under the legacy (non-IR) pipeline.
     function _requestExecution(
         Route memory route,
-        bytes32 target,
+        bytes memory recipient,
         address refundTo,
         uint64 sequence,
-        uint128 gasLimit,
-        uint256 executorValue
+        Execution memory e
     ) private {
-        IExecutorQuoterRouter(route.quoterRouter).requestExecution{value: executorValue}(
+        IExecutor(route.executor).requestExecution{value: e.price}(
             route.targetChain,
-            target,
+            recipientOf(recipient),
             refundTo,
-            route.quoter,
+            e.signedQuote,
             _requestBytes(route.coreBridge, sequence),
-            relayInstructions(gasLimit)
+            relayInstructions(e.gasLimit)
         );
     }
 
-    /// @dev Prices the request for the next sequence this contract will publish, which is the
-    ///      one `send` would use.
-    function quote(
-        Route memory route,
-        bytes memory recipient,
-        bytes[] memory attributes,
-        address refundTo,
-        uint256 defaultGas
-    ) public view returns (uint256) {
-        uint64 sequence = ICoreBridge(route.coreBridge).nextSequence(address(this));
-        return ICoreBridge(route.coreBridge).messageFee()
-            + IExecutorQuoterRouter(route.quoterRouter)
-                .quoteExecution(
-                route.targetChain,
-                recipientOf(recipient),
-                refundTo,
-                route.quoter,
-                _requestBytes(route.coreBridge, sequence),
-                relayInstructions(gasLimitFrom(attributes, defaultGas))
-            );
+    /// @notice What a relay provider charges, in this chain's native currency, for `gasLimit` on
+    ///         the destination under its EQ01 quote.
+    /// @dev The Executor's own formula (`ExecutorQuoter.estimateQuote`): the base fee, in units of
+    ///      10^-10 of the source currency, plus the destination gas at the quoted price converted
+    ///      by the two USD prices. It assumes 18-decimal native currency and gas priced in wei on
+    ///      both chains, true of every chain Wormhole reaches here; it reproduced the Executor
+    ///      API's `estimatedCost` exactly (deploy/CHECKS.md §3). The Executor checks the chains and
+    ///      expiry again but not the payment, which the provider enforces off-chain.
+    /// @dev The quote's signature is not checked: a quote from a provider that will not relay
+    ///      costs only the caller who chose it, and anyone may still relay the VAA.
+    function executionPrice(Route memory route, bytes memory signedQuote, uint128 gasLimit)
+        internal
+        view
+        returns (uint256)
+    {
+        // forge-lint: disable-next-line(unsafe-typecast) the leading 4 bytes, after the length check
+        if (signedQuote.length != EQ01_LENGTH || bytes4(signedQuote) != EQ01) revert UnsupportedQuote();
+        // Each field is read at its own width, so the narrowing casts below lose nothing.
+        // forge-lint: disable-start(unsafe-typecast)
+        uint16 srcChain = uint16(_word(signedQuote, 56, 2));
+        uint16 dstChain = uint16(_word(signedQuote, 58, 2));
+        if (srcChain != ICoreBridge(route.coreBridge).chainId() || dstChain != route.targetChain) {
+            revert QuoteForAnotherRoute(srcChain, dstChain);
+        }
+        uint64 expiry = uint64(_word(signedQuote, 60, 8));
+        // forge-lint: disable-end(unsafe-typecast)
+        // forge-lint: disable-next-line(block-timestamp) the Executor's own expiry rule
+        if (expiry <= block.timestamp) revert QuoteExpired(expiry);
+        uint256 srcPrice = _word(signedQuote, 84, 8);
+        if (srcPrice == 0) revert UnsupportedQuote();
+        return _word(signedQuote, 68, 8) * 1e8 + uint256(gasLimit) * _word(signedQuote, 76, 8)
+            * _word(signedQuote, 92, 8) / srcPrice;
+    }
+
+    /// @dev The big-endian integer `size` bytes long at `offset`, which the caller has bounded.
+    function _word(bytes memory b, uint256 offset, uint256 size) private pure returns (uint256 v) {
+        assembly {
+            v := shr(sub(256, mul(size, 8)), mload(add(add(b, 32), offset)))
+        }
+    }
+
+    function _refund(address to, uint256 amount) private {
+        if (amount == 0) return;
+        (bool ok,) = to.call{value: amount}("");
+        if (!ok) revert RefundFailed(to, amount);
     }
 
     function _requestBytes(address coreBridge, uint64 sequence) private view returns (bytes memory) {
@@ -138,14 +196,25 @@ library WormholeMessage {
         return bytes32(uint256(uint160(ProviderAddress.evmRecipient(recipient))));
     }
 
-    /// @notice One attribute: the destination gas limit, as
-    ///         `abi.encodePacked(GAS_LIMIT_ATTRIBUTE, abi.encode(gasLimit))`, at most
-    ///         `type(uint128).max`. Anything else is refused per ERC-7786.
-    /// @dev The Executor has no default, so without the attribute it is `defaultGas`.
-    function gasLimitFrom(bytes[] memory attributes, uint256 defaultGas) internal pure returns (uint128) {
-        return
-        // forge-lint: disable-next-line(unsafe-typecast) bounded by uintValue
-        uint128(ProviderAttribute.uintValue(attributes, GAS_LIMIT_ATTRIBUTE, type(uint128).max, defaultGas));
+    /// @notice The one attribute, which every send needs: a relay provider's signed EQ01 quote
+    ///         for this pair of chains and the destination gas, as
+    ///         `abi.encodePacked(EXECUTION_ATTRIBUTE, abi.encode(signedQuote, gasLimit))`. A
+    ///         `gasLimit` of zero means `defaultGas`. Anything else is refused per ERC-7786.
+    /// @dev Required: the Executor prices only from a quote fetched off-chain, and its on-chain
+    ///      quoter router is not deployed on these chains (#53).
+    function executionFrom(bytes[] memory attributes, uint256 defaultGas)
+        internal
+        pure
+        returns (bytes memory signedQuote, uint128 gasLimit)
+    {
+        (bool present, bytes memory body) = ProviderAttribute.body(attributes, EXECUTION_ATTRIBUTE, 0);
+        if (!present) revert NoSignedQuote();
+        uint256 gas;
+        (signedQuote, gas) = abi.decode(body, (bytes, uint256));
+        if (gas == 0) gas = defaultGas;
+        if (gas > type(uint128).max) revert ProviderAttribute.UnsupportedAttribute(attributes[0]);
+        // forge-lint: disable-next-line(unsafe-typecast) bounded above
+        gasLimit = uint128(gas);
     }
 
     /* ================================= receiving ================================== */

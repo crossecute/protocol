@@ -5,8 +5,7 @@ import {DeployProvider} from "script/DeployProvider.s.sol";
 import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 
-/// @notice `WORMHOLE_CORE`, `WORMHOLE_EXECUTOR_ROUTER`, and `WORMHOLE_QUOTER`. See
-///         `DeployProvider`.
+/// @notice `WORMHOLE_CORE` and `WORMHOLE_EXECUTOR`. See `DeployProvider`.
 contract DeployWormhole is DeployProvider {
     function _providerName() internal pure override returns (string memory) {
         return "wormhole";
@@ -14,9 +13,7 @@ contract DeployWormhole is DeployProvider {
 
     function _endpoints() internal view returns (WormholeDeploy.Endpoints memory) {
         return WormholeDeploy.Endpoints({
-            coreBridge: vm.envAddress("WORMHOLE_CORE"),
-            executorRouter: vm.envAddress("WORMHOLE_EXECUTOR_ROUTER"),
-            quoter: vm.envAddress("WORMHOLE_QUOTER")
+            coreBridge: vm.envAddress("WORMHOLE_CORE"), executor: vm.envAddress("WORMHOLE_EXECUTOR")
         });
     }
 

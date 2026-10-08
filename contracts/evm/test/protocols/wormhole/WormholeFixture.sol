@@ -3,14 +3,13 @@ pragma solidity ^0.8.20;
 
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
-import {WormholeZkSyncTransceiver} from "src/protocols/wormhole/WormholeDivergentTransceiver.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
-import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
+import {MockExecutor} from "test/protocols/wormhole/MockExecutor.sol";
 import {ProviderGasFixture, defaultReceiverInit, toBytes32} from "test/protocols/ProviderFixture.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
@@ -50,7 +49,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
 contract WormholeTransceiverHarness is WormholeTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address core, address router, address quoter) WormholeTransceiver(core, router, quoter) {}
+    constructor(address core, address executor_) WormholeTransceiver(core, executor_) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -60,22 +59,17 @@ contract WormholeTransceiverHarness is WormholeTransceiver {
         return _sendMessage(recipient, payload, attributes, value);
     }
 
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+        external
+        view
+        returns (uint256)
+    {
+        return _quoteMessage(recipient, payload, attributes);
     }
 
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
-    }
-}
-
-/// @notice Exposes the report seam.
-contract WormholeZkSyncHarness is WormholeZkSyncTransceiver {
-    constructor(address core_, address router_, address quoter_) WormholeZkSyncTransceiver(core_, router_, quoter_) {}
-
-    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
-        _reportReceiver(home, owner, salt, receiver);
     }
 }
 
@@ -87,18 +81,22 @@ abstract contract WormholeFixture is ProviderGasFixture {
     uint16 internal constant BASE_WORMHOLE_CHAIN = 30;
     uint256 internal constant CORE_MESSAGE_FEE = 1 gwei;
     address internal constant QUOTER = address(0x0907);
+    address internal constant PAYEE = address(0x9A7EE);
 
     MockWormholeCore internal core = new MockWormholeCore(HERE_WORMHOLE_CHAIN);
-    MockExecutorQuoterRouter internal router = new MockExecutorQuoterRouter();
+    MockExecutor internal executor = new MockExecutor(HERE_WORMHOLE_CHAIN);
+    /// @dev The relay provider's price, a multiple of 10^8 wei: the quote states it as a base
+    ///      fee in units of 10^-10 of the currency, with a zero gas price.
+    uint256 internal executorFee;
     /// @dev A fresh sequence per VAA, so a second delivery is a new message, not a replay.
     uint64 internal sequence;
 
     function _endpoints() internal view returns (WormholeDeploy.Endpoints memory) {
-        return WormholeDeploy.Endpoints(address(core), address(router), QUOTER);
+        return WormholeDeploy.Endpoints(address(core), address(executor));
     }
 
     function _transceiverImplementation() internal override returns (address) {
-        return address(new WormholeTransceiverHarness(address(core), address(router), QUOTER));
+        return address(new WormholeTransceiverHarness(address(core), address(executor)));
     }
 
     function _receiverImplementation() internal override returns (address) {
@@ -151,7 +149,7 @@ abstract contract WormholeFixture is ProviderGasFixture {
     }
 
     function _setProviderFee(uint256 fee) internal override {
-        router.setFee(fee);
+        executorFee = fee;
         core.setMessageFee(CORE_MESSAGE_FEE);
     }
 
@@ -162,10 +160,46 @@ abstract contract WormholeFixture is ProviderGasFixture {
 
     /// @dev A gas relay instruction: type (1), then the gas limit (16).
     function _lastGasLimit() internal view override returns (uint256) {
-        return _uintAt(router.requests(router.requestsLength() - 1).relayInstructions, 1, 16);
+        return _uintAt(executor.requests(executor.requestsLength() - 1).relayInstructions, 1, 16);
     }
 
-    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
-        return abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, gas);
+    /// @notice A relay provider's EQ01 quote from this chain to the remote one, valid for an
+    ///         hour, charging `executorFee` whatever the gas.
+    function _signedQuote() internal view returns (bytes memory) {
+        return _eq01(BASE_WORMHOLE_CHAIN, uint64(block.timestamp + 1 hours), uint64(executorFee / 1e8), 0, 1, 1);
+    }
+
+    function _eq01(uint16 dstChain, uint64 expiry, uint64 baseFee, uint64 dstGasPrice, uint64 srcPrice, uint64 dstPrice)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            WormholeMessage.EQ01,
+            QUOTER,
+            toBytes32(PAYEE),
+            HERE_WORMHOLE_CHAIN,
+            dstChain,
+            expiry,
+            baseFee,
+            dstGasPrice,
+            srcPrice,
+            dstPrice,
+            new bytes(65)
+        );
+    }
+
+    function _executionAttribute(bytes memory signedQuote, uint256 gas) internal pure returns (bytes memory) {
+        return abi.encodePacked(WormholeMessage.EXECUTION_ATTRIBUTE, abi.encode(signedQuote, gas));
+    }
+
+    function _gasAttribute(uint256 gas) internal view override returns (bytes memory) {
+        return _executionAttribute(_signedQuote(), gas);
+    }
+
+    /// @dev Every Wormhole send carries a signed quote.
+    function _attributes() internal view override returns (bytes[] memory attrs) {
+        attrs = new bytes[](1);
+        attrs[0] = _gasAttribute(0);
     }
 }

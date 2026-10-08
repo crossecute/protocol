@@ -54,7 +54,7 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
         vm.expectRevert(OpStackInteropMessage.InteropToThisChain.selector);
         harness.sendMessagePublic(here, "x", new bytes[](0), 0);
         vm.expectRevert(OpStackInteropMessage.InteropToThisChain.selector);
-        harness.quoteMessagePublic(here, "x");
+        harness.quoteMessagePublic(here, "x", new bytes[](0));
     }
 }
 
