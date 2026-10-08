@@ -220,8 +220,8 @@ library AddressDerive {
     /// @notice Same 85-byte preimage as EIP-1014; only the domain byte differs (0x41).
     /// @dev Returns the bare 20-byte in-VM form. Prepend 0x41 + Base58Check off-chain.
     ///      initCodeHash must come from Tron-solc, not solc.
-    ///      Caveat: TRON's docs conflict on whether high-level `new {salt:}` uses 0x41
-    ///      or 0xff. Verify on Shasta before trusting this in a signed payload.
+    ///      java-tron's CREATE2 hashes the sender in its 21-byte form, `0x41 ‖ deployer`
+    ///      (`WalletUtil.generateContractAddress2`), which is where the 0x41 comes from.
     function tronCreate2(address deployer, bytes32 salt, bytes32 initCodeHash) internal pure returns (address) {
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0x41), deployer, salt, initCodeHash)))));
     }

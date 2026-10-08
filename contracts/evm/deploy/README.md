@@ -35,18 +35,10 @@ home, which requires the home to be `Predetermined` from there.
 
 ## 2. Check the chain
 
-Before mainnet, from [todo §2](../../../docs/todo.md#2-chain-checks-before-mainnet):
-
-- **Arachnid's factory** at `0x4e59b44847b379578588920cA78FbF26c0B4956C` with Ethereum's code,
-  for a parity chain.
-- **EIP-152** (BLAKE2b at `0x09`) if the chain may be a home or use the BLAKE2b commitment
-  scheme. Without it the scheme reverts.
-- **zkSync and Tron derivations** are unverified against a real deployment. Each needs a
-  one-account check before it carries value.
-- **Lanes.** For each provider, which existing chains it actually connects to the new one.
-  CCIP lanes, Wormhole Executor quotes, and Hyperlane routes exist per pair.
-- **Hyperlane's ISM.** The new chain's Mailbox decides what counts as verified for every
-  origin it accepts.
+Run every check in [CHECKS.md](CHECKS.md) against the new chain and each chain it will talk
+to: where contracts land, EIP-152, each provider's lanes, destination gas, the destination's
+verification, and OP Stack's messengers. None spends gas. It also records each provider's
+endpoint addresses, which the deploy scripts take from the environment.
 
 ## 3. Add it to `deploy/`
 

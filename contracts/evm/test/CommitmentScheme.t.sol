@@ -136,6 +136,16 @@ contract CommitmentSchemeTest is Test {
         h.hashElements(Scheme.Blake2b256Scheme, DEST, elements);
     }
 
+    /// @dev On Tron, 0x09 is `BatchValidateSign`, which answers with one 32-byte word.
+    function test_anotherPrecompileAt0x09Reverts() public {
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"01";
+        vm.mockCall(address(0x09), bytes(""), abi.encode(uint256(1)));
+
+        vm.expectRevert(Blake2b256.PrecompileFailed.selector);
+        h.hashElements(Scheme.Blake2b256Scheme, DEST, elements);
+    }
+
     function test_anEmptyArrayIsRefusedUnderEveryScheme() public {
         bytes[] memory none = new bytes[](0);
         Scheme[3] memory schemes = [Scheme.Keccak256, Scheme.Sha256, Scheme.Blake2b256Scheme];

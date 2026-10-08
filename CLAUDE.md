@@ -85,3 +85,29 @@ It is reasonably possible unless one of these holds:
 
 Before writing a new function, look for an existing one in the bases and shared libraries
 that does it or nearly does it, and extend that instead.
+
+## Adding a chain or a provider
+
+The deploy information lives under `contracts/evm/deploy/`: `chains.toml` and
+`providers/<p>.toml` hold the ids transceivers are born with, `README.md` is the procedure for
+a new chain, and `CHECKS.md` holds the gas-free checks, each provider's endpoint addresses,
+and the results last recorded. Which parts apply depends on what is being added.
+
+- **A new chain.** Follow `deploy/README.md` in order. Run every check in `CHECKS.md` for the
+  new chain against every chain it will talk to, for every provider that reaches it, before
+  adding it to `chains.toml`. Add its row to each provider's values table in `CHECKS.md` and
+  record the results with the date. Where a provider's check fails, leave the chain out of
+  that provider's `providers/<p>.toml` and open an issue for the failure. Do not
+  configure around it, since ids and routes are write-once.
+- **A new provider.** Start from `docs/provider-spec.md`: §2 is the go or no-go checklist
+  and §10 the binding checklist. The binding goes under `src/protocols/<p>/`, its fixture
+  under `test/protocols/<p>/` (every shared spec runs against it), its deploy library in
+  `script/deploy/<P>Deploy.sol`, and its script in `script/Deploy<P>.s.sol`. Add
+  `deploy/providers/<p>.toml` with its id source and date in the header. Then extend
+  `CHECKS.md` for it over every chain already configured: a values table, how to quote a
+  lane and what an unconnected pair does, its default destination gas against the measured
+  delivery costs, and how its destination verifies. If it prices per byte, add it to the
+  per-byte line above.
+
+In both cases re-read `CHECKS.md` "What these checks do not cover", and add what the new
+chain or provider needs to `docs/todo.md`.

@@ -258,8 +258,9 @@ contract TronHarness is LzTronTransceiver {
 /// @dev What this suite can establish about a diverging transceiver, running on an Ethereum
 ///      EVM: that each override reproduces `AddressDerive`'s formula exactly, that it does not
 ///      reproduce Ethereum's, and that the guard refuses rather than arming nothing. What
-///      it cannot establish is that the target chain's own deployer agrees, which is an
-///      on-chain check against Era and Shasta.
+///      it cannot establish is that the target chain's own deployer agrees. The formulas are
+///      checked against Era's `ContractDeployer` and java-tron's source (deploy/CHECKS.md §1);
+///      the real artifacts' hashes need a deployment on Era and Shasta.
 contract DivergentTransceiverTest is Test {
     address owner = address(0xA11CE);
 
