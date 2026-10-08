@@ -59,14 +59,21 @@ zkSync.
 | zksync | 324 | `0x6bD0A2214797Bc81e0b006F7B74d6221BcD8cb6E` | `0xf55CB3c8C4b20276AF9F979B0D94Bd7ae5487fa2` |
 
 **Wormhole.** Source: `wormhole-foundation/wormhole-solidity-sdk`,
-`src/testing/ChainConsts.sol` (a36ed90c). zkSync Era has no Wormhole chain id or Core bridge.
+`src/testing/ChainConsts.sol` (a36ed90c). Each Executor answered its own chain id from
+`ourChain()` and `Executor-0.0.1` from `EXECUTOR_VERSION()` on 2026-10-08. Wormhole has no
+chain id for zkSync Era or Tron.
 
-| Chain | Chain id | `WORMHOLE_CORE` | Executor | `WORMHOLE_EXECUTOR_ROUTER` |
-| --- | --- | --- | --- | --- |
-| ethereum | 2 | `0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B` | `0x84EEe8dBa37C36947397E1E11251cA9A06Fc6F8a` | none (#53) |
-| base | 30 | `0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6` | `0x9E1936E91A4a5AE5A5F75fFc472D6cb8e93597ea` | none (#53) |
-| arbitrum | 23 | `0xa5f208e072434bC67592E4C49C1B991BA79BCA46` | `0x3980f8318fc03d79033Bbb421A622CDF8d2Eeab4` | none (#53) |
-| optimism | 24 | `0xEe91C335eab126dF5fDB3797EA9d6aD93aeC9722` | `0x85B704501f6AE718205C0636260768C4e72ac3e7` | none (#53) |
+| Chain | Chain id | `WORMHOLE_CORE` | `WORMHOLE_EXECUTOR` |
+| --- | --- | --- | --- |
+| ethereum | 2 | `0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B` | `0x84EEe8dBa37C36947397E1E11251cA9A06Fc6F8a` |
+| base | 30 | `0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6` | `0x9E1936E91A4a5AE5A5F75fFc472D6cb8e93597ea` |
+| arbitrum | 23 | `0xa5f208e072434bC67592E4C49C1B991BA79BCA46` | `0x3980f8318fc03d79033Bbb421A622CDF8d2Eeab4` |
+| optimism | 24 | `0xEe91C335eab126dF5fDB3797EA9d6aD93aeC9722` | `0x85B704501f6AE718205C0636260768C4e72ac3e7` |
+
+A Wormhole send carries a relay provider's signed quote, from
+`POST https://executor.labsapis.com/v0/quote` with `srcChain`, `dstChain`, and
+`relayInstructions`. It expires an hour after it is issued. `GET /v0/capabilities` lists the
+chains each request type is served on; all four here serve `ERV1` (VAA v1).
 
 **op-stack-l1-l2.** In [`providers/op-stack-l1-l2.toml`](providers/op-stack-l1-l2.toml): on
 Ethereum, Base's `L1CrossDomainMessenger` is `0x866E82a600A1414e583f7F13623F1aC5d58b0Afa` and
@@ -135,7 +142,7 @@ connect should revert at the quote. The configured pairs, checked 2026-10-07:
 | LayerZero | all 12 among the four parity chains, with `lzReceive` options at 200,000 and 1,000,000 gas; empty options revert on all 20 (#50, why the binding never sends them); Ethereum to zkSync once LayerZero Labs' DVN is pinned (`test/fork/LzDvnFork.t.sol`) | zkSync pairs revert at quote on the dead-DVN default until a DVN is pinned (#51) |
 | CCIP | all 20 | reverts `UnsupportedDestinationChain` (`0xae236d9c`) |
 | Hyperlane | all 20 | the Mailbox quotes 0; the binding refuses that quote and the send (#56) |
-| Wormhole | not quotable: no quoter router (#53) | |
+| Wormhole | Ethereum to Base priced on chain at the API's `estimatedCost` exactly (`test_aLiveQuoteIsPricedAsTheExecutorApiPricesIt`); the API quotes any pair it lists | the API refuses a pair it does not serve, and the binding a quote for another pair (`QuoteForAnotherRoute`) |
 | op-stack-l1-l2 | Ethereum to Base and OP Mainnet and back; nothing to quote | |
 
 ```sh

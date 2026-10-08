@@ -69,7 +69,7 @@ contract HyperlaneTransceiverSendTest is
         mailbox.setUnrouted(BASE_DOMAIN);
         bytes memory refusal = abi.encodeWithSelector(HyperlaneMessage.NoHyperlaneRoute.selector, BASE_DOMAIN);
         vm.expectRevert(refusal);
-        harness.quoteMessagePublic(_configuredRecipient(), "x");
+        harness.quoteMessagePublic(_configuredRecipient(), "x", new bytes[](0));
         vm.expectRevert(refusal);
         harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
     }

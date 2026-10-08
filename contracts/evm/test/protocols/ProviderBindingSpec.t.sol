@@ -35,7 +35,10 @@ interface ISendHarness {
         payable
         returns (bytes32);
 
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256);
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+        external
+        view
+        returns (uint256);
 }
 
 /// @dev The GATEWAY_ROLE every binding checks, read without an external call so an expected
@@ -71,9 +74,8 @@ abstract contract ProviderSendSpec is ProviderFixture {
     }
 
     /// @notice Send `payload` to the configured recipient, paying its quote as a real send does.
-    /// @dev Quoted without `attributes`: no mock prices destination gas.
     function _sendPaid(bytes memory payload, bytes[] memory attributes) internal returns (bytes32) {
-        uint256 fee = harness.quoteMessagePublic(_configuredRecipient(), payload);
+        uint256 fee = harness.quoteMessagePublic(_configuredRecipient(), payload, attributes);
         vm.deal(address(this), address(this).balance + fee);
         return harness.sendMessagePublic{value: fee}(_configuredRecipient(), payload, attributes, fee);
     }
@@ -90,14 +92,14 @@ abstract contract ProviderSendSpec is ProviderFixture {
     }
 
     function test_sendResolvesTheConfiguredDestination() public {
-        _sendPaid("payload", new bytes[](0));
+        _sendPaid("payload", _attributes());
         _assertLastSendTargetedConfiguredDestination();
     }
 
     function test_quoteMatchesWhatSendWouldPay() public {
         uint256 fee = 0.02 ether;
         _setProviderFee(fee);
-        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), _expectedQuoteFor(fee));
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _attributes()), _expectedQuoteFor(fee));
     }
 
     /// @dev ERC-7786: a gateway returns zero once the message is sent, and a non-zero id means a
@@ -107,26 +109,26 @@ abstract contract ProviderSendSpec is ProviderFixture {
     ///      available in the provider's events. Checks a second send too: a provider counter
     ///      (a nonce or sequence) starts at zero and would pass on the first alone.
     function test_aCompletedSendReturnsZero() public {
-        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
-        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
+        assertEq(_sendPaid("payload", _attributes()), bytes32(0));
+        assertEq(_sendPaid("payload", _attributes()), bytes32(0));
     }
 
     function test_sendRevertsForAnUnconfiguredDestination() public {
         vm.expectRevert();
-        harness.sendMessagePublic(_unconfiguredRecipient(), "x", new bytes[](0), 0);
+        harness.sendMessagePublic(_unconfiguredRecipient(), "x", _attributes(), 0);
     }
 
     /// @dev C13 (R2.5): a quote that succeeded where the send reverts reports a message as
     ///      sendable when it is not.
     function test_quoteRevertsWhereTheSendWould() public {
         vm.expectRevert();
-        harness.quoteMessagePublic(_unconfiguredRecipient(), "x");
+        harness.quoteMessagePublic(_unconfiguredRecipient(), "x", _attributes());
     }
 
     /// @dev C14 (R2.2): a quote is only ever an `eth_call`.
     function test_quoteIsView() public view {
-        (bool ok,) =
-            address(harness).staticcall(abi.encodeCall(ISendHarness.quoteMessagePublic, (_configuredRecipient(), "x")));
+        (bool ok,) = address(harness)
+            .staticcall(abi.encodeCall(ISendHarness.quoteMessagePublic, (_configuredRecipient(), "x", _attributes())));
         assertTrue(ok);
     }
 
@@ -156,26 +158,26 @@ abstract contract ProviderFeeSpec is ProviderSendSpec {
     /// @dev C11 against the mock; the real endpoint's C11 is a fork test (`docs/todo.md` §3).
     function test_quoteEqualsWhatTheSendActuallyConsumes() public {
         _setProviderFee(0.02 ether);
-        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
-        harness.sendMessagePublic{value: q}(_configuredRecipient(), "payload", new bytes[](0), q);
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload", _attributes());
+        harness.sendMessagePublic{value: q}(_configuredRecipient(), "payload", _attributes(), q);
         assertEq(_lastPaid(), q);
     }
 
     /// @dev C16.
     function test_anUnderfundedSendReverts() public {
         _setProviderFee(0.02 ether);
-        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload", _attributes());
         vm.expectRevert();
-        harness.sendMessagePublic{value: q - 1}(_configuredRecipient(), "payload", new bytes[](0), q - 1);
+        harness.sendMessagePublic{value: q - 1}(_configuredRecipient(), "payload", _attributes(), q - 1);
     }
 
     /// @dev C26 (R7.1, R7.3): a nested send arrives with `msg.value == 0` and pays from the
     ///      contract's balance, so the binding must spend `value`, never `msg.value`.
     function test_aSendIsPaidFromValueNotMsgValue() public {
         _setProviderFee(0.02 ether);
-        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "payload", _attributes());
         vm.deal(address(harness), q);
-        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), q);
+        harness.sendMessagePublic(_configuredRecipient(), "payload", _attributes(), q);
         assertEq(_lastPaid(), q);
     }
 
@@ -183,9 +185,9 @@ abstract contract ProviderFeeSpec is ProviderSendSpec {
     ///      `msg.value == value` reverts every bootstrap once a fee is configured.
     function test_sendSpendsExactlyValueEvenWhenLessThanMsgValue() public {
         _setProviderFee(0.01 ether);
-        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "x");
+        uint256 q = harness.quoteMessagePublic(_configuredRecipient(), "x", _attributes());
         vm.deal(address(this), 2 * q);
-        harness.sendMessagePublic{value: 2 * q}(_configuredRecipient(), "x", new bytes[](0), q);
+        harness.sendMessagePublic{value: 2 * q}(_configuredRecipient(), "x", _attributes(), q);
         assertEq(_lastPaid(), q);
     }
 }
@@ -201,11 +203,11 @@ abstract contract ProviderRefundSpec is ProviderFeeSpec {
 
     function test_excessRefundsToTheCallerNotTheSender() public {
         _setProviderFee(0.02 ether);
-        uint256 overpaid = 2 * harness.quoteMessagePublic(_configuredRecipient(), "payload");
+        uint256 overpaid = 2 * harness.quoteMessagePublic(_configuredRecipient(), "payload", _attributes());
         address caller = makeAddr("caller");
         vm.deal(caller, overpaid);
         vm.prank(caller);
-        harness.sendMessagePublic{value: overpaid}(_configuredRecipient(), "payload", new bytes[](0), overpaid);
+        harness.sendMessagePublic{value: overpaid}(_configuredRecipient(), "payload", _attributes(), overpaid);
         assertEq(_lastRefundAddress(), caller);
     }
 }
@@ -222,17 +224,17 @@ abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
     function test_quoteIsTakenOverTheExactPayloadBytes() public {
         _setProviderFeePerByte(1 gwei);
         bytes memory longer = "a longer payload than the other one";
-        uint256 short = harness.quoteMessagePublic(_configuredRecipient(), "x");
-        uint256 long = harness.quoteMessagePublic(_configuredRecipient(), longer);
+        uint256 short = harness.quoteMessagePublic(_configuredRecipient(), "x", _attributes());
+        uint256 long = harness.quoteMessagePublic(_configuredRecipient(), longer, _attributes());
         assertGt(long, short);
-        harness.sendMessagePublic{value: long}(_configuredRecipient(), longer, new bytes[](0), long);
+        harness.sendMessagePublic{value: long}(_configuredRecipient(), longer, _attributes(), long);
         assertEq(_lastPaid(), long);
     }
 
     function test_sendForwardsThePayloadAndValueUnchanged() public {
         _setProviderFee(0.01 ether);
         vm.deal(address(this), 1 ether);
-        harness.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "payload", new bytes[](0), 0.01 ether);
+        harness.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "payload", _attributes(), 0.01 ether);
         assertEq(_lastSentBody(), "payload");
         assertEq(_lastPaid(), 0.01 ether);
     }
@@ -306,7 +308,7 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         vm.deal(account, 1 ether);
         _prepareAccount(account);
         vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), new bytes[](0));
+        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
     }
 
     function test_aFundedAccountSendsWithNoValueAttached() public {
@@ -315,11 +317,11 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         bytes memory payload = Payload.encodeCalls(calls);
         bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
         _setProviderFee(0.01 ether);
-        uint256 quote = TransmitterBase(account).quoteMessage(recipient, payload, new bytes[](0));
+        uint256 quote = TransmitterBase(account).quoteMessage(recipient, payload, _attributes());
         uint256 before = account.balance;
 
         vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).sendMessage(recipient, payload, new bytes[](0));
+        TransmitterBase(account).sendMessage(recipient, payload, _attributes());
 
         assertEq(before - account.balance, quote, "the quote, from the balance");
         assertEq(_lastGasLimit(), DeliveryGas.PAYLOAD, "at the payload default");
@@ -332,14 +334,14 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
 abstract contract ProviderDefaultGasSpec is ProviderSendSpec, ProviderGasFixture {
     function test_aBootstrapGetsTheBootstrapDefault() public {
         bytes memory payload = Envelope.encodeBootstrap(address(0xA11CE), bytes32(0), bytes32(0), new Call[](0));
-        _sendPaid(payload, new bytes[](0));
+        _sendPaid(payload, _attributes());
         assertEq(_lastGasLimit(), DeliveryGas.BOOTSTRAP);
     }
 
     function test_aReportGetsTheReportDefault() public {
         bytes memory payload =
             Envelope.encodeReceiverReport(address(0xA11CE), bytes32(0), Erc7930.encodeEvm(1, address(0x2C)));
-        _sendPaid(payload, new bytes[](0));
+        _sendPaid(payload, _attributes());
         assertEq(_lastGasLimit(), DeliveryGas.REPORT);
     }
 
@@ -360,7 +362,7 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
         bytes memory recipient =
             Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
         vm.expectRevert(abi.encodeWithSelector(ProviderAddress.UnsupportedRecipient.selector, wide));
-        harness.sendMessagePublic(recipient, "x", new bytes[](0), 0);
+        harness.sendMessagePublic(recipient, "x", _attributes(), 0);
     }
 }
 

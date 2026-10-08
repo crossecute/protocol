@@ -671,13 +671,14 @@ signature underneath is sound.
 Wormhole now marks the Standard Relayer deprecated and points integrators to the Executor
 framework (`wormhole-docs`, `protocol/infrastructure/relayers/relayer.md` and
 `executor-vs-sr.md`; Relayer source removed from the core repo in
-wormhole-foundation/wormhole#4644, "deprecated generic relayer"). No sunset date was found.
-The binding therefore takes the Core path above, with the Executor for delivery:
+wormhole-foundation/wormhole#4644, "deprecated generic relayer"); its automatic delivery
+ended on 2026-04-01 (Wormhole's "Migrating from Standard Relay to Executor Relay"). The binding therefore
+takes the Core path above, with the Executor for delivery:
 
 | Our hook | Wormhole Core + Executor |
 | --- | --- |
-| `_sendMessage` | `ICoreBridge.publishMessage{messageFee}` then `IExecutorQuoterRouter.requestExecution{rest}`; the router refunds its overpayment to `refundAddr` |
-| `_quoteMessage` | `messageFee() + IExecutorQuoterRouter.quoteExecution(...)`, a `view` (wormhole-solidity-sdk#118, Feb 2026) |
+| `_sendMessage` | `ICoreBridge.publishMessage{messageFee}` then `IExecutor.requestExecution{price}` with the caller's signed EQ01 quote; the Executor pays everything it is sent to the quote's payee, so the binding refunds the rest itself |
+| `_quoteMessage` | `messageFee()` plus the price the quote states for the gas, computed on chain with the Executor's own formula (`ExecutorQuoter.estimateQuote`) |
 | inbound | `IVaaV1Receiver.executeVAAv1(vaa)`, permissionless; verified via `parseAndVerifyVM` |
 | replay | the binding's own consumed-hash set, as the Core section above anticipated |
 
@@ -686,8 +687,10 @@ payload with `(targetChain, targetAddress)` and checks both; and `GATEWAY_ROLE` 
 to name, so it is granted to the Core bridge and checked by membership. Sources:
 `wormhole-solidity-sdk @ 2cb855ea` (`interfaces/ICoreBridge.sol`, `interfaces/IExecutor.sol`,
 `Executor/Request.sol`, `Executor/Integration.sol`) and
-`wormholelabs-xyz/example-messaging-executor @ 55f94274` (`ExecutorQuoterRouter.sol`,
-`Executor.sol`).
+`wormholelabs-xyz/example-messaging-executor @ 55f94274` (`Executor.sol`; the quote layout in
+`README.md`, the formula in `ExecutorQuoter.sol`). The on-chain quote path
+(`ExecutorQuoterRouter`, wormhole-solidity-sdk#118) is deployed only on Polygon and Monad, so
+the binding takes signed quotes, Wormhole's production path (#53).
 
 ### What this means for scope
 

@@ -27,8 +27,6 @@ this file is the gap between that design and the tree.
 
 ## 2. Chain checks before mainnet
 
-- **No Wormhole quoter router on any configured chain** (#53). The binding quotes and sends
-  through `ExecutorQuoterRouter`, which Wormhole's SDK lists only on Polygon and Monad.
 - **LayerZero's zkSync side is unverified** (#51). Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
   The Ethereum side quotes on a fork; the zkSync side needs a zkSync Sepolia run.
@@ -60,6 +58,9 @@ this file is the gap between that design and the tree.
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these
   scripts do not drive.
+- **Wormhole sends need a fresh quote.** Each carries a relay provider's signed quote, valid
+  for an hour (deploy/CHECKS.md). The payload tooling above must fetch one when it sends,
+  not when a multisig proposal is drafted.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an

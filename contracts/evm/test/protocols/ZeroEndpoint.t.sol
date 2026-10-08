@@ -58,10 +58,9 @@ contract ZeroEndpointTest is Test {
     function test_wormholeRefusesAnyZeroEndpoint() public {
         bytes[2] memory code = [type(WormholeTransceiver).creationCode, type(WormholeTransmitter).creationCode];
         for (uint256 i; i < code.length; ++i) {
-            bytes memory good = abi.encode(E, E, E);
-            _assertRefusesOnlyZero(code[i], abi.encode(address(0), E, E), good);
-            _assertRefusesOnlyZero(code[i], abi.encode(E, address(0), E), good);
-            _assertRefusesOnlyZero(code[i], abi.encode(E, E, address(0)), good);
+            bytes memory good = abi.encode(E, E);
+            _assertRefusesOnlyZero(code[i], abi.encode(address(0), E), good);
+            _assertRefusesOnlyZero(code[i], abi.encode(E, address(0)), good);
         }
     }
 

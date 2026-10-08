@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
-import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
-import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
-import {
-    ProviderZkSyncSpec,
-    ProviderGatewayRoleSpec,
-    ProviderGovernorHomeSpec
-} from "test/protocols/ProviderBindingSpec.t.sol";
-import {WormholeFixture, WormholeZkSyncHarness, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
+import {ProviderGatewayRoleSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures authenticate the emitter, and
 ///         the base's counterpart check is what refuses a wrong one.
@@ -56,27 +49,6 @@ contract WormholeTransceiverInboundTest is ProviderGatewayRoleSpec, WormholeFixt
         bytes memory vaa = _vaaFrom(ORIGIN_TRANSCEIVER, HERE_WORMHOLE_CHAIN, _bootstrap());
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.InvalidVaa.selector, "VM signature invalid"));
         IVaaV1Receiver(transceiver).executeVAAv1(vaa);
-    }
-}
-
-contract WormholeZkSyncTransceiverTest is ProviderZkSyncSpec, WormholeFixture {
-    function _zkSyncImplementation() internal override returns (address) {
-        return address(new WormholeZkSyncHarness(address(core), address(router), QUOTER));
-    }
-
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
-        internal
-        override
-        returns (address)
-    {
-        return WormholeDeploy.zkSyncTransceiver(d, address(core), 0, accountBytecodeHash);
-    }
-
-    function _assertReportSent() internal view override {
-        MockExecutorQuoterRouter.Request memory r = router.requests(0);
-        assertEq(r.dstChain, BASE_WORMHOLE_CHAIN, "to the account's home");
-        assertEq(r.dstAddr, toBytes32(HOME_TRANSCEIVER), "to its transceiver there");
-        assertEq(r.refundAddr, zk, "an excess returns to the float, not the relayer");
     }
 }
 

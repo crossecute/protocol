@@ -110,9 +110,10 @@ means, and they are the claim the entire redesign rests on. Verify them against 
 provider's actual code, not its documentation, before writing anything else.
 
 Every binding here quotes on-chain with a `view`: LayerZero's `endpoint.quote`, CCIP's
-`getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the Executor
-quoter router's `quoteExecution`. Both OP Stack quotes are zero: a deposit is paid in burned gas,
-and an interop message by its relayer.
+`getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the price a
+relay provider's signed quote states, which the caller fetches off-chain and passes as an
+attribute: the Executor has no on-chain price on these chains (#53). Both OP Stack quotes are
+zero: a deposit is paid in burned gas, and an interop message by its relayer.
 
 ---
 
@@ -286,7 +287,8 @@ the chain type.
 **R1.5** `attributes` are decoded only inside the binding, and without a gas attribute the
 binding MUST send `_defaultGas(payload)`: `DeliveryGas.BOOTSTRAP` for a bootstrap,
 `REPORT` for a report, `PAYLOAD` for an account's payload. Never zero gas, and never the
-gateway's own default, which is not sized for an account creation (#52). A binding MUST answer `supportsAttribute`
+gateway's own default, which is not sized for an account creation (#52). Wormhole's one
+attribute is required, since it carries the signed quote; its gas limit of zero means the default. A binding MUST answer `supportsAttribute`
 honestly, and a gateway that refuses an attribute it does not know is behaving correctly.
 
 **R1.6** A send to an unconfigured destination MUST revert, not succeed. `routeFor` reverts
@@ -823,7 +825,7 @@ to those, rather than flags:
 | `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver); only the provider delivers |
 | `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole, `op-stack-l2-l2` (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
-| `ProviderZkSyncSpec` | the four zkSync transceivers | A receiver report is paid from the float, never the relayer, at `DeliveryGas.REPORT`, and any excess returns to the float |
+| `ProviderZkSyncSpec` | the three zkSync transceivers (Wormhole reaches no zkSync or Tron chain) | A receiver report is paid from the float, never the relayer, at `DeliveryGas.REPORT`, and any excess returns to the float |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
