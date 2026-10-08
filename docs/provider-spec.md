@@ -817,6 +817,7 @@ to those, rather than flags:
 | `ProviderDefaultGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | C32 |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all six | C9 |
+| `ProviderTransmitterSendSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | An account's own send through the binding's real transmitter is paid from its balance whatever `msg.value` is ([R7.1](#r7-fees-and-value), #55), at `DeliveryGas.PAYLOAD` (C32) |
 | `ProviderReceiveSpec` | all six | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
 | `ProviderWideSenderSpec` | all but the two OP Stack providers (sender is an address) | C10 |
 | `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver); only the provider delivers |
@@ -860,7 +861,7 @@ below. The column says where each line is held.
 | C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. | Wormhole, which owns replay: `test_aReplayedVaaIsRejected`. Others: the transport's, fork test not built |
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerAccount`. Others: fork test not built |
-| C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`). | `ProviderDefaultGasSpec` |
+| C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; an account's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`). | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
 
 **C11 and C29 to C31 want FORK tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness
