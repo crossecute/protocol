@@ -16,7 +16,9 @@ import {
     ProviderIdTableSpec,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackFixture} from "test/protocols/op-stack/OpStackFixture.sol";
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
@@ -25,7 +27,12 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 
 /// @notice The destination is which messenger is called, so the check is that the one the table
 ///         maps the recipient's chain to was, addressed to the recipient.
-contract OpStackTransceiverSendTest is ProviderIdTableSpec, ProviderEvmRecipientSpec, OpStackFixture {
+contract OpStackTransceiverSendTest is
+    ProviderIdTableSpec,
+    ProviderEvmRecipientSpec,
+    ProviderDefaultGasSpec,
+    OpStackFixture
+{
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(MESSENGER.sentLength(), 1);
         assertEq(MESSENGER.sent(0).sender, address(harness));
@@ -40,15 +47,6 @@ contract OpStackTransceiverSendTest is ProviderIdTableSpec, ProviderEvmRecipient
         harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
         assertEq(MESSENGER.sent(0).message, abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (bytes("payload"))));
         assertEq(MESSENGER.sent(0).value, 0);
-    }
-
-    function test_minGasLimitDefaultsAndFollowsTheAttribute() public {
-        bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE, uint256(900_000));
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
-        assertEq(MESSENGER.sent(0).minGasLimit, OpStackMessage.DEFAULT_MIN_GAS_LIMIT);
-        assertEq(MESSENGER.sent(1).minGasLimit, 900_000);
     }
 
     /// @dev Value handed to the messenger is bridged to the target, not spent as a fee.
@@ -112,3 +110,5 @@ contract OpStackReceiveTest is ProviderReceiveSpec, OpStackFixture {
 }
 
 contract OpStackTransmitterInboundTest is ProviderTransmitterSpec, OpStackFixture {}
+
+contract OpStackTransmitterSendTest is ProviderTransmitterSendSpec, OpStackFixture {}

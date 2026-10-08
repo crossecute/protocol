@@ -185,6 +185,8 @@ contract InboundAuthTest is Test {
         vm.startPrank(owner);
         node.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
         node.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
+        // A reporting destination refuses a free bootstrap.
+        node.setBootstrapFee(chainKey, 1);
         vm.stopPrank();
     }
 
@@ -215,6 +217,7 @@ contract InboundAuthTest is Test {
     function _standUpAccount(uint256 chainId) internal returns (Transmitter acct) {
         vm.startPrank(transmitter);
         acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
+        vm.deal(address(acct), 1 ether);
         acct.bootstrap(chainId, new Call[](0), new bytes[](0));
         vm.stopPrank();
     }

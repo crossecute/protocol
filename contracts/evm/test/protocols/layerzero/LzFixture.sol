@@ -13,7 +13,8 @@ import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceive
 import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract LzTransceiverHarness is LzTransceiver {
@@ -50,7 +51,7 @@ contract LzZkSyncHarness is LzZkSyncTransceiver {
 
 /// @notice LayerZero delivers only from an eid's set peer, checked inside OApp before this
 ///         protocol's code runs, so configuring a remote chain sets its peer as well as its eid.
-abstract contract LzFixture is ProviderIdFixture {
+abstract contract LzFixture is ProviderGasFixture {
     uint32 internal constant BASE_EID = 30184;
 
     MockLzEndpoint internal endpoint = new MockLzEndpoint();
@@ -118,5 +119,15 @@ abstract contract LzFixture is ProviderIdFixture {
 
     function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
         return providerFee;
+    }
+
+    /// @dev Type-3 options with one `lzReceive` option, whose gas is bytes 6 to 22.
+    function _lastGasLimit() internal view override returns (uint256) {
+        (,,, bytes memory options,,) = endpoint.sent(endpoint.sentLength() - 1);
+        return _uintAt(options, 6, 16);
+    }
+
+    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
+        return abi.encodePacked(LzMessage.OPTIONS_ATTRIBUTE, uint16(3), uint8(1), uint16(17), uint8(1), uint128(gas));
     }
 }

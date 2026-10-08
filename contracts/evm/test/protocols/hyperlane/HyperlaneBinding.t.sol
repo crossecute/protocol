@@ -13,7 +13,9 @@ import {
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
 
@@ -22,6 +24,7 @@ contract HyperlaneTransceiverSendTest is
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
+    ProviderDefaultGasSpec,
     HyperlaneFixture
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
@@ -39,18 +42,13 @@ contract HyperlaneTransceiverSendTest is
     }
 
     function test_sendUsesTheRecipientsAddressAsBytes32() public {
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
+        _sendPaid("x", new bytes[](0));
         assertEq(mailbox.sent(0).recipientAddress, TypeCasts.addressToBytes32(REMOTE_COUNTERPART));
     }
 
     function test_hookMetadataCarriesTheGasLimitAttributeAndRefundTarget() public {
-        harness.sendMessagePublic(_configuredRecipient(), "x", _gasLimitAttribute(400_000), 0);
+        _sendPaid("x", _gasLimitAttribute(400_000));
         assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 400_000, address(this), ""));
-    }
-
-    function test_noAttributeMeansTheIgpDefaultGasLimit() public {
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        assertEq(mailbox.sent(0).metadata, StandardHookMetadata.formatMetadata(0, 50_000, address(this), ""));
     }
 
     /// @dev Without `refundAddress` in the metadata the refund goes to the sending contract,
@@ -63,6 +61,17 @@ contract HyperlaneTransceiverSendTest is
         harness.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
         assertEq(payer.balance, 0.99 ether);
         assertEq(address(harness).balance, 0);
+    }
+
+    /// @dev #56: the real Mailbox quotes zero for a domain it does not route, and the dispatch is
+    ///      never delivered. The quote and the send both refuse it.
+    function test_aDomainThatQuotesZeroIsRefused() public {
+        mailbox.setUnrouted(BASE_DOMAIN);
+        bytes memory refusal = abi.encodeWithSelector(HyperlaneMessage.NoHyperlaneRoute.selector, BASE_DOMAIN);
+        vm.expectRevert(refusal);
+        harness.quoteMessagePublic(_configuredRecipient(), "x");
+        vm.expectRevert(refusal);
+        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
     }
 
     function test_malformedGasLimitAttributeIsRefused() public {
@@ -102,3 +111,5 @@ contract HyperlaneTransceiverSendTest is
 contract HyperlaneReceiveTest is ProviderWideSenderSpec, HyperlaneFixture {}
 
 contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec, HyperlaneFixture {}
+
+contract HyperlaneTransmitterSendTest is ProviderTransmitterSendSpec, HyperlaneFixture {}

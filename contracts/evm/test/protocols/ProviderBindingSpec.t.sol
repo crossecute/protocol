@@ -2,7 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
-import {ProviderFixture, ProviderIdFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderFixture, ProviderIdFixture, ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -21,6 +22,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 
 /// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
@@ -68,6 +70,14 @@ abstract contract ProviderSendSpec is ProviderFixture {
         _configureRemote(address(harness), REMOTE_COUNTERPART);
     }
 
+    /// @notice Send `payload` to the configured recipient, paying its quote as a real send does.
+    /// @dev Quoted without `attributes`: no mock prices destination gas.
+    function _sendPaid(bytes memory payload, bytes[] memory attributes) internal returns (bytes32) {
+        uint256 fee = harness.quoteMessagePublic(_configuredRecipient(), payload);
+        vm.deal(address(this), address(this).balance + fee);
+        return harness.sendMessagePublic{value: fee}(_configuredRecipient(), payload, attributes, fee);
+    }
+
     function _configuredRecipient() internal pure returns (bytes memory) {
         return Erc7930.encodeEvm(REMOTE_CHAIN_ID, REMOTE_COUNTERPART);
     }
@@ -80,7 +90,7 @@ abstract contract ProviderSendSpec is ProviderFixture {
     }
 
     function test_sendResolvesTheConfiguredDestination() public {
-        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        _sendPaid("payload", new bytes[](0));
         _assertLastSendTargetedConfiguredDestination();
     }
 
@@ -97,8 +107,8 @@ abstract contract ProviderSendSpec is ProviderFixture {
     ///      available in the provider's events. Checks a second send too: a provider counter
     ///      (a nonce or sequence) starts at zero and would pass on the first alone.
     function test_aCompletedSendReturnsZero() public {
-        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
-        assertEq(harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0), bytes32(0));
+        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
+        assertEq(_sendPaid("payload", new bytes[](0)), bytes32(0));
     }
 
     function test_sendRevertsForAnUnconfiguredDestination() public {
@@ -261,6 +271,83 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
     function test_aDeliveryFromAnUnmappedOriginIsRefused() public {
         vm.expectRevert(_unmappedOriginRevert(999));
         _deliver(address(harness), 999, toBytes32(REMOTE_COUNTERPART), "");
+    }
+}
+
+/// @title ProviderTransmitterSendSpec
+/// @notice An account's own send (path A) through the binding's transmitter, paid from the
+///         account's balance whatever `msg.value` is (R7.1), at the payload default gas.
+abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
+    address internal constant ACCOUNT_OWNER = address(0xA11CE);
+    address payable internal account;
+
+    /// @notice What the provider needs set on the account before it can send to the remote
+    ///         chain, as its owner.
+    function _prepareAccount(address account_) internal virtual {}
+
+    /// @dev The remote chain is `Predetermined`, so the account's receiver there shares its
+    ///      address and the transceiver's counterpart is the transceiver's own.
+    function setUp() public virtual {
+        TransceiverConfig memory c = _config();
+        c.transmitterImplementation = _transmitterImplementation();
+        address transceiver = _deployTransceiver(c, 0);
+        TransceiverBase t = TransceiverBase(payable(transceiver));
+        ChainRegistry registry = new ChainRegistry(address(this), unseeded());
+        bytes32 provider = registry.addMessageProvider("under-test");
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Predetermined);
+        vm.startPrank(t.owner());
+        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        t.setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        vm.stopPrank();
+        _configureRemote(transceiver, transceiver);
+
+        vm.prank(ACCOUNT_OWNER);
+        account = payable(t.createTransmitter(bytes32(0)));
+        vm.deal(account, 1 ether);
+        _prepareAccount(account);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), new bytes[](0));
+    }
+
+    function test_aFundedAccountSendsWithNoValueAttached() public {
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
+        bytes memory payload = Payload.encodeCalls(calls);
+        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        _setProviderFee(0.01 ether);
+        uint256 quote = TransmitterBase(account).quoteMessage(recipient, payload, new bytes[](0));
+        uint256 before = account.balance;
+
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).sendMessage(recipient, payload, new bytes[](0));
+
+        assertEq(before - account.balance, quote, "the quote, from the balance");
+        assertEq(_lastGasLimit(), DeliveryGas.PAYLOAD, "at the payload default");
+    }
+}
+
+/// @title ProviderDefaultGasSpec
+/// @notice Without a gas attribute a send carries its `DeliveryGas` default, chosen from the
+///         payload alone, and an attribute replaces it.
+abstract contract ProviderDefaultGasSpec is ProviderSendSpec, ProviderGasFixture {
+    function test_aBootstrapGetsTheBootstrapDefault() public {
+        bytes memory payload = Envelope.encodeBootstrap(address(0xA11CE), bytes32(0), bytes32(0), new Call[](0));
+        _sendPaid(payload, new bytes[](0));
+        assertEq(_lastGasLimit(), DeliveryGas.BOOTSTRAP);
+    }
+
+    function test_aReportGetsTheReportDefault() public {
+        bytes memory payload =
+            Envelope.encodeReceiverReport(address(0xA11CE), bytes32(0), Erc7930.encodeEvm(1, address(0x2C)));
+        _sendPaid(payload, new bytes[](0));
+        assertEq(_lastGasLimit(), DeliveryGas.REPORT);
+    }
+
+    function test_aGasAttributeReplacesTheDefault() public {
+        bytes[] memory attrs = new bytes[](1);
+        attrs[0] = _gasAttribute(750_000);
+        _sendPaid("x", attrs);
+        assertEq(_lastGasLimit(), 750_000);
     }
 }
 
@@ -630,7 +717,7 @@ interface IReportHarness {
 /// @notice A zkSync transceiver always diverges, so it reports each receiver it creates to the
 ///         account's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
 ///         paid from the float, and any overpayment must return to the float, not the relayer.
-abstract contract ProviderZkSyncSpec is ProviderIdFixture {
+abstract contract ProviderZkSyncSpec is ProviderGasFixture {
     address internal constant HOME_TRANSCEIVER = address(0xC0DE);
 
     address internal zk;
@@ -676,6 +763,7 @@ abstract contract ProviderZkSyncSpec is ProviderIdFixture {
         IReportHarness(zk).reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
 
         assertEq(zk.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
+        assertEq(_lastGasLimit(), DeliveryGas.REPORT, "the float pays for the report's fixed gas only");
         _assertReportSent();
     }
 }

@@ -47,7 +47,8 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
         returns (bytes32)
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
-        CcipMessage.send(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes, value);
+        uint64 selector = uint64(_providerIdOf(recipient));
+        CcipMessage.send(router, selector, recipient, payload, attributes, value, _defaultGas(payload));
         return bytes32(0);
     }
 
@@ -58,7 +59,8 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
         returns (uint256 nativeFee)
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
-        return CcipMessage.quote(router, uint64(_providerIdOf(recipient)), recipient, payload, attributes);
+        uint64 selector = uint64(_providerIdOf(recipient));
+        return CcipMessage.quote(router, selector, recipient, payload, attributes, _defaultGas(payload));
     }
 
     /* ==================================== receiving ==================================== */

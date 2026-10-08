@@ -5,7 +5,6 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 import {OAppSenderUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppSenderUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -42,9 +41,8 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     }
 
     /// @dev `recipient`'s address half is unused: LayerZero delivers to whatever `setPeer`
-    ///      recorded for the eid, not to an address in the payload. Value is exact, not
-    ///      `msg.value` (`OutboundBase` widens the primitive for this); `_payNative` reverts
-    ///      on any mismatch.
+    ///      recorded for the eid, not to an address in the payload. `value` is the quote, paid
+    ///      from the account's balance whatever `msg.value` is (R7.1).
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override
@@ -52,8 +50,16 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
-        bytes memory options = LzMessage.options(attributes);
-        _lzSend(dstEid, payload, options, MessagingFee(value, 0), _refundTo());
+        LzMessage.send(
+            address(endpoint),
+            dstEid,
+            _getPeerOrRevert(dstEid),
+            payload,
+            attributes,
+            _defaultGas(payload),
+            value,
+            _refundTo()
+        );
         return bytes32(0);
     }
 
@@ -65,9 +71,10 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 dstEid = uint32(providerIdOf(transceiver, recipient));
-        bytes memory options = LzMessage.options(attributes);
-        MessagingFee memory fee = _quote(dstEid, payload, options, false);
-        return fee.nativeFee;
+        return
+            LzMessage.quote(
+                address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, _defaultGas(payload)
+            );
     }
 
     /// @notice One attribute, `LzMessage.OPTIONS_ATTRIBUTE`. Anything else is refused per ERC-7786.

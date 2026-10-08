@@ -18,14 +18,23 @@ import {
     ProviderWideSenderSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterSendSpec,
+    ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 
 /// @notice LayerZero delivers to the eid's peer, never to the recipient's address, so the
 ///         destination check is the eid alone.
-contract LzTransceiverSendTest is ProviderIdTableSpec, ProviderPayloadPricedSpec, ProviderRefundSpec, LzFixture {
+contract LzTransceiverSendTest is
+    ProviderIdTableSpec,
+    ProviderPayloadPricedSpec,
+    ProviderRefundSpec,
+    ProviderDefaultGasSpec,
+    LzFixture
+{
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(endpoint.sentLength(), 1);
         (uint32 dstEid,,,,,) = endpoint.sent(0);
@@ -140,5 +149,13 @@ contract LzInitValidationTest is Test {
 contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerCheck, LzFixture {
     function test_thePeerIsWriteOnce() public {
         _assertPeerIsWriteOnce(_transmitter(), address(this), BASE_EID);
+    }
+}
+
+contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
+    /// @dev LayerZero delivers only from a set peer: here the receiver, at the account's address.
+    function _prepareAccount(address account_) internal override {
+        vm.prank(ACCOUNT_OWNER);
+        LzTransmitter(payable(account_)).setPeer(BASE_EID, toBytes32(account_));
     }
 }

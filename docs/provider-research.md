@@ -31,7 +31,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [5. Hyperlane](#5-hyperlane-as-a-native-binding) | `hyperlane-xyz/hyperlane-monorepo`, `main` branch, commit `983831f6`; pinned dependency versions read from `solidity/remappings.txt` (OZ `4.9.3`) | Hyperlane bumps its own OZ pin past a version this repo can share, or changes `MailboxClient`/`Router`'s shape |
 | [6. Wormhole](#6-wormhole-core-vs-the-relayer-are-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
 | [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`); commit `dfe4f947` (`IL2ToL2CrossDomainMessenger.sol`, `ICrossL2Inbox.sol`) | Optimism changes `relayMessage`'s calling convention, how `xDomainMessageSender` or `crossDomainMessageSource` is scoped, or interop's message format |
-| [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace, its peer check, or `_payNative`'s `msg.value` rule |
+| [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace or its peer check |
 
 ---
 
@@ -842,7 +842,7 @@ back out of it, rather than out of a route lookup.
 
 | Our hook | LayerZero |
 | --- | --- |
-| `_sendMessage(recipient, payload, attributes)` | `_lzSend(eid, payload, options, MessagingFee, refund)`: `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
+| `_sendMessage(recipient, payload, attributes)` | `endpoint.send{value}(MessagingParams(eid, peer, payload, options, false), refund)` through the linked `LzMessage.send`, not `_lzSend`, whose `_payNative` requires `msg.value` to equal the fee (#55): `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
 | `_quoteMessage(recipient, payload, attributes)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
 | `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
@@ -852,7 +852,7 @@ back out of it, rather than out of a route lookup.
 | `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
-protocol's need for a provider id, not LayerZero's: `_lzSend` still takes a `uint32`. So a
+protocol's need for a provider id, not LayerZero's: `MessagingParams` still takes a `uint32`. So a
 native LayerZero binding keeps its own chainKey→eid mapping under R5, where a gateway
 binding keeps none.
 

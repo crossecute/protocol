@@ -27,10 +27,11 @@ library CcipMessage {
         bytes memory recipient,
         bytes memory payload,
         bytes[] memory attributes,
-        uint256 value
+        uint256 value,
+        uint256 defaultGas
     ) internal {
         // forge-lint: disable-next-line(unused-return) the id is in the on-ramp's event; sends return 0
-        IRouterClient(router).ccipSend{value: value}(selector, build(recipient, payload, attributes));
+        IRouterClient(router).ccipSend{value: value}(selector, build(recipient, payload, attributes, defaultGas));
     }
 
     function quote(
@@ -38,14 +39,13 @@ library CcipMessage {
         uint64 selector,
         bytes memory recipient,
         bytes memory payload,
-        bytes[] memory attributes
+        bytes[] memory attributes,
+        uint256 defaultGas
     ) internal view returns (uint256) {
-        return IRouterClient(router).getFee(selector, build(recipient, payload, attributes));
+        return IRouterClient(router).getFee(selector, build(recipient, payload, attributes, defaultGas));
     }
 
-    /// @dev Empty `extraArgs` is a valid default (CCIP's own 200k gas limit applies), not a
-    ///      missing one.
-    function build(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+    function build(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 defaultGas)
         internal
         pure
         returns (Client.EVM2AnyMessage memory)
@@ -57,17 +57,22 @@ library CcipMessage {
             data: payload,
             tokenAmounts: noTokens,
             feeToken: address(0),
-            extraArgs: extraArgsFrom(attributes)
+            extraArgs: extraArgsFrom(attributes, defaultGas)
         });
     }
 
     /// @notice One attribute: CCIP's `EVMExtraArgsV2`, as
     ///         `abi.encodePacked(EXTRA_ARGS_ATTRIBUTE, abi.encode(gasLimit,
     ///         allowOutOfOrderExecution))`. Anything else is refused per ERC-7786.
-    function extraArgsFrom(bytes[] memory attributes) internal pure returns (bytes memory) {
+    /// @dev Without it, `defaultGas` in order, which is what empty `extraArgs` would mean but
+    ///      at CCIP's own 200k.
+    function extraArgsFrom(bytes[] memory attributes, uint256 defaultGas) internal pure returns (bytes memory) {
         (bool present, bytes memory encoded) = ProviderAttribute.body(attributes, EXTRA_ARGS_ATTRIBUTE, 64);
-        if (!present) return "";
-        (uint256 gasLimit, bool allowOutOfOrderExecution) = abi.decode(encoded, (uint256, bool));
+        // In order, as empty `extraArgs` would be.
+        // forge-lint: disable-start(boolean-cst)
+        (uint256 gasLimit, bool allowOutOfOrderExecution) =
+            present ? abi.decode(encoded, (uint256, bool)) : (defaultGas, false);
+        // forge-lint: disable-end(boolean-cst)
         return Client._argsToBytes(
             Client.EVMExtraArgsV2({gasLimit: gasLimit, allowOutOfOrderExecution: allowOutOfOrderExecution})
         );

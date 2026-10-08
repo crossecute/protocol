@@ -10,7 +10,8 @@ import {CcipDeploy} from "script/deploy/CcipDeploy.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
-import {ProviderIdFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -58,7 +59,7 @@ contract CcipZkSyncHarness is CcipZkSyncTransceiver {
 
 /// @notice CCIP's off-ramp asserts nothing about the sender: the router's gateway role admits
 ///         the call, and the binding's own check refuses a wrong sender.
-abstract contract CcipFixture is ProviderIdFixture {
+abstract contract CcipFixture is ProviderGasFixture {
     uint64 internal constant BASE_SELECTOR = 15_971_525_489_660_198_786;
 
     MockCcipRouter internal router = new MockCcipRouter();
@@ -119,5 +120,15 @@ abstract contract CcipFixture is ProviderIdFixture {
         returns (bytes memory)
     {
         return defaultReceiverInit(sourceTransmitter, calls);
+    }
+
+    /// @dev `EVMExtraArgsV2` after its 4-byte tag; the gas limit is its first word.
+    function _lastGasLimit() internal view override returns (uint256) {
+        (,,,, bytes memory extraArgs,) = router.sent(router.sentLength() - 1);
+        return _uintAt(extraArgs, 4, 32);
+    }
+
+    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
+        return abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(gas, false));
     }
 }

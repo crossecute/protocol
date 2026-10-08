@@ -106,6 +106,12 @@ library Envelope {
         return abi.encode(RECEIVER_REPORT, owner, salt, interop);
     }
 
+    /// @notice Whether `message` is led by the report kind. Reads nothing past the kind.
+    function isReceiverReport(bytes memory message) internal pure returns (bool) {
+        // forge-lint: disable-next-line(unsafe-typecast) the leading word, after the length check
+        return message.length >= 32 && uint256(bytes32(message)) == RECEIVER_REPORT;
+    }
+
     function decodeReceiverReport(bytes calldata message)
         internal
         pure

@@ -20,18 +20,18 @@ contract OpStackTransmitter is OwnableTransmitter {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through the transceiver's address setter
         address messenger = address(uint160(providerIdOf(transceiver, recipient)));
-        return OpStackMessage.send(messenger, recipient, payload, attributes, value);
+        return OpStackMessage.send(messenger, recipient, payload, attributes, value, _defaultGas(payload));
     }
 
     /// @dev Zero: see `OpStackMessage`.
-    function _quoteMessage(bytes memory recipient, bytes memory, bytes[] memory attributes)
+    function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         internal
         view
         override
         returns (uint256 nativeFee)
     {
         providerIdOf(transceiver, recipient);
-        return OpStackMessage.quote(recipient, attributes);
+        return OpStackMessage.quote(recipient, attributes, _defaultGas(payload));
     }
 
     bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;

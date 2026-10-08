@@ -5,11 +5,11 @@ import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
-import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
+import {IOpStackRecipient, OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 import {IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
-import {ProviderIdFixture} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract OpStackTransceiverHarness is OpStackTransceiver {
@@ -36,7 +36,7 @@ contract OpStackTransceiverHarness is OpStackTransceiver {
 /// @notice The messenger that reaches `REMOTE_CHAIN_ID` is its provider id, so the mock sits at a
 ///         fixed address. The sender is `xDomainMessageSender()`, never anything in the
 ///         delivered calldata.
-abstract contract OpStackFixture is ProviderIdFixture {
+abstract contract OpStackFixture is ProviderGasFixture {
     address internal constant REMOTE_MESSENGER = address(0x4E55E7);
 
     MockCrossDomainMessenger internal constant MESSENGER = MockCrossDomainMessenger(REMOTE_MESSENGER);
@@ -109,5 +109,13 @@ abstract contract OpStackFixture is ProviderIdFixture {
 
     function _expectedQuoteFor(uint256) internal pure override returns (uint256) {
         return 0;
+    }
+
+    function _lastGasLimit() internal view override returns (uint256) {
+        return MESSENGER.sent(MESSENGER.sentLength() - 1).minGasLimit;
+    }
+
+    function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
+        return abi.encodePacked(OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE, gas);
     }
 }

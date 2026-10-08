@@ -6,6 +6,7 @@ import {Roles} from "src/messaging/Roles.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -173,6 +174,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     error IsLocalChain(bytes32 chainKey);
     /// @dev The caller sent less than the destination's fee.
     error InsufficientBootstrapFee(uint256 required, uint256 provided);
+    /// @dev The destination reports its receivers, and its bootstrap fee is unset.
+    error NoBootstrapFee(bytes32 chainKey);
     error FeeTransferFailed(address to, uint256 amount);
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
@@ -482,7 +485,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         bytes memory envelope,
         bytes[] calldata attributes
     ) private {
-        _requireRoutable(destinationChainKey);
+        _requireBootstrappable(destinationChainKey);
         emit BootstrapSent(destinationChainKey, owner, salt);
         _sendMessage(_recipientOn(destinationChainKey), envelope, attributes, _bootstrapSendValue(destinationChainKey));
     }
@@ -493,9 +496,20 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         view
         returns (uint256)
     {
-        _requireRoutable(destinationChainKey);
+        _requireBootstrappable(destinationChainKey);
         return
             _quoteMessage(_recipientOn(destinationChainKey), envelope, attributes) + bootstrapFee[destinationChainKey];
+    }
+
+    /// @notice Refuse a bootstrap that cannot be sent, or that would cost the destination's float
+    ///         more than it paid.
+    /// @dev A reporting destination pays the report from its float, so a free bootstrap there
+    ///      would let anyone drain it. The fee's size is governance; zero is refused here.
+    function _requireBootstrappable(bytes32 destinationChainKey) private view {
+        _requireRoutable(destinationChainKey);
+        if (bootstrapFee[destinationChainKey] == 0 && reportsReceiver(destinationChainKey)) {
+            revert NoBootstrapFee(destinationChainKey);
+        }
     }
 
     /// @notice An EVM transmitter as a bootstrap carries it: left-padded to a word.
@@ -787,6 +801,13 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     ///      bootstrap above all, refunds the account that paid.
     function _refundTo() internal view virtual override returns (address) {
         return _reporting ? address(this) : msg.sender;
+    }
+
+    /// @inheritdoc OutboundBase
+    /// @dev By the envelope, not `_reporting`, so `quoteMessage` prices a report as it is sent.
+    ///      A report's gas is fixed here because the float pays for it.
+    function _defaultGas(bytes memory payload) internal pure override returns (uint256) {
+        return Envelope.isReceiverReport(payload) ? DeliveryGas.REPORT : DeliveryGas.BOOTSTRAP;
     }
 
     /* =================================== the float ================================= */

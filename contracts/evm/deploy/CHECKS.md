@@ -132,9 +132,9 @@ connect should revert at the quote. The configured pairs, checked 2026-10-07:
 
 | Provider | Configured pairs that quote | A pair with no lane |
 | --- | --- | --- |
-| LayerZero | none with empty options (#50); with 200,000 `lzReceive` gas, all 12 among the four parity chains | zkSync pairs revert at quote for the dead-DVN default (#51) |
+| LayerZero | all 12 among the four parity chains, with `lzReceive` options at 200,000 and 1,000,000 gas; empty options revert on all 20 (#50, why the binding never sends them) | zkSync pairs revert at quote for the dead-DVN default (#51) |
 | CCIP | all 20 | reverts `UnsupportedDestinationChain` (`0xae236d9c`) |
-| Hyperlane | all 20 | quotes 0 and does not revert, so the deploy must check |
+| Hyperlane | all 20 | the Mailbox quotes 0; the binding refuses that quote and the send (#56) |
 | Wormhole | not quotable: no quoter router (#53) | |
 | op-stack-l1-l2 | Ethereum to Base and OP Mainnet and back; nothing to quote | |
 
@@ -151,7 +151,7 @@ cast call $HYPERLANE_MAILBOX "quoteDispatch(uint32,bytes32,bytes,bytes)(uint256)
   0x0001<uint256 msgValue><uint256 gasLimit><address refund> --rpc-url $RPC
 ```
 
-A Hyperlane quote of 0 is a missing lane. The Mailbox's default hook is a fallback-routing
+A Hyperlane quote of 0 is a missing lane, and the binding refuses it (`NoHyperlaneRoute`). The Mailbox's default hook is a fallback-routing
 hook; a domain with no route falls back to the Merkle tree hook alone, which charges nothing
 and pays no relayer, so the dispatch would succeed and never be delivered. The IGP itself
 reverts `IGP: no gas oracle for domain` for such a domain.
@@ -168,9 +168,11 @@ that. Measured with the provider fixtures (mock gateways, cold storage):
 | Report arriving at the home transceiver | up to about 135,000 |
 | Payload to an existing receiver | under 16,000 plus its calls |
 
-The defaults are 50,000 (Hyperlane) and 200,000 (CCIP, Wormhole, OP Stack), so a bootstrap
-needs an explicit gas attribute today, and a Hyperlane report always runs out (#52). EraVM
-prices differently and Forge cannot measure it; zkSync needs its own number.
+Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
+250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
+1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
+attribute can exceed a lane's cap. EraVM prices differently and Forge cannot measure it;
+zkSync needs its own number.
 
 ### 5. Verification on the destination
 

@@ -53,7 +53,9 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(_providerIdOf(recipient));
-        return HyperlaneMessage.dispatch(mailbox, domain, recipient, payload, attributes, value, _refundTo());
+        return HyperlaneMessage.dispatch(
+            mailbox, domain, recipient, payload, attributes, value, _refundTo(), _defaultGas(payload)
+        );
     }
 
     function _quoteMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -64,7 +66,8 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 domain = uint32(_providerIdOf(recipient));
-        return HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo());
+        return
+            HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo(), _defaultGas(payload));
     }
 
     /* ==================================== receiving ==================================== */
