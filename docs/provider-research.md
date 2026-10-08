@@ -865,7 +865,8 @@ destination, read from the table rather than computed.
 
 - **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`, and the delegate is
   `address(this)`.** Settled: inside `upgradeInitializeAndLock`'s delegatecall that is the
-  ACCOUNT, so each account is its own delegate and no other party can reconfigure it. The
+  ACCOUNT, so each account is its own delegate and no other party can reconfigure it (a
+  transmitter's owner may name itself delegate; a receiver has no owner). The
   cost is that every account creation touches the endpoint, which is real gas on the
   bootstrap path and the concrete form of "peers and any send-side security configuration
   are per-user rather than shared". Recorded as R6.4 in the spec, which generalises it: any

@@ -13,6 +13,8 @@ import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOApp
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
@@ -120,6 +122,22 @@ contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck, LzFixture {
         _assertPeerIsFixed(receiver, BASE_EID, SOURCE_TRANSMITTER);
     }
 
+    /// @dev #51: the receiver has no owner, so its endpoint config changes only through its own
+    ///      payload, from its transmitter.
+    function test_onlyAPayloadReconfiguresTheReceiver() public {
+        address lib = endpoint.RECEIVE_LIBRARY();
+        SetConfigParam[] memory params = new SetConfigParam[](1);
+        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, hex"c0ffee");
+
+        vm.expectRevert(MockLzEndpoint.Unauthorized.selector);
+        endpoint.setConfig(receiver, lib, params);
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(endpoint), 0, abi.encodeCall(MockLzEndpoint.setConfig, (receiver, lib, params)));
+        _deliver(receiver, BASE_EID, toBytes32(SOURCE_TRANSMITTER), Payload.encodeCalls(calls));
+        assertEq(endpoint.configOf(receiver, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
+    }
+
     /// @dev OApp's own `NoPeer`.
     function _deliverFromUnconfiguredOrigin() internal override {
         _deliver(receiver, BASE_EID + 1, toBytes32(SOURCE_TRANSMITTER), _emptyPayload());
@@ -141,7 +159,7 @@ contract LzInitValidationTest is Test {
         vm.expectRevert(LzHomePeer.ZeroHomeEid.selector);
         ICrossProxy(proxy)
             .upgradeInitializeAndLock(
-                impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0))
+                impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0, address(0)))
             );
     }
 }
@@ -153,6 +171,24 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerChe
 }
 
 contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
+    /// @dev #51: the owner reconfigures the account's sends, such as toward zkSync whose default
+    ///      DVN refuses every message, by naming itself delegate through OApp's `setDelegate`.
+    function test_theOwnerCanReconfigureTheAccount() public {
+        address lib = endpoint.SEND_LIBRARY();
+        SetConfigParam[] memory params = new SetConfigParam[](1);
+        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, hex"c0ffee");
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        LzTransmitter(account).setDelegate(address(0xBAD));
+
+        vm.startPrank(ACCOUNT_OWNER);
+        LzTransmitter(account).setDelegate(ACCOUNT_OWNER);
+        endpoint.setConfig(account, lib, params);
+        vm.stopPrank();
+        assertEq(endpoint.configOf(account, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
+    }
+
     /// @dev LayerZero delivers only from a set peer: here the receiver, at the account's address.
     function _prepareAccount(address account_) internal override {
         vm.prank(ACCOUNT_OWNER);

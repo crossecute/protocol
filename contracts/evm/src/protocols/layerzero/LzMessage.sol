@@ -6,6 +6,17 @@ import {
     ILayerZeroEndpointV2,
     MessagingParams
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+
+/// @dev `UlnBase.UlnConfig` in LayerZero's message libraries, which are not vendored.
+struct UlnConfig {
+    uint64 confirmations;
+    uint8 requiredDVNCount;
+    uint8 optionalDVNCount;
+    uint8 optionalDVNThreshold;
+    address[] requiredDVNs;
+    address[] optionalDVNs;
+}
 
 /// @notice Send and quote for every LayerZero sender, and the one attribute they accept:
 ///         execution options, as `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptionsBytes)`.
@@ -54,6 +65,42 @@ library LzMessage {
         return ILayerZeroEndpointV2(endpoint)
         .quote(MessagingParams(dstEid, peer, payload, options(attributes, defaultGas), false), address(this))
         .nativeFee;
+    }
+
+    /// @dev `CONFIG_TYPE_ULN` in LayerZero's `SendUln302` and `ReceiveUln302`.
+    uint32 internal constant ULN_CONFIG_TYPE = 2;
+
+    /// @dev `UlnBase.NIL_DVN_COUNT`: no optional DVNs, rather than the default's.
+    uint8 internal constant NIL_DVN_COUNT = type(uint8).max;
+
+    /// @notice Verify what this OApp sends to `eid` with `dvn` alone, on today's default send
+    ///         library, which it keeps.
+    /// @dev For a pathway whose default is LayerZero's dead DVN, which refuses every message
+    ///      (#51). The library is pinned because the config is per library: a new default would
+    ///      fall back to the dead DVN. `confirmations` 0 keeps the pathway's default. The caller
+    ///      must be its own delegate.
+    function pinSendDvn(address endpoint, uint32 eid, address dvn) public {
+        ILayerZeroEndpointV2 ep = ILayerZeroEndpointV2(endpoint);
+        address lib = ep.defaultSendLibrary(eid);
+        ep.setSendLibrary(address(this), eid, lib);
+        ep.setConfig(address(this), lib, _onlyDvn(eid, dvn));
+    }
+
+    /// @notice `pinSendDvn` for what this OApp accepts from `eid`.
+    function pinReceiveDvn(address endpoint, uint32 eid, address dvn) public {
+        ILayerZeroEndpointV2 ep = ILayerZeroEndpointV2(endpoint);
+        address lib = ep.defaultReceiveLibrary(eid);
+        ep.setReceiveLibrary(address(this), eid, lib, 0);
+        ep.setConfig(address(this), lib, _onlyDvn(eid, dvn));
+    }
+
+    function _onlyDvn(uint32 eid, address dvn) private pure returns (SetConfigParam[] memory params) {
+        address[] memory required = new address[](1);
+        required[0] = dvn;
+        params = new SetConfigParam[](1);
+        params[0] = SetConfigParam(
+            eid, ULN_CONFIG_TYPE, abi.encode(UlnConfig(0, 1, NIL_DVN_COUNT, 0, required, new address[](0)))
+        );
     }
 
     /// @dev Without the attribute: type-3 options with one executor `lzReceive` option carrying

@@ -9,6 +9,7 @@ import {
     TronTransceiver
 } from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {Call} from "src/messaging/Call.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @dev The overrides below only name both bases, as Solidity requires where each supplies an
 ///      implementation; `super` resolves by linearization to the one that does the work.
@@ -19,11 +20,13 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
-    function initialize(TransceiverConfig memory c, uint32 governorHomeEid, bytes32 accountBytecodeHash_)
-        external
-        initializer
-    {
-        __LzTransceiver_init(c, governorHomeEid);
+    function initialize(
+        TransceiverConfig memory c,
+        uint32 governorHomeEid,
+        address governorHomeDvn,
+        bytes32 accountBytecodeHash_
+    ) external initializer {
+        __LzTransceiver_init(c, governorHomeEid, governorHomeDvn);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
         _initGovernorHomePeer(c, governorHomeEid);
     }
@@ -59,6 +62,10 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
     ) internal view override(TransceiverBase, LzTransceiverBase) returns (bytes memory) {
         return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
+
+    function _checkOwner() internal view override(OwnableUpgradeable, LzTransceiverBase) {
+        super._checkOwner();
+    }
 }
 
 /// @notice `LzTransceiverBase` on Tron: Tron's address derivation only.
@@ -66,11 +73,13 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
     constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, uint32 governorHomeEid, bytes32 accountBytecodeHash_)
-        external
-        initializer
-    {
-        __LzTransceiver_init(c, governorHomeEid);
+    function initialize(
+        TransceiverConfig memory c,
+        uint32 governorHomeEid,
+        address governorHomeDvn,
+        bytes32 accountBytecodeHash_
+    ) external initializer {
+        __LzTransceiver_init(c, governorHomeEid, governorHomeDvn);
         __DivergentTransceiver_init(c, accountBytecodeHash_);
         _initGovernorHomePeer(c, governorHomeEid);
     }
@@ -101,5 +110,9 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
         Call[] memory calls
     ) internal view override(TransceiverBase, LzTransceiverBase) returns (bytes memory) {
         return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+    }
+
+    function _checkOwner() internal view override(OwnableUpgradeable, LzTransceiverBase) {
+        super._checkOwner();
     }
 }
