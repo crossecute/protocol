@@ -58,15 +58,9 @@ this file is the gap between that design and the tree.
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these
   scripts do not drive.
-- **Wormhole deferred executions need a requester.** A multisig cannot carry a relay
-  provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
-  Wormhole sends and bootstraps take the deferred attribute: the transaction publishes and
-  escrows a budget, and anyone later calls `requestDeferredExecution(sequence, signedQuote)`
-  with a fresh quote. Nothing does that yet. The tooling needs a job that watches
-  `ExecutionDeferred` on every Wormhole transceiver and governor transmitter, fetches a
-  quote, and requests. If the quoter key rotates, the governor approves the new one with
-  `setQuoter` on each chain's transceiver; until then a request reverts and the message can
-  still be relayed by hand with `executeVAAv1`.
+- **Wormhole sends need a fresh quote.** Each carries a relay provider's signed quote, valid
+  for an hour (deploy/CHECKS.md). The payload tooling above must fetch one when it sends,
+  not when a multisig proposal is drafted.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an

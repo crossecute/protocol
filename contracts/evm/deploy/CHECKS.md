@@ -75,14 +75,6 @@ A Wormhole send carries a relay provider's signed quote, from
 `relayInstructions`. It expires an hour after it is issued. `GET /v0/capabilities` lists the
 chains each request type is served on; all four here serve `ERV1` (VAA v1).
 
-`WORMHOLE_QUOTER` is `0xa54008017941EcE968623a0Dd8Ee907E2b133596` on every chain: the
-transceiver approves it at initialization, and a deferred execution is paid only under a
-quote it signed. On 2026-10-13 the API's quotes for eight pairs (2→30, 30→2, 2→23, 23→24,
-24→30, 30→23, 2→5, 6→2) all named it as quoter and `0x6a8bfc410a3cc7306d52872f116afb12f1cec6c6`
-as payee, and each signature recovered to it from the keccak256 of the quote's first 100
-bytes. Wormhole publishes no list of quoter keys, so before a deployment, fetch a quote for
-each new lane and confirm it recovers to the key passed.
-
 **op-stack-l1-l2.** In [`providers/op-stack-l1-l2.toml`](providers/op-stack-l1-l2.toml): on
 Ethereum, Base's `L1CrossDomainMessenger` is `0x866E82a600A1414e583f7F13623F1aC5d58b0Afa` and
 OP Mainnet's is `0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1`; on each L2, the predeploy
