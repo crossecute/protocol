@@ -12,6 +12,12 @@ import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {Provenance} from "src/registry/Provenance.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {unseeded} from "test/RegistrySeed.sol";
+
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
@@ -102,9 +108,21 @@ abstract contract LzFixture is ProviderGasFixture {
         LzTransceiver(payable(t)).setEid(chainKey, uint32(providerId));
     }
 
+    /// @dev The peer must be the counterpart (#62), so a transceiver with no registry, as the
+    ///      send suite's is, gets one that records `counterpart` on a `Unique` remote chain.
     function _configureRemote(address t, address counterpart) internal override {
         _setRemoteProviderId(t);
-        vm.prank(TransceiverBase(payable(t)).owner());
+        TransceiverBase tb = TransceiverBase(payable(t));
+        if (address(tb.chainRegistry()) == address(0)) {
+            ChainRegistry registry = new ChainRegistry(address(this), unseeded());
+            bytes32 provider = registry.addMessageProvider("under-test");
+            bytes32 remote = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
+            vm.startPrank(tb.owner());
+            tb.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+            tb.setCounterpart(remote, Erc7930.encodeEvm(REMOTE_CHAIN_ID, counterpart));
+            vm.stopPrank();
+        }
+        vm.prank(tb.owner());
         LzTransceiver(payable(t)).setPeer(BASE_EID, toBytes32(counterpart));
     }
 

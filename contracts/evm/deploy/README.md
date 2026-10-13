@@ -120,8 +120,9 @@ bootstrap creates the governor's accounts there.
    - `setRoute`;
    - the provider's id setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`),
      with the id from `providers/`;
-   - LayerZero's `setPeer`;
    - `setCounterpart` or `resolveCounterpart` where the destination is not `Predetermined`;
+   - LayerZero's `setPeer`, after the two above: it refuses a peer other than the counterpart
+     on the chain the eid maps to (#62);
    - `setBootstrapFee` where the destination reports its receivers (a zkSync or Tron
      destination).
 5. **Fund floats** (§6 step 7) on chains whose transceivers report, sized from
