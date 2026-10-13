@@ -88,6 +88,10 @@ abstract contract ProviderFixture is Test {
         virtual
         returns (bytes memory);
 
+    /// @notice The attributes every send through this provider carries, where a test means none
+    ///         beyond what the provider requires: Wormhole's signed quote.
+    function _attributes() internal view virtual returns (bytes[] memory);
+
     function _config() internal returns (TransceiverConfig memory) {
         return transceiverConfig(_receiverImplementation());
     }
@@ -131,7 +135,7 @@ abstract contract ProviderGasFixture is ProviderIdFixture {
     function _lastGasLimit() internal view virtual returns (uint256);
 
     /// @notice An attribute asking for `gas`, in the binding's own format.
-    function _gasAttribute(uint256 gas) internal pure virtual returns (bytes memory);
+    function _gasAttribute(uint256 gas) internal view virtual returns (bytes memory);
 
     /// @notice The big-endian unsigned integer `width` bytes long at `offset` in `b`.
     function _uintAt(bytes memory b, uint256 offset, uint256 width) internal pure returns (uint256 v) {

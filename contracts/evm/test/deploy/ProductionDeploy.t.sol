@@ -182,10 +182,9 @@ contract DeployWormholeTest is ProductionDeploySpec {
 
     function _setUpProvider() internal override {
         deployCodeTo("MockWormholeCore.sol:MockWormholeCore", abi.encode(uint16(2)), address(0xE0004));
-        deployCodeTo("MockExecutorQuoterRouter.sol:MockExecutorQuoterRouter", address(0xE0005));
+        deployCodeTo("MockExecutor.sol:MockExecutor", abi.encode(uint16(2)), address(0xE0005));
         _setEnv("WORMHOLE_CORE", vm.toString(address(0xE0004)));
-        _setEnv("WORMHOLE_EXECUTOR_ROUTER", vm.toString(address(0xE0005)));
-        _setEnv("WORMHOLE_QUOTER", vm.toString(address(0x0907)));
+        _setEnv("WORMHOLE_EXECUTOR", vm.toString(address(0xE0005)));
     }
 }
 

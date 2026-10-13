@@ -7,12 +7,13 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
-import {MockExecutorQuoterRouter} from "test/protocols/wormhole/MockExecutorQuoterRouter.sol";
+import {MockExecutor} from "test/protocols/wormhole/MockExecutor.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
@@ -34,82 +35,176 @@ contract WormholeTransceiverSendTest is
     ProviderDefaultGasSpec,
     WormholeFixture
 {
+    /// @dev Fetched from `executor.labsapis.com/v0/quote` on 2026-10-07 for Ethereum (2) to Base
+    ///      (30) and 1,000,000 gas; the API answered `estimatedCost` 84,081,300,000,000 wei.
+    bytes internal constant LIVE_QUOTE =
+        hex"45513031a54008017941ece968623a0dd8ee907e2b1335960000000000000000000000006a8bfc410a3cc7306d52872f116afb12f1cec6c60002001e000000006ac7337a00000000000bea0d00000000005b8d800000174bcb40af000000174bcb40af00bb67be36695b6322bf555fe6120d22a1ecb8d6e0897eb4fd0df32471ffd94eaa79d708a06d1bbd242a7ec7deba14c41f40856b847b9dcbc8182e6448d982ce841c";
+    uint64 internal constant LIVE_QUOTE_EXPIRY = 1_791_439_738;
+
     function _assertLastSendTargetedConfiguredDestination() internal view override {
-        assertEq(router.requestsLength(), 1);
-        assertEq(router.requests(0).dstChain, BASE_WORMHOLE_CHAIN);
+        assertEq(executor.requestsLength(), 1);
+        assertEq(executor.requests(0).dstChain, BASE_WORMHOLE_CHAIN);
     }
 
-    function _supportedAttribute() internal pure override returns (bytes memory) {
-        return abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, uint256(1));
+    function _supportedAttribute() internal view override returns (bytes memory) {
+        return _gasAttribute(1);
     }
 
-    function _gasLimitAttribute(uint256 gasLimit) internal pure returns (bytes[] memory attrs) {
+    function _with(bytes memory signedQuote, uint256 gas) internal pure returns (bytes[] memory attrs) {
         attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(WormholeMessage.GAS_LIMIT_ATTRIBUTE, gasLimit);
+        attrs[0] = _executionAttribute(signedQuote, gas);
+    }
+
+    function _refusesQuoteAndSend(bytes[] memory attrs, bytes memory refusal) internal {
+        vm.expectRevert(refusal);
+        harness.quoteMessagePublic(_configuredRecipient(), "x", attrs);
+        vm.expectRevert(refusal);
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
     function test_publishedPayloadNamesItsDestination() public {
-        harness.sendMessagePublic(_configuredRecipient(), "payload", new bytes[](0), 0);
+        harness.sendMessagePublic(_configuredRecipient(), "payload", _attributes(), 0);
         MockWormholeCore.Published memory p = core.published(0);
         assertEq(p.emitter, address(harness));
         assertEq(p.payload, _envelope(BASE_WORMHOLE_CHAIN, REMOTE_COUNTERPART, "payload"));
         assertEq(p.consistencyLevel, 1);
     }
 
-    function test_executionRequestNamesTheVaaAndTheRecipient() public {
+    function test_executionRequestCarriesTheQuoteAndNamesTheVaa() public {
         address payer = address(0xFEE);
+        bytes memory signedQuote = _signedQuote();
         vm.prank(payer);
-        harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        MockExecutorQuoterRouter.Request memory r = router.requests(0);
+        harness.sendMessagePublic(_configuredRecipient(), "x", _with(signedQuote, 0), 0);
+        MockExecutor.Request memory r = executor.requests(0);
         assertEq(r.dstAddr, toBytes32(REMOTE_COUNTERPART));
         assertEq(r.refundAddr, payer);
-        assertEq(r.quoterAddr, QUOTER);
+        assertEq(r.signedQuote, signedQuote);
         assertEq(
             r.requestBytes, RequestLib.encodeVaaMultiSigRequest(HERE_WORMHOLE_CHAIN, toBytes32(address(harness)), 0)
         );
     }
 
-    function test_quoteIsMessageFeePlusExecutionPrice() public {
+    function test_quoteIsMessageFeePlusThePriceTheQuoteStates() public {
+        _setProviderFee(0.01 ether);
         core.setMessageFee(0.001 ether);
-        router.setFee(0.01 ether);
-        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x"), 0.011 ether);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _attributes()), 0.011 ether);
     }
 
-    function test_valueSplitsBetweenCoreAndTheRouterWithExcessRefunded() public {
+    /// @dev The binding's price for a real provider quote is the provider's own answer.
+    function test_aLiveQuoteIsPricedAsTheExecutorApiPricesIt() public {
+        vm.warp(LIVE_QUOTE_EXPIRY - 60);
+        core.setMessageFee(0);
+        assertEq(
+            harness.quoteMessagePublic(_configuredRecipient(), "x", _with(LIVE_QUOTE, 1_000_000)), 84_081_300_000_000
+        );
+    }
+
+    /// @dev Destination gas is converted at the ratio of the two USD prices.
+    function test_gasIsPricedAtTheDestinationsRate() public {
+        core.setMessageFee(0);
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        bytes memory parity = _eq01(BASE_WORMHOLE_CHAIN, expiry, 0, 2 gwei, 1, 1);
+        bytes memory dearer = _eq01(BASE_WORMHOLE_CHAIN, expiry, 0, 2 gwei, 1, 3);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _with(parity, 100_000)), 100_000 * 2 gwei);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _with(dearer, 100_000)), 3 * 100_000 * 2 gwei);
+    }
+
+    /// @dev The Executor forwards all it is sent to the payee, so the binding sends it the price
+    ///      alone and refunds the rest itself.
+    function test_thePayeeGetsThePriceAndThePayerTheRest() public {
+        _setProviderFee(0.01 ether);
         core.setMessageFee(0.001 ether);
-        router.setFee(0.01 ether);
         address payer = address(0xFEE);
         vm.deal(payer, 1 ether);
         vm.prank(payer);
-        harness.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", new bytes[](0), 0.03 ether);
+        harness.sendMessagePublic{value: 0.03 ether}(_configuredRecipient(), "x", _attributes(), 0.03 ether);
         assertEq(core.published(0).value, 0.001 ether);
-        assertEq(router.requests(0).paid, 0.01 ether);
+        assertEq(PAYEE.balance, 0.01 ether);
         assertEq(payer.balance, 0.989 ether);
         assertEq(address(harness).balance, 0);
     }
 
-    function test_valueBelowTheMessageFeeIsRefused() public {
+    function test_valueBelowThePriceIsRefused() public {
+        _setProviderFee(0.01 ether);
         core.setMessageFee(0.001 ether);
         vm.deal(address(this), 1 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(WormholeMessage.InsufficientWormholeValue.selector, 0.0005 ether, 0.001 ether)
+            abi.encodeWithSelector(WormholeMessage.InsufficientWormholeValue.selector, 0.005 ether, 0.011 ether)
         );
-        harness.sendMessagePublic{value: 0.0005 ether}(_configuredRecipient(), "x", new bytes[](0), 0.0005 ether);
+        harness.sendMessagePublic{value: 0.005 ether}(_configuredRecipient(), "x", _attributes(), 0.005 ether);
+    }
+
+    /// @dev #53: no on-chain quoter is deployed, so a send without a provider's quote has no price
+    ///      and no relayer.
+    function test_noQuoteIsRefused() public {
+        _refusesQuoteAndSend(new bytes[](0), abi.encodeWithSelector(WormholeMessage.NoSignedQuote.selector));
+    }
+
+    function test_anExpiredQuoteIsRefused() public {
+        bytes[] memory attrs = _attributes();
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        vm.warp(expiry);
+        _refusesQuoteAndSend(attrs, abi.encodeWithSelector(WormholeMessage.QuoteExpired.selector, expiry));
+    }
+
+    function test_aQuoteForAnotherRouteIsRefused() public {
+        bytes memory other = _eq01(31, uint64(block.timestamp + 1 hours), 1, 0, 1, 1);
+        _refusesQuoteAndSend(
+            _with(other, 0),
+            abi.encodeWithSelector(WormholeMessage.QuoteForAnotherRoute.selector, HERE_WORMHOLE_CHAIN, uint16(31))
+        );
+    }
+
+    function test_onlyAnEq01QuoteIsPriced() public {
+        bytes memory eq02 = _signedQuote();
+        eq02[3] = "2";
+        _refusesQuoteAndSend(_with(eq02, 0), abi.encodeWithSelector(WormholeMessage.UnsupportedQuote.selector));
+        bytes memory zeroPrice = _eq01(BASE_WORMHOLE_CHAIN, uint64(block.timestamp + 1 hours), 1, 1, 0, 1);
+        _refusesQuoteAndSend(_with(zeroPrice, 0), abi.encodeWithSelector(WormholeMessage.UnsupportedQuote.selector));
     }
 
     function test_gasLimitAboveUint128IsRefused() public {
-        bytes[] memory attrs = _gasLimitAttribute(uint256(type(uint128).max) + 1);
-        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
-        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        bytes[] memory attrs = _with(_signedQuote(), uint256(type(uint128).max) + 1);
+        _refusesQuoteAndSend(attrs, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
     }
 
-    /// @dev Core's message fee plus what the Executor router kept (it refunds the rest).
+    /// @dev A multisig's send: no quote, so no relay provider is paid; the VAA is delivered by
+    ///      whoever submits it (`WormholeReceiveTest.test_anyoneDeliversAVaa`).
+    function test_aPublishOnlySendPaysCoreAlone() public {
+        core.setMessageFee(0.001 ether);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _publishOnly()), 0.001 ether);
+        address payer = address(0xFEE);
+        vm.deal(payer, 1 ether);
+        vm.prank(payer);
+        harness.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "x", _publishOnly(), 0.01 ether);
+        assertEq(core.publishedLength(), 1);
+        assertEq(core.published(0).payload, _envelope(BASE_WORMHOLE_CHAIN, REMOTE_COUNTERPART, "x"));
+        assertEq(executor.requestsLength(), 0);
+        assertEq(payer.balance, 1 ether - 0.001 ether);
+        assertEq(address(harness).balance, 0);
+    }
+
+    function test_publishOnlyStandsAlone() public {
+        bytes[] memory withBody = new bytes[](1);
+        withBody[0] = abi.encodePacked(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE, uint256(1));
+        _refusesQuoteAndSend(
+            withBody, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, withBody[0])
+        );
+        bytes[] memory withQuote = new bytes[](2);
+        withQuote[0] = abi.encodePacked(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE);
+        withQuote[1] = _gasAttribute(0);
+        _refusesQuoteAndSend(
+            withQuote, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, withQuote[1])
+        );
+    }
+
+    /// @dev Core's message fee plus what the payee was paid.
     function _lastPaid() internal view override returns (uint256) {
-        return core.published(core.publishedLength() - 1).value + router.requests(router.requestsLength() - 1).paid;
+        return core.published(core.publishedLength() - 1).value + executor.requests(executor.requestsLength() - 1).paid;
     }
 
     function _lastRefundAddress() internal view override returns (address) {
-        return router.requests(router.requestsLength() - 1).refundAddr;
+        return executor.requests(executor.requestsLength() - 1).refundAddr;
     }
 }
 
@@ -121,6 +216,16 @@ contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
         return _vaa(
             1, BASE_WORMHOLE_CHAIN, SOURCE_TRANSMITTER, seq, _envelope(HERE_WORMHOLE_CHAIN, receiver, _emptyPayload())
         );
+    }
+
+    /// @dev Delivery needs no role and no relay provider: a publish-only send's VAA is
+    ///      delivered by whoever holds it.
+    function test_anyoneDeliversAVaa() public {
+        bytes memory vaa = _validVaa(0);
+        vm.prank(address(0x5757));
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
+        (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(vaa);
+        assertTrue(WormholeReceiver(payable(receiver)).vaaConsumed(v.hash));
     }
 
     function test_aReplayedVaaIsRejected() public {
@@ -255,4 +360,23 @@ contract Switch {
     }
 }
 
-contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFixture {}
+contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFixture {
+    /// @dev The owner's calldata holds no quote, so it may wait on a multisig indefinitely.
+    function test_anOwnerSendsPublishOnly() public {
+        _setProviderFee(0.01 ether);
+        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        uint256 requests = executor.requestsLength();
+        uint256 before = account.balance;
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).sendMessage(recipient, "x", _publishOnly());
+        assertEq(before - account.balance, CORE_MESSAGE_FEE);
+        assertEq(executor.requestsLength(), requests, "no relay provider paid");
+        assertEq(core.published(core.publishedLength() - 1).emitter, account);
+    }
+
+    function test_theTransmitterSupportsBothAttributes() public view {
+        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.EXECUTION_ATTRIBUTE));
+        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE));
+    }
+}

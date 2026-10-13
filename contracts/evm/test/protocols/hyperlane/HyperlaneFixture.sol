@@ -27,8 +27,12 @@ contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
         return _sendMessage(recipient, payload, attributes, value);
     }
 
-    function quoteMessagePublic(bytes memory recipient, bytes memory payload) external view returns (uint256) {
-        return _quoteMessage(recipient, payload, new bytes[](0));
+    function quoteMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
+        external
+        view
+        returns (uint256)
+    {
+        return _quoteMessage(recipient, payload, attributes);
     }
 
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
@@ -76,6 +80,10 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
         returns (bytes memory)
     {
         return defaultReceiverInit(sourceTransmitter, calls);
+    }
+
+    function _attributes() internal pure override returns (bytes[] memory) {
+        return new bytes[](0);
     }
 
     function _gateway() internal view override returns (address) {

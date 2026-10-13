@@ -360,8 +360,11 @@ What an operator or integrator has to know:
   `CcipInterfaceSupportTest` pins the receiver's answer and `CcipTransceiver.t.sol` the
   transceiver's, on the plain and zkSync versions, so any inheritance change to the CCIP
   contracts has to keep them.
-- **Wormhole delivery is permissionless.** Anyone may submit a VAA, and liveness does not
-  depend on the Executor quoter, which is an implementation immutable.
+- **Wormhole delivery is permissionless.** Anyone may submit a VAA. Automatic delivery needs
+  a relay provider's signed quote, fetched off-chain and passed with each send, which
+  expires an hour after it is issued. A multisig's send is publish-only instead: it pays
+  Core alone, and whoever submits the signed VAA to `executeVAAv1` delivers it, paying the
+  destination gas. A send with neither reverts (#53).
 - **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
   would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,

@@ -27,8 +27,6 @@ this file is the gap between that design and the tree.
 
 ## 2. Chain checks before mainnet
 
-- **No Wormhole quoter router on any configured chain** (#53). The binding quotes and sends
-  through `ExecutorQuoterRouter`, which Wormhole's SDK lists only on Polygon and Monad.
 - **LayerZero's zkSync side is unverified** (#51). Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
   The Ethereum side quotes on a fork; the zkSync side needs a zkSync Sepolia run.
@@ -60,6 +58,14 @@ this file is the gap between that design and the tree.
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these
   scripts do not drive.
+- **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
+  provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
+  Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes
+  and pays no relay provider. Nothing delivers those messages yet. The tooling needs a job
+  that watches `LogMessagePublished` from every governor transmitter and Wormhole
+  transceiver, fetches each signed VAA from Wormholescan once the guardians sign it, and
+  calls `executeVAAv1` on the destination, paying its gas. Anyone may run one; delivery
+  needs no role.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
