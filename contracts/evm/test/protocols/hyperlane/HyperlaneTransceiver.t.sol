@@ -7,10 +7,12 @@ import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
 import {toBytes32} from "test/protocols/ProviderFixture.sol";
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {
+    IReportHarness,
     ProviderZkSyncSpec,
     ProviderGatewayRoleSpec,
     ProviderGovernorHomeSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {HyperlaneFixture, HyperlaneZkSyncHarness} from "test/protocols/hyperlane/HyperlaneFixture.sol";
 
 contract HyperlaneTransceiverInboundTest is ProviderGatewayRoleSpec, HyperlaneFixture {}
@@ -33,6 +35,18 @@ contract HyperlaneZkSyncTransceiverTest is ProviderZkSyncSpec, HyperlaneFixture 
         assertEq(s.destinationDomain, BASE_DOMAIN, "to the account's home");
         assertEq(s.recipientAddress, toBytes32(HOME_TRANSCEIVER), "to its transceiver there");
         assertEq(s.refundTo, zk, "an overpayment returns to the float, not the relayer");
+    }
+
+    /// @dev #63: the report is quoted over the metadata it is sent with, refund address included.
+    function test_aReportIsQuotedWithTheRefundAddressItIsSentWith() public {
+        mailbox.setFee(0.01 ether);
+        mailbox.setRefundSurcharge(zk, 0.02 ether);
+        vm.deal(zk, 1 ether);
+
+        vm.prank(makeAddr("relayer"));
+        IReportHarness(zk).reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
+
+        assertEq(zk.balance, 1 ether - 0.03 ether, "the surcharge on the float's own refund address was paid");
     }
 }
 

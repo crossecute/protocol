@@ -43,10 +43,23 @@ contract MockHyperlaneMailbox {
         unrouted[domain] = true;
     }
 
+    /// @notice A price on the metadata's refund address, standing in for a hook that prices
+    ///         its metadata, so a quote taken over other metadata than the send's underpays.
+    mapping(address => uint256) public refundSurcharge;
+
+    function setRefundSurcharge(address refundAddress, uint256 surcharge) external {
+        refundSurcharge[refundAddress] = surcharge;
+    }
+
     /// @dev At least 1 wei on a routed domain: a real routed domain always charges for its relay.
-    function quoteDispatch(uint32 domain, bytes32, bytes calldata body, bytes calldata) public view returns (uint256) {
+    function quoteDispatch(uint32 domain, bytes32, bytes calldata body, bytes calldata metadata)
+        public
+        view
+        returns (uint256)
+    {
         if (unrouted[domain]) return 0;
         uint256 price = fee + feePerByte * body.length;
+        if (metadata.length >= 86) price += refundSurcharge[address(bytes20(metadata[66:86]))];
         return price == 0 ? 1 : price;
     }
 
