@@ -72,7 +72,7 @@ abstract contract OpStackInteropFixture is ProviderFixture {
         override
         returns (bytes memory)
     {
-        return defaultReceiverInit(sourceTransmitter, calls);
+        return defaultReceiverInit(sourceTransmitter, _remoteProviderId(), calls);
     }
 
     function _gateway() internal pure override returns (address) {

@@ -56,7 +56,7 @@ contract CommitmentQueueTest is Test {
     function setUp() public {
         ledger = new Ledger();
         r = new QueueReceiver();
-        r.initialize(TRANSMITTER, new Call[](0));
+        r.initialize(TRANSMITTER, ChainKey.forEvm(1), new Call[](0));
         // The transmitter is the only party that may approve or withdraw. The test contract
         // created this receiver and has no authority over it afterwards, which is the
         // property being relied on rather than worked around.

@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import {CcipTransceiverBase} from "src/protocols/ccip/CcipTransceiver.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
+import {Call} from "src/messaging/Call.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {
     DivergentTransceiver,
@@ -49,6 +51,16 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         return super._parityAddress(chainKey);
     }
 
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+    }
+
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -88,6 +100,16 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         returns (address)
     {
         return super._parityAddress(chainKey);
+    }
+
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 
     function supportsInterface(bytes4 interfaceId)

@@ -117,7 +117,7 @@ abstract contract WormholeFixture is ProviderGasFixture {
         override
         returns (bytes memory)
     {
-        return defaultReceiverInit(sourceTransmitter, calls);
+        return defaultReceiverInit(sourceTransmitter, _remoteProviderId(), calls);
     }
 
     function _gateway() internal view override returns (address) {

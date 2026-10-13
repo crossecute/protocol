@@ -609,7 +609,7 @@ anything. A binding has to expose its own external entry point that accepts a ra
 WHOEVER submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
 no address to grant `GATEWAY_ROLE` to for this channel, because there is no fixed caller:
 authenticity comes entirely from the guardian signatures inside the VAA, checked by
-`vm.emitterChainId`/`vm.emitterAddress`, the emitter compared by `_onMessageFrom`, with nothing checking
+`vm.emitterChainId`/`vm.emitterAddress`, both compared by `_onMessageFrom`, with nothing checking
 "who submitted this transaction" at all. That is not a gap relative to the other bindings:
 `_onMessageFrom`, `_onMessage`, and `_onInbound` are already `internal`, so this
 entry point reaches the same seam CCIP and Hyperlane already reuse — it is simply the first

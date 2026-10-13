@@ -79,7 +79,7 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
         override
         returns (bytes memory)
     {
-        return defaultReceiverInit(sourceTransmitter, calls);
+        return defaultReceiverInit(sourceTransmitter, _remoteProviderId(), calls);
     }
 
     function _attributes() internal pure override returns (bytes[] memory) {

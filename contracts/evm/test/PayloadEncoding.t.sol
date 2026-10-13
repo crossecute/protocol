@@ -242,7 +242,7 @@ contract PayloadEncodingTest is Test {
         bytes32 commitment = Commitment.hashCalls(ChainKey.local(), Calls.encodeAll(calls));
 
         OpenReceiver r = new OpenReceiver();
-        r.initialize(address(this), new Call[](0));
+        r.initialize(address(this), ChainKey.forEvm(1), new Call[](0));
         r.commit(commitment);
         r.finalize(calls);
 
@@ -256,7 +256,7 @@ contract PayloadEncodingTest is Test {
         calls[0] = Call({target: address(sink), value: 1 ether, data: abi.encodeCall(Sink.poke, (1))});
 
         OpenReceiver r = new OpenReceiver();
-        r.initialize(address(this), new Call[](0));
+        r.initialize(address(this), ChainKey.forEvm(1), new Call[](0));
         r.commit(Commitment.hashCalls(ChainKey.local(), calls));
         vm.deal(address(r), 1 ether);
 
@@ -269,7 +269,7 @@ contract PayloadEncodingTest is Test {
     /// is exactly one entry point to gate, which is the point of dropping the opaque one.
     function test_executeIsGatedOnTheCaller() public {
         OpenReceiver r = new OpenReceiver();
-        r.initialize(address(this), new Call[](0));
+        r.initialize(address(this), ChainKey.forEvm(1), new Call[](0));
 
         vm.prank(address(0xBAD));
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
@@ -280,7 +280,7 @@ contract PayloadEncodingTest is Test {
     /// spelling of the entry point: it has no selector here at all.
     function test_thereIsNoOpaqueEntryPoint() public {
         OpenReceiver r = new OpenReceiver();
-        r.initialize(address(this), new Call[](0));
+        r.initialize(address(this), ChainKey.forEvm(1), new Call[](0));
 
         (bool ok,) = address(r).call(abi.encodeWithSignature("execute(bytes[])", Calls.encodeAll(_sinkCalls())));
         assertFalse(ok, "there is no execute(bytes[])");

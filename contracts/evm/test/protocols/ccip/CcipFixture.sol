@@ -127,7 +127,7 @@ abstract contract CcipFixture is ProviderGasFixture {
         override
         returns (bytes memory)
     {
-        return defaultReceiverInit(sourceTransmitter, calls);
+        return defaultReceiverInit(sourceTransmitter, _remoteProviderId(), calls);
     }
 
     /// @dev `EVMExtraArgsV2` after its 4-byte tag; the gas limit is its first word.

@@ -509,7 +509,7 @@ contract TransportTest is Test {
         _sendCalls(DEST, calls);
 
         MockReceiver r = new MockReceiver();
-        r.initialize(address(transmitter), new Call[](0));
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
         r.deliver(transmitter.sentPayload());
 
         assertEq(sink.total(), 3, "the array crossed and ran");
@@ -520,7 +520,7 @@ contract TransportTest is Test {
     ///      matching array later. Nothing on the wire distinguishes the two.
     function test_aDeferredPayloadPinsAHashInsteadOfRunning() public {
         MockReceiver r = new MockReceiver();
-        r.initialize(address(transmitter), new Call[](0));
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
 
         Call[] memory later = _calls();
         bytes32 hash = Commitment.hashCalls(ChainKey.local(), later);
@@ -863,7 +863,7 @@ contract TransportTest is Test {
     ///      send from one would be pricing a message that has no path.
     function test_aReceiverExposesNoQuote() public {
         MockReceiver r = new MockReceiver();
-        r.initialize(address(transmitter), new Call[](0));
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
 
         (bool ok,) =
             address(r).staticcall(abi.encodeWithSignature("quoteMessage(bytes,bytes,bytes[])", DEST, _calls(), NONE));
@@ -1153,7 +1153,7 @@ contract DivergingDestinationTest is Test {
     ///      address. This is the inbound mirror of the three above.
     function test_aDivergedReceiverAuthenticatesItsOwnTransmitter() public {
         MockReceiver r = new MockReceiver();
-        r.initialize(address(transmitter), new Call[](0));
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
         assertTrue(address(r) != address(transmitter), "addresses diverge, by construction");
 
         bytes memory sender = Erc7930.encodeEvm(1, address(transmitter));
@@ -1163,12 +1163,25 @@ contract DivergingDestinationTest is Test {
     /// @dev And still refuses anyone else, including a sender claiming its own address.
     function test_aDivergedReceiverRefusesAnImpostor() public {
         MockReceiver r = new MockReceiver();
-        r.initialize(address(transmitter), new Call[](0));
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
 
         bytes memory impostor = Erc7930.encodeEvm(1, address(r));
         bytes memory payload = Payload.encodeCalls(new Call[](0));
 
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, impostor));
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         r.receiveMessage(bytes32(0), impostor, payload);
+    }
+
+    /// @dev #61: its own transmitter's address on a chain other than its home is not its
+    ///      transmitter, so the sender's chain is checked too.
+    function test_aReceiverRefusesItsTransmittersAddressFromAnotherChain() public {
+        MockReceiver r = new MockReceiver();
+        r.initialize(address(transmitter), ChainKey.forEvm(1), new Call[](0));
+
+        bytes memory elsewhere = Erc7930.encodeEvm(10, address(transmitter));
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+
+        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.NotHomeOrigin.selector, ChainKey.forEvm(10)));
+        r.receiveMessage(bytes32(0), elsewhere, payload);
     }
 }

@@ -480,7 +480,7 @@ do nothing else with the message.
 
 | Contract | Entry point | Then |
 | --- | --- | --- |
-| receiver | `receiveMessage(receiveId, sender, payload)` over an ERC-7786 gateway, or the binding's callback | `_onMessageFrom(sender, payload)`, which checks the source transmitter and calls `_onMessage(payload)` |
+| receiver | `receiveMessage(receiveId, sender, payload)` over an ERC-7786 gateway, or the binding's callback | `_onMessageFrom(origin, sender, payload)`, which checks the home origin and the source transmitter and calls `_onMessage(payload)` |
 | transceiver | the binding's callback | `_onInbound(route, sender, message)`, through `_onProviderInbound` where the provider names the origin by its own id |
 | transmitter | none | MUST revert |
 
@@ -490,7 +490,11 @@ through transport this account trusts, which the binding establishes by granting
 The sender's address must equal the account's `sourceTransmitter`, which says it came from
 THIS account on the other side; that one needs no configuration and is therefore answered in
 the base. An honest but shared gateway would otherwise let one account's payload land in
-another's receiver.
+another's receiver. The sender's chain must also be the account's home, `homeOrigin`, which
+the transceiver arms the receiver with in the transport's own naming (the provider's id for
+the home, or its chainKey over a gateway): the transmitter's address on another chain is not
+always this account's, since wherever the provider's transceiver is not yet deployed its
+`deployedBy` can place code there (#61).
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
 later chance.** `Roles.grantRole` is `onlyInitializing`, so after the arming call there is
@@ -945,13 +949,13 @@ contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
     /// The base answers whether the sender is this account, because that half needs no
     /// configuration. Granting precedes `__ReceiverBase_init` so it is in place before the
     /// bootstrap payload runs.
-    function initialize(address transmitter_, Call[] calldata calls)
+    function initialize(address transmitter_, bytes32 homeOrigin_, Call[] calldata calls)
         external
         override
         initializer
     {
         grantRole(GATEWAY_ROLE, address(gateway));
-        __ReceiverBase_init(transmitter_, calls);
+        __ReceiverBase_init(transmitter_, homeOrigin_, calls);
     }
 }
 

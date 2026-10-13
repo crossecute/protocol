@@ -373,7 +373,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     /// @dev The proxy locks in the same call, and an account's own configuration is gated on
     ///      its owner, not this contract, so all provider setup must be in this calldata. A
     ///      transmitter takes its salt, since an account cannot recover it from its own
-    ///      address; a receiver answers to the transmitter its bootstrap carried.
+    ///      address; a receiver answers to the transmitter its bootstrap carried, on its home,
+    ///      named here by chainKey as an ERC-7786 gateway reports it.
     function _accountInitializer(
         address owner,
         bytes32 salt,
@@ -384,7 +385,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         if (homeChainKey == localChainKey) {
             return abi.encodeCall(ITransmitterInit.initialize, (owner, address(this), salt));
         }
-        return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, calls));
+        return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, homeChainKey, calls));
     }
 
     /// @notice `(owner, salt)`'s account homed on this chain: its transmitter here.

@@ -31,8 +31,11 @@ function toBytes32(address a) pure returns (bytes32) {
     return bytes32(uint256(uint160(a)));
 }
 
-function defaultReceiverInit(address sourceTransmitter, Call[] memory calls) pure returns (bytes memory) {
-    return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, calls));
+function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, Call[] memory calls)
+    pure
+    returns (bytes memory)
+{
+    return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, bytes32(homeProviderId), calls));
 }
 
 /// @title ProviderFixture

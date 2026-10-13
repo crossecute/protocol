@@ -24,17 +24,21 @@ contract WormholeReceiver is ReceiverBase, IVaaV1Receiver {
 
     /// @dev `grantRole` is `onlyInitializing`, so this initializer is the only window the
     ///      Core bridge's gateway grant ever gets.
-    function initialize(address sourceTransmitter_, Call[] calldata calls) external override initializer {
+    function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
+        external
+        override
+        initializer
+    {
         grantRole(GATEWAY_ROLE, coreBridge);
-        __ReceiverBase_init(sourceTransmitter_, calls);
+        __ReceiverBase_init(sourceTransmitter_, homeOrigin_, calls);
     }
 
-    /// @dev Guardian signatures authenticate the emitter; `_onMessageFrom` is the only sender
-    ///      check, so no R3.3 exception.
+    /// @dev Guardian signatures authenticate the emitter and its chain; `_onMessageFrom` is the
+    ///      only check of either, so no R3.3 exception.
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
-        (, address emitter, bytes calldata payload) =
+        (uint16 emitterChain, address emitter, bytes calldata payload) =
             WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
-        _onMessageFrom(emitter, payload);
+        _onMessageFrom(bytes32(uint256(emitterChain)), emitter, payload);
     }
 
     function vaaConsumed(bytes32 vaaHash) external view returns (bool) {

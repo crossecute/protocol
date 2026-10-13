@@ -433,11 +433,10 @@ abstract contract ProviderReceiveSpec is ProviderFixture {
         _deliver(receiver, _remoteProviderId(), toBytes32(sender), _emptyPayload());
     }
 
-    /// @notice Deliver a correctly-authenticated message from an origin this receiver was never
-    ///         configured for. A receiver that keeps no origin state has no such case, and the
-    ///         impersonator stands in.
-    function _deliverFromUnconfiguredOrigin() internal virtual {
-        _deliverFrom(address(0xBAD));
+    /// @notice Deliver from this receiver's own transmitter address, but on an origin other than
+    ///         its home: a contract at that address elsewhere is not the account's transmitter.
+    function _deliverFromUnconfiguredOrigin() internal {
+        _deliver(receiver, _remoteProviderId() + 1, toBytes32(SOURCE_TRANSMITTER), _emptyPayload());
     }
 
     function test_theConfiguredSourceIsAccepted() public {
@@ -654,6 +653,23 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         address receiver = t.predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
+    }
+
+    /// @dev #61: the origin the transceiver arms a receiver with is the one its deliveries
+    ///      report, so its transmitter is accepted from its home and from nowhere else.
+    function test_aCreatedReceiverAcceptsItsTransmitterOnlyFromItsHome() public {
+        bytes32 chainKey = _wire();
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
+        address receiver =
+            TransceiverBase(payable(transceiver)).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+
+        vm.expectRevert();
+        _deliver(receiver, _remoteProviderId() + 1, toBytes32(ORIGIN_TRANSMITTER), payload);
+
+        vm.expectEmit(false, false, false, true, receiver);
+        emit ProviderReceiveSpec.Delivered(0);
+        _deliver(receiver, _remoteProviderId(), toBytes32(ORIGIN_TRANSMITTER), payload);
     }
 
     function test_anotherSenderOnTheOriginIsRefused() public {

@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import {HyperlaneTransceiverBase} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
+import {Call} from "src/messaging/Call.sol";
 import {
     DivergentTransceiver,
     ZkSyncTransceiver,
@@ -47,6 +49,16 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
     {
         return super._parityAddress(chainKey);
     }
+
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+    }
 }
 
 /// @notice `HyperlaneTransceiverBase` on Tron: Tron's address derivation only.
@@ -78,5 +90,15 @@ contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
         returns (address)
     {
         return super._parityAddress(chainKey);
+    }
+
+    function _accountInitializer(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        address sourceTransmitter,
+        Call[] memory calls
+    ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 }

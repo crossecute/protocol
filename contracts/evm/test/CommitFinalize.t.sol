@@ -1044,7 +1044,7 @@ contract CommitFinalizeTest is Test {
     function test_receiverCannotBeReinitialized() public {
         (MockReceiver r,) = _deployedReceiver();
         vm.expectRevert();
-        r.initialize(address(0xDEAD), new Call[](0));
+        r.initialize(address(0xDEAD), home(), new Call[](0));
     }
 
     /// @dev The chain-binding is the receiver's alone now. The transceiver has no array

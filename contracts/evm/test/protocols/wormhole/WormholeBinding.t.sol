@@ -209,8 +209,7 @@ contract WormholeTransceiverSendTest is
 }
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate
-///         the emitter, and `isSourceTransmitter` is the only sender check. `WormholeReceiver`
-///         keeps no origin state, so the unconfigured-origin case is the impersonator case.
+///         the emitter and its chain, and `_onMessageFrom` is the only check of either.
 contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
     function _validVaa(uint64 seq) internal view returns (bytes memory) {
         return _vaa(
