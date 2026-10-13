@@ -112,7 +112,8 @@ provider's actual code, not its documentation, before writing anything else.
 Every binding here quotes on-chain with a `view`: LayerZero's `endpoint.quote`, CCIP's
 `getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the price a
 relay provider's signed quote states, which the caller fetches off-chain and passes as an
-attribute: the Executor has no on-chain price on these chains (#53). Both OP Stack quotes are
+attribute: the Executor has no on-chain price on these chains (#53). A publish-only send, for
+a sender that cannot hold a quote until it lands, is quoted at Core's fee alone. Both OP Stack quotes are
 zero: a deposit is paid in burned gas, and an interop message by its relayer.
 
 ---
@@ -287,8 +288,9 @@ the chain type.
 **R1.5** `attributes` are decoded only inside the binding, and without a gas attribute the
 binding MUST send `_defaultGas(payload)`: `DeliveryGas.BOOTSTRAP` for a bootstrap,
 `REPORT` for a report, `PAYLOAD` for an account's payload. Never zero gas, and never the
-gateway's own default, which is not sized for an account creation (#52). Wormhole's one
-attribute is required, since it carries the signed quote; its gas limit of zero means the default. A binding MUST answer `supportsAttribute`
+gateway's own default, which is not sized for an account creation (#52). Wormhole
+requires one of its two attributes: the signed quote, whose gas limit of zero means the
+default, or publish-only, which pays no relay provider and so names no gas. A binding MUST answer `supportsAttribute`
 honestly, and a gateway that refuses an attribute it does not know is behaving correctly.
 
 **R1.6** A send to an unconfigured destination MUST revert, not succeed. `routeFor` reverts
@@ -753,7 +755,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
 | 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Deployed through Arachnid's factory with identical arguments, each sits at one address on every standard EVM chain. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
-| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer. zkSync and Tron pass the account bytecode hash too. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
+| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the account bytecode hash too. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |

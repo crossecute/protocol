@@ -73,7 +73,10 @@ chain id for zkSync Era or Tron.
 A Wormhole send carries a relay provider's signed quote, from
 `POST https://executor.labsapis.com/v0/quote` with `srcChain`, `dstChain`, and
 `relayInstructions`. It expires an hour after it is issued. `GET /v0/capabilities` lists the
-chains each request type is served on; all four here serve `ERV1` (VAA v1).
+chains each request type is served on; all four here serve `ERV1` (VAA v1). A publish-only
+send needs no quote: its signed VAA is at
+`GET https://api.wormholescan.io/api/v1/vaas/{chain}/{emitter}/{sequence}` (base64 `vaa`;
+listing by chain answered on 2026-10-13), for anyone to pass to `executeVAAv1`.
 
 **op-stack-l1-l2.** In [`providers/op-stack-l1-l2.toml`](providers/op-stack-l1-l2.toml): on
 Ethereum, Base's `L1CrossDomainMessenger` is `0x866E82a600A1414e583f7F13623F1aC5d58b0Afa` and
