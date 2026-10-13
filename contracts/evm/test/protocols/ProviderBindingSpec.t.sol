@@ -355,7 +355,8 @@ abstract contract ProviderDefaultGasSpec is ProviderSendSpec, ProviderGasFixture
 
 /// @title ProviderEvmRecipientSpec
 /// @notice For bindings that deliver to the recipient's address as an EVM address: a recipient
-///         whose address is not 20 bytes is refused rather than truncated into another one.
+///         whose address is not 20 bytes is refused rather than truncated into another one, by
+///         the quote as by the send (R2.5).
 abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
     function test_aNonEvmWidthRecipientIsRefused() public {
         bytes memory wide = abi.encodePacked(bytes32(uint256(0xC0DE)));
@@ -363,6 +364,8 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
             Erc7930.encode(Erc7930.CT_EIP155, Erc7930.parseStrict(_configuredRecipient()).chainRef, wide);
         vm.expectRevert(abi.encodeWithSelector(ProviderAddress.UnsupportedRecipient.selector, wide));
         harness.sendMessagePublic(recipient, "x", _attributes(), 0);
+        vm.expectRevert(abi.encodeWithSelector(ProviderAddress.UnsupportedRecipient.selector, wide));
+        harness.quoteMessagePublic(recipient, "x", _attributes());
     }
 }
 

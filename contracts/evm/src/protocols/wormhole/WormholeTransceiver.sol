@@ -70,7 +70,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(_route(recipient), attributes, _defaultGas(payload));
+        return WormholeMessage.quote(_route(recipient), recipient, attributes, _defaultGas(payload));
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {

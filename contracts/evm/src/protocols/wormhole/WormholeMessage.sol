@@ -103,7 +103,12 @@ library WormholeMessage {
     }
 
     /// @notice Core's message fee plus the execution price, reverting wherever `send` would.
-    function quote(Route memory route, bytes[] memory attributes, uint256 defaultGas) public view returns (uint256) {
+    function quote(Route memory route, bytes memory recipient, bytes[] memory attributes, uint256 defaultGas)
+        public
+        view
+        returns (uint256)
+    {
+        recipientOf(recipient);
         return ICoreBridge(route.coreBridge).messageFee() + execution(route, attributes, defaultGas).price;
     }
 

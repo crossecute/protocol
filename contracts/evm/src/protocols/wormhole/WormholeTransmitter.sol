@@ -39,7 +39,7 @@ contract WormholeTransmitter is OwnableTransmitter {
         override
         returns (uint256 nativeFee)
     {
-        return WormholeMessage.quote(_route(recipient), attributes, _defaultGas(payload));
+        return WormholeMessage.quote(_route(recipient), recipient, attributes, _defaultGas(payload));
     }
 
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
