@@ -677,7 +677,7 @@ takes the Core path above, with the Executor for delivery:
 
 | Our hook | Wormhole Core + Executor |
 | --- | --- |
-| `_sendMessage` | `ICoreBridge.publishMessage{messageFee}` then `IExecutor.requestExecution{price}` with the caller's signed EQ01 quote; the Executor pays everything it is sent to the quote's payee, so the binding refunds the rest itself |
+| `_sendMessage` | `ICoreBridge.publishMessage{messageFee}` then `IExecutor.requestExecution{price}` with the caller's signed EQ01 quote; the Executor pays everything it is sent to the quote's payee, so the binding refunds the rest itself. Or, deferred, publish and escrow a budget; anyone later calls `requestDeferredExecution` with a fresh quote, whose signature must recover to an approved quoter |
 | `_quoteMessage` | `messageFee()` plus the price the quote states for the gas, computed on chain with the Executor's own formula (`ExecutorQuoter.estimateQuote`) |
 | inbound | `IVaaV1Receiver.executeVAAv1(vaa)`, permissionless; verified via `parseAndVerifyVM` |
 | replay | the binding's own consumed-hash set, as the Core section above anticipated |

@@ -361,9 +361,11 @@ What an operator or integrator has to know:
   transceiver's, on the plain and zkSync versions, so any inheritance change to the CCIP
   contracts has to keep them.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA. Automatic delivery needs
-  a relay provider's signed quote, fetched off-chain and passed with each send, which
-  expires an hour after it is issued; without one the send reverts (#53). A send that waits
-  on a multisig past that hour needs a fresh quote.
+  a relay provider's signed quote, fetched off-chain, which expires an hour after it is
+  issued; a send with neither a quote nor a deferral reverts (#53). A multisig's send
+  defers: it publishes and escrows a budget, and anyone later requests execution with a
+  fresh quote. The escrow pays only a quote signed by a quoter the transceiver's owner
+  approves, within the budget, to the payee the quote names.
 - **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends
   nothing from the account, and the binding refuses a nonzero `value` because the messenger
   would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,
