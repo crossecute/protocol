@@ -79,11 +79,11 @@ abstract contract OpStackInteropFixture is ProviderFixture {
         return address(MESSENGER);
     }
 
-    /// @dev Interop names a chain by its chain id.
     function _attributes() internal pure override returns (bytes[] memory) {
         return new bytes[](0);
     }
 
+    /// @dev Interop names a chain by its chain id.
     function _remoteProviderId() internal pure override returns (uint256) {
         return REMOTE_CHAIN_ID;
     }
