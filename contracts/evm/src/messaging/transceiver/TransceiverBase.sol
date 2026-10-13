@@ -159,6 +159,9 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     error InsufficientCounterpartProvenance(bytes32 chainKey, Provenance grade);
     /// @dev Re-pointing a counterpart would redirect the destination; moving one is a redeploy.
     error CounterpartAlreadySet(bytes32 chainKey);
+    /// @dev A `Predetermined` chain's counterpart is `_parityAddress`, in use before any is
+    ///      recorded, so a recorded one may only restate it.
+    error CounterpartNotParity(bytes32 chainKey);
     /// @dev The derivation inputs are not the ones this transaction approved. See
     ///      `resolveCounterpart`.
     error ParamsCommitmentMismatch(bytes32 chainKey);
@@ -370,7 +373,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
     /// @dev The proxy locks in the same call, and an account's own configuration is gated on
     ///      its owner, not this contract, so all provider setup must be in this calldata. A
     ///      transmitter takes its salt, since an account cannot recover it from its own
-    ///      address; a receiver answers to the transmitter its bootstrap carried.
+    ///      address; a receiver answers to the transmitter its bootstrap carried, on its home,
+    ///      named here by chainKey as an ERC-7786 gateway reports it.
     function _accountInitializer(
         address owner,
         bytes32 salt,
@@ -381,7 +385,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         if (homeChainKey == localChainKey) {
             return abi.encodeCall(ITransmitterInit.initialize, (owner, address(this), salt));
         }
-        return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, calls));
+        return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, homeChainKey, calls));
     }
 
     /// @notice `(owner, salt)`'s account homed on this chain: its transmitter here.
@@ -598,8 +602,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
         if (address(chainRegistry) == address(0)) revert NoChainRegistry();
         if (hasCounterpart(chainKey)) revert CounterpartAlreadySet(chainKey);
 
-        chainRegistry.validateLocation(chainKey, interop);
-        _setCounterpart(chainKey, Erc7930.parseStrict(interop).addr);
+        _recordCounterpart(chainKey, interop);
     }
 
     /// @notice Record the counterpart by recomputing it from the registry's deriver and inputs
@@ -615,9 +618,20 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
             revert ParamsCommitmentMismatch(chainKey);
         }
 
-        bytes memory interop = chainRegistry.expectedTransceiver(chainKey);
+        _recordCounterpart(chainKey, chainRegistry.expectedTransceiver(chainKey));
+    }
+
+    /// @dev The default `_counterpartOn` answers on a `Predetermined` chain is live from the
+    ///      moment the chain is graded, so a counterpart recorded later must equal it: otherwise
+    ///      `hasCounterpart` being false would let the owner repoint a lane in use.
+    function _recordCounterpart(bytes32 chainKey, bytes memory interop) private {
         chainRegistry.validateLocation(chainKey, interop);
-        _setCounterpart(chainKey, Erc7930.parseStrict(interop).addr);
+        bytes memory addr = Erc7930.parseStrict(interop).addr;
+        if (
+            chainRegistry.provenanceFor(chainKey) == Provenance.Predetermined
+                && keccak256(addr) != keccak256(abi.encodePacked(_parityAddress(chainKey)))
+        ) revert CounterpartNotParity(chainKey);
+        _setCounterpart(chainKey, addr);
     }
 
     /* ================================= counterparts ================================ */

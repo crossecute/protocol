@@ -37,7 +37,7 @@ interface IExecute {
 
 /// @notice What a transceiver needs from the receiver it creates and reuses.
 interface IReceiverInit is ICommitFinalize, ICancel, IExecute {
-    function initialize(address sourceTransmitter, Call[] calldata calls) external;
+    function initialize(address sourceTransmitter, bytes32 homeOrigin, Call[] calldata calls) external;
 }
 
 /// @title ReceiverBase
@@ -80,6 +80,11 @@ abstract contract ReceiverBase is
     /// The transceiver that created this receiver. Not `transceiver`, which on
     /// `TransmitterBase` means the other direction.
     address public parentTransceiver;
+    /// The account's home as the transport names an origin: the provider's id for it, or its
+    /// chainKey over an ERC-7786 gateway. Set once, at initialization.
+    /// @dev The transmitter's address on another chain is not always this account's: where the
+    ///      provider's transceiver is not yet deployed, its `deployedBy` can place code there.
+    bytes32 public homeOrigin;
 
     event ReceiverInitialized(address indexed sourceTransmitter, address indexed transceiver);
     event ReceiverExecuted(address indexed caller, uint256 callCount);
@@ -93,9 +98,9 @@ abstract contract ReceiverBase is
 
     error NotSourceTransmitter();
     error ZeroTransmitter();
-    /// @dev The message names a sender other than this receiver's transmitter: another
-    ///      account's payload at the wrong receiver.
-    error SenderIsNotThisAccount(bytes sender);
+    error ZeroHomeOrigin();
+    /// @dev The message came from a chain other than this account's home.
+    error NotHomeOrigin(bytes32 origin);
     /// @dev No approval matches the array supplied.
     error CommitmentMismatch();
     /// @dev Nothing outstanding under that hash. Refused rather than a no-op, since success
@@ -136,8 +141,13 @@ abstract contract ReceiverBase is
     /// @notice Bind this account to its transmitter and run the payload it was created for.
     /// @dev For a binding that needs no setup of its own; one that does declares its own
     ///      `initialize` and calls `__ReceiverBase_init` last.
-    function initialize(address sourceTransmitter_, Call[] calldata calls) external virtual override initializer {
-        __ReceiverBase_init(sourceTransmitter_, calls);
+    function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
+        external
+        virtual
+        override
+        initializer
+    {
+        __ReceiverBase_init(sourceTransmitter_, homeOrigin_, calls);
     }
 
     /// @notice The work behind `initialize`: bind, then run the bootstrap calls.
@@ -149,13 +159,18 @@ abstract contract ReceiverBase is
     /// @dev Separate so a binding can configure its provider before the payload runs, from
     ///      inside its own `initializer` and ahead of this call; `super.initialize` would run the
     ///      payload first. The transceiver's reach into a receiver ends here.
-    function __ReceiverBase_init(address sourceTransmitter_, Call[] calldata calls) internal onlyInitializing {
+    function __ReceiverBase_init(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
+        internal
+        onlyInitializing
+    {
         if (sourceTransmitter_ == address(0)) revert ZeroTransmitter();
+        if (homeOrigin_ == bytes32(0)) revert ZeroHomeOrigin();
 
         // First, so the guard is live before the payload at the end of this function runs.
         __ReentrancyGuard_init();
 
         sourceTransmitter = sourceTransmitter_;
+        homeOrigin = homeOrigin_;
         parentTransceiver = msg.sender;
         emit ReceiverInitialized(sourceTransmitter_, msg.sender);
         if (calls.length != 0) _execute(calls);
@@ -288,10 +303,11 @@ abstract contract ReceiverBase is
 
     /// @notice ERC-7786 delivery: the gateway hands over an authenticated message.
     ///
-    /// @dev Two checks, both required on an `external` entry point: the gateway role says the
-    ///      transport is trusted, and the sender must be this receiver's own transmitter, so a
-    ///      shared gateway cannot land one account's payload in another's receiver. Compared
-    ///      against the stored `sourceTransmitter`, not `address(this)`, mirroring
+    /// @dev Both checks are required on an `external` entry point: the gateway role says the
+    ///      transport is trusted, and `_onMessageFrom` requires the sender to be this
+    ///      receiver's own transmitter on its home, so a shared gateway cannot land one
+    ///      account's payload in another's receiver. Compared against the stored
+    ///      `sourceTransmitter`, not `address(this)`, mirroring
     ///      `TransmitterBase._requireOwnRecipient`.
     ///
     /// @dev `receiveId` is ignored: nothing here correlates messages, and replay is the
@@ -306,17 +322,15 @@ abstract contract ReceiverBase is
         Erc7930.Interop memory io = Erc7930.parseStrict(sender);
         if (io.addr.length != 20) revert UnauthenticatedSender(sender);
         // forge-lint: disable-next-line(unsafe-typecast) length checked above
-        if (address(bytes20(io.addr)) != sourceTransmitter) revert SenderIsNotThisAccount(sender);
-
-        _onMessage(payload);
+        _onMessageFrom(Erc7930.chainKey(sender), address(bytes20(io.addr)), payload);
         return IERC7786Recipient.receiveMessage.selector;
     }
 
-    /// @notice Deliver `payload` if `sender`, as the provider reported it, is this receiver's
-    ///         transmitter.
-    /// @dev For bindings whose provider reports the sender as a plain address rather than an
-    ///      ERC-7930 envelope in calldata.
-    function _onMessageFrom(address sender, bytes calldata payload) internal {
+    /// @notice Deliver `payload` if `origin` and `sender`, as the provider reported them, are
+    ///         this account's home and its transmitter there.
+    /// @param origin The source chain in `homeOrigin`'s naming.
+    function _onMessageFrom(bytes32 origin, address sender, bytes calldata payload) internal {
+        if (origin != homeOrigin) revert NotHomeOrigin(origin);
         if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
         _onMessage(payload);
     }

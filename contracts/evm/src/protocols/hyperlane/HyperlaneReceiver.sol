@@ -27,24 +27,23 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
 
     /// @dev `grantRole` is `onlyInitializing`, so this initializer is the only window the
     ///      Mailbox's gateway grant ever gets.
-    function initialize(address sourceTransmitter_, Call[] calldata calls) external override initializer {
+    function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
+        external
+        override
+        initializer
+    {
         grantRole(GATEWAY_ROLE, mailbox);
-        __ReceiverBase_init(sourceTransmitter_, calls);
+        __ReceiverBase_init(sourceTransmitter_, homeOrigin_, calls);
     }
 
     /// @dev `Mailbox.process` verifies the message against its ISM, not which contract sent
-    ///      it, so `_onMessageFrom` is the only sender check: no R3.3 exception.
-    function handle(
-        uint32,
-        /* origin */
-        bytes32 sender,
-        bytes calldata message
-    )
+    ///      it, so `_onMessageFrom` is the only origin and sender check: no R3.3 exception.
+    function handle(uint32 origin, bytes32 sender, bytes calldata message)
         external
         payable
         override
         onlyRole(GATEWAY_ROLE)
     {
-        _onMessageFrom(ProviderAddress.evmSender(sender), message);
+        _onMessageFrom(bytes32(uint256(origin)), ProviderAddress.evmSender(sender), message);
     }
 }

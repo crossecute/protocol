@@ -13,13 +13,13 @@ interface IOpStackReceiverInit {
 }
 
 /// @notice Per-user account on a non-home chain, for `op-stack-l1-l2`.
-/// @dev No origin-chain check: the one messenger granted `GATEWAY_ROLE` relays only from the
-///      account's home.
+/// @dev The origin is the messenger that called, the one granted `GATEWAY_ROLE`, which relays
+///      only from the account's home.
 contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverInit {
     /// @dev Refused, not just unused: it would arm the account with no gateway.
     error UseOpStackInitializer();
 
-    function initialize(address, Call[] calldata) external pure override {
+    function initialize(address, bytes32, Call[] calldata) external pure override {
         revert UseOpStackInitializer();
     }
 
@@ -32,13 +32,13 @@ contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverIni
     {
         if (messenger == address(0)) revert ProviderAddress.ZeroEndpoint();
         grantRole(GATEWAY_ROLE, messenger);
-        __ReceiverBase_init(sourceTransmitter_, calls);
+        __ReceiverBase_init(sourceTransmitter_, bytes32(uint256(uint160(messenger))), calls);
     }
 
     /// @dev The sender is `xDomainMessageSender()`, never anything in `payload`: see
     ///      `OpStackMessage.sender`. No R3.3 exception; `_onMessageFrom` is the only
     ///      sender check.
     function receiveOpStackMessage(bytes calldata payload) external override onlyRole(GATEWAY_ROLE) {
-        _onMessageFrom(OpStackMessage.sender(), payload);
+        _onMessageFrom(bytes32(uint256(uint160(msg.sender))), OpStackMessage.sender(), payload);
     }
 }

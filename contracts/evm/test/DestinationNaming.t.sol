@@ -98,7 +98,7 @@ contract DestinationNamingTest is Test {
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
         baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
-        t.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xC0DE)));
+        t.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(t)));
         t.setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
     }
@@ -147,13 +147,13 @@ contract DestinationNamingTest is Test {
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
 
         registry.removeChainKey(key);
 
         assertFalse(registry.hasChainKey(key));
         assertEq(uint8(registry.provenanceFor(key)), uint8(Provenance.Predetermined), "the declared grade stays");
-        assertEq(t.counterpartOn(key), abi.encodePacked(address(0xC0DE)), "the transceiver still resolves it");
+        assertEq(t.counterpartOn(key), abi.encodePacked(address(t)), "the transceiver still resolves it");
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
         registry.validateLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
@@ -164,7 +164,7 @@ contract DestinationNamingTest is Test {
     function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         registry.removeChainKey(key);
         registry.setSuspended(key, true);
         vm.stopPrank();
@@ -185,7 +185,7 @@ contract DestinationNamingTest is Test {
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(0xC0DE)));
+        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         vm.stopPrank();
 
         assertEq(t.counterpartOn(key).length, 20, "counterpart resolves");

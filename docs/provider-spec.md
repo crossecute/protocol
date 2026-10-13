@@ -480,7 +480,7 @@ do nothing else with the message.
 
 | Contract | Entry point | Then |
 | --- | --- | --- |
-| receiver | `receiveMessage(receiveId, sender, payload)` over an ERC-7786 gateway, or the binding's callback | `_onMessageFrom(sender, payload)`, which checks the source transmitter and calls `_onMessage(payload)` |
+| receiver | `receiveMessage(receiveId, sender, payload)` over an ERC-7786 gateway, or the binding's callback | `_onMessageFrom(origin, sender, payload)`, which checks the home origin and the source transmitter and calls `_onMessage(payload)` |
 | transceiver | the binding's callback | `_onInbound(route, sender, message)`, through `_onProviderInbound` where the provider names the origin by its own id |
 | transmitter | none | MUST revert |
 
@@ -490,7 +490,11 @@ through transport this account trusts, which the binding establishes by granting
 The sender's address must equal the account's `sourceTransmitter`, which says it came from
 THIS account on the other side; that one needs no configuration and is therefore answered in
 the base. An honest but shared gateway would otherwise let one account's payload land in
-another's receiver.
+another's receiver. The sender's chain must also be the account's home, `homeOrigin`, which
+the transceiver arms the receiver with in the transport's own naming (the provider's id for
+the home, or its chainKey over a gateway): the transmitter's address on another chain is not
+always this account's, since wherever the provider's transceiver is not yet deployed its
+`deployedBy` can place code there (#61).
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
 later chance.** `Roles.grantRole` is `onlyInitializing`, so after the arming call there is
@@ -758,7 +762,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the account bytecode hash too. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
-| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there. Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |
+| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |
 | 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
@@ -945,13 +949,13 @@ contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
     /// The base answers whether the sender is this account, because that half needs no
     /// configuration. Granting precedes `__ReceiverBase_init` so it is in place before the
     /// bootstrap payload runs.
-    function initialize(address transmitter_, Call[] calldata calls)
+    function initialize(address transmitter_, bytes32 homeOrigin_, Call[] calldata calls)
         external
         override
         initializer
     {
         grantRole(GATEWAY_ROLE, address(gateway));
-        __ReceiverBase_init(transmitter_, calls);
+        __ReceiverBase_init(transmitter_, homeOrigin_, calls);
     }
 }
 

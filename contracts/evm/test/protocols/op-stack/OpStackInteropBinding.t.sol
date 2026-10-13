@@ -58,9 +58,8 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
     }
 }
 
-/// @notice The sender is `crossDomainMessageSender()`, never anything in the delivered calldata.
-///         The receiver keeps no origin state, so the unconfigured-origin case is the
-///         impersonator case.
+/// @notice The sender and source chain are `crossDomainMessageContext()`, never anything in the
+///         delivered calldata.
 contract OpStackInteropReceiveTest is ProviderReceiveSpec, OpStackInteropFixture {
     function test_aSenderClaimedInsideTheMessageIsIgnored() public {
         bytes memory claimed = abi.encodePacked(

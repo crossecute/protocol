@@ -18,7 +18,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev One OApp sends bootstraps and reports to any configured eid and receives both from
 ///      any. LayerZero delivers only from a set peer, so the owner sets one per eid, write-once
-///      (`LzWriteOncePeer`), as well as the eid itself (`setEid`).
+///      (`LzWriteOncePeer`) and equal to the counterpart, as well as the eid itself (`setEid`).
 ///
 /// @dev No `GATEWAY_ROLE` check on delivery: OApp already requires `msg.sender == endpoint`,
 ///      and a transceiver's gateways cannot be revoked, so the role would only restate it.
@@ -35,6 +35,9 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     error DvnAlreadyPinned(uint32 eid);
     /// @dev The transceiver stays its own delegate, so its endpoint config changes only here.
     error DelegateIsFixed();
+    /// @dev LayerZero sends to and admits only the peer, and `_authenticateOrigin` only the
+    ///      counterpart, so a peer that differs would close the lane for good: both are write-once.
+    error PeerNotCounterpart(uint32 eid);
 
     constructor(address _endpoint) OAppUpgradeable(_endpoint) {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
@@ -91,8 +94,11 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
         _setProviderId(chainKey, eid);
     }
 
-    /// @dev Resolves the inheritance diamond; the body is `LzWriteOncePeer`'s.
-    function setPeer(uint32 eid, bytes32 peer) public virtual override(OAppCoreUpgradeable, LzWriteOncePeer) {
+    /// @notice Set the eid's peer, which must be the counterpart on the chain the eid maps to.
+    function setPeer(uint32 eid, bytes32 peer) public virtual override(OAppCoreUpgradeable, LzWriteOncePeer) onlyOwner {
+        if (peer != bytes32(uint256(uint160(_evmCounterpartOn(_chainKeyOfProvider(eid)))))) {
+            revert PeerNotCounterpart(eid);
+        }
         super.setPeer(eid, peer);
     }
 

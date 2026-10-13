@@ -14,6 +14,7 @@ import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 import {UnsendableTransmitter} from "test/Unsendable.sol";
 
 /// @dev An account names its transport in the call that arms it, which is the only moment
@@ -23,7 +24,7 @@ import {UnsendableTransmitter} from "test/Unsendable.sol";
 contract RoleReceiver is ReceiverBase {
     function initializeWith(address transmitter_, address gateway_, Call[] calldata calls) external initializer {
         grantRole(GATEWAY_ROLE, gateway_);
-        __ReceiverBase_init(transmitter_, calls);
+        __ReceiverBase_init(transmitter_, ChainKey.forEvm(1), calls);
     }
 }
 

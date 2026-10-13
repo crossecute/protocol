@@ -19,7 +19,6 @@ import {
     ProviderInboundSpec,
     ProviderGovernorHomeSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {LzWriteOncePeerCheck} from "test/protocols/layerzero/LzBinding.t.sol";
 import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzTransceiver, LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzMessage, UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
@@ -34,7 +33,7 @@ function onlyDvn(address dvn) pure returns (bytes memory) {
     return abi.encode(UlnConfig(0, 1, LzMessage.NIL_DVN_COUNT, 0, required, new address[](0)));
 }
 
-contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck, LzFixture {
+contract LzTransceiverInboundTest is ProviderInboundSpec, LzFixture {
     /// @dev R3.3: OApp refuses any sender but the eid's peer before the base runs.
     function _wrongSenderRevert(bytes32, address sender) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, BASE_EID, toBytes32(sender));
@@ -50,8 +49,34 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzWriteOncePeerCheck, 
         assertEq(IOAppCore(receiver).peers(BASE_EID), toBytes32(transmitter));
     }
 
-    function test_peersAreWriteOnceAndTheOwners() public {
-        _assertPeerIsWriteOnce(transceiver, TransceiverBase(payable(transceiver)).owner(), BASE_EID);
+    /// @dev #62: the peer is the counterpart on the eid's chain, and only the owner names it.
+    function test_thePeerMustBeTheCounterpart() public {
+        _wire();
+        LzTransceiver t = LzTransceiver(payable(transceiver));
+        address owner = t.owner();
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        t.setPeer(BASE_EID, toBytes32(ORIGIN_TRANSCEIVER));
+
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LzTransceiverBase.PeerNotCounterpart.selector, BASE_EID));
+        t.setPeer(BASE_EID, toBytes32(address(0xB0B)));
+        vm.expectRevert(abi.encodeWithSelector(LzTransceiverBase.PeerNotCounterpart.selector, BASE_EID));
+        t.setPeer(BASE_EID, bytes32(0));
+
+        t.setPeer(BASE_EID, toBytes32(ORIGIN_TRANSCEIVER));
+        assertEq(t.peers(BASE_EID), toBytes32(ORIGIN_TRANSCEIVER));
+        vm.stopPrank();
+    }
+
+    /// @dev An eid no chain maps to has no counterpart, so it can have no peer.
+    function test_anUnmappedEidTakesNoPeer() public {
+        _wire();
+        LzTransceiver t = LzTransceiver(payable(transceiver));
+        vm.prank(t.owner());
+        vm.expectRevert(abi.encodeWithSignature("UnknownProviderId(uint256)", uint256(BASE_EID + 1)));
+        t.setPeer(BASE_EID + 1, toBytes32(ORIGIN_TRANSCEIVER));
     }
 
     /// @dev #51: a receiver whose home's pathway the transceiver pinned is created with that DVN

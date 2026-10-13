@@ -523,7 +523,7 @@ contract DivergentReceiverAuthTest is Test {
 
     function test_aMessageFromTheReceiversOwnAddressIsRefused() public {
         bytes memory sender = Erc7930.encodeEvm(1, address(receiver));
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.SenderIsNotThisAccount.selector, sender));
+        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         receiver.receiveMessage(bytes32(0), sender, Payload.encodeCalls(new Call[](0)));
     }
 }

@@ -31,7 +31,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
     ///      bricking inbound (`NoPeer` forever, no reopening the init window).
     error UseLzInitializer();
 
-    function initialize(address, Call[] calldata) external pure override {
+    function initialize(address, bytes32, Call[] calldata) external pure override {
         revert UseLzInitializer();
     }
 
@@ -47,7 +47,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
         grantRole(GATEWAY_ROLE, address(endpoint));
         _initHomePeer(homeEid, sourceTransmitter_);
         if (homeDvn != address(0)) LzMessage.pinReceiveDvn(address(endpoint), homeEid, homeDvn);
-        __ReceiverBase_init(sourceTransmitter_, calls);
+        __ReceiverBase_init(sourceTransmitter_, bytes32(uint256(homeEid)), calls);
     }
 
     /// @dev R3.3 exception: `lzReceive` (not overridden) authenticates via `endpoint`+`peers`
@@ -66,6 +66,6 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
         override
     {
         _checkRole(GATEWAY_ROLE);
-        _onMessageFrom(ProviderAddress.evmSender(_origin.sender), _message);
+        _onMessageFrom(bytes32(uint256(_origin.srcEid)), ProviderAddress.evmSender(_origin.sender), _message);
     }
 }

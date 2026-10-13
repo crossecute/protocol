@@ -30,9 +30,13 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      is fixed infrastructure, not a per-account choice), so `GATEWAY_ROLE` is granted
     ///      here, before `__ReceiverBase_init`. `grantRole` is
     ///      `onlyInitializing`, so this initializer is the only window it ever gets.
-    function initialize(address sourceTransmitter_, Call[] calldata calls) external override initializer {
+    function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
+        external
+        override
+        initializer
+    {
         grantRole(GATEWAY_ROLE, router);
-        __ReceiverBase_init(sourceTransmitter_, calls);
+        __ReceiverBase_init(sourceTransmitter_, homeOrigin_, calls);
     }
 
     /// @dev No provider-side check runs before this. Unlike LayerZero's `lzReceive`, CCIP's
@@ -41,7 +45,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      below is the only authentication check, matching `_onInbound`'s stated rule with
     ///      no exception to write.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
-        _onMessageFrom(CcipMessage.sender(message), message.data);
+        _onMessageFrom(bytes32(uint256(message.sourceChainSelector)), CcipMessage.sender(message), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

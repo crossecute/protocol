@@ -138,11 +138,6 @@ contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck, LzFixture {
         assertEq(endpoint.configOf(receiver, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
     }
 
-    /// @dev OApp's own `NoPeer`.
-    function _deliverFromUnconfiguredOrigin() internal override {
-        _deliver(receiver, BASE_EID + 1, toBytes32(SOURCE_TRANSMITTER), _emptyPayload());
-    }
-
     /// @dev OApp's own peer check, which compares all 32 bytes, refuses it first.
     function _wideSenderRevert(bytes32 wide) internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IOAppCore.OnlyPeer.selector, BASE_EID, wide);

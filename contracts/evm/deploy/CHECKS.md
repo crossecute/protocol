@@ -173,10 +173,13 @@ that. Measured with the provider fixtures (mock gateways, cold storage):
 
 | Delivery | Gas |
 | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 589,000 to 641,000 by binding |
-| The same with one call | 597,000 to 649,000 |
+| Bootstrap to a plain transceiver, no calls | 611,000 to 667,000 by binding |
+| The same with one call | 619,000 to 675,000 |
 | Report arriving at the home transceiver | up to about 135,000 |
-| Payload to an existing receiver | under 16,000 plus its calls |
+| Payload to an existing receiver | under 18,500 plus its calls |
+
+Measured 2026-10-07, then raised by what #61 measured on 2026-10-13: a receiver's home
+origin adds 22,000 to 26,000 to each bootstrap and 1,300 to 2,300 to each payload.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote

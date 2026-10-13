@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {ChainKey} from "src/addressing/ChainKey.sol";
 
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -67,7 +68,7 @@ contract ExecutionTest is Test {
 
     function setUp() public {
         r = new PolicyReceiver();
-        r.initialize(transmitter, new Call[](0));
+        r.initialize(transmitter, ChainKey.forEvm(1), new Call[](0));
         t = new Target();
     }
 
@@ -91,7 +92,7 @@ contract ExecutionTest is Test {
     ///      into.
     function test_aReceiverWithNoPolicyExecutesEverything() public {
         SilentReceiver s = new SilentReceiver();
-        s.initialize(transmitter, new Call[](0));
+        s.initialize(transmitter, ChainKey.forEvm(1), new Call[](0));
 
         vm.prank(transmitter);
         s.execute(_one(_call(address(t), 0, abi.encodeCall(Target.ping, (1)))));
@@ -102,7 +103,7 @@ contract ExecutionTest is Test {
     ///      unaffected by the policy being open.
     function test_anOpenPolicyStillGatesTheCaller() public {
         SilentReceiver s = new SilentReceiver();
-        s.initialize(transmitter, new Call[](0));
+        s.initialize(transmitter, ChainKey.forEvm(1), new Call[](0));
 
         vm.prank(address(0xBAD));
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);

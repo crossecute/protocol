@@ -106,8 +106,7 @@ contract HyperlaneTransceiverSendTest is
 }
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so
-///         `isSourceTransmitter` inside `handle` is the only sender check. `HyperlaneReceiver`
-///         keeps no origin state, so the unconfigured-origin case is the impersonator case.
+///         `_onMessageFrom` inside `handle` is the only origin and sender check.
 contract HyperlaneReceiveTest is ProviderWideSenderSpec, HyperlaneFixture {}
 
 contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec, HyperlaneFixture {}

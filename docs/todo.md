@@ -17,7 +17,7 @@ this file is the gap between that design and the tree.
 
 - **EraVM's delivery costs are not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
-  590,000 to 650,000. A bootstrap to zkSync Era needs the same measurement on Era, which
+  about 610,000 to 675,000. A bootstrap to zkSync Era needs the same measurement on Era, which
   Forge cannot run; zkSync Sepolia can.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
   from its own float, in its own currency, for accounts homed on any chain, while each home
