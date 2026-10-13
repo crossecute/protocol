@@ -58,13 +58,20 @@ contract UniformDerivationTest is Test {
         vm.stopPrank();
     }
 
-    function test_evmCreate2_derivesAndStoresAsPredetermined() public {
+    /// @dev A chain graded `Unique`, such as one without Arachnid's factory: on a `Predetermined`
+    ///      chain the counterpart is the parity default and a derived one may only restate it.
+    function test_evmCreate2_derivesAndStoresOnAUniqueChain() public {
         address factory = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
         bytes32 salt = keccak256("crossecute.transceiver.v1");
         bytes32 initCodeHash = keccak256("initcode");
 
         bytes memory params = abi.encode(VmDeriver.Scheme.EvmCreate2, abi.encode(factory, salt, initCodeHash));
-        bytes32 chainKey = _wire(Erc7930.encodeEvmChain(8453), params, keccak256("base.transceiver"));
+        vm.startPrank(owner);
+        bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Unique);
+        registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
+        registry.setDeriveParams(chainKey, params);
+        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
+        vm.stopPrank();
 
         // The uniform read agrees with the raw library derivation.
         address want = AddressDerive.create2(factory, salt, initCodeHash);
@@ -76,9 +83,18 @@ contract UniformDerivationTest is Test {
         transceiver.resolveCounterpart(chainKey, keccak256(params));
 
         assertEq(transceiver.counterpartOn(chainKey), abi.encodePacked(want));
-        assertEq(
-            uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Predetermined), "an eip155 chain, recomputed here"
+    }
+
+    /// @dev On a `Predetermined` chain a derivation that lands off the parity address is refused.
+    function test_evmCreate2_offTheParityAddressIsRefusedOnAPredeterminedChain() public {
+        bytes memory params = abi.encode(
+            VmDeriver.Scheme.EvmCreate2, abi.encode(address(0xFAC7), keccak256("salt"), keccak256("initcode"))
         );
+        bytes32 chainKey = _wire(Erc7930.encodeEvmChain(8453), params, bytes32(0));
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartNotParity.selector, chainKey));
+        transceiver.resolveCounterpart(chainKey, keccak256(params));
     }
 
     /// @dev The point of normalizing: Solana configures through the same three calls and

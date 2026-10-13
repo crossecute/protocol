@@ -9,7 +9,6 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -25,11 +24,6 @@ contract CounterpartRoutingTest is Test {
 
     address msig = address(0x5165);
     bytes32 provider;
-
-    /// The single CREATE2 address every EVM counterpart shares.
-    address constant FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-    bytes32 constant SALT = keccak256("crossecute.transceiver.lz.v1");
-    bytes32 constant INIT_CODE_HASH = keccak256("lz-transceiver-initcode");
 
     function setUp() public {
         registry = new ChainRegistry(msig, unseeded());
@@ -54,7 +48,7 @@ contract CounterpartRoutingTest is Test {
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.stopPrank();
 
-        address expected = AddressDerive.create2(FACTORY, SALT, INIT_CODE_HASH);
+        address expected = address(transceiver);
         vm.prank(msig);
         transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, expected));
 
@@ -70,12 +64,12 @@ contract CounterpartRoutingTest is Test {
     ///      chain authenticates against, so re-pointing one redirects the whole destination.
     function test_aCounterpartIsWriteOnce() public {
         vm.prank(msig);
-        bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
 
         vm.startPrank(msig);
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xA)));
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, baseKey));
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xB)));
+        transceiver.setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xA)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, zkKey));
+        transceiver.setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xB)));
         vm.stopPrank();
     }
 
@@ -232,16 +226,21 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(baseKey), transceiver.counterpartOn(arbKey));
     }
 
-    /// @dev An explicit declaration wins. This is the escape hatch for every chain where
-    ///      parity does not hold.
-    function test_anExplicitCounterpartOverridesTheDefault() public {
+    /// @dev The default is already in use the moment the chain is graded, so a counterpart
+    ///      there may only restate it. Any other address would repoint a lane accounts already
+    ///      derive from, and every bootstrap through it would fail `ParityBroken`. A chain where
+    ///      parity does not hold is graded `Unique` and declares its counterpart.
+    function test_aPredeterminedDefaultCannotBeRepointed() public {
         vm.startPrank(msig);
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
-        registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
-        vm.stopPrank();
+        assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(address(transceiver)));
 
-        assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(address(0xACE5)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartNotParity.selector, baseKey));
+        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
+
+        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(transceiver)));
+        vm.stopPrank();
+        assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(address(transceiver)));
     }
 
     function test_thereIsNoDefaultOnANonEvmChain() public {

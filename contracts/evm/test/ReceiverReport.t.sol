@@ -704,12 +704,12 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertFalse(registry.requiresReceiverCallback(derivedKey));
         vm.startPrank(homeSide.owner());
         homeSide.setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
-        homeSide.setCounterpart(derivedKey, Erc7930.encodeEvm(42161, address(remote)));
         vm.stopPrank();
 
+        // Its counterpart is the parity default, this transceiver's own address.
         bytes memory produced = _report();
         vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainDoesNotReport.selector, derivedKey));
-        homeSide.arrive(Erc7930.encodeEvmChain(42161), abi.encodePacked(address(remote)), produced);
+        homeSide.arrive(Erc7930.encodeEvmChain(42161), abi.encodePacked(address(homeSide)), produced);
     }
 
     /// @dev A chain may only report addresses on itself. An ERC-7930 envelope names its own
