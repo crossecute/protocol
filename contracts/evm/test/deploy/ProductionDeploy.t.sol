@@ -185,7 +185,6 @@ contract DeployWormholeTest is ProductionDeploySpec {
         deployCodeTo("MockExecutor.sol:MockExecutor", abi.encode(uint16(2)), address(0xE0005));
         _setEnv("WORMHOLE_CORE", vm.toString(address(0xE0004)));
         _setEnv("WORMHOLE_EXECUTOR", vm.toString(address(0xE0005)));
-        _setEnv("WORMHOLE_QUOTER", vm.toString(address(0xE0006)));
     }
 }
 

@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {WormholeMessage, IWormholeQuoters} from "src/protocols/wormhole/WormholeMessage.sol";
+import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -14,12 +14,8 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      table. Transceivers share one address across parity chains, so the published payload's
 ///      destination prefix (`WormholeMessage`) is what keeps a VAA for one chain from running
 ///      on another. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings`.
-contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver, IWormholeQuoters {
+contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
-    bytes4 public constant WORMHOLE_DEFERRED_ATTRIBUTE = WormholeMessage.DEFERRED_ATTRIBUTE;
-
-    /// @dev Escrow left in the balance by a deferred send is not the float.
-    error EscrowNotWithdrawable(uint256 amount, uint256 withdrawable);
 
     /// @notice Core bridge and Executor on this chain. On the implementation, so they never
     ///         reach a derived account address.
@@ -33,12 +29,9 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver, IWormholeQu
         executor = executor_;
     }
 
-    /// @param quoter The relay provider quoter deferred executions on this chain, and on the
-    ///        transmitters this transceiver creates, may be paid under.
-    function initialize(TransceiverConfig memory c, uint16 governorHomeChain, address quoter) external initializer {
+    function initialize(TransceiverConfig memory c, uint16 governorHomeChain) external initializer {
         __WormholeTransceiver_init(c, governorHomeChain);
         __TransceiverBase_init(c);
-        WormholeMessage.setQuoter(quoter, true);
     }
 
     /// @dev `executeVAAv1` requires the Core bridge to hold `GATEWAY_ROLE`, though it never
@@ -58,28 +51,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver, IWormholeQu
         _setProviderId(chainKey, wormholeChain);
     }
 
-    /// @notice Approve or revoke a quoter, as one rotates or another provider is added.
-    function setQuoter(address quoter, bool approved) external onlyOwner {
-        WormholeMessage.setQuoter(quoter, approved);
-    }
-
-    function isQuoter(address quoter) external view returns (bool) {
-        return WormholeMessage.isQuoter(quoter);
-    }
-
     /* ===================================== sending ===================================== */
-
-    /// @notice Request execution of a message a deferred send published here. Permissionless;
-    ///         see `WormholeMessage.requestDeferred`.
-    function requestDeferredExecution(uint64 sequence, bytes calldata signedQuote) external {
-        WormholeMessage.requestDeferred(coreBridge, executor, address(this), sequence, signedQuote);
-    }
-
-    function withdraw(uint256 amount) public override {
-        uint256 withdrawable = address(this).balance - WormholeMessage.escrowed();
-        if (amount > withdrawable) revert EscrowNotWithdrawable(amount, withdrawable);
-        super.withdraw(amount);
-    }
 
     /// @dev The excess over the quote is refunded to `_refundTo`, the caller.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)

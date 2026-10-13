@@ -42,26 +42,10 @@ contract WormholeTransmitter is OwnableTransmitter {
         return WormholeMessage.quote(_route(recipient), recipient, attributes, _defaultGas(payload));
     }
 
-    /// @notice Request execution of a message a deferred send published here, paid from its
-    ///         escrow under a quoter this account's transceiver approves. Permissionless, so an
-    ///         owner whose sends wait on a multisig need not be online when they land; see
-    ///         `WormholeMessage.requestDeferred`.
-    function requestDeferredExecution(uint64 sequence, bytes calldata signedQuote) external {
-        WormholeMessage.requestDeferred(coreBridge, executor, transceiver, sequence, signedQuote);
-    }
-
-    /// @notice The escrow of pending deferrals. A send refuses to spend it; the owner's other
-    ///         spends (`execute`, `bootstrap`) can, after which a request reverts until the
-    ///         balance is topped up.
-    function escrowed() external view returns (uint256) {
-        return WormholeMessage.escrowed();
-    }
-
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
-    bytes4 public constant WORMHOLE_DEFERRED_ATTRIBUTE = WormholeMessage.DEFERRED_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
-        return selector == WORMHOLE_EXECUTION_ATTRIBUTE || selector == WORMHOLE_DEFERRED_ATTRIBUTE;
+        return selector == WORMHOLE_EXECUTION_ATTRIBUTE;
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {

@@ -80,8 +80,7 @@ abstract contract WormholeFixture is ProviderGasFixture {
     uint16 internal constant HERE_WORMHOLE_CHAIN = 2;
     uint16 internal constant BASE_WORMHOLE_CHAIN = 30;
     uint256 internal constant CORE_MESSAGE_FEE = 1 gwei;
-    uint256 internal constant QUOTER_KEY = 0x0907;
-    address internal immutable QUOTER = vm.addr(QUOTER_KEY);
+    address internal constant QUOTER = address(0x0907);
     address internal constant PAYEE = address(0x9A7EE);
 
     MockWormholeCore internal core = new MockWormholeCore(HERE_WORMHOLE_CHAIN);
@@ -109,7 +108,7 @@ abstract contract WormholeFixture is ProviderGasFixture {
     }
 
     function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
-        return WormholeDeploy.transceiver(d, address(core), uint16(homeId), QUOTER);
+        return WormholeDeploy.transceiver(d, address(core), uint16(homeId));
     }
 
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)
@@ -172,32 +171,12 @@ abstract contract WormholeFixture is ProviderGasFixture {
 
     function _eq01(uint16 dstChain, uint64 expiry, uint64 baseFee, uint64 dstGasPrice, uint64 srcPrice, uint64 dstPrice)
         internal
-        view
+        pure
         returns (bytes memory)
     {
-        return _signed(QUOTER_KEY, QUOTER, dstChain, expiry, baseFee, dstGasPrice, srcPrice, dstPrice);
-    }
-
-    /// @dev A quote to the remote chain at `fee`, signed by `key` and naming `quoter`.
-    function _quoteSignedBy(uint256 key, address quoter, uint256 fee) internal view returns (bytes memory) {
-        return _signed(key, quoter, BASE_WORMHOLE_CHAIN, uint64(block.timestamp + 1 hours), uint64(fee / 1e8), 0, 1, 1);
-    }
-
-    /// @dev Signed as a provider's quoter signs: over the keccak256 of the 100 bytes before the
-    ///      signature.
-    function _signed(
-        uint256 key,
-        address quoter,
-        uint16 dstChain,
-        uint64 expiry,
-        uint64 baseFee,
-        uint64 dstGasPrice,
-        uint64 srcPrice,
-        uint64 dstPrice
-    ) internal pure returns (bytes memory) {
-        bytes memory body = abi.encodePacked(
+        return abi.encodePacked(
             WormholeMessage.EQ01,
-            quoter,
+            QUOTER,
             toBytes32(PAYEE),
             HERE_WORMHOLE_CHAIN,
             dstChain,
@@ -205,19 +184,13 @@ abstract contract WormholeFixture is ProviderGasFixture {
             baseFee,
             dstGasPrice,
             srcPrice,
-            dstPrice
+            dstPrice,
+            new bytes(65)
         );
-        (uint8 v, bytes32 r, bytes32 sig) = vm.sign(key, keccak256(body));
-        return abi.encodePacked(body, r, sig, v);
     }
 
     function _executionAttribute(bytes memory signedQuote, uint256 gas) internal pure returns (bytes memory) {
         return abi.encodePacked(WormholeMessage.EXECUTION_ATTRIBUTE, abi.encode(signedQuote, gas));
-    }
-
-    function _deferredAttributes(uint256 gas, uint256 maxPrice) internal pure returns (bytes[] memory attrs) {
-        attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(WormholeMessage.DEFERRED_ATTRIBUTE, abi.encode(gas, maxPrice));
     }
 
     function _gasAttribute(uint256 gas) internal view override returns (bytes memory) {

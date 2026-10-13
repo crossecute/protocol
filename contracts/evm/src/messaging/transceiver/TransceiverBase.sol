@@ -817,9 +817,8 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
 
     /// @notice Send `amount` of the float to the treasury, at the treasury's call.
     /// @dev Gated, not a permissionless sweep: anyone able to empty the float could make every
-    ///      bootstrap here that reports revert. Virtual for a binding that holds escrow in the
-    ///      same balance (`WormholeTransceiver`).
-    function withdraw(uint256 amount) public virtual {
+    ///      bootstrap here that reports revert.
+    function withdraw(uint256 amount) external {
         address to = treasury;
         if (msg.sender != to) revert NotTreasury(msg.sender);
 
