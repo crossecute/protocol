@@ -7,6 +7,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {RequestLib} from "@wormhole-sdk/Executor/Request.sol";
 import {CoreBridgeVM} from "@wormhole-sdk/interfaces/ICoreBridge.sol";
@@ -167,6 +168,36 @@ contract WormholeTransceiverSendTest is
         _refusesQuoteAndSend(attrs, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[0]));
     }
 
+    /// @dev A multisig's send: no quote, so no relay provider is paid; the VAA is delivered by
+    ///      whoever submits it (`WormholeReceiveTest.test_anyoneDeliversAVaa`).
+    function test_aPublishOnlySendPaysCoreAlone() public {
+        core.setMessageFee(0.001 ether);
+        assertEq(harness.quoteMessagePublic(_configuredRecipient(), "x", _publishOnly()), 0.001 ether);
+        address payer = address(0xFEE);
+        vm.deal(payer, 1 ether);
+        vm.prank(payer);
+        harness.sendMessagePublic{value: 0.01 ether}(_configuredRecipient(), "x", _publishOnly(), 0.01 ether);
+        assertEq(core.publishedLength(), 1);
+        assertEq(core.published(0).payload, _envelope(BASE_WORMHOLE_CHAIN, REMOTE_COUNTERPART, "x"));
+        assertEq(executor.requestsLength(), 0);
+        assertEq(payer.balance, 1 ether - 0.001 ether);
+        assertEq(address(harness).balance, 0);
+    }
+
+    function test_publishOnlyStandsAlone() public {
+        bytes[] memory withBody = new bytes[](1);
+        withBody[0] = abi.encodePacked(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE, uint256(1));
+        _refusesQuoteAndSend(
+            withBody, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, withBody[0])
+        );
+        bytes[] memory withQuote = new bytes[](2);
+        withQuote[0] = abi.encodePacked(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE);
+        withQuote[1] = _gasAttribute(0);
+        _refusesQuoteAndSend(
+            withQuote, abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, withQuote[1])
+        );
+    }
+
     /// @dev Core's message fee plus what the payee was paid.
     function _lastPaid() internal view override returns (uint256) {
         return core.published(core.publishedLength() - 1).value + executor.requests(executor.requestsLength() - 1).paid;
@@ -185,6 +216,16 @@ contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
         return _vaa(
             1, BASE_WORMHOLE_CHAIN, SOURCE_TRANSMITTER, seq, _envelope(HERE_WORMHOLE_CHAIN, receiver, _emptyPayload())
         );
+    }
+
+    /// @dev Delivery needs no role and no relay provider: a publish-only send's VAA is
+    ///      delivered by whoever holds it.
+    function test_anyoneDeliversAVaa() public {
+        bytes memory vaa = _validVaa(0);
+        vm.prank(address(0x5757));
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
+        (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(vaa);
+        assertTrue(WormholeReceiver(payable(receiver)).vaaConsumed(v.hash));
     }
 
     function test_aReplayedVaaIsRejected() public {
@@ -319,4 +360,23 @@ contract Switch {
     }
 }
 
-contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFixture {}
+contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFixture {
+    /// @dev The owner's calldata holds no quote, so it may wait on a multisig indefinitely.
+    function test_anOwnerSendsPublishOnly() public {
+        _setProviderFee(0.01 ether);
+        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        uint256 requests = executor.requestsLength();
+        uint256 before = account.balance;
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).sendMessage(recipient, "x", _publishOnly());
+        assertEq(before - account.balance, CORE_MESSAGE_FEE);
+        assertEq(executor.requestsLength(), requests, "no relay provider paid");
+        assertEq(core.published(core.publishedLength() - 1).emitter, account);
+    }
+
+    function test_theTransmitterSupportsBothAttributes() public view {
+        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.EXECUTION_ATTRIBUTE));
+        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE));
+    }
+}

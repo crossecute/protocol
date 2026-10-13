@@ -16,6 +16,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      on another. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings`.
 contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
+    bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
 
     /// @notice Core bridge and Executor on this chain. On the implementation, so they never
     ///         reach a derived account address.

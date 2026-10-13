@@ -43,9 +43,10 @@ contract WormholeTransmitter is OwnableTransmitter {
     }
 
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
+    bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
-        return selector == WORMHOLE_EXECUTION_ATTRIBUTE;
+        return selector == WORMHOLE_EXECUTION_ATTRIBUTE || selector == WORMHOLE_PUBLISH_ONLY_ATTRIBUTE;
     }
 
     function _route(bytes memory recipient) internal view returns (WormholeMessage.Route memory) {

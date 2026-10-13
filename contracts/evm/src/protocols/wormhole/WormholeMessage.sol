@@ -23,6 +23,8 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 library WormholeMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant EXECUTION_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.execution"));
+    // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
+    bytes4 internal constant PUBLISH_ONLY_ATTRIBUTE = bytes4(keccak256("crossecute.wormhole.publishOnly"));
 
     /// @dev The Executor's signed quote, version 1: header (prefix, quoter, payee, source chain,
     ///      destination chain, expiry), then base fee, destination gas price, source and
@@ -71,16 +73,19 @@ library WormholeMessage {
     }
 
     /// @dev A send's execution terms: the caller's quote, the gas it buys, and their price.
+    ///      Publish-only has none of them and a zero price.
     struct Execution {
         bytes signedQuote;
         uint128 gasLimit;
         uint256 price;
+        bool publishOnly;
     }
 
     /// @dev Publishes, then requests execution with the caller's signed quote, paying the price
     ///      `quote` computes from it and refunding the rest to `refundTo`: the Executor forwards
-    ///      all it is sent to the quote's payee and refunds nothing. Returns zero, ERC-7786's
-    ///      "sent" (see `ProviderSendSpec`); the Core sequence is in `LogMessagePublished`.
+    ///      all it is sent to the quote's payee and refunds nothing. Publish-only stops after
+    ///      Core. Returns zero, ERC-7786's "sent" (see `ProviderSendSpec`); the Core sequence is
+    ///      in `LogMessagePublished`.
     function send(
         Route memory route,
         bytes memory recipient,
@@ -97,7 +102,7 @@ library WormholeMessage {
         uint64 sequence = ICoreBridge(route.coreBridge).publishMessage{value: messageFee}(
             0, abi.encodePacked(route.targetChain, recipientOf(recipient), payload), CONSISTENCY_FINALIZED
         );
-        _requestExecution(route, recipient, refundTo, sequence, e);
+        if (!e.publishOnly) _requestExecution(route, recipient, refundTo, sequence, e);
         _refund(refundTo, value - messageFee - e.price);
         return bytes32(0);
     }
@@ -118,6 +123,10 @@ library WormholeMessage {
         view
         returns (Execution memory e)
     {
+        if (publishOnly(attributes)) {
+            e.publishOnly = true;
+            return e;
+        }
         (e.signedQuote, e.gasLimit) = executionFrom(attributes, defaultGas);
         e.price = executionPrice(route, e.signedQuote, e.gasLimit);
     }
@@ -201,8 +210,23 @@ library WormholeMessage {
         return bytes32(uint256(uint160(ProviderAddress.evmRecipient(recipient))));
     }
 
-    /// @notice The one attribute, which every send needs: a relay provider's signed EQ01 quote
-    ///         for this pair of chains and the destination gas, as
+    /// @notice Whether the one attribute is `PUBLISH_ONLY_ATTRIBUTE`, alone and with no body: the
+    ///         message is published and no relay provider is paid, so anyone holding the VAA
+    ///         delivers it through `executeVAAv1`, paying the destination gas. For a sender whose
+    ///         calldata is fixed long before it lands (a multisig), which cannot carry a quote
+    ///         that expires within the hour.
+    function publishOnly(bytes[] memory attributes) internal pure returns (bool) {
+        // forge-lint: disable-next-line(unsafe-typecast) the selector, after the length check
+        if (attributes.length == 0 || attributes[0].length < 4 || bytes4(attributes[0]) != PUBLISH_ONLY_ATTRIBUTE) {
+            return false;
+        }
+        (, bytes memory body) = ProviderAttribute.body(attributes, PUBLISH_ONLY_ATTRIBUTE, 0);
+        if (body.length != 0) revert ProviderAttribute.UnsupportedAttribute(attributes[0]);
+        return true;
+    }
+
+    /// @notice Otherwise the one attribute is a relay provider's signed EQ01 quote for this pair
+    ///         of chains and the destination gas, as
     ///         `abi.encodePacked(EXECUTION_ATTRIBUTE, abi.encode(signedQuote, gasLimit))`. A
     ///         `gasLimit` of zero means `defaultGas`. Anything else is refused per ERC-7786.
     /// @dev Required: the Executor prices only from a quote fetched off-chain, and its on-chain

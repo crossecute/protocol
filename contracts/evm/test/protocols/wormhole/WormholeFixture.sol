@@ -193,6 +193,11 @@ abstract contract WormholeFixture is ProviderGasFixture {
         return abi.encodePacked(WormholeMessage.EXECUTION_ATTRIBUTE, abi.encode(signedQuote, gas));
     }
 
+    function _publishOnly() internal pure returns (bytes[] memory attrs) {
+        attrs = new bytes[](1);
+        attrs[0] = abi.encodePacked(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE);
+    }
+
     function _gasAttribute(uint256 gas) internal view override returns (bytes memory) {
         return _executionAttribute(_signedQuote(), gas);
     }
