@@ -6,7 +6,7 @@ allow_paths = ["."]
 # Deploy scripts read the chain and provider configuration under deploy/.
 fs_permissions = [{ access = "read", path = "./deploy" }, { access = "read", path = "./test/deploy/config" }]
 solc_version = "0.8.28"
-# Pinned to paris, NOT shanghai: PUSH0 is absent on zkSync, Tron, and several L2s.
+# Pinned to paris, not shanghai: PUSH0 is absent on zkSync, Tron, and several L2s.
 # The whole CREATE2 story depends on identical initcode producing identical addresses
 # everywhere, so the target must not vary by chain. Do not raise this per-network.
 evm_version = "paris"
@@ -14,7 +14,7 @@ evm_version = "paris"
 # bytecode across chains is what the CREATE2 derivation depends on.
 optimizer = true
 optimizer_runs = 200
-# The default embeds an IPFS hash of the SOURCE, comments included, in the trailing
+# The default embeds an IPFS hash of the source, comments included, in the trailing
 # metadata. That put every derived address one comment edit away from moving, which is
 # not a property this protocol can have: CrossProxy's initcode hash is what fixes an
 # account's address on every chain, and the registry stores initcode hashes to derive

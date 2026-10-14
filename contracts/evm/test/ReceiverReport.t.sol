@@ -226,7 +226,7 @@ contract ReceiverReportTest is WiresHome {
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);
         assertEq(
-            interop, Erc7930.encodeEvm(block.chainid, created), "canonical ERC-7930 for the receiver on THIS chain"
+            interop, Erc7930.encodeEvm(block.chainid, created), "canonical ERC-7930 for the receiver on this chain"
         );
     }
 

@@ -124,7 +124,7 @@ Hop by hop:
   this account has already bootstrapped. It asks its transceiver's `quoteBootstrap` and
   forwards exactly that, bootstrap fee included, from its own balance.
 - `bootstrap(chainKey, owner, salt, calls, attributes)` on the home's transceiver:
-  `msg.sender` must BE the account homed there, `_requireRoutable(chainKey)` applies the
+  `msg.sender` must be the account homed there, `_requireRoutable(chainKey)` applies the
   registry's grade, the suspension flag, and the provenance bar, and
   `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.
 - `_onInbound(route, sender, message)` on the destination's transceiver:

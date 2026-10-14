@@ -208,7 +208,7 @@ contract InboundAuthTest is Test {
         assertEq(
             acct.counterpartOn(baseKey),
             abi.encodePacked(address(0xBEEF)),
-            "recorded against the chain the ROUTE resolved to"
+            "recorded against the chain the route resolved to"
         );
     }
 

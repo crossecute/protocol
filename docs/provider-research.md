@@ -3,10 +3,10 @@
 What we have found out about transports we do not control, and about standards that are
 still drafts. None of it is a requirement.
 
-**READ THE STALENESS BEFORE THE CONTENT.** This file and
+**Check how stale this is before relying on it.** This file and
 [`provider-spec.md`](provider-spec.md) were one document, and they were split because they
-go out of date for different reasons. The spec changes when THIS protocol changes, and a
-reader can check it against the tree. Everything here goes stale when somebody ELSE ships a
+go out of date for different reasons. The spec changes when this protocol changes, and a
+reader can check it against the tree. Everything here goes stale when somebody else ships a
 release: it makes version-pinned claims about contracts in other repositories, verified by
 reading their deployed source on a particular day and true only until they redeploy.
 Keeping the two together let that rot sit inside a document people read as a specification.
@@ -52,7 +52,7 @@ against the deployed source rather than the marketing. This is the evidence behi
 | **Arbitrum, L2→L1** | Yes | `Outbox.spent`, a packed bitmap over the withdrawal's merkle index; `recordOutputAsSpent` reverts `AlreadySpent` | Yes, `executeBridgeCall` bubbles the revert, so a failure rolls the spent bit back |
 | **Arbitrum, L1→L2** † | Yes | retryable ticket id, redeemable once | Yes, manual redeem inside the ticket lifetime, ~7 days |
 | **Avalanche Warp** | **No** | the precompile verifies a BLS aggregate over the source L1's validator set and nothing else; the word "replay" does not appear in it | n/a, replay is the integrator's problem |
-| **Avalanche ICM (Teleporter)** | Yes | `_receivedMessageNonces[messageID]`, written BEFORE execution; `receivedFailedMessageHashes` is a separate record of a delivered message whose execution failed | Yes, `retryMessageExecution`, and see below: this is the only one that retries execution WITHOUT re-delivery |
+| **Avalanche ICM (Teleporter)** | Yes | `_receivedMessageNonces[messageID]`, written before execution; `receivedFailedMessageHashes` is a separate record of a delivered message whose execution failed | Yes, `retryMessageExecution`, and see below: this is the only one that retries execution without re-delivery |
 
 **† One row is still unverified.** Arbitrum's retryable redeem is implemented in ArbOS, in
 Go, and `ArbRetryableTx` in `nitro-contracts` is an interface only, so nothing in that
@@ -64,19 +64,19 @@ repository states the guarantee. Every other row here was read from source: OP S
 **Eight of the ten provide it, by three shapes, and the difference matters to a binding
 author.**
 
-MARK FIRST, THEN CALL PLAINLY: LayerZero, Hyperlane, Axelar, and Arbitrum's outbox. The
+**Mark first, then call plainly:** LayerZero, Hyperlane, Axelar, and Arbitrum's outbox. The
 write-first order is reentrancy protection; the plain call is what gives retry, because the
 revert that fails the payload also rolls the mark back. One state write, both properties.
 Arbitrum is the clearest instance: `recordOutputAsSpent` runs before
 `executeTransactionImpl`, and `executeBridgeCall` re-throws the callee's revert data
 verbatim, so a failed withdrawal is simply not spent.
 
-CALL, THEN RECORD WHICH WAY IT WENT: CCIP and the OP Stack. `relayMessage` makes a
+**Call, then record which way it went:** CCIP and the OP Stack. `relayMessage` makes a
 low-level call and branches, `successfulMessages` on success and `failedMessages` on
 failure, and the failed entry is what a later replay is required to come from. Two state
 writes, and the failure is a recorded state of its own rather than an absence.
 
-MARK DELIVERY FIRST, RECORD EXECUTION SEPARATELY: Avalanche ICM alone, and it is the
+**Mark delivery first, record execution separately:** Avalanche ICM alone, and it is the
 strongest of the three. `_markMessageReceived` writes the nonce before
 `_handleInitialMessageExecution` runs, so the message can never be delivered twice; the
 execution then happens through a bare `call` whose boolean is checked, and a failure is
@@ -85,9 +85,9 @@ facts**, so `retryMessageExecution` re-runs a failed payload with no new bridge 
 Every other transport here conflates them and needs the message re-delivered.
 
 **The second shape looks like the thing [R3.7](provider-spec.md#r3-receive) forbids, and is
-not.** That rule says a BINDING must never wrap the delivery call in `try/catch`, because a
+not.** That rule says a binding must never wrap the delivery call in `try/catch`, because a
 binding that swallows a failure consumes the message and drops the payload. A transport that
-catches a failure and RECORDS IT AS REPLAYABLE has done the opposite: it is providing
+catches a failure and records it as replayable has done the opposite: it is providing
 [P6](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist), not defeating it.
 The distinction is whether the failure survives the catch, and on both of these it does.
 
@@ -144,26 +144,26 @@ capture.
 | **Avalanche ICM** | n/a: C-Chain and Avalanche L1s, not Ethereum | n/a | **seconds, any-to-any**, which is the one mesh in this table |
 
 **The asymmetry looks fatal and mostly is not.** Each account is one-directional by
-construction: its home sends and every destination is a leaf, and the ONLY return leg is the
+construction: its home sends and every destination is a leaf, and the only return leg is the
 receiver report. That report fires only where `addressesDiverge`, which is false on both
 rollup stacks, since they use Ethereum's CREATE2 formula and the home computes an account's
 address before the first message. So an account homed on Ethereum reaching OP Stack and
 Arbitrum chains over their canonical bridges never needs the slow direction at all.
 
-**It is fatal the other way round.** An account homed ON an L2 that reaches its L1 over
+**It is fatal the other way round.** An account homed on an L2 that reaches its L1 over
 the canonical bridge puts every bootstrap and every payload through the seven-day window.
 Any chain can be an account's home, so nothing refuses this; it is a cost to state wherever
 an L2 is offered as a home, and a reason to reach the L1 over a mesh provider instead.
 
 ### Address aliasing, which is the concrete trap
 
-An L1 CONTRACT that deposits to an L2 does not arrive as itself. Arbitrum and the OP
+An L1 contract that deposits to an L2 does not arrive as itself. Arbitrum and the OP
 Stack's `OptimismPortal` both add `0x1111000000000000000000000000000000001111` to the
 sender, so the L2 sees an aliased address.
 
 `ReceiverBase.receiveMessage` compares the sender against `sourceTransmitter`, and a
 transmitter is a contract, so **a naive canonical binding fails every inbound message**.
-The binding MUST un-alias before handing the sender to the protocol.
+The binding must un-alias before handing the sender to the protocol.
 `AddressDerive.applyL1ToL2Alias` is already in this repo and is the forward direction;
 subtracting the same offset is the inverse.
 
@@ -178,7 +178,7 @@ since the same constant serves all three stacks and it is Arbitrum's
 calls, and its NatSpec carries two traps. It is L1 -> L2 only, so applying it to a
 withdrawal corrupts a sender that arrived unaliased. And the arithmetic wraps, so undoing an
 alias that was never applied yields a well-formed address belonging to nobody, rather than
-reverting. A caller decides from the DIRECTION of the message, never from the value.
+reverting. A caller decides from the direction of the message, never from the value.
 
 Exactly one input undoes to the zero address, the offset itself, which a fuzz case pins.
 That is the whole extent of what a zero check on the result would buy, and it is not a
@@ -247,7 +247,7 @@ CREATE2 via Arachnid's factory, same from ->  execution reverted
 CREATE2 via Arachnid's factory, from 0x0  ->  0xb2e363e5…da1e80a1   (0x0 has role Enabled)
 ```
 
-The factory is a CONTRACT doing the create, and it fails or succeeds purely on who
+The factory is a contract doing the create, and it fails or succeeds purely on who
 originated the call. So allowlisting this protocol's transceiver buys nothing.
 
 **What that costs is bootstrap, and only bootstrap.** An account is created inside the
@@ -259,7 +259,7 @@ retry is gone with it, since an arbitrary party retrying a failed bootstrap is e
 arbitrary `tx.origin`. Path A is untouched: a normal send creates no contract.
 
 **On these two chains today, LayerZero's executor cannot deploy, so bootstrap cannot
-happen.** Not degraded: impossible. The Executor CONTRACT is the wrong thing to check, since
+happen.** Not degraded: impossible. The Executor contract is the wrong thing to check, since
 the gate is on the origin, and the origin is the off-chain key that drives it. Recent
 deliveries on both chains come from one signing EOA, and it holds no role on either:
 
@@ -304,7 +304,7 @@ and it means an ICM binding inherits a deployment constraint the protocol was go
 impose anyway.
 
 **Aurora is a parity chain, checked rather than assumed.** NEAR itself runs WASM and has no
-EVM, so Solidity does not run on it; Aurora is an EVM implemented AS a NEAR contract, and it
+EVM, so Solidity does not run on it; Aurora is an EVM implemented as a NEAR contract, and it
 presents as `eip155` chain 1313161554. The question that decides whether it needs anything
 of its own is whether its CREATE2 is EIP-1014, and it is. Arachnid's factory is deployed
 there at the usual address, and `eth_call`ing it executes on Aurora's own engine rather than
@@ -318,7 +318,7 @@ salt deadbeef…   0x70e2fc1339425ad82497b92828ac23248b804297
 ```
 
 So Aurora is plain `LzTransceiver` and nothing else: stock solc, so
-`CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR PROPER is a
+`CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR itself is a
 different question and not this one: `ChainType.NEAR` is for a Rust receiver addressed by a
 named or implicit account, and unlike Move it is not blocked on dispatch, since
 `Promise::function_call` takes the method name as a runtime string.
@@ -351,7 +351,7 @@ reviewed diff on our schedule rather than a side effect of a dependency bump.
 
 **The core contracts implement `IERC7786GatewaySource` and `IERC7786Recipient` directly**,
 the route slot holds a chain identifier, and `TransceiverBase._recipientOn` builds the
-recipient. `CrosschainLinked(Upgradeable)` is NOT adopted: it sits behind `Bytes.sol` and
+recipient. `CrosschainLinked(Upgradeable)` is not adopted: it sits behind `Bytes.sol` and
 its four `mcopy` sites, so it cannot compile at `paris`, and independently its per-contract
 `_links` table and its own gateway allowlist would replace the shared-transceiver routing
 and bypass the registry's provenance dial. The analysis below is the reasoning behind that,
@@ -365,7 +365,7 @@ ERC-7930 blob. This protocol holds a `chainKey`, which is
 7786 recipient.
 
 **Store the chain identifier in the route slot.** `setRoute(chainKey, identifier)` makes the
-reverse index correct BY CONSTRUCTION rather than by configuration, since
+reverse index correct by construction rather than by configuration, since
 `keccak256(identifier) == chainKey` is the definition of a chainKey. `setRoute` already
 enforces injectivity and chain identifiers are unique per chain, so nothing else changes.
 The route slot holds a chain identifier instead of an eid, and every other piece of the
@@ -472,7 +472,7 @@ question. This is the cleanest of the three candidates to fit into this repo's p
 `CCIPReceiver.ccipReceive` is gated by `onlyRouter`
 (`msg.sender == i_ccipRouter`) alone — a transport-identity check, exactly what
 `GATEWAY_ROLE` already answers — and asserts nothing about who sent the message on the
-SOURCE chain. Unlike LayerZero's `_lzReceive`, which authenticates the peer BEFORE handing
+source chain. Unlike LayerZero's `_lzReceive`, which authenticates the peer before handing
 control to the app and cannot be bypassed without forking the receive path, CCIP's own base
 contract does not check the source-chain sender at all: that is left entirely to the
 application. So a binding that implements `IAny2EVMMessageReceiver.ccipReceive` directly,
@@ -481,7 +481,7 @@ through `_authenticateOrigin`, has exactly one origin check, in exactly one plac
 `_onInbound`'s NatSpec states, with nothing to write an exception for.
 
 **Licensing is mixed, and matters for what gets vendored.** The infrastructure contracts
-this protocol only ever CALLS (`Router.sol` itself, `FeeQuoter.sol`, the on-ramp/off-ramp
+this protocol only ever calls (`Router.sol` itself, `FeeQuoter.sol`, the on-ramp/off-ramp
 internals) are `BUSL-1.1`. The application-facing files a binding would actually vendor —
 `CCIPReceiver.sol`, `IAny2EVMMessageReceiver.sol`, `IRouterClient.sol`, `Client.sol` — are
 each individually tagged `MIT` in their own SPDX header. Worth a second look before mainnet
@@ -523,18 +523,18 @@ shape as CCIP's `getFee`.
 `bytes32ToAddress` (alignment-preserving casts, no imports, nothing to collide with) are the
 whole of it, and safe to vendor standalone regardless of what else is.
 
-**THE FINDING THAT MATTERS MOST: `MailboxClient` and `Router` cannot be inherited into this
+**The most important finding: `MailboxClient` and `Router` cannot be inherited into this
 repo's proxies at all, and it is not a style question.** Both bring `OwnableUpgradeable`, and
 `hyperlane-monorepo`'s own `remappings.txt` pins
 `@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-4.9.3/`.
-`MailboxClient._MailboxClient_initialize` calls `__Ownable_init()` with NO argument, which is
+`MailboxClient._MailboxClient_initialize` calls `__Ownable_init()` with no argument, which is
 OpenZeppelin 4.x's signature; this repo is pinned to 5.4.0, whose `OwnableUpgradeable` takes
 an explicit initial owner and has no zero-argument overload at all. The two versions cannot
 occupy one inheritance graph — Solidity will not compile two incompatible definitions of the
 same base reached through different import paths. This is a harder wall than the
 `draft-InteroperableAddress` OZ-bump question above: that one is blocked by a compile-target
 collision (`paris` vs `mcopy`) that in principle a version choice could still resolve; this
-one is blocked by two SHIPPED, INCOMPATIBLE major versions of the same contract, and nothing
+one is blocked by two shipped, incompatible major versions of the same contract, and nothing
 about how either project builds changes that.
 
 **The fix costs nothing, because the useful parts have no OZ dependency at all.**
@@ -542,7 +542,7 @@ about how either project builds changes that.
 are plain interfaces and a pure library — no OpenZeppelin imports, no version to collide
 with. (`IMailbox` imports `IPostDispatchHook`, itself a plain interface, and
 `StandardHookMetadata` carries the refund address, so the vendored set is six files; see
-`contracts/evm/script/vendor/hyperlane.sh`.) A real binding vendors those six, holds the `IMailbox` address as its OWN immutable (the same "one
+`contracts/evm/script/vendor/hyperlane.sh`.) A real binding vendors those six, holds the `IMailbox` address as its own immutable (the same "one
 constructor argument, on the implementation" shape used everywhere else in this survey), and
 implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`
 itself, gated by `onlyRole(GATEWAY_ROLE)` rather than `MailboxClient`'s `onlyMailbox`
@@ -551,13 +551,13 @@ storage reservations never enter this repo's layout at all — there is nothing 
 with, because there is nothing there.
 
 **Skipping `Router` is independently correct, aside from the OZ collision.** `Router.handle`
-checks an enrolled-router-per-domain mapping (`_routers`) BEFORE calling the app's own
+checks an enrolled-router-per-domain mapping (`_routers`) before calling the app's own
 `_handle` — the exact shape already rejected for OpenZeppelin's `CrosschainLinked` in
 [§3](#3-erc-7786-as-a-transport): "its own gateway allowlist would replace the
 shared-transceiver routing and bypass the registry's provenance dial." A binding built
 directly on `IMessageRecipient` has no such allowlist to bypass.
 
-**No R3.3-style exception needed, PROVIDED `Router` is skipped.** `Mailbox.process`
+**No R3.3-style exception needed, provided `Router` is skipped.** `Mailbox.process`
 authenticates that a message passed its configured ISM before calling `handle` — a statement
 about the message, not about which contract sent it on the source chain. The per-domain peer
 check is `Router`'s own optional layer, not `Mailbox`'s. So a binding built directly on
@@ -596,7 +596,7 @@ Where that VAA goes, and whether it goes anywhere, is decided entirely off-proto
 whoever chooses to do something with it.
 
 **There is no delivery, so there is no delivery-inclusive quote.** `messageFee()` is a flat,
-tiny anti-spam fee paid on the SOURCE chain — unrelated to destination gas. Every other
+tiny anti-spam fee paid on the source chain, unrelated to destination gas. Every other
 provider surveyed here (LayerZero, CCIP, Hyperlane, and Wormhole's own Relayer below) prices
 the full round trip in one native-currency number; bare Core has nothing to ask. A binding on
 it falls back to the off-chain measurement already documented for OP Stack in
@@ -606,7 +606,7 @@ answers on-chain.
 **No push callback, and therefore no caller to gate.** `parseAndVerifyVM(encodedVM) view
 returns (vm, valid, reason)` is a pure verification function. Wormhole Core never calls
 anything. A binding has to expose its own external entry point that accepts a raw VAA from
-WHOEVER submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
+whoever submits it, calls `parseAndVerifyVM` itself, and proceeds only if `valid`. There is
 no address to grant `GATEWAY_ROLE` to for this channel, because there is no fixed caller:
 authenticity comes entirely from the guardian signatures inside the VAA, checked by
 `vm.emitterChainId`/`vm.emitterAddress`, both compared by `_onMessageFrom`, with nothing checking
@@ -657,8 +657,8 @@ was built `uint256`-widened rather than sized to any
 one provider: a fourth candidate slots into the existing table with no changes to it.
 
 **The trust assumption moves, and is worth weighing on its own rather than assumed away.**
-Message AUTHENTICITY still rests on the guardian-signed VAA underneath — the Relayer does
-not weaken that. But delivery LIVENESS now also depends on a delivery-provider marketplace
+Message authenticity still rests on the guardian-signed VAA underneath; the Relayer does
+not weaken that. But delivery liveness now also depends on a delivery-provider marketplace
 (a "default delivery provider," typically Wormhole Labs-operated, or an alternate one named
 by address) actually submitting the transaction. That is a second dependency the other three
 bindings do not add: LayerZero's executor, CCIP's off-ramp, and Hyperlane's relayer are each
@@ -717,8 +717,8 @@ would inherit, and the one thing about its shape that is not like the other four
 
 **No chain id, and no chain-id table, because there is no fan-out to name.**
 `sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable`
-takes no destination chain at all. Each OP Stack chain has its OWN dedicated
-`L1CrossDomainMessenger` deployed at its own address on L1; the destination IS which
+takes no destination chain at all. Each OP Stack chain has its own dedicated
+`L1CrossDomainMessenger` deployed at its own address on L1; the destination is which
 messenger contract you call, not an argument to it. So `op-stack-l1-l2` names a chain by the
 address of the messenger that reaches it, as its row in
 [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol): on the L1 one row per
@@ -728,7 +728,7 @@ began as one pair per registered provider; #41 replaced that (see §2).
 
 **No on-chain quote, confirmed against the full interface.** There is no `quote`-shaped
 function anywhere in `ICrossDomainMessenger`. `baseGas(message, minGasLimit)` exists, but it
-returns a `uint64` GAS OVERHEAD, not a native-currency price — it still has to be combined
+returns a `uint64` gas overhead, not a native-currency price; it still has to be combined
 with an off-chain gas price to produce a `msg.value`. This confirms §2's finding
 ("no view quote... there is nothing to ask for a price") at the interface level: a binding's
 `_quoteMessage` has nothing to answer from. The correction below is what keeps the binding
@@ -743,19 +743,19 @@ Nothing is charged in `msg.value`, so the binding requires zero value and quotes
 is what the R2.2.2 balance-delta measurement would report. `baseGas` remains the only
 price-shaped function, and it prices gas, not currency.
 
-**THE SHARP EDGE: the authenticated sender is retrieved by a callback, never carried as an
+**The trap: the authenticated sender is retrieved by a callback, never carried as an
 argument, and treating it as one would be a real vulnerability rather than a style choice.**
 `relayMessage(nonce, sender, target, value, minGasLimit, message)` makes a low-level call to
 `target` with `message` as calldata — calldata that whoever called `sendMessage` on the
-ORIGIN domain chose, in full, since `sendMessage` is permissionless and anyone may target
+origin domain chose, in full, since `sendMessage` is permissionless and anyone may target
 this protocol's receiver with it. Every other provider surveyed hands the authenticated
-origin to the callback as a value the TRANSPORT computed (LayerZero's `Origin`, Hyperlane's
+origin to the callback as a value the transport computed (LayerZero's `Origin`, Hyperlane's
 `sender`, CCIP's `message.sender`, Wormhole's `sourceAddress`). OP Stack does not: nothing
 about `message`'s own bytes is trustworthy, because the caller who published it wrote every
 byte of it themselves. The only fact the protocol actually guarantees is retrievable
-separately, by calling `xDomainMessageSender()` on the messenger — `msg.sender` from the
-called contract's own perspective — DURING the execution `relayMessage` triggers. A binding
-MUST call this itself and MUST NOT accept a "sender" as part of `message`'s own payload; an
+separately, by calling `xDomainMessageSender()` on the messenger (`msg.sender` from the
+called contract's own perspective) during the execution `relayMessage` triggers. A binding
+must call this itself and must not accept a "sender" as part of `message`'s own payload; an
 entry point that trusted a self-declared sender argument would let anyone impersonate this
 account's transmitter simply by encoding a claim to that effect in `message`, since nothing
 about `sendMessage` checks who is calling it or what they claim. `_onMessageFrom` still
@@ -839,7 +839,7 @@ unaffected either way.
 
 ### Where each seam attaches
 
-The hooks are ERC-7786-shaped now, so a NATIVE LayerZero binding has one translation the
+The hooks are ERC-7786-shaped now, so a native LayerZero binding has one translation the
 old table did not: the recipient arrives as an ERC-7930 envelope and the eid has to come
 back out of it, rather than out of a route lookup.
 
@@ -851,7 +851,7 @@ back out of it, rather than out of a route lookup.
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
 | `_accountInitializer(owner, salt, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
-| the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are ONE owner rather than two authorities. A binding must not add a third |
+| the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are one owner rather than two authorities. A binding must not add a third |
 | `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 
 **A native binding reintroduces a codec, and the eid table with it.** ERC-7786 removed the
@@ -868,7 +868,7 @@ destination, read from the table rather than computed.
 
 - **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`, and the delegate is
   `address(this)`.** Settled: inside `upgradeInitializeAndLock`'s delegatecall that is the
-  ACCOUNT, so each account is its own delegate and no other party can reconfigure it (a
+  account, so each account is its own delegate and no other party can reconfigure it (a
   transmitter's owner may name itself delegate; a receiver has no owner). The
   cost is that every account creation touches the endpoint, which is real gas on the
   bootstrap path and the concrete form of "peers and any send-side security configuration

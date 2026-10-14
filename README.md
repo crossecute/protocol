@@ -229,10 +229,10 @@ src/
   messaging/      Commitment, Call, Payload, Envelope, Executor, Roles
                   IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
-    inbound/      ReceiverBase                          what an account RECEIVES with
+    inbound/      ReceiverBase                          what an account receives with
     transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
                   DivergentAccounts                         zkSync and Tron derivation
-  account/        CrossProxy                                what both halves, and transceivers, ARE
+  account/        CrossProxy                                what both halves, and transceivers, are
                   CrossProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
