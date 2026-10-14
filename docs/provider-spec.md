@@ -97,7 +97,7 @@ account up on however good the transport is.
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Accounts are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
-| **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the RELAYER'S SIGNING KEY, not for any contract. |
+| **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. An account is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the relayer's signing key, not for any contract. |
 
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
 gateway satisfies P1 through P4 cleanly and would be less code. But ERC-7786 defines no
@@ -190,7 +190,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` LAST so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
+| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` last so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
 | an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the transceiver for exactly this. |
 | nothing else | | A binding MUST NOT expect the transceiver to reach a receiver after creation. `commit`, `cancel`, and `execute` are gated on the transmitter alone; the initializer is the transceiver's only call, ever. |
 
@@ -198,7 +198,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a SECOND ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a second ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
 | nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
@@ -260,7 +260,7 @@ one, saying which in its NatSpec ([§9](#9-worked-skeleton-an-erc-7786-gateway-b
 **R1.1 The recipient arrives built, and the binding MUST NOT re-derive it.** It is a
 binary interoperable address naming its own chain, so there is no chain id to resolve and
 no route table to consult inside `_sendMessage`. The route table still exists, but it holds
-each chain's ERC-7930 IDENTIFIER now rather than a provider's private id, and it is read by
+each chain's ERC-7930 identifier now rather than a provider's private id, and it is read by
 `TransceiverBase._recipientOn` on the way in.
 
 **R1.2** An account MUST NOT hold a route table of its own: a user adding a destination is
@@ -342,7 +342,7 @@ recorded here so nobody rediscovers them:
 - `STATICCALL` cannot carry value, so a fee-taking send cannot be simulated at all. The
   question becomes "does this succeed with nothing attached", whose answer is always no.
 - There is nothing to read even if it ran. A send returns a message id, not a price. It
-  CONSUMES `msg.value`; it never computes a number to hand back.
+  consumes `msg.value`; it never computes a number to hand back.
 
 The mutating variant (perform the send, revert with the answer, call it through `eth_call`
 so the state change is discarded) is a real pattern and is how Uniswap's quoter works. It
@@ -350,9 +350,9 @@ is still refused here. It requires the gateway to reveal the fee somehow, it nee
 balance override to fund the simulation, and it would make the whole read surface above
 non-view, which is the property R2.2 exists to protect.
 
-**R2.2.2 Checking a quote is off-chain, and it MEASURES rather than searches.** The
+**R2.2.2 Checking a quote is off-chain, and it measures rather than searches.** The
 constraints in R2.2.1 are the EVM's static context, and a simulator is not bound by them. A
-Foundry fork test or script can call the REAL send against the real endpoint and read the
+Foundry fork test or script can call the actual send against the real endpoint and read the
 exact net cost off the paying account's balance:
 
 ```solidity
@@ -488,7 +488,7 @@ do nothing else with the message.
 checks, and they are not the same check. `onlyRole(GATEWAY_ROLE)` says the message came
 through transport this account trusts, which the binding establishes by granting the role.
 The sender's address must equal the account's `sourceTransmitter`, which says it came from
-THIS account on the other side; that one needs no configuration and is therefore answered in
+this account on the other side; that one needs no configuration and is therefore answered in
 the base. An honest but shared gateway would otherwise let one account's payload land in
 another's receiver. The sender's chain must also be the account's home, `homeOrigin`, which
 the transceiver arms the receiver with in the transport's own naming (the provider's id for
@@ -580,10 +580,10 @@ sits on zkSync or Tron, which derive it from the registry. Both are 20 bytes. A 
 left-padded sender MUST be narrowed by the binding.
 
 ```solidity
-// WRONG: 32 bytes, will never equal the registry's 20.
+// Wrong: 32 bytes, will never equal the registry's 20.
 bytes memory sender = abi.encode(origin.sender);
 
-// RIGHT: the same 20 raw bytes the registry stores.
+// Right: the same 20 raw bytes the registry stores.
 bytes memory sender = abi.encodePacked(address(uint160(uint256(origin.sender))));
 ```
 
@@ -660,7 +660,7 @@ binding reading `msg.value` overpays the provider, or refunds the fee to the sen
 sends nothing.
 
 **R7.2** Refunding the excess is the binding's job, because only the binding knows the
-provider's refund convention. The address it refunds to is NOT the binding's choice: it
+provider's refund convention. The address it refunds to is not the binding's choice: it
 MUST be `OutboundBase._refundTo()`, and a binding MUST NOT read a refund address out of the
 attributes or substitute one of its own.
 
@@ -668,7 +668,7 @@ The rule is one sentence: a fee is overpaid by whoever paid it, so the remainder
 to the party that sent the value. That is the account on both paths. On path A the
 transmitter paid from its own balance, so `TransmitterBase` overrides `_refundTo()` to
 `address(this)`. On path B the base answers `msg.sender`, and `bootstrap` refuses any
-caller that is not `predictCrossAccount(owner, salt, localChainKey)`, so `msg.sender` is the ACCOUNT. The
+caller that is not `predictCrossAccount(owner, salt, localChainKey)`, so `msg.sender` is the account. The
 one exception is a receiver report, which a transceiver pays from its own float inside a
 delivery, where `msg.sender` is the relayer: its overpayment returns to that float. A
 shared transceiver refunding a bootstrap to `address(this)` would pool every user's excess
@@ -683,7 +683,7 @@ A binding MUST NOT put a refund address in the attributes instead. That leaves
 `_sendMessage` with no correct default on a bootstrap, since the owner is inside the encoded
 envelope and the binding would have to decode `Envelope` to find it. The refund address is
 the one value a binding cannot be handed, which is why it is a function on the base rather
-than an argument; the send VALUE is the opposite case, and is passed (see
+than an argument; the send value is the opposite case, and is passed (see
 [R7.1](#r7-fees-and-value)).
 
 **R7.3** A nested send (the receiver report, sent from inside a delivery callback) has
@@ -871,7 +871,7 @@ below. The column says where each line is held.
 | C31 | `replay_theDedupeIsPerAccount` | Two accounts, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerAccount`. Others: fork test not built |
 | C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; an account's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`). | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
 
-**C11 and C29 to C31 want FORK tests, against the real endpoint.** A mock provider does
+**C11 and C29 to C31 want fork tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness
 dedupes, prices, and retries. It proves nothing about the transport, which is where those
 properties actually live. Run them against a forked chain with the provider's real
@@ -922,7 +922,7 @@ contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
     ) internal override returns (bytes32 sendId) {
         // R7.1: pay from `value`, never from msg.value.
         sendId = gateway.sendMessage{value: value}(recipient, payload, attributes);
-        // R1: a non-zero id means the gateway has NOT sent it yet. Refuse rather than
+        // R1: a non-zero id means the gateway has not sent it yet. Refuse rather than
         // report success for a message still sitting in a queue somebody else must poke.
         if (sendId != bytes32(0)) revert TwoStepGatewayUnsupported(sendId);
     }
@@ -945,7 +945,7 @@ contract GatewayTransmitter is TransmitterBase, GatewayEndpoint {
 }
 
 contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
-    /// R3.0.1: the binding names WHICH gateway, once, in the call that arms the account.
+    /// R3.0.1: the binding names which gateway, once, in the call that arms the account.
     /// The base answers whether the sender is this account, because that half needs no
     /// configuration. Granting precedes `__ReceiverBase_init` so it is in place before the
     /// bootstrap payload runs.

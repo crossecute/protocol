@@ -27,8 +27,8 @@ this file is the gap between that design and the tree.
 
 ## 2. Chain checks before mainnet
 
-- **LayerZero's zkSync side is unverified** (#51). Its pathways default to the dead DVN, so both
-  ends pin LayerZero Labs' DVN ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
+- **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
+  ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
   The Ethereum side quotes on a fork; the zkSync side needs a zkSync Sepolia run.
 - **One account deployed on zkSync Era and on Shasta.** The formulas are checked: zkSync's
   matches `ContractDeployer.getNewAddressCreate2` on mainnet, and Tron's `0x41` preimage is

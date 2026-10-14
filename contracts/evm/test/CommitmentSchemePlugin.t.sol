@@ -185,7 +185,7 @@ contract CommitmentSchemePluginTest is Test {
         );
     }
 
-    /* ======================= onboarding a NEW primitive ======================= */
+    /* ======================= onboarding a new primitive ======================= */
 
     /// @dev The whole point. A chain whose hash has no `Scheme` member, on a chain type
     ///      with no `ChainType` constant, becomes previewable with one owner transaction.

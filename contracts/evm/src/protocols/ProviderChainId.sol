@@ -40,8 +40,8 @@ function providerIdOf(address transceiver, bytes memory recipient) view returns 
 ///      would let an inbound message from either be attributed to the other. Routes get the
 ///      same property from `OutboundBase._setRoute`, which requires a route to hash to its key.
 ///
-/// @dev Zero is the unset sentinel on both sides; no provider in scope ever names a live
-///      chain 0 (verified in `docs/provider-research.md` §§4-5 and `docs/provider-research.md` §8).
+/// @dev Zero is the unset sentinel on both sides, so a provider id of 0 is refused here
+///      (`ZeroProviderId`) and in `deploy/` (`ChainConfig.providerId`).
 ///
 /// @dev Internal and ungated, like every other setter on `OutboundBase`: the inheriting
 ///      transceiver wraps `_setProviderId` in its own authority.

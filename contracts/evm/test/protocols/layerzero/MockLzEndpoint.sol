@@ -10,7 +10,7 @@ import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interf
 
 /// @notice Minimal endpoint surface the bindings actually call: `quote`, `send`,
 ///         `setDelegate`, `lzToken`, and the library and config calls `LzMessage` pins a DVN
-///         with, authorized as EndpointV2 does (the OApp or its delegate). Not `ILayerZeroEndpointV2` itself — the call sites only
+///         with, authorized as EndpointV2 does (the OApp or its delegate). Not `ILayerZeroEndpointV2` itself: the call sites only
 ///         check selector/calldata at the EVM level, so implementing the full 20-plus
 ///         function interface would be noise. Inbound delivery isn't simulated: tests drive
 ///         it with `vm.prank(address(endpoint))` + a direct `lzReceive` call.
