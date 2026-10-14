@@ -462,7 +462,7 @@ paying in LINK, and using it would reintroduce exactly the per-chain funding-tok
 exists to avoid.
 
 **`CCIPReceiver` carries zero storage and zero external dependency.** It holds one
-`immutable` (`i_ccipRouter`, set in the constructor — same "one constructor argument, on the
+`immutable` (`i_ccipRouter`, set in the constructor, the same "one constructor argument, on the
 implementation, and it does not matter" shape as LayerZero's `OAppCoreUpgradeable` endpoint:
 see [§8](#8-layerzero-as-a-native-binding)) and vendors its own tiny copy of
 `IERC165` rather than importing OpenZeppelin's. No storage-layout question, no OZ-version
@@ -470,20 +470,20 @@ question. This is the cleanest of the three candidates to fit into this repo's p
 
 **No R3.3-style exception needed, provided a binding skips `CCIPReceiver` itself.**
 `CCIPReceiver.ccipReceive` is gated by `onlyRouter`
-(`msg.sender == i_ccipRouter`) alone — a transport-identity check, exactly what
-`GATEWAY_ROLE` already answers — and asserts nothing about who sent the message on the
+(`msg.sender == i_ccipRouter`) alone (a transport-identity check, exactly what
+`GATEWAY_ROLE` already answers) and asserts nothing about who sent the message on the
 source chain. Unlike LayerZero's `_lzReceive`, which authenticates the peer before handing
 control to the app and cannot be bypassed without forking the receive path, CCIP's own base
 contract does not check the source-chain sender at all: that is left entirely to the
 application. So a binding that implements `IAny2EVMMessageReceiver.ccipReceive` directly,
 gated by `onlyRole(GATEWAY_ROLE)`, and authenticates the source chain and sender purely
-through `_authenticateOrigin`, has exactly one origin check, in exactly one place — the rule
+through `_authenticateOrigin`, has exactly one origin check, in exactly one place, which is the rule
 `_onInbound`'s NatSpec states, with nothing to write an exception for.
 
 **Licensing is mixed, and matters for what gets vendored.** The infrastructure contracts
 this protocol only ever calls (`Router.sol` itself, `FeeQuoter.sol`, the on-ramp/off-ramp
-internals) are `BUSL-1.1`. The application-facing files a binding would actually vendor —
-`CCIPReceiver.sol`, `IAny2EVMMessageReceiver.sol`, `IRouterClient.sol`, `Client.sol` — are
+internals) are `BUSL-1.1`. The application-facing files a binding would actually vendor
+(`CCIPReceiver.sol`, `IAny2EVMMessageReceiver.sol`, `IRouterClient.sol`, `Client.sol`) are
 each individually tagged `MIT` in their own SPDX header. Worth a second look before mainnet
 regardless, the way any vendored license is, but the files this binding needs are not the
 BUSL ones.
@@ -530,7 +530,7 @@ repo's proxies at all, and it is not a style question.** Both bring `OwnableUpgr
 `MailboxClient._MailboxClient_initialize` calls `__Ownable_init()` with no argument, which is
 OpenZeppelin 4.x's signature; this repo is pinned to 5.4.0, whose `OwnableUpgradeable` takes
 an explicit initial owner and has no zero-argument overload at all. The two versions cannot
-occupy one inheritance graph — Solidity will not compile two incompatible definitions of the
+occupy one inheritance graph: Solidity will not compile two incompatible definitions of the
 same base reached through different import paths. This is a harder wall than the
 `draft-InteroperableAddress` OZ-bump question above: that one is blocked by a compile-target
 collision (`paris` vs `mcopy`) that in principle a version choice could still resolve; this
@@ -539,7 +539,7 @@ about how either project builds changes that.
 
 **The fix costs nothing, because the useful parts have no OZ dependency at all.**
 `IMailbox.sol`, `IMessageRecipient.sol`, `IInterchainSecurityModule.sol`, and `TypeCasts.sol`
-are plain interfaces and a pure library — no OpenZeppelin imports, no version to collide
+are plain interfaces and a pure library, with no OpenZeppelin imports and no version to collide
 with. (`IMailbox` imports `IPostDispatchHook`, itself a plain interface, and
 `StandardHookMetadata` carries the refund address, so the vendored set is six files; see
 `contracts/evm/script/vendor/hyperlane.sh`.) A real binding vendors those six, holds the `IMailbox` address as its own immutable (the same "one
@@ -547,22 +547,22 @@ constructor argument, on the implementation" shape used everywhere else in this 
 implements `IMessageRecipient.handle(uint32 origin, bytes32 sender, bytes calldata message)`
 itself, gated by `onlyRole(GATEWAY_ROLE)` rather than `MailboxClient`'s `onlyMailbox`
 modifier. Since neither `MailboxClient` nor `Router` is inherited, their `uint256[48] __GAP`
-storage reservations never enter this repo's layout at all — there is nothing to collide
+storage reservations never enter this repo's layout at all. There is nothing to collide
 with, because there is nothing there.
 
 **Skipping `Router` is independently correct, aside from the OZ collision.** `Router.handle`
 checks an enrolled-router-per-domain mapping (`_routers`) before calling the app's own
-`_handle` — the exact shape already rejected for OpenZeppelin's `CrosschainLinked` in
+`_handle`, the exact shape already rejected for OpenZeppelin's `CrosschainLinked` in
 [§3](#3-erc-7786-as-a-transport): "its own gateway allowlist would replace the
 shared-transceiver routing and bypass the registry's provenance dial." A binding built
 directly on `IMessageRecipient` has no such allowlist to bypass.
 
 **No R3.3-style exception needed, provided `Router` is skipped.** `Mailbox.process`
-authenticates that a message passed its configured ISM before calling `handle` — a statement
+authenticates that a message passed its configured ISM before calling `handle`, a statement
 about the message, not about which contract sent it on the source chain. The per-domain peer
 check is `Router`'s own optional layer, not `Mailbox`'s. So a binding built directly on
 `IMessageRecipient` + `IMailbox`, authenticating solely through `_authenticateOrigin`, has
-exactly one origin check, in exactly one place, matching `_onInbound`'s stated rule — unlike
+exactly one origin check, in exactly one place, matching `_onInbound`'s stated rule, unlike
 LayerZero, where the peer check is inside `_lzReceive` itself and there is no opting out of
 it short of forking the receive path.
 
@@ -612,11 +612,11 @@ authenticity comes entirely from the guardian signatures inside the VAA, checked
 `vm.emitterChainId`/`vm.emitterAddress`, both compared by `_onMessageFrom`, with nothing checking
 "who submitted this transaction" at all. That is not a gap relative to the other bindings:
 `_onMessageFrom`, `_onMessage`, and `_onInbound` are already `internal`, so this
-entry point reaches the same seam CCIP and Hyperlane already reuse — it is simply the first
+entry point reaches the same seam CCIP and Hyperlane already reuse. It is simply the first
 candidate whose entry point has no role check in front of that seam.
 
 **No replay protection, confirmed against the full interface, not assumed.** There is no
-`delivered`/`consumed` mapping for an ordinary message anywhere in `IWormhole` —
+`delivered`/`consumed` mapping for an ordinary message anywhere in `IWormhole`.
 `governanceActionIsConsumed` exists, and it is scoped to governance actions only. A binding
 on bare Core is the first candidate in this survey to actually trigger
 [R3.5](provider-spec.md#r3-receive) ("a binding whose transport does not provide it MUST
@@ -644,14 +644,14 @@ recording rather than assuming.
 
 **Dedupe exists at this layer.** `deliveryAttempted(bytes32 deliveryHash) view returns
 (bool)` tracks delivery the way LZ/CCIP/Hyperlane already do, so R3.5 is satisfied the same
-way it is for them — a binding on the Relayer does not need the consumed-hash map bare Core
+way it is for them: a binding on the Relayer does not need the consumed-hash map bare Core
 would require. (Checked against the implementation: `executeDelivery` refuses a hash
 already in `deliverySuccessBlock`; a failed delivery can be retried. A reverting
 `receiveWormholeMessages` does not revert the delivery transaction. The implementation was
 read at `wormhole-foundation/wormhole` `932a2e0a2c`, the parent of the commit that deleted
 it from that repo.)
 
-**The chain id is `uint16`, "Wormhole Chain ID" format** — a fourth provider-native width,
+**The chain id is `uint16`, "Wormhole Chain ID" format**, a fourth provider-native width,
 and the reason [`ProviderChainId`](../contracts/evm/src/protocols/ProviderChainId.sol)
 was built `uint256`-widened rather than sized to any
 one provider: a fourth candidate slots into the existing table with no changes to it.
@@ -699,9 +699,9 @@ Neither variant requires changing anything in the shared base contracts. `_sendM
 `_onMessage`, and `_onInbound` are already `internal` and reusable by any provider-specific
 entry point regardless of that entry point's own gating; `Roles`/`GATEWAY_ROLE` needs no
 change either way. The Relayer binding is a template-comparable addition, the same shape as
-LZ/CCIP/Hyperlane. A bare-Core binding is real, additional, self-contained work — a
+LZ/CCIP/Hyperlane. A bare-Core binding is real, additional, self-contained work (a
 permissionless entry point and a replay-protection map, both local to a new
-`protocols/wormhole/` binding — not a gap in what already exists.
+`protocols/wormhole/` binding), not a gap in what already exists.
 
 ---
 
@@ -746,8 +746,8 @@ price-shaped function, and it prices gas, not currency.
 **The trap: the authenticated sender is retrieved by a callback, never carried as an
 argument, and treating it as one would be a real vulnerability rather than a style choice.**
 `relayMessage(nonce, sender, target, value, minGasLimit, message)` makes a low-level call to
-`target` with `message` as calldata — calldata that whoever called `sendMessage` on the
-origin domain chose, in full, since `sendMessage` is permissionless and anyone may target
+`target` with `message` as calldata. Whoever called `sendMessage` on the
+origin domain chose that calldata in full, since `sendMessage` is permissionless and anyone may target
 this protocol's receiver with it. Every other provider surveyed hands the authenticated
 origin to the callback as a value the transport computed (LayerZero's `Origin`, Hyperlane's
 `sender`, CCIP's `message.sender`, Wormhole's `sourceAddress`). OP Stack does not: nothing
@@ -767,7 +767,7 @@ compared comes from.
 (`AddressDerive.undoL1ToL2Alias` exists in this repo for exactly that), while
 `CrossDomainMessenger` un-aliases internally and hands back the real address through
 `xDomainMessageSender()`. Binding here, one layer up, means `AddressDerive`'s alias-undoing
-path stays unused by this binding entirely — it would only be needed by a binding built
+path stays unused by this binding entirely. It would only be needed by a binding built
 directly on `OptimismPortal`, which this is deliberately not.
 
 **No divergent variant, unlike the other four.** zkSync and Tron need

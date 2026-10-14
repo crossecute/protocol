@@ -53,7 +53,7 @@ contract CcipReceiver is ReceiverBase, IAny2EVMMessageReceiver {
     ///      token transfer. The default a plain
     ///      `AccessControlEnumerableUpgradeable.supportsInterface` would give (false, since
     ///      it never heard of this interface) makes the off-ramp deliver silently without
-    ///      ever calling `ccipReceive` — a message that looks sent and simply never
+    ///      ever calling `ccipReceive`: a message that looks sent and simply never
     ///      arrives, not a revert. See `CCIPReceiver.sol`'s own comment on
     ///      `supportsInterface` at the pinned commit
     ///      (`docs/provider-research.md#4-ccip-as-a-native-binding`).
