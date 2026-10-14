@@ -350,10 +350,12 @@ What an operator or integrator has to know:
   `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
   `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
   checks in this repo's own code. Each LayerZero account is its own OApp delegate.
-- **Provider-side security configuration is the provider's default.** No contract here sets
-  a LayerZero DVN or library configuration, or a Hyperlane `interchainSecurityModule()`. So
-  the Mailbox owner's replaceable `defaultIsm` and LayerZero's default configuration decide
-  what counts as a verified message.
+- **Provider-side security configuration is mostly the provider's default.** No contract here
+  sets a LayerZero library configuration or a Hyperlane `interchainSecurityModule()`, so the
+  Mailbox owner's replaceable `defaultIsm` and LayerZero's default configuration decide what
+  counts as a verified message. The one exception is a LayerZero pathway whose default is the
+  dead DVN, such as every pathway touching zkSync: its transceiver pins LayerZero Labs' DVN
+  with `setDvn`, write-once per eid, and a receiver it creates inherits that pin (#51).
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
@@ -456,7 +458,7 @@ over interop).
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 754 passing
+cd contracts/evm && forge test        # 801 passing, 1 skipped (the fork test)
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
