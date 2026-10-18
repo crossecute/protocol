@@ -101,16 +101,15 @@ contract CrossProxyTest is Test {
     }
 
     /// @dev A transceiver deploys accounts from the stored copy, so it must be the initcode byte
-    ///      for byte, and the contract holding it must do nothing when called.
+    ///      for byte, whatever the call.
     function test_theStoredInitCodeIsTheInitCode() public {
         InitCodeStore store = new InitCodeStore();
         assertEq(store.load(), type(CrossProxy).creationCode);
-        assertEq(store.at().code[0], 0x00, "led by STOP");
 
         (bool ok, bytes memory data) =
             store.at().call(abi.encodeWithSignature("upgradeInitializeAndLock(address,bytes)", address(1), ""));
         assertTrue(ok);
-        assertEq(data.length, 0);
+        assertEq(data, type(CrossProxy).creationCode);
     }
 
     /* ================================== the lock =============================== */
