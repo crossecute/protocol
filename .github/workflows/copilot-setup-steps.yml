@@ -1,0 +1,31 @@
+name: Copilot Setup Steps
+
+# Copilot code review and the cloud agent run these steps before they start, so either can
+# build and test. Only the copilot-setup-steps job's steps, permissions, runs-on, services,
+# snapshot, and timeout-minutes are read; other job keys are ignored. Takes effect once on
+# the default branch.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # Same pins as test.yml, so Copilot builds with the toolchain CI enforces.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+
+      # Prebuilt artifacts make Copilot's own forge test runs incremental.
+      - run: forge build
+        working-directory: contracts/evm
