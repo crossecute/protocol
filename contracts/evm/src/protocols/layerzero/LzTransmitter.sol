@@ -27,10 +27,9 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     ///      know every chain this account will ever reach. The owner calls `setPeer` once per
     ///      destination before its first send there; `LzWriteOncePeer` makes it final.
     function initialize(address owner_, address transceiver_, bytes32 salt_) external override initializer {
-        __Ownable_init(owner_);
         // Delegate = self: R6.4, any provider-side authority over an account is the account.
         __OAppSender_init(address(this));
-        __TransmitterBase_init(owner_, transceiver_, salt_);
+        __OwnableTransmitter_init(owner_, transceiver_, salt_);
     }
 
     function _checkOwner() internal view override(OwnableTransmitter, OwnableUpgradeable) {
