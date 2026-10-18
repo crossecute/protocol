@@ -3,9 +3,24 @@ pragma solidity ^0.8.20;
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
+import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
-import {check, deployCrossProxy} from "script/deploy/CrossProxyDeploy.sol";
+import {check, deployCrossProxy, arachnidDeploy} from "script/deploy/CrossProxyDeploy.sol";
+
+/// @notice The extension every provider's transceiver implementation on this chain names, deployed
+///         on first use. It takes no constructor arguments, so it has one address on every parity
+///         chain.
+function transceiverExtension() returns (address) {
+    return arachnidDeploy(type(TransceiverExtension).creationCode);
+}
+
+/// @notice `transceiverExtension` for the zkSync variants these libraries build for tests; Era
+///         itself is built by zksolc.
+function zkSyncTransceiverExtension() returns (address) {
+    return arachnidDeploy(type(ZkSyncTransceiverExtension).creationCode);
+}
 
 /// @notice What every provider's transceiver deploy is given. The implementation is deployed
 ///         by the caller: production's, or a test's harness around it.
@@ -29,16 +44,17 @@ function deployTransceiverProxy(TransceiverDeployment memory d, bytes memory ini
 
 function checkTransceiver(address t, TransceiverDeployment memory d, address providerGateway) view {
     TransceiverBase tb = TransceiverBase(payable(t));
+    TransceiverExtension te = TransceiverExtension(t);
     TransceiverConfig memory c = d.config;
     bytes32 home = keccak256(c.governorHome);
 
     check(
-        tb.owner() == tb.predictCrossAccount(c.governorOwner, c.governorSalt, home),
+        tb.owner() == te.predictCrossAccount(c.governorOwner, c.governorSalt, home),
         "owner is the governor's account on its home"
     );
-    check(tb.treasury() == c.treasury, "treasury");
-    check(tb.transmitterImplementation() == c.transmitterImplementation, "transmitter implementation");
-    check(tb.receiverImplementation() == c.receiverImplementation, "receiver implementation");
+    check(te.treasury() == c.treasury, "treasury");
+    check(te.transmitterImplementation() == c.transmitterImplementation, "transmitter implementation");
+    check(te.receiverImplementation() == c.receiverImplementation, "receiver implementation");
     for (uint256 i; i < c.gateways.length; ++i) {
         if (c.gateways[i] != address(0)) {
             check(tb.hasRole(tb.GATEWAY_ROLE(), c.gateways[i]), "listed gateway holds GATEWAY_ROLE");
@@ -51,9 +67,9 @@ function checkTransceiver(address t, TransceiverDeployment memory d, address pro
         check(keccak256(tb.routeFor(home)) == home, "the governor's home is routed");
     }
     if (address(c.chainRegistry) != address(0)) {
-        check(address(tb.chainRegistry()) == address(c.chainRegistry), "registry");
-        check(tb.messageProvider() == c.messageProvider, "message provider");
-        _checkDeploymentRecord(tb, d);
+        check(address(te.chainRegistry()) == address(c.chainRegistry), "registry");
+        check(te.messageProvider() == c.messageProvider, "message provider");
+        _checkDeploymentRecord(tb, te, d);
     }
 }
 
@@ -61,16 +77,16 @@ function checkTransceiver(address t, TransceiverDeployment memory d, address pro
 ///         transceiver was deployed from exactly that record and sits where it predicts.
 /// @dev A diverging chain derives addresses its own way and records solc's initcode hash,
 ///      not its own compiler's (#30), so neither comparison applies there.
-function _checkDeploymentRecord(TransceiverBase tb, TransceiverDeployment memory d) view {
-    ProviderDeployment memory r = tb.chainRegistry().providerDeployment(d.config.messageProvider);
-    if (r.salt == bytes32(0) || tb.addressesDiverge()) return;
+function _checkDeploymentRecord(TransceiverBase tb, TransceiverExtension te, TransceiverDeployment memory d) view {
+    ProviderDeployment memory r = te.chainRegistry().providerDeployment(d.config.messageProvider);
+    if (r.salt == bytes32(0) || te.addressesDiverge()) return;
     check(r.deployedBy == d.deployedBy, "deployedBy is the recorded one");
     check(r.salt == d.salt, "salt is the recorded one");
     check(r.crossProxyInitCodeHash == tb.CROSS_PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
     // At deployment a registry knows only its seed's home, which it requires `Predetermined`
     // (§6 step 1), and the prediction is the same for every such chain.
     check(
-        tb.chainRegistry().predictTransceiver(keccak256(d.config.governorHome), d.config.messageProvider)
+        te.chainRegistry().predictTransceiver(keccak256(d.config.governorHome), d.config.messageProvider)
             == address(tb),
         "transceiver is where the registry predicts"
     );

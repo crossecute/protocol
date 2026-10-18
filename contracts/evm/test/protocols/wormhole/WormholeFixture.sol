@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
@@ -56,7 +56,7 @@ function _envelope(uint16 targetChain, address target, bytes memory inner) pure 
 contract WormholeTransceiverHarness is WormholeTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address core, address executor_) WormholeTransceiver(core, executor_) {}
+    constructor(address core, address executor_) WormholeTransceiver(core, executor_, transceiverExtension()) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external

@@ -5,7 +5,11 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {Client} from "@ccip/libraries/Client.sol";
 
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 import {CcipDeploy} from "script/deploy/CcipDeploy.sol";
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 
@@ -18,7 +22,7 @@ import {Call} from "src/messaging/Call.sol";
 contract CcipTransceiverHarness is CcipTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address router_) CcipTransceiver(router_) {}
+    constructor(address router_) CcipTransceiver(router_, transceiverExtension()) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -54,7 +58,7 @@ function ccipMessage(uint64 selector, bytes32 sender, bytes memory data) pure re
 
 /// @notice Exposes the report seam.
 contract CcipZkSyncHarness is CcipZkSyncTransceiver {
-    constructor(address router_) CcipZkSyncTransceiver(router_) {}
+    constructor(address router_) CcipZkSyncTransceiver(router_, zkSyncTransceiverExtension()) {}
 
     function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
         _reportReceiver(home, owner, salt, receiver);

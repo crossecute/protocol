@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -23,7 +23,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     address public immutable coreBridge;
     address public immutable executor;
 
-    constructor(address coreBridge_, address executor_) {
+    constructor(address coreBridge_, address executor_, address extension_) TransceiverBase(extension_) {
         if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         if (executor_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;

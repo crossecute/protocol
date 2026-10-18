@@ -128,8 +128,8 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Public, and so linked, where inlining it would put a transceiver over EIP-170 (`WormholeMessage`, `LzMessage`). |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
 | `<P>Receiver.sol` | `ProviderReceiver`, or `ReceiverBase` where setup goes beyond the gateway grant | The per-user account on every other chain. Receives on path A. `ProviderReceiver` supplies `initialize`, which grants `GATEWAY_ROLE` to `_providerGateway()` and then runs `__ReceiverBase_init`; LayerZero and `op-stack-l1-l2` declare their own initializer instead, since they set a peer or take the gateway as an argument. |
-| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
-| `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
+| `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). Each constructor takes the chain's `TransceiverExtension` and passes it to `TransceiverBase`, which runs every selector it does not declare there (#70). |
+| `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. Its implementation names `ZkSyncTransceiverExtension` or `TronTransceiverExtension`, which derive alike. |
 
 Where the provider sits, on each path. Path A carries every ordinary message and touches
 only the two accounts:
@@ -184,7 +184,7 @@ the transmitter and the transceiver.
 | --- | --- | --- |
 | `_owner()` | `TransmitterBase._owner` | Answer from the SDK's own ownership if it brings one, otherwise from `OwnableUpgradeable`. |
 | `_checkOwner()` | `TransmitterBase._checkOwner` | Same. Note `TransmitterBase` uses `onlyAccountOwner`, not `onlyOwner`, precisely so an SDK's `onlyOwner` does not collide. |
-| `initialize(address owner, address transceiver, bytes32 salt)` | `ITransmitterInit`, in `TransceiverBase.sol` | MUST exist with that exact signature, or the transceiver's `_accountInitializer` MUST be overridden to encode a different one. |
+| `initialize(address owner, address transceiver, bytes32 salt)` | `ITransmitterInit`, in `TransceiverCore.sol` | MUST exist with that exact signature, or the transceiver's `_accountInitializer` MUST be overridden to encode a different one. |
 
 ### 4.3 Required on the receiver
 
@@ -198,10 +198,10 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a second ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
+| nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived at initialization (`TransceiverExtension.initializeBase`, which `__TransceiverBase_init` runs and checks) from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a second ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
 | nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `_grantInitialRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
-| `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
+| `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `_predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
 | `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | the provider id table | `ProviderChainId`, via `ProviderTransceiver` | A typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`) over `_setProviderId`, write-once. The inbound callback maps the delivery's origin id back to a route with `_onProviderInbound`, so an unmapped origin reverts and a mapped one goes through the base's counterpart check. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. |
@@ -261,7 +261,7 @@ one, saying which in its NatSpec ([§9](#9-worked-skeleton-an-erc-7786-gateway-b
 binary interoperable address naming its own chain, so there is no chain id to resolve and
 no route table to consult inside `_sendMessage`. The route table still exists, but it holds
 each chain's ERC-7930 identifier now rather than a provider's private id, and it is read by
-`TransceiverBase._recipientOn` on the way in.
+`OutboundBase._recipientOn` on the way in.
 
 **R1.2** An account MUST NOT hold a route table of its own: a user adding a destination is
 a governance configuration change, not a per-account migration. `IAccountTransceiver.routeTo` is
@@ -728,7 +728,7 @@ compiler settings. `bytecode_hash = "none"` and `cbor_metadata = false` are pinn
 included, which would otherwise put every derived address one comment edit away from moving.
 
 **R8.4** `ChainRegistry.setProviderDeployment`'s `crossProxyInitCodeHash` MUST equal
-`TransceiverBase.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and its `deployedBy` MUST be
+`TransceiverCore.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and its `deployedBy` MUST be
 the account that called `CrossProxyDeployer.deploy` for the provider's transceivers. The
 shared deploy asserts this for every binding (`script/deploy/TransceiverDeploy.sol`) rather
 than transcribing it. A diverging transceiver predicts its receivers on
@@ -745,7 +745,7 @@ parity chains from this record, since its own constant comes from zksolc or TRON
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
 **R9.3** The binding MUST NOT expose an upgrade path that survives installation.
-`TransceiverBase` has no upgrade function, and the `CrossProxy` it runs in has no admin once
+Neither `TransceiverBase` nor the `TransceiverExtension` it names in an immutable has an upgrade function, and the `CrossProxy` it runs in has no admin once
 `CrossProxyDeployer` has armed it, so a binding has nothing to lock. If the SDK carries its own upgrade mechanism, the
 binding MUST disable it: the base cannot close an upgrade path it does not know about.
 
@@ -761,7 +761,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
 | 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Deployed through Arachnid's factory with identical arguments, each sits at one address on every standard EVM chain. The timelock's design is 48 hours, the governor's accounts under two providers as proposers, execution open. |
-| 2 | every chain | Deploy `CrossProxyDeployer` through Arachnid's factory once per chain, then each provider's transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the account bytecode hash too. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
+| 2 | every chain | Deploy `CrossProxyDeployer` and `TransceiverExtension` through Arachnid's factory once per chain, then each provider's transceiver implementation, naming that extension, and the transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the account bytecode hash too, and name their own extension variant. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |
@@ -962,6 +962,8 @@ contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
 }
 
 contract GatewayTransceiver is TransceiverBase, GatewayEndpoint {
+    constructor(address gateway_, address extension_) GatewayEndpoint(gateway_) TransceiverBase(extension_) {}
+
     /// R3.2: translating the callback into three arguments is the whole inbound job.
     /// `_authenticateOrigin` is the base's.
     function receiveMessage(bytes32, bytes calldata sender, bytes calldata payload)
@@ -1004,6 +1006,9 @@ A binding is done when every line is true.
 - [ ] `_sendMessage` overridden on the transmitter and the transceiver
 - [ ] `_quoteMessage` overridden on the same two, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
+- [ ] The transceiver's constructor takes the chain's extension and passes it to
+      `TransceiverBase`, which refuses one without code; the `<P>Deploy` library builds it
+      with `transceiverExtension()`
 - [ ] Every provider endpoint a constructor takes refused at zero
       (`ProviderAddress.ZeroEndpoint`), with the plain receiver, transmitter, and transceiver
       deployed against zero in `test/protocols/ZeroEndpoint.t.sol`. The

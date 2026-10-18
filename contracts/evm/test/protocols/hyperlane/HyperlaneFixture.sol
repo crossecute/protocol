@@ -4,7 +4,11 @@ pragma solidity ^0.8.20;
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
@@ -17,7 +21,7 @@ import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address mailbox_) HyperlaneTransceiver(mailbox_) {}
+    constructor(address mailbox_) HyperlaneTransceiver(mailbox_, transceiverExtension()) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -43,7 +47,7 @@ contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
 
 /// @notice Exposes the report seam.
 contract HyperlaneZkSyncHarness is HyperlaneZkSyncTransceiver {
-    constructor(address mailbox_) HyperlaneZkSyncTransceiver(mailbox_) {}
+    constructor(address mailbox_) HyperlaneZkSyncTransceiver(mailbox_, zkSyncTransceiverExtension()) {}
 
     function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
         _reportReceiver(home, owner, salt, receiver);

@@ -21,8 +21,9 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 ///      `ripemd160`, and zksolc rejects a compilation unit that contains it at all.
 ///
 /// @dev Not a `TransceiverBase`: a mixin that did inherit it would meet every transceiver base's
-///      own overrides in a diamond. Each transceiver overrides `predictCrossAccount` and
-///      `_deployAccount` with a one-line call into the helpers below.
+///      own overrides in a diamond. Each transceiver overrides `_predictCrossAccount`, in both
+///      its `TransceiverBase` and its extension, and `_deployAccount` with a one-line call into the
+///      helpers below.
 abstract contract DivergentAccounts is Initializable {
     /// The hash this chain's deployer keys an account address by, in that chain's own form.
     /// @dev Write-once. Not `CROSS_PROXY_INIT_CODE_HASH`, which hashes the local compiler's

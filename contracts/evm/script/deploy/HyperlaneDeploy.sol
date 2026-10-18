@@ -5,7 +5,13 @@ import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
-import {TransceiverDeployment, deployTransceiverProxy, checkGovernorHomeId} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    checkGovernorHomeId,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice Hyperlane's contracts. The Mailbox is the gateway.
 library HyperlaneDeploy {
@@ -18,11 +24,11 @@ library HyperlaneDeploy {
     }
 
     function transceiverImplementation(address mailbox) internal returns (address) {
-        return address(new HyperlaneTransceiver(mailbox));
+        return address(new HyperlaneTransceiver(mailbox, transceiverExtension()));
     }
 
     function zkSyncTransceiverImplementation(address mailbox) internal returns (address) {
-        return address(new HyperlaneZkSyncTransceiver(mailbox));
+        return address(new HyperlaneZkSyncTransceiver(mailbox, zkSyncTransceiverExtension()));
     }
 
     /// @param homeDomain Hyperlane's domain for the governor's home.

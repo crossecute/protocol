@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -22,7 +22,7 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
     ///         derived account address.
     address public immutable mailbox;
 
-    constructor(address mailbox_) {
+    constructor(address mailbox_, address extension_) TransceiverBase(extension_) {
         if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }
@@ -87,7 +87,7 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
 
 /// @notice The Hyperlane transceiver on every chain whose addresses match Ethereum's.
 contract HyperlaneTransceiver is HyperlaneTransceiverBase {
-    constructor(address mailbox_) HyperlaneTransceiverBase(mailbox_) {}
+    constructor(address mailbox_, address extension_) HyperlaneTransceiverBase(mailbox_, extension_) {}
 
     function initialize(TransceiverConfig memory c, uint32 governorHomeDomain) external initializer {
         __HyperlaneTransceiver_init(c, governorHomeDomain);

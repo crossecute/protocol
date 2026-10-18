@@ -9,7 +9,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {TransmitterBase, IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
-import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -17,7 +17,14 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver, AnyGatewayTransmitter} from "test/Harness.sol";
+import {
+    transceiverConfig,
+    AnyGatewayReceiver,
+    AnyGatewayTransceiver,
+    AnyGatewayTransmitter,
+    ext
+} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
@@ -178,7 +185,7 @@ contract TransportTest is Test {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
 
-        address at = transceiver.predictCrossAccount(owner, SALT, transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictCrossAccount(owner, SALT, transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), SALT);
@@ -324,7 +331,7 @@ contract TransportTest is Test {
         (MockTransceiver t, MockTransmitter acct) = _account();
 
         vm.expectEmit(true, true, false, true, address(t));
-        emit TransceiverBase.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
+        emit TransceiverCore.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
         vm.prank(owner);
         acct.bootstrap(DEST, _calls(), new bytes[](0));
     }
@@ -539,7 +546,7 @@ contract TransportTest is Test {
         t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = t.predictCrossAccount(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -559,7 +566,7 @@ contract TransportTest is Test {
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         address receiver = Create2.computeAddress(
-            t.accountSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
+            ext(address(t)).accountSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
         );
         assertEq(acct.destinationReceiverOn(ChainKey.forEvm(DEST)), abi.encodePacked(receiver));
         assertTrue(receiver != address(acct), "not its own address");
@@ -579,7 +586,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, owner, SALT, address(this)));
         t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE);
     }
 
@@ -665,7 +672,7 @@ contract TransportTest is Test {
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"01";
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, owner, SALT, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, owner, SALT, address(this)));
         t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, NONE);
     }
 
@@ -807,7 +814,10 @@ contract TransportTest is Test {
         assertEq(
             quoted,
             Envelope.encodeBootstrap(
-                owner, SALT, bytes32(uint256(uint160(t.predictCrossAccount(owner, SALT, t.localChainKey())))), calls
+                owner,
+                SALT,
+                bytes32(uint256(uint160(ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey())))),
+                calls
             )
             .length * t.WEI_PER_BYTE(),
             "the transceiver priced its own envelope"
@@ -984,7 +994,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = t.predictCrossAccount(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         MockTransmitter acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -1062,7 +1072,7 @@ contract DivergingDestinationTest is Test {
     function setUp() public {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
-        address at = transceiver.predictCrossAccount(owner, bytes32(0), transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictCrossAccount(owner, bytes32(0), transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), bytes32(0));

@@ -56,8 +56,8 @@ this file is the gap between that design and the tree.
   enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
   needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
   deploy functions the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, is built by zksolc and TRON-solc, which these
-  scripts do not drive.
+  `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
+  zksolc and TRON-solc, which these scripts do not drive.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes

@@ -6,14 +6,14 @@ import {Test} from "forge-std/Test.sol";
 import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OwnedTransceiver} from "test/Harness.sol";
+import {OwnedTransceiver, ext} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
 ///         than assuming it shares its own address. That assumption holds on most EVM
@@ -35,7 +35,7 @@ contract CounterpartRoutingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         vm.stopPrank();
     }
 
@@ -50,7 +50,7 @@ contract CounterpartRoutingTest is Test {
 
         address expected = address(transceiver);
         vm.prank(msig);
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, expected));
+        ext(address(transceiver)).setCounterpart(baseKey, Erc7930.encodeEvm(8453, expected));
 
         assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(expected));
         assertEq(
@@ -67,9 +67,9 @@ contract CounterpartRoutingTest is Test {
         bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
 
         vm.startPrank(msig);
-        transceiver.setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xA)));
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, zkKey));
-        transceiver.setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xB)));
+        ext(address(transceiver)).setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xA)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.CounterpartAlreadySet.selector, zkKey));
+        ext(address(transceiver)).setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xB)));
         vm.stopPrank();
     }
 
@@ -82,7 +82,7 @@ contract CounterpartRoutingTest is Test {
         registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(42161, address(0xA)));
+        ext(address(transceiver)).setCounterpart(baseKey, Erc7930.encodeEvm(42161, address(0xA)));
         vm.stopPrank();
     }
 
@@ -111,19 +111,19 @@ contract CounterpartRoutingTest is Test {
 
         vm.startPrank(msig);
         bytes32 solKey = registry.addChainKey(solChain, Provenance.Unique);
-        transceiver.setCounterpart(solKey, solAccount);
+        ext(address(transceiver)).setCounterpart(solKey, solAccount);
         vm.stopPrank();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unique
+                TransceiverCore.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unique
             )
         );
         transceiver.counterpartOn(solKey);
 
         // Lowering the bar makes it reachable: explicitly, not by accident.
         vm.prank(msig);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         assertEq(transceiver.counterpartOn(solKey).length, 32);
     }
 
@@ -133,7 +133,7 @@ contract CounterpartRoutingTest is Test {
                     address(new OwnedTransceiver()), abi.encodeCall(OwnedTransceiver.initialize, (msig))
                 ))
         );
-        vm.expectRevert(TransceiverBase.NoChainRegistry.selector);
+        vm.expectRevert(TransceiverCore.NoChainRegistry.selector);
         bare.counterpartOn(keccak256("anything"));
     }
 
@@ -177,7 +177,7 @@ contract CounterpartRoutingTest is Test {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(block.chainid), Provenance.Predetermined);
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, local));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.IsLocalChain.selector, local));
         transceiver.counterpartOn(local);
     }
 
@@ -235,10 +235,10 @@ contract CounterpartRoutingTest is Test {
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(address(transceiver)));
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartNotParity.selector, baseKey));
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.CounterpartNotParity.selector, baseKey));
+        ext(address(transceiver)).setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(0xACE5)));
 
-        transceiver.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(transceiver)));
+        ext(address(transceiver)).setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(transceiver)));
         vm.stopPrank();
         assertEq(transceiver.counterpartOn(baseKey), abi.encodePacked(address(transceiver)));
     }
@@ -254,7 +254,7 @@ contract CounterpartRoutingTest is Test {
         // a default would be a guess rather than a shortcut.
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unknown
+                TransceiverCore.InsufficientCounterpartProvenance.selector, solKey, Provenance.Unknown
             )
         );
         transceiver.counterpartOn(solKey);
@@ -269,7 +269,7 @@ contract CounterpartRoutingTest is Test {
         vm.startPrank(msig);
         bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
         registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         vm.stopPrank();
 
         // The default withdraws: the transceiver's own address is only the right answer where
@@ -279,7 +279,7 @@ contract CounterpartRoutingTest is Test {
 
         // Declaring one explicitly is what the grade forces you to do.
         vm.prank(msig);
-        transceiver.setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xACE5)));
+        ext(address(transceiver)).setCounterpart(zkKey, Erc7930.encodeEvm(324, address(0xACE5)));
         assertEq(transceiver.counterpartOn(zkKey), abi.encodePacked(address(0xACE5)));
     }
 
@@ -309,6 +309,6 @@ contract CounterpartRoutingTest is Test {
 
     function test_setRoutingIsOwnerGated() public {
         vm.expectRevert();
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
     }
 }

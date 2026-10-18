@@ -8,7 +8,13 @@ import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceive
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
-import {TransceiverDeployment, deployTransceiverProxy, checkGovernorHomeId} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    checkGovernorHomeId,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice LayerZero's contracts. OApp checks the endpoint itself, so no gateway role is granted.
 library LzDeploy {
@@ -21,11 +27,11 @@ library LzDeploy {
     }
 
     function transceiverImplementation(address endpoint) internal returns (address) {
-        return address(new LzTransceiver(endpoint));
+        return address(new LzTransceiver(endpoint, transceiverExtension()));
     }
 
     function zkSyncTransceiverImplementation(address endpoint) internal returns (address) {
-        return address(new LzZkSyncTransceiver(endpoint));
+        return address(new LzZkSyncTransceiver(endpoint, zkSyncTransceiverExtension()));
     }
 
     /// @param homeEid LayerZero's eid for the governor's home.

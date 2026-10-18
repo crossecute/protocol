@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
@@ -13,6 +13,8 @@ import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract OpStackTransceiverHarness is OpStackTransceiver {
+    constructor() OpStackTransceiver(transceiverExtension()) {}
+
     event InboundHandled(bytes32 chainKey);
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)

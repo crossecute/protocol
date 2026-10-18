@@ -227,18 +227,21 @@ currency as an explicit asset.
 Who inherits what:
 
 ```
-Roles                      ← TransceiverBase, RolesEnumerable
+Roles                      ← TransceiverCore, RolesEnumerable
 RolesEnumerable            ← TransmitterBase, ReceiverBase
 Executor                   ← TransmitterBase, ReceiverBase
 ReentrancyGuardUpgradeable ← ReceiverBase
 
 OutboundBase → TransmitterBase                  the home account
-OutboundBase → TransceiverBase → DivergentTransceiver → ZkSyncTransceiver / TronTransceiver
+OutboundBase → TransceiverCore → TransceiverBase → DivergentTransceiver → ZkSyncTransceiver / TronTransceiver
+               TransceiverCore → TransceiverExtension → DivergentTransceiverExtension → zkSync / Tron variants
 ReceiverBase                                    the destination account; not an OutboundBase
 ```
 
 `TransceiverBase` is the only contract with both a send side and a receive side, and its
 receive side is `_onInbound` alone: it decodes an `Envelope` and runs no payload of its own.
+Its initialization, owner configuration, and views run in `TransceiverExtension`, which its
+`fallback` reaches by `DELEGATECALL`, against the transceiver's own storage.
 A transmitter sends and executes locally but never receives over the wire. A receiver
 receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `_onMessage`, both
 `finalize` overloads, and `execute` under one lock.
@@ -250,8 +253,10 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `accountSalt`, `predictCrossAccount`, `predictReceiver`, `createTransmitter`, `predictTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `reportsReceiver`, `reportPayload`, `withdraw`, `receive()`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `CROSS_PROXY_INIT_CODE_HASH` |
-| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash` |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
+| `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `accountSalt`, `predictCrossAccount`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `treasury` |
+| `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `CROSS_PROXY_INIT_CODE_HASH` |
+| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
 | `messaging/transceiver/DivergentAccounts.sol` | The zkSync and Tron account formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `accountBytecodeHash` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 

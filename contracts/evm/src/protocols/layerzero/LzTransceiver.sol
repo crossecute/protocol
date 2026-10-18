@@ -39,7 +39,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     ///      counterpart, so a peer that differs would close the lane for good: both are write-once.
     error PeerNotCounterpart(uint32 eid);
 
-    constructor(address _endpoint) OAppUpgradeable(_endpoint) {
+    constructor(address _endpoint, address extension_) OAppUpgradeable(_endpoint) TransceiverBase(extension_) {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
 
@@ -178,7 +178,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
 
 /// @notice The LayerZero transceiver on every chain whose addresses match Ethereum's.
 contract LzTransceiver is LzTransceiverBase {
-    constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
+    constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
     function initialize(TransceiverConfig memory c, uint32 governorHomeEid, address governorHomeDvn)
         external

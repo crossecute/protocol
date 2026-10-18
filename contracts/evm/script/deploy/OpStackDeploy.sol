@@ -4,7 +4,12 @@ pragma solidity ^0.8.20;
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
-import {TransceiverDeployment, deployTransceiverProxy, checkGovernorHomeId} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    checkGovernorHomeId,
+    transceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 import {VM, check} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 
@@ -21,7 +26,7 @@ library OpStackDeploy {
     }
 
     function transceiverImplementation() internal returns (address) {
-        return address(new OpStackTransceiver());
+        return address(new OpStackTransceiver(transceiverExtension()));
     }
 
     /// @param homeMessenger The messenger on this chain that reaches the governor's home.

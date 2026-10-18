@@ -350,7 +350,7 @@ an event topic, a selector, an argument order. Holding the copy makes a change a
 reviewed diff on our schedule rather than a side effect of a dependency bump.
 
 **The core contracts implement `IERC7786GatewaySource` and `IERC7786Recipient` directly**,
-the route slot holds a chain identifier, and `TransceiverBase._recipientOn` builds the
+the route slot holds a chain identifier, and `OutboundBase._recipientOn` builds the
 recipient. `CrosschainLinked(Upgradeable)` is not adopted: it sits behind `Bytes.sol` and
 its four `mcopy` sites, so it cannot compile at `paris`, and independently its per-contract
 `_links` table and its own gateway allowlist would replace the shared-transceiver routing

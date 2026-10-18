@@ -7,7 +7,7 @@ import {OpStackInteropTransmitter} from "src/protocols/op-stack/OpStackInteropTr
 import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
 import {VM, check} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
-import {TransceiverDeployment, deployTransceiverProxy} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, deployTransceiverProxy, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice `op-stack-l2-l2`'s contracts. The messenger is a predeploy, so nothing provider-specific
 ///         is an argument, and it is the gateway.
@@ -21,7 +21,7 @@ library OpStackInteropDeploy {
     }
 
     function transceiverImplementation() internal returns (address) {
-        return address(new OpStackInteropTransceiver());
+        return address(new OpStackInteropTransceiver(transceiverExtension()));
     }
 
     /// @dev Refused where interop is not live: the transceiver's only gateway would be an

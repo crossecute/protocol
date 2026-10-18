@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {
     DivergentTransceiver,
     ZkSyncTransceiver,
@@ -16,7 +17,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 /// @notice `LzTransceiverBase` on zkSync Era: zkSync's address derivation and deployment.
 contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
-    constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
+    constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
     /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
@@ -31,13 +32,13 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
         _initGovernorHomePeer(c, governorHomeEid);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
-        public
+    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        internal
         view
-        override(TransceiverBase, ZkSyncTransceiver)
+        override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
@@ -47,7 +48,7 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
     function _parityAddress(bytes32 chainKey)
         internal
         view
-        override(TransceiverBase, DivergentTransceiver)
+        override(TransceiverCore, DivergentTransceiver)
         returns (address)
     {
         return super._parityAddress(chainKey);
@@ -70,7 +71,7 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
 
 /// @notice `LzTransceiverBase` on Tron: Tron's address derivation only.
 contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
-    constructor(address _endpoint) LzTransceiverBase(_endpoint) {}
+    constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
     /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
     function initialize(
@@ -84,19 +85,19 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
         _initGovernorHomePeer(c, governorHomeEid);
     }
 
-    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
-        public
+    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        internal
         view
-        override(TransceiverBase, TronTransceiver)
+        override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super.predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossAccount(owner, salt, homeChainKey);
     }
 
     function _parityAddress(bytes32 chainKey)
         internal
         view
-        override(TransceiverBase, DivergentTransceiver)
+        override(TransceiverCore, DivergentTransceiver)
         returns (address)
     {
         return super._parityAddress(chainKey);

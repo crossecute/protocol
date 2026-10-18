@@ -4,7 +4,12 @@ pragma solidity ^0.8.20;
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
-import {TransceiverDeployment, deployTransceiverProxy, checkGovernorHomeId} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    checkGovernorHomeId,
+    transceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice Wormhole's contracts. The Core bridge holds the gateway role, though delivery
 ///         through `executeVAAv1` is permissionless.
@@ -23,7 +28,7 @@ library WormholeDeploy {
     }
 
     function transceiverImplementation(Endpoints memory e) internal returns (address) {
-        return address(new WormholeTransceiver(e.coreBridge, e.executor));
+        return address(new WormholeTransceiver(e.coreBridge, e.executor, transceiverExtension()));
     }
 
     /// @param homeChain Wormhole's chain id for the governor's home.

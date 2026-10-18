@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
@@ -22,7 +22,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
     ///         account address.
     address public immutable router;
 
-    constructor(address router_) {
+    constructor(address router_, address extension_) TransceiverBase(extension_) {
         if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }
@@ -82,7 +82,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
 
 /// @notice The CCIP transceiver on every chain whose addresses match Ethereum's.
 contract CcipTransceiver is CcipTransceiverBase {
-    constructor(address router_) CcipTransceiverBase(router_) {}
+    constructor(address router_, address extension_) CcipTransceiverBase(router_, extension_) {}
 
     function initialize(TransceiverConfig memory c, uint64 governorHomeSelector) external initializer {
         __CcipTransceiver_init(c, governorHomeSelector);

@@ -23,6 +23,8 @@ import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 ///
 /// @dev No zkSync or Tron variant: an OP Stack chain uses Ethereum's CREATE2 formula.
 contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
+    constructor(address extension_) TransceiverBase(extension_) {}
+
     /// @dev Grants `GATEWAY_ROLE` to the messenger: `receiveOpStackMessage` is gated on it.
     function initialize(TransceiverConfig memory c) external initializer {
         _grantInitialRole(GATEWAY_ROLE, OpStackInteropMessage.MESSENGER);

@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
@@ -22,8 +21,10 @@ import {
     transceiverConfig,
     AnyGatewayReceiver,
     AnyGatewayTransceiver,
-    AnyGatewayTransmitter
+    AnyGatewayTransmitter,
+    ext
 } from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
 ///      without a provider behind it.
@@ -109,7 +110,7 @@ contract ReportingTransceiver is AnyGatewayTransceiver {
     ///      authenticating the origin. The carried transmitter sits at the receiver's own
     ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, home(), predictCrossAccount(owner, salt, home()), calls);
+        _bootstrapInbound(owner, salt, home(), _predictCrossAccount(owner, salt, home()), calls);
     }
 }
 
@@ -122,8 +123,8 @@ abstract contract WiresHome is Test {
         registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Predetermined);
 
         vm.startPrank(s.owner());
-        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        s.setRoute(home(), Erc7930.encodeEvmChain(1));
+        ext(address(s)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(s)).setRoute(home(), Erc7930.encodeEvmChain(1));
         vm.stopPrank();
     }
 }
@@ -157,14 +158,14 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 0, "no message left");
-        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0, "but the account exists");
+        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0, "but the account exists");
     }
 
     /// @dev And it would be a downgrade, not merely waste. A derivation is `Predetermined`;
     ///      anything arriving over a bridge is graded `Unique`, which is strictly less.
     function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
         ReportingTransceiver s = _remote(false);
-        address predicted = s.predictCrossAccount(owner, SALT, home());
+        address predicted = ext(address(s)).predictCrossAccount(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -177,7 +178,7 @@ contract ReceiverReportTest is WiresHome {
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
         ReportingTransceiver s = _remote(true);
-        address created = s.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(s)).predictCrossAccount(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -201,7 +202,7 @@ contract ReceiverReportTest is WiresHome {
         ReportingTransceiver s = _remote(true);
         s.setReportFee(0.01 ether);
         vm.deal(address(s), 1 ether);
-        address created = s.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(s)).predictCrossAccount(owner, SALT, home());
         gas = bound(gas, 30_000, 1_500_000);
 
         // forge-lint: disable-next-line(return-bomb) the harness returns nothing
@@ -229,7 +230,7 @@ contract ReceiverReportTest is WiresHome {
             keccak256(s.sentPayload()),
             keccak256(
                 Envelope.encodeReceiverReport(
-                    a, b, Erc7930.encodeEvm(block.chainid, s.predictCrossAccount(a, b, home()))
+                    a, b, Erc7930.encodeEvm(block.chainid, ext(address(s)).predictCrossAccount(a, b, home()))
                 )
             )
         );
@@ -263,7 +264,7 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            s.predictCrossAccount(owner, SALT, home()).code.length,
+            ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length,
             0,
             "no account, so the bootstrap can be retried once funded"
         );
@@ -279,17 +280,17 @@ contract ReceiverReportTest is WiresHome {
         bytes32 provider = registry.addMessageProvider("test");
         registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Unique);
         vm.startPrank(s.owner());
-        s.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
-        s.setRoute(home(), Erc7930.encodeEvmChain(1));
+        ext(address(s)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
+        ext(address(s)).setRoute(home(), Erc7930.encodeEvmChain(1));
         vm.stopPrank();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, home(), Provenance.Unique
+                TransceiverCore.InsufficientCounterpartProvenance.selector, home(), Provenance.Unique
             )
         );
         s.inbound(owner, SALT, new Call[](0));
-        assertEq(s.predictCrossAccount(owner, SALT, home()).code.length, 0, "no account");
+        assertEq(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length, 0, "no account");
     }
 
     /// @notice The report is priced, not handed the balance.
@@ -317,8 +318,8 @@ contract ReceiverReportTest is WiresHome {
         ReportingTransceiver s = _remote(true);
         vm.deal(address(s), 1 ether);
 
-        address receiver = s.predictCrossAccount(owner, SALT, home());
-        bytes memory expected = s.reportPayload(owner, SALT, receiver);
+        address receiver = ext(address(s)).predictCrossAccount(owner, SALT, home());
+        bytes memory expected = ext(address(s)).reportPayload(owner, SALT, receiver);
 
         // Priced through the surface `OutboundBase` now exposes, before anything is sent.
         uint256 quoted = s.quoteMessage(Erc7930.encodeEvm(1, address(s)), expected, new bytes[](0));
@@ -345,13 +346,13 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
-        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0);
     }
 
     /// @dev A transceiver with no treasury could never release its float, so it is refused.
     function test_aZeroTreasuryIsRefused() public {
         ReportingTransceiver s = new ReportingTransceiver();
-        vm.expectRevert(TransceiverBase.NoTreasury.selector);
+        vm.expectRevert(TransceiverCore.NoTreasury.selector);
         s.initialize(msig, address(impl), true, address(0));
     }
 
@@ -364,7 +365,7 @@ contract ReceiverReportTest is WiresHome {
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertTrue(s.predictCrossAccount(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0);
     }
 
     /* ================================ the flag ================================= */
@@ -376,12 +377,12 @@ contract ReceiverReportTest is WiresHome {
 
         (bool ok,) = address(s).call(abi.encodeWithSignature("setAddressesDiverge(bool)", true));
         assertFalse(ok, "no such function");
-        assertFalse(s.addressesDiverge());
+        assertFalse(ext(address(s)).addressesDiverge());
     }
 
     function test_theFlagIsReadable() public {
-        assertFalse(_remote(false).addressesDiverge());
-        assertTrue(_remote(true).addressesDiverge());
+        assertFalse(ext(address(_remote(false))).addressesDiverge());
+        assertTrue(ext(address(_remote(true))).addressesDiverge());
     }
 
     /// @dev It is single-shot along with the rest of the initializer, so a second call
@@ -391,7 +392,7 @@ contract ReceiverReportTest is WiresHome {
 
         vm.expectRevert();
         s.initialize(msig, address(impl), true, address(0x7EA5));
-        assertFalse(s.addressesDiverge());
+        assertFalse(ext(address(s)).addressesDiverge());
     }
 }
 
@@ -481,11 +482,11 @@ contract ReceiverReportRoundTripTest is WiresHome {
         vm.stopPrank();
 
         vm.startPrank(homeSide.owner());
-        homeSide.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        homeSide.setCounterpart(remoteKey, Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)));
-        homeSide.setRoute(remoteKey, Erc7930.encodeEvmChain(REMOTE_CHAIN));
+        ext(address(homeSide)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(homeSide)).setCounterpart(remoteKey, Erc7930.encodeEvm(REMOTE_CHAIN, address(remote)));
+        ext(address(homeSide)).setRoute(remoteKey, Erc7930.encodeEvmChain(REMOTE_CHAIN));
         // A reporting destination refuses a free bootstrap.
-        homeSide.setBootstrapFee(remoteKey, 1);
+        ext(address(homeSide)).setBootstrapFee(remoteKey, 1);
         vm.stopPrank();
 
         // The account the report is about. It has to exist and to have been stood up on the
@@ -530,7 +531,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         // The report lands, and only then does the destination become sendable, at the
         // address the remote actually created, not at the guess.
         bytes memory produced = _report();
-        address created = remote.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         assertTrue(account.isReachable(remoteKey), "now it is");
@@ -595,7 +596,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      address the reporting side actually created. No `Envelope.encode*` in the assertion.
     function test_theReportingSidesBytesDecodeAtHome() public {
         bytes memory produced = _report();
-        address created = remote.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
 
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
@@ -613,7 +614,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      not before.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
-        address created = remote.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, created);
@@ -640,7 +641,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         bytes memory produced = _report();
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        address created = remote.predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
         assertTrue(account.isReceiverPinned(remoteKey));
 
         (bool ok,) = address(account)
@@ -661,12 +662,12 @@ contract ReceiverReportRoundTripTest is WiresHome {
         bytes32 derivedKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         assertFalse(registry.requiresReceiverCallback(derivedKey));
         vm.startPrank(homeSide.owner());
-        homeSide.setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
+        ext(address(homeSide)).setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
         vm.stopPrank();
 
         // Its counterpart is the parity default, this transceiver's own address.
         bytes memory produced = _report();
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainDoesNotReport.selector, derivedKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainDoesNotReport.selector, derivedKey));
         homeSide.arrive(Erc7930.encodeEvmChain(42161), abi.encodePacked(address(homeSide)), produced);
     }
 
@@ -679,7 +680,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
 
         bytes memory elsewhere = Envelope.encodeReceiverReport(owner, SALT, Erc7930.encodeEvm(42161, address(0xBAD)));
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ReportedChainMismatch.selector, remoteKey, otherKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ReportedChainMismatch.selector, remoteKey, otherKey));
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
     }
 
@@ -747,12 +748,12 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
-        t.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
-        t.setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(t)).setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
+        ext(address(t)).setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
+        ext(address(t)).setRoute(parityKey, Erc7930.encodeEvmChain(PARITY));
         // Only the chain that reports is charged.
-        t.setBootstrapFee(divergingKey, FEE);
+        ext(address(t)).setBootstrapFee(divergingKey, FEE);
         vm.stopPrank();
 
         vm.prank(owner);
@@ -763,7 +764,7 @@ contract BootstrapFeeTest is Test {
     /// @dev A parity destination pays nothing. It sends no report and creates no obligation,
     ///      so charging it would tax the common case to fund the rare one.
     function test_aParityDestinationIsNotCharged() public {
-        assertEq(t.bootstrapFee(parityKey), 0);
+        assertEq(ext(address(t)).bootstrapFee(parityKey), 0);
         vm.prank(owner);
         account.bootstrap(PARITY, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, 0);
@@ -773,13 +774,13 @@ contract BootstrapFeeTest is Test {
     ///      drain it. The send and its quote both refuse.
     function test_aReportingDestinationWithNoFeeIsRefused() public {
         vm.prank(t.owner());
-        t.setBootstrapFee(divergingKey, 0);
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NoBootstrapFee.selector, divergingKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
         account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NoBootstrapFee.selector, divergingKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
@@ -811,7 +812,7 @@ contract BootstrapFeeTest is Test {
     function test_underpayingTheFeeReverts() public {
         vm.deal(address(account), FEE);
         vm.prank(address(account));
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.InsufficientBootstrapFee.selector, FEE, FEE - 1));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.InsufficientBootstrapFee.selector, FEE, FEE - 1));
         t.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
     }
 
@@ -865,7 +866,7 @@ contract BootstrapFeeTest is Test {
 
     function test_onlyTheOwnerSetsTheFee() public {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        t.setBootstrapFee(divergingKey, 1);
+        ext(address(t)).setBootstrapFee(divergingKey, 1);
     }
 
     /// @dev The treasury is write-once and there is no fee withdrawal. Together those remove
@@ -873,7 +874,7 @@ contract BootstrapFeeTest is Test {
     ///      destination to name, and no setter to repoint. The float leaves only at the
     ///      treasury's own call.
     function test_thereIsNoWithdrawalAndNoWayToRepointTheTreasury() public {
-        assertEq(t.treasury(), treasury);
+        assertEq(ext(address(t)).treasury(), treasury);
 
         (bool withdrew,) = address(t).call(abi.encodeWithSignature("withdrawFees(address)", msig));
         assertFalse(withdrew);
@@ -896,10 +897,10 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(h.owner());
-        h.setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Unique);
-        h.setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
-        h.setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
-        h.setBootstrapFee(divergingKey, FEE);
+        ext(address(h)).setRouting(IChainRegistryRefs(address(registry)), second, Provenance.Unique);
+        ext(address(h)).setCounterpart(divergingKey, Erc7930.encodeEvm(DIVERGING, address(0xC0DE)));
+        ext(address(h)).setRoute(divergingKey, Erc7930.encodeEvmChain(DIVERGING));
+        ext(address(h)).setBootstrapFee(divergingKey, FEE);
         vm.stopPrank();
 
         vm.prank(owner);
@@ -907,7 +908,7 @@ contract BootstrapFeeTest is Test {
         vm.deal(address(a), 1 ether);
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.FeeTransferFailed.selector, rejecting, FEE));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.FeeTransferFailed.selector, rejecting, FEE));
         a.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 }

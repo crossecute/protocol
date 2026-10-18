@@ -18,27 +18,60 @@ import {Call} from "src/messaging/Call.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
+import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
+import {OpStackInteropTransceiver} from "src/protocols/op-stack/OpStackInteropTransceiver.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice Every provider endpoint a constructor takes is immutable, so each refuses zero, as
-///         does the messenger OP Stack's receiver takes at initialization.
+///         does the messenger OP Stack's receiver takes at initialization. A transceiver's
+///         extension is immutable too, and must have code.
 contract ZeroEndpointTest is Test {
     address constant E = address(0xE0);
 
     function test_singleEndpointConstructorsRefuseZero() public {
-        bytes[10] memory code = [
+        bytes[7] memory code = [
             type(CcipReceiver).creationCode,
-            type(CcipTransceiver).creationCode,
             type(CcipTransmitter).creationCode,
             type(HyperlaneReceiver).creationCode,
-            type(HyperlaneTransceiver).creationCode,
             type(HyperlaneTransmitter).creationCode,
             type(LzReceiver).creationCode,
-            type(LzTransceiver).creationCode,
             type(LzTransmitter).creationCode,
             type(WormholeReceiver).creationCode
         ];
         for (uint256 i; i < code.length; ++i) {
             _assertRefusesOnlyZero(code[i], abi.encode(address(0)), abi.encode(E));
+        }
+
+        address extension = transceiverExtension();
+        bytes[3] memory transceivers = [
+            type(CcipTransceiver).creationCode,
+            type(HyperlaneTransceiver).creationCode,
+            type(LzTransceiver).creationCode
+        ];
+        for (uint256 i; i < transceivers.length; ++i) {
+            _assertRefusesOnlyZero(transceivers[i], abi.encode(address(0), extension), abi.encode(E, extension));
+        }
+    }
+
+    /// @dev Every selector a transceiver does not declare runs in its extension, so one without
+    ///      code would answer every such call with success and no data.
+    function test_transceiversRefuseAnExtensionWithoutCode() public {
+        bytes[6] memory code = [
+            abi.encodePacked(type(CcipTransceiver).creationCode, abi.encode(E)),
+            abi.encodePacked(type(HyperlaneTransceiver).creationCode, abi.encode(E)),
+            abi.encodePacked(type(LzTransceiver).creationCode, abi.encode(E)),
+            abi.encodePacked(type(WormholeTransceiver).creationCode, abi.encode(E, E)),
+            type(OpStackTransceiver).creationCode,
+            type(OpStackInteropTransceiver).creationCode
+        ];
+        address[2] memory codeless = [address(0), address(0xE7)];
+        for (uint256 i; i < code.length; ++i) {
+            for (uint256 j; j < codeless.length; ++j) {
+                (address deployed, bytes memory reason) = _create(abi.encodePacked(code[i], abi.encode(codeless[j])));
+                assertEq(deployed, address(0));
+                assertEq(reason, abi.encodeWithSelector(TransceiverBase.NoExtension.selector));
+            }
         }
     }
 
@@ -56,12 +89,15 @@ contract ZeroEndpointTest is Test {
 
     /// @dev The core bridge and the Executor, each zeroed in turn.
     function test_wormholeRefusesAnyZeroEndpoint() public {
-        bytes[2] memory code = [type(WormholeTransceiver).creationCode, type(WormholeTransmitter).creationCode];
-        for (uint256 i; i < code.length; ++i) {
-            bytes memory good = abi.encode(E, E);
-            _assertRefusesOnlyZero(code[i], abi.encode(address(0), E), good);
-            _assertRefusesOnlyZero(code[i], abi.encode(E, address(0)), good);
-        }
+        bytes memory transmitter = type(WormholeTransmitter).creationCode;
+        _assertRefusesOnlyZero(transmitter, abi.encode(address(0), E), abi.encode(E, E));
+        _assertRefusesOnlyZero(transmitter, abi.encode(E, address(0)), abi.encode(E, E));
+
+        address extension = transceiverExtension();
+        bytes memory transceiver = type(WormholeTransceiver).creationCode;
+        bytes memory good = abi.encode(E, E, extension);
+        _assertRefusesOnlyZero(transceiver, abi.encode(address(0), E, extension), good);
+        _assertRefusesOnlyZero(transceiver, abi.encode(E, address(0), extension), good);
     }
 
     function _assertRefusesOnlyZero(bytes memory code, bytes memory zeroArgs, bytes memory goodArgs) internal {
