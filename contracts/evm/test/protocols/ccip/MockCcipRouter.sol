@@ -27,20 +27,8 @@ contract MockCcipRouter {
         return _sent.length;
     }
 
-    function sent(uint256 i)
-        external
-        view
-        returns (
-            uint64 destChainSelector,
-            bytes memory receiver,
-            bytes memory data,
-            address feeToken,
-            bytes memory extraArgs,
-            uint256 value
-        )
-    {
-        Sent storage s = _sent[i];
-        return (s.destChainSelector, s.receiver, s.data, s.feeToken, s.extraArgs, s.value);
+    function sent(uint256 i) external view returns (Sent memory) {
+        return _sent[i];
     }
 
     uint256 public feePerByte;

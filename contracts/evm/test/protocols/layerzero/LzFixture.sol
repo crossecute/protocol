@@ -150,8 +150,7 @@ abstract contract LzFixture is ProviderGasFixture {
 
     /// @dev Type-3 options with one `lzReceive` option, whose gas is bytes 6 to 22.
     function _lastGasLimit() internal view override returns (uint256) {
-        (,,, bytes memory options,,) = endpoint.sent(endpoint.sentLength() - 1);
-        return _uintAt(options, 6, 16);
+        return _uintAt(endpoint.sent(endpoint.sentLength() - 1).options, 6, 16);
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {

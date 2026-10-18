@@ -39,28 +39,27 @@ contract LzTransceiverSendTest is
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(endpoint.sentLength(), 1);
-        (uint32 dstEid,,,,,) = endpoint.sent(0);
-        assertEq(dstEid, BASE_EID);
+        assertEq(endpoint.sent(0).dstEid, BASE_EID);
     }
 
     function _supportedAttribute() internal pure override returns (bytes memory) {
         return abi.encodePacked(LzMessage.OPTIONS_ATTRIBUTE, hex"0003");
     }
 
-    function _lastPaid() internal view override returns (uint256 value) {
-        (,,,, value,) = endpoint.sent(endpoint.sentLength() - 1);
+    function _lastPaid() internal view override returns (uint256) {
+        return endpoint.sent(endpoint.sentLength() - 1).value;
     }
 
-    function _lastSentBody() internal view override returns (bytes memory message) {
-        (,, message,,,) = endpoint.sent(endpoint.sentLength() - 1);
+    function _lastSentBody() internal view override returns (bytes memory) {
+        return endpoint.sent(endpoint.sentLength() - 1).message;
     }
 
     function _setProviderFeePerByte(uint256 perByte) internal override {
         endpoint.setFeePerByte(perByte);
     }
 
-    function _lastRefundAddress() internal view override returns (address refundAddress) {
-        (,,,,, refundAddress) = endpoint.sent(endpoint.sentLength() - 1);
+    function _lastRefundAddress() internal view override returns (address) {
+        return endpoint.sent(endpoint.sentLength() - 1).refundAddress;
     }
 
     /// @dev OApp refuses an eid with no peer before the binding's table is consulted.

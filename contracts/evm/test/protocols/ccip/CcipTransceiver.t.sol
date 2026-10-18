@@ -12,6 +12,7 @@ import {
     ProviderGovernorHomeSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipFixture, CcipZkSyncHarness} from "test/protocols/ccip/CcipFixture.sol";
+import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 
 contract CcipTransceiverInboundTest is ProviderGatewayRoleSpec, CcipFixture {
     /// @dev Answering false makes the off-ramp mark a message executed without delivering it.
@@ -37,9 +38,9 @@ contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
     }
 
     function _assertReportSent() internal view override {
-        (uint64 selector, bytes memory receiver,,,,) = router.sent(0);
-        assertEq(selector, BASE_SELECTOR, "to the account's home");
-        assertEq(receiver, abi.encode(HOME_TRANSCEIVER), "to its transceiver there");
+        MockCcipRouter.Sent memory s = router.sent(0);
+        assertEq(s.destChainSelector, BASE_SELECTOR, "to the account's home");
+        assertEq(s.receiver, abi.encode(HOME_TRANSCEIVER), "to its transceiver there");
     }
 
     function test_itAnswersSupportsInterface() public view {
