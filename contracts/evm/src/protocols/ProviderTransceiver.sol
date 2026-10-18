@@ -13,7 +13,7 @@ abstract contract ProviderTransceiver is TransceiverBase, ProviderChainId {
     /// @notice Name the provider's own delivery contract as a gateway, for a binding whose
     ///         entry point checks `GATEWAY_ROLE`.
     function __ProviderTransceiver_init(address providerGateway) internal onlyInitializing {
-        grantRole(GATEWAY_ROLE, providerGateway);
+        _grantInitialRole(GATEWAY_ROLE, providerGateway);
     }
 
     /// @notice Name the provider's id for the governor's home, so the bootstrap that creates

@@ -23,7 +23,7 @@ contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverIni
         revert UseOpStackInitializer();
     }
 
-    /// @dev `grantRole` is `onlyInitializing`, so this initializer is the only window the
+    /// @dev `_grantInitialRole` is `onlyInitializing`, so this initializer is the only window the
     ///      messenger's gateway grant ever gets.
     function initialize(address sourceTransmitter_, Call[] calldata calls, address messenger)
         external
@@ -31,7 +31,7 @@ contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverIni
         initializer
     {
         if (messenger == address(0)) revert ProviderAddress.ZeroEndpoint();
-        grantRole(GATEWAY_ROLE, messenger);
+        _grantInitialRole(GATEWAY_ROLE, messenger);
         __ReceiverBase_init(sourceTransmitter_, bytes32(uint256(uint160(messenger))), calls);
     }
 

@@ -243,7 +243,7 @@ abstract contract TransceiverBase is Initializable, OutboundBase, Roles, Ownable
 
         for (uint256 i; i < c.gateways.length; ++i) {
             if (c.gateways[i] != address(0)) {
-                grantRole(GATEWAY_ROLE, c.gateways[i]);
+                _grantInitialRole(GATEWAY_ROLE, c.gateways[i]);
             }
         }
     }

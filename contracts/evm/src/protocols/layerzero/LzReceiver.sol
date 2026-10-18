@@ -44,7 +44,7 @@ contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzRec
         initializer
     {
         __OAppReceiver_init(address(this));
-        grantRole(GATEWAY_ROLE, address(endpoint));
+        _grantInitialRole(GATEWAY_ROLE, address(endpoint));
         _initHomePeer(homeEid, sourceTransmitter_);
         if (homeDvn != address(0)) LzMessage.pinReceiveDvn(address(endpoint), homeEid, homeDvn);
         __ReceiverBase_init(sourceTransmitter_, bytes32(uint256(homeEid)), calls);

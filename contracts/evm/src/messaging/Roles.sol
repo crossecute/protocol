@@ -25,16 +25,27 @@ abstract contract Roles is AccessControlUpgradeable {
     /// @dev Namespaced so a provider SDK's own role of the same name cannot share its members.
     bytes32 public constant GATEWAY_ROLE = keccak256("crossecute.role.GATEWAY");
 
-    /// @notice Grant a role. The only grant path, and it closes when initialization does.
+    /// @dev The caller of `grantRole` was not this contract.
+    error GrantNotFromSelf(address caller);
+
+    /// @notice Grant a role from this contract's own bootstrap payload, so an owner's first
+    ///         payload can name its account's gateway. Closes when initialization does.
     ///
     /// @dev `onlyInitializing` replaces OZ's admin gate. No role has an admin, so after arming
     ///      no caller can add a member: not the owner, the governor, the creating transceiver, or a
-    ///      member. The window includes the bootstrap payload, which `__ReceiverBase_init` runs
-    ///      while initializing, so an owner's first payload can name its account's gateway.
+    ///      member. The flag stays set while `__ReceiverBase_init` runs the payload, so every
+    ///      contract the payload reaches would be inside the window too; only a self-call from
+    ///      `_execute` is accepted (#68).
     ///
     /// @dev `public` because it overrides OZ's `grantRole`; a separate entry point would leave
     ///      the inherited one reachable.
     function grantRole(bytes32 role, address account) public virtual override onlyInitializing {
+        if (msg.sender != address(this)) revert GrantNotFromSelf(msg.sender);
+        _grantRole(role, account);
+    }
+
+    /// @notice An initializer's own grant, such as the provider endpoint it names as a gateway.
+    function _grantInitialRole(bytes32 role, address account) internal onlyInitializing {
         _grantRole(role, account);
     }
 

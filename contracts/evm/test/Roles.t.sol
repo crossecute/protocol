@@ -23,7 +23,7 @@ import {UnsendableTransmitter} from "test/Harness.sol";
 ///      front of the bootstrap payload, and this is that setup.
 contract RoleReceiver is ReceiverBase {
     function initializeWith(address transmitter_, address gateway_, Call[] calldata calls) external initializer {
-        grantRole(GATEWAY_ROLE, gateway_);
+        _grantInitialRole(GATEWAY_ROLE, gateway_);
         __ReceiverBase_init(transmitter_, ChainKey.forEvm(1), calls);
     }
 }
@@ -31,7 +31,7 @@ contract RoleReceiver is ReceiverBase {
 contract RoleTransmitter is UnsendableTransmitter {
     function initializeWith(address owner_, address transceiver_, address gateway_) external initializer {
         __OwnableTransmitter_init(owner_, transceiver_, bytes32(0));
-        grantRole(GATEWAY_ROLE, gateway_);
+        _grantInitialRole(GATEWAY_ROLE, gateway_);
     }
 
     /// @dev Stands in for what a binding's `_sendMessage` does before it calls out.
@@ -46,7 +46,7 @@ contract PlainRoleHarness is Roles {}
 contract RoleHarness is RolesEnumerable {
     function initialize(address[] calldata gateways) external initializer {
         for (uint256 i; i < gateways.length; ++i) {
-            if (gateways[i] != address(0)) grantRole(GATEWAY_ROLE, gateways[i]);
+            if (gateways[i] != address(0)) _grantInitialRole(GATEWAY_ROLE, gateways[i]);
         }
     }
 
@@ -60,7 +60,7 @@ contract RoleHarness is RolesEnumerable {
     /// @dev Proves the window is what closes the grant, rather than a caller check: this is
     ///      the same call the initializer makes, made one transaction later.
     function grantLate(bytes32 role, address account) external {
-        grantRole(role, account);
+        _grantInitialRole(role, account);
     }
 }
 
