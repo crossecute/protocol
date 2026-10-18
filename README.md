@@ -466,7 +466,8 @@ CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on 
 request (`.github/workflows/test.yml`). `src/` is linted a second time under the `lint-src`
 profile, which also enforces the detector heuristics the default profile leaves off for tests.
 `forge build --sizes src` fails if any contract exceeds EIP-170's 24,576-byte limit, which
-`forge test` does not check.
+`forge test` does not check. `script/check-selectors.sh` fails if a transceiver declares a
+selector its extension also declares under another signature.
 
 Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
 reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the

@@ -1009,6 +1009,8 @@ A binding is done when every line is true.
 - [ ] The transceiver's constructor takes the chain's extension and passes it to
       `TransceiverBase`, which refuses one without code; the `<P>Deploy` library builds it
       with `transceiverExtension()`
+- [ ] `script/check-selectors.sh` passes: no transceiver function shares a selector with an
+      extension function of another signature
 - [ ] Every provider endpoint a constructor takes refused at zero
       (`ProviderAddress.ZeroEndpoint`), with the plain receiver, transmitter, and transceiver
       deployed against zero in `test/protocols/ZeroEndpoint.t.sol`. The

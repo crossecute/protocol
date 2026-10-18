@@ -35,6 +35,10 @@ jobs:
       # forge test does not enforce (#29).
       - run: forge build --sizes src
 
+      # Fails if a transceiver and a TransceiverExtension share a selector under different
+      # signatures, which would shadow the extension function (#70).
+      - run: script/check-selectors.sh
+
       - run: forge lint -D notes
 
       - run: forge lint -D notes src
