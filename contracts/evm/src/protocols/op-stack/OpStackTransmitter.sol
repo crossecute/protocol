@@ -13,6 +13,8 @@ import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See
 ///      `docs/provider-research.md#7-op-stack-as-a-native-binding`.
 contract OpStackTransmitter is OwnableTransmitter {
+    bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
+
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override
@@ -33,8 +35,6 @@ contract OpStackTransmitter is OwnableTransmitter {
         providerIdOf(transceiver, recipient);
         return OpStackMessage.quote(recipient, attributes, _defaultGas(payload));
     }
-
-    bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE;

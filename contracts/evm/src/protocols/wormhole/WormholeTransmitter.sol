@@ -10,6 +10,9 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev Sender-only: no `executeVAAv1`, so R3.1 is answered by absence rather than a guard.
 ///      It is the Wormhole emitter its receivers authenticate.
 contract WormholeTransmitter is OwnableTransmitter {
+    bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
+    bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
+
     /// @notice Core bridge and Executor on this chain. Set on the implementation; safe because
     ///         the implementation address lives in the proxy's ERC-1967 slot, not its initcode,
     ///         so these never move a derived address.
@@ -41,9 +44,6 @@ contract WormholeTransmitter is OwnableTransmitter {
     {
         return WormholeMessage.quote(_route(recipient), recipient, attributes, _defaultGas(payload));
     }
-
-    bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
-    bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == WORMHOLE_EXECUTION_ATTRIBUTE || selector == WORMHOLE_PUBLISH_ONLY_ATTRIBUTE;
