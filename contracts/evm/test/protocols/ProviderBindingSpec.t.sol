@@ -25,6 +25,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
+import {Roles} from "src/messaging/Roles.sol";
 
 /// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
 ///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -409,6 +410,19 @@ contract ProviderConfiguredProbe {
 ///      code sees the call, while Hyperlane/CCIP/Wormhole/OP Stack check `GATEWAY_ROLE` in
 ///      their own inbound entry point. This spec asserts only the observable property (revert,
 ///      or `Delivered`), never where the check runs.
+/// @dev Calls back into the receiver whose bootstrap payload called it, as any contract the
+///      payload pays or calls could, and keeps the refusal.
+contract GatewayGrabber {
+    bytes public refusal;
+
+    function grab() external {
+        try Roles(msg.sender).grantRole(Roles(msg.sender).GATEWAY_ROLE(), address(this)) {}
+        catch (bytes memory reason) {
+            refusal = reason;
+        }
+    }
+}
+
 abstract contract ProviderReceiveSpec is ProviderFixture {
     event Delivered(uint256 callCount);
 
@@ -449,6 +463,34 @@ abstract contract ProviderReceiveSpec is ProviderFixture {
     function test_anImpersonatorIsRejected() public {
         vm.expectRevert();
         _deliverFrom(address(0xBAD));
+    }
+
+    /// @dev #68: the bootstrap payload runs while the receiver is still initializing, so every
+    ///      contract it reaches is inside the grant window. Only the receiver's own call grants.
+    function test_aBootstrapPayloadsCalleeCannotGrantItselfTheGateway() public {
+        GatewayGrabber grabber = new GatewayGrabber();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(grabber), value: 0, data: abi.encodeCall(GatewayGrabber.grab, ())});
+
+        address r = _deployReceiver(calls);
+
+        assertEq(grabber.refusal(), abi.encodeWithSelector(Roles.GrantNotFromSelf.selector, address(grabber)));
+        assertFalse(IAccessControl(r).hasRole(GATEWAY_ROLE, address(grabber)));
+    }
+
+    /// @dev What the grant window is for: the owner's first payload naming another gateway.
+    function test_aBootstrapPayloadCanNameAGatewayByCallingItsReceiver() public {
+        address second = address(0x6A7E);
+        address implementation = _receiverImplementation();
+        address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        Call[] memory calls = new Call[](1);
+        calls[0] =
+            Call({target: next, value: 0, data: abi.encodeCall(IAccessControl.grantRole, (GATEWAY_ROLE, second))});
+
+        address r = deployAccount(implementation, _initializeReceiver(SOURCE_TRANSMITTER, calls));
+
+        assertEq(r, next);
+        assertTrue(IAccessControl(r).hasRole(GATEWAY_ROLE, second));
     }
 
     function test_anUnconfiguredOriginIsRejected() public {

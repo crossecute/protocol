@@ -25,7 +25,7 @@ import {
     ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {toBytes32} from "test/Harness.sol";
-import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
+import {WormholeFixture, _vaa, _envelope, _withConsistency} from "test/protocols/wormhole/WormholeFixture.sol";
 
 contract WormholeTransceiverSendTest is
     ProviderIdTableSpec,
@@ -286,6 +286,22 @@ contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
         vm.expectRevert(
             abi.encodeWithSelector(WormholeMessage.WrongDestination.selector, uint16(31), toBytes32(receiver))
         );
+        WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
+    }
+
+    /// @dev A VAA signed before its source finalized could be undone by a reorg after it ran.
+    function test_aVaaBelowFinalityIsRejected() public {
+        bytes memory vaa = _withConsistency(
+            _vaa(
+                1,
+                BASE_WORMHOLE_CHAIN,
+                SOURCE_TRANSMITTER,
+                0,
+                _envelope(HERE_WORMHOLE_CHAIN, receiver, Payload.encodeCalls(new Call[](0)))
+            ),
+            200
+        );
+        vm.expectRevert(abi.encodeWithSelector(WormholeMessage.NotFinalized.selector, uint8(200)));
         WormholeReceiver(payable(receiver)).executeVAAv1(vaa);
     }
 

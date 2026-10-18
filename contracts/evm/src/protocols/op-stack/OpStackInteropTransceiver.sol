@@ -25,7 +25,7 @@ import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
     /// @dev Grants `GATEWAY_ROLE` to the messenger: `receiveOpStackMessage` is gated on it.
     function initialize(TransceiverConfig memory c) external initializer {
-        grantRole(GATEWAY_ROLE, OpStackInteropMessage.MESSENGER);
+        _grantInitialRole(GATEWAY_ROLE, OpStackInteropMessage.MESSENGER);
         __TransceiverBase_init(c);
     }
 

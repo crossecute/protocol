@@ -199,7 +199,7 @@ the transmitter and the transceiver.
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
 | nothing for authority | `OwnableUpgradeable`, via `TransceiverBase` | There is no seam to answer. The owner is derived in `__TransceiverBase_init` from the config's governor owner, salt, and home: the governor's own account on this chain. A binding MUST NOT bring a second ownership implementation: an SDK using OpenZeppelin's own `OwnableUpgradeable` shares this one, which is correct, but two different systems over the same operations would mean an authority gated on one is exercisable through the other. |
-| nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `grantRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
+| nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `_grantInitialRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
 | `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. There is no second chance: `CrossProxy` locks in the same call that arms it. |
@@ -497,11 +497,13 @@ always this account's, since wherever the provider's transceiver is not yet depl
 `deployedBy` can place code there (#61).
 
 **R3.0.1 An account MUST be granted its gateway during initialization, and there is no
-later chance.** `Roles.grantRole` is `onlyInitializing`, so after the arming call there is
+later chance.** Every grant is `onlyInitializing`, so after the arming call there is
 nobody a grant could come from. Not the transceiver that created it, not the governor, and not
-the account's own owner. A binding therefore calls `grantRole(GATEWAY_ROLE, endpoint)` from its
-own `initialize`, ahead of `__ReceiverBase_init`, where the rest of its provider setup already
-goes. The same applies to a transmitter, and to a transceiver, whose gateways normally arrive
+the account's own owner. A binding therefore calls `_grantInitialRole(GATEWAY_ROLE, endpoint)`
+from its own `initialize`, ahead of `__ReceiverBase_init`, where the rest of its provider setup
+already goes. The public `grantRole` accepts only the contract's own call: the window is still
+open while `__ReceiverBase_init` runs the bootstrap payload, and every contract that payload
+reaches would otherwise be inside it (#68). The same applies to a transmitter, and to a transceiver, whose gateways normally arrive
 in its initializer's `gateways` argument instead.
 
 **R3.0.2 A binding MUST NOT add a grant path, and MUST NOT expect one.** The only membership
@@ -954,7 +956,7 @@ contract GatewayReceiver is ReceiverBase, GatewayEndpoint {
         override
         initializer
     {
-        grantRole(GATEWAY_ROLE, address(gateway));
+        _grantInitialRole(GATEWAY_ROLE, address(gateway));
         __ReceiverBase_init(transmitter_, homeOrigin_, calls);
     }
 }
