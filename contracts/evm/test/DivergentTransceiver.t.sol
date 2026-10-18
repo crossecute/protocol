@@ -18,6 +18,7 @@ import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {SymHarness, Rcv, RecordingTransmitter} from "test/Transceiver.t.sol";
+import {transceiverConfig} from "test/Harness.sol";
 
 contract ZkSym is ZkSyncTransceiver, SymHarness {
     function initialize(TransceiverConfig memory c, bytes32 hash) external initializer {
@@ -88,18 +89,7 @@ contract DivergentTransceiverTest is Test {
     address alice = address(0xA11CE);
 
     function _config() internal returns (TransceiverConfig memory) {
-        return TransceiverConfig({
-            gateways: new address[](0),
-            transmitterImplementation: address(new RecordingTransmitter()),
-            receiverImplementation: address(new Rcv()),
-            governorOwner: msig,
-            governorSalt: bytes32(0),
-            governorHome: Erc7930.encodeEvmChain(1),
-            treasury: address(0x7EA5),
-            chainRegistry: IChainRegistryRefs(address(0)),
-            messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unknown
-        });
+        return transceiverConfig(msig, address(new RecordingTransmitter()), address(new Rcv()), address(0x7EA5));
     }
 
     function _zk() internal returns (ZkSym t) {

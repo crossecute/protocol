@@ -54,7 +54,7 @@ contract ZeroEndpointTest is Test {
             );
     }
 
-    /// @dev Core bridge, executor router, and quoter, each zeroed in turn.
+    /// @dev The core bridge and the Executor, each zeroed in turn.
     function test_wormholeRefusesAnyZeroEndpoint() public {
         bytes[2] memory code = [type(WormholeTransceiver).creationCode, type(WormholeTransmitter).creationCode];
         for (uint256 i; i < code.length; ++i) {

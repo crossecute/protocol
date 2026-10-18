@@ -2,7 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
-import {ProviderFixture, ProviderIdFixture, ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";

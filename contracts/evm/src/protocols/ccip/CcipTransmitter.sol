@@ -8,8 +8,10 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
-///      absence rather than a guard.
+///      absence rather than a guard, and no gateway is granted here.
 contract CcipTransmitter is OwnableTransmitter {
+    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
+
     /// @notice CCIP Router on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its
     ///         initcode, so this never moves a derived account address.
@@ -46,12 +48,7 @@ contract CcipTransmitter is OwnableTransmitter {
         return CcipMessage.quote(router, selector, recipient, payload, attributes, _defaultGas(payload));
     }
 
-    bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
-
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
     }
-
-    /// @notice No gateway is granted here: the Router holds `GATEWAY_ROLE` on the
-    ///         transceiver and receivers; the transmitter has no inbound entry point (R3.1).
 }

@@ -19,7 +19,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -149,8 +150,7 @@ abstract contract LzFixture is ProviderGasFixture {
 
     /// @dev Type-3 options with one `lzReceive` option, whose gas is bytes 6 to 22.
     function _lastGasLimit() internal view override returns (uint256) {
-        (,,, bytes memory options,,) = endpoint.sent(endpoint.sentLength() - 1);
-        return _uintAt(options, 6, 16);
+        return _uintAt(endpoint.sent(endpoint.sentLength() - 1).options, 6, 16);
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {

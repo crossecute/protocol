@@ -14,6 +14,8 @@ import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
 ///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
 contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOncePeer {
+    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
+
     /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
     ///        because the implementation address lives in the proxy's ERC-1967 slot, not its
     ///        initcode, so this never moves a derived account address.
@@ -25,10 +27,9 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
     ///      know every chain this account will ever reach. The owner calls `setPeer` once per
     ///      destination before its first send there; `LzWriteOncePeer` makes it final.
     function initialize(address owner_, address transceiver_, bytes32 salt_) external override initializer {
-        __Ownable_init(owner_);
         // Delegate = self: R6.4, any provider-side authority over an account is the account.
         __OAppSender_init(address(this));
-        __TransmitterBase_init(owner_, transceiver_, salt_);
+        __OwnableTransmitter_init(owner_, transceiver_, salt_);
     }
 
     function _checkOwner() internal view override(OwnableTransmitter, OwnableUpgradeable) {
@@ -76,9 +77,6 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
                 address(endpoint), dstEid, _getPeerOrRevert(dstEid), payload, attributes, _defaultGas(payload)
             );
     }
-
-    /// @notice One attribute, `LzMessage.OPTIONS_ATTRIBUTE`. Anything else is refused per ERC-7786.
-    bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == LZ_OPTIONS_ATTRIBUTE;

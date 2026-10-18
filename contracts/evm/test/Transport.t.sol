@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {Provenance} from "src/registry/Provenance.sol";
 import {Test} from "forge-std/Test.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
@@ -19,13 +17,13 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver, AnyGatewayTransmitter} from "test/Harness.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
 address constant PROVIDER = address(0xFEE);
 
-contract MockTransmitter is OwnableTransmitter {
+contract MockTransmitter is AnyGatewayTransmitter {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentCount;
@@ -67,22 +65,10 @@ contract MockTransmitter is OwnableTransmitter {
     {
         return payload.length * WEI_PER_BYTE + attributes.length;
     }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
 }
 
 /// @dev Exposes the inbound funnel a provider adapter would route into.
-contract MockReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
+contract MockReceiver is AnyGatewayReceiver {
     function deliver(bytes calldata payload) external {
         _onMessage(payload);
     }
@@ -90,26 +76,15 @@ contract MockReceiver is ReceiverBase {
 
 /// @dev Records the bootstrap the transmitter asked for. The routing hooks are answered
 ///      directly, so `bootstrap`'s provenance lookup succeeds without a registry.
-contract MockTransceiver is TransceiverBase {
+contract MockTransceiver is AnyGatewayTransceiver {
     bytes public sentPayload;
     uint256 public bootCount;
     address public bootRefund;
 
     function initialize(address, address impl) external initializer {
-        __TransceiverBase_init(
-            TransceiverConfig({
-                gateways: new address[](0),
-                transmitterImplementation: impl,
-                receiverImplementation: impl,
-                governorOwner: address(0x5165),
-                governorSalt: bytes32(0),
-                governorHome: Erc7930.encodeEvmChain(block.chainid),
-                treasury: address(0x7EA5),
-                chainRegistry: IChainRegistryRefs(address(0)),
-                messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unknown
-            })
-        );
+        TransceiverConfig memory c = transceiverConfig(address(0x5165), impl, impl, address(0x7EA5));
+        c.governorHome = Erc7930.encodeEvmChain(block.chainid);
+        __TransceiverBase_init(c);
     }
 
     function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
@@ -174,12 +149,6 @@ contract MockTransceiver is TransceiverBase {
         returns (uint256)
     {
         return payload.length * WEI_PER_BYTE;
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 

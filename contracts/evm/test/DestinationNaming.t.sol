@@ -15,7 +15,7 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {transceiverConfig} from "test/protocols/ProviderFixture.sol";
+import {transceiverConfig} from "test/Harness.sol";
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
 ///         a chainKey across the protocol, and the provider's own id only at the edge.

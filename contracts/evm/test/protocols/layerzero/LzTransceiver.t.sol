@@ -13,7 +13,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
-import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {
     ProviderZkSyncSpec,
     ProviderInboundSpec,
@@ -23,6 +23,7 @@ import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol
 import {LzTransceiver, LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzMessage, UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 
 address constant DVN = address(0xD7);
 
@@ -172,9 +173,9 @@ contract LzZkSyncTransceiverTest is ProviderZkSyncSpec, LzFixture {
     }
 
     function _assertReportSent() internal view override {
-        (uint32 dstEid,,,,, address refundAddress) = endpoint.sent(0);
-        assertEq(dstEid, BASE_EID, "to the account's home");
-        assertEq(refundAddress, zk, "an overpayment returns to the float, not the relayer");
+        MockLzEndpoint.Sent memory s = endpoint.sent(0);
+        assertEq(s.dstEid, BASE_EID, "to the account's home");
+        assertEq(s.refundAddress, zk, "an overpayment returns to the float, not the relayer");
     }
 }
 

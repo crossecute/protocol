@@ -12,6 +12,8 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      4.9.3's zero-arg `__Ownable_init()` (see
 ///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`).
 contract HyperlaneTransmitter is OwnableTransmitter {
+    bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
+
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
     ///         so this never moves a derived account address.
@@ -45,8 +47,6 @@ contract HyperlaneTransmitter is OwnableTransmitter {
         return
             HyperlaneMessage.quote(mailbox, domain, recipient, payload, attributes, _refundTo(), _defaultGas(payload));
     }
-
-    bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == HYPERLANE_GAS_LIMIT_ATTRIBUTE;

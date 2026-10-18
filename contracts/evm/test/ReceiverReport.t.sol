@@ -5,24 +5,29 @@ import {Test} from "forge-std/Test.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {
+    home,
+    transceiverConfig,
+    AnyGatewayReceiver,
+    AnyGatewayTransceiver,
+    AnyGatewayTransmitter
+} from "test/Harness.sol";
 
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
 ///      without a provider behind it.
-contract Transmitter is OwnableTransmitter {
+contract Transmitter is AnyGatewayTransmitter {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
@@ -35,49 +40,14 @@ contract Transmitter is OwnableTransmitter {
     function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal pure override returns (uint256) {
         return 0;
     }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
 }
 
-contract Receiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
-
-/// @dev Where every account the reporting side creates is homed.
-function home() pure returns (bytes32) {
-    return ChainKey.forEvm(1);
-}
-
-function config(address governor, address transmitterImpl, address receiverImpl, address treasury)
-    pure
-    returns (TransceiverConfig memory)
-{
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: transmitterImpl,
-        receiverImplementation: receiverImpl,
-        governorOwner: governor,
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: treasury,
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
+contract Receiver is AnyGatewayReceiver {}
 
 /// @dev A transceiver whose divergence flag is an initializer choice, so both arms can be
 ///      exercised against otherwise identical contracts. A diverging one stands in for the
 ///      zkSync and Tron variants, whose account creation fails closed on Forge's EVM.
-contract ReportingTransceiver is TransceiverBase {
+contract ReportingTransceiver is AnyGatewayTransceiver {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -92,7 +62,7 @@ contract ReportingTransceiver is TransceiverBase {
         external
         initializer
     {
-        __TransceiverBase_init(config(governor, address(0xBEEF), impl, treasury_), addressesDiverge_);
+        __TransceiverBase_init(transceiverConfig(governor, address(0xBEEF), impl, treasury_), addressesDiverge_);
     }
 
     /// @dev Stands in for a dry float: a provider whose fee cannot be paid reverts here.
@@ -140,12 +110,6 @@ contract ReportingTransceiver is TransceiverBase {
     ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
         _bootstrapInbound(owner, salt, home(), predictCrossAccount(owner, salt, home()), calls);
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
@@ -435,9 +399,9 @@ contract ReceiverReportTest is WiresHome {
 
 /// @dev The home side: a real transceiver, a real registry, and nothing hand-built.
 ///      Everything below feeds the reporting side's actual wire bytes into it.
-contract HomeTransceiver is TransceiverBase {
+contract HomeTransceiver is AnyGatewayTransceiver {
     function initialize(address governor, address treasury_, address transmitterImplementation_) external initializer {
-        __TransceiverBase_init(config(governor, transmitterImplementation_, address(0xBEEF), treasury_));
+        __TransceiverBase_init(transceiverConfig(governor, transmitterImplementation_, address(0xBEEF), treasury_));
     }
 
     /// @dev Records what the base said it may spend, which is `msg.value` minus the fee.
@@ -470,12 +434,6 @@ contract HomeTransceiver is TransceiverBase {
     ///      arguments `_onInbound` takes, and does nothing else.
     function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 

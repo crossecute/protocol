@@ -24,7 +24,7 @@ import {
     ProviderTransmitterSendSpec,
     ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
 
 contract WormholeTransceiverSendTest is

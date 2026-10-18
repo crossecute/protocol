@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -14,7 +13,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///
 /// @dev Implements no `interchainSecurityModule()`, so `Mailbox.recipientIsm` falls back to
 ///      the Mailbox's `defaultIsm`, which the Mailbox owner can change.
-contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
+contract HyperlaneReceiver is ProviderReceiver, IMessageRecipient {
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
     ///         so this never moves a derived account address.
@@ -25,15 +24,8 @@ contract HyperlaneReceiver is ReceiverBase, IMessageRecipient {
         mailbox = mailbox_;
     }
 
-    /// @dev `grantRole` is `onlyInitializing`, so this initializer is the only window the
-    ///      Mailbox's gateway grant ever gets.
-    function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
-        external
-        override
-        initializer
-    {
-        grantRole(GATEWAY_ROLE, mailbox);
-        __ReceiverBase_init(sourceTransmitter_, homeOrigin_, calls);
+    function _providerGateway() internal view override returns (address) {
+        return mailbox;
     }
 
     /// @dev `Mailbox.process` verifies the message against its ISM, not which contract sent

@@ -8,6 +8,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
+import {AnyGatewayReceiver} from "test/Harness.sol";
 
 /// @dev Records what it was called with, and can be made to fail.
 contract Target {
@@ -32,13 +33,7 @@ contract Target {
 }
 
 /// @dev Uses the concrete `_execute` (no override), with an openable allowlist.
-contract PolicyReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
+contract PolicyReceiver is AnyGatewayReceiver {
     mapping(address => mapping(bytes4 => bool)) public permitted;
 
     function allow(address target, bytes4 selector) external {
@@ -51,13 +46,7 @@ contract PolicyReceiver is ReceiverBase {
 }
 
 /// @dev A receiver that implements no policy at all, to check the open default.
-contract SilentReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
+contract SilentReceiver is AnyGatewayReceiver {}
 
 contract ExecutionTest is Test {
     PolicyReceiver r;

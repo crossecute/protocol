@@ -33,20 +33,19 @@ contract CcipTransceiverSendTest is
 {
     function _assertLastSendTargetedConfiguredDestination() internal view override {
         assertEq(router.sentLength(), 1);
-        (uint64 destChainSelector,,,,,) = router.sent(0);
-        assertEq(destChainSelector, BASE_SELECTOR);
+        assertEq(router.sent(0).destChainSelector, BASE_SELECTOR);
     }
 
     function _supportedAttribute() internal pure override returns (bytes memory) {
         return abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(uint256(1), true));
     }
 
-    function _lastPaid() internal view override returns (uint256 value) {
-        (,,,,, value) = router.sent(router.sentLength() - 1);
+    function _lastPaid() internal view override returns (uint256) {
+        return router.sent(router.sentLength() - 1).value;
     }
 
-    function _lastSentBody() internal view override returns (bytes memory data) {
-        (,, data,,,) = router.sent(router.sentLength() - 1);
+    function _lastSentBody() internal view override returns (bytes memory) {
+        return router.sent(router.sentLength() - 1).data;
     }
 
     function _setProviderFeePerByte(uint256 perByte) internal override {
@@ -55,8 +54,7 @@ contract CcipTransceiverSendTest is
 
     function test_sendUsesTheRecipientsAddressAsTheCcipReceiver() public {
         harness.sendMessagePublic(_configuredRecipient(), "x", new bytes[](0), 0);
-        (, bytes memory receiver,,,,) = router.sent(0);
-        assertEq(receiver, abi.encode(REMOTE_COUNTERPART));
+        assertEq(router.sent(0).receiver, abi.encode(REMOTE_COUNTERPART));
     }
 
     /// @dev Previously a short body failed inside `abi.decode` and a long one was truncated.
@@ -73,9 +71,9 @@ contract CcipTransceiverSendTest is
 
         harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
 
-        (,,,, bytes memory extraArgs,) = router.sent(0);
         assertEq(
-            extraArgs, Client._argsToBytes(Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
+            router.sent(0).extraArgs,
+            Client._argsToBytes(Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
         );
     }
 }

@@ -6,30 +6,8 @@ import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
-import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {Provenance} from "src/registry/Provenance.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-
-/// @notice A transceiver configuration with no registry, homed on Ethereum.
-function transceiverConfig(address receiverImplementation) pure returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: receiverImplementation,
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
-
-function toBytes32(address a) pure returns (bytes32) {
-    return bytes32(uint256(uint160(a)));
-}
+import {transceiverConfig} from "test/Harness.sol";
 
 function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, Call[] memory calls)
     pure

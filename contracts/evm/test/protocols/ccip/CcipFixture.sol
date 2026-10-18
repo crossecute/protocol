@@ -132,8 +132,7 @@ abstract contract CcipFixture is ProviderGasFixture {
 
     /// @dev `EVMExtraArgsV2` after its 4-byte tag; the gas limit is its first word.
     function _lastGasLimit() internal view override returns (uint256) {
-        (,,,, bytes memory extraArgs,) = router.sent(router.sentLength() - 1);
-        return _uintAt(extraArgs, 4, 32);
+        return _uintAt(router.sent(router.sentLength() - 1).extraArgs, 4, 32);
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {

@@ -127,7 +127,7 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | --- | --- | --- |
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Public, and so linked, where inlining it would put a transceiver over EIP-170 (`WormholeMessage`, `LzMessage`). |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
-| `<P>Receiver.sol` | `ReceiverBase` | The per-user account on every other chain. Receives on path A. |
+| `<P>Receiver.sol` | `ProviderReceiver`, or `ReceiverBase` where setup goes beyond the gateway grant | The per-user account on every other chain. Receives on path A. `ProviderReceiver` supplies `initialize`, which grants `GATEWAY_ROLE` to `_providerGateway()` and then runs `__ReceiverBase_init`; LayerZero and `op-stack-l1-l2` declare their own initializer instead, since they set a peer or take the gateway as an argument. |
 | `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
 | `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
 
@@ -190,7 +190,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` last so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
+| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Where the only setup is the gateway grant, extend `ProviderReceiver` and answer `_providerGateway()`. Otherwise declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` last so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
 | an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the transceiver for exactly this. |
 | nothing else | | A binding MUST NOT expect the transceiver to reach a receiver after creation. `commit`, `cancel`, and `execute` are gated on the transmitter alone; the initializer is the transceiver's only call, ever. |
 
@@ -1002,8 +1002,17 @@ A binding is done when every line is true.
 - [ ] `_sendMessage` overridden on the transmitter and the transceiver
 - [ ] `_quoteMessage` overridden on the same two, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
-- [ ] `GATEWAY_ROLE` granted in every receiver's initializer, and inbound routed into
-      `_onInbound` on the transceiver
+- [ ] Every provider endpoint a constructor takes refused at zero
+      (`ProviderAddress.ZeroEndpoint`), with the plain receiver, transmitter, and transceiver
+      deployed against zero in `test/protocols/ZeroEndpoint.t.sol`. The
+      existing bindings follow one of three shapes: the inherited SDK holds the endpoint and
+      the binding adds only the check (LayerZero's OApp `endpoint`); each contract holds it as
+      an immutable (CCIP's `router`, Hyperlane's `mailbox`, Wormhole's `coreBridge` and
+      `executor`); or no constructor takes one, because the id table or the receiver's
+      initializer supplies it (`op-stack-l1-l2`) or it is a predeploy constant
+      (`op-stack-l2-l2`)
+- [ ] `GATEWAY_ROLE` granted in every receiver's initializer (`ProviderReceiver` does it where
+      that is the only setup), and inbound routed into `_onInbound` on the transceiver
 - [ ] Inbound reverts on the transmitter
 - [ ] Initialized with the governor's owner, salt, and home, the chain's `Treasury`, the
       registry and provider, the governor home's provider id, and every transport the

@@ -24,7 +24,7 @@ contract MockLzEndpoint {
         address refundAddress;
     }
 
-    Sent[] public sent;
+    Sent[] internal _sent;
     mapping(address => address) public delegateOf;
 
     MessagingFee public fee;
@@ -46,7 +46,11 @@ contract MockLzEndpoint {
     }
 
     function sentLength() external view returns (uint256) {
-        return sent.length;
+        return _sent.length;
+    }
+
+    function sent(uint256 i) external view returns (Sent memory) {
+        return _sent[i];
     }
 
     function quote(
@@ -67,7 +71,7 @@ contract MockLzEndpoint {
     {
         MessagingFee memory required = _priced(_params.message);
         if (msg.value < required.nativeFee) revert InsufficientFee(required.nativeFee, msg.value);
-        sent.push(
+        _sent.push(
             Sent({
                 dstEid: _params.dstEid,
                 receiver: _params.receiver,
@@ -78,8 +82,8 @@ contract MockLzEndpoint {
             })
         );
         return MessagingReceipt({
-            guid: keccak256(abi.encode(sent.length, _params.dstEid, _params.message)),
-            nonce: uint64(sent.length),
+            guid: keccak256(abi.encode(_sent.length, _params.dstEid, _params.message)),
+            nonce: uint64(_sent.length),
             fee: required
         });
     }

@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -21,16 +20,16 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call, Calls} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {UnsendableTransceiver} from "test/Unsendable.sol";
+import {
+    home,
+    transceiverConfig,
+    UnsendableTransceiver,
+    AnyGatewayReceiver,
+    AnyGatewayTransceiver
+} from "test/Harness.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
-contract MockReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
+contract MockReceiver is AnyGatewayReceiver {
     bytes[] public executed;
 
     /// @dev Records and performs. A bootstrap payload's self-call to `commit` only works
@@ -70,13 +69,7 @@ contract Switchboard {
 }
 
 /// @dev A receiver whose payload can be made to fail, to exercise atomic delivery.
-contract RevertingReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
+contract RevertingReceiver is AnyGatewayReceiver {
     Switchboard public immutable switchboard;
     bytes[] public executed;
 
@@ -99,36 +92,10 @@ contract RevertingReceiver is ReceiverBase {
     }
 }
 
-/// @dev Where every account in these tests is homed: another chain, so the transceiver here
-///      creates receivers for it.
-function home() pure returns (bytes32) {
-    return ChainKey.forEvm(1);
-}
-
-function transceiverConfig(
-    address governor,
-    address receiverImplementation,
-    address treasury,
-    address[] memory gateways
-) pure returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: gateways,
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: receiverImplementation,
-        governorOwner: governor,
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: treasury,
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
-
 /// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
-contract MockTransceiver is UnsendableTransceiver {
+contract MockTransceiver is AnyGatewayTransceiver {
     function initialize(address governor, address receiverImplementation_) external initializer {
-        __TransceiverBase_init(transceiverConfig(governor, receiverImplementation_, address(0x7EA5), new address[](0)));
+        __TransceiverBase_init(transceiverConfig(governor, address(0xBEEF), receiverImplementation_, address(0x7EA5)));
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
@@ -136,12 +103,6 @@ contract MockTransceiver is UnsendableTransceiver {
     ///      address, as it does for an account homed on a parity chain.
     function inbound(address transmitter, Call[] calldata calls) external {
         _bootstrapInbound(transmitter, bytes32(0), home(), predictCrossAccount(transmitter, bytes32(0), home()), calls);
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
@@ -156,7 +117,9 @@ contract MsigTransceiver is UnsendableTransceiver {
         address[] calldata gateways_,
         address receiverImplementation_
     ) external initializer {
-        __TransceiverBase_init(transceiverConfig(governor, receiverImplementation_, treasury_, gateways_));
+        TransceiverConfig memory c = transceiverConfig(governor, address(0xBEEF), receiverImplementation_, treasury_);
+        c.gateways = gateways_;
+        __TransceiverBase_init(c);
     }
 
     /// @dev No blanket gateway answer here, unlike the other harnesses in this file. These
