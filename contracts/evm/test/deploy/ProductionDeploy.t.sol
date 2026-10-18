@@ -16,6 +16,7 @@ import {DeployHyperlane} from "script/DeployHyperlane.s.sol";
 import {DeployWormhole} from "script/DeployWormhole.s.sol";
 import {DeployOpStack} from "script/DeployOpStack.s.sol";
 import {DeployOpStackInterop} from "script/DeployOpStackInterop.s.sol";
+import {ext} from "test/Harness.sol";
 
 /// @notice What every production-script test shares: the environment, a chain
 ///         `deploy/chains.toml` configures, and a registry seeded with every provider's record.
@@ -96,7 +97,7 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
         address t = _script().run();
         bytes32 provider = keccak256(bytes(_providerName()));
         assertEq(t, ChainRegistry(REGISTRY).predictTransceiver(ChainKey.forEvm(HOME_CHAIN_ID), provider));
-        assertEq(TransceiverBase(payable(t)).messageProvider(), provider);
+        assertEq(ext(address(TransceiverBase(payable(t)))).messageProvider(), provider);
     }
 
     /// @dev A grade is write-once, so a registry that disagrees with deploy/chains.toml is

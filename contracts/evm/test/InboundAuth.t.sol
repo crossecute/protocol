@@ -6,13 +6,20 @@ import {Test} from "forge-std/Test.sol";
 
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
-import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver, AnyGatewayTransmitter} from "test/Harness.sol";
+import {
+    transceiverConfig,
+    AnyGatewayReceiver,
+    AnyGatewayTransceiver,
+    AnyGatewayTransmitter,
+    ext
+} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 contract MockReceiver is AnyGatewayReceiver {
     uint256 public executedCount;
@@ -94,8 +101,8 @@ contract InboundAuthTest is Test {
         vm.stopPrank();
 
         vm.startPrank(owner);
-        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        node.setRoute(homeKey, HOME_ROUTE);
+        ext(address(node)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(node)).setRoute(homeKey, HOME_ROUTE);
         vm.stopPrank();
     }
 
@@ -106,7 +113,7 @@ contract InboundAuthTest is Test {
     function test_aBootstrapFromTheCounterpartStandsTheReceiverUp() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
 
-        MockReceiver r = MockReceiver(payable(node.predictCrossAccount(transmitter, bytes32(0), homeKey)));
+        MockReceiver r = MockReceiver(payable(ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey)));
         assertEq(r.sourceTransmitter(), address(uint160(uint256(_homeTransmitter()))), "its peer is the carried one");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }
@@ -115,14 +122,14 @@ contract InboundAuthTest is Test {
     ///      counterpart. Both halves of the check are load-bearing.
     function test_theRightRouteFromTheWrongSenderIsRefused() public {
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, homeKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, homeKey));
         node.arrive(HOME_ROUTE, abi.encodePacked(address(0xBAD)), msg_);
     }
 
     function test_theRightSenderFromTheWrongRouteIsRefused() public {
         bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory msg_ = _bootstrapMsg();
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, baseKey));
         node.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
@@ -130,12 +137,12 @@ contract InboundAuthTest is Test {
     ///      bootstrap from it, and a receiver here is homed elsewhere.
     function test_aReceiverCannotBootstrapFromHere() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
-        address receiver = node.predictCrossAccount(transmitter, bytes32(0), homeKey);
+        address receiver = ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey);
 
         vm.deal(receiver, 1 ether);
         vm.prank(receiver);
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.NotTheAccount.selector, transmitter, bytes32(0), receiver)
+            abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, transmitter, bytes32(0), receiver)
         );
         node.bootstrap{value: 1 ether}(homeKey, transmitter, bytes32(0), _boot(), new bytes[](0));
     }
@@ -149,10 +156,10 @@ contract InboundAuthTest is Test {
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId), Provenance.Unique);
         vm.stopPrank();
         vm.startPrank(owner);
-        node.setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
-        node.setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
+        ext(address(node)).setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));
+        ext(address(node)).setRoute(chainKey, Erc7930.encodeEvmChain(chainId));
         // A reporting destination refuses a free bootstrap.
-        node.setBootstrapFee(chainKey, 1);
+        ext(address(node)).setBootstrapFee(chainKey, 1);
         vm.stopPrank();
     }
 
@@ -200,7 +207,7 @@ contract InboundAuthTest is Test {
         bytes32 baseKey = _wireReportingChain(8453, address(0xC0DE));
         bytes memory m = Envelope.encodeReceiverReport(transmitter, bytes32(0), bytes(""));
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, baseKey));
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(address(0xBAD)), m);
     }
 
@@ -221,12 +228,12 @@ contract InboundAuthTest is Test {
 
         // Raise it, and the same well-formed message from the same contract is refused.
         vm.prank(owner);
-        node.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
+        ext(address(node)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         bytes memory report2 =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Unique
+                TransceiverCore.InsufficientCounterpartProvenance.selector, chainKey, Provenance.Unique
             )
         );
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report2);
@@ -244,13 +251,13 @@ contract InboundAuthTest is Test {
         vm.prank(msig);
         registry.setSuspended(baseKey, true);
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, baseKey));
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
 
         address second = address(0x7A12);
         vm.startPrank(second);
         Transmitter acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, baseKey));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, baseKey));
         acct.bootstrap(8453, new Call[](0), new bytes[](0));
         vm.stopPrank();
 
@@ -258,7 +265,10 @@ contract InboundAuthTest is Test {
         registry.setSuspended(baseKey, false);
         node.arrive(Erc7930.encodeEvmChain(8453), abi.encodePacked(counterpart), report);
         assertEq(
-            Transmitter(payable(node.predictTransmitter(transmitter, bytes32(0)))).counterpartOn(baseKey).length, 20
+            Transmitter(payable(ext(address(node)).predictTransmitter(transmitter, bytes32(0))))
+            .counterpartOn(baseKey)
+            .length,
+            20
         );
     }
 
@@ -325,7 +335,7 @@ contract InboundAuthTest is Test {
 
     /// @dev The transmitter chain 1 would carry for `transmitter`'s account.
     function _homeTransmitter() internal view returns (bytes32) {
-        return bytes32(uint256(uint160(node.predictCrossAccount(transmitter, bytes32(0), homeKey))));
+        return bytes32(uint256(uint160(ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey))));
     }
 
     function _bootstrapMsg() internal view returns (bytes memory) {
@@ -338,7 +348,7 @@ contract InboundAuthTest is Test {
         bytes32 wide = bytes32(uint256(0xBEEF) << 160);
         bytes memory m = Envelope.encodeBootstrap(transmitter, bytes32(0), wide, _boot());
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.SourceTransmitterNotEvm.selector, wide));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.SourceTransmitterNotEvm.selector, wide));
         node.arrive(HOME_ROUTE, HOME_SENDER, m);
     }
 

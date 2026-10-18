@@ -327,7 +327,7 @@ contract ChainRegistry is Ownable {
 
     /// @notice Where an owner's account lands on `chainKey`, before it exists: the
     ///         transceiver from the provider's salt, then the account from the transceiver.
-    /// @dev The account salt must match `TransceiverBase.accountSalt`; it is written out
+    /// @dev The account salt must match `TransceiverCore._accountSalt`; it is written out
     ///      rather than imported, and `test/SaltedDeployment.t.sol` asserts the two agree.
     /// @param homeChainKey The chain the account is homed on, which need not be `chainKey`.
     function predictCrossAccount(
@@ -366,7 +366,7 @@ contract ChainRegistry is Ownable {
     /// @notice Whether accounts on `chainKey` must report their own address home.
     /// @dev True exactly where this contract cannot recompute addresses, so it cannot
     ///      disagree with the grades. Where a receiver landed is held by its transmitter, not
-    ///      here. The home's side of `TransceiverBase.addressesDiverge`.
+    ///      here. The home's side of `TransceiverExtension.addressesDiverge`.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
     }

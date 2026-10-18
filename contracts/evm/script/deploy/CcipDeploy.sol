@@ -5,7 +5,13 @@ import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
-import {TransceiverDeployment, deployTransceiverProxy, checkGovernorHomeId} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    checkGovernorHomeId,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice CCIP's contracts. The router is the gateway.
 library CcipDeploy {
@@ -18,11 +24,11 @@ library CcipDeploy {
     }
 
     function transceiverImplementation(address router) internal returns (address) {
-        return address(new CcipTransceiver(router));
+        return address(new CcipTransceiver(router, transceiverExtension()));
     }
 
     function zkSyncTransceiverImplementation(address router) internal returns (address) {
-        return address(new CcipZkSyncTransceiver(router));
+        return address(new CcipZkSyncTransceiver(router, zkSyncTransceiverExtension()));
     }
 
     /// @param homeSelector CCIP's chain selector for the governor's home.

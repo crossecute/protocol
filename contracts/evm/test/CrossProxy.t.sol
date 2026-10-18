@@ -7,6 +7,8 @@ import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.s
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
+import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -93,6 +95,23 @@ contract CrossProxyTest is Test {
         assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
     }
 
+    /// @dev Transceivers carry the hash as a literal, so the initcode stays out of their runtime.
+    function test_theTransceiversLiteralIsTheInitCodeHash() public {
+        assertEq(new TransceiverExtension().CROSS_PROXY_INIT_CODE_HASH(), keccak256(type(CrossProxy).creationCode));
+    }
+
+    /// @dev A transceiver deploys accounts from the stored copy, so it must be the initcode byte
+    ///      for byte, whatever the call.
+    function test_theStoredInitCodeIsTheInitCode() public {
+        InitCodeStore store = new InitCodeStore();
+        assertEq(store.load(), type(CrossProxy).creationCode);
+
+        (bool ok, bytes memory data) =
+            store.at().call(abi.encodeWithSignature("upgradeInitializeAndLock(address,bytes)", address(1), ""));
+        assertTrue(ok);
+        assertEq(data, type(CrossProxy).creationCode);
+    }
+
     /* ================================== the lock =============================== */
 
     /// @dev There is no state with a live key and a real implementation. The single admin
@@ -174,5 +193,18 @@ contract CrossProxyTest is Test {
 contract Shadower {
     function upgradeInitializeAndLock(address, bytes calldata) external pure returns (string memory) {
         return "reached the implementation";
+    }
+}
+
+/// @dev `CrossProxyInitCode` as a transceiver implementation uses it.
+contract InitCodeStore {
+    address public immutable at;
+
+    constructor() {
+        at = CrossProxyInitCode.store();
+    }
+
+    function load() external view returns (bytes memory) {
+        return CrossProxyInitCode.load(at);
     }
 }

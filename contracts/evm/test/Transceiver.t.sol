@@ -15,10 +15,11 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {MockTransmitter} from "test/Transport.t.sol";
-import {transceiverConfig, toBytes32} from "test/Harness.sol";
+import {transceiverConfig, toBytes32, TestTransceiver, ext} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @dev The transport every test transceiver here shares: it records what it was asked to send.
-abstract contract SymHarness is TransceiverBase {
+abstract contract SymHarness is TestTransceiver {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -163,14 +164,14 @@ contract TransceiverTest is Test {
 
         uint256[3] memory chains = [ETH, BASE, ZK];
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         for (uint256 i; i < 3; ++i) {
             if (chains[i] == chainId) continue;
             vm.stopPrank();
             registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Unique : Provenance.Predetermined);
             vm.startPrank(t.owner());
-            t.setRoute(_key(chains[i]), _route(chains[i]));
-            if (chains[i] == ZK) t.setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));
+            ext(address(t)).setRoute(_key(chains[i]), _route(chains[i]));
+            if (chains[i] == ZK) ext(address(t)).setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));
         }
         vm.stopPrank();
     }
@@ -193,7 +194,7 @@ contract TransceiverTest is Test {
         uint256 world = vm.snapshotState();
         Sym eth = _chain(ETH, false);
         address onEth = eth.owner();
-        assertEq(onEth, eth.predictTransmitter(msig, bytes32(0)), "the msig's transmitter at home");
+        assertEq(onEth, ext(address(eth)).predictTransmitter(msig, bytes32(0)), "the msig's transmitter at home");
 
         vm.revertToState(world);
         Sym base = _chain(BASE, false);
@@ -206,7 +207,7 @@ contract TransceiverTest is Test {
         vm.prank(alice);
         address account = t.createTransmitter(SALT);
 
-        assertEq(account, t.predictCrossAccount(alice, SALT, _key(BASE)));
+        assertEq(account, ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)));
         assertEq(RecordingTransmitter(account).owner(), alice, "transmitter logic, owned by its caller");
     }
 
@@ -259,7 +260,7 @@ contract TransceiverTest is Test {
         assertEq(owner, governor, "the governor's receiver sits on its transmitter's address");
         assertEq(ReceiverBase(payable(owner)).sourceTransmitter(), governor, "and answers to it");
         vm.prank(owner);
-        base.setRoute(_key(ZK), _route(ZK));
+        ext(address(base)).setRoute(_key(ZK), _route(ZK));
         assertEq(base.routeFor(_key(ZK)), _route(ZK), "and it configures the rest");
     }
 
@@ -272,7 +273,7 @@ contract TransceiverTest is Test {
         uint256 world = vm.snapshotState();
 
         Sym base = _chain(BASE, false);
-        address transmitter = base.predictTransmitter(alice, SALT);
+        address transmitter = ext(address(base)).predictTransmitter(alice, SALT);
         uint256 quote = base.quoteBootstrap(_key(ETH), alice, SALT, _calls(), new bytes[](0));
         vm.deal(transmitter, quote);
         vm.prank(transmitter);
@@ -287,7 +288,7 @@ contract TransceiverTest is Test {
         assertEq(address(eth), address(base), "one address on both chains");
         eth.arrive(_route(BASE), abi.encodePacked(address(eth)), sent);
 
-        address receiver = eth.predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(eth)).predictCrossAccount(alice, SALT, _key(BASE));
         assertEq(receiver, transmitter, "the receiver sits on its transmitter's address");
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
@@ -295,10 +296,10 @@ contract TransceiverTest is Test {
     /// @dev This chain is never a destination: an account homed here is its transmitter.
     function test_aBootstrapToThisChainIsRefused() public {
         Sym t = _chain(BASE, false);
-        address transmitter = t.predictTransmitter(alice, SALT);
+        address transmitter = ext(address(t)).predictTransmitter(alice, SALT);
 
         vm.prank(transmitter);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, _key(BASE)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.IsLocalChain.selector, _key(BASE)));
         t.bootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
     }
 
@@ -311,7 +312,7 @@ contract TransceiverTest is Test {
         vm.deal(address(account), 1 ether);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.IsLocalChain.selector, _key(BASE)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.IsLocalChain.selector, _key(BASE)));
         account.bootstrap(BASE, _calls(), new bytes[](0));
     }
 
@@ -337,7 +338,9 @@ contract TransceiverTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.ParityBroken.selector, t.predictCrossAccount(alice, SALT, _key(BASE)), wrong
+                TransceiverCore.ParityBroken.selector,
+                ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)),
+                wrong
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
@@ -348,12 +351,14 @@ contract TransceiverTest is Test {
     ///      under the mapped one, so every account from there would be unreachable.
     function test_anOriginMappedToTheWrongChainRefusesItsFirstBootstrap() public {
         Sym t = _chain(ETH, false);
-        address realTransmitter = t.predictCrossAccount(alice, SALT, _key(10));
+        address realTransmitter = ext(address(t)).predictCrossAccount(alice, SALT, _key(10));
         bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(realTransmitter), _calls());
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.ParityBroken.selector, t.predictCrossAccount(alice, SALT, _key(BASE)), realTransmitter
+                TransceiverCore.ParityBroken.selector,
+                ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)),
+                realTransmitter
             )
         );
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
@@ -368,7 +373,7 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(ZK), abi.encodePacked(zkTransceiver), m);
 
-        address receiver = t.predictCrossAccount(alice, SALT, _key(ZK));
+        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(ZK));
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), zkTransmitter);
     }
 
@@ -383,14 +388,14 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
 
-        address receiver = t.predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE));
         assertEq(t.sentCount(), 1, "one report");
         assertEq(t.sentRecipient(), Erc7930.encodeEvm(BASE, address(t)), "to the home");
-        assertEq(t.sentPayload(), t.reportPayload(alice, SALT, receiver));
+        assertEq(t.sentPayload(), ext(address(t)).reportPayload(alice, SALT, receiver));
         assertEq(t.sentRefundTo(), address(t), "the report's overpayment returns to the float");
 
         // Outside a report, a bootstrap's overpayment refunds the account again.
-        address transmitter = t.predictTransmitter(alice, SALT);
+        address transmitter = ext(address(t)).predictTransmitter(alice, SALT);
         uint256 quote = t.quoteBootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
         vm.deal(transmitter, quote);
         vm.prank(transmitter);
@@ -413,18 +418,18 @@ contract TransceiverTest is Test {
         vm.deal(address(t), 1 ether);
         uint256 fee = 0.01 ether;
         vm.prank(t.owner());
-        t.setBootstrapFee(_key(BASE), fee);
+        ext(address(t)).setBootstrapFee(_key(BASE), fee);
 
-        address receiver = t.predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE));
         bytes32 nestedSalt = keccak256("nested");
-        address nested = t.predictTransmitter(receiver, nestedSalt);
+        address nested = ext(address(t)).predictTransmitter(receiver, nestedSalt);
         uint256 paid = 0.05 ether;
         vm.deal(receiver, paid);
 
         Call[] memory calls = new Call[](2);
         calls[0] = Call(address(t), 0, abi.encodeCall(TransceiverBase.createTransmitter, (nestedSalt)));
         calls[1] = Call(nested, paid, abi.encodeCall(BootstrappingTransmitter.bootstrapTo, (_key(BASE))));
-        uint256 treasuryBefore = t.treasury().balance;
+        uint256 treasuryBefore = ext(address(t)).treasury().balance;
 
         t.arrive(
             _route(BASE),
@@ -441,10 +446,10 @@ contract TransceiverTest is Test {
         );
         assertEq(bootstrap.value, paid - fee, "sent with what its payer paid, less the fee");
         assertEq(bootstrap.refundTo, nested, "refunded to its caller, not the float");
-        assertEq(t.treasury().balance - treasuryBefore, fee, "and the fee reached the treasury");
+        assertEq(ext(address(t)).treasury().balance - treasuryBefore, fee, "and the fee reached the treasury");
 
         SymHarness.Sent memory report = t.sendAt(1);
-        bytes memory expected = t.reportPayload(alice, SALT, receiver);
+        bytes memory expected = ext(address(t)).reportPayload(alice, SALT, receiver);
         assertEq(report.payload, expected, "then the report");
         assertEq(report.value, expected.length, "at its quote");
         assertEq(report.refundTo, address(t), "refunded to the float");
@@ -469,10 +474,10 @@ contract TransceiverTest is Test {
         Sym t = _chain(ETH, false);
         vm.deal(address(t), 1 ether);
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTreasury.selector, address(this)));
-        t.withdraw(1 ether);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTreasury.selector, address(this)));
+        ext(address(t)).withdraw(1 ether);
 
-        Treasury treasury = Treasury(payable(t.treasury()));
+        Treasury treasury = Treasury(payable(ext(address(t)).treasury()));
         treasury.collect(IReportFloat(address(t)), 1 ether);
         assertEq(address(treasury).balance, 1 ether);
         assertEq(address(t).balance, 0);
@@ -485,19 +490,19 @@ contract TransceiverTest is Test {
             transceiverConfig(msig, address(new RecordingTransmitter()), address(0), address(1));
 
         Sym fresh = new Sym();
-        vm.expectRevert(TransceiverBase.NoAccountImplementation.selector);
+        vm.expectRevert(TransceiverCore.NoAccountImplementation.selector);
         fresh.initialize(c);
 
         c.receiverImplementation = address(new Rcv());
         c.treasury = address(0);
         fresh = new Sym();
-        vm.expectRevert(TransceiverBase.NoTreasury.selector);
+        vm.expectRevert(TransceiverCore.NoTreasury.selector);
         fresh.initialize(c);
 
         c.treasury = address(1);
         c.governorOwner = address(0);
         fresh = new Sym();
-        vm.expectRevert(TransceiverBase.ZeroOwner.selector);
+        vm.expectRevert(TransceiverCore.ZeroOwner.selector);
         fresh.initialize(c);
     }
 }

@@ -9,14 +9,17 @@ import {VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver, LzTronTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {home, transceiverConfig, AnyGatewayTransceiver} from "test/Harness.sol";
+import {home, transceiverConfig, AnyGatewayTransceiver, ext} from "test/Harness.sol";
+import {transceiverExtension, zkSyncTransceiverExtension} from "script/deploy/TransceiverDeploy.sol";
+import {TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -129,13 +132,19 @@ contract DivergingFormulaTransceiver is AnyGatewayTransceiver {
         overridePrediction = v;
     }
 
-    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
-        public
+    /// @dev This contract's own prediction, which `create` uses; the extension's
+    ///      `predictCrossAccount` keeps Ethereum's.
+    function predicted(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
+        return _predictCrossAccount(owner, salt, homeChainKey);
+    }
+
+    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+        internal
         view
         override
         returns (address)
     {
-        if (!overridePrediction) return super.predictCrossAccount(owner, salt, homeChainKey);
+        if (!overridePrediction) return super._predictCrossAccount(owner, salt, homeChainKey);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
         // Tron's prefix. `_deployAccount` is deliberately not overridden to match.
         return address(uint160(uint256(keccak256(abi.encode("other", owner, salt)))));
@@ -168,7 +177,7 @@ contract DivergingFormulaTest is Test {
     /// @dev The parity path is untouched: prediction and deployment agree, so the guard
     ///      never fires and the account arms normally.
     function test_theParityPathIsUnaffected() public {
-        address predicted = t.predictCrossAccount(owner, bytes32(0), t.localChainKey());
+        address predicted = ext(address(t)).predictCrossAccount(owner, bytes32(0), t.localChainKey());
         assertEq(t.create(owner, bytes32(0)), predicted);
         assertTrue(predicted.code.length != 0, "armed");
     }
@@ -178,14 +187,14 @@ contract DivergingFormulaTest is Test {
     ///      `extcodesize` check, which carries no reason data at all.
     function test_aHalfOverriddenDerivationIsRefusedByName() public {
         t.setOverridePrediction(true);
-        address predicted = t.predictCrossAccount(owner, bytes32(0), t.localChainKey());
+        address predicted = t.predicted(owner, bytes32(0), t.localChainKey());
         address wouldDeployTo = Create2.computeAddress(
             keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
         assertTrue(predicted != wouldDeployTo, "the two formulas disagree, by construction");
 
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverBase.AccountAddressMismatch.selector, predicted, wouldDeployTo)
+            abi.encodeWithSelector(TransceiverCore.AccountAddressMismatch.selector, predicted, wouldDeployTo)
         );
         t.create(owner, bytes32(0));
     }
@@ -202,7 +211,7 @@ contract DivergingFormulaTest is Test {
         t.create(owner, bytes32(0));
 
         assertEq(wouldDeployTo.code.length, 0, "no stranded proxy holding a live admin key");
-        assertEq(t.predictCrossAccount(owner, bytes32(0), t.localChainKey()).code.length, 0);
+        assertEq(t.predicted(owner, bytes32(0), t.localChainKey()).code.length, 0);
     }
 }
 
@@ -215,7 +224,7 @@ contract MinimalAccount {
 ///      these exercise the initializer a deployment actually calls: a stand-in that
 ///      reimplemented it could pass while the real one was never wired to anything.
 contract ZkHarness is LzZkSyncTransceiver {
-    constructor(address _endpoint) LzZkSyncTransceiver(_endpoint) {}
+    constructor(address _endpoint) LzZkSyncTransceiver(_endpoint, zkSyncTransceiverExtension()) {}
 
     function create(address o, bytes32 s) external returns (address) {
         return _createCrossAccount(o, s, home(), address(0x7A11), new Call[](0));
@@ -223,7 +232,7 @@ contract ZkHarness is LzZkSyncTransceiver {
 }
 
 contract TronHarness is LzTronTransceiver {
-    constructor(address _endpoint) LzTronTransceiver(_endpoint) {}
+    constructor(address _endpoint) LzTronTransceiver(_endpoint, address(new TronTransceiverExtension())) {}
 }
 
 /// @dev What this suite can establish about a diverging transceiver, running on an Ethereum
@@ -253,8 +262,8 @@ contract DivergentTransceiverTest is Test {
         vm.assume(o != address(0));
         ZkHarness s = _zk();
         assertEq(
-            s.predictCrossAccount(o, salt, home()),
-            AddressDerive.zksyncCreate2(address(s), s.accountSalt(o, salt, home()), HASH, keccak256(""))
+            ext(address(s)).predictCrossAccount(o, salt, home()),
+            AddressDerive.zksyncCreate2(address(s), ext(address(s)).accountSalt(o, salt, home()), HASH, keccak256(""))
         );
     }
 
@@ -262,8 +271,8 @@ contract DivergentTransceiverTest is Test {
         vm.assume(o != address(0));
         TronHarness s = _tron();
         assertEq(
-            s.predictCrossAccount(o, salt, home()),
-            AddressDerive.tronCreate2(address(s), s.accountSalt(o, salt, home()), HASH)
+            ext(address(s)).predictCrossAccount(o, salt, home()),
+            AddressDerive.tronCreate2(address(s), ext(address(s)).accountSalt(o, salt, home()), HASH)
         );
     }
 
@@ -271,14 +280,17 @@ contract DivergentTransceiverTest is Test {
     function test_neitherMatchesEthereum() public {
         ZkHarness z = _zk();
         TronHarness t = _tron();
-        address ethZ =
-            Create2.computeAddress(z.accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z));
-        address ethT =
-            Create2.computeAddress(t.accountSalt(owner, SALT, home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t));
-        assertTrue(z.predictCrossAccount(owner, SALT, home()) != ethZ, "zkSync diverges");
-        assertTrue(t.predictCrossAccount(owner, SALT, home()) != ethT, "Tron diverges");
+        address ethZ = Create2.computeAddress(
+            ext(address(z)).accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
+        );
+        address ethT = Create2.computeAddress(
+            ext(address(t)).accountSalt(owner, SALT, home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+        );
+        assertTrue(ext(address(z)).predictCrossAccount(owner, SALT, home()) != ethZ, "zkSync diverges");
+        assertTrue(ext(address(t)).predictCrossAccount(owner, SALT, home()) != ethT, "Tron diverges");
         assertTrue(
-            z.predictCrossAccount(owner, SALT, home()) != t.predictCrossAccount(owner, SALT, home()),
+            ext(address(z)).predictCrossAccount(owner, SALT, home())
+                != ext(address(t)).predictCrossAccount(owner, SALT, home()),
             "and from each other"
         );
     }
@@ -290,9 +302,11 @@ contract DivergentTransceiverTest is Test {
         ZkHarness z = _zk();
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverBase.AccountAddressMismatch.selector,
-                z.predictCrossAccount(owner, SALT, home()),
-                Create2.computeAddress(z.accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z))
+                TransceiverCore.AccountAddressMismatch.selector,
+                ext(address(z)).predictCrossAccount(owner, SALT, home()),
+                Create2.computeAddress(
+                    ext(address(z)).accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)
+                )
             )
         );
         z.create(owner, SALT);
@@ -409,7 +423,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     ///      report every receiver while deriving Ethereum's way. The field is gone, and with it
     ///      the initializer that took it: the old shape, well formed, finds no function.
     function test_theParityTransceiverCannotBeToldToDiverge() public {
-        LzTransceiver s = new LzTransceiver(ENDPOINT);
+        LzTransceiver s = new LzTransceiver(ENDPOINT, transceiverExtension());
         TransceiverConfig memory c = _config();
         ConfigWithFlag memory old = ConfigWithFlag(
             c.gateways,
@@ -427,11 +441,11 @@ contract DivergenceIsNotConfigurableTest is Test {
         assertFalse(ok, "no initializer takes the flag");
 
         s.initialize(_config(), 0, address(0));
-        assertFalse(s.addressesDiverge());
+        assertFalse(ext(address(s)).addressesDiverge());
         assertEq(
-            s.predictCrossAccount(owner, bytes32(0), home()),
+            ext(address(s)).predictCrossAccount(owner, bytes32(0), home()),
             Create2.computeAddress(
-                s.accountSalt(owner, bytes32(0), home()), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)
+                ext(address(s)).accountSalt(owner, bytes32(0), home()), s.CROSS_PROXY_INIT_CODE_HASH(), address(s)
             ),
             "and it derives the way the home recomputes"
         );
@@ -439,27 +453,27 @@ contract DivergenceIsNotConfigurableTest is Test {
 
     /// @dev The variants set the flag themselves.
     function test_theDivergentTransceiversAlwaysReportDivergence() public {
-        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
+        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT, zkSyncTransceiverExtension());
         zk.initialize(_config(), 0, address(0), HASH);
-        LzTronTransceiver tron = new LzTronTransceiver(ENDPOINT);
+        LzTronTransceiver tron = new LzTronTransceiver(ENDPOINT, address(new TronTransceiverExtension()));
         tron.initialize(_config(), 0, address(0), HASH);
 
-        assertTrue(zk.addressesDiverge(), "set by the variant, and true");
-        assertTrue(tron.addressesDiverge());
+        assertTrue(ext(address(zk)).addressesDiverge(), "set by the variant, and true");
+        assertTrue(ext(address(tron)).addressesDiverge());
         assertEq(zk.accountBytecodeHash(), HASH, "the initializer wired it");
         assertEq(tron.accountBytecodeHash(), HASH);
 
         // And each derives its own way, not Ethereum's.
         address ethWay = Create2.computeAddress(
-            zk.accountSalt(owner, bytes32(0), home()), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
+            ext(address(zk)).accountSalt(owner, bytes32(0), home()), zk.CROSS_PROXY_INIT_CODE_HASH(), address(zk)
         );
-        assertTrue(zk.predictCrossAccount(owner, bytes32(0), home()) != ethWay);
+        assertTrue(ext(address(zk)).predictCrossAccount(owner, bytes32(0), home()) != ethWay);
     }
 
     /// @dev The bytecode hash has no setter, so a transceiver initialized without one cannot
     ///      acquire it later: the initializer refuses zero, which is the only way in.
     function test_thereIsNoSetterForTheBytecodeHash() public {
-        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT);
+        LzZkSyncTransceiver zk = new LzZkSyncTransceiver(ENDPOINT, zkSyncTransceiverExtension());
         zk.initialize(_config(), 0, address(0), HASH);
 
         (bool ok,) = address(zk).call(abi.encodeWithSignature("setAccountBytecodeHash(bytes32)", keccak256("other")));

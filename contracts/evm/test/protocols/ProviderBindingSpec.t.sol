@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
-import {toBytes32} from "test/Harness.sol";
+import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
@@ -26,6 +26,7 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Roles} from "src/messaging/Roles.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
 ///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -300,8 +301,8 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         bytes32 provider = registry.addMessageProvider("under-test");
         bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Predetermined);
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(t)).setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
         vm.stopPrank();
         _configureRemote(transceiver, transceiver);
 
@@ -592,7 +593,7 @@ abstract contract ProviderInboundSpec is ProviderFixture {
 
     /// @notice The revert for a wrong sender: the base's by default.
     function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(TransceiverBase.NotCounterpart.selector, chainKey);
+        return abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, chainKey);
     }
 
     /// @notice The revert when `caller` calls the delivery entry point directly.
@@ -616,9 +617,9 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
 
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setCounterpart(chainKey, Erc7930.encodeEvm(REMOTE_CHAIN_ID, ORIGIN_TRANSCEIVER));
-        t.setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(t)).setCounterpart(chainKey, Erc7930.encodeEvm(REMOTE_CHAIN_ID, ORIGIN_TRANSCEIVER));
+        ext(address(t)).setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
         vm.stopPrank();
         _configureRemote(transceiver, ORIGIN_TRANSCEIVER);
     }
@@ -681,7 +682,7 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         ChainRegistry registry = _seeded(Provenance.Predetermined);
         bytes32 home = ChainKey.forEvm(REMOTE_CHAIN_ID);
         registry.setSuspended(home, true);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, home));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, home));
         this.deployBornConfigured(IChainRegistryRefs(address(registry)));
     }
 
@@ -693,7 +694,7 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         emit InboundHandled(chainKey);
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
-        address receiver = t.predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        address receiver = ext(address(t)).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
@@ -703,8 +704,8 @@ abstract contract ProviderInboundSpec is ProviderFixture {
     function test_aCreatedReceiverAcceptsItsTransmitterOnlyFromItsHome() public {
         bytes32 chainKey = _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
-        address receiver =
-            TransceiverBase(payable(transceiver)).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        address receiver = ext(address(TransceiverBase(payable(transceiver))))
+            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
         bytes memory payload = Payload.encodeCalls(new Call[](0));
 
         vm.expectRevert();
@@ -739,16 +740,16 @@ abstract contract ProviderInboundSpec is ProviderFixture {
 
     function test_theFloatLeavesOnlyToTheTreasury() public {
         TransceiverBase t = TransceiverBase(payable(transceiver));
-        address treasury = t.treasury();
+        address treasury = ext(address(t)).treasury();
         vm.deal(address(t), 1 ether);
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.NotTreasury.selector, address(0xBAD)));
-        t.withdraw(1 ether);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTreasury.selector, address(0xBAD)));
+        ext(address(t)).withdraw(1 ether);
 
         uint256 before = treasury.balance;
         vm.prank(treasury);
-        t.withdraw(0.4 ether);
+        ext(address(t)).withdraw(0.4 ether);
         assertEq(treasury.balance - before, 0.4 ether);
     }
 
@@ -808,15 +809,15 @@ abstract contract ProviderZkSyncSpec is ProviderGasFixture {
 
         TransceiverBase t = TransceiverBase(payable(zk));
         vm.startPrank(t.owner());
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        t.setRoute(home, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
-        t.setCounterpart(home, Erc7930.encodeEvm(REMOTE_CHAIN_ID, HOME_TRANSCEIVER));
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(t)).setRoute(home, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        ext(address(t)).setCounterpart(home, Erc7930.encodeEvm(REMOTE_CHAIN_ID, HOME_TRANSCEIVER));
         vm.stopPrank();
         _configureRemote(zk, HOME_TRANSCEIVER);
     }
 
     function test_itAlwaysDiverges() public view {
-        assertTrue(TransceiverBase(payable(zk)).addressesDiverge());
+        assertTrue(ext(address(TransceiverBase(payable(zk)))).addressesDiverge());
     }
 
     function test_aReportSpendsFromTheFloat() public {

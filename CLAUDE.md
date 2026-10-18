@@ -62,7 +62,8 @@ In this repo:
 - Lint with `forge lint`; for files under `src/`, also run it with
   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
 - Run `forge build --sizes src` after a change to a deployed contract: CI fails any over
-  EIP-170, and `forge test` does not check it.
+  EIP-170, and `forge test` does not check it. After a change to a transceiver's or the
+  extension's external functions, also run `script/check-selectors.sh`, which CI runs too.
 
 ## Generalize before duplicating
 

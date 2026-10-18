@@ -17,6 +17,7 @@ import {
     ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackInteropFixture} from "test/protocols/op-stack/OpStackInteropFixture.sol";
+import {ext} from "test/Harness.sol";
 
 /// @notice The destination is the recipient's chain id, handed to the one messenger.
 contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecipientSpec, OpStackInteropFixture {
@@ -49,7 +50,8 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
     function test_aSendToThisChainIsRefused() public {
         address owner = TransceiverBase(payable(address(harness))).owner();
         vm.prank(owner);
-        TransceiverBase(payable(address(harness))).setRoute(ChainKey.local(), Erc7930.encodeEvmChain(block.chainid));
+        ext(address(TransceiverBase(payable(address(harness)))))
+            .setRoute(ChainKey.local(), Erc7930.encodeEvmChain(block.chainid));
         bytes memory here = Erc7930.encodeEvm(block.chainid, REMOTE_COUNTERPART);
         vm.expectRevert(OpStackInteropMessage.InteropToThisChain.selector);
         harness.sendMessagePublic(here, "x", new bytes[](0), 0);

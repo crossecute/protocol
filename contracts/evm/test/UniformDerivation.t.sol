@@ -12,9 +12,9 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OwnedTransceiver} from "test/Harness.sol";
+import {OwnedTransceiver, ext} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @notice Covers the claim that resolution is uniform: the same three calls configure
 ///         any destination, and the same read returns its transceiver, regardless of VM.
@@ -38,7 +38,7 @@ contract UniformDerivationTest is Test {
                 ))
         );
         vm.prank(owner);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Predetermined);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Predetermined);
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
@@ -70,7 +70,7 @@ contract UniformDerivationTest is Test {
         bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Unique);
         registry.setDeriver(chainKey, IVmDeriver(address(deriver)));
         registry.setDeriveParams(chainKey, params);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
         vm.stopPrank();
 
         // The uniform read agrees with the raw library derivation.
@@ -80,7 +80,7 @@ contract UniformDerivationTest is Test {
 
         // The transceiver records the recomputed value; the registry says what it is worth.
         vm.prank(owner);
-        transceiver.resolveCounterpart(chainKey, keccak256(params));
+        ext(address(transceiver)).resolveCounterpart(chainKey, keccak256(params));
 
         assertEq(transceiver.counterpartOn(chainKey), abi.encodePacked(want));
     }
@@ -93,8 +93,8 @@ contract UniformDerivationTest is Test {
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(8453), params, bytes32(0));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartNotParity.selector, chainKey));
-        transceiver.resolveCounterpart(chainKey, keccak256(params));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.CounterpartNotParity.selector, chainKey));
+        ext(address(transceiver)).resolveCounterpart(chainKey, keccak256(params));
     }
 
     /// @dev The point of normalizing: Solana configures through the same three calls and
@@ -114,8 +114,8 @@ contract UniformDerivationTest is Test {
         assertEq(bytes32(io.addr), AddressDerive.solanaCreateProgramAddress(seeds, 255, programId));
 
         vm.startPrank(owner);
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
-        transceiver.resolveCounterpart(chainKey, keccak256(params));
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), PROVIDER, Provenance.Unique);
+        ext(address(transceiver)).resolveCounterpart(chainKey, keccak256(params));
         vm.stopPrank();
         assertEq(transceiver.counterpartOn(chainKey).length, 32);
     }
@@ -127,8 +127,8 @@ contract UniformDerivationTest is Test {
         bytes32 chainKey = _wire(Erc7930.encodeEvmChain(1), params, keccak256("eth.tx"));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ParamsCommitmentMismatch.selector, chainKey));
-        transceiver.resolveCounterpart(chainKey, keccak256("something else"));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ParamsCommitmentMismatch.selector, chainKey));
+        ext(address(transceiver)).resolveCounterpart(chainKey, keccak256("something else"));
     }
 
     /// @dev Ethereum, zkSync, and Tron are all eip155 with different CREATE2 formulas,

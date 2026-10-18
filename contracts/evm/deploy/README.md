@@ -86,6 +86,10 @@ Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage
 deploys each before them, through Arachnid's factory, so it has one address on every parity
 chain.
 
+Every transceiver implementation names the chain's `TransceiverExtension` (#70), which
+`script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider
+on the chain and it has one address on every parity chain.
+
 LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway defaults to the
 dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
 

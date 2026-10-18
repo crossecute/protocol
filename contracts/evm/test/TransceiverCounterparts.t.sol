@@ -12,9 +12,9 @@ import {MoveValidator} from "src/validators/MoveValidator.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OwnedTransceiver} from "test/Harness.sol";
+import {OwnedTransceiver, ext} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @notice The counterpart directory after it moved off the registry.
 ///
@@ -47,7 +47,7 @@ contract TransceiverCounterpartsTest is Test {
         registry.setValidator(suiChainKey, new MoveValidator());
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(transceiver));
-        transceiver.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(address(transceiver)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         vm.stopPrank();
     }
 
@@ -61,7 +61,7 @@ contract TransceiverCounterpartsTest is Test {
 
     function test_theTransceiverHoldsTheAddressAndTheRegistryTheGrade() public {
         vm.prank(owner);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
+        ext(address(transceiver)).setCounterpart(suiChainKey, suiInterop);
 
         assertEq(transceiver.counterpartOn(suiChainKey), Erc7930.parseStrict(suiInterop).addr);
         assertEq(uint8(registry.provenanceFor(suiChainKey)), uint8(Provenance.Unique));
@@ -81,9 +81,9 @@ contract TransceiverCounterpartsTest is Test {
 
         vm.startPrank(owner);
         bytes32 p2 = registry.addMessageProvider("hyperlane");
-        second.setRouting(IChainRegistryRefs(address(registry)), p2, Provenance.Unique);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
-        second.setCounterpart(suiChainKey, other);
+        ext(address(second)).setRouting(IChainRegistryRefs(address(registry)), p2, Provenance.Unique);
+        ext(address(transceiver)).setCounterpart(suiChainKey, suiInterop);
+        ext(address(second)).setCounterpart(suiChainKey, other);
         vm.stopPrank();
 
         assertTrue(
@@ -100,15 +100,15 @@ contract TransceiverCounterpartsTest is Test {
     function test_aCounterpartIsWriteOnce() public {
         bytes memory other = Erc7930.encode(ChainType.SUI, bytes("mainnet"), abi.encodePacked(keccak256("other")));
         vm.startPrank(owner);
-        transceiver.setCounterpart(suiChainKey, suiInterop);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.CounterpartAlreadySet.selector, suiChainKey));
-        transceiver.setCounterpart(suiChainKey, other);
+        ext(address(transceiver)).setCounterpart(suiChainKey, suiInterop);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.CounterpartAlreadySet.selector, suiChainKey));
+        ext(address(transceiver)).setCounterpart(suiChainKey, other);
         vm.stopPrank();
     }
 
     function test_settingACounterpartIsAdminGated() public {
         vm.expectRevert();
-        transceiver.setCounterpart(suiChainKey, suiInterop);
+        ext(address(transceiver)).setCounterpart(suiChainKey, suiInterop);
     }
 
     /// @dev The validator stayed on the registry when the storage left, because what makes
@@ -119,14 +119,14 @@ contract TransceiverCounterpartsTest is Test {
         bytes memory short = Erc7930.encode(ChainType.SUI, bytes("mainnet"), new bytes(31));
         vm.prank(owner);
         vm.expectRevert();
-        transceiver.setCounterpart(suiChainKey, short);
+        ext(address(transceiver)).setCounterpart(suiChainKey, short);
     }
 
     function test_aCounterpartOnTheWrongChainIsRefused() public {
         vm.startPrank(owner);
         registry.addChainKey(Erc7930.encodeEvmChain(1), Provenance.Predetermined);
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        transceiver.setCounterpart(suiChainKey, Erc7930.encodeEvm(1, address(0xCAFE)));
+        ext(address(transceiver)).setCounterpart(suiChainKey, Erc7930.encodeEvm(1, address(0xCAFE)));
         vm.stopPrank();
     }
 

@@ -19,18 +19,22 @@ function check(bool ok, string memory what) pure {
     if (!ok) revert DeployCheck(what);
 }
 
+/// @notice `initCode` deployed through Arachnid's factory at salt zero, on first use, so it sits
+///         at one address on every chain that runs the same initcode.
+function arachnidDeploy(bytes memory initCode) returns (address at) {
+    at = Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
+    if (at.code.length == 0) {
+        check(ARACHNID.code.length != 0, "Arachnid's factory is deployed");
+        (bool ok,) = ARACHNID.call(abi.encodePacked(bytes32(0), initCode));
+        check(ok && at.code.length != 0, "deployed through Arachnid's factory");
+    }
+}
+
 /// @notice `CrossProxyDeployer` where production puts it: through Arachnid's factory at salt
 ///         zero, deployed on first use. `ChainRegistry.CROSS_PROXY_DEPLOYER` is this address;
 ///         `CrossProxyDeployer.t.sol` pins the literal.
 function crossProxyDeployer() returns (CrossProxyDeployer) {
-    bytes memory initCode = type(CrossProxyDeployer).creationCode;
-    address at = Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
-    if (at.code.length == 0) {
-        check(ARACHNID.code.length != 0, "Arachnid's factory is deployed");
-        (bool ok,) = ARACHNID.call(abi.encodePacked(bytes32(0), initCode));
-        check(ok && at.code.length != 0, "CrossProxyDeployer deployed through Arachnid's factory");
-    }
-    return CrossProxyDeployer(at);
+    return CrossProxyDeployer(arachnidDeploy(type(CrossProxyDeployer).creationCode));
 }
 
 /// @notice Deploy a `CrossProxy` for `deployedBy` at `salt`, armed with `implementation` and

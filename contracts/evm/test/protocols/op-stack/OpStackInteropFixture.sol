@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackInteropDeploy} from "script/deploy/OpStackInteropDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -13,9 +13,12 @@ import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
 import {MockL2ToL2CrossDomainMessenger} from "test/protocols/op-stack/MockL2ToL2CrossDomainMessenger.sol";
 import {ProviderFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {ext} from "test/Harness.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract OpStackInteropTransceiverHarness is OpStackInteropTransceiver {
+    constructor() OpStackInteropTransceiver(transceiverExtension()) {}
+
     event InboundHandled(bytes32 chainKey);
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
@@ -92,7 +95,8 @@ abstract contract OpStackInteropFixture is ProviderFixture {
     function _configureRemote(address t, address) internal override {
         address owner = TransceiverBase(payable(t)).owner();
         vm.prank(owner);
-        TransceiverBase(payable(t)).setRoute(ChainKey.forEvm(REMOTE_CHAIN_ID), Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        ext(address(TransceiverBase(payable(t))))
+            .setRoute(ChainKey.forEvm(REMOTE_CHAIN_ID), Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
     }
 
     /// @dev The messenger reports a 20-byte sender, so a wider one cannot be expressed.

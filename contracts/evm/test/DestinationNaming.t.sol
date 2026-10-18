@@ -5,7 +5,6 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
 import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
-import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
@@ -15,7 +14,9 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
-import {transceiverConfig} from "test/Harness.sol";
+import {transceiverConfig, ext} from "test/Harness.sol";
+import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice How a destination is named end to end: a plain chain id at the transmitter,
 ///         a chainKey across the protocol, and the provider's own id only at the edge.
@@ -42,7 +43,7 @@ contract DestinationNamingTest is Test {
         t = LzTransceiver(
             payable(address(
                     deployTransceiver(
-                        address(new LzTransceiver(ENDPOINT)),
+                        address(new LzTransceiver(ENDPOINT, transceiverExtension())),
                         abi.encodeCall(
                             LzTransceiver.initialize,
                             (transceiverConfig(address(new LzReceiver(ENDPOINT))), uint32(0), address(0))
@@ -55,7 +56,7 @@ contract DestinationNamingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
-        t.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
+        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         vm.stopPrank();
     }
 
@@ -98,8 +99,8 @@ contract DestinationNamingTest is Test {
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
         baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
-        t.setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(t)));
-        t.setRoute(baseKey, BASE_ROUTE);
+        ext(address(t)).setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(t)));
+        ext(address(t)).setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
     }
 
@@ -119,7 +120,7 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, arbKey));
-        t.setRoute(arbKey, BASE_ROUTE);
+        ext(address(t)).setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
         assertEq(t.chainKeyOfRoute(BASE_ROUTE), baseKey);
     }
@@ -128,7 +129,7 @@ contract DestinationNamingTest is Test {
     function test_rewritingTheSameRouteIsIdempotent() public {
         bytes32 baseKey = _wireBase();
         vm.prank(msig);
-        t.setRoute(baseKey, BASE_ROUTE);
+        ext(address(t)).setRoute(baseKey, BASE_ROUTE);
         assertEq(t.routeTo(baseKey), BASE_ROUTE);
     }
 
@@ -147,7 +148,7 @@ contract DestinationNamingTest is Test {
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
+        ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
 
         registry.removeChainKey(key);
 
@@ -164,12 +165,12 @@ contract DestinationNamingTest is Test {
     function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
+        ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         registry.removeChainKey(key);
         registry.setSuspended(key, true);
         vm.stopPrank();
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverBase.ChainSuspended.selector, key));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, key));
         t.counterpartOn(key);
     }
 
@@ -185,7 +186,7 @@ contract DestinationNamingTest is Test {
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
-        t.setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
+        ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         vm.stopPrank();
 
         assertEq(t.counterpartOn(key).length, 20, "counterpart resolves");
@@ -196,7 +197,7 @@ contract DestinationNamingTest is Test {
     function test_setProviderRouteIsOwnerGated() public {
         bytes32 baseKey = _wireBase();
         vm.expectRevert();
-        t.setRoute(baseKey, ARB_ROUTE);
+        ext(address(t)).setRoute(baseKey, ARB_ROUTE);
     }
 
     /// @dev A route cannot be repointed: a key has exactly one valid route, so pointing it
@@ -206,7 +207,7 @@ contract DestinationNamingTest is Test {
 
         vm.prank(msig);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, baseKey));
-        t.setRoute(baseKey, ARB_ROUTE);
+        ext(address(t)).setRoute(baseKey, ARB_ROUTE);
 
         assertEq(t.routeTo(baseKey), BASE_ROUTE, "unchanged");
     }
@@ -236,7 +237,7 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, key));
-        t.setRoute(key, abi.encodePacked(uint32(30111)));
+        ext(address(t)).setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();
 
         assertFalse(t.hasRoute(key));
@@ -248,7 +249,7 @@ contract DestinationNamingTest is Test {
         bytes32 baseKey = ChainKey.forEvm(8453);
         vm.prank(msig);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, baseKey));
-        t.setRoute(baseKey, Erc7930.encodeEvm(8453, address(0xBEEF)));
+        ext(address(t)).setRoute(baseKey, Erc7930.encodeEvm(8453, address(0xBEEF)));
     }
 
     /// @dev `keccak256(identifier) == chainKey` is the definition of a chainKey, which is

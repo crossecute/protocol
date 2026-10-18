@@ -231,6 +231,7 @@ src/
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
     inbound/      ReceiverBase                          what an account receives with
     transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
+                  TransceiverExtension -> zkSync / Tron     init, owner config, views; one per chain
                   DivergentAccounts                         zkSync and Tron derivation
   account/        CrossProxy                                what both halves, and transceivers, are
                   CrossProxyDeployer                        arms a transceiver's proxy in one call
@@ -273,17 +274,17 @@ summary: the file is always the newer statement.
 | Why `Call[]` reaches EVM chains and opaque `bytes[]` everything else     | `messaging/Payload.sol`               |
 | Why a commitment is defined over elements nothing here parses            | `messaging/Commitment.sol`            |
 | Why a chain is graded, and what each grade is worth                      | `registry/Provenance.sol`             |
-| Why the transceiver holds counterparts and the registry their grade      | `TransceiverBase.setCounterpart`      |
-| Why routes live on the transceiver rather than in the registry           | `TransceiverBase.setRoute`            |
+| Why the transceiver holds counterparts and the registry their grade      | `TransceiverExtension.setCounterpart` |
+| Why routes live on the transceiver rather than in the registry           | `TransceiverExtension.setRoute`       |
 | Why the owner configures and the roles are not authorities               | `messaging/Roles.sol`, `TransceiverBase` |
 | Why the bootstrap fee is paid to the treasury in the same transaction    | `TransceiverBase._bootstrapSendValue` |
 | Why each account is homed on its authenticated origin                   | `TransceiverBase._handleInbound`      |
-| Why the report float leaves only at the treasury's call                  | `TransceiverBase.withdraw`, `Treasury.collect` |
+| Why the report float leaves only at the treasury's call                  | `TransceiverExtension.withdraw`, `Treasury.collect` |
 | Why a chain's grade is write-once and suspension is the cut-off          | `registry/ChainRegistry.sol`          |
 | Why zkSync and Tron derive accounts their own way, and what is unverified  | `transceiver/DivergentAccounts.sol`   |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
-| Why the route slot holds a chain identifier, not a provider's id         | `TransceiverBase._recipientOn`        |
+| Why the route slot holds a chain identifier, not a provider's id         | `OutboundBase._recipientOn`           |
 | Why the recipient is checked rather than trusted, and only on `eip155`   | `TransmitterBase.sendMessage`         |
 
 ## Adding a chain type
@@ -458,14 +459,15 @@ over interop).
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 801 passing, 1 skipped (the fork test)
+cd contracts/evm && forge test        # 826 passing, 1 skipped (the fork test)
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull
 request (`.github/workflows/test.yml`). `src/` is linted a second time under the `lint-src`
 profile, which also enforces the detector heuristics the default profile leaves off for tests.
 `forge build --sizes src` fails if any contract exceeds EIP-170's 24,576-byte limit, which
-`forge test` does not check.
+`forge test` does not check. `script/check-selectors.sh` fails if a transceiver declares a
+selector its extension also declares under another signature.
 
 Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
 reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the

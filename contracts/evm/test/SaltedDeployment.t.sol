@@ -18,7 +18,8 @@ import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {home, transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver} from "test/Harness.sol";
+import {home, transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver, ext} from "test/Harness.sol";
+import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 
 contract SaltedReceiver is AnyGatewayReceiver {}
 
@@ -53,7 +54,7 @@ contract SaltedTransceiver is AnyGatewayTransceiver {
     ///      about where accounts land. The carried transmitter is where Ethereum's CREATE2
     ///      puts it at home, over this same address.
     function bootstrapFor(address owner_) external returns (address) {
-        address carried = Create2.computeAddress(accountSalt(owner_, bytes32(0), home()), CROSS_PROXY_INIT_CODE_HASH);
+        address carried = Create2.computeAddress(_accountSalt(owner_, bytes32(0), home()), CROSS_PROXY_INIT_CODE_HASH);
         return _createCrossAccount(owner_, bytes32(0), home(), carried, new Call[](0));
     }
 }
@@ -150,10 +151,12 @@ contract SaltedDeploymentTest is Test {
         SaltedTransceiver t = _deploy(_init());
 
         address ownerOf = address(0x7A11);
-        assertEq(t.accountSalt(ownerOf, bytes32(0), home()), keccak256(abi.encode(ownerOf, bytes32(0), home())));
+        assertEq(
+            ext(address(t)).accountSalt(ownerOf, bytes32(0), home()), keccak256(abi.encode(ownerOf, bytes32(0), home()))
+        );
         assertEq(
             registry.predictCrossAccount(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)),
-            t.predictCrossAccount(ownerOf, bytes32(0), home()),
+            ext(address(t)).predictCrossAccount(ownerOf, bytes32(0), home()),
             "one salt convention, two chains"
         );
     }
@@ -279,7 +282,7 @@ contract SaltedDeploymentTest is Test {
         assertEq(atInit, ChainKey.local());
 
         address ownerOf = address(0x7A11);
-        address predicted = t.predictTransmitter(ownerOf, bytes32(0));
+        address predicted = ext(address(t)).predictTransmitter(ownerOf, bytes32(0));
 
         vm.chainId(block.chainid + 1);
         assertEq(t.localChainKey(), atInit, "the key did not follow the chain id");
@@ -297,7 +300,7 @@ contract SaltedDeploymentTest is Test {
         address ownerOf = address(0x7A11);
         bytes32 userSalt = keccak256("treasury");
 
-        address predicted = t.predictTransmitter(ownerOf, userSalt);
+        address predicted = ext(address(t)).predictTransmitter(ownerOf, userSalt);
 
         vm.prank(ownerOf);
         assertEq(t.createTransmitter(userSalt), predicted, "where the view said");
@@ -433,6 +436,11 @@ contract SaltedDeploymentTest is Test {
     }
 }
 
+/// @dev The salt transform `DivergingSaltedTransceiver` and its extension both derive with.
+function divergedSalt(bytes32 salt) pure returns (bytes32) {
+    return keccak256(abi.encode(salt, "diverge"));
+}
+
 /// @dev A transceiver on a chain whose address formula differs from Ethereum's, as zkSync's
 ///      and Tron's do, emulated on Forge's EVM by transforming the salt in both seams.
 contract DivergingSaltedTransceiver is SaltedTransceiver {
@@ -441,23 +449,37 @@ contract DivergingSaltedTransceiver is SaltedTransceiver {
         return true;
     }
 
-    function predictCrossAccount(address owner_, bytes32 salt, bytes32 homeChainKey)
-        public
+    function _newExtension() internal override returns (address) {
+        return address(new DivergingSaltedExtension());
+    }
+
+    function _predictCrossAccount(address owner_, bytes32 salt, bytes32 homeChainKey)
+        internal
         view
         override
         returns (address)
     {
         return Create2.computeAddress(
-            _diverge(accountSalt(owner_, salt, homeChainKey)), CROSS_PROXY_INIT_CODE_HASH, address(this)
+            divergedSalt(_accountSalt(owner_, salt, homeChainKey)), CROSS_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
     function _deployAccount(bytes32 salt) internal override returns (address) {
-        return Create2.deploy(0, _diverge(salt), type(CrossProxy).creationCode);
+        return Create2.deploy(0, divergedSalt(salt), type(CrossProxy).creationCode);
     }
+}
 
-    function _diverge(bytes32 salt) private pure returns (bytes32) {
-        return keccak256(abi.encode(salt, "diverge"));
+/// @dev `DivergingSaltedTransceiver`'s extension, deriving as it does.
+contract DivergingSaltedExtension is TransceiverExtension {
+    function _predictCrossAccount(address owner_, bytes32 salt, bytes32 homeChainKey)
+        internal
+        view
+        override
+        returns (address)
+    {
+        return Create2.computeAddress(
+            divergedSalt(_accountSalt(owner_, salt, homeChainKey)), CROSS_PROXY_INIT_CODE_HASH, address(this)
+        );
     }
 }
 
@@ -475,7 +497,7 @@ contract DivergentReceiverAuthTest is Test {
         receiver = ReceiverBase(payable(t.bootstrapFor(ownerOf)));
         // The home transceiver deploys with Ethereum's CREATE2, at this fixture's own address.
         homeTransmitter = Create2.computeAddress(
-            t.accountSalt(ownerOf, bytes32(0), home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+            ext(address(t)).accountSalt(ownerOf, bytes32(0), home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
         );
     }
 

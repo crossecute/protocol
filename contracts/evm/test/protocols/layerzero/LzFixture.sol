@@ -4,7 +4,11 @@ pragma solidity ^0.8.20;
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    transceiverExtension,
+    zkSyncTransceiverExtension
+} from "script/deploy/TransceiverDeploy.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -20,14 +24,14 @@ import {unseeded} from "test/RegistrySeed.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
-import {toBytes32} from "test/Harness.sol";
+import {toBytes32, ext} from "test/Harness.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract LzTransceiverHarness is LzTransceiver {
     event InboundHandled(bytes32 chainKey);
 
-    constructor(address endpoint) LzTransceiver(endpoint) {}
+    constructor(address endpoint) LzTransceiver(endpoint, transceiverExtension()) {}
 
     function sendMessagePublic(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         external
@@ -53,7 +57,7 @@ contract LzTransceiverHarness is LzTransceiver {
 
 /// @notice Exposes the report seam.
 contract LzZkSyncHarness is LzZkSyncTransceiver {
-    constructor(address endpoint_) LzZkSyncTransceiver(endpoint_) {}
+    constructor(address endpoint_) LzZkSyncTransceiver(endpoint_, zkSyncTransceiverExtension()) {}
 
     function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
         _reportReceiver(home, owner, salt, receiver);
@@ -114,13 +118,13 @@ abstract contract LzFixture is ProviderGasFixture {
     function _configureRemote(address t, address counterpart) internal override {
         _setRemoteProviderId(t);
         TransceiverBase tb = TransceiverBase(payable(t));
-        if (address(tb.chainRegistry()) == address(0)) {
+        if (address(ext(address(tb)).chainRegistry()) == address(0)) {
             ChainRegistry registry = new ChainRegistry(address(this), unseeded());
             bytes32 provider = registry.addMessageProvider("under-test");
             bytes32 remote = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
             vm.startPrank(tb.owner());
-            tb.setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-            tb.setCounterpart(remote, Erc7930.encodeEvm(REMOTE_CHAIN_ID, counterpart));
+            ext(address(tb)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+            ext(address(tb)).setCounterpart(remote, Erc7930.encodeEvm(REMOTE_CHAIN_ID, counterpart));
             vm.stopPrank();
         }
         vm.prank(tb.owner());

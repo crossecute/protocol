@@ -26,6 +26,8 @@ import {IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
 contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
     bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
 
+    constructor(address extension_) TransceiverBase(extension_) {}
+
     /// @param governorHomeMessenger The messenger on this chain that reaches the governor's
     ///        home; see `ProviderTransceiver._initGovernorHomeId`.
     function initialize(TransceiverConfig memory c, address governorHomeMessenger) external initializer {

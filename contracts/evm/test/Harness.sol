@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -43,6 +44,23 @@ function toBytes32(address a) pure returns (bytes32) {
     return bytes32(uint256(uint160(a)));
 }
 
+/// @notice A transceiver's extension functions, reached through its `fallback`, for a test that
+///         holds the transceiver under its own type.
+function ext(address transceiver) pure returns (TransceiverExtension) {
+    return TransceiverExtension(transceiver);
+}
+
+/// @notice A test transceiver with its own extension, deployed with it, so each copy reads the
+///         chain id it is deployed under as a production pair does. A harness that derives
+///         accounts its own way overrides `_newExtension` with an extension that derives alike.
+abstract contract TestTransceiver is TransceiverBase {
+    constructor() TransceiverBase(_newExtension()) {}
+
+    function _newExtension() internal virtual returns (address) {
+        return address(new TransceiverExtension());
+    }
+}
+
 /// @notice For harnesses that exercise everything but the transport: `OutboundBase`'s two
 ///         provider seams, as reverts. One per base, because a mixin beside the base would
 ///         collide with the functions the base itself overrides from `OutboundBase`. The
@@ -50,7 +68,7 @@ function toBytes32(address a) pure returns (bytes32) {
 
 error Unsent();
 
-abstract contract UnsendableTransceiver is TransceiverBase {
+abstract contract UnsendableTransceiver is TestTransceiver {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         virtual
