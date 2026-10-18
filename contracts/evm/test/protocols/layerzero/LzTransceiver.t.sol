@@ -13,7 +13,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 
-import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {
     ProviderZkSyncSpec,
     ProviderInboundSpec,

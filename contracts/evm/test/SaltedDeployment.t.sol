@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -19,16 +18,9 @@ import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {UnsendableTransceiver} from "test/Unsendable.sol";
-import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
+import {home, transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver} from "test/Harness.sol";
 
-contract SaltedReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-}
+contract SaltedReceiver is AnyGatewayReceiver {}
 
 /// @dev Minimal transmitter logic: enough to prove which side armed the account.
 contract MiniTransmitter {
@@ -43,31 +35,12 @@ contract MiniTransmitter {
     }
 }
 
-/// @dev Where the accounts the transceiver creates receivers for are homed.
-function home() pure returns (bytes32) {
-    return ChainKey.forEvm(1);
-}
-
 /// @dev One transceiver, deployed from one initcode at one salt on every chain: it creates
 ///      transmitters for accounts homed where it runs and receivers for accounts homed
 ///      elsewhere.
-contract SaltedTransceiver is UnsendableTransceiver {
+contract SaltedTransceiver is AnyGatewayTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
-        __TransceiverBase_init(
-            TransceiverConfig({
-                gateways: new address[](0),
-                transmitterImplementation: transmitterImpl,
-                receiverImplementation: receiverImpl,
-                governorOwner: governor,
-                governorSalt: bytes32(0),
-                governorHome: Erc7930.encodeEvmChain(1),
-                treasury: address(0x7EA5),
-                chainRegistry: IChainRegistryRefs(address(0)),
-                messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unknown
-            }),
-            _diverges()
-        );
+        __TransceiverBase_init(transceiverConfig(governor, transmitterImpl, receiverImpl, address(0x7EA5)), _diverges());
     }
 
     function _diverges() internal pure virtual returns (bool) {
@@ -82,12 +55,6 @@ contract SaltedTransceiver is UnsendableTransceiver {
     function bootstrapFor(address owner_) external returns (address) {
         address carried = Create2.computeAddress(accountSalt(owner_, bytes32(0), home()), CROSS_PROXY_INIT_CODE_HASH);
         return _createCrossAccount(owner_, bytes32(0), home(), carried, new Call[](0));
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 

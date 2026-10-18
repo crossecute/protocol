@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {Provenance} from "src/registry/Provenance.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
@@ -13,13 +11,12 @@ import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
-import {ChainKey} from "src/addressing/ChainKey.sol";
 import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver, LzTronTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {UnsendableTransceiver} from "test/Unsendable.sol";
+import {home, transceiverConfig, AnyGatewayTransceiver} from "test/Harness.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -117,13 +114,13 @@ contract CloneDerivationTest is Test {
 ///      Tron are `eip155`, so nothing about the chain type separates them, and only the
 ///      transceiver itself knows. Both seams must be overridden together, and this is what happens when
 ///      they are not.
-contract DivergingFormulaTransceiver is UnsendableTransceiver {
+contract DivergingFormulaTransceiver is AnyGatewayTransceiver {
     /// Stands in for a chain-specific derivation: any answer other than Ethereum's.
     bool public overridePrediction;
 
     /// @dev `create` makes an account homed here, so `impl` is the transmitter logic.
     function initialize(address impl) external initializer {
-        TransceiverConfig memory c = config(impl);
+        TransceiverConfig memory c = transceiverConfig(impl);
         c.transmitterImplementation = impl;
         __TransceiverBase_init(c);
     }
@@ -156,12 +153,6 @@ contract DivergingFormulaTransceiver is UnsendableTransceiver {
         returns (bytes memory)
     {
         return "";
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 
@@ -219,26 +210,6 @@ contract MinimalAccount {
     function initialize() external {}
 }
 
-/// @dev Where the accounts in these tests are homed: anywhere but this chain.
-function home() pure returns (bytes32) {
-    return ChainKey.forEvm(1);
-}
-
-function config(address receiverImplementation) pure returns (TransceiverConfig memory) {
-    return TransceiverConfig({
-        gateways: new address[](0),
-        transmitterImplementation: address(0xBEEF),
-        receiverImplementation: receiverImplementation,
-        governorOwner: address(0x5165),
-        governorSalt: bytes32(0),
-        governorHome: Erc7930.encodeEvmChain(1),
-        treasury: address(0x7EA5),
-        chainRegistry: IChainRegistryRefs(address(0)),
-        messageProvider: bytes32(0),
-        minCounterpartProvenance: Provenance.Unknown
-    });
-}
-
 /// @dev The shipped contracts, with one function added. Everything about initialization,
 ///      the divergence flag and the bytecode hash is inherited rather than restated, so
 ///      these exercise the initializer a deployment actually calls: a stand-in that
@@ -270,12 +241,12 @@ contract DivergentTransceiverTest is Test {
 
     function _zk() internal returns (ZkHarness s) {
         s = new ZkHarness(ENDPOINT);
-        s.initialize(config(address(new MinimalAccount())), 0, address(0), HASH);
+        s.initialize(transceiverConfig(address(new MinimalAccount())), 0, address(0), HASH);
     }
 
     function _tron() internal returns (TronHarness s) {
         s = new TronHarness(ENDPOINT);
-        s.initialize(config(address(new MinimalAccount())), 0, address(0), HASH);
+        s.initialize(transceiverConfig(address(new MinimalAccount())), 0, address(0), HASH);
     }
 
     function testFuzz_zkSyncReproducesTheEraFormula(address o, bytes32 salt) public {
@@ -332,7 +303,7 @@ contract DivergentTransceiverTest is Test {
     ///      expectation and the test fails on the wrong line. The same trap catches
     ///      `vm.prank`, and it is silent whenever the pranked call happens to succeed.
     function test_theBytecodeHashIsWriteOnceAndNonZero() public {
-        TransceiverConfig memory c = config(address(new MinimalAccount()));
+        TransceiverConfig memory c = transceiverConfig(address(new MinimalAccount()));
 
         ZkHarness s = new ZkHarness(ENDPOINT);
         vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
@@ -431,7 +402,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     address ENDPOINT = address(new MockLzEndpoint());
 
     function _config() internal returns (TransceiverConfig memory) {
-        return config(address(new MinimalAccount()));
+        return transceiverConfig(address(new MinimalAccount()));
     }
 
     /// @dev #26: the flag was a config field, so a plain transceiver could be initialized to

@@ -24,7 +24,7 @@ import {
     ProviderTransmitterSendSpec,
     ProviderDefaultGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 

@@ -10,7 +10,8 @@ import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.so
 
 import {MockWormholeCore} from "test/protocols/wormhole/MockWormholeCore.sol";
 import {MockExecutor} from "test/protocols/wormhole/MockExecutor.sol";
-import {ProviderGasFixture, defaultReceiverInit, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
 /// @dev VAA v1 with `sigCount` zeroed 66-byte signatures (the mock Core does not check them)

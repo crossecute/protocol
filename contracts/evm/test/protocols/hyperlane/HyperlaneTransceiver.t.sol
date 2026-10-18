@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
 
-import {toBytes32} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {
     IReportHarness,

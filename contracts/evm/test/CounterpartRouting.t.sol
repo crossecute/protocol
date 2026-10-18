@@ -13,7 +13,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OwnedTransceiver} from "test/Unsendable.sol";
+import {OwnedTransceiver} from "test/Harness.sol";
 
 /// @notice The source transceiver asks the registry where its counterpart lives, rather
 ///         than assuming it shares its own address. That assumption holds on most EVM

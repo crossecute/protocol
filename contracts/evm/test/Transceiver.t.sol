@@ -15,6 +15,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {MockTransmitter} from "test/Transport.t.sol";
+import {transceiverConfig, toBytes32} from "test/Harness.sol";
 
 /// @dev The transport every test transceiver here shares: it records what it was asked to send.
 abstract contract SymHarness is TransceiverBase {
@@ -156,18 +157,8 @@ contract TransceiverTest is Test {
         Treasury treasury = new Treasury(address(this));
         bytes32 provider = registry.addMessageProvider("test");
 
-        TransceiverConfig memory c = TransceiverConfig({
-            gateways: new address[](0),
-            transmitterImplementation: transmitterImplementation,
-            receiverImplementation: address(new Rcv()),
-            governorOwner: msig,
-            governorSalt: bytes32(0),
-            governorHome: _route(ETH),
-            treasury: address(treasury),
-            chainRegistry: IChainRegistryRefs(address(0)),
-            messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unknown
-        });
+        TransceiverConfig memory c =
+            transceiverConfig(msig, transmitterImplementation, address(new Rcv()), address(treasury));
         t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
         uint256[3] memory chains = [ETH, BASE, ZK];
@@ -192,10 +183,6 @@ contract TransceiverTest is Test {
 
     function _calls() internal pure returns (Call[] memory calls) {
         calls = new Call[](0);
-    }
-
-    function _word(address a) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(a)));
     }
 
     /* =================================== identity ================================= */
@@ -330,7 +317,7 @@ contract TransceiverTest is Test {
 
     function test_theElementsFormIsRefusedOnAnEvmChain() public {
         Sym t = _chain(ETH, false);
-        bytes memory m = Envelope.encodeBootstrapElements(alice, SALT, _word(address(t)), new bytes[](1));
+        bytes memory m = Envelope.encodeBootstrapElements(alice, SALT, toBytes32(address(t)), new bytes[](1));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -346,7 +333,7 @@ contract TransceiverTest is Test {
     function test_aReceiverOffItsTransmitterIsRefusedFromAPredeterminedHome() public {
         Sym t = _chain(ETH, false);
         address wrong = address(0xBAD);
-        bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(wrong), _calls());
+        bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(wrong), _calls());
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -362,7 +349,7 @@ contract TransceiverTest is Test {
     function test_anOriginMappedToTheWrongChainRefusesItsFirstBootstrap() public {
         Sym t = _chain(ETH, false);
         address realTransmitter = t.predictCrossAccount(alice, SALT, _key(10));
-        bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(realTransmitter), _calls());
+        bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(realTransmitter), _calls());
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -377,7 +364,7 @@ contract TransceiverTest is Test {
     function test_aUniqueHomeIsNotHeldToParity() public {
         Sym t = _chain(ETH, false);
         address zkTransmitter = address(0x2CA11);
-        bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(zkTransmitter), _calls());
+        bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(zkTransmitter), _calls());
 
         t.arrive(_route(ZK), abi.encodePacked(zkTransceiver), m);
 
@@ -392,7 +379,7 @@ contract TransceiverTest is Test {
     function test_aDivergingChainReportsToTheHomeFromItsFloat() public {
         Sym t = _chain(ETH, true);
         vm.deal(address(t), 1 ether);
-        bytes memory m = Envelope.encodeBootstrap(alice, SALT, _word(address(0x7A)), _calls());
+        bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(address(0x7A)), _calls());
 
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
 
@@ -442,14 +429,14 @@ contract TransceiverTest is Test {
         t.arrive(
             _route(BASE),
             abi.encodePacked(address(t)),
-            Envelope.encodeBootstrap(alice, SALT, _word(address(0x7A)), calls)
+            Envelope.encodeBootstrap(alice, SALT, toBytes32(address(0x7A)), calls)
         );
 
         assertEq(t.sentCount(), 2, "the nested bootstrap, then the report");
         SymHarness.Sent memory bootstrap = t.sendAt(0);
         assertEq(
             bootstrap.payload,
-            Envelope.encodeBootstrap(receiver, nestedSalt, _word(nested), new Call[](0)),
+            Envelope.encodeBootstrap(receiver, nestedSalt, toBytes32(nested), new Call[](0)),
             "first the receiver's own bootstrap"
         );
         assertEq(bootstrap.value, paid - fee, "sent with what its payer paid, less the fee");
@@ -494,18 +481,8 @@ contract TransceiverTest is Test {
     /* ============================== initialization =============================== */
 
     function test_initializationRefusesMissingPieces() public {
-        TransceiverConfig memory c = TransceiverConfig({
-            gateways: new address[](0),
-            transmitterImplementation: address(new RecordingTransmitter()),
-            receiverImplementation: address(0),
-            governorOwner: msig,
-            governorSalt: bytes32(0),
-            governorHome: _route(ETH),
-            treasury: address(1),
-            chainRegistry: IChainRegistryRefs(address(0)),
-            messageProvider: bytes32(0),
-            minCounterpartProvenance: Provenance.Unknown
-        });
+        TransceiverConfig memory c =
+            transceiverConfig(msig, address(new RecordingTransmitter()), address(0), address(1));
 
         Sym fresh = new Sym();
         vm.expectRevert(TransceiverBase.NoAccountImplementation.selector);

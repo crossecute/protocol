@@ -10,6 +10,7 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
+import {AnyGatewayReceiver} from "test/Harness.sol";
 
 /// @dev A target that records what it was called with, so an assertion can be about the
 ///      call that actually landed rather than about a return value.
@@ -29,17 +30,7 @@ contract Sink {
 
 /// @dev A receiver with an open policy, so these tests are about encoding rather than
 ///      about `isAllowed`.
-contract OpenReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
-    function isAllowed(address, bytes4) public pure override returns (bool) {
-        return true;
-    }
-}
+contract OpenReceiver is AnyGatewayReceiver {}
 
 /// @dev Reaches the library through external calls so `calldata` parameters are genuine
 ///      calldata, which is what the production path uses.

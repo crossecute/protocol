@@ -6,27 +6,16 @@ import {Test} from "forge-std/Test.sol";
 
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
-import {UnsendableTransceiver, UnsendableTransmitter} from "test/Unsendable.sol";
+import {transceiverConfig, AnyGatewayReceiver, AnyGatewayTransceiver, AnyGatewayTransmitter} from "test/Harness.sol";
 
-contract MockReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
+contract MockReceiver is AnyGatewayReceiver {
     uint256 public executedCount;
-
-    function isAllowed(address, bytes4) public pure override returns (bool) {
-        return true;
-    }
 
     function _execute(Call[] memory calls) internal override {
         executedCount += calls.length;
@@ -37,7 +26,7 @@ contract MockReceiver is ReceiverBase {
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
 /// @dev A transmitter with an inert send, so an account can be stood up on a destination
 ///      without a provider behind it. A report has to land on a real account now.
-contract Transmitter is UnsendableTransmitter {
+contract Transmitter is AnyGatewayTransmitter {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
         pure
@@ -46,32 +35,15 @@ contract Transmitter is UnsendableTransmitter {
     {
         return bytes32(0);
     }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
 }
 
 /// @dev One transceiver, which is both ends: it creates receivers for accounts homed on an
 ///      origin it authenticates, and receives reports for accounts homed here.
-contract Node is UnsendableTransceiver {
+contract Node is AnyGatewayTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
-        __TransceiverBase_init(
-            TransceiverConfig({
-                gateways: new address[](0),
-                transmitterImplementation: transmitterImpl,
-                receiverImplementation: receiverImpl,
-                governorOwner: governor,
-                governorSalt: bytes32(0),
-                governorHome: Erc7930.encodeEvmChain(block.chainid),
-                treasury: address(0x7EA5),
-                chainRegistry: IChainRegistryRefs(address(0)),
-                messageProvider: bytes32(0),
-                minCounterpartProvenance: Provenance.Unknown
-            })
-        );
+        TransceiverConfig memory c = transceiverConfig(governor, transmitterImpl, receiverImpl, address(0x7EA5));
+        c.governorHome = Erc7930.encodeEvmChain(block.chainid);
+        __TransceiverBase_init(c);
     }
 
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
@@ -90,12 +62,6 @@ contract Node is UnsendableTransceiver {
 
     function arrive(bytes memory route, bytes memory sender, bytes calldata message) external {
         _onInbound(route, sender, message);
-    }
-
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
     }
 }
 

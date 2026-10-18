@@ -19,7 +19,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
-import {ProviderGasFixture, toBytes32} from "test/protocols/ProviderFixture.sol";
+import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
+import {toBytes32} from "test/Harness.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.

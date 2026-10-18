@@ -14,7 +14,7 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {OwnedTransceiver} from "test/Unsendable.sol";
+import {OwnedTransceiver} from "test/Harness.sol";
 
 /// @notice The counterpart directory after it moved off the registry.
 ///

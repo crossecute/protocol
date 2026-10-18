@@ -9,6 +9,7 @@ import {Commitment} from "src/messaging/Commitment.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {AnyGatewayReceiver} from "test/Harness.sol";
 
 /// @dev Records the order calls actually landed in, so ordering assertions are about
 ///      execution rather than about bookkeeping.
@@ -29,17 +30,7 @@ contract Ledger {
     }
 }
 
-contract QueueReceiver is ReceiverBase {
-    /// @dev A harness trusts any gateway, which no deployment may do. Overriding the
-    ///      membership read rather than granting a role keeps each test on its own subject.
-    function hasRole(bytes32 role, address account) public view override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
-    }
-
-    function isAllowed(address, bytes4) public pure override returns (bool) {
-        return true;
-    }
-}
+contract QueueReceiver is AnyGatewayReceiver {}
 
 /// @notice The approval map: unordered discharge, duplicate approvals, and cancellation.
 ///
