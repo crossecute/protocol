@@ -1002,8 +1002,17 @@ A binding is done when every line is true.
 - [ ] `_sendMessage` overridden on the transmitter and the transceiver
 - [ ] `_quoteMessage` overridden on the same two, `view`, sharing the send's resolver
 - [ ] `supportsAttribute` answered on the transmitter, `quoteBootstrap` on the transceiver
-- [ ] `GATEWAY_ROLE` granted in every receiver's initializer, and inbound routed into
-      `_onInbound` on the transceiver
+- [ ] Every provider endpoint a constructor takes refused at zero
+      (`ProviderAddress.ZeroEndpoint`), with the plain receiver, transmitter, and transceiver
+      deployed against zero in `test/protocols/ZeroEndpoint.t.sol`. The
+      existing bindings follow one of three shapes: the inherited SDK holds the endpoint and
+      the binding adds only the check (LayerZero's OApp `endpoint`); each contract holds it as
+      an immutable (CCIP's `router`, Hyperlane's `mailbox`, Wormhole's `coreBridge` and
+      `executor`); or no constructor takes one, because the id table or the receiver's
+      initializer supplies it (`op-stack-l1-l2`) or it is a predeploy constant
+      (`op-stack-l2-l2`)
+- [ ] `GATEWAY_ROLE` granted in every receiver's initializer (`ProviderReceiver` does it where
+      that is the only setup), and inbound routed into `_onInbound` on the transceiver
 - [ ] Inbound reverts on the transmitter
 - [ ] Initialized with the governor's owner, salt, and home, the chain's `Treasury`, the
       registry and provider, the governor home's provider id, and every transport the
