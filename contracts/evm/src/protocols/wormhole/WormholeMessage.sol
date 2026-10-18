@@ -62,6 +62,7 @@ library WormholeMessage {
     error MalformedVaa();
     error WrongDestination(uint16 targetChain, bytes32 targetAddress);
     error VaaAlreadyConsumed(bytes32 vaaHash);
+    error NotFinalized(uint8 consistencyLevel);
     error UnexpectedValue();
 
     /* ================================== sending =================================== */
@@ -261,6 +262,10 @@ library WormholeMessage {
     ///
     /// @dev Replay is keyed on `vm.hash` (over the body, not the signatures), so a VAA
     ///      re-signed by a different guardian subset is still the same message.
+    ///
+    /// @dev Finalized only. Every send here publishes at `CONSISTENCY_FINALIZED`; a weaker level
+    ///      can come only from an owner calling Core directly through `execute`, and a reorg on
+    ///      the source could then undo a message the destination has already run.
     function verify(address coreBridge, bool gatewayHeld, bytes calldata vaa)
         internal
         returns (uint16 emitterChain, address emitter, bytes calldata inner)
@@ -270,6 +275,7 @@ library WormholeMessage {
 
         (CoreBridgeVM memory vm, bool valid, string memory reason) = ICoreBridge(coreBridge).parseAndVerifyVM(vaa);
         if (!valid) revert InvalidVaa(reason);
+        if (vm.consistencyLevel != CONSISTENCY_FINALIZED) revert NotFinalized(vm.consistencyLevel);
 
         bytes calldata payload = _payloadOf(vaa);
         if (keccak256(payload) != keccak256(vm.payload)) revert MalformedVaa();

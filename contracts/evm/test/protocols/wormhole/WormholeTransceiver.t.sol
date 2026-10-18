@@ -9,7 +9,7 @@ import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
 import {toBytes32} from "test/Harness.sol";
 import {ProviderGatewayRoleSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
-import {WormholeFixture, _vaa, _envelope} from "test/protocols/wormhole/WormholeFixture.sol";
+import {WormholeFixture, _vaa, _envelope, _withConsistency} from "test/protocols/wormhole/WormholeFixture.sol";
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures authenticate the emitter, and
 ///         the base's counterpart check is what refuses a wrong one.
@@ -29,6 +29,14 @@ contract WormholeTransceiverInboundTest is ProviderGatewayRoleSpec, WormholeFixt
         (CoreBridgeVM memory v,,) = core.parseAndVerifyVM(vaa);
         assertTrue(WormholeTransceiver(payable(transceiver)).vaaConsumed(v.hash));
         vm.expectRevert(abi.encodeWithSelector(WormholeMessage.VaaAlreadyConsumed.selector, v.hash));
+        IVaaV1Receiver(transceiver).executeVAAv1(vaa);
+    }
+
+    /// @dev A VAA signed before its source finalized could be undone by a reorg after it ran.
+    function test_aVaaBelowFinalityIsRejected() public {
+        _wire();
+        bytes memory vaa = _withConsistency(_vaaFrom(ORIGIN_TRANSCEIVER, HERE_WORMHOLE_CHAIN, _bootstrap()), 200);
+        vm.expectRevert(abi.encodeWithSelector(WormholeMessage.NotFinalized.selector, uint8(200)));
         IVaaV1Receiver(transceiver).executeVAAv1(vaa);
     }
 

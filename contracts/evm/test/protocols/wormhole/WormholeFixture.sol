@@ -42,6 +42,12 @@ function _vaa(uint8 sigCount, uint16 emitterChain, bytes32 emitter, uint64 seque
     );
 }
 
+/// @dev `vaa` with its body's consistency level replaced.
+function _withConsistency(bytes memory vaa, uint8 level) pure returns (bytes memory) {
+    vaa[6 + uint256(uint8(vaa[5])) * 66 + 50] = bytes1(level);
+    return vaa;
+}
+
 function _envelope(uint16 targetChain, address target, bytes memory inner) pure returns (bytes memory) {
     return abi.encodePacked(targetChain, toBytes32(target), inner);
 }
