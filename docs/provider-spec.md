@@ -127,7 +127,7 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | --- | --- | --- |
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Public, and so linked, where inlining it would put a transceiver over EIP-170 (`WormholeMessage`, `LzMessage`). |
 | `<P>Transmitter.sol` | `OwnableTransmitter` (`TransmitterBase` + `OwnableUpgradeable`) | The per-user account at home. Sends on path A. |
-| `<P>Receiver.sol` | `ReceiverBase` | The per-user account on every other chain. Receives on path A. |
+| `<P>Receiver.sol` | `ProviderReceiver`, or `ReceiverBase` where setup goes beyond the gateway grant | The per-user account on every other chain. Receives on path A. `ProviderReceiver` supplies `initialize`, which grants `GATEWAY_ROLE` to `_providerGateway()` and then runs `__ReceiverBase_init`; LayerZero and `op-stack-l1-l2` declare their own initializer instead, since they set a peer or take the gateway as an argument. |
 | `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). |
 | `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive account addresses their own way. Each override only names both bases. |
 
@@ -190,7 +190,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` last so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
+| `initialize(...)` | `IReceiverInit`, in `ReceiverBase.sol` | Where the only setup is the gateway grant, extend `ProviderReceiver` and answer `_providerGateway()`. Otherwise declare a binding-specific one, do provider setup, then call `__ReceiverBase_init` last so the bootstrap payload runs against a configured provider. Never `super.initialize`; see below. |
 | an owner or delegate | none today | If the SDK needs an owner-gated config surface on the account, the receiver's initializer MUST carry the owner. `_accountInitializer` is `virtual` on the transceiver for exactly this. |
 | nothing else | | A binding MUST NOT expect the transceiver to reach a receiver after creation. `commit`, `cancel`, and `execute` are gated on the transmitter alone; the initializer is the transceiver's only call, ever. |
 
