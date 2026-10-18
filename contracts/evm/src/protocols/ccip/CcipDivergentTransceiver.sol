@@ -43,6 +43,10 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         return super._deployAccount(salt);
     }
 
+    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeCrossProxyInitCode();
+    }
+
     function _parityAddress(bytes32 chainKey)
         internal
         view

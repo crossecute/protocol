@@ -11,7 +11,8 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -46,6 +47,10 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @notice The `TransceiverExtension` every selector not declared here runs in.
     address public immutable extension;
 
+    /// The contract `_deployAccount` reads `CrossProxy`'s initcode from (`CrossProxyInitCode`),
+    /// written by this implementation's constructor. Zero on zkSync, which deploys by hash.
+    address internal immutable _crossProxyInitCode;
+
     error NoExtension();
     /// @dev The extension derives accounts, or names this chain, differently from this contract.
     error ExtensionMismatch();
@@ -53,6 +58,13 @@ abstract contract TransceiverBase is TransceiverCore {
     constructor(address extension_) {
         if (extension_.code.length == 0) revert NoExtension();
         extension = extension_;
+        _crossProxyInitCode = _storeCrossProxyInitCode();
+    }
+
+    /// @notice Write `CrossProxy`'s initcode for `_deployAccount` to read.
+    /// @dev A variant whose `_deployAccount` does not read it overrides this to store nothing.
+    function _storeCrossProxyInitCode() internal virtual returns (address) {
+        return CrossProxyInitCode.store();
     }
 
     /// @notice Run any other selector in the extension, against this contract's storage.
@@ -137,7 +149,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      and deployment through a system contract against a pre-published bytecode hash, so
     ///      a variant there emits `new CrossProxy{salt: s}()`. Tron diverges only in the formula.
     function _deployAccount(bytes32 salt) internal virtual returns (address deployed) {
-        return Create2.deploy(0, salt, type(CrossProxy).creationCode);
+        return Create2.deploy(0, salt, CrossProxyInitCode.load(_crossProxyInitCode));
     }
 
     /// @notice Deploy an owner's account and arm it: a transmitter if it is homed here, a

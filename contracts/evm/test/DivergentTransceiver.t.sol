@@ -32,6 +32,10 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
         return address(new ZkSyncTransceiverExtension());
     }
 
+    function crossProxyInitCode() external view returns (address) {
+        return _crossProxyInitCode;
+    }
+
     /// @dev The overrides below only name both bases, as Solidity requires where each supplies
     ///      an implementation; `super` resolves by linearization to the one that does the work.
     function _parityAddress(bytes32 chainKey)
@@ -55,6 +59,10 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
     function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployAccount(salt);
     }
+
+    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeCrossProxyInitCode();
+    }
 }
 
 contract TronSym is TronTransceiver, SymHarness {
@@ -64,6 +72,10 @@ contract TronSym is TronTransceiver, SymHarness {
 
     function _newExtension() internal override returns (address) {
         return address(new TronTransceiverExtension());
+    }
+
+    function crossProxyInitCode() external view returns (address) {
+        return _crossProxyInitCode;
     }
 
     /// @dev The overrides below only name both bases, as Solidity requires where each supplies
@@ -145,6 +157,13 @@ contract DivergentTransceiverTest is Test {
     /// @dev These chains always report, whatever the caller passed.
     function test_itAlwaysDiverges() public {
         assertTrue(ext(address(_zk())).addressesDiverge());
+    }
+
+    /// @dev EraVM cannot deploy raw initcode, so the zkSync implementation's constructor must
+    ///      not try; Tron deploys from the stored copy as a parity chain does.
+    function test_onlyZkSyncStoresNoInitCode() public {
+        assertEq(new ZkSym().crossProxyInitCode(), address(0));
+        assertTrue(new TronSym().crossProxyInitCode().code.length != 0);
     }
 
     function test_aZeroBytecodeHashIsRefused() public {

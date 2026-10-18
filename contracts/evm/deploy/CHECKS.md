@@ -179,7 +179,9 @@ that. Measured with the provider fixtures (mock gateways, cold storage):
 | Payload to an existing receiver | under 18,500 plus its calls |
 
 Measured 2026-10-07, then raised by what #61 measured on 2026-10-13: a receiver's home
-origin adds 22,000 to 26,000 to each bootstrap and 1,300 to 2,300 to each payload.
+origin adds 22,000 to 26,000 to each bootstrap and 1,300 to 2,300 to each payload. Since #70 a
+transceiver reads `CrossProxy`'s initcode from a code-only contract, which adds 2,264 to each
+account creation, and so to each bootstrap (measured 2026-10-18, cold).
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote

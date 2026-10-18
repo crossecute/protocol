@@ -50,6 +50,11 @@ abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncAccounts {
     function _deployAccount(bytes32 salt) internal virtual override returns (address) {
         return _zkSyncDeploy(salt);
     }
+
+    /// @dev EraVM cannot deploy raw initcode, and `_deployAccount` here reads none.
+    function _storeCrossProxyInitCode() internal virtual override returns (address) {
+        return address(0);
+    }
 }
 
 /// @title TronTransceiver

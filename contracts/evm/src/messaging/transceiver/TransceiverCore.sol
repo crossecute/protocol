@@ -5,7 +5,6 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Roles} from "src/messaging/Roles.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -72,7 +71,11 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
     /// @dev An input to Ethereum's CREATE2 formula only. zkSync deploys from a zksolc artifact
     ///      hash instead; see `_predictCrossAccount`.
-    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
+    /// @dev `keccak256(type(CrossProxy).creationCode)`, written out: solc evaluates that
+    ///      expression at runtime, which would put the initcode in every runtime that reads this
+    ///      (#70). `CrossProxy.t.sol` pins the two equal.
+    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH =
+        0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c;
 
     /// The transmitter logic every account homed here is armed with. Write-once: accounts
     /// lock when armed, so a change would split them into two logic versions by creation time.
