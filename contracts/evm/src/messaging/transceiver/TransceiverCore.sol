@@ -9,6 +9,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {CrossProxy} from "src/account/CrossProxy.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -71,11 +72,11 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
     /// @dev An input to Ethereum's CREATE2 formula only. zkSync deploys from a zksolc artifact
     ///      hash instead; see `_predictCrossAccount`.
-    /// @dev `keccak256(type(CrossProxy).creationCode)`, written out: solc evaluates that
-    ///      expression at runtime, which would put the initcode in every runtime that reads this
-    ///      (#70). `CrossProxy.t.sol` pins the two equal.
-    bytes32 public constant CROSS_PROXY_INIT_CODE_HASH =
-        0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c;
+    /// @dev Immutable, not constant: a constant is evaluated at runtime, which would put the
+    ///      initcode in every runtime that reads this (#70); an immutable puts it in initcode only.
+    ///      Computed rather than written out so a build with other compiler settings, such as
+    ///      `forge coverage`'s unoptimized one, derives the accounts it deploys.
+    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
 
     /// The transmitter logic every account homed here is armed with. Write-once: accounts
     /// lock when armed, so a change would split them into two logic versions by creation time.

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
@@ -95,9 +96,18 @@ contract CrossProxyTest is Test {
         assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
     }
 
-    /// @dev Transceivers carry the hash as a literal, so the initcode stays out of their runtime.
-    function test_theTransceiversLiteralIsTheInitCodeHash() public {
+    function test_theTransceiversHashIsTheInitCodeHash() public {
         assertEq(new TransceiverExtension().CROSS_PROXY_INIT_CODE_HASH(), keccak256(type(CrossProxy).creationCode));
+    }
+
+    /// @dev R8.3: every chain's build must derive the same accounts, and the transceiver now
+    ///      computes the hash from its own build, so this is what catches a settings change.
+    ///      Coverage builds unoptimized and is exempt.
+    function test_theInitCodeHashIsPinned() public {
+        if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
+        assertEq(
+            keccak256(type(CrossProxy).creationCode), 0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c
+        );
     }
 
     /// @dev A transceiver deploys accounts from the stored copy, so it must be the initcode byte
