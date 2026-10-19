@@ -279,7 +279,7 @@ summary: the file is always the newer statement.
 | Why the owner configures and the roles are not authorities               | `messaging/Roles.sol`, `TransceiverBase` |
 | Why the bootstrap fee is paid to the treasury in the same transaction    | `TransceiverBase._bootstrapSendValue` |
 | Why each account is homed on its authenticated origin                   | `TransceiverBase._handleInbound`      |
-| Why the report float leaves only at the treasury's call                  | `TransceiverExtension.withdraw`, `Treasury.collect` |
+| Why the report float pays reports and leaves only at the treasury's call | `TransceiverExtension.withdraw`, `Treasury.collect` |
 | Why a chain's grade is write-once and suspension is the cut-off          | `registry/ChainRegistry.sol`          |
 | Why zkSync and Tron derive accounts their own way, and what is unverified  | `transceiver/DivergentAccounts.sol`   |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
@@ -429,8 +429,8 @@ What an operator or integrator has to know:
   enforces that design today.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
   so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
-  reports, funded out of band, and that leaves only when the treasury pulls it with
-  `Treasury.collect`.
+  reports, funded out of band, which pays those reports and otherwise leaves only when the
+  treasury pulls it with `Treasury.collect`.
 - Ownership is the only live authority, and it cannot admit a transport, drop one, or
   repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization

@@ -350,6 +350,9 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   report, an inbound delivery), not an account's later sends, which leave from its transmitter.
 - A destination is bootstrapped exactly once per account, and a send to one that has not
   been is refused locally rather than paid for and failed on arrival.
+- A bootstrap fee lands in the treasury in the transaction that charges it, and a bootstrap's
+  quote is its message fee plus that fee, which is exactly what the account pays. A
+  transceiver's float pays only for receiver reports and otherwise leaves only to its treasury.
 
 ## TODO
 
