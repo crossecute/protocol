@@ -84,11 +84,12 @@ this file is the gap between that design and the tree.
   catches it only if the registry's recorded `crossProxyInitCodeHash` is the canonical value
   rather than one read from the deploying build. Step 1, which writes that record, is
   unscripted; scripting it should take the value from `deploy/`, not from the build.
-- **Dependency pins.** Foundry is at 1.8.1 (latest 1.8.5), checked 2026-10-19. Decide before
-  mainnet whether to bump. OpenZeppelin stays at 5.4.0 (latest 5.7.0), decided 2026-10-19:
-  from 5.5.0 its `Arrays` uses `mcopy`, which `EnumerableSet` reaches, so `src/` no longer
-  compiles at `paris` (README, Assumptions). The one OpenZeppelin advisory since 5.2
-  (`Bytes.lastIndexOf`) is fixed in 5.4.0, and `src/` does not import `Bytes`.
+- **Dependency pins.** Decided 2026-10-19: Foundry stays at 1.8.1 (latest 1.8.5), and
+  OpenZeppelin at 5.4.0 (latest 5.7.0). Foundry does not set the bytecode; solc and its
+  settings are pinned in `foundry.toml`. From 5.5.0, OpenZeppelin's `Arrays` uses `mcopy`,
+  which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
+  Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
+  5.4.0, and `src/` does not import `Bytes`.
 
 ## 4. Post-launch: non-EVM destinations
 
