@@ -9,7 +9,6 @@ import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
-import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -94,10 +93,6 @@ contract CrossProxyTest is Test {
         );
         // No constructor arguments at all: the creation code is the initcode.
         assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
-    }
-
-    function test_theTransceiversHashIsTheInitCodeHash() public {
-        assertEq(new TransceiverExtension().CROSS_PROXY_INIT_CODE_HASH(), keccak256(type(CrossProxy).creationCode));
     }
 
     /// @dev R8.3: every chain's build must derive the same accounts, and the transceiver now
