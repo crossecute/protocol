@@ -2,8 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {VmSafe} from "forge-std/Vm.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {ARACHNID} from "script/deploy/CrossProxyDeploy.sol";
 import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 
 contract Logic {
@@ -26,10 +29,15 @@ contract CrossProxyDeployerTest is Test {
         deployer = crossProxyDeployer();
     }
 
-    /// @dev `ChainRegistry.CROSS_PROXY_DEPLOYER` is this literal. A change to the deployer's
-    ///      bytecode moves it and fails here first.
-    function test_itSitsWhereTheRegistryDerivesAgainst() public view {
-        assertEq(address(deployer), 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C);
+    /// @dev A change to the deployer's bytecode moves it off `CROSS_PROXY_DEPLOYER` and fails here
+    ///      first. Coverage builds unoptimized and is exempt.
+    function test_itSitsWhereTheRegistryDerivesAgainst() public {
+        if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
+        assertEq(
+            Create2.computeAddress(bytes32(0), keccak256(type(CrossProxyDeployer).creationCode), ARACHNID),
+            CROSS_PROXY_DEPLOYER
+        );
+        assertEq(address(deployer), CROSS_PROXY_DEPLOYER);
     }
 
     function test_itArmsAndLocksInTheDeployingCall() public {

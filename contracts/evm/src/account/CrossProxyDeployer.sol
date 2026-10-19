@@ -4,6 +4,12 @@ pragma solidity ^0.8.20;
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
 
+// Where `CrossProxyDeployer` sits: Arachnid's factory at salt zero, so the same address on every
+// standard EVM chain. A `Predetermined` chain is one whose transceivers were deployed through it
+// (#33). A literal, since a zkSync or Tron registry's compiler would derive another;
+// `CrossProxyDeployer.t.sol` pins it to solc's build.
+address constant CROSS_PROXY_DEPLOYER = 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C;
+
 /// @notice The CREATE2 salt `CrossProxyDeployer` deploys under for `deployedBy`'s `salt`.
 /// @dev The caller is hashed in so that nobody else can deploy at a caller's address first
 ///      with their own implementation. `ChainRegistry.predictTransceiver` derives with it.
