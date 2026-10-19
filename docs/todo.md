@@ -79,11 +79,6 @@ this file is the gap between that design and the tree.
   skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
-- **Coverage is not in CI.** `forge coverage` builds without the optimizer, so `CrossProxy`'s
-  initcode and `CrossProxyDeployer`'s address differ from a production build. It runs because
-  `CROSS_PROXY_INIT_CODE_HASH` is computed from the build and `crossProxyDeployer()` moves the
-  deployer to `CROSS_PROXY_DEPLOYER` under coverage only; the two tests that pin those values
-  skip there. The numbers are the unoptimized build's.
 - **A build with other compiler settings is caught in CI, not at deploy.**
   `test_theInitCodeHashIsPinned` holds R8.3. At deploy, `TransceiverDeploy`'s R8.4 check
   catches it only if the registry's recorded `crossProxyInitCodeHash` is the canonical value

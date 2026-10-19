@@ -46,3 +46,34 @@ jobs:
           FOUNDRY_PROFILE: lint-src
 
       - run: forge test -vvv
+
+  # Reports coverage of src/ and enforces no minimum. The build is unoptimized, so the two
+  # tests that pin CrossProxy's initcode hash and the deployer's address skip here; `forge`
+  # above holds those values.
+  coverage:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/evm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+
+      # shell: bash adds pipefail, so a failing test fails the step despite the tee.
+      - shell: bash
+        run: |
+          forge coverage --report summary --report lcov --no-match-coverage '^(test|script|lib)/' \
+            | tee coverage.txt
+          # The invariant suites print tables too; the coverage table is the one after "Ran".
+          { echo '```'; sed -n '/^Ran [0-9]* test suites/,$p' coverage.txt | sed -n '/^╭/,/^╰/p'
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov
+          path: contracts/evm/lcov.info
