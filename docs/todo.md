@@ -23,7 +23,9 @@ this file is the gap between that design and the tree.
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
   pays; the float is funded out of band, and how much it needs depends on traffic from every
-  home.
+  home. Mass bootstrapping can also spend it down on purpose: the fee floor is only nonzero,
+  the cheapest home sets the price, and an empty float blocks bootstraps to that chain from
+  every home (#78).
 
 ## 2. Chain checks before mainnet
 
