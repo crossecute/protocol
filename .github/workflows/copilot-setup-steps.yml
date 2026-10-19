@@ -29,3 +29,11 @@ jobs:
       # Prebuilt artifacts make Copilot's own forge test runs incremental.
       - run: forge build
         working-directory: contracts/evm
+
+      # The full suite's result on the PR head, which the review instructions point at for
+      # checking a test count or a named test without re-running it. In out/, which git
+      # ignores. A failing suite must not stop the review, so the exit code is dropped.
+      - run: |
+          forge test > out/copilot-forge-test.txt 2>&1 || true
+          tail -n 3 out/copilot-forge-test.txt
+        working-directory: contracts/evm

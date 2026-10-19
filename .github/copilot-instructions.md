@@ -20,6 +20,9 @@ touches security-sensitive code; all of `src/` is. Base the verdict on what you 
 A review has a fixed budget and stops when it runs out. Spend it on `src/` first, in the
 order below, and stop a pass when you have a finding or have cleared it. CI already builds,
 runs the full test suite, checks sizes, and runs fmt and lint, so do not repeat any of that.
+To check a test count or whether a named test passes, read
+`contracts/evm/out/copilot-forge-test.txt`, which the setup steps wrote from `forge test` on
+the PR head. Forge counts all the `invariant_` functions of one contract as a single test.
 
 End the summary with the checks you did not reach, so the human reviewer knows what is left.
 
