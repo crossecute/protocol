@@ -12,7 +12,7 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Move} from "src/addressing/Move.sol";
-import {crossProxySalt} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/account/CrossProxyDeployer.sol";
 
 /// @notice A provider a registry is born knowing, with the CREATE2 inputs its contracts
 ///         deploy from.
@@ -55,13 +55,6 @@ struct RegistrySeed {
 ///      fixed, and every change waits out the owning timelock.
 contract ChainRegistry is Ownable {
     using EnumerableSet for EnumerableSet.Bytes32Set;
-
-    /// @notice `CrossProxyDeployer`, deployed through Arachnid's factory at salt zero, so at the
-    ///         same address on every standard EVM chain. A `Predetermined` chain is one whose
-    ///         transceivers were deployed through it (#33).
-    /// @dev A literal, since a zkSync or Tron registry's compiler would derive another;
-    ///      `CrossProxyDeployer.t.sol` pins it to solc's build.
-    address internal constant CROSS_PROXY_DEPLOYER = 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C;
 
     /* ================================= storage ================================= */
 

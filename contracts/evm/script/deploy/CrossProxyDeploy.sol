@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Vm} from "forge-std/Vm.sol";
+import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
 
 /// @dev Shared by every deploy, in tests and on chain, so a check written here holds in both.
 ///      Forge runs both, so the cheatcode address is present to read proxy slots.
@@ -31,10 +31,17 @@ function arachnidDeploy(bytes memory initCode) returns (address at) {
 }
 
 /// @notice `CrossProxyDeployer` where production puts it: through Arachnid's factory at salt
-///         zero, deployed on first use. `ChainRegistry.CROSS_PROXY_DEPLOYER` is this address;
-///         `CrossProxyDeployer.t.sol` pins the literal.
+///         zero, deployed on first use, which is `CROSS_PROXY_DEPLOYER`.
+/// @dev `forge coverage` builds unoptimized, so its deployer lands elsewhere; it is copied to
+///      `CROSS_PROXY_DEPLOYER`, which is sound because the deployer holds no storage. Never true
+///      in a broadcast.
 function crossProxyDeployer() returns (CrossProxyDeployer) {
-    return CrossProxyDeployer(arachnidDeploy(type(CrossProxyDeployer).creationCode));
+    address at = arachnidDeploy(type(CrossProxyDeployer).creationCode);
+    if (at != CROSS_PROXY_DEPLOYER && VM.isContext(VmSafe.ForgeContext.Coverage)) {
+        if (CROSS_PROXY_DEPLOYER.code.length == 0) VM.etch(CROSS_PROXY_DEPLOYER, at.code);
+        at = CROSS_PROXY_DEPLOYER;
+    }
+    return CrossProxyDeployer(at);
 }
 
 /// @notice Deploy a `CrossProxy` for `deployedBy` at `salt`, armed with `implementation` and
