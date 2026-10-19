@@ -459,7 +459,7 @@ over interop).
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 826 passing, 1 skipped (the fork test)
+cd contracts/evm && forge test        # 829 passing, 1 skipped (the fork test)
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

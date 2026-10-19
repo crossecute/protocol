@@ -57,7 +57,9 @@ this file is the gap between that design and the tree.
   needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
-  zksolc and TRON-solc, which these scripts do not drive.
+  zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
+  0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19);
+  CI does not run it.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes
@@ -70,9 +72,27 @@ this file is the gap between that design and the tree.
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
   initializer sets together are covered only by the suites that read them back.
-- **No fork tests.** Every binding is tested against a mock of its provider. C11, and C29 to
-  C31 for every provider but Wormhole, test the transport rather than the binding, so until
-  they run against each provider's real deployment, P7 and P9 remain documented assumptions.
+- **One fork test, and CI does not run it.** Every binding is tested against a mock of its
+  provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint and
+  skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
+  but Wormhole, test the transport rather than the binding, so until they run against each
+  provider's real deployment, P7 and P9 remain documented assumptions.
+- **Coverage is not in CI.** `forge coverage` builds without the optimizer, so `CrossProxy`'s
+  initcode and `CrossProxyDeployer`'s address differ from a production build. It runs because
+  `CROSS_PROXY_INIT_CODE_HASH` is computed from the build and `crossProxyDeployer()` moves the
+  deployer to `CROSS_PROXY_DEPLOYER` under coverage only; the two tests that pin those values
+  skip there. The numbers are the unoptimized build's.
+- **A build with other compiler settings is caught in CI, not at deploy.**
+  `test_theInitCodeHashIsPinned` holds R8.3. At deploy, `TransceiverDeploy`'s R8.4 check
+  catches it only if the registry's recorded `crossProxyInitCodeHash` is the canonical value
+  rather than one read from the deploying build. Step 1, which writes that record, is
+  unscripted; scripting it should take the value from `deploy/`, not from the build.
+- **Dependency pins.** OpenZeppelin is at 5.4.0 (latest 5.7.0) and Foundry at 1.8.1 (latest
+  1.8.5), checked 2026-10-19. `CrossProxy` and `CrossProxyDeployer` import OpenZeppelin, so a
+  bump that changes their bytecode moves `CROSS_PROXY_INIT_CODE_HASH`, `CROSS_PROXY_DEPLOYER`,
+  and every derived address; the pin tests fail if it does. The one OpenZeppelin advisory
+  since 5.2 (`Bytes.lastIndexOf`) is fixed in 5.4.0, and `src/` does not import `Bytes`.
+  Decide before mainnet whether to bump: after it, a bump means redeploying everything.
 
 ## 4. Post-launch: non-EVM destinations
 
