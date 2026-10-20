@@ -221,7 +221,8 @@ defines no quote, so `quoteMessage` is the protocol's own addition alongside it.
 ```
 src/
   addressing/     Erc7930, ChainType, ChainKey, Move        no imports outside itself
-  derivation/     AddressDerive, VmDeriver, Starknet/Sui, Blake2b256
+  derivation/     AddressDerive, IVmDeriver, VmDeriver, Bitcoin/Starknet/Sui
+                  Blake2b256
   registry/       ChainRegistry, Provenance, IRefValidator, IChainRegistryRefs
                   ICommitmentScheme
   validators/     StarknetValidator, MoveValidator          pluggable, per chainKey

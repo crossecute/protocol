@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import {IVmDeriver} from "src/derivation/VmDeriver.sol";
+import {IVmDeriver} from "src/derivation/IVmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
