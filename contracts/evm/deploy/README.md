@@ -94,7 +94,7 @@ LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway
 dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
 
 zkSync and Tron have deploy functions, which the tests use, but no production script: their
-bytecode comes from zksolc and TRON-solc.
+bytecode, and step 1's `ChainRegistry` there, comes from zksolc and TRON-solc.
 
 `op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home on an
 L2 it lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. Where the

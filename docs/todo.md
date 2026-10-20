@@ -60,8 +60,9 @@ this file is the gap between that design and the tree.
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
-  0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19);
-  CI does not run it.
+  0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
+  zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
+  `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes
