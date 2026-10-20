@@ -84,22 +84,17 @@ this file is the gap between that design and the tree.
   skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
-- **Coverage is not in CI.** `forge coverage` builds without the optimizer, so `CrossProxy`'s
-  initcode and `CrossProxyDeployer`'s address differ from a production build. It runs because
-  `CROSS_PROXY_INIT_CODE_HASH` is computed from the build and `crossProxyDeployer()` moves the
-  deployer to `CROSS_PROXY_DEPLOYER` under coverage only; the two tests that pin those values
-  skip there. The numbers are the unoptimized build's.
 - **A build with other compiler settings is caught in CI, not at deploy.**
   `test_theInitCodeHashIsPinned` holds R8.3. At deploy, `TransceiverDeploy`'s R8.4 check
   catches it only if the registry's recorded `crossProxyInitCodeHash` is the canonical value
   rather than one read from the deploying build. Step 1, which writes that record, is
   unscripted; scripting it should take the value from `deploy/`, not from the build.
-- **Dependency pins.** OpenZeppelin is at 5.4.0 (latest 5.7.0) and Foundry at 1.8.1 (latest
-  1.8.5), checked 2026-10-19. `CrossProxy` and `CrossProxyDeployer` import OpenZeppelin, so a
-  bump that changes their bytecode moves `CROSS_PROXY_INIT_CODE_HASH`, `CROSS_PROXY_DEPLOYER`,
-  and every derived address; the pin tests fail if it does. The one OpenZeppelin advisory
-  since 5.2 (`Bytes.lastIndexOf`) is fixed in 5.4.0, and `src/` does not import `Bytes`.
-  Decide before mainnet whether to bump: after it, a bump means redeploying everything.
+- **Dependency pins.** Decided 2026-10-19: Foundry stays at 1.8.1 (latest 1.8.5), and
+  OpenZeppelin at 5.4.0 (latest 5.7.0). Foundry does not set the bytecode; solc and its
+  settings are pinned in `foundry.toml`. From 5.5.0, OpenZeppelin's `Arrays` uses `mcopy`,
+  which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
+  Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
+  5.4.0, and `src/` does not import `Bytes`.
 
 ## 4. Post-launch: non-EVM destinations
 
