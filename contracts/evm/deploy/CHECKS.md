@@ -186,8 +186,27 @@ account creation, and so to each bootstrap (measured 2026-10-18, cold).
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
 1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
-attribute can exceed a lane's cap. EraVM prices differently and Forge cannot measure it;
-zkSync needs its own number.
+attribute can exceed a lane's cap.
+
+EraVM prices differently and Forge cannot run it, so zkSync is measured on a local node by
+`test/eravm/era-delivery-gas.sh`. Each number is the smallest gas limit on the call into
+`handle` under which the delivery succeeds, found by `eth_call` against one cold state:
+
+| Delivery to a Hyperlane zkSync transceiver | Gas |
+| --- | --- |
+| Bootstrap, no calls | 376,647 |
+| Bootstrap, one call | 380,492 |
+| Payload to an existing receiver, no calls | 30,211 |
+
+Measured 2026-10-20 on anvil-zksync 0.7.1 (protocol version 30), built by foundry-zksync
+0.1.10 with zksolc 1.5.15 over era-solc 0.8.28-1.0.1 at its default settings. The bootstrap
+includes its report, sent through the mock mailbox. Registry reads go to a stub with
+`ChainRegistry`'s storage reads, since zksolc cannot build `ChainRegistry` (#82).
+
+These are execution only. The node publishes no pubdata (0 bytes at any
+`--l1-pubdata-price`), so what a bootstrap's storage writes cost in pubdata, and whether that
+counts against the call's gas limit, needs zkSync Sepolia. A report arriving at a zkSync home
+is not measured.
 
 ### 5. Verification on the destination
 
@@ -247,7 +266,9 @@ have no code at the predeploy, as expected.
 ## What these checks do not cover
 
 - That an account deploys where `ZkSyncAccounts` and `TronAccounts` predict, with the real
-  zksolc and TRON-solc artifacts. It needs one funded deployment per chain.
+  zksolc and TRON-solc artifacts. It needs one funded deployment per chain. On a local EraVM
+  node it did, with foundry-zksync's build (§4).
+- What pubdata adds to a delivery on zkSync (§4).
 - End-to-end delivery through each provider's real relayers. Fork tests can cover the
   contracts for free ([todo §3](../../../docs/todo.md#3-infrastructure)); the off-chain
   relaying needs a real send.

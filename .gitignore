@@ -4,6 +4,8 @@ contracts/evm/cache/
 contracts/evm/broadcast/
 contracts/evm/lcov.info
 contracts/evm/coverage.txt
+# foundry-zksync output from test/eravm/era-delivery-gas.sh.
+contracts/evm/zkout/
 
 # contracts/evm/lib/ is committed deliberately: CREATE2 parity depends on byte-identical
 # initcode, so the exact dependency bytes are load-bearing. forge-std and OZ are pinned
