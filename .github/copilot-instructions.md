@@ -12,8 +12,10 @@ through provider bindings (LayerZero, CCIP, Hyperlane, Wormhole, OP Stack) under
 so a bug that ships cannot be patched in place. `docs/provider-spec.md` is the normative
 spec; rules are cited as R1.1 to R9.3, prohibitions as §7, and compliance tests as C1 to C32.
 
-Every PR here gets a human review. Do not mark a PR as needing a closer look only because it
-touches security-sensitive code; all of `src/` is. Base the verdict on what you found.
+Every PR here gets a human review. Base the verdict on what you found: without a Medium or
+higher finding, do not mark a PR as needing a closer look. Touching security-sensitive code is
+not a reason, since all of `src/` is. Neither is a claim you could not check here, such as a
+measurement taken outside CI; list it with the checks you did not reach.
 
 ## Budget
 
@@ -24,7 +26,9 @@ To check a test count or whether a named test passes, read
 `contracts/evm/out/copilot-forge-test.txt`, which the setup steps wrote from `forge test` on
 the PR head. Forge counts all the `invariant_` functions of one contract as a single test.
 
-End the summary with the checks you did not reach, so the human reviewer knows what is left.
+End every summary, whatever the PR touches, with the checks you did not reach, named by their
+number or heading below, so the human reviewer knows what is left. If you reached them all,
+say so.
 
 ## What to report
 
@@ -89,10 +93,14 @@ to check a suspected bug or item 9.
 
 ## PRs that only touch docs or tests
 
+A change under `src/` that touches only comments or NatSpec counts as docs: with
+`bytecode_hash = "none"` and no CBOR metadata, it cannot change bytecode.
+
 Skip the `src/` checklist. Report only claims that are wrong against the code, citations
-that point at something that no longer says what the text claims, and tests that cannot
-fail (an assertion that holds whatever the code does, or a fixture that never reaches the
-path under test).
+that point at something that no longer says what the text claims, counts the PR description
+states (check a test count against `contracts/evm/out/copilot-forge-test.txt`), and tests
+that cannot fail (an assertion that holds whatever the code does, or a fixture that never
+reaches the path under test).
 
 ## What not to report
 
