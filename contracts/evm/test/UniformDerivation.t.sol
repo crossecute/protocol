@@ -5,7 +5,8 @@ import {Test} from "forge-std/Test.sol";
 
 import {deployTransceiver} from "test/DeployCrossProxy.sol";
 
-import {IVmDeriver, VmDeriver} from "src/derivation/VmDeriver.sol";
+import {IVmDeriver} from "src/derivation/IVmDeriver.sol";
+import {VmDeriver} from "src/derivation/VmDeriver.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";

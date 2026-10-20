@@ -13,8 +13,8 @@ pragma solidity ^0.8.20;
 ///
 /// @dev Nothing on a destination calls this. Bitcoin has no executor and no receiver: `bip122`
 ///      appears in the registry as a reference that can be validated and addressed, never
-///      as a destination a payload runs on. Its only caller is `VmDeriver`, which is
-///      home-chain machinery, so this file never reaches a chain that cannot compile it.
+///      as a destination a payload runs on. Its only caller is `VmDeriver`, which nothing
+///      deployed on EraVM imports, so `VmDeriver` cannot be built for EraVM either.
 library BitcoinDerive {
     /// @notice HASH160 = ripemd160(sha256(x)). P2PKH and P2WPKH witness programs.
     function hash160(bytes memory data) internal pure returns (bytes20) {
