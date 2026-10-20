@@ -10,6 +10,7 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {HyperlaneTransceiverBase} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {HyperlaneDeploy} from "script/deploy/HyperlaneDeploy.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -20,39 +21,12 @@ import {Call} from "src/messaging/Call.sol";
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {transceiverConfig, toBytes32} from "test/Harness.sol";
+import {unseeded} from "test/RegistrySeed.sol";
 
 /// @notice The Hyperlane mock, also delivering with a set gas limit, as a relayer's executor does.
 contract GasLimitedMailbox is MockHyperlaneMailbox {
     function deliver(address to, uint32 origin, bytes32 sender, bytes calldata message, uint256 gasLimit) external {
         IMessageRecipient(to).handle{gas: gasLimit}(origin, sender, message);
-    }
-}
-
-/// @notice The registry calls a delivery makes, over the same storage reads as `ChainRegistry`,
-///         which zksolc cannot build: it reaches `BitcoinDerive`'s `ripemd160` through `VmDeriver`
-///         (#82).
-contract RegistryReads {
-    mapping(bytes32 => bytes) internal _chainIdentifier;
-    mapping(bytes32 => Provenance) internal _provenanceOf;
-    mapping(bytes32 => bool) internal _suspended;
-
-    function addChainKey(bytes calldata identifier, Provenance provenance) external returns (bytes32 chainKey) {
-        chainKey = keccak256(identifier);
-        _chainIdentifier[chainKey] = identifier;
-        _provenanceOf[chainKey] = provenance;
-    }
-
-    function isSuspended(bytes32 chainKey) external view returns (bool) {
-        return _suspended[chainKey];
-    }
-
-    function provenanceFor(bytes32 chainKey) external view returns (Provenance) {
-        require(_chainIdentifier[chainKey].length != 0, "unknown chain key");
-        return _provenanceOf[chainKey];
-    }
-
-    function validateLocation(bytes32 chainKey, bytes calldata interop) external view {
-        require(_chainIdentifier[chainKey].length != 0 && Erc7930.chainKey(interop) == chainKey, "location");
     }
 }
 
@@ -81,8 +55,9 @@ contract EraDeliveryGas is Script {
         bytes32 accountBytecodeHash =
             IAccountCodeStorage(ACCOUNT_CODE_STORAGE).getRawCodeHash(address(new CrossProxy()));
 
-        RegistryReads registry = new RegistryReads();
-        bytes32 provider = keccak256("hyperlane");
+        (, address deployer,) = vm.readCallers();
+        ChainRegistry registry = new ChainRegistry(deployer, unseeded());
+        bytes32 provider = registry.addMessageProvider("hyperlane");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(HOME_DOMAIN), Provenance.Unique);
 
         address t = address(new CrossProxy());
