@@ -194,14 +194,15 @@ EraVM prices differently and Forge cannot run it, so zkSync is measured on a loc
 
 | Delivery to a Hyperlane zkSync transceiver | Gas |
 | --- | --- |
-| Bootstrap, no calls | 376,647 |
-| Bootstrap, one call | 380,492 |
+| Bootstrap, no calls | 384,948 |
+| Bootstrap, one call | 388,793 |
 | Payload to an existing receiver, no calls | 30,211 |
 
 Measured 2026-10-20 on anvil-zksync 0.7.1 (protocol version 30), built by foundry-zksync
 0.1.10 with zksolc 1.5.15 over era-solc 0.8.28-1.0.1 at its default settings. The bootstrap
-includes its report, sent through the mock mailbox. Registry reads go to a stub with
-`ChainRegistry`'s storage reads, since zksolc cannot build `ChainRegistry` (#82).
+includes its report, sent through the mock mailbox, and its reads from a real `ChainRegistry`.
+A stub doing the same storage reads, used before zksolc could build the registry (#82), came
+in 8,301 lower on each bootstrap.
 
 These are execution only. The node publishes no pubdata (0 bytes at any
 `--l1-pubdata-price`), so what a bootstrap's storage writes cost in pubdata, and whether that

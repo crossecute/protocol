@@ -17,8 +17,8 @@ this file is the gap between that design and the tree.
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
-  about 610,000 to 675,000. On a local EraVM node a bootstrap's execution needs about 377,000
-  to 381,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
+  about 610,000 to 675,000. On a local EraVM node a bootstrap's execution needs about 385,000
+  to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
   against the gas limit a provider calls the transceiver with. A report arriving at a zkSync
   home is not measured either.
