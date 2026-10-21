@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Vm} from "forge-std/Vm.sol";
+import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
@@ -813,13 +813,14 @@ contract NoOpReceiver {
 ///      delivered to a contract that does nothing. What is left runs inside the receiver's
 ///      frame, scaled up by 64/63 at the gateway's call, so it slightly overstates the gas
 ///      limit a gateway must pass. It is measured against mock gateways, and Wormhole's mock
-///      Core verifies no guardian signatures.
+///      Core verifies no guardian signatures. Coverage builds unoptimized and is exempt.
 abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture {
     uint256 internal constant MEASURE_CEILING = 5_000_000;
 
     address private noOp;
 
     function setUp() public override {
+        if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         TransceiverConfig memory c = _config();
         c.transmitterImplementation = _transmitterImplementation();
         transceiver = _deployTransceiver(c, 0);
