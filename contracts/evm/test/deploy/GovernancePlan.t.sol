@@ -239,6 +239,17 @@ contract GovernancePlanTest is Test {
         GovernancePlan.load(ChainConfig.defaultDir(), GovernanceConfig.defaultFile());
     }
 
+    /// @dev `op-stack-l1-l2` reaches only the OP Stack chains from Ethereum, so Arbitrum would get
+    ///      neither its registry scheduled nor that proposer.
+    function test_aProposerThatDoesNotReachEveryChainIsRefused() public {
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "each proposer reaches every chain"));
+        this.load(string.concat(vm.projectRoot(), "/test/deploy/config/governance-unreaching-proposer.toml"));
+    }
+
+    function load(string memory file) external view {
+        GovernancePlan.load(ChainConfig.defaultDir(), file);
+    }
+
     function _args(bytes memory data) internal pure returns (bytes memory out) {
         out = new bytes(data.length - 4);
         for (uint256 i; i < out.length; ++i) {

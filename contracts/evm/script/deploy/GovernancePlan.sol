@@ -81,6 +81,14 @@ library GovernancePlan {
             // Its lanes need no id and are not built here; a listed chain must not be skipped.
             check(!OpStackInteropConfig.isMember(dir, p.all, p.all[i]), "op-stack-l2-l2 lanes are not scripted");
         }
+        // Each proposer's account exists on a chain only once it is bootstrapped there, and the
+        // first one's bootstrap is what schedules that chain's registry.
+        for (uint256 i; i < p.chains.length; ++i) {
+            if (p.chains[i].chainId == p.g.home.chainId) continue;
+            for (uint256 j; j < 2; ++j) {
+                check(idFor(p, p.g.proposers[j], p.g.home, p.chains[i]) != 0, "each proposer reaches every chain");
+            }
+        }
     }
 
     /* ================================ addresses =============================== */
