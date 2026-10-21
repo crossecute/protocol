@@ -773,6 +773,10 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
+Step 1 is scripted for a standard EVM chain: `script/DeployChain.s.sol` takes every argument
+from `deploy/governance.toml`, so the three contracts sit at one address on every such chain,
+and reads the design above back from chain.
+
 Step 2 is scripted for each provider on a standard EVM chain: `script/Deploy<Provider>.s.sol`
 reads the chain's inputs from the environment and deploys through `script/deploy/`, which the
 test suites deploy through too, so every check a deployment makes also runs in every test.
@@ -780,8 +784,8 @@ Those shared checks hold the proxy to its predicted address, locked on its imple
 the transceiver to its configuration, gateways, and governor's home; and, where the registry
 records the provider's deployment, R8.4. The production script adds what holds only on chain:
 the salt and caller are the record's; the chain, the governor's home, and the provider ids are
-in `deploy/`; and the registry has the home and grades every chain as `deploy/` does. Steps 1
-and 3 to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
+in `deploy/`; and the registry has the home and grades every chain as `deploy/` does. Steps 3
+to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
 ordering above is their specification.
 
 ---

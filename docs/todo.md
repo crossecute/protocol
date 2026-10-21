@@ -63,10 +63,9 @@ this file is the gap between that design and the tree.
 
 ## 3. Infrastructure
 
-- **Deploy scripts cover step 2 only**
+- **Deploy scripts cover steps 1 and 2 only**
   ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
-  step 1 (the per-chain timelock, the seeded registry, the treasury, so the timelock design is
-  enforced by nothing), steps 3 to 7, and the payloads that write the N × N tables every chain
+  steps 3 to 7, and the payloads that write the N × N tables every chain
   needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
   deploy functions the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
@@ -91,11 +90,11 @@ this file is the gap between that design and the tree.
   skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
-- **A build with other compiler settings is caught in CI, not at deploy.**
-  `test_theInitCodeHashIsPinned` holds R8.3. At deploy, `TransceiverDeploy`'s R8.4 check
-  catches it only if the registry's recorded `crossProxyInitCodeHash` is the canonical value
-  rather than one read from the deploying build. Step 1, which writes that record, is
-  unscripted; scripting it should take the value from `deploy/`, not from the build.
+- **`deploy/governance.toml` is unset.** The governor's owner and salt, and each provider's
+  `deployed_by` and salt, are zero, and the deploy scripts refuse them. Its proposers,
+  LayerZero and CCIP, are a default to confirm: they must be two providers that reach every
+  chain from the home, which rules out both OP Stack providers, and Wormhole until its
+  deliverer exists.
 - **Dependency pins.** Decided 2026-10-19: Foundry stays at 1.8.1 (latest 1.8.5), and
   OpenZeppelin at 5.4.0 (latest 5.7.0). Foundry does not set the bytecode; solc and its
   settings are pinned in `foundry.toml`. From 5.5.0, OpenZeppelin's `Arrays` uses `mcopy`,

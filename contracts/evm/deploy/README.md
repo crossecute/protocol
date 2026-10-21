@@ -60,11 +60,22 @@ Never change a deployed chain's ids. Transceivers hold them write-once.
 
 ## 4. Deploy on the new chain
 
-**Step 1, not scripted yet.** Deploy the chain's `TimelockController`, then
-`ChainRegistry(timelock, seed)` and `Treasury(timelock)`. The seed names the governor's home,
-graded `Predetermined`, and each provider's deployment record exactly as every other chain's
-registry has it. A record that differs moves that provider's transceiver off its shared
-address.
+**Step 1:**
+
+```
+forge script script/DeployChain.s.sol --rpc-url <rpc> --broadcast
+```
+
+It deploys the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and
+`Treasury(timelock)`, through Arachnid's factory. Every argument comes from
+[`governance.toml`](governance.toml), so each lands at one address on every parity chain: the
+seed names the governor's home, graded `Predetermined`, and each provider's deployment record,
+and the timelock's proposers are the governor's accounts under the two providers it names. Any
+account may broadcast, and a rerun deploys nothing. It refuses a chain that is not parity, a
+`governance.toml` with an owner, caller, or salt unset, and a build whose `CrossProxy` initcode
+hash is not the one `governance.toml` records, since every registry records that value for
+every provider (R8.4). Never change `governance.toml` once a chain is deployed: every address
+derives from it.
 
 **Step 2, per provider:**
 

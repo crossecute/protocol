@@ -120,6 +120,13 @@ library ChainConfig {
         revert DeployCheck("derivation is parity, zksync, tron, or other");
     }
 
+    function chainNamed(ChainEntry[] memory cs, string memory name) internal pure returns (ChainEntry memory) {
+        for (uint256 i; i < cs.length; ++i) {
+            if (keccak256(bytes(cs[i].name)) == keccak256(bytes(name))) return cs[i];
+        }
+        revert DeployCheck("chain name is in chains.toml");
+    }
+
     function hasChainNamed(ChainEntry[] memory cs, string memory name) internal pure returns (bool) {
         for (uint256 i; i < cs.length; ++i) {
             if (keccak256(bytes(cs[i].name)) == keccak256(bytes(name))) return true;

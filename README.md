@@ -426,8 +426,8 @@ What an operator or integrator has to know:
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
   owner, where the governor's accounts under two providers propose and cancel, so a compromised
-  provider can freeze them but not take them. That step is not scripted yet, so nothing
-  enforces that design today.
+  provider can freeze them but not take them. `script/DeployChain.s.sol` deploys it from
+  `contracts/evm/deploy/governance.toml` and reads the design back.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
   so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
   reports, funded out of band, which pays those reports and otherwise leaves only when the

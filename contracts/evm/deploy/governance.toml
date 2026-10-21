@@ -1,0 +1,50 @@
+# What every chain's step 1 and step 2 must agree on (docs/provider-spec.md §6). Each value is
+# hashed into an address that has to be the same on every parity chain: the timelock, registry,
+# and treasury through their constructor arguments, the transceivers through each provider's
+# record, and the governor's accounts through its owner, salt, and home. Read by
+# `GovernanceConfig` in script/deploy/ChainDeploy.sol.
+#
+# A zero owner, deployed_by, or salt is unset: the deploy scripts refuse it.
+
+# The governor's home, by chains.toml name. Must be a parity chain.
+home = "ethereum"
+
+# The governor's owner on its home, which calls `createTransmitter` there, and its salt.
+owner = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# Every chain's TimelockController: 48 hours, the governor's accounts under these two providers
+# as proposers and cancellers, execution open, no admin but itself.
+timelock_delay = 172800
+proposers = ["layerzero", "ccip"]
+
+# keccak256 of solc's `CrossProxy` initcode, which every registry records for every provider
+# (R8.4). Taken from here, not from the deploying build; `test_theInitCodeHashIsPinned` holds
+# the build to the same value.
+cross_proxy_init_code_hash = "0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c"
+
+# Each provider's deployment record: the account that calls `CrossProxyDeployer.deploy` for its
+# transceiver on every chain, and the salt it deploys under. Write-once in every registry.
+[providers.layerzero]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[providers.ccip]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[providers.hyperlane]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[providers.wormhole]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[providers.op-stack-l1-l2]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[providers.op-stack-l2-l2]
+deployed_by = "0x0000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
