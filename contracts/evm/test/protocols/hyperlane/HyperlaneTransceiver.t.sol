@@ -10,7 +10,8 @@ import {
     IReportHarness,
     ProviderZkSyncSpec,
     ProviderGatewayRoleSpec,
-    ProviderGovernorHomeSpec
+    ProviderGovernorHomeSpec,
+    ProviderDeliveryGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {HyperlaneFixture, HyperlaneZkSyncHarness} from "test/protocols/hyperlane/HyperlaneFixture.sol";
@@ -51,3 +52,5 @@ contract HyperlaneZkSyncTransceiverTest is ProviderZkSyncSpec, HyperlaneFixture 
 }
 
 contract HyperlaneGovernorHomeTest is ProviderGovernorHomeSpec, HyperlaneFixture {}
+
+contract HyperlaneDeliveryGasTest is ProviderDeliveryGasSpec, HyperlaneFixture {}

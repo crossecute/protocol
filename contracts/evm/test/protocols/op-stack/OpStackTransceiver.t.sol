@@ -7,7 +7,11 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 
-import {ProviderInboundSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {
+    ProviderInboundSpec,
+    ProviderGovernorHomeSpec,
+    ProviderDeliveryGasSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackFixture} from "test/protocols/op-stack/OpStackFixture.sol";
 
 /// @notice The origin is the chain of the messenger that called, through the table, and the
@@ -41,3 +45,5 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec, OpStackFixture {
 }
 
 contract OpStackGovernorHomeTest is ProviderGovernorHomeSpec, OpStackFixture {}
+
+contract OpStackDeliveryGasTest is ProviderDeliveryGasSpec, OpStackFixture {}

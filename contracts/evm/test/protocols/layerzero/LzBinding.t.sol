@@ -165,6 +165,10 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerChe
 }
 
 contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
+    function _prepareAccount(address account_, address owner) internal override {
+        _peerWithItsReceiver(account_, owner);
+    }
+
     /// @dev #51: the owner reconfigures the account's sends, such as toward zkSync whose default
     ///      DVN refuses every message, by naming itself delegate through OApp's `setDelegate`.
     function test_theOwnerCanReconfigureTheAccount() public {
@@ -181,11 +185,5 @@ contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
         endpoint.setConfig(account, lib, params);
         vm.stopPrank();
         assertEq(endpoint.configOf(account, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
-    }
-
-    /// @dev LayerZero delivers only from a set peer: here the receiver, at the account's address.
-    function _prepareAccount(address account_) internal override {
-        vm.prank(ACCOUNT_OWNER);
-        LzTransmitter(payable(account_)).setPeer(BASE_EID, toBytes32(account_));
     }
 }

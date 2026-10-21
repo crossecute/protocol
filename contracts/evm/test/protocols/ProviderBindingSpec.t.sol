@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
@@ -286,10 +287,6 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
     address internal constant ACCOUNT_OWNER = address(0xA11CE);
     address payable internal account;
 
-    /// @notice What the provider needs set on the account before it can send to the remote
-    ///         chain, as its owner.
-    function _prepareAccount(address account_) internal virtual {}
-
     /// @dev The remote chain is `Predetermined`, so the account's receiver there shares its
     ///      address and the transceiver's counterpart is the transceiver's own.
     function setUp() public virtual {
@@ -309,7 +306,7 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         vm.prank(ACCOUNT_OWNER);
         account = payable(t.createTransmitter(bytes32(0)));
         vm.deal(account, 1 ether);
-        _prepareAccount(account);
+        _prepareAccount(account, ACCOUNT_OWNER);
         vm.prank(ACCOUNT_OWNER);
         TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
     }
@@ -566,22 +563,15 @@ abstract contract ProviderGovernorHomeSpec is ProviderIdFixture {
     }
 }
 
-/// @title ProviderInboundSpec
-/// @notice What every binding's transceiver must satisfy on the way in: a bootstrap from a
-///         configured origin, arriving through the provider's own path, creates a receiver
-///         configured for that provider; a wrong sender is refused; and the float can be funded
-///         and leaves only to the treasury.
-/// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
-///      Forge's EVM, so their suites pin their own overrides instead.
-abstract contract ProviderInboundSpec is ProviderFixture {
-    event InboundHandled(bytes32 chainKey);
-
+/// @title ProviderInboundFixture
+/// @notice A plain transceiver that accepts bootstraps from `ORIGIN_TRANSCEIVER` on
+///         `REMOTE_CHAIN_ID`, and the deliveries the inbound specs make to it.
+abstract contract ProviderInboundFixture is ProviderFixture {
     /// @dev The origin's transceiver as this one records it. `Unique`, so no parity check.
     address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
     address internal constant ACCOUNT_OWNER = address(0xA11CE);
     bytes32 internal constant ACCOUNT_SALT = keccak256("account");
     address internal constant ORIGIN_TRANSMITTER = address(0x7A11);
-    address internal constant GOVERNOR = address(0x5165);
 
     /// @notice The transceiver under test, emitting `InboundHandled(origin)` as it handles a
     ///         message.
@@ -589,21 +579,6 @@ abstract contract ProviderInboundSpec is ProviderFixture {
 
     function setUp() public virtual {
         transceiver = _deployTransceiver(_config(), 0);
-    }
-
-    /// @notice The revert for a wrong sender: the base's by default.
-    function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, chainKey);
-    }
-
-    /// @notice The revert when `caller` calls the delivery entry point directly.
-    function _bypassRevert(address caller) internal view virtual returns (bytes memory) {
-        return abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, caller, GATEWAY_ROLE);
-    }
-
-    /// @notice R6: the receiver was configured for the provider before its payload ran.
-    function _assertReceiverConfigured(address receiver, address) internal view virtual {
-        assertTrue(IAccessControl(receiver).hasRole(GATEWAY_ROLE, _gateway()));
     }
 
     function _deliverTo(address to, address sender, bytes memory message) internal {
@@ -626,6 +601,46 @@ abstract contract ProviderInboundSpec is ProviderFixture {
 
     function _bootstrap() internal pure returns (bytes memory) {
         return Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), new Call[](0));
+    }
+
+    /// @dev External so a test can cap the gas the provider delivers with.
+    function deliver(address to, address sender, bytes calldata message) external {
+        // A call cut short between a fixture's `vm.prank` and its call leaves that prank set.
+        vm.stopPrank();
+        _deliverTo(to, sender, message);
+    }
+
+    function _deliverWith(uint256 gas, address to, address sender, bytes memory message) internal returns (bool ok) {
+        // forge-lint: disable-next-line(return-bomb) this contract returns nothing
+        (ok,) = address(this).call{gas: gas}(abi.encodeCall(this.deliver, (to, sender, message)));
+    }
+}
+
+/// @title ProviderInboundSpec
+/// @notice What every binding's transceiver must satisfy on the way in: a bootstrap from a
+///         configured origin, arriving through the provider's own path, creates a receiver
+///         configured for that provider; a wrong sender is refused; and the float can be funded
+///         and leaves only to the treasury.
+/// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
+///      Forge's EVM, so their suites pin their own overrides instead.
+abstract contract ProviderInboundSpec is ProviderInboundFixture {
+    event InboundHandled(bytes32 chainKey);
+
+    address internal constant GOVERNOR = address(0x5165);
+
+    /// @notice The revert for a wrong sender: the base's by default.
+    function _wrongSenderRevert(bytes32 chainKey, address) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(TransceiverCore.NotCounterpart.selector, chainKey);
+    }
+
+    /// @notice The revert when `caller` calls the delivery entry point directly.
+    function _bypassRevert(address caller) internal view virtual returns (bytes memory) {
+        return abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, caller, GATEWAY_ROLE);
+    }
+
+    /// @notice R6: the receiver was configured for the provider before its payload ran.
+    function _assertReceiverConfigured(address receiver, address) internal view virtual {
+        assertTrue(IAccessControl(receiver).hasRole(GATEWAY_ROLE, _gateway()));
     }
 
     /// @notice The plain transceiver born knowing only the governor's home, `REMOTE_CHAIN_ID`:
@@ -699,6 +714,26 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
 
+    /// @dev C33: a gas attribute is the sender's to size. A bootstrap delivered with too little
+    ///      gas reverts whole and leaves no account, so the provider's retry at a higher limit
+    ///      creates it. 200,000 is under every measured bootstrap (deploy/CHECKS.md §4).
+    function test_aBootstrapCutShortByGasSucceedsOnRetryWithMore() public {
+        bytes32 chainKey = _wire();
+        address receiver = ext(address(TransceiverBase(payable(transceiver))))
+            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+
+        assertFalse(
+            _deliverWith(200_000, transceiver, ORIGIN_TRANSCEIVER, _bootstrap()), "the delivery runs out of gas"
+        );
+        assertEq(receiver.code.length, 0, "and creates nothing");
+
+        assertTrue(
+            _deliverWith(2_000_000, transceiver, ORIGIN_TRANSCEIVER, _bootstrap()),
+            "the same delivery with more gas succeeds"
+        );
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
+    }
+
     /// @dev #61: the origin the transceiver arms a receiver with is the one its deliveries
     ///      report, so its transmitter is accepted from its home and from nowhere else.
     function test_aCreatedReceiverAcceptsItsTransmitterOnlyFromItsHome() public {
@@ -761,6 +796,124 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         address[] memory accounts = new address[](1);
         accounts[0] = transceiver;
         SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+    }
+}
+
+/// @dev Accepts any delivery entry point and does nothing: what a delivery costs outside the
+///      receiver.
+contract NoOpReceiver {
+    fallback() external payable {}
+}
+
+/// @title ProviderDeliveryGasSpec
+/// @notice What each delivery costs through the provider's fixture, with its `DeliveryGas`
+///         default at least 10% above it (deploy/CHECKS.md §4).
+/// @dev A measurement is the smallest gas limit on the call into the fixture's delivery under
+///      which it succeeds, every account it touches cold, less the same for the same message
+///      delivered to a contract that does nothing. What is left runs inside the receiver's
+///      frame, scaled up by 64/63 at the gateway's call, so it slightly overstates the gas
+///      limit a gateway must pass. It is measured against mock gateways, and Wormhole's mock
+///      Core verifies no guardian signatures. Coverage builds unoptimized and is exempt.
+abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture {
+    uint256 internal constant MEASURE_CEILING = 5_000_000;
+
+    address private noOp;
+
+    function setUp() public override {
+        if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
+        TransceiverConfig memory c = _config();
+        c.transmitterImplementation = _transmitterImplementation();
+        transceiver = _deployTransceiver(c, 0);
+        noOp = address(new NoOpReceiver());
+    }
+
+    function test_aBootstrapWithNoCallsFitsTheDefault() public {
+        _wire();
+        _assertFits(
+            "bootstrap, no calls", _measure(transceiver, ORIGIN_TRANSCEIVER, _bootstrap()), DeliveryGas.BOOTSTRAP
+        );
+    }
+
+    /// @dev One call to an address with no code: the per-call cost the bootstrap adds.
+    function test_aBootstrapWithOneCallFitsTheDefault() public {
+        _wire();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
+        bytes memory message =
+            Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), calls);
+        _assertFits("bootstrap, one call", _measure(transceiver, ORIGIN_TRANSCEIVER, message), DeliveryGas.BOOTSTRAP);
+    }
+
+    /// @dev `REMOTE_CHAIN_ID` is graded `Unique`, so it reports, and the account has dispatched
+    ///      its bootstrap there, which is what the report answers.
+    function test_aReportArrivingHomeFitsTheDefault() public {
+        bytes32 chainKey = _wire();
+        vm.prank(TransceiverBase(payable(transceiver)).owner());
+        ext(transceiver).setBootstrapFee(chainKey, 1);
+        vm.prank(ACCOUNT_OWNER);
+        address payable account = payable(TransceiverBase(payable(transceiver)).createTransmitter(bytes32(0)));
+        vm.deal(account, 1 ether);
+        _prepareAccount(account, ACCOUNT_OWNER);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+
+        bytes memory report = Envelope.encodeReceiverReport(
+            ACCOUNT_OWNER, bytes32(0), Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBEEF))
+        );
+        _assertFits("report arriving home", _measure(transceiver, ORIGIN_TRANSCEIVER, report), DeliveryGas.REPORT);
+    }
+
+    /// @dev The receiver's overhead only: `PAYLOAD` also pays for the caller's calls.
+    function test_aPayloadWithNoCallsFitsTheDefault() public {
+        bytes32 chainKey = _wire();
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
+        address receiver = ext(transceiver).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+        _assertFits("payload, no calls", _measure(receiver, ORIGIN_TRANSMITTER, payload), DeliveryGas.PAYLOAD);
+    }
+
+    function _assertFits(string memory delivery, uint256 measured, uint256 defaultGas) internal {
+        emit log_named_uint(delivery, measured);
+        assertLe(measured * 11 / 10, defaultGas, delivery);
+    }
+
+    function _measure(address to, address sender, bytes memory message) internal returns (uint256) {
+        return _minGas(to, sender, message) - _minGas(noOp, sender, message);
+    }
+
+    /// @notice The smallest gas limit under which `message` reaches `to` from `sender`, every
+    ///         account it touches cold. State is left as it was.
+    function _minGas(address to, address sender, bytes memory message) private returns (uint256 hi) {
+        uint256 snapshot = vm.snapshotState();
+        vm.startStateDiffRecording();
+        _deliverWith(MEASURE_CEILING, to, sender, message);
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+
+        uint256 lo;
+        hi = MEASURE_CEILING;
+        assertTrue(_coldDeliveryWith(hi, snapshot, accesses, to, sender, message), "it succeeds at the ceiling");
+        while (hi - lo > 1) {
+            uint256 mid = (lo + hi) / 2;
+            if (_coldDeliveryWith(mid, snapshot, accesses, to, sender, message)) hi = mid;
+            else lo = mid;
+        }
+        vm.revertToState(snapshot);
+    }
+
+    /// @dev This contract is left warm: it is the caller, and a gateway is warm the same way.
+    function _coldDeliveryWith(
+        uint256 gas,
+        uint256 snapshot,
+        Vm.AccountAccess[] memory accesses,
+        address to,
+        address sender,
+        bytes memory message
+    ) private returns (bool) {
+        vm.revertToState(snapshot);
+        for (uint256 i; i < accesses.length; ++i) {
+            if (accesses[i].account != address(this)) vm.cool(accesses[i].account);
+        }
+        return _deliverWith(gas, to, sender, message);
     }
 }
 

@@ -13,15 +13,21 @@ this file is the gap between that design and the tree.
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07).
+(2026-10-07; §4's destination gas, 2026-10-21).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
-  about 610,000 to 675,000. On a local EraVM node a bootstrap's execution needs about 385,000
+  about 624,000 to 678,000. On a local EraVM node a bootstrap's execution needs about 385,000
   to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
   against the gas limit a provider calls the transceiver with. A report arriving at a zkSync
   home is not measured either.
+- **Wormhole's VAA verification is not measured.** `ProviderDeliveryGasSpec` measures a
+  Wormhole delivery against a mock Core that checks no guardian signatures, so the cost of a
+  real VAA's verification is missing from every Wormhole number in
+  [CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas). It counts against the
+  same gas limit as the payload's calls. A fork test against a real Core and a signed VAA
+  can measure it.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that

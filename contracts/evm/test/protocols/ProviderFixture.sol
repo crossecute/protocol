@@ -73,6 +73,10 @@ abstract contract ProviderFixture is Test {
     ///         beyond what the provider requires: Wormhole's signed quote.
     function _attributes() internal view virtual returns (bytes[] memory);
 
+    /// @notice What the provider needs set on `account_` before it can send to the remote
+    ///         chain, as its `owner`.
+    function _prepareAccount(address account_, address owner) internal virtual {}
+
     function _config() internal returns (TransceiverConfig memory) {
         return transceiverConfig(_receiverImplementation());
     }
