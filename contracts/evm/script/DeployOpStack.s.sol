@@ -32,10 +32,8 @@ contract DeployOpStack is DeployProvider {
     function _homeMessenger() internal view returns (address m) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry[] memory cs = ChainConfig.chains(dir);
-        uint256 home = vm.envUint("GOVERNOR_HOME_CHAIN_ID");
-        m = OpStackConfig.messenger(
-            dir, cs, ChainConfig.chainWithId(cs, block.chainid), ChainConfig.chainWithId(cs, home)
-        );
-        if (home != block.chainid) check(m != address(0), "a messenger here reaches the governor's home");
+        ChainEntry memory home = _governance().home;
+        m = OpStackConfig.messenger(dir, cs, ChainConfig.chainWithId(cs, block.chainid), home);
+        if (home.chainId != block.chainid) check(m != address(0), "a messenger here reaches the governor's home");
     }
 }

@@ -778,8 +778,9 @@ from `deploy/governance.toml`, so the three contracts sit at one address on ever
 and reads the design above back from chain.
 
 Step 2 is scripted for each provider on a standard EVM chain: `script/Deploy<Provider>.s.sol`
-reads the chain's inputs from the environment and deploys through `script/deploy/`, which the
-test suites deploy through too, so every check a deployment makes also runs in every test.
+reads the governor and step 1's addresses from `deploy/governance.toml` and its endpoints from
+the environment, and deploys through `script/deploy/`, which the test suites deploy through
+too, so every check a deployment makes also runs in every test.
 Those shared checks hold the proxy to its predicted address, locked on its implementation;
 the transceiver to its configuration, gateways, and governor's home; and, where the registry
 records the provider's deployment, R8.4. The production script adds what holds only on chain:

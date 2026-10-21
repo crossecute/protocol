@@ -472,9 +472,12 @@ selector its extension also declares under another signature. A separate job run
 `forge coverage` over `src/` and posts the summary on the run; it sets no minimum, and its
 build is unoptimized, so the two address-pinning tests skip there.
 
-Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
-reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the
-salt and deployer from the chain registry's record, and provider ids from `deploy/`. The test
+Each chain's timelock, registry, and treasury deploy with `forge script
+script/DeployChain.s.sol`, and each provider's transceiver with `forge script
+script/Deploy<Provider>.s.sol`. Both read the governor and every address-determining value from
+`deploy/governance.toml`; the transceiver takes the salt and deployer from the chain registry's
+record, provider ids from `deploy/`, and its endpoints from the environment (listed in each
+script). The test
 suites deploy through the same functions under `script/deploy/`, so a deployment makes every
 check the tests do. [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md) says
 what adding a chain takes.

@@ -83,10 +83,12 @@ derives from it.
 forge script script/Deploy<Provider>.s.sol --rpc-url <rpc> --broadcast --sender <deployedBy>
 ```
 
-The broadcaster must be the record's `deployedBy`; the salt is read from the record. Inputs
-come from the environment, listed in [`DeployProvider.s.sol`](../script/DeployProvider.s.sol)
-and each provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a transceiver's
-gateways cannot be added later. Provider ids come from this directory.
+The broadcaster must be the record's `deployedBy`; the salt is read from the record. The
+governor's owner, salt, and home come from [`governance.toml`](governance.toml), and the
+registry and treasury are step 1's, at the addresses it predicts. The rest comes from the
+environment, listed in [`DeployProvider.s.sol`](../script/DeployProvider.s.sol) and each
+provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a transceiver's gateways
+cannot be added later. Provider ids come from this directory.
 
 Before deploying, the script refuses a chain missing from `chains.toml` or not parity, a
 governor's home that is not `Predetermined` from it, and a registry that has not registered
