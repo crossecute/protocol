@@ -829,6 +829,7 @@ to those, rather than flags:
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderDefaultGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | C32 |
+| `ProviderDeliveryGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | Each `DeliveryGas` default is at least 10% above what its delivery measures through the binding's fixture ([deploy/CHECKS.md §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)) |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all six | C9 |
 | `ProviderTransmitterSendSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | An account's own send through the binding's real transmitter is paid from its balance whatever `msg.value` is ([R7.1](#r7-fees-and-value), #55), at `DeliveryGas.PAYLOAD` (C32) |

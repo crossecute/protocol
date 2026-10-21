@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {Vm} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
@@ -604,6 +605,8 @@ abstract contract ProviderInboundFixture is ProviderFixture {
 
     /// @dev External so a test can cap the gas the provider delivers with.
     function deliver(address to, address sender, bytes calldata message) external {
+        // A call cut short between a fixture's `vm.prank` and its call leaves that prank set.
+        vm.stopPrank();
         _deliverTo(to, sender, message);
     }
 
@@ -793,6 +796,123 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         address[] memory accounts = new address[](1);
         accounts[0] = transceiver;
         SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+    }
+}
+
+/// @dev Accepts any delivery entry point and does nothing: what a delivery costs outside the
+///      receiver.
+contract NoOpReceiver {
+    fallback() external payable {}
+}
+
+/// @title ProviderDeliveryGasSpec
+/// @notice What each delivery costs through the provider's fixture, with its `DeliveryGas`
+///         default at least 10% above it (deploy/CHECKS.md §4).
+/// @dev A measurement is the smallest gas limit on the call into the fixture's delivery under
+///      which it succeeds, every account it touches cold, less the same for the same message
+///      delivered to a contract that does nothing. What is left runs inside the receiver's
+///      frame, scaled up by 64/63 at the gateway's call, so it slightly overstates the gas
+///      limit a gateway must pass. It is measured against mock gateways, and Wormhole's mock
+///      Core verifies no guardian signatures.
+abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture {
+    uint256 internal constant MEASURE_CEILING = 5_000_000;
+
+    address private noOp;
+
+    function setUp() public override {
+        TransceiverConfig memory c = _config();
+        c.transmitterImplementation = _transmitterImplementation();
+        transceiver = _deployTransceiver(c, 0);
+        noOp = address(new NoOpReceiver());
+    }
+
+    function test_aBootstrapWithNoCallsFitsTheDefault() public {
+        _wire();
+        _assertFits(
+            "bootstrap, no calls", _measure(transceiver, ORIGIN_TRANSCEIVER, _bootstrap()), DeliveryGas.BOOTSTRAP
+        );
+    }
+
+    /// @dev One call to an address with no code: the per-call cost the bootstrap adds.
+    function test_aBootstrapWithOneCallFitsTheDefault() public {
+        _wire();
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
+        bytes memory message =
+            Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), calls);
+        _assertFits("bootstrap, one call", _measure(transceiver, ORIGIN_TRANSCEIVER, message), DeliveryGas.BOOTSTRAP);
+    }
+
+    /// @dev `REMOTE_CHAIN_ID` is graded `Unique`, so it reports, and the account has dispatched
+    ///      its bootstrap there, which is what the report answers.
+    function test_aReportArrivingHomeFitsTheDefault() public {
+        bytes32 chainKey = _wire();
+        vm.prank(TransceiverBase(payable(transceiver)).owner());
+        ext(transceiver).setBootstrapFee(chainKey, 1);
+        vm.prank(ACCOUNT_OWNER);
+        address payable account = payable(TransceiverBase(payable(transceiver)).createTransmitter(bytes32(0)));
+        vm.deal(account, 1 ether);
+        _prepareAccount(account, ACCOUNT_OWNER);
+        vm.prank(ACCOUNT_OWNER);
+        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+
+        bytes memory report = Envelope.encodeReceiverReport(
+            ACCOUNT_OWNER, bytes32(0), Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBEEF))
+        );
+        _assertFits("report arriving home", _measure(transceiver, ORIGIN_TRANSCEIVER, report), DeliveryGas.REPORT);
+    }
+
+    /// @dev The receiver's overhead only: `PAYLOAD` also pays for the caller's calls.
+    function test_aPayloadWithNoCallsFitsTheDefault() public {
+        bytes32 chainKey = _wire();
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
+        address receiver = ext(transceiver).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+        _assertFits("payload, no calls", _measure(receiver, ORIGIN_TRANSMITTER, payload), DeliveryGas.PAYLOAD);
+    }
+
+    function _assertFits(string memory delivery, uint256 measured, uint256 defaultGas) internal {
+        emit log_named_uint(delivery, measured);
+        assertLe(measured * 11 / 10, defaultGas, delivery);
+    }
+
+    function _measure(address to, address sender, bytes memory message) internal returns (uint256) {
+        return _minGas(to, sender, message) - _minGas(noOp, sender, message);
+    }
+
+    /// @notice The smallest gas limit under which `message` reaches `to` from `sender`, every
+    ///         account it touches cold. State is left as it was.
+    function _minGas(address to, address sender, bytes memory message) private returns (uint256 hi) {
+        uint256 snapshot = vm.snapshotState();
+        vm.startStateDiffRecording();
+        _deliverWith(MEASURE_CEILING, to, sender, message);
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+
+        uint256 lo;
+        hi = MEASURE_CEILING;
+        assertTrue(_coldDeliveryWith(hi, snapshot, accesses, to, sender, message), "it succeeds at the ceiling");
+        while (hi - lo > 1) {
+            uint256 mid = (lo + hi) / 2;
+            if (_coldDeliveryWith(mid, snapshot, accesses, to, sender, message)) hi = mid;
+            else lo = mid;
+        }
+        vm.revertToState(snapshot);
+    }
+
+    /// @dev This contract is left warm: it is the caller, and a gateway is warm the same way.
+    function _coldDeliveryWith(
+        uint256 gas,
+        uint256 snapshot,
+        Vm.AccountAccess[] memory accesses,
+        address to,
+        address sender,
+        bytes memory message
+    ) private returns (bool) {
+        vm.revertToState(snapshot);
+        for (uint256 i; i < accesses.length; ++i) {
+            if (accesses[i].account != address(this)) vm.cool(accesses[i].account);
+        }
+        return _deliverWith(gas, to, sender, message);
     }
 }
 

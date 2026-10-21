@@ -9,7 +9,8 @@ import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.
 import {
     ProviderZkSyncSpec,
     ProviderGatewayRoleSpec,
-    ProviderGovernorHomeSpec
+    ProviderGovernorHomeSpec,
+    ProviderDeliveryGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {CcipFixture, CcipZkSyncHarness} from "test/protocols/ccip/CcipFixture.sol";
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
@@ -49,3 +50,5 @@ contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
 }
 
 contract CcipGovernorHomeTest is ProviderGovernorHomeSpec, CcipFixture {}
+
+contract CcipDeliveryGasTest is ProviderDeliveryGasSpec, CcipFixture {}

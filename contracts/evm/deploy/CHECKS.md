@@ -169,19 +169,24 @@ reverts `IGP: no gas oracle for domain` for such a domain.
 ### 4. Destination gas
 
 A bootstrap creates an account on the destination, so the gas it is sent with must cover
-that. Measured with the provider fixtures (mock gateways, cold storage):
+that. `ProviderDeliveryGasSpec` (`test/protocols/ProviderBindingSpec.t.sol`) measures each
+delivery through every binding's fixture and fails if a `DeliveryGas` default is not at
+least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers. Each is the
+smallest gas limit under which the delivery succeeds from cold storage, less what the same
+message costs delivered to a contract that does nothing:
 
-| Delivery | Gas |
-| --- | --- |
-| Bootstrap to a plain transceiver, no calls | 611,000 to 667,000 by binding |
-| The same with one call | 619,000 to 675,000 |
-| Report arriving at the home transceiver | up to about 135,000 |
-| Payload to an existing receiver | under 18,500 plus its calls |
+| Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
+| --- | --- | --- | --- | --- | --- |
+| Bootstrap to a plain transceiver, no calls | 624,348 | 623,809 | 678,100 | 629,707 | 667,854 |
+| The same with one call to an address with no code | 631,005 | 630,472 | 684,754 | 636,469 | 675,625 |
+| Report arriving at the home transceiver | 127,275 | 126,742 | 127,393 | 124,497 | 170,877 |
+| Payload to an existing receiver, no calls | 24,903 | 24,394 | 27,624 | 23,183 | 67,651 |
 
-Measured 2026-10-07, then raised by what #61 measured on 2026-10-13: a receiver's home
-origin adds 22,000 to 26,000 to each bootstrap and 1,300 to 2,300 to each payload. Since #70 a
-transceiver reads `CrossProxy`'s initcode from a contract that returns it, which adds 2,291 to each
-account creation, and so to each bootstrap (measured 2026-10-18, cold).
+Measured 2026-10-21 against mock gateways. Wormhole's numbers include verifying the VAA
+and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
+so a real delivery costs more. A payload's default also pays for the caller's calls, so the
+row is only the receiver's share. Wormhole reaches no reporting chain, so it carries no
+report.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote

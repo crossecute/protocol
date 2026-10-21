@@ -8,7 +8,11 @@ import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.so
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 
 import {toBytes32} from "test/Harness.sol";
-import {ProviderGatewayRoleSpec, ProviderGovernorHomeSpec} from "test/protocols/ProviderBindingSpec.t.sol";
+import {
+    ProviderGatewayRoleSpec,
+    ProviderGovernorHomeSpec,
+    ProviderDeliveryGasSpec
+} from "test/protocols/ProviderBindingSpec.t.sol";
 import {WormholeFixture, _vaa, _envelope, _withConsistency} from "test/protocols/wormhole/WormholeFixture.sol";
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures authenticate the emitter, and
@@ -61,3 +65,5 @@ contract WormholeTransceiverInboundTest is ProviderGatewayRoleSpec, WormholeFixt
 }
 
 contract WormholeGovernorHomeTest is ProviderGovernorHomeSpec, WormholeFixture {}
+
+contract WormholeDeliveryGasTest is ProviderDeliveryGasSpec, WormholeFixture {}

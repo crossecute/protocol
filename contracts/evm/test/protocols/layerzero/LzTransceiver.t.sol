@@ -17,7 +17,8 @@ import {toBytes32, ext} from "test/Harness.sol";
 import {
     ProviderZkSyncSpec,
     ProviderInboundSpec,
-    ProviderGovernorHomeSpec
+    ProviderGovernorHomeSpec,
+    ProviderDeliveryGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzTransceiver, LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
@@ -233,5 +234,11 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
     function test_withNoRegistryThePeerIsLeftToTheOwner() public {
         address t = _deployTransceiver(_registryConfig(IChainRegistryRefs(address(0))), HOME_EID);
         assertEq(IOAppCore(t).peers(HOME_EID), bytes32(0));
+    }
+}
+
+contract LzDeliveryGasTest is ProviderDeliveryGasSpec, LzFixture {
+    function _prepareAccount(address account_, address owner) internal override {
+        _peerWithItsReceiver(account_, owner);
     }
 }
