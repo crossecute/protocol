@@ -61,8 +61,8 @@ The rest of the bill, stated plainly:
 - **A home cannot move.** It is part of the account's address. A team that wants another
   home makes another account.
 - **Configuration is N × N.** Every chain's transceiver needs every other chain's route and
-  provider id. Their one source is `contracts/evm/deploy/`; nothing turns it into the
-  governance payloads yet.
+  provider id. Their one source is `contracts/evm/deploy/`, which
+  `script/GovernancePayloads.s.sol` turns into the governance payloads for the parity chains.
 - **A registry bug means new transceivers.** The registry is fixed and a transceiver's pointer
   to it is write-once, so a fix moves that chain's accounts.
 - **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then

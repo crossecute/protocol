@@ -63,11 +63,14 @@ this file is the gap between that design and the tree.
 
 ## 3. Infrastructure
 
-- **Deploy scripts cover steps 1 and 2 only**
-  ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Not scripted:
-  steps 3 to 7, and the payloads that write the N × N tables every chain
-  needs about every other chain, whose source is `contracts/evm/deploy/`. zkSync and Tron have
-  deploy functions the tests use but no production script: their bytecode, with
+- **Deploy scripts cover parity chains only**
+  ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Steps 1 to 6
+  are scripted for them, the N × N tables as payloads from `contracts/evm/deploy/`. Not
+  scripted: `op-stack-l2-l2`'s lanes, which the payload script refuses to skip once a chain is
+  listed; registry plugins, which no parity chain needs (a commitment scheme only previews);
+  and a chain added after the first deployment, whose files repeat what is already set. zkSync
+  and Tron, and every lane to them, are left out of the payloads, and have deploy functions
+  the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).

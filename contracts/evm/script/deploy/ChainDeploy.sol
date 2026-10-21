@@ -116,14 +116,18 @@ library ChainDeploy {
     /// @dev On the home this is the governor's transmitter, elsewhere the receiver its bootstrap
     ///      creates, which is each of that provider's transceivers' owner.
     function governorAccount(Governance memory g, string memory provider) internal pure returns (address) {
-        ProviderSeed memory p = GovernanceConfig.providerSeed(g, provider);
-        address transceiver =
-            AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(p.deployedBy, p.salt), p.crossProxyInitCodeHash);
         return AddressDerive.create2(
-            transceiver,
+            transceiver(g, provider),
             keccak256(abi.encode(g.owner, g.salt, ChainKey.forEvm(g.home.chainId))),
-            p.crossProxyInitCodeHash
+            g.crossProxyInitCodeHash
         );
+    }
+
+    /// @notice `provider`'s transceiver, at its record's address on every parity chain.
+    function transceiver(Governance memory g, string memory provider) internal pure returns (address) {
+        ProviderSeed memory p = GovernanceConfig.providerSeed(g, provider);
+        return
+            AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(p.deployedBy, p.salt), g.crossProxyInitCodeHash);
     }
 
     function proposers(Governance memory g) internal pure returns (address[] memory ps) {

@@ -145,5 +145,29 @@ bootstrap creates the governor's accounts there.
 5. **Fund floats** (§6 step 7) on chains whose transceivers report, sized from
    [R7.5](../../../docs/provider-spec.md#r7-fees-and-value)'s quote.
 
-Generating these payloads from this directory, so that every chain's tables agree, is not
-scripted yet ([todo §3](../../../docs/todo.md#3-infrastructure)).
+For the parity chains, these payloads come from this directory, so every chain's tables agree:
+
+```
+forge script script/GovernancePayloads.s.sol
+```
+
+It reads nothing on chain, so a commit always writes the same files to `out/governance/`, Safe
+Transaction Builder batches numbered in the order they are submitted:
+
+1. `1-prepare-home.json`, by the governor's owner on the home: create its transmitter under each
+   provider, set the home transceivers' routes and ids, and schedule the home registry.
+2. `2-execute-registry-<home>.json`, by anyone after the timelock delay.
+3. `3-bootstrap.json`, by the governor's owner: the home's LayerZero peers, then a bootstrap of
+   every other chain under every provider that reaches it. Each payload sets that transceiver's
+   routes and ids, and the first proposer's also schedules that chain's registry. Each
+   transmitter pays from its own balance, so send it its quotes first. Wormhole's go
+   publish-only, and wait for a deliverer ([todo §3](../../../docs/todo.md#3-infrastructure)).
+4. `4-execute-registry-<chain>.json` for every other chain, by anyone there once its bootstrap
+   has arrived and the delay has passed.
+5. `5-connect.json`, by the governor's owner once every file 4 has executed: each chain's
+   LayerZero peers, which need its registry.
+
+The files are for the first deployment. For a chain added later, a rerun writes every entry
+again, and creating a transmitter or bootstrapping a chain a second time reverts, so submit only
+the entries that name the new chain. zkSync and Tron are left out: their transceivers
+are not at a predicted address, so neither they nor any lane to them is in these files.
