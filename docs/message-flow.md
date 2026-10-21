@@ -313,6 +313,12 @@ than stranding a commitment. Every provider lets anyone re-execute a failed mess
 is a retry rather than a loss. A payload that failed for a fixable reason (insufficient
 balance, a target not yet deployed) succeeds on retry once the cause is fixed.
 
+Running out of gas is one of those causes. A gas attribute replaces the default with no
+floor, so a sender who names too little gets a delivery that reverts whole, and the retry
+supplies more: LayerZero, Hyperlane, and Wormhole pass on the retry transaction's own gas,
+CCIP's manual execution takes a higher limit, and the OP Stack messenger treats
+`minGasLimit` as a lower bound. Whoever retries pays that gas again.
+
 **This holds only under unordered delivery.** It is the default everywhere. Opting into
 ordered execution would let one permanently-failing message block every message behind it on
 that lane.

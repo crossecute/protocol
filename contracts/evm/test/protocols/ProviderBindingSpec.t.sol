@@ -699,6 +699,31 @@ abstract contract ProviderInboundSpec is ProviderFixture {
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
 
+    /// @dev External so a test can cap the gas the provider delivers with.
+    function deliverBootstrap() external {
+        _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
+    }
+
+    function _deliverBootstrapWith(uint256 gas) internal returns (bool ok) {
+        // forge-lint: disable-next-line(return-bomb) this contract returns nothing
+        (ok,) = address(this).call{gas: gas}(abi.encodeCall(this.deliverBootstrap, ()));
+    }
+
+    /// @dev C33: a gas attribute is the sender's to size. A bootstrap delivered with too little
+    ///      gas reverts whole and leaves no account, so the provider's retry at a higher limit
+    ///      creates it. 200,000 is under every measured bootstrap (deploy/CHECKS.md §4).
+    function test_aBootstrapCutShortByGasSucceedsOnRetryWithMore() public {
+        bytes32 chainKey = _wire();
+        address receiver = ext(address(TransceiverBase(payable(transceiver))))
+            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+
+        assertFalse(_deliverBootstrapWith(200_000), "the delivery runs out of gas");
+        assertEq(receiver.code.length, 0, "and creates nothing");
+
+        assertTrue(_deliverBootstrapWith(2_000_000), "the same delivery with more gas succeeds");
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
+    }
+
     /// @dev #61: the origin the transceiver arms a receiver with is the one its deliveries
     ///      report, so its transmitter is accepted from its home and from nowhere else.
     function test_aCreatedReceiverAcceptsItsTransmitterOnlyFromItsHome() public {

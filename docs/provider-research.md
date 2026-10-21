@@ -105,6 +105,19 @@ the other seven inherit for free, and it is the one place in this protocol where
 holds a security property rather than a translation. Binding to ICM rather than to raw Warp
 is the way to avoid that on Avalanche.
 
+**A retry is not held to the gas the sender paid for.** Read 2026-10-21, for the five
+providers bound here. LayerZero's `EndpointV2.lzReceive` and Hyperlane's `Mailbox.process`
+call the receiver with no gas argument, so it gets what the retry transaction brings; the
+options gas a LayerZero sender names only tells the executor what to send. CCIP's
+`manuallyExecute` takes a per-message override and refuses one below the message's own
+limit (`InvalidManualExecutionGasLimit`, OffRamp 1.6.2; `InvalidGasLimitOverride` in
+`execute`, OffRamp 2.0.0). OP Stack's `relayMessage` requires only `hasMinGas(minGasLimit,
+...)` and calls the target with `gasleft() - RELAY_RESERVED_GAS`, and `baseGas` sizes the
+deposit so a call short of `minGasLimit` is recorded in `failedMessages` rather than lost.
+Wormhole's retry is this protocol's own `executeVAAv1`, open to anyone at any gas. So the
+gas a sender names can be left to the sender: too little costs a retry, never the message.
+Not checked: which OffRamp version each CCIP lane runs.
+
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its
 own. Correlation never needed one: the home derives the reporting account from the
 authenticated origin plus the stated `(owner, salt)`, and the account pins the first report.

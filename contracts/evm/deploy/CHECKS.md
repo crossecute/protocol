@@ -186,7 +186,9 @@ account creation, and so to each bootstrap (measured 2026-10-18, cold).
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
 1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
-attribute can exceed a lane's cap.
+attribute can exceed a lane's cap. Nothing checks an attribute against these measurements:
+one below them makes the delivery revert, and it is retried with more gas
+([provider-spec R1.5](../../../docs/provider-spec.md#r1-send)).
 
 EraVM prices differently and Forge cannot run it, so zkSync is measured on a local node by
 `test/eravm/era-delivery-gas.sh`. Each number is the smallest gas limit on the call into
