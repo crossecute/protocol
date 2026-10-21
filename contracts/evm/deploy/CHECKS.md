@@ -179,14 +179,14 @@ message costs delivered to a contract that does nothing:
 | --- | --- | --- | --- | --- | --- |
 | Bootstrap to a plain transceiver, no calls | 624,348 | 623,809 | 678,100 | 629,707 | 667,854 |
 | The same with one call to an address with no code | 631,005 | 630,472 | 684,754 | 636,469 | 675,625 |
-| Report arriving at the home transceiver | 127,275 | 126,742 | 127,393 | 124,497 | 170,877 |
+| Report arriving at the home transceiver | 127,275 | 126,742 | 127,393 | 124,497 | n/a (170,877) |
 | Payload to an existing receiver, no calls | 24,903 | 24,394 | 27,624 | 23,183 | 67,651 |
 
 Measured 2026-10-21 against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
-row is only the receiver's share. Wormhole reaches no reporting chain, so it carries no
-report.
+row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
+report; the spec measures one there only because it runs every delivery on every binding.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
