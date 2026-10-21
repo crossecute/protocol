@@ -35,9 +35,9 @@ struct ChainContracts {
 }
 
 /// @title GovernanceConfig
-/// @notice Reads `deploy/governance.toml`, checking its shape. Unset values (a zero owner, caller,
-///         or salt) parse, and are refused by `requireSet`, so the file can be checked before
-///         they are decided.
+/// @notice Reads `deploy/governance.toml`, checking its shape. Unset values (a zero owner, or a zero
+///         caller or salt in a provider's record) parse, and are refused by `requireSet`, so the
+///         file can be checked before they are decided.
 library GovernanceConfig {
     function defaultFile() internal view returns (string memory) {
         return string.concat(ChainConfig.defaultDir(), "/governance.toml");
