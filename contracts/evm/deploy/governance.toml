@@ -4,7 +4,8 @@
 # record, and the governor's accounts through its owner, salt, and home. Read by
 # `GovernanceConfig` in script/deploy/ChainDeploy.sol.
 #
-# A zero owner, deployed_by, or salt is unset: the deploy scripts refuse it.
+# A zero owner, or a zero deployed_by or salt in a provider's record, is unset: the deploy scripts
+# refuse it. The governor's salt may be zero.
 
 # The governor's home, by chains.toml name. Must be a parity chain.
 home = "ethereum"
