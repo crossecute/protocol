@@ -470,7 +470,9 @@ profile, which also enforces the detector heuristics the default profile leaves 
 `forge test` does not check. `script/check-selectors.sh` fails if a transceiver declares a
 selector its extension also declares under another signature. A separate job runs
 `forge coverage` over `src/` and posts the summary on the run; it sets no minimum, and its
-build is unoptimized, so the two address-pinning tests skip there.
+build is unoptimized, so the tests that need solc's optimized bytecode skip there: those pinning
+`CrossProxy`'s initcode hash and the deployer's address, the delivery gas measurements, and
+the deploy tests that deploy from `deploy/governance.toml`.
 
 Each chain's timelock, registry, and treasury deploy with `forge script
 script/DeployChain.s.sol`, and each provider's transceiver with `forge script
