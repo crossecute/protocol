@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
-import {IOpStackRecipient, OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
+import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
@@ -126,6 +127,6 @@ abstract contract OpStackFixture is ProviderGasFixture {
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
-        return abi.encodePacked(OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE, gas);
+        return GasAttribute.opStack(gas);
     }
 }

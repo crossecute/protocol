@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
@@ -15,7 +16,6 @@ import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver
 
 import {MockHyperlaneMailbox} from "test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {ProviderGasFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
-import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
@@ -129,6 +129,6 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
-        return abi.encodePacked(HyperlaneMessage.GAS_LIMIT_ATTRIBUTE, gas);
+        return GasAttribute.hyperlane(gas);
     }
 }
