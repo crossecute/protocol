@@ -26,6 +26,7 @@ import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
 contract LzTransceiverHarness is LzTransceiver {
@@ -115,6 +116,13 @@ abstract contract LzFixture is ProviderGasFixture {
 
     /// @dev The peer must be the counterpart (#62), so a transceiver with no registry, as the
     ///      send suite's is, gets one that records `counterpart` on a `Unique` remote chain.
+    /// @notice `_prepareAccount` for LayerZero, which delivers only from a set peer: here the
+    ///         receiver, at the account's address.
+    function _peerWithItsReceiver(address account_, address owner) internal {
+        vm.prank(owner);
+        LzTransmitter(payable(account_)).setPeer(BASE_EID, toBytes32(account_));
+    }
+
     function _configureRemote(address t, address counterpart) internal override {
         _setRemoteProviderId(t);
         TransceiverBase tb = TransceiverBase(payable(t));
