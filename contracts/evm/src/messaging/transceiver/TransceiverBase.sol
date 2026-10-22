@@ -7,6 +7,7 @@ import {
     ITransmitterInit,
     IAccountReceiverReport
 } from "src/messaging/transceiver/TransceiverCore.sol";
+import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -271,7 +272,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrap(
             destinationChainKey,
-            Envelope.encodeBootstrap(owner, salt, _transmitterWord(_localAccount(owner, salt)), calls),
+            Envelope.encodeBootstrap(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), calls),
             attributes
         );
     }
@@ -286,7 +287,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrap(
             destinationChainKey,
-            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_localAccount(owner, salt)), elements),
+            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), elements),
             attributes
         );
     }
@@ -294,9 +295,18 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @notice Refuse any caller but the account `(owner, salt)` resolves to here, and return
     ///         it as the bootstrap carries it.
     function _bootstrapCaller(address owner, bytes32 salt) private view returns (bytes32) {
-        address account = _localAccount(owner, salt);
+        address account = _allowedAccount(owner, salt);
         if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
         return _transmitterWord(account);
+    }
+
+    /// @notice The account `(owner, salt)` resolves to here, refused unless the allowlist, where
+    ///         one is set, allows it.
+    /// @dev Shared by `bootstrap` and its quotes so they refuse the same accounts.
+    function _allowedAccount(address owner, bytes32 salt) private view returns (address account) {
+        account = _localAccount(owner, salt);
+        IBootstrapAllowlist allowlist = _bootstrapAllowlist;
+        if (address(allowlist) != address(0) && !allowlist.isAllowed(account)) revert NotAllowed(account);
     }
 
     /// @dev One send path for both envelope forms. The provenance bar lives inside

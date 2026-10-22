@@ -173,6 +173,39 @@ the account anyway would leave the home permanently unable to address it, since 
 arms exactly once and there is no second bootstrap to carry a second report. All or nothing
 keeps the operation retryable once the float is funded.
 
+**An empty float moves the report's cost to whoever retries; it does not strand the
+account.** Every provider that reaches zkSync or Tron (LayerZero, CCIP, Hyperlane) keeps a
+reverted delivery retryable by anyone, LayerZero and Hyperlane with no expiry in their
+contracts and CCIP with none in its documentation. Hyperlane's `Mailbox.process` and
+LayerZero's `EndpointV2.lzReceive` forward the retry's `msg.value` to the transceiver, so the
+retry can bring its own report's cost, and no other stuck bootstrap can spend it in the same
+transaction. A top-up sent on its own is shared: whoever retries first spends it, including
+whoever drained the float. CCIP's `ccipReceive` takes no value, so a CCIP retry funds its own
+report only through a contract that tops up the float and calls manual execution in one
+transaction.
+
+**What draining a float costs.** Each bootstrap to a reporting chain costs its sender the
+home's message fee plus that home's bootstrap fee, and costs the float one report. Spending a
+float of F takes F ÷ (one report's cost) bootstraps, so the attack costs
+(F ÷ report cost) × (bootstrap fee + message fee), at the cheapest home. A bootstrap fee of at
+least one report's cost means every report the float pays was paid for first, into that home's
+treasury in that home's currency. Price movement between the two currencies erodes the margin,
+so each home's fee is reviewed when prices move (#78).
+
+**Halting bootstraps to a reporting chain.** The fee is per destination, held by each home's
+transceiver. Setting a reporting destination's fee to zero refuses every bootstrap and quote
+to it (`NoBootstrapFee`), and setting the fee again resumes them. The owner can do this, or
+the operator it names (`setOperator`), which off the governor's home needs no cross-chain
+message. It halts that home only, so stopping a drain takes every home, and bootstraps
+already in flight still arrive and spend the float. The registry's `setSuspended` halts any
+chain, parity ones included, but also refuses reports and deliveries from it until lifted.
+
+**Limiting who bootstraps.** The owner can name an `IBootstrapAllowlist`
+(`setBootstrapAllowlist`), after which a bootstrap and its quote are refused (`NotAllowed`)
+for any account it does not allow. The check is on the account, which `bootstrap` requires
+to be `msg.sender`, so both refuse the same accounts. It applies to every destination,
+reporting or not, and setting zero lifts it.
+
 On an EVM destination nothing persists past the transaction: deploy, arm, execute, and lock
 all happen in the inbound handler. Chains where deployment is not synchronous (Starknet, the
 Move chains) need somewhere to hold the payload in between, which is a per-VM concern.
@@ -254,7 +287,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
 | `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
-| `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `accountSalt`, `predictCrossAccount`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setBootstrapFee`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `treasury` |
+| `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `accountSalt`, `predictCrossAccount`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
 | `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `CROSS_PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
 | `messaging/transceiver/DivergentAccounts.sol` | The zkSync and Tron account formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `accountBytecodeHash` |

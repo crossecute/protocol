@@ -141,7 +141,9 @@ bootstrap creates the governor's accounts there.
    - LayerZero's `setPeer`, after the two above: it refuses a peer other than the counterpart
      on the chain the eid maps to (#62);
    - `setBootstrapFee` where the destination reports its receivers (a zkSync or Tron
-     destination).
+     destination);
+   - `setOperator`, naming a key on this chain that may reprice or halt bootstraps without a
+     cross-chain governance message, if the chain has one.
 5. **Fund floats** (§6 step 7) on chains whose transceivers report, sized from
    [R7.5](../../../docs/provider-spec.md#r7-fees-and-value)'s quote.
 

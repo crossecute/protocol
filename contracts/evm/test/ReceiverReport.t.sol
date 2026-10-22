@@ -25,6 +25,7 @@ import {
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 
 /// @dev A transmitter with a send that does nothing, so a bootstrap can be dispatched
 ///      without a provider behind it.
@@ -784,6 +785,112 @@ contract BootstrapFeeTest is Test {
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
+    /// @dev A zero fee is the owner's halt for bootstraps to a reporting destination (#78), so
+    ///      setting it again must resume them; the refused attempt records nothing.
+    function test_restoringTheFeeResumesBootstraps() public {
+        vm.prank(t.owner());
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(t.owner());
+        ext(address(t)).setBootstrapFee(divergingKey, FEE);
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        assertEq(treasury.balance, FEE, "charged the restored fee");
+    }
+
+    /// @dev Send and quote refuse the same accounts, so a transmitter's bootstrap, which quotes
+    ///      first, fails before it spends anything. The elements forms are called on the
+    ///      transceiver directly, since the transmitter sends them only to non-EVM chains.
+    function test_anAllowlistRefusesTheAccountsItDoesNotList() public {
+        Allowlist list = new Allowlist();
+        vm.prank(t.owner());
+        ext(address(t)).setBootstrapAllowlist(list);
+        bytes memory refused = abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(account));
+        bytes[] memory elements = new bytes[](0);
+
+        vm.expectRevert(refused);
+        t.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
+        vm.prank(owner);
+        vm.expectRevert(refused);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        vm.expectRevert(refused);
+        t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
+        vm.prank(address(account));
+        vm.expectRevert(refused);
+        t.bootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
+
+        list.allow(address(account));
+        t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev Only the owner sets or clears it; cleared, every account bootstraps again.
+    function test_onlyTheOwnerSetsTheAllowlist() public {
+        Allowlist list = new Allowlist();
+        address operator = makeAddr("operator");
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, operator));
+        ext(address(t)).setBootstrapAllowlist(list);
+
+        vm.startPrank(t.owner());
+        ext(address(t)).setBootstrapAllowlist(list);
+        assertEq(address(ext(address(t)).bootstrapAllowlist()), address(list));
+        ext(address(t)).setBootstrapAllowlist(IBootstrapAllowlist(address(0)));
+        vm.stopPrank();
+
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev The operator prices and halts bootstraps without the owner, whose actions off the
+    ///      governor's home take a cross-chain message (#78).
+    function test_theOperatorHaltsAndResumesBootstraps() public {
+        address operator = makeAddr("operator");
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(operator);
+        assertEq(ext(address(t)).operator(), operator);
+
+        vm.prank(operator);
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(operator);
+        ext(address(t)).setBootstrapFee(divergingKey, FEE);
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev Only the owner names or removes the operator, and a removed one sets nothing.
+    function test_onlyTheOwnerOrItsOperatorSetsAFee() public {
+        address operator = makeAddr("operator");
+        address stranger = makeAddr("stranger");
+
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOwnerOrOperator.selector, stranger));
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, operator));
+        ext(address(t)).setOperator(stranger);
+
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(address(0));
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOwnerOrOperator.selector, operator));
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        assertEq(ext(address(t)).bootstrapFee(divergingKey), FEE, "unchanged");
+    }
+
     /// @dev The fee moves in the transaction that charges it. Nothing accrues on the transceiver, so
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
@@ -864,11 +971,6 @@ contract BootstrapFeeTest is Test {
         assertEq(t.lastSendValue(), quote - FEE);
     }
 
-    function test_onlyTheOwnerSetsTheFee() public {
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        ext(address(t)).setBootstrapFee(divergingKey, 1);
-    }
-
     /// @dev The treasury is write-once and there is no fee withdrawal. Together those remove
     ///      the operation a compromised owner would have reached for: no accrued fees, no
     ///      destination to name, and no setter to repoint. The float leaves only at the
@@ -917,5 +1019,13 @@ contract BootstrapFeeTest is Test {
 contract Rejector {
     receive() external payable {
         revert("no");
+    }
+}
+
+contract Allowlist is IBootstrapAllowlist {
+    mapping(address => bool) public isAllowed;
+
+    function allow(address account) external {
+        isAllowed[account] = true;
     }
 }

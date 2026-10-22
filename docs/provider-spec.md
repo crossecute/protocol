@@ -704,12 +704,16 @@ from its balance. A binding MUST NOT retain a remainder on the transceiver.
 **R7.5** Where the report is sent from a contract balance, the binding SHOULD expose the
 report's own quote (`reportPayload` with `quoteMessage`) so an operator can size that
 float. A transceiver that runs dry fails every bootstrap on its chain at the return leg, and
-the failure is invisible from home until someone finds the account unreachable there.
+the failure is invisible from home until someone finds the account unreachable there. The
+bootstrap stays retryable at the provider, and where the provider forwards a retry's
+`msg.value` (Hyperlane, LayerZero) the retry can bring its own report's cost
+([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)).
 
 **R7.6 The float pays only for a completed report, at the report's fixed gas, after a
 bootstrap that paid a fee.** A report's gas is `DeliveryGas.REPORT`, which no attribute
 changes. A bootstrap to a destination that reports is refused, and so is its quote, while
-`bootstrapFee` for it is zero (`NoBootstrapFee`). A delivery that runs out of gas reverts
+`bootstrapFee` for it is zero (`NoBootstrapFee`), which is also how the owner or its operator
+halts bootstraps to it. A delivery that runs out of gas reverts
 whole, the report's payment with it. The fee's size relative to the report's cost is
 governance's to keep.
 

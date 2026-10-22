@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {TransceiverCore, TransceiverConfig} from "src/messaging/transceiver/TransceiverCore.sol";
+import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -161,9 +162,24 @@ contract TransceiverExtension is TransceiverCore {
         _setCounterpart(chainKey, addr);
     }
 
-    /// @notice Set what standing an account up on `chainKey` costs.
-    /// @dev Rebindable: a price redirects nothing.
-    function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyOwner {
+    /// @notice Name the contract that decides which accounts may bootstrap. Zero lets every
+    ///         account.
+    function setBootstrapAllowlist(IBootstrapAllowlist allowlist) external onlyOwner {
+        _bootstrapAllowlist = allowlist;
+        emit BootstrapAllowlistSet(address(allowlist));
+    }
+
+    /// @notice Name who may set bootstrap fees besides the owner. Zero names no one.
+    // forge-lint: disable-next-line(missing-zero-check) zero removes the operator
+    function setOperator(address operator_) external onlyOwner {
+        _operator = operator_;
+        emit OperatorSet(operator_);
+    }
+
+    /// @notice Set what standing an account up on `chainKey` costs. The owner's or the operator's.
+    /// @dev Rebindable: a price redirects nothing. Zero halts bootstraps to a reporting chain.
+    function setBootstrapFee(bytes32 chainKey, uint256 fee) external {
+        if (msg.sender != _operator && msg.sender != owner()) revert NotOwnerOrOperator(msg.sender);
         _bootstrapFee[chainKey] = fee;
         emit BootstrapFeeSet(chainKey, fee);
     }
@@ -231,6 +247,14 @@ contract TransceiverExtension is TransceiverCore {
 
     function bootstrapFee(bytes32 chainKey) external view returns (uint256) {
         return _bootstrapFee[chainKey];
+    }
+
+    function operator() external view returns (address) {
+        return _operator;
+    }
+
+    function bootstrapAllowlist() external view returns (IBootstrapAllowlist) {
+        return _bootstrapAllowlist;
     }
 
     function treasury() external view returns (address) {

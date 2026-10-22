@@ -32,9 +32,15 @@ this file is the gap between that design and the tree.
   from its own float, in its own currency, for accounts homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
   pays; the float is funded out of band, and how much it needs depends on traffic from every
-  home. Mass bootstrapping can also spend it down on purpose: the fee floor is only nonzero,
-  the cheapest home sets the price, and an empty float blocks bootstraps to that chain from
-  every home (#78).
+  home. Mass bootstrapping can also spend it down on purpose (#78, pinned by
+  `test/invariant/FeesAndFloat.t.sol`): the fee floor is only nonzero, and the cheapest home
+  sets the price. An empty float refuses bootstraps to that chain from every home, but strands
+  none: anyone can retry one and bring its report's cost, so until a refill every user of that
+  chain pays their own report. A fee of at least one report's cost makes the attacker pay for
+  every report the float pays ([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
+  gives the cost), which needs the report's measured cost on each reporting chain. Each home's
+  owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
+  there to zero, and the owner can limit which accounts bootstrap with an allowlist.
 
 ## 2. Chain checks before mainnet
 
@@ -84,6 +90,11 @@ this file is the gap between that design and the tree.
   transceiver, fetches each signed VAA from Wormholescan once the guardians sign it, and
   calls `executeVAAv1` on the destination, paying its gas. Anyone may run one; delivery
   needs no role.
+- **Retrying a bootstrap stuck on an empty float needs tooling.** For LayerZero and Hyperlane
+  it is the provider's own retry (`EndpointV2.lzReceive`, `Mailbox.process`) sent with the
+  report's quote as `msg.value`. For CCIP it needs a contract that transfers the quote to the
+  float and calls manual execution in one transaction, since a separate top-up can be spent by
+  another retry first (#78). Neither is written.
 - **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
