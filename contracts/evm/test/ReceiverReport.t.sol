@@ -802,19 +802,28 @@ contract BootstrapFeeTest is Test {
     }
 
     /// @dev Send and quote refuse the same accounts, so a transmitter's bootstrap, which quotes
-    ///      first, fails before it spends anything.
+    ///      first, fails before it spends anything. The elements forms are called on the
+    ///      transceiver directly, since the transmitter sends them only to non-EVM chains.
     function test_anAllowlistRefusesTheAccountsItDoesNotList() public {
         Allowlist list = new Allowlist();
         vm.prank(t.owner());
         ext(address(t)).setBootstrapAllowlist(list);
+        bytes memory refused = abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(account));
+        bytes[] memory elements = new bytes[](0);
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(account)));
+        vm.expectRevert(refused);
         t.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(account)));
+        vm.expectRevert(refused);
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        vm.expectRevert(refused);
+        t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
+        vm.prank(address(account));
+        vm.expectRevert(refused);
+        t.bootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
 
         list.allow(address(account));
+        t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
         vm.prank(owner);
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
