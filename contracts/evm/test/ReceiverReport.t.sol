@@ -784,6 +784,22 @@ contract BootstrapFeeTest is Test {
         account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
+    /// @dev A zero fee is the owner's halt for bootstraps to a reporting destination (#78), so
+    ///      setting it again must resume them; the refused attempt records nothing.
+    function test_restoringTheFeeResumesBootstraps() public {
+        vm.prank(t.owner());
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(t.owner());
+        ext(address(t)).setBootstrapFee(divergingKey, FEE);
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        assertEq(treasury.balance, FEE, "charged the restored fee");
+    }
+
     /// @dev The fee moves in the transaction that charges it. Nothing accrues on the transceiver, so
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
