@@ -179,7 +179,7 @@ contract TransceiverExtension is TransceiverCore {
     /// @notice Set what standing an account up on `chainKey` costs. The owner's or the operator's.
     /// @dev Rebindable: a price redirects nothing. Zero halts bootstraps to a reporting chain.
     function setBootstrapFee(bytes32 chainKey, uint256 fee) external {
-        if (msg.sender != _operator && msg.sender != owner()) revert NotOperator(msg.sender);
+        if (msg.sender != _operator && msg.sender != owner()) revert NotOwnerOrOperator(msg.sender);
         _bootstrapFee[chainKey] = fee;
         emit BootstrapFeeSet(chainKey, fee);
     }

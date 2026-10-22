@@ -196,7 +196,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      Refused on the first bootstrap rather than leaving every such account unreachable.
     error ParityBroken(address receiver, address sourceTransmitter);
     error NotTreasury(address caller);
-    error NotOperator(address caller);
+    error NotOwnerOrOperator(address caller);
     error NotAllowed(address account);
     error WithdrawFailed(uint256 amount);
 

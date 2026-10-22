@@ -865,7 +865,7 @@ contract BootstrapFeeTest is Test {
         address stranger = makeAddr("stranger");
 
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOperator.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOwnerOrOperator.selector, stranger));
         ext(address(t)).setBootstrapFee(divergingKey, 0);
 
         vm.prank(t.owner());
@@ -877,7 +877,7 @@ contract BootstrapFeeTest is Test {
         vm.prank(t.owner());
         ext(address(t)).setOperator(address(0));
         vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOperator.selector, operator));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOwnerOrOperator.selector, operator));
         ext(address(t)).setBootstrapFee(divergingKey, 0);
         assertEq(ext(address(t)).bootstrapFee(divergingKey), FEE, "unchanged");
     }
