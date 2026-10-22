@@ -712,8 +712,8 @@ bootstrap stays retryable at the provider, and where the provider forwards a ret
 **R7.6 The float pays only for a completed report, at the report's fixed gas, after a
 bootstrap that paid a fee.** A report's gas is `DeliveryGas.REPORT`, which no attribute
 changes. A bootstrap to a destination that reports is refused, and so is its quote, while
-`bootstrapFee` for it is zero (`NoBootstrapFee`), which is also how the owner halts
-bootstraps to it. A delivery that runs out of gas reverts
+`bootstrapFee` for it is zero (`NoBootstrapFee`), which is also how the owner or its operator
+halts bootstraps to it. A delivery that runs out of gas reverts
 whole, the report's payment with it. The fee's size relative to the report's cost is
 governance's to keep.
 

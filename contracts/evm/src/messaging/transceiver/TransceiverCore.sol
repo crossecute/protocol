@@ -117,6 +117,12 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     /// True only while a receiver report is being sent, which pays from this contract's float.
     bool internal _reporting;
 
+    /// May set bootstrap fees besides the owner. The owner is the governor's account, which off
+    /// the governor's home acts only through a cross-chain message, so this lets a local key
+    /// price or halt bootstraps (#78). Set and replaced by the owner.
+    // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverExtension`
+    address internal _operator;
+
     event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the account.
@@ -126,6 +132,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     event AddressesDivergeSet(bool addressesDiverge);
     event RoutingSet(address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance);
     event BootstrapFeeSet(bytes32 indexed chainKey, uint256 fee);
+    event OperatorSet(address operator);
     event BootstrapFeePaid(bytes32 indexed chainKey, address indexed to, uint256 amount);
     event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account);
     event ReceiverReported(bytes32 indexed home, address indexed owner, bytes32 salt, address receiver);
@@ -182,6 +189,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      Refused on the first bootstrap rather than leaving every such account unreachable.
     error ParityBroken(address receiver, address sourceTransmitter);
     error NotTreasury(address caller);
+    error NotOperator(address caller);
     error WithdrawFailed(uint256 amount);
 
     constructor() {

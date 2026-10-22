@@ -800,6 +800,49 @@ contract BootstrapFeeTest is Test {
         assertEq(treasury.balance, FEE, "charged the restored fee");
     }
 
+    /// @dev The operator prices and halts bootstraps without the owner, whose actions off the
+    ///      governor's home take a cross-chain message (#78).
+    function test_theOperatorHaltsAndResumesBootstraps() public {
+        address operator = makeAddr("operator");
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(operator);
+        assertEq(ext(address(t)).operator(), operator);
+
+        vm.prank(operator);
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+
+        vm.prank(operator);
+        ext(address(t)).setBootstrapFee(divergingKey, FEE);
+        vm.prank(owner);
+        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+    }
+
+    /// @dev Only the owner names or removes the operator, and a removed one sets nothing.
+    function test_onlyTheOwnerOrItsOperatorSetsAFee() public {
+        address operator = makeAddr("operator");
+        address stranger = makeAddr("stranger");
+
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOperator.selector, stranger));
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(operator);
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, operator));
+        ext(address(t)).setOperator(stranger);
+
+        vm.prank(t.owner());
+        ext(address(t)).setOperator(address(0));
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOperator.selector, operator));
+        ext(address(t)).setBootstrapFee(divergingKey, 0);
+        assertEq(ext(address(t)).bootstrapFee(divergingKey), FEE, "unchanged");
+    }
+
     /// @dev The fee moves in the transaction that charges it. Nothing accrues on the transceiver, so
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
@@ -878,11 +921,6 @@ contract BootstrapFeeTest is Test {
 
         assertEq(address(account).balance, 1 ether - quote);
         assertEq(t.lastSendValue(), quote - FEE);
-    }
-
-    function test_onlyTheOwnerSetsTheFee() public {
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
-        ext(address(t)).setBootstrapFee(divergingKey, 1);
     }
 
     /// @dev The treasury is write-once and there is no fee withdrawal. Together those remove

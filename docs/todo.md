@@ -39,7 +39,8 @@ this file is the gap between that design and the tree.
   chain pays their own report. A fee of at least one report's cost makes the attacker pay for
   every report the float pays ([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
-  owner can halt bootstraps to a reporting chain by setting its fee there to zero.
+  owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
+  there to zero.
 
 ## 2. Chain checks before mainnet
 

@@ -161,9 +161,17 @@ contract TransceiverExtension is TransceiverCore {
         _setCounterpart(chainKey, addr);
     }
 
-    /// @notice Set what standing an account up on `chainKey` costs.
-    /// @dev Rebindable: a price redirects nothing.
-    function setBootstrapFee(bytes32 chainKey, uint256 fee) external onlyOwner {
+    /// @notice Name who may set bootstrap fees besides the owner. Zero names no one.
+    // forge-lint: disable-next-line(missing-zero-check) zero removes the operator
+    function setOperator(address operator_) external onlyOwner {
+        _operator = operator_;
+        emit OperatorSet(operator_);
+    }
+
+    /// @notice Set what standing an account up on `chainKey` costs. The owner's or the operator's.
+    /// @dev Rebindable: a price redirects nothing. Zero halts bootstraps to a reporting chain.
+    function setBootstrapFee(bytes32 chainKey, uint256 fee) external {
+        if (msg.sender != _operator && msg.sender != owner()) revert NotOperator(msg.sender);
         _bootstrapFee[chainKey] = fee;
         emit BootstrapFeeSet(chainKey, fee);
     }
@@ -231,6 +239,10 @@ contract TransceiverExtension is TransceiverCore {
 
     function bootstrapFee(bytes32 chainKey) external view returns (uint256) {
         return _bootstrapFee[chainKey];
+    }
+
+    function operator() external view returns (address) {
+        return _operator;
     }
 
     function treasury() external view returns (address) {

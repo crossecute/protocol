@@ -162,6 +162,9 @@ contract TransceiverExtensionTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTreasury.selector, address(this)));
         e.withdraw(0);
+
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotOperator.selector, address(this)));
+        e.setBootstrapFee(bytes32(0), 1);
     }
 
     function test_aSelectorNeitherDeclaresReverts() public {

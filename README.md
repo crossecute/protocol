@@ -422,7 +422,8 @@ What an operator or integrator has to know:
   are a `draft-` upstream and this protocol's ABI here.
 - A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
-  to the transceiver owner's bootstrap fee and to a provider's price.
+  to the bootstrap fee, which the transceiver's owner or its operator sets, and to a provider's
+  price. A fee lands in the chain's treasury, so an operator can overcharge but not take it.
 - Each chain has one `ChainRegistry` and one `Treasury`, shared by every provider there. A
   chain's grade, and so whether it reports its receivers, is given when it is registered and
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
