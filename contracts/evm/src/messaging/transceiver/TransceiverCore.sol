@@ -9,6 +9,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {CrossProxy} from "src/account/CrossProxy.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -123,6 +124,11 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverExtension`
     address internal _operator;
 
+    /// Where set, the only accounts that may bootstrap or be quoted one. Set by the owner; zero
+    /// lets every account.
+    // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
+    IBootstrapAllowlist internal _bootstrapAllowlist;
+
     event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the account.
@@ -133,6 +139,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     event RoutingSet(address chainRegistry, bytes32 messageProvider, Provenance minCounterpartProvenance);
     event BootstrapFeeSet(bytes32 indexed chainKey, uint256 fee);
     event OperatorSet(address operator);
+    event BootstrapAllowlistSet(address allowlist);
     event BootstrapFeePaid(bytes32 indexed chainKey, address indexed to, uint256 amount);
     event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account);
     event ReceiverReported(bytes32 indexed home, address indexed owner, bytes32 salt, address receiver);
@@ -190,6 +197,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error ParityBroken(address receiver, address sourceTransmitter);
     error NotTreasury(address caller);
     error NotOperator(address caller);
+    error NotAllowed(address account);
     error WithdrawFailed(uint256 amount);
 
     constructor() {

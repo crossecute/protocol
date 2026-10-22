@@ -40,7 +40,7 @@ this file is the gap between that design and the tree.
   every report the float pays ([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
-  there to zero.
+  there to zero, and the owner can limit which accounts bootstrap with an allowlist.
 
 ## 2. Chain checks before mainnet
 

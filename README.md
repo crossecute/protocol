@@ -424,6 +424,11 @@ What an operator or integrator has to know:
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the bootstrap fee, which the transceiver's owner or its operator sets, and to a provider's
   price. A fee lands in the chain's treasury, so an operator can overcharge but not take it.
+- A transceiver's owner can limit which accounts bootstrap through it by naming an
+  `IBootstrapAllowlist` (`setBootstrapAllowlist`), and lift it by setting zero. It gates
+  bootstraps and their quotes only: an account's messages to receivers it already has go
+  from its transmitter and never reach the check. The allowlist is an external call on every
+  bootstrap, so one that reverts halts bootstraps from that chain.
 - Each chain has one `ChainRegistry` and one `Treasury`, shared by every provider there. A
   chain's grade, and so whether it reports its receivers, is given when it is registered and
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The

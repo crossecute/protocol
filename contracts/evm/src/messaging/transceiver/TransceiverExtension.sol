@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {TransceiverCore, TransceiverConfig} from "src/messaging/transceiver/TransceiverCore.sol";
+import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -161,6 +162,13 @@ contract TransceiverExtension is TransceiverCore {
         _setCounterpart(chainKey, addr);
     }
 
+    /// @notice Name the contract that decides which accounts may bootstrap. Zero lets every
+    ///         account.
+    function setBootstrapAllowlist(IBootstrapAllowlist allowlist) external onlyOwner {
+        _bootstrapAllowlist = allowlist;
+        emit BootstrapAllowlistSet(address(allowlist));
+    }
+
     /// @notice Name who may set bootstrap fees besides the owner. Zero names no one.
     // forge-lint: disable-next-line(missing-zero-check) zero removes the operator
     function setOperator(address operator_) external onlyOwner {
@@ -243,6 +251,10 @@ contract TransceiverExtension is TransceiverCore {
 
     function operator() external view returns (address) {
         return _operator;
+    }
+
+    function bootstrapAllowlist() external view returns (IBootstrapAllowlist) {
+        return _bootstrapAllowlist;
     }
 
     function treasury() external view returns (address) {
