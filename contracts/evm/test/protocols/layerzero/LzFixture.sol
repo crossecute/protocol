@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 
@@ -25,7 +26,6 @@ import {unseeded} from "test/RegistrySeed.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
-import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -166,6 +166,6 @@ abstract contract LzFixture is ProviderGasFixture {
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
-        return abi.encodePacked(LzMessage.OPTIONS_ATTRIBUTE, uint16(3), uint8(1), uint16(17), uint8(1), uint128(gas));
+        return GasAttribute.layerZero(gas);
     }
 }

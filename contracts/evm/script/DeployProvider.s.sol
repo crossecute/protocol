@@ -5,23 +5,23 @@ import {Script} from "forge-std/Script.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
+import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 
 /// @title DeployProvider
 /// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
 ///         its account implementations, its transceiver implementation, and the transceiver,
 ///         deployed through `CrossProxyDeployer` from the registry's record.
 ///
-/// @dev Chain-wide inputs, from the environment:
-///      `CHAIN_REGISTRY`, `TREASURY`, `GOVERNOR_OWNER`, `GOVERNOR_SALT` (default zero),
-///      `GOVERNOR_HOME_CHAIN_ID`, `MIN_COUNTERPART_PROVENANCE` (0 Unknown, 1 Unique,
-///      2 Predetermined), and `GATEWAYS` (default none; they cannot be added later).
-///      Each provider's script names its endpoints. Provider ids come from `deploy/`.
+/// @dev The governor's owner, salt, and home come from `deploy/governance.toml`, and the
+///      registry and treasury are step 1's, at the addresses that file predicts. From the
+///      environment: `MIN_COUNTERPART_PROVENANCE` (0 Unknown, 1 Unique, 2 Predetermined) and
+///      `GATEWAYS` (default none; they cannot be added later). Each provider's script names
+///      its endpoints. Provider ids come from `deploy/`.
 ///
 /// @dev The checks every deployment shares live in `script/deploy/`, which the tests deploy
 ///      through. What is checked here holds only in production: the salt and caller are the
@@ -38,28 +38,35 @@ abstract contract DeployProvider is Script {
     function _deploy(TransceiverDeployment memory d) internal virtual returns (address transceiver);
 
     function run() external returns (address transceiver) {
+        Governance memory g = _governance();
+        GovernanceConfig.requireSet(g);
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         (address receiverImpl, address transmitterImpl, address transceiverImpl) = _implementations();
-        TransceiverConfig memory c = _config(receiverImpl, transmitterImpl);
-        _checkChains(ChainRegistry(address(c.chainRegistry)));
+        TransceiverConfig memory c = _config(g, receiverImpl, transmitterImpl);
+        _checkChains(g, ChainRegistry(address(c.chainRegistry)));
         TransceiverDeployment memory d = _fromRecord(deployer, transceiverImpl, c);
         transceiver = _deploy(d);
         vm.stopBroadcast();
     }
 
-    function _config(address receiverImpl, address transmitterImpl) internal view returns (TransceiverConfig memory) {
+    function _config(Governance memory g, address receiverImpl, address transmitterImpl)
+        internal
+        view
+        returns (TransceiverConfig memory)
+    {
         uint256 bar = vm.envUint("MIN_COUNTERPART_PROVENANCE");
         check(bar <= uint256(Provenance.Predetermined), "MIN_COUNTERPART_PROVENANCE names a grade");
+        ChainContracts memory step1 = ChainDeploy.predict(g);
         return TransceiverConfig({
             gateways: vm.envOr("GATEWAYS", ",", new address[](0)),
             transmitterImplementation: transmitterImpl,
             receiverImplementation: receiverImpl,
-            governorOwner: vm.envAddress("GOVERNOR_OWNER"),
-            governorSalt: vm.envOr("GOVERNOR_SALT", bytes32(0)),
-            governorHome: Erc7930.encodeEvmChain(vm.envUint("GOVERNOR_HOME_CHAIN_ID")),
-            treasury: vm.envAddress("TREASURY"),
-            chainRegistry: IChainRegistryRefs(vm.envAddress("CHAIN_REGISTRY")),
+            governorOwner: g.owner,
+            governorSalt: g.salt,
+            governorHome: ChainDeploy.homeIdentifier(g),
+            treasury: address(step1.treasury),
+            chainRegistry: IChainRegistryRefs(address(step1.registry)),
             messageProvider: keccak256(bytes(_providerName())),
             minCounterpartProvenance: Provenance(bar)
         });
@@ -72,7 +79,7 @@ abstract contract DeployProvider is Script {
         view
         returns (TransceiverDeployment memory)
     {
-        check(address(c.chainRegistry).code.length != 0, "CHAIN_REGISTRY is deployed");
+        check(address(c.chainRegistry).code.length != 0, "step 1's registry is deployed");
         ProviderDeployment memory r = c.chainRegistry.providerDeployment(c.messageProvider);
         check(r.salt != bytes32(0), "the registry records this provider's deployment");
         check(r.deployedBy == deployer, "the broadcaster is the recorded deployedBy");
@@ -83,11 +90,11 @@ abstract contract DeployProvider is Script {
     ///         (zkSync and Tron are built by other compilers), the home is `Predetermined` from
     ///         here as birth requires, the registry has the home, and its grades agree with
     ///         `deploy/`.
-    function _checkChains(ChainRegistry registry) internal view {
+    function _checkChains(Governance memory g, ChainRegistry registry) internal view {
         ChainEntry[] memory cs = ChainConfig.chains(ChainConfig.defaultDir());
         ChainEntry memory local = ChainConfig.chainWithId(cs, block.chainid);
         check(local.derivation == Derivation.Parity, "this chain is a parity chain");
-        ChainEntry memory home = ChainConfig.chainWithId(cs, vm.envUint("GOVERNOR_HOME_CHAIN_ID"));
+        ChainEntry memory home = g.home;
         check(ChainConfig.gradeOf(local, home) == Provenance.Predetermined, "the governor's home is Predetermined");
         // The initializer would revert `UnknownChainKey` without saying which chain is missing.
         if (home.chainId != block.chainid) {
@@ -100,9 +107,17 @@ abstract contract DeployProvider is Script {
     ///         owner arrives under. Required unless this chain is the home.
     function _governorHomeId() internal view returns (uint256 id) {
         string memory dir = ChainConfig.defaultDir();
-        ChainEntry[] memory cs = ChainConfig.chains(dir);
-        uint256 home = vm.envUint("GOVERNOR_HOME_CHAIN_ID");
-        id = ChainConfig.providerId(dir, cs, _providerName(), ChainConfig.chainWithId(cs, home));
-        if (home != block.chainid) check(id != 0, "the provider reaches the governor's home");
+        ChainEntry memory home = _governance().home;
+        id = ChainConfig.providerId(dir, ChainConfig.chains(dir), _providerName(), home);
+        if (home.chainId != block.chainid) check(id != 0, "the provider reaches the governor's home");
+    }
+
+    function _governance() internal view returns (Governance memory) {
+        return GovernanceConfig.read(_governanceFile(), ChainConfig.chains(ChainConfig.defaultDir()));
+    }
+
+    /// @dev Overridden by tests, whose file has every value set.
+    function _governanceFile() internal view virtual returns (string memory) {
+        return GovernanceConfig.defaultFile();
     }
 }

@@ -29,10 +29,10 @@ contract DeployOpStackInterop is DeployProvider {
         ChainEntry[] memory cs = ChainConfig.chains(dir);
         ChainEntry memory local = ChainConfig.chainWithId(cs, block.chainid);
         check(OpStackInteropConfig.isMember(dir, cs, local), "this chain runs op-stack-l2-l2");
-        uint256 home = vm.envUint("GOVERNOR_HOME_CHAIN_ID");
-        if (home != block.chainid) {
+        ChainEntry memory home = _governance().home;
+        if (home.chainId != block.chainid) {
             check(
-                OpStackInteropConfig.isMember(dir, cs, ChainConfig.chainWithId(cs, home)),
+                OpStackInteropConfig.isMember(dir, cs, home),
                 "the governor's home reaches this chain over op-stack-l2-l2"
             );
         }

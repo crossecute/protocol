@@ -47,9 +47,10 @@ jobs:
 
       - run: forge test -vvv
 
-  # Reports coverage of src/ and enforces no minimum. The build is unoptimized, so the two
-  # tests that pin CrossProxy's initcode hash and the deployer's address skip here; `forge`
-  # above holds those values.
+  # Reports coverage of src/ and enforces no minimum. The build is unoptimized, so the tests
+  # that need solc's optimized bytecode skip here: those pinning CrossProxy's initcode hash and
+  # the deployer's address, the delivery gas measurements, and the deploy tests that deploy
+  # from deploy/governance.toml. `forge` above runs them all.
   coverage:
     runs-on: ubuntu-latest
     defaults:

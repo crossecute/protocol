@@ -2,9 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
-import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
+import {RegistrySeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -17,16 +16,15 @@ import {DeployWormhole} from "script/DeployWormhole.s.sol";
 import {DeployOpStack} from "script/DeployOpStack.s.sol";
 import {DeployOpStackInterop} from "script/DeployOpStackInterop.s.sol";
 import {ext} from "test/Harness.sol";
+import {Governance, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
+import {testGovernanceFile, testGovernance, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
 
 /// @notice What every production-script test shares: the environment, a chain
-///         `deploy/chains.toml` configures, and a registry seeded with every provider's record.
+///         `deploy/chains.toml` configures, and step 1's contracts from the test governance file.
 /// @dev `vm.setEnv` is process-wide and tests run in parallel, so every test sets the same
-///      values: mocks and the registry sit at fixed addresses, and the registry records every
-///      provider.
+///      values: mocks sit at fixed addresses.
 abstract contract ProductionDeploySpecBase is Test {
-    address internal constant REGISTRY = address(0x5EED0000);
     address internal constant BROADCASTER = DEFAULT_SENDER;
-    uint256 internal constant HOME_CHAIN_ID = 1;
     /// @dev Base, a parity chain in deploy/chains.toml.
     uint256 internal constant LOCAL_CHAIN_ID = 8453;
 
@@ -43,44 +41,27 @@ abstract contract ProductionDeploySpecBase is Test {
     function setUp() public {
         // The scripts deploy only to a chain in deploy/chains.toml.
         vm.chainId(LOCAL_CHAIN_ID);
-        _setEnv("CHAIN_REGISTRY", vm.toString(REGISTRY));
-        _setEnv("TREASURY", vm.toString(address(0x7EA5)));
-        _setEnv("GOVERNOR_OWNER", vm.toString(address(0x5165)));
-        _setEnv("GOVERNOR_HOME_CHAIN_ID", vm.toString(HOME_CHAIN_ID));
         _setEnv("MIN_COUNTERPART_PROVENANCE", "1");
         _setUpProvider();
     }
 
-    /// @notice The registry at `REGISTRY`, homed on `HOME_CHAIN_ID`, recording every provider
-    ///         as deployed by `deployedBy`.
-    function _seedRegistry(address deployedBy) internal {
-        _seedRegistry(deployedBy, Provenance.Predetermined);
+    /// @notice Step 1, as `DeployChain` runs it.
+    function _deployStep1() internal returns (ChainContracts memory) {
+        return ChainDeploy.deploy(testGovernance());
     }
 
-    function _seedRegistry(address deployedBy, Provenance homeGrade) internal {
-        _seedRegistry(deployedBy, homeGrade, HOME_CHAIN_ID);
-    }
-
+    /// @notice A registry at step 1's address that disagrees with the governance file: homed on
+    ///         `homeChainId` with `homeGrade`, recording every provider as deployed by `deployedBy`.
     function _seedRegistry(address deployedBy, Provenance homeGrade, uint256 homeChainId) internal {
-        string[6] memory names = ["layerzero", "ccip", "hyperlane", "wormhole", "op-stack-l1-l2", "op-stack-l2-l2"];
-        ProviderSeed[] memory providers = new ProviderSeed[](6);
-        for (uint256 i; i < 6; ++i) {
-            providers[i] = ProviderSeed(
-                names[i], deployedBy, keccak256(bytes(names[i])), keccak256(type(CrossProxy).creationCode)
-            );
+        Governance memory g = testGovernance();
+        ChainContracts memory c = ChainDeploy.predict(g);
+        RegistrySeed memory s = ChainDeploy.seed(g);
+        s.governorHome = Erc7930.encodeEvmChain(homeChainId);
+        s.governorHomeGrade = homeGrade;
+        for (uint256 i; i < s.providers.length; ++i) {
+            s.providers[i].deployedBy = deployedBy;
         }
-        deployCodeTo(
-            "ChainRegistry.sol:ChainRegistry",
-            abi.encode(
-                address(this),
-                RegistrySeed({
-                    governorHome: Erc7930.encodeEvmChain(homeChainId),
-                    governorHomeGrade: homeGrade,
-                    providers: providers
-                })
-            ),
-            REGISTRY
-        );
+        deployCodeTo("ChainRegistry.sol:ChainRegistry", abi.encode(address(c.timelock), s), address(c.registry));
     }
 }
 
@@ -93,17 +74,18 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
     function _providerName() internal pure virtual returns (string memory);
 
     function test_theTransceiverLandsWhereTheRegistryPredicts() public {
-        _seedRegistry(BROADCASTER);
+        skipUnderCoverage();
+        ChainContracts memory c = _deployStep1();
         address t = _script().run();
         bytes32 provider = keccak256(bytes(_providerName()));
-        assertEq(t, ChainRegistry(REGISTRY).predictTransceiver(ChainKey.forEvm(HOME_CHAIN_ID), provider));
+        assertEq(t, c.registry.predictTransceiver(ChainKey.forEvm(testGovernance().home.chainId), provider));
         assertEq(ext(address(TransceiverBase(payable(t)))).messageProvider(), provider);
     }
 
     /// @dev A grade is write-once, so a registry that disagrees with deploy/chains.toml is
     ///      refused before anything is deployed against it.
     function test_aRegistryGradingAChainOtherwiseIsRefused() public {
-        _seedRegistry(BROADCASTER, Provenance.Unique);
+        _seedRegistry(BROADCASTER, Provenance.Unique, 1);
         DeployProvider script = _script();
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "registry grades agree with chains.toml"));
         script.run();
@@ -120,7 +102,7 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
 
     /// @dev A production deployment uses the recorded salt from the recorded caller only.
     function test_aBroadcasterOtherThanTheRecordedOneIsRefused() public {
-        _seedRegistry(address(0xBAD));
+        _seedRegistry(address(0xBAD), Provenance.Predetermined, 1);
         DeployProvider script = _script();
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the broadcaster is the recorded deployedBy"));
         script.run();
@@ -129,7 +111,7 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
 
 contract DeployLzTest is ProductionDeploySpec {
     function _script() internal override returns (DeployProvider) {
-        return new DeployLz();
+        return new TestDeployLz();
     }
 
     function _providerName() internal pure override returns (string memory) {
@@ -144,7 +126,7 @@ contract DeployLzTest is ProductionDeploySpec {
 
 contract DeployCcipTest is ProductionDeploySpec {
     function _script() internal override returns (DeployProvider) {
-        return new DeployCcip();
+        return new TestDeployCcip();
     }
 
     function _providerName() internal pure override returns (string memory) {
@@ -159,7 +141,7 @@ contract DeployCcipTest is ProductionDeploySpec {
 
 contract DeployHyperlaneTest is ProductionDeploySpec {
     function _script() internal override returns (DeployProvider) {
-        return new DeployHyperlane();
+        return new TestDeployHyperlane();
     }
 
     function _providerName() internal pure override returns (string memory) {
@@ -174,7 +156,7 @@ contract DeployHyperlaneTest is ProductionDeploySpec {
 
 contract DeployWormholeTest is ProductionDeploySpec {
     function _script() internal override returns (DeployProvider) {
-        return new DeployWormhole();
+        return new TestDeployWormhole();
     }
 
     function _providerName() internal pure override returns (string memory) {
@@ -191,7 +173,7 @@ contract DeployWormholeTest is ProductionDeploySpec {
 
 contract DeployOpStackTest is ProductionDeploySpec {
     function _script() internal override returns (DeployProvider) {
-        return new DeployOpStack();
+        return new TestDeployOpStack();
     }
 
     function _providerName() internal pure override returns (string memory) {
@@ -211,9 +193,54 @@ contract DeployOpStackInteropTest is ProductionDeploySpecBase {
             "MockL2ToL2CrossDomainMessenger.sol:MockL2ToL2CrossDomainMessenger",
             0x4200000000000000000000000000000000000023
         );
-        _seedRegistry(BROADCASTER);
-        DeployOpStackInterop script = new DeployOpStackInterop();
+        _deployStep1();
+        DeployOpStackInterop script = new TestDeployOpStackInterop();
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "this chain runs op-stack-l2-l2"));
         script.run();
+    }
+}
+
+/// @dev Production's file is not ready to deploy until its addresses are decided.
+contract ProductionGovernanceFileTest is ProductionDeploySpecBase {
+    function test_theProductionFileRefusesItsUnsetOwner() public {
+        DeployCcip script = new DeployCcip();
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "governance.toml: owner is set"));
+        script.run();
+    }
+}
+
+contract TestDeployLz is DeployLz {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
+    }
+}
+
+contract TestDeployCcip is DeployCcip {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
+    }
+}
+
+contract TestDeployHyperlane is DeployHyperlane {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
+    }
+}
+
+contract TestDeployWormhole is DeployWormhole {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
+    }
+}
+
+contract TestDeployOpStack is DeployOpStack {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
+    }
+}
+
+contract TestDeployOpStackInterop is DeployOpStackInterop {
+    function _governanceFile() internal view override returns (string memory) {
+        return testGovernanceFile();
     }
 }

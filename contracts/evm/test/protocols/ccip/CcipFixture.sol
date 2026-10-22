@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
 
@@ -15,7 +16,6 @@ import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
 
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {ProviderGasFixture, defaultReceiverInit} from "test/protocols/ProviderFixture.sol";
-import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @notice Exposes the send seam for the shared send suite, and marks each message it handles.
@@ -140,6 +140,6 @@ abstract contract CcipFixture is ProviderGasFixture {
     }
 
     function _gasAttribute(uint256 gas) internal pure override returns (bytes memory) {
-        return abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(gas, false));
+        return GasAttribute.ccip(gas);
     }
 }

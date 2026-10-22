@@ -61,8 +61,8 @@ The rest of the bill, stated plainly:
 - **A home cannot move.** It is part of the account's address. A team that wants another
   home makes another account.
 - **Configuration is N × N.** Every chain's transceiver needs every other chain's route and
-  provider id. Their one source is `contracts/evm/deploy/`; nothing turns it into the
-  governance payloads yet.
+  provider id. Their one source is `contracts/evm/deploy/`, which
+  `script/GovernancePayloads.s.sol` turns into the governance payloads for the parity chains.
 - **A registry bug means new transceivers.** The registry is fixed and a transceiver's pointer
   to it is write-once, so a fix moves that chain's accounts.
 - **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then
@@ -426,8 +426,8 @@ What an operator or integrator has to know:
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
   owner, where the governor's accounts under two providers propose and cancel, so a compromised
-  provider can freeze them but not take them. That step is not scripted yet, so nothing
-  enforces that design today.
+  provider can freeze them but not take them. `script/DeployChain.s.sol` deploys it from
+  `contracts/evm/deploy/governance.toml` and reads the design back.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
   so no transceiver holds an accrued fee. A transceiver holds only the float for its receiver
   reports, funded out of band, which pays those reports and otherwise leaves only when the
@@ -470,11 +470,16 @@ profile, which also enforces the detector heuristics the default profile leaves 
 `forge test` does not check. `script/check-selectors.sh` fails if a transceiver declares a
 selector its extension also declares under another signature. A separate job runs
 `forge coverage` over `src/` and posts the summary on the run; it sets no minimum, and its
-build is unoptimized, so the two address-pinning tests skip there.
+build is unoptimized, so the tests that need solc's optimized bytecode skip there: those pinning
+`CrossProxy`'s initcode hash and the deployer's address, the delivery gas measurements, and
+the deploy tests that deploy from `deploy/governance.toml`.
 
-Each provider's transceiver deploys with `forge script script/Deploy<Provider>.s.sol`, which
-reads its inputs from the environment (listed in `script/DeployProvider.s.sol`) and the
-salt and deployer from the chain registry's record, and provider ids from `deploy/`. The test
+Each chain's timelock, registry, and treasury deploy with `forge script
+script/DeployChain.s.sol`, and each provider's transceiver with `forge script
+script/Deploy<Provider>.s.sol`. Both read the governor and every address-determining value from
+`deploy/governance.toml`; the transceiver takes the salt and deployer from the chain registry's
+record, provider ids from `deploy/`, and its endpoints from the environment (listed in each
+script). The test
 suites deploy through the same functions under `script/deploy/`, so a deployment makes every
 check the tests do. [`contracts/evm/deploy/README.md`](contracts/evm/deploy/README.md) says
 what adding a chain takes.

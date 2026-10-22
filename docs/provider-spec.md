@@ -768,21 +768,30 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 2 | every chain | Deploy `CrossProxyDeployer` and `TransceiverExtension` through Arachnid's factory once per chain, then each provider's transceiver implementation, naming that extension, and the transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the account and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both account implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the account bytecode hash too, and name their own extension variant. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
-| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`; nothing turns it into payloads yet. |
+| 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`, which `script/GovernancePayloads.s.sol` turns into payloads for the parity chains. |
 | 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
+Step 1 is scripted for a standard EVM chain: `script/DeployChain.s.sol` takes every argument
+from `deploy/governance.toml`, so the three contracts sit at one address on every such chain,
+and reads the design above back from chain.
+
 Step 2 is scripted for each provider on a standard EVM chain: `script/Deploy<Provider>.s.sol`
-reads the chain's inputs from the environment and deploys through `script/deploy/`, which the
-test suites deploy through too, so every check a deployment makes also runs in every test.
+reads the governor and step 1's addresses from `deploy/governance.toml` and its endpoints from
+the environment, and deploys through `script/deploy/`, which the test suites deploy through
+too, so every check a deployment makes also runs in every test.
 Those shared checks hold the proxy to its predicted address, locked on its implementation;
 the transceiver to its configuration, gateways, and governor's home; and, where the registry
 records the provider's deployment, R8.4. The production script adds what holds only on chain:
 the salt and caller are the record's; the chain, the governor's home, and the provider ids are
-in `deploy/`; and the registry has the home and grades every chain as `deploy/` does. Steps 1
-and 3 to 7, and zkSync and Tron, are not scripted ([todo §3](todo.md#3-infrastructure)). The
-ordering above is their specification.
+in `deploy/`; and the registry has the home and grades every chain as `deploy/` does. 
+
+Steps 3 to 6 are scripted for the parity chains: `script/GovernancePayloads.s.sol` computes them
+from `deploy/` alone, with every address predicted, and writes them as Safe Transaction Builder
+batches for the governor's owner, with the timelock executions anyone may submit, in the order
+above. No parity chain reports, so step 7 funds nothing among them. zkSync and Tron, and every
+lane to them, are not scripted ([todo §3](todo.md#3-infrastructure)).
 
 ---
 

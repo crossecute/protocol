@@ -60,11 +60,22 @@ Never change a deployed chain's ids. Transceivers hold them write-once.
 
 ## 4. Deploy on the new chain
 
-**Step 1, not scripted yet.** Deploy the chain's `TimelockController`, then
-`ChainRegistry(timelock, seed)` and `Treasury(timelock)`. The seed names the governor's home,
-graded `Predetermined`, and each provider's deployment record exactly as every other chain's
-registry has it. A record that differs moves that provider's transceiver off its shared
-address.
+**Step 1:**
+
+```
+forge script script/DeployChain.s.sol --rpc-url <rpc> --broadcast
+```
+
+It deploys the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and
+`Treasury(timelock)`, through Arachnid's factory. Every argument comes from
+[`governance.toml`](governance.toml), so each lands at one address on every parity chain: the
+seed names the governor's home, graded `Predetermined`, and each provider's deployment record,
+and the timelock's proposers are the governor's accounts under the two providers it names. Any
+account may broadcast, and a rerun deploys nothing. It refuses a chain that is not parity, a
+`governance.toml` with an owner, caller, or salt unset, and a build whose `CrossProxy` initcode
+hash is not the one `governance.toml` records, since every registry records that value for
+every provider (R8.4). Never change `governance.toml` once a chain is deployed: every address
+derives from it.
 
 **Step 2, per provider:**
 
@@ -72,10 +83,12 @@ address.
 forge script script/Deploy<Provider>.s.sol --rpc-url <rpc> --broadcast --sender <deployedBy>
 ```
 
-The broadcaster must be the record's `deployedBy`; the salt is read from the record. Inputs
-come from the environment, listed in [`DeployProvider.s.sol`](../script/DeployProvider.s.sol)
-and each provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a transceiver's
-gateways cannot be added later. Provider ids come from this directory.
+The broadcaster must be the record's `deployedBy`; the salt is read from the record. The
+governor's owner, salt, and home come from [`governance.toml`](governance.toml), and the
+registry and treasury are step 1's, at the addresses it predicts. The rest comes from the
+environment, listed in [`DeployProvider.s.sol`](../script/DeployProvider.s.sol) and each
+provider's script (its endpoint addresses). `GATEWAYS` is fixed here: a transceiver's gateways
+cannot be added later. Provider ids come from this directory.
 
 Before deploying, the script refuses a chain missing from `chains.toml` or not parity, a
 governor's home that is not `Predetermined` from it, and a registry that has not registered
@@ -132,5 +145,29 @@ bootstrap creates the governor's accounts there.
 5. **Fund floats** (§6 step 7) on chains whose transceivers report, sized from
    [R7.5](../../../docs/provider-spec.md#r7-fees-and-value)'s quote.
 
-Generating these payloads from this directory, so that every chain's tables agree, is not
-scripted yet ([todo §3](../../../docs/todo.md#3-infrastructure)).
+For the parity chains, these payloads come from this directory, so every chain's tables agree:
+
+```
+forge script script/GovernancePayloads.s.sol
+```
+
+It reads nothing on chain, so a commit always writes the same files to `out/governance/`, Safe
+Transaction Builder batches numbered in the order they are submitted:
+
+1. `1-prepare-home.json`, by the governor's owner on the home: create its transmitter under each
+   provider, set the home transceivers' routes and ids, and schedule the home registry.
+2. `2-execute-registry-<home>.json`, by anyone after the timelock delay.
+3. `3-bootstrap.json`, by the governor's owner: the home's LayerZero peers, then a bootstrap of
+   every other chain under every provider that reaches it. Each payload sets that transceiver's
+   routes and ids, and the first proposer's also schedules that chain's registry. Each
+   transmitter pays from its own balance, so send it its quotes first. Wormhole's go
+   publish-only, and wait for a deliverer ([todo §3](../../../docs/todo.md#3-infrastructure)).
+4. `4-execute-registry-<chain>.json` for every other chain, by anyone there once its bootstrap
+   has arrived and the delay has passed.
+5. `5-connect.json`, by the governor's owner once every file 4 has executed: each chain's
+   LayerZero peers, which need its registry.
+
+The files are for the first deployment. For a chain added later, a rerun writes every entry
+again, and creating a transmitter or bootstrapping a chain a second time reverts, so submit only
+the entries that name the new chain. zkSync and Tron are left out: their transceivers
+are not at a predicted address, so neither they nor any lane to them is in these files.
