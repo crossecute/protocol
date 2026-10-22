@@ -122,7 +122,9 @@ fires only where `addressesDiverge`, which is zkSync and Tron as destinations. E
 home derived the receiver's address before the first message left. The report is sent from
 inside the delivery callback at the fee its own quote names, paid from the transceiver's
 float, so an underfunded float reverts and takes the account creation with it: all or
-nothing, and retryable once it is funded. This runs once per chain.
+nothing, and retryable by anyone, who can bring the report's cost with the retry (see
+[path B](docs/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)). This runs
+once per chain.
 
 A bootstrap may carry the account's whole first payload. Without a gas attribute it is sent
 with 1,000,000 gas (`DeliveryGas.BOOTSTRAP`), which covers creating the account and a few

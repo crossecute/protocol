@@ -116,6 +116,10 @@ limit (`InvalidManualExecutionGasLimit`, OffRamp 1.6.2; `InvalidGasLimitOverride
 deposit so a call short of `minGasLimit` is recorded in `failedMessages` rather than lost.
 Wormhole's retry is this protocol's own `executeVAAv1`, open to anyone at any gas. So the
 gas a sender names can be left to the sender: too little costs a retry, never the message.
+A retry can also bring value: `Mailbox.process` and `EndpointV2.lzReceive` are payable and
+forward `msg.value` to the receiver (read 2026-10-22, on each repository's `main`), while
+CCIP's receiver call carries none. This is what lets a bootstrap stuck on an empty report
+float pay its own report (#78).
 Not checked: which OffRamp version each CCIP lane runs.
 
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its

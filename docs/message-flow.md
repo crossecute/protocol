@@ -173,6 +173,32 @@ the account anyway would leave the home permanently unable to address it, since 
 arms exactly once and there is no second bootstrap to carry a second report. All or nothing
 keeps the operation retryable once the float is funded.
 
+**An empty float moves the report's cost to whoever retries; it does not strand the
+account.** Every provider that reaches zkSync or Tron (LayerZero, CCIP, Hyperlane) keeps a
+reverted delivery retryable by anyone, LayerZero and Hyperlane with no expiry in their
+contracts and CCIP with none in its documentation. Hyperlane's `Mailbox.process` and
+LayerZero's `EndpointV2.lzReceive` forward the retry's `msg.value` to the transceiver, so the
+retry can bring its own report's cost, and no other stuck bootstrap can spend it in the same
+transaction. A top-up sent on its own is shared: whoever retries first spends it, including
+whoever drained the float. CCIP's `ccipReceive` takes no value, so a CCIP retry funds its own
+report only through a contract that tops up the float and calls manual execution in one
+transaction.
+
+**What draining a float costs.** Each bootstrap to a reporting chain costs its sender the
+home's message fee plus that home's bootstrap fee, and costs the float one report. Spending a
+float of F takes F ÷ (one report's cost) bootstraps, so the attack costs
+(F ÷ report cost) × (bootstrap fee + message fee), at the cheapest home. A bootstrap fee of at
+least one report's cost means every report the float pays was paid for first, into that home's
+treasury in that home's currency. Price movement between the two currencies erodes the margin,
+so each home's fee is reviewed when prices move (#78).
+
+**Halting bootstraps to a reporting chain.** The fee is per destination, held by each home's
+transceiver. Its owner setting a reporting destination's fee to zero refuses every bootstrap
+and quote to it (`NoBootstrapFee`), and setting the fee again resumes them. It halts that
+home only, so stopping a drain takes every home's owner, and bootstraps already in flight
+still arrive and spend the float. The registry's `setSuspended` halts any chain, parity ones
+included, but also refuses reports and deliveries from it until lifted.
+
 On an EVM destination nothing persists past the transaction: deploy, arm, execute, and lock
 all happen in the inbound handler. Chains where deployment is not synchronous (Starknet, the
 Move chains) need somewhere to hold the payload in between, which is a per-VM concern.
