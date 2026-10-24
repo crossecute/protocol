@@ -328,6 +328,18 @@ contract TransceiverTest is Test {
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
     }
 
+    /// @dev Only a `layerzero-oft` transceiver reads this kind; any other refuses it by name.
+    function test_theOftFormIsRefusedByATransceiverOfAnotherBinding() public {
+        Sym t = _chain(ETH, false);
+        bytes memory m =
+            Envelope.encodeBootstrapOft(alice, SALT, toBytes32(address(t)), bytes32(0), bytes32(0), _calls());
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.BOOTSTRAP_OFT)
+        );
+        t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
+    }
+
     /* ================================== parity =================================== */
 
     /// @dev From a `Predetermined` home the receiver must sit on its transmitter's address.

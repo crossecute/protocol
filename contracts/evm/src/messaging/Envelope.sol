@@ -18,6 +18,9 @@ library Envelope {
     uint8 internal constant BOOTSTRAP = 1;
     uint8 internal constant BOOTSTRAP_ELEMENTS = 2;
     uint8 internal constant RECEIVER_REPORT = 3;
+    uint8 internal constant BOOTSTRAP_OFT = 4;
+    /// @dev The highest kind `kindOf` accepts.
+    uint8 internal constant LAST_KIND = BOOTSTRAP_OFT;
 
     /// @dev Shorter than the one word that holds the kind.
     error EnvelopeTooShort();
@@ -30,7 +33,7 @@ library Envelope {
     function kindOf(bytes calldata message) internal pure returns (uint8) {
         if (message.length < 32) revert EnvelopeTooShort();
         uint256 kind = abi.decode(message[:32], (uint256));
-        if (kind == 0 || kind > RECEIVER_REPORT) revert UnknownEnvelopeKind(kind);
+        if (kind == 0 || kind > LAST_KIND) revert UnknownEnvelopeKind(kind);
         // forge-lint: disable-next-line(unsafe-typecast) bounded by the check above
         return uint8(kind);
     }
@@ -76,7 +79,39 @@ library Envelope {
         (, owner, salt, transmitter, calls) = abi.decode(message, (uint8, address, bytes32, bytes32, Call[]));
     }
 
-    /// @notice The same message, for a destination whose calls this chain cannot express.
+    /// @notice `encodeBootstrap`, plus the two OFTs the `layerzero-oft` binding sends Path A
+    ///         through: the one on the account's home and the one on the destination.
+    /// @dev A separate kind so that every other binding's bootstrap keeps its bytes. Fixed
+    ///      words, as `transmitter` is: 64 bytes over `BOOTSTRAP`, on this kind only.
+    function encodeBootstrapOft(
+        address owner,
+        bytes32 salt,
+        bytes32 transmitter,
+        bytes32 homeOft,
+        bytes32 destinationOft,
+        Call[] memory calls
+    ) internal pure returns (bytes memory) {
+        return abi.encode(BOOTSTRAP_OFT, owner, salt, transmitter, homeOft, destinationOft, calls);
+    }
+
+    function decodeBootstrapOft(bytes calldata message)
+        internal
+        pure
+        returns (
+            address owner,
+            bytes32 salt,
+            bytes32 transmitter,
+            bytes32 homeOft,
+            bytes32 destinationOft,
+            Call[] memory calls
+        )
+    {
+        _expect(message, BOOTSTRAP_OFT);
+        (, owner, salt, transmitter, homeOft, destinationOft, calls) =
+            abi.decode(message, (uint8, address, bytes32, bytes32, bytes32, bytes32, Call[]));
+    }
+
+    /// @notice `encodeBootstrap`, for a destination whose calls this chain cannot express.
     /// @dev No Solidity decoder: the EVM transceiver refuses this kind, and a non-EVM
     ///      transceiver decodes it in its own language.
     function encodeBootstrapElements(address owner, bytes32 salt, bytes32 transmitter, bytes[] memory elements)

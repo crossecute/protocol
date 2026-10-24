@@ -221,16 +221,16 @@ per destination with `setPeer`, and it cannot be changed after.
 
 An account's channel carries exactly one shape, so its payload needs no tag. A transceiver's
 envelope leads with its kind (`Envelope.BOOTSTRAP` 1, `BOOTSTRAP_ELEMENTS` 2,
-`RECEIVER_REPORT` 3), and each decoder refuses a kind it does not act on before reading the
-rest, so a wrong shape is refused by name rather than misread. Kinds start at 1, so an
-untagged body, which leads with the owner, is refused too. A recipient is a binary
+`RECEIVER_REPORT` 3, `BOOTSTRAP_OFT` 4), and each decoder refuses a kind it does not act on
+before reading the rest, so a wrong shape is refused by name rather than misread. Kinds
+start at 1, so an untagged body, which leads with the owner, is refused too. A recipient is a binary
 interoperable address (ERC-7930) carrying its own chain, so no channel names a destination
 separately from its message.
 
 | Channel | Payload |
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
-| home → destination transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes32 transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes32 transmitter, bytes[] elements)` elsewhere |
+| home → destination transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes32 transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes32 transmitter, bytes[] elements)` elsewhere; for the `layerzero-oft` binding, `abi.encode(uint8 4, address owner, bytes32 salt, bytes32 transmitter, bytes32 homeOft, bytes32 destinationOft, Call[] calls)` ([plan](layerzero-oft-plan.md)) |
 | destination → home transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
 **Both transceiver channels identify the account by owner and salt rather than by its

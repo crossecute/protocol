@@ -296,7 +296,7 @@ contract InboundAuthTest is Test {
     }
 
     function testFuzz_onlyDefinedKindsAreRead(uint256 kind) public {
-        vm.assume(kind == 0 || kind > Envelope.RECEIVER_REPORT);
+        vm.assume(kind == 0 || kind > Envelope.LAST_KIND);
         bytes memory m = abi.encode(kind, transmitter, bytes32(0), _boot());
 
         vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, kind));
@@ -329,8 +329,58 @@ contract InboundAuthTest is Test {
         assertEq(withTransmitter.length, without.length + 32);
     }
 
+    /// @dev The calls' own round trip is `testFuzz_bootstrapEnvelopeRoundTrips`'s.
+    function testFuzz_oftBootstrapEnvelopeRoundTrips(
+        address owner_,
+        bytes32 salt_,
+        bytes32 src,
+        bytes32 homeOft,
+        bytes32 destinationOft
+    ) public view {
+        (address gotOwner, bytes32 gotSalt, bytes32 gotSrc, bytes32 gotHome, bytes32 gotDst, Call[] memory got) =
+            this.peekBootstrapOft(Envelope.encodeBootstrapOft(owner_, salt_, src, homeOft, destinationOft, _boot()));
+
+        assertEq(gotOwner, owner_);
+        assertEq(gotSalt, salt_);
+        assertEq(gotSrc, src);
+        assertEq(gotHome, homeOft, "home OFT");
+        assertEq(gotDst, destinationOft, "destination OFT");
+        assertEq(keccak256(abi.encode(got)), keccak256(abi.encode(_boot())), "calls");
+    }
+
+    /// @dev Each decoder checks its own kind, so neither bootstrap shape is read as the other.
+    function test_theTwoBootstrapKindsAreNotReadAsEachOther() public {
+        bytes memory oftBoot =
+            Envelope.encodeBootstrapOft(transmitter, bytes32(0), _homeTransmitter(), bytes32(0), bytes32(0), _boot());
+        vm.expectRevert(
+            abi.encodeWithSelector(Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP, Envelope.BOOTSTRAP_OFT)
+        );
+        this.peekBootstrap(oftBoot);
+
+        bytes memory plain = _bootstrapMsg();
+        vm.expectRevert(
+            abi.encodeWithSelector(Envelope.UnexpectedEnvelopeKind.selector, Envelope.BOOTSTRAP_OFT, Envelope.BOOTSTRAP)
+        );
+        this.peekBootstrapOft(plain);
+    }
+
+    /// @dev The OFT pair is two fixed words over `BOOTSTRAP`, and nothing else differs.
+    function test_theOftPairCostsTwoWords() public view {
+        bytes memory oftBoot =
+            Envelope.encodeBootstrapOft(transmitter, bytes32(0), _homeTransmitter(), bytes32(0), bytes32(0), _boot());
+        assertEq(oftBoot.length, _bootstrapMsg().length + 64);
+    }
+
     function peekBootstrap(bytes calldata m) external pure returns (address, bytes32, bytes32, Call[] memory) {
         return Envelope.decodeBootstrap(m);
+    }
+
+    function peekBootstrapOft(bytes calldata m)
+        external
+        pure
+        returns (address, bytes32, bytes32, bytes32, bytes32, Call[] memory)
+    {
+        return Envelope.decodeBootstrapOft(m);
     }
 
     /// @dev The transmitter chain 1 would carry for `transmitter`'s account.
