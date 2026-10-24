@@ -43,6 +43,8 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
    It refuses an address whose `IOAppCore(oft).endpoint()` is not this chain's endpoint, which
    catches an address from the wrong chain or one that is not an OApp. Bootstrap refuses an
    account that has not set it.
+10. **The provider is named `layerzero-oft`, and the existing one stays `layerzero`.**
+    Renaming the existing provider to `layerzero-oapp` was considered and not taken.
 
 ## What LayerZero guarantees
 
