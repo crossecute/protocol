@@ -202,7 +202,7 @@ the transmitter and the transceiver.
 | nothing for the roles | `Roles.grantRole` | Named in the config's `gateways`, or granted inside the initializer with `_grantInitialRole(GATEWAY_ROLE, endpoint)`, which is `onlyInitializing`; `ProviderTransceiver.__ProviderTransceiver_init` does it for the provider's own endpoint. A binding MUST NOT add a grant path and MUST NOT expect one: after the arming call no caller of any kind can add a member. |
 | `initialize(TransceiverConfig)` | convention | MUST call `__TransceiverBase_init(c)`, or `__DivergentTransceiver_init(c, hash)` on zkSync and Tron. The config carries the gateways, both account implementations, the governor's owner, salt, and home, and the chain's treasury. |
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `_predictCrossAccount`, so the plain init stores false and the divergent init true, alongside the account bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
-| `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. There is no second chance: `CrossProxy` locks in the same call that arms it. |
+| `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData)` | `TransceiverBase._accountInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. `bindingData` is what a binding's own bootstrap kind carried, and is empty for every binding without one. There is no second chance: `CrossProxy` locks in the same call that arms it. |
 | the provider id table | `ProviderChainId`, via `ProviderTransceiver` | A typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`) over `_setProviderId`, write-once. The inbound callback maps the delivery's origin id back to a route with `_onProviderInbound`, so an unmapped origin reverts and a mapped one goes through the base's counterpart check. |
 | nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. |
 | the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `_bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from the transceiver's float. |
@@ -385,7 +385,7 @@ It is not a substitute for a missing quote. The transmitter prices each send on-
 send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no-go-checklist).
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
-`Payload.encodeCalls(calls)` or `Envelope.encodeBootstrap(owner, salt, transmitter, calls)`, the same
+`Payload.encodeCalls(calls)` or `_bootstrapEnvelope(owner, salt, transmitter, calls)`, the same
 function `sendMessage` puts on the wire, not over an estimate of the length. LayerZero, CCIP,
 and Hyperlane price per byte; Wormhole's Executor and the two OP Stack providers do not, and the rule costs them
 nothing. This is what makes a quote a number the send can pay rather than a number it must
@@ -453,7 +453,7 @@ the pairing.
 receiver never sends, and pricing a message that has no path is not a thing to expose.
 
 **The payload builders are shared, not duplicated.** Each quote calls the same
-`Payload.encodeCalls` / `Payload.encodeElements` / `Envelope.encodeBootstrap` its sending
+`Payload.encodeCalls` / `Payload.encodeElements` / `_bootstrapEnvelope` its sending
 twin calls. "The quote prices the exact bytes that go out" is therefore a property of there
 being one builder, rather than a promise two code paths make separately.
 

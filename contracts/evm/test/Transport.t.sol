@@ -94,7 +94,7 @@ contract MockTransceiver is AnyGatewayTransceiver {
         __TransceiverBase_init(c);
     }
 
-    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
+    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory, bytes memory)
         internal
         pure
         override

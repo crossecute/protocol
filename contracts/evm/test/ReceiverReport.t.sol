@@ -111,7 +111,7 @@ contract ReportingTransceiver is AnyGatewayTransceiver {
     ///      authenticating the origin. The carried transmitter sits at the receiver's own
     ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, home(), _predictCrossAccount(owner, salt, home()), calls);
+        _bootstrapInbound(owner, salt, home(), _predictCrossAccount(owner, salt, home()), calls, "");
     }
 }
 

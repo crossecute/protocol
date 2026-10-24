@@ -65,10 +65,11 @@ contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
         }
         bytes32 home = bytes32(Erc7930.evmChainId(Erc7930.parseStrict(routeFor(homeChainKey))));
         return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, home, calls));

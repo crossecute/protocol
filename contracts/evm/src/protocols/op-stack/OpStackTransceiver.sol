@@ -86,10 +86,11 @@ contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view virtual override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
         }
         return abi.encodeCall(IOpStackReceiverInit.initialize, (sourceTransmitter, calls, messengerFor(homeChainKey)));
     }

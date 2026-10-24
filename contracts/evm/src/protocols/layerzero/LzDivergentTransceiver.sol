@@ -63,9 +63,10 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, LzTransceiverBase) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 
     function _checkOwner() internal view override(OwnableUpgradeable, LzTransceiverBase) {
@@ -112,9 +113,10 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, LzTransceiverBase) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 
     function _checkOwner() internal view override(OwnableUpgradeable, LzTransceiverBase) {

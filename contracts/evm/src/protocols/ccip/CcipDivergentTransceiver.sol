@@ -61,9 +61,10 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 
     function supportsInterface(bytes4 interfaceId)
@@ -112,9 +113,10 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 
     function supportsInterface(bytes4 interfaceId)

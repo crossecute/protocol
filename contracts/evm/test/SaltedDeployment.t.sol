@@ -55,7 +55,7 @@ contract SaltedTransceiver is AnyGatewayTransceiver {
     ///      puts it at home, over this same address.
     function bootstrapFor(address owner_) external returns (address) {
         address carried = Create2.computeAddress(_accountSalt(owner_, bytes32(0), home()), CROSS_PROXY_INIT_CODE_HASH);
-        return _createCrossAccount(owner_, bytes32(0), home(), carried, new Call[](0));
+        return _createCrossAccount(owner_, bytes32(0), home(), carried, new Call[](0), "");
     }
 }
 

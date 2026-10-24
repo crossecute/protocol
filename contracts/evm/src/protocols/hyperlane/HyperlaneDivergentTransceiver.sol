@@ -60,9 +60,10 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 }
 
@@ -102,8 +103,9 @@ contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
     }
 }

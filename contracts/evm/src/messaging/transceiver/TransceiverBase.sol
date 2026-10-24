@@ -142,7 +142,7 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one account.
     /// @return account The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address account) {
-        account = _createCrossAccount(msg.sender, salt, localChainKey, address(0), new Call[](0));
+        account = _createCrossAccount(msg.sender, salt, localChainKey, address(0), new Call[](0), "");
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
@@ -165,12 +165,15 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      to. Without the check a mismatch still fails, but with no revert reason.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
+    /// @param bindingData What a binding's own bootstrap kind carried for the receiver's
+    ///        initializer; empty for every other binding and for a transmitter.
     function _createCrossAccount(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal returns (address account) {
         if (owner == address(0)) revert ZeroOwner();
 
@@ -185,7 +188,7 @@ abstract contract TransceiverBase is TransceiverCore {
 
         ICrossProxy(account)
             .upgradeInitializeAndLock(
-                implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
+                implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData)
             );
 
         emit CrossAccountCreated(owner, account, salt, homeChainKey);
@@ -208,7 +211,8 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory /* bindingData */
     ) internal view virtual returns (bytes memory) {
         if (homeChainKey == localChainKey) {
             return abi.encodeCall(ITransmitterInit.initialize, (owner, address(this), salt));
@@ -236,7 +240,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external payable {
         bytes32 transmitter = _bootstrapCaller(owner, salt);
         _sendBootstrap(
-            destinationChainKey, owner, salt, Envelope.encodeBootstrap(owner, salt, transmitter, calls), attributes
+            destinationChainKey, owner, salt, _bootstrapEnvelope(owner, salt, transmitter, calls), attributes
         );
     }
 
@@ -272,7 +276,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrap(
             destinationChainKey,
-            Envelope.encodeBootstrap(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), calls),
+            _bootstrapEnvelope(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), calls),
             attributes
         );
     }
@@ -290,6 +294,19 @@ abstract contract TransceiverBase is TransceiverCore {
             Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), elements),
             attributes
         );
+    }
+
+    /// @notice The envelope `bootstrap` sends and `quoteBootstrap` prices, built in one place so
+    ///         the two cannot drift.
+    /// @dev A binding with its own bootstrap kind overrides this. A quote may run before the
+    ///      account exists, so an override must not depend on the account's code.
+    function _bootstrapEnvelope(address owner, bytes32 salt, bytes32 transmitter, Call[] calldata calls)
+        internal
+        view
+        virtual
+        returns (bytes memory)
+    {
+        return Envelope.encodeBootstrap(owner, salt, transmitter, calls);
     }
 
     /// @notice Refuse any caller but the account `(owner, salt)` resolves to here, and return
@@ -414,7 +431,7 @@ abstract contract TransceiverBase is TransceiverCore {
 
         (address owner, bytes32 salt, bytes32 transmitter, Call[] memory calls) = Envelope.decodeBootstrap(message);
         if (uint256(transmitter) >> 160 != 0) revert SourceTransmitterNotEvm(transmitter);
-        _bootstrapInbound(owner, salt, origin, address(uint160(uint256(transmitter))), calls);
+        _bootstrapInbound(owner, salt, origin, address(uint160(uint256(transmitter))), calls, "");
     }
 
     /// @notice Stand up the receiver of an account homed on `home`, and run its first payload.
@@ -430,9 +447,10 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes32 salt,
         bytes32 home,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal {
-        address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls);
+        address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls, bindingData);
         if (_addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
         } else if (receiver != sourceTransmitter && _chainRegistry.provenanceFor(home) == Provenance.Predetermined) {

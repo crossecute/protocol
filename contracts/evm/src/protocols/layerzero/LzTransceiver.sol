@@ -112,10 +112,11 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
-        Call[] memory calls
+        Call[] memory calls,
+        bytes memory bindingData
     ) internal view virtual override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls, bindingData);
         }
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 homeEid = uint32(_providerIdFor(homeChainKey));
