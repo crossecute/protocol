@@ -1,4 +1,4 @@
-# Plan: LayerZero OFT carrier binding
+# Plan: the `layerzero-oft` binding
 
 A LayerZero binding whose Path A rides an OFT the account's operator already runs. The
 transmitter sends each payload as a 0-amount `oft.send` with the payload as `composeMsg`,
@@ -31,10 +31,10 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
 6. **The transmitter checks the home peer on every send.** `homeOft.peers(dstEid)` must
    still equal the `dstOft` the bootstrap sent. A mismatch reverts at home, rather than
    paying for a message the receiver will refuse.
-7. **The pair travels in a new envelope kind, `BOOTSTRAP_CARRIER`.** It is `BOOTSTRAP` with
-   two fixed words `(homeOft, dstOft)` after `transmitter`. Existing kinds keep their bytes.
-   Prepending a self-call to `calls` was rejected: signers approve `calls`, and the receiver
-   would run a call no signer approved.
+7. **The pair travels in a new envelope kind, `BOOTSTRAP_OFT`.** It is `BOOTSTRAP` with
+   two fixed words, `homeOft` and `destinationOft`, after `transmitter`. Existing kinds keep
+   their bytes. Prepending a self-call to `calls` was rejected: signers approve `calls`, and
+   the receiver would run a call no signer approved.
 8. **The transmitter holds all OFT state; the transceiver holds none.** The transmitter
    stores `homeOft` and, per destination, the `dstOft` it read at bootstrap. The transceiver
    reads the pair from the bootstrapping account when it builds the envelope and stores
@@ -124,22 +124,22 @@ path is private in `TransmitterBase` and non-virtual in `TransceiverBase`.
 
 1. **`TransmitterBase`: a virtual `_beforeBootstrap(bytes32 chainKey)`**, empty by default,
    called from `_bootstrapCalls` after `_markBootstrapped` and before the transceiver is
-   called. The carrier transmitter reads `homeOft.peers(dstEid)`, refuses zero, and stores it
+   called. `LzOftTransmitter` reads `homeOft.peers(dstEid)`, refuses zero, and stores it
    as that destination's `dstOft`.
 2. **`TransceiverBase`: a virtual `_bootstrapEnvelope(owner, salt, transmitter, calls)`**,
    returning `Envelope.encodeBootstrap(...)` by default. `bootstrap` and `quoteBootstrap` both
-   call it, so the send and its quote encode in one place. The carrier transceiver reads the
-   pair from the account through a view and encodes `BOOTSTRAP_CARRIER`. A quote taken
+   call it, so the send and its quote encode in one place. `LzOftTransceiver` reads the
+   pair from the account through a view and encodes `BOOTSTRAP_OFT`. A quote taken
    before the account exists, or before `_beforeBootstrap` has run, encodes zero words. The
    fee is the same, since the words are fixed width.
 3. **`TransceiverBase`: a `bytes bindingData` parameter on `_bootstrapInbound`,
-   `_createCrossAccount` and `_accountInitializer`**, empty for every existing binding. The
-   carrier transceiver overrides `_handleInbound` to decode `BOOTSTRAP_CARRIER` and passes the
+   `_createCrossAccount` and `_accountInitializer`**, empty for every existing binding.
+   `LzOftTransceiver` overrides `_handleInbound` to decode `BOOTSTRAP_OFT` and passes the
    pair through. Existing overrides of `_accountInitializer` change only their signature.
 
 ## Repository layout
 
-The carrier is a second message provider, `layerzero-oft`, next to `layerzero`, the way
+The OFT binding is a second message provider, `layerzero-oft`, next to `layerzero`, the way
 `op-stack-l2-l2` sits next to `op-stack-l1-l2`. The name is hashed into the registry's
 `messageProvider`, which fixes the transceiver's address and so every account's, so it
 cannot change after the first deployment. Its accounts have different addresses from a
@@ -170,7 +170,7 @@ What is shared and what is not:
   on, and `ChainConfig` reads their eids from `layerzero.toml`, so the two cannot disagree.
   This needs a small change to `ChainConfig.providerId`, so a provider can name another
   provider's id table.
-- **`MockLzEndpoint` gains `sendCompose` and `lzCompose`** for the carrier tests, rather than
+- **`MockLzEndpoint` gains `sendCompose` and `lzCompose`** for the `layerzero-oft` tests, rather than
   a second endpoint mock. The plain build's tests never call them.
 - **Deploy-side lists** name the new provider: `GasAttribute` (compose gas instead of
   lzReceive gas), `governance.toml`'s `[providers]`, and `ChainConfig.t.sol`'s provider list.
@@ -185,7 +185,7 @@ Each item is one commit.
 1. `docs`: this plan.
 2. `chore(lib)`: vendor `IOFT` (`SendParam`, `MessagingFee`, `OFTReceipt`),
    `ILayerZeroComposer` and `OFTComposeMsgCodec` from `devtools`, with provenance headers.
-3. `feat(envelope)`: `BOOTSTRAP_CARRIER`, its encoder and decoder, and `kindOf`'s bound.
+3. `feat(envelope)`: `BOOTSTRAP_OFT`, its encoder and decoder, and `kindOf`'s bound.
    Tests for the tag checks and the round trip.
 4. `refactor(transceiver)`: `_bootstrapEnvelope`, used by `bootstrap` and `quoteBootstrap`,
    and `bindingData` threaded to `_accountInitializer`. No behavior change: existing
@@ -199,7 +199,7 @@ Each item is one commit.
 8. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks above, then
    `_onMessageFrom`.
 9. `feat(lz-oft)`: `LzOftTransceiver` on `LzTransceiverBase` for Path B. At home it encodes
-   `BOOTSTRAP_CARRIER` from the account's pair. At the destination it runs the reverse-peer
+   `BOOTSTRAP_OFT` from the account's pair. At the destination it runs the reverse-peer
    check and arms the receiver with `(homeEid, homeOft, dstOft)`.
 10. `test(lz-oft)`: the fixture on `ProviderBindingSpec`, a mock OFT that follows `OFTCore`'s
     encoding, and binding tests: a fake OFT calling `sendCompose`, a router as the `send`

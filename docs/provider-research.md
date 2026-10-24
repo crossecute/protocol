@@ -814,7 +814,7 @@ are in `contracts/evm/script/vendor/layerzero.sh`.
 Verified against `@layerzerolabs/oapp-evm-upgradeable@0.1.3` (it imports interfaces from
 `@layerzerolabs/oapp-evm`, 0.4.1 at the time of checking). Both are vendored under
 `contracts/evm/lib/`. So are `IOFT` and `OFTComposeMsgCodec` from `@layerzerolabs/oft-evm`,
-and `ILayerZeroComposer`, for the OFT carrier ([plan](oft-carrier-plan.md)).
+and `ILayerZeroComposer`, for the `layerzero-oft` binding ([plan](layerzero-oft-plan.md)).
 
 ```solidity
 abstract contract OAppCoreUpgradeable is IOAppCore, OwnableUpgradeable {

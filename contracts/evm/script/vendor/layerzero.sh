@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Re-vendors the 17 files behind the LayerZero bindings: OApp's upgradeable core/sender/
-# receiver + their interface closure, and for the OFT carrier `IOFT`, `OFTComposeMsgCodec`
-# and `ILayerZeroComposer`, hand-copied because no package has a dedicated repo of its own
-# that isolates just these files (see docs/provider-research.md §8).
+# receiver + their interface closure, and for the `layerzero-oft` binding `IOFT`,
+# `OFTComposeMsgCodec` and `ILayerZeroComposer`, hand-copied because no package has a
+# dedicated repo of its own that isolates just these files (see docs/provider-research.md §8).
 #
 # Usage: contracts/evm/script/vendor/layerzero.sh
 #
@@ -42,7 +42,7 @@ for f in OAppSender OAppCore; do
 done
 
 # --- @layerzerolabs/oft-evm ---
-# Same monorepo and pin. The carrier calls an operator's OFT and decodes its compose
+# Same monorepo and pin. That binding calls an operator's OFT and decodes its compose
 # message, and never inherits OFTCore.
 OFT_NOTE=$'@layerzerolabs/oft-evm has no dedicated repo of its own; this is its\n// actual home. See docs/provider-research.md §8.'
 OFT_SRC="packages/oft-evm/contracts"
