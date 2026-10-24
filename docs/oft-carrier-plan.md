@@ -46,8 +46,10 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
 
 ## What LayerZero guarantees
 
-Checked against `LayerZero-Labs/devtools` (`packages/oft-evm`) and `LayerZero-Labs/LayerZero-v2`
-(`MessagingComposer.sol`), main branch, on 2026-10-24. Neither is vendored here yet.
+Checked on 2026-10-24 against `LayerZero-Labs/devtools` (`packages/oft-evm`) and
+`LayerZero-Labs/LayerZero-v2` (`MessagingComposer.sol`), both on main and at the commits
+`script/vendor/layerzero.sh` pins. `OFTCore`, `OFTMsgCodec` and `MessagingComposer` are not
+vendored, since nothing here compiles against them.
 
 - `OFTMsgCodec.encode` writes `sendTo | amountSD | addressToBytes32(msg.sender) | composeMsg`
   when `composeMsg` is non-empty. The caller cannot set the third field.
