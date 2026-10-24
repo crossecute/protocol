@@ -135,6 +135,47 @@ path is private in `TransmitterBase` and non-virtual in `TransceiverBase`.
    carrier transceiver overrides `_handleInbound` to decode `BOOTSTRAP_CARRIER` and passes the
    pair through. Existing overrides of `_accountInitializer` change only their signature.
 
+## Repository layout
+
+The carrier is a second message provider, `layerzero-oft`, next to `layerzero`, the way
+`op-stack-l2-l2` sits next to `op-stack-l1-l2`. The name is hashed into the registry's
+`messageProvider`, which fixes the transceiver's address and so every account's, so it
+cannot change after the first deployment. Its accounts have different addresses from a
+`layerzero` account with the same owner and salt.
+
+Both builds share one directory per area, told apart by a prefix, as OP Stack's are:
+
+| Area | `layerzero` (unchanged) | `layerzero-oft` (new) |
+| --- | --- | --- |
+| `src/protocols/layerzero/` | `LzTransceiver`, `LzTransmitter`, `LzReceiver`, `LzDivergentTransceiver` | `LzOftTransceiver`, `LzOftTransmitter`, `LzOftReceiver`, `LzOftMessage` |
+| shared there | `LzMessage` (send, quote, DVN pins, options), `LzTransceiverBase`, `LzHomePeer`, `LzWriteOncePeer` | the same files |
+| `test/protocols/layerzero/` | `LzFixture`, `LzBinding.t.sol`, `LzTransceiver.t.sol`, `MockLzEndpoint` | `LzOftFixture`, `LzOftBinding.t.sol`, `LzOftTransceiver.t.sol`, `MockOft` |
+| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol`, `deploy/LzOftDeploy.sol` |
+| `deploy/providers/` | `layerzero.toml` (eids) | `layerzero-oft.toml` (chains only) |
+
+What is shared and what is not:
+
+- **Path B is shared.** `LzOftTransceiver` extends `LzTransceiverBase`, so eids, write-once
+  peers, DVN pins and the bootstrap's `lzReceive` are the same code. It overrides only
+  `_bootstrapEnvelope`, `_handleInbound` and `_accountInitializer`.
+- **Options encoding is shared.** The lzCompose option goes in `LzMessage` next to the
+  lzReceive one, rather than in a second encoder. `LzOftMessage` holds only what targets an
+  OFT: `send` and `quote` through `oft.send` and `oft.quoteSend`, and the peer check.
+- **The accounts share nothing with the plain build's accounts.** `LzOftTransmitter` is an
+  `OwnableTransmitter` that calls an OFT, and `LzOftReceiver` is a `ReceiverBase` and an
+  `ILayerZeroComposer`. Neither is an OApp, so neither carries OApp storage.
+- **Eids have one source.** `layerzero-oft.toml` lists which chains the provider is deployed
+  on, and `ChainConfig` reads their eids from `layerzero.toml`, so the two cannot disagree.
+  This needs a small change to `ChainConfig.providerId`, so a provider can name another
+  provider's id table.
+- **`MockLzEndpoint` gains `sendCompose` and `lzCompose`** for the carrier tests, rather than
+  a second endpoint mock. The plain build's tests never call them.
+- **Deploy-side lists** name the new provider: `GasAttribute` (compose gas instead of
+  lzReceive gas), `governance.toml`'s `[providers]`, and `ChainConfig.t.sol`'s provider list.
+
+Moving `LzTransceiverBase` out of `LzTransceiver.sol` into its own file would make the
+sharing easier to see, but it is not needed and is left out of this PR.
+
 ## Work, in commit order
 
 Each item is one commit.
@@ -148,9 +189,8 @@ Each item is one commit.
    and `bindingData` threaded to `_accountInitializer`. No behavior change: existing
    envelopes and every existing binding's tests are unchanged.
 5. `refactor(transmitter)`: the empty `_beforeBootstrap` hook. No behavior change.
-6. `feat(lz-oft)`: `LzOftMessage`, the shared library: `send` and `quote` through
-   `oft.send` and `oft.quoteSend`, compose-gas options from `_defaultGas` or the attribute,
-   and the peer check used by every caller.
+6. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`: `send` and
+   `quote` through `oft.send` and `oft.quoteSend`, and the peer check used by every caller.
 7. `feat(lz-oft)`: `LzOftTransmitter`: `setOft` with the endpoint check, `_beforeBootstrap`
    storing `dstOft`, the pair view the transceiver reads, and send and quote with the home
    peer check (decision 6).
@@ -166,8 +206,9 @@ Each item is one commit.
     the account exists, replay (C29) and a 0-amount compose round trip.
 11. `test(fork)`: a 0-amount compose through a live OFT on two chains, decoding `[44:76]` to
     the transmitter. Doubles as the onboarding check for a candidate OFT.
-12. `feat(deploy)`: `providers/lz-oft.toml`, `script/deploy/LzOftDeploy.sol`,
-    `script/DeployLzOft.s.sol`, and the `CHECKS.md` sections.
+12. `feat(deploy)`: `providers/layerzero-oft.toml`, `ChainConfig` reading its eids from
+    `layerzero.toml`, `script/deploy/LzOftDeploy.sol`, `script/DeployLzOft.s.sol`, the
+    deploy-side provider lists, and the `CHECKS.md` sections.
 13. `docs`: fold this plan into `provider-research.md` and `provider-spec.md`, add the
     trust section to the user-facing docs, and update `todo.md`.
 
