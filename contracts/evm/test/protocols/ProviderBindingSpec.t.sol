@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Vm, VmSafe} from "forge-std/Vm.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {

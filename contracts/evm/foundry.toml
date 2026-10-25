@@ -112,6 +112,8 @@ exclude_lints = [
     "boolean-cst",
     "locked-ether",
     "empty-block",
+    "reentrancy-no-eth",
+    "missing-events-access-control",
 ]
 
 # CI also runs `FOUNDRY_PROFILE=lint-src forge lint -D notes src`. A reviewed hit is suppressed

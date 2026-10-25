@@ -18,11 +18,11 @@ abstract contract LzOftFixture is ProviderAccountFixture {
     address internal constant HOME_OFT = address(0x40F7);
 
     MockLzEndpoint internal endpoint = new MockLzEndpoint();
-    MockOft internal localOft = _peeredOft();
+    MockOft internal localOft;
 
-    function _peeredOft() private returns (MockOft oft) {
-        oft = new MockOft(address(endpoint));
-        oft.setPeer(HOME_EID, HOME_OFT);
+    constructor() {
+        localOft = new MockOft(address(endpoint));
+        localOft.setPeer(HOME_EID, HOME_OFT);
     }
 
     function _receiverImplementation() internal override returns (address) {
