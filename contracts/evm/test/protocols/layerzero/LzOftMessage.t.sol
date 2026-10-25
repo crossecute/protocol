@@ -47,10 +47,6 @@ contract LzOftMessageTest is Test {
         return abi.encodePacked(LzMessage.OPTIONS_ATTRIBUTE, raw);
     }
 
-    function _amount(uint256 amountLD) internal pure returns (bytes memory) {
-        return abi.encodePacked(LzOftMessage.AMOUNT_ATTRIBUTE, abi.encode(amountLD));
-    }
-
     function _attrs(bytes memory a) internal pure returns (bytes[] memory attrs) {
         attrs = new bytes[](1);
         attrs[0] = a;
@@ -61,41 +57,33 @@ contract LzOftMessageTest is Test {
     function test_theComposeOptionIsExecutorOptionsLayout() public pure {
         bytes memory option = abi.encodePacked(uint16(0), uint128(GAS));
         bytes memory expected = abi.encodePacked(uint16(3), uint8(1), uint16(option.length + 1), uint8(3), option);
-        assertEq(LzMessage.composeOptions(GAS), expected);
+        assertEq(LzMessage.defaultComposeOptions(GAS), expected);
     }
 
-    function test_noAttributesSendNothingWithTheDefaultCompose() public view {
+    function test_aSendMovesNoTokensAndCarriesTheDefaultCompose() public view {
         SendParam memory p = h.sendParam(EID, TO, hex"c0", new bytes[](0), GAS);
         assertEq(p.dstEid, EID);
         assertEq(p.to, bytes32(uint256(uint160(TO))));
         assertEq(p.amountLD, 0);
         assertEq(p.minAmountLD, 0);
-        assertEq(p.extraOptions, LzMessage.composeOptions(GAS));
+        assertEq(p.extraOptions, LzMessage.defaultComposeOptions(GAS));
         assertEq(p.composeMsg, hex"c0");
         assertEq(p.oftCmd.length, 0);
     }
 
-    /// @dev The minimum is the amount, so the OFT refuses to trim or charge it.
-    function test_theAmountIsAlsoTheMinimum() public view {
-        SendParam memory p = h.sendParam(EID, TO, hex"c0", _attrs(_amount(5 ether)), GAS);
-        assertEq(p.amountLD, 5 ether);
-        assertEq(p.minAmountLD, 5 ether);
-        assertEq(p.extraOptions, LzMessage.composeOptions(GAS), "options untouched");
-    }
-
-    function test_bothAttributesTogether() public view {
-        bytes[] memory attrs = new bytes[](2);
-        attrs[0] = _amount(3);
-        attrs[1] = _options(hex"0003aa");
-        SendParam memory p = h.sendParam(EID, TO, hex"c0", attrs, GAS);
-        assertEq(p.amountLD, 3);
+    function test_theOptionsAttributeReplacesTheDefaultWhole() public view {
+        SendParam memory p = h.sendParam(EID, TO, hex"c0", _attrs(_options(hex"0003aa")), GAS);
         assertEq(p.extraOptions, hex"0003aa");
+        assertEq(p.amountLD, 0);
     }
 
-    function test_anAmountThatIsNotOneWordIsRefused() public {
-        bytes memory bad = abi.encodePacked(LzOftMessage.AMOUNT_ATTRIBUTE, uint128(1));
-        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, bad));
-        h.sendParam(EID, TO, hex"c0", _attrs(bad), GAS);
+    /// @dev One attribute at most, as every LayerZero send takes.
+    function test_aSecondAttributeIsRefused() public {
+        bytes[] memory attrs = new bytes[](2);
+        attrs[0] = _options(hex"0003aa");
+        attrs[1] = _options(hex"0003bb");
+        vm.expectRevert(abi.encodeWithSelector(ProviderAttribute.UnsupportedAttribute.selector, attrs[1]));
+        h.sendParam(EID, TO, hex"c0", attrs, GAS);
     }
 
     function test_anotherBindingsAttributeIsRefused() public {

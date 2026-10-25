@@ -4,12 +4,9 @@ pragma solidity ^0.8.20;
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {Hashes} from "@openzeppelin/contracts/utils/cryptography/Hashes.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {CrossProxy} from "src/account/CrossProxy.sol";
 import {CrossAccounts} from "src/account/CrossAccounts.sol";
@@ -35,8 +32,6 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another account.
 contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
-    using SafeERC20 for IERC20;
-
     /// @notice One destination, as the operator lists it at creation.
     struct Leaf {
         bytes32 chainKey;
@@ -187,10 +182,8 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     ///      source eid, so the packet came from it, verified by `_from`'s own DVNs; and
     ///      `composeFrom` is the account the message's fields derive.
     ///
-    /// @dev Value and tokens move only after those checks, since a fake OFT reports any amount.
-    ///      Once `_from` is proven the endpoint runs each compose once, so the forward cannot
-    ///      spend what another bootstrap brought. Both land before the receiver is armed, so its
-    ///      bootstrap calls can spend them. Fee-on-transfer tokens are not supported.
+    /// @dev The account sends no tokens, so the compose carries an amount of 0 and nothing is
+    ///      credited here. Any native value the executor attaches goes to the account.
     function lzCompose(
         address _from,
         bytes32, /* _guid */
@@ -207,7 +200,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
 
     function _createReceiver(address from, bytes calldata message) private {
         (LzOftMessage.Bootstrap memory b, bytes32 s, address account, uint32 srcEid) = _authenticate(from, message);
-        _fund(from, account, OFTComposeMsgCodec.amountLD(message));
+        _forwardValue(account);
 
         CrossAccounts.requireLanded(account, CrossAccounts.deploy(s, _crossProxyInitCode));
         bytes memory init = abi.encodeCall(ILzOftReceiverInit.initialize, (account, srcEid, b.homeOft, from, b.calls));
@@ -240,9 +233,8 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     }
 
     /// @dev Before the account has code: an address with none accepts value without running
-    ///      anything, and the bootstrap calls the receiver runs when armed can spend both.
-    function _fund(address from, address account, uint256 amountLD) private {
-        if (amountLD != 0) IERC20(IOFT(from).token()).safeTransfer(account, amountLD);
+    ///      anything, and the bootstrap calls the receiver runs when armed can spend it.
+    function _forwardValue(address account) private {
         if (msg.value != 0) {
             // forge-lint: disable-next-line(arbitrary-send-eth) the account the compose was proven for
             (bool ok,) = account.call{value: msg.value}("");
@@ -276,10 +268,9 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
         return level[0];
     }
 
-    /// @dev The sibling path `_root` hashes `index` along. Reads the stored leaves into memory,
-    ///      a copy, since each level overwrites the one below it.
-    function _proof(bytes32[] storage stored, uint256 index) private view returns (bytes32[] memory proof) {
-        bytes32[] memory level = stored;
+    /// @dev The sibling path `_root` hashes `index` along. `level` is overwritten level by
+    ///      level, so the caller passes a memory copy of the stored leaves.
+    function _proof(bytes32[] memory level, uint256 index) private pure returns (bytes32[] memory proof) {
         bytes32[] memory path = new bytes32[](64);
         uint256 depth;
         for (uint256 n = level.length; n > 1; index /= 2) {

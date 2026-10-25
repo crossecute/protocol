@@ -130,14 +130,14 @@ contract MockLzEndpoint {
         return RECEIVE_LIBRARY;
     }
 
-    function setSendLibrary(address oapp, uint32 eid, address lib) external {
+    function setSendLibrary(address oapp, uint32 remoteEid, address lib) external {
         _authorize(oapp);
-        sendLibraryOf[oapp][eid] = lib;
+        sendLibraryOf[oapp][remoteEid] = lib;
     }
 
-    function setReceiveLibrary(address oapp, uint32 eid, address lib, uint256) external {
+    function setReceiveLibrary(address oapp, uint32 remoteEid, address lib, uint256) external {
         _authorize(oapp);
-        receiveLibraryOf[oapp][eid] = lib;
+        receiveLibraryOf[oapp][remoteEid] = lib;
     }
 
     function setConfig(address oapp, address lib, SetConfigParam[] calldata params) external {
@@ -147,8 +147,12 @@ contract MockLzEndpoint {
         }
     }
 
-    function configOf(address oapp, address lib, uint32 eid, uint32 configType) external view returns (bytes memory) {
-        return _configs[oapp][lib][eid][configType];
+    function configOf(address oapp, address lib, uint32 remoteEid, uint32 configType)
+        external
+        view
+        returns (bytes memory)
+    {
+        return _configs[oapp][lib][remoteEid][configType];
     }
 
     /* ================================== compose ================================== */

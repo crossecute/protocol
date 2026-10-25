@@ -62,21 +62,14 @@ contract LzOftReceiverTest is Test {
     }
 
     /// @dev The OFT credits and queues; the executor then calls the endpoint.
-    function _deliver(MockOft oft, uint32 srcEid, address from, uint256 amountLD) internal returns (bytes memory m) {
-        m = oft.receivePacket(srcEid, GUID, address(receiver), amountLD, from, _payload());
+    function _deliver(MockOft oft, uint32 srcEid, address from) internal returns (bytes memory m) {
+        m = oft.receivePacket(srcEid, GUID, address(receiver), from, _payload());
         vm.prank(EXECUTOR);
         endpoint.lzCompose(address(oft), address(receiver), GUID, 0, m, "");
     }
 
     function test_aComposeFromTheTransmitterRunsThePayload() public {
-        _deliver(localOft, HOME_EID, TRANSMITTER, 0);
-        assertEq(target.hits(), 1);
-    }
-
-    /// @dev Credited by the OFT before the compose, so already the account's.
-    function test_anAmountIsTheAccounts() public {
-        _deliver(localOft, HOME_EID, TRANSMITTER, 3 ether);
-        assertEq(localOft.balanceOf(address(receiver)), 3 ether);
+        _deliver(localOft, HOME_EID, TRANSMITTER);
         assertEq(target.hits(), 1);
     }
 
@@ -84,26 +77,26 @@ contract LzOftReceiverTest is Test {
     function test_aComposeQueuedByAnotherContractIsRefused() public {
         MockOft fake = new MockOft(address(endpoint));
         fake.setPeer(HOME_EID, HOME_OFT);
-        bytes memory m = fake.receivePacket(HOME_EID, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = fake.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectRevert(abi.encodeWithSelector(LzOftReceiver.NotTheOft.selector, address(fake)));
         endpoint.lzCompose(address(fake), address(receiver), GUID, 0, m, "");
     }
 
     function test_anotherSourceEidIsRefused() public {
-        bytes memory m = localOft.receivePacket(30110, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = localOft.receivePacket(30110, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectRevert(abi.encodeWithSelector(ReceiverBase.NotHomeOrigin.selector, bytes32(uint256(30110))));
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
     }
 
     /// @dev Another account's send through the same OFT pair carries that account as `composeFrom`.
     function test_anotherSenderIsRefused() public {
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), 0, address(0xBAD), _payload());
+        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), address(0xBAD), _payload());
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
     }
 
     function test_aRePeeredLocalOftIsRefused() public {
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         localOft.setPeer(HOME_EID, address(0xBAD));
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -117,7 +110,7 @@ contract LzOftReceiverTest is Test {
     }
 
     function test_onlyTheEndpointDelivers() public {
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, address(this), receiver.GATEWAY_ROLE()
@@ -128,7 +121,7 @@ contract LzOftReceiverTest is Test {
 
     /// @dev C29: the endpoint marks a compose before calling, so a success is final.
     function test_aDeliveredComposeCannotRunAgain() public {
-        bytes memory m = _deliver(localOft, HOME_EID, TRANSMITTER, 0);
+        bytes memory m = _deliver(localOft, HOME_EID, TRANSMITTER);
         vm.expectPartialRevert(MockLzEndpoint.ComposeNotFound.selector);
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
         assertEq(target.hits(), 1);
@@ -137,7 +130,7 @@ contract LzOftReceiverTest is Test {
     /// @dev A reverting payload rolls the mark back, so anyone retries it once it can succeed.
     function test_aFailedComposeIsRetried() public {
         target.setOpen(false);
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectPartialRevert(Executor.CallFailed.selector);
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
 
@@ -149,7 +142,7 @@ contract LzOftReceiverTest is Test {
     function test_revokingTheEndpointDisconnectsIt() public {
         vm.prank(TRANSMITTER);
         receiver.revokeGateway(address(endpoint));
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), 0, TRANSMITTER, _payload());
+        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectPartialRevert(IAccessControl.AccessControlUnauthorizedAccount.selector);
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
     }

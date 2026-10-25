@@ -203,11 +203,8 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         );
     }
 
-    function _queue(MockOft from, address composeFrom, uint256 amountLD, bytes memory compose)
-        internal
-        returns (bytes memory)
-    {
-        return from.receivePacket(HOME_EID, GUID, address(factory), amountLD, composeFrom, compose);
+    function _queue(MockOft from, address composeFrom, bytes memory compose) internal returns (bytes memory) {
+        return from.receivePacket(HOME_EID, GUID, address(factory), composeFrom, compose);
     }
 
     function _run(MockOft from, bytes memory m) internal {
@@ -216,7 +213,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
     }
 
     function test_theBootstrapCreatesTheReceiverAtTheAccountsAddress() public {
-        _run(oft, _queue(oft, account, 0, _bootstrap(root, new bytes32[](0))));
+        _run(oft, _queue(oft, account, _bootstrap(root, new bytes32[](0))));
 
         LzOftReceiver r = LzOftReceiver(payable(account));
         assertEq(r.sourceTransmitter(), account, "answers to the transmitter at the same address");
@@ -226,22 +223,21 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         assertEq(sink.hits(), 1, "ran the bootstrap calls");
     }
 
-    /// @dev Credited to the factory by the OFT, then forwarded before the receiver is armed.
-    function test_tokensAndValueReachTheAccountBeforeItsCalls() public {
-        bytes memory m = _queue(oft, account, 4 ether, _bootstrap(root, new bytes32[](0)));
+    /// @dev Native value the executor attaches reaches the account before its calls run.
+    function test_valueReachesTheAccount() public {
+        bytes memory m = _queue(oft, account, _bootstrap(root, new bytes32[](0)));
         vm.deal(EXECUTOR, 1 ether);
         vm.prank(EXECUTOR);
         endpoint.lzCompose{value: 1 ether}(address(oft), address(factory), GUID, 0, m, "");
-        assertEq(oft.balanceOf(account), 4 ether);
-        assertEq(oft.balanceOf(address(factory)), 0);
         assertEq(account.balance, 1 ether);
+        assertEq(address(factory).balance, 0);
     }
 
     /// @dev A contract outside the root queues a compose naming the victim's account.
     function test_anOftOutsideTheRootIsRefused() public {
         MockOft fake = new MockOft(address(endpoint));
         fake.setPeer(HOME_EID, HOME_OFT);
-        bytes memory m = _queue(fake, account, 100 ether, _bootstrap(root, new bytes32[](0)));
+        bytes memory m = _queue(fake, account, _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(
             abi.encodeWithSelector(LzOftFactory.NotInRoot.selector, LzOftMessage.leaf(destKey, DEST_EID, address(fake)))
         );
@@ -250,7 +246,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
 
     /// @dev The factory has no endpoint of its own; the one the claimed OFT uses must call.
     function test_aCallerOtherThanTheOftsEndpointIsRefused() public {
-        bytes memory m = _queue(oft, account, 0, _bootstrap(root, new bytes32[](0)));
+        bytes memory m = _queue(oft, account, _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheEndpoint.selector, address(this)));
         factory.lzCompose(address(oft), GUID, m, EXECUTOR, "");
     }
@@ -260,19 +256,19 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
     function test_aLeafForAnotherChainIsRefused() public {
         bytes32 otherRoot = LzOftMessage.leaf(ChainKey.forEvm(10), 30111, address(oft));
         address other = factory.predictAccount(owner, SALT, homeKey, HOME_OFT, otherRoot);
-        bytes memory m = _queue(oft, other, 0, _bootstrap(otherRoot, new bytes32[](0)));
+        bytes memory m = _queue(oft, other, _bootstrap(otherRoot, new bytes32[](0)));
         vm.expectPartialRevert(LzOftFactory.NotInRoot.selector);
         _run(oft, m);
     }
 
     function test_aSenderOtherThanTheAccountIsRefused() public {
-        bytes memory m = _queue(oft, address(0xBAD), 0, _bootstrap(root, new bytes32[](0)));
+        bytes memory m = _queue(oft, address(0xBAD), _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheAccount.selector, address(0xBAD), account));
         _run(oft, m);
     }
 
     function test_anOftThatNoLongerPeersTheHomeIsRefused() public {
-        bytes memory m = _queue(oft, account, 0, _bootstrap(root, new bytes32[](0)));
+        bytes memory m = _queue(oft, account, _bootstrap(root, new bytes32[](0)));
         oft.setPeer(HOME_EID, address(0xBAD));
         vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
         _run(oft, m);
@@ -285,7 +281,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         fake.setPeer(HOME_EID, HOME_OFT);
         bytes32 forged = LzOftMessage.leaf(destKey, DEST_EID, address(fake));
         address elsewhere = factory.predictAccount(owner, SALT, homeKey, HOME_OFT, forged);
-        _run(fake, _queue(fake, elsewhere, 0, _bootstrap(forged, new bytes32[](0))));
+        _run(fake, _queue(fake, elsewhere, _bootstrap(forged, new bytes32[](0))));
 
         assertGt(elsewhere.code.length, 0);
         assertNotEq(elsewhere, account);
@@ -293,9 +289,9 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
     }
 
     function test_aSecondBootstrapIsRefused() public {
-        _run(oft, _queue(oft, account, 0, _bootstrap(root, new bytes32[](0))));
+        _run(oft, _queue(oft, account, _bootstrap(root, new bytes32[](0))));
         bytes memory m = oft.receivePacket(
-            HOME_EID, keccak256("again"), address(factory), 0, account, _bootstrap(root, new bytes32[](0))
+            HOME_EID, keccak256("again"), address(factory), account, _bootstrap(root, new bytes32[](0))
         );
         vm.prank(EXECUTOR);
         vm.expectRevert(abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, owner, SALT, account));
@@ -337,7 +333,7 @@ contract LzOftFactoryRoundTripTest is LzOftFactoryBase {
         Sink destSink = new Sink{salt: bytes32(0)}();
 
         bytes memory m = oft.receivePacket(
-            HOME_EID, GUID, address(uint160(uint256(boot.param.to))), 0, boot.from, boot.param.composeMsg
+            HOME_EID, GUID, address(uint160(uint256(boot.param.to))), boot.from, boot.param.composeMsg
         );
         vm.prank(EXECUTOR);
         endpoint.lzCompose(address(oft), address(factory), GUID, 0, m, "");
@@ -347,7 +343,7 @@ contract LzOftFactoryRoundTripTest is LzOftFactoryBase {
         bytes32 guid2 = keccak256("pathA");
         address to = address(uint160(uint256(pathA.param.to)));
         assertEq(to, address(account));
-        m = oft.receivePacket(HOME_EID, guid2, to, 0, pathA.from, pathA.param.composeMsg);
+        m = oft.receivePacket(HOME_EID, guid2, to, pathA.from, pathA.param.composeMsg);
         vm.prank(EXECUTOR);
         endpoint.lzCompose(address(oft), to, guid2, 0, m, "");
         assertEq(destSink.hits(), 2, "Path A ran through the receiver");

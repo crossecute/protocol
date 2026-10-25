@@ -28,7 +28,6 @@ interface ILzOftTransmitterInit {
 /// @dev Not an OApp: the OFT is the sender LayerZero sees, so this carries no OApp storage.
 contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
-    bytes4 public constant LZ_OFT_AMOUNT_ATTRIBUTE = LzOftMessage.AMOUNT_ATTRIBUTE;
 
     struct Destination {
         uint32 eid;
@@ -69,7 +68,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
     }
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
-        return selector == LZ_OPTIONS_ATTRIBUTE || selector == LZ_OFT_AMOUNT_ATTRIBUTE;
+        return selector == LZ_OPTIONS_ATTRIBUTE;
     }
 
     /* ================================== Path A ================================= */

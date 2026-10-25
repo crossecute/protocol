@@ -45,9 +45,11 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
    message the destination will refuse.
 7. **The reverse-peer check runs at the destination on every receive and bootstrap**:
    `dstOft.peers(homeEid) == homeOft`.
-8. **`amountLD` may be non-zero.** It rides an ERC-7786 attribute, 0 when absent.
+8. **No tokens move.** Every send has `amountLD = minAmountLD = 0`, as no other binding
+   carries value but its fee. CCIP could carry tokens and sends none (`CcipMessage`).
 9. **No interface changes.** `sendMessage`, `bootstrap` and their quotes keep their
-   signatures, and `supportsAttribute` answers for the amount attribute only.
+   signatures. The one attribute is LayerZero's options, parsed as the plain binding parses
+   it.
 10. **The home factory stores each account's destinations.** At creation it takes the
     leaves, checks each against `homeOft.peers(eid)`, computes the root itself and stores
     `(eid, dstOft)` per destination. At bootstrap the account reads its destination and proof
@@ -90,20 +92,19 @@ for every leaf, computes `destRoot`, stores the leaves under the account, then d
 and locks the account with `(owner, factory, salt, homeOft)`.
 
 **Bootstrap, at home.** The owner calls the account's existing `bootstrap(destinationChainId,
-calls, attributes)`, optionally with the amount attribute. The account:
+calls, attributes)`. The account:
 
 1. reads `(eid, dstOft, destRoot, proof)` for the chain from the factory, which refuses a
    chain not in the account's leaves and builds the proof from the stored leaves;
 2. checks `homeOft.peers(eid) == dstOft`, since the peer may have changed since creation;
 3. records `chainKey → (eid, dstOft)` and the route and counterpart, as `_markBootstrapped`
    does today;
-4. calls `homeOft.send` with `to = factory`, `amountLD` from the attribute,
-   `minAmountLD = amountLD`, and `composeMsg = LzOftMessage.Bootstrap(owner, salt,
+4. calls `homeOft.send` with `to = factory`, no amount, and
+   `composeMsg = LzOftMessage.Bootstrap(owner, salt,
    homeChainKey, homeOft, destRoot, proof, calls)`. No eid or `dstOft`: the destination
    proves its own.
 
-**Bootstrap, at the destination.** The real `dstOft` credits `amountLD` to the factory and
-queues the compose. In `lzCompose(_from, guid, message, ...)` the factory checks, in order:
+**Bootstrap, at the destination.** The real `dstOft` queues the compose. In `lzCompose(_from, guid, message, ...)` the factory checks, in order:
 
 | Check | Proves |
 | --- | --- |
@@ -113,10 +114,8 @@ queues the compose. In `lzCompose(_from, guid, message, ...)` the factory checks
 | `composeFrom == account` | the account called `send`; the account address is derived from the message's own fields |
 
 It then creates the receiver at `account`, armed with `(account, homeChainKey, homeEid,
-homeOft, _from, calls)`, and forwards `amountLD` of `IOFT(_from).token()` to it. The amount
-is trusted only after the first three checks, since a fake OFT can report any amount. Once
-`_from` is proven, the endpoint runs each guid once, so the forward cannot spend tokens
-another bootstrap brought.
+homeOft, _from, calls)`. Native value the executor attaches is forwarded to the account
+before it is armed, so its bootstrap calls can spend it.
 
 **Path A.** The owner calls `sendMessage(recipient, payload, attributes)`. The account reads
 the stored `(eid, dstOft)`, rechecks `homeOft.peers(eid) == dstOft`, and calls
@@ -130,30 +129,16 @@ the stored `(eid, dstOft)`, rechecks `homeOft.peers(eid) == dstOft`, and calls
 | `dstOft.peers(homeEid) == homeOft` | the pathway still trusts the home OFT |
 | `composeFrom == sourceTransmitter` | the account called `send` |
 
-Any `amountLD` was credited to the receiver before the compose ran, and the receiver is the
-account on that chain, so nothing moves. `executor` and
-`_extraData` are not authenticated and are not read.
+`executor` and `_extraData` are not authenticated and are not read.
 
 Bootstraps and Path A messages go to different compose targets, so the factory never sees a
 Path A payload and a receiver never sees a bootstrap. No envelope tag is needed between them.
 
-## Tokens
+## Failed composes
 
-- **Funding.** `send` debits `msg.sender`, which is the account. A mint/burn OFT burns from
-  it. An adapter pulls through `transferFrom`, so the owner approves the adapter in a prior
-  `execute`.
-- **Dust and slippage.** The account sets `minAmountLD = amountLD`. `OFTCore._debitView`
-  removes dust and then refuses a received amount below the minimum, in `quoteSend` and `send`
-  alike, so an amount that is not dust-free, or one an OFT would charge a fee on, reverts
-  (`SlippageExceeded`) rather than stranding a remainder or delivering less. No check of the
-  binding's own is needed.
-- **Failed composes.** Tokens are credited to `to` before the compose runs and stay there
-  until it is retried, which anyone can do. A real bootstrap fails the factory's checks only
-  if a leaf pairs a `chainKey` with another chain's `eid`. The home factory checks the peer
-  but cannot map an eid to a chain, so `LzOftLeaves.s.sol` checks each leaf's `eid` against
-  `layerzero.toml`.
-- **Assumption.** Fee-on-transfer and rebasing tokens break the exact forward and are not
-  supported.
+Anyone can retry a failed compose. A real bootstrap fails the factory's checks only if a leaf
+pairs a `chainKey` with another chain's `eid`. The home factory checks the peer but cannot map
+an eid to a chain, so `LzOftLeaves.s.sol` checks each leaf's `eid` against `layerzero.toml`.
 
 ## What LayerZero guarantees
 
@@ -233,9 +218,8 @@ apply. Step 12 writes the short spec this binding meets instead.
    receiver in this design, and `bindingData` and the virtual `_bootstrapEnvelope` have no
    implementer. `TransceiverBase`'s single encoder for `bootstrap` and `quoteBootstrap` is
    kept as a private function, with its test, since it still keeps the two from drifting.
-
-4. **`ProviderAttribute.bodyAmong`**, for a binding that accepts several attributes
-   together. Every other binding takes at most one and keeps `body`.
+4. **`LzMessage` parses the options attribute once for both builds**, with the plain
+   binding's lzReceive default or this binding's lzCompose default.
 
 ## Repository layout
 
@@ -274,20 +258,19 @@ Each item is one commit. Steps 1 and 2 are done.
    No behavior change.
 6. `refactor(transmitter)`: `_sendBootstrap` and `_quoteBootstrap`. No behavior change.
 7. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`.
-8. `feat(lz-oft)`: `LzOftTransmitter`: the amount attribute, the bootstrap read from the
+8. `feat(lz-oft)`: `LzOftTransmitter`: the bootstrap read from the
    factory, and the bootstrap and Path A sends and quotes with the peer check.
 9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, then
    `_onMessageFrom`.
 10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter` with the leaf checks and on-chain root,
     the stored leaves and the proof view, the transceiver views, and the bootstrap `lzCompose`
-    with the four checks and the token forward.
-11. `test(lz-oft)`: the fixture on `ProviderBindingSpec` where its specs apply, a mock OFT that
-    follows `OFTCore`'s encoding, and binding tests: a fake OFT and a fake endpoint calling the
-    factory, a valid proof for another chain, a forged root, unsorted or duplicate leaves, a
-    leaf the home OFT does not peer, a bootstrap to a chain not in the leaves, a router as the `send` caller,
-    re-peered home and destination, a non-dust-free amount, a reported amount larger than the
-    credit, quote and send agreeing for a bootstrap and a message, replay (C29), and 0 and
-    non-zero amount round trips.
+    with the four checks.
+11. `test(lz-oft)`: `ProviderAccountFixture`, split out of `ProviderFixture` with the hooks
+    that concern accounts only, under the receiver and transmitter specs
+    (`ProviderReceiveSpec`, `ProviderWideSenderSpec`, `ProviderTransmitterSpec`); an
+    `LzOftFixture` that runs them; and the binding's own tests for what is OFT-specific. The
+    transceiver send specs do not apply, since this binding's sends leave from the account;
+    `LzOftTransmitter.t.sol` covers the properties of those that hold for it.
 12. `test(fork)` and `feat(deploy)`: a compose through a live OFT on two chains, decoding
     `[44:76]` to the account; `DeployLzOft.s.sol` and `LzOftLeaves.s.sol`.
 13. `docs`: the binding's short spec, the trust section in the user-facing docs, the

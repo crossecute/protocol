@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
@@ -105,8 +104,9 @@ contract LzOftTransmitterTest is Test {
         assertEq(s.value, quote, "pays its quote");
         assertEq(s.param.dstEid, DEST_EID);
         assertEq(s.param.to, bytes32(uint256(uint160(address(factory)))), "to the factory");
-        assertEq(s.param.amountLD, 0);
-        assertEq(s.param.extraOptions, LzMessage.composeOptions(DeliveryGas.BOOTSTRAP));
+        assertEq(s.param.amountLD, 0, "no tokens");
+        assertEq(s.param.minAmountLD, 0);
+        assertEq(s.param.extraOptions, LzMessage.defaultComposeOptions(DeliveryGas.BOOTSTRAP));
 
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
@@ -142,29 +142,6 @@ contract LzOftTransmitterTest is Test {
         account.quoteBootstrap(10, _calls(), new bytes[](0));
     }
 
-    /// @dev An amount the OFT would trim refuses the quote and the send alike.
-    function test_anAmountWithDustIsRefused() public {
-        oft.setDecimalConversionRate(1e12);
-        bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(LzOftMessage.AMOUNT_ATTRIBUTE, abi.encode(uint256(1e18 + 1)));
-        bytes memory err = abi.encodeWithSelector(MockOft.SlippageExceeded.selector, 1e18, 1e18 + 1);
-        vm.expectRevert(err);
-        account.quoteBootstrap(DEST, _calls(), attrs);
-        vm.prank(owner);
-        vm.expectRevert(err);
-        account.bootstrap(DEST, _calls(), attrs);
-    }
-
-    function test_aBootstrapCarriesAnAmount() public {
-        bytes[] memory attrs = new bytes[](1);
-        attrs[0] = abi.encodePacked(LzOftMessage.AMOUNT_ATTRIBUTE, abi.encode(uint256(5 ether)));
-        vm.prank(owner);
-        account.bootstrap(DEST, _calls(), attrs);
-        SendParam memory p = oft.sent(0).param;
-        assertEq(p.amountLD, 5 ether);
-        assertEq(p.minAmountLD, 5 ether);
-    }
-
     /* ================================== Path A ================================= */
 
     function test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose() public {
@@ -182,7 +159,7 @@ contract LzOftTransmitterTest is Test {
         assertEq(s.param.dstEid, DEST_EID);
         assertEq(s.param.to, bytes32(uint256(uint160(address(account)))), "the receiver, at this address on parity");
         assertEq(s.param.composeMsg, payload);
-        assertEq(s.param.extraOptions, LzMessage.composeOptions(DeliveryGas.PAYLOAD));
+        assertEq(s.param.extraOptions, LzMessage.defaultComposeOptions(DeliveryGas.PAYLOAD));
     }
 
     /// @dev The OFT's owner can re-peer after the bootstrap; the send and its quote both see it.
@@ -212,9 +189,9 @@ contract LzOftTransmitterTest is Test {
         assertEq(account.transceiver(), address(factory));
     }
 
-    function test_bothAttributesAreSupported() public view {
+    function test_onlyTheOptionsAttributeIsSupported() public view {
         assertTrue(account.supportsAttribute(LzMessage.OPTIONS_ATTRIBUTE));
-        assertTrue(account.supportsAttribute(LzOftMessage.AMOUNT_ATTRIBUTE));
+        assertFalse(account.supportsAttribute(bytes4(keccak256("crossecute.lz-oft.amount"))));
         assertFalse(account.supportsAttribute(bytes4(0xdeadbeef)));
     }
 }

@@ -30,9 +30,6 @@ interface ILzOftReceiverInit {
 ///      transmitter. `composeFrom` is `send`'s caller, which `OFTMsgCodec` writes and the
 ///      caller cannot set, and the OFT queues a compose only for a packet its own DVNs
 ///      verified from a peer.
-///
-/// @dev Any amount the message carries was credited to this address by the OFT before the
-///      compose ran, so it is already the account's.
 contract LzOftReceiver is ReceiverBase, ILayerZeroComposer, ILzOftReceiverInit {
     /// @notice The OFT on this account's home, which this chain's OFT must still peer.
     address public homeOft;
