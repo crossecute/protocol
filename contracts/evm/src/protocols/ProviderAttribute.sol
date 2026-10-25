@@ -79,6 +79,7 @@ library ProviderAttribute {
 
     /// @dev Callers check `attribute.length >= 4` first.
     function _bodyOf(bytes memory attribute) private pure returns (bytes memory out) {
+        // forge-lint: disable-next-line(calls-loop) allocation, not a call
         out = new bytes(attribute.length - 4);
         for (uint256 i; i < out.length; ++i) {
             out[i] = attribute[i + 4];

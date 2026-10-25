@@ -98,8 +98,9 @@ calls, attributes)`, optionally with the amount attribute. The account:
 3. records `chainKey → (eid, dstOft)` and the route and counterpart, as `_markBootstrapped`
    does today;
 4. calls `homeOft.send` with `to = factory`, `amountLD` from the attribute,
-   `minAmountLD = amountLD`, and `composeMsg = (owner, salt, homeChainKey, homeOft,
-   destRoot, eid, proof, calls)`.
+   `minAmountLD = amountLD`, and `composeMsg = LzOftMessage.Bootstrap(owner, salt,
+   homeChainKey, homeOft, destRoot, proof, calls)`. No eid or `dstOft`: the destination
+   proves its own.
 
 **Bootstrap, at the destination.** The real `dstOft` credits `amountLD` to the factory and
 queues the compose. In `lzCompose(_from, guid, message, ...)` the factory checks, in order:
@@ -140,9 +141,11 @@ Path A payload and a receiver never sees a bootstrap. No envelope tag is needed 
 - **Funding.** `send` debits `msg.sender`, which is the account. A mint/burn OFT burns from
   it. An adapter pulls through `transferFrom`, so the owner approves the adapter in a prior
   `execute`.
-- **Dust and slippage.** The OFT debits only `removeDust(amountLD)`. The account refuses an
-  amount that is not dust-free, so no remainder is stranded, and sets `minAmountLD = amountLD`,
-  so an OFT that takes a fee reverts rather than delivering less.
+- **Dust and slippage.** The account sets `minAmountLD = amountLD`. `OFTCore._debitView`
+  removes dust and then refuses a received amount below the minimum, in `quoteSend` and `send`
+  alike, so an amount that is not dust-free, or one an OFT would charge a fee on, reverts
+  (`SlippageExceeded`) rather than stranding a remainder or delivering less. No check of the
+  binding's own is needed.
 - **Failed composes.** Tokens are credited to `to` before the compose runs and stay there
   until it is retried, which anyone can do. A real bootstrap fails the factory's checks only
   if a leaf pairs a `chainKey` with another chain's `eid`. The home factory checks the peer
@@ -204,7 +207,7 @@ account, which needs a working channel to hand roles off. Both belong in the use
 | P8, P9 | `oft.quoteSend` is a view, and `send` is paid in native currency |
 | P10 | The OFT address and root go in the init call and the salt, not the initcode |
 | P11 | No receiver report: every chain in scope uses Ethereum's CREATE2 |
-| P12 | `extraOptions` carries the lzCompose gas, merged with the OFT's enforced options |
+| P12 | `extraOptions` carries only the lzCompose gas (`LzMessage.composeOptions`). The OFT's enforced options for a send with a compose message must carry its own lzReceive gas; without them the executor refuses the send at home (`Executor_ZeroLzReceiveGasProvided`), and onboarding checks for them. The options attribute replaces the default whole |
 | P13 | Limited to the chains in the account's root |
 | P14 | The account does not inherit the OApp SDK, so carries no OApp storage |
 | P15 | Not applicable: no transceiver-to-transceiver bootstrap |
@@ -229,6 +232,9 @@ apply. Step 12 writes the short spec this binding meets instead.
    receiver in this design, and `bindingData` and the virtual `_bootstrapEnvelope` have no
    implementer. `TransceiverBase`'s single encoder for `bootstrap` and `quoteBootstrap` is
    kept as a private function, with its test, since it still keeps the two from drifting.
+
+4. **`ProviderAttribute.bodyAmong`**, for a binding that accepts several attributes
+   together. Every other binding takes at most one and keeps `body`.
 
 ## Repository layout
 
@@ -268,7 +274,7 @@ Each item is one commit. Steps 1 and 2 are done.
 6. `refactor(transmitter)`: `_sendBootstrap` and `_quoteBootstrap`. No behavior change.
 7. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`.
 8. `feat(lz-oft)`: `LzOftTransmitter`: the amount attribute, the bootstrap read from the
-   factory, the bootstrap and Path A sends and quotes with the peer check, and the dust check.
+   factory, and the bootstrap and Path A sends and quotes with the peer check.
 9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, the token move, then
    `_onMessageFrom`.
 10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter` with the leaf checks and on-chain root,
@@ -291,8 +297,9 @@ Each item is one commit. Steps 1 and 2 are done.
 LayerZero prices per byte. Against the plain binding, each Path A message carries 72 more
 bytes (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step, the
 lzCompose. A bootstrap carries those 72 bytes plus the account fields `(owner, salt,
-homeChainKey, homeOft, destRoot, eid)`, 192 bytes, and a proof of `ceil(log2 n)` words for
-`n` destinations plus its offset and length words: 160 bytes for 8. No bootstrap fee is charged. Creation stores one slot per destination
+homeChainKey, homeOft, destRoot)`, 160 bytes, a proof of `ceil(log2 n)` words for `n`
+destinations, and 96 bytes of offset and length words for the struct and the proof: 256
+bytes more than the calls alone for 8 destinations. No bootstrap fee is charged. Creation stores one slot per destination
 (`dstOft` and `eid` packed) and reads one peer each, on top of today's account creation;
 building a proof reads the account's `n` leaves. All are measured in step 11.
 
