@@ -138,7 +138,8 @@ Path A payload and a receiver never sees a bootstrap. No envelope tag is needed 
 
 Anyone can retry a failed compose. A real bootstrap fails the factory's checks only if a leaf
 pairs a `chainKey` with another chain's `eid`. The home factory checks the peer but cannot map
-an eid to a chain, so `LzOftLeaves.s.sol` checks each leaf's `eid` against `layerzero.toml`.
+an eid to a chain, so `LzOftLeaves.s.sol` takes each leaf's `eid` from `layerzero.toml` and
+checks it on the destination's own chain (`LzOftDeploy.checkOnDestination`).
 
 ## What LayerZero guarantees
 
@@ -228,7 +229,7 @@ apply. Step 12 writes the short spec this binding meets instead.
 | `src/protocols/layerzero/` | `LzTransceiver`, `LzTransmitter`, `LzReceiver`, `LzDivergentTransceiver` | `LzOftFactory`, `LzOftTransmitter`, `LzOftReceiver`, `LzOftMessage` |
 | shared there | `LzMessage` (options encoding) | the same file |
 | `test/protocols/layerzero/` | `LzFixture`, `LzBinding.t.sol`, `LzTransceiver.t.sol`, `MockLzEndpoint` | `LzOftFixture`, `LzOftBinding.t.sol`, `LzOftFactory.t.sol`, `MockOft` |
-| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol` (Nick's proxy, no arguments that vary by chain), `LzOftLeaves.s.sol` |
+| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol` (Nick's proxy, no arguments that vary by chain), `LzOftLeaves.s.sol`, `deploy/LzOftDeploy.sol` |
 
 - **Options encoding is shared.** The lzCompose option goes in `LzMessage` next to the
   lzReceive one. `LzOftMessage` holds what targets an OFT: the compose messages, `send` and
@@ -246,7 +247,7 @@ apply. Step 12 writes the short spec this binding meets instead.
 
 ## Work, in commit order
 
-Each item is one commit. Steps 1 and 2 are done.
+Each item is one commit, or a few where a step split. Steps 1 to 12 are done.
 
 1. `docs`: this plan.
 2. `chore(lib)`: vendor `IOFT`, `ILayerZeroComposer` and `OFTComposeMsgCodec`, with provenance
@@ -271,8 +272,12 @@ Each item is one commit. Steps 1 and 2 are done.
     `LzOftFixture` that runs them; and the binding's own tests for what is OFT-specific. The
     transceiver send specs do not apply, since this binding's sends leave from the account;
     `LzOftTransmitter.t.sol` covers the properties of those that hold for it.
-12. `test(fork)` and `feat(deploy)`: a compose through a live OFT on two chains, decoding
-    `[44:76]` to the account; `DeployLzOft.s.sol` and `LzOftLeaves.s.sol`.
+12. `test(fork)` and `feat(deploy)`: `test/fork/LzOftFork.t.sol` through frxUSD, homed on
+    Fraxtal (lockbox) with Ethereum (lockbox) and Arbitrum (OFT) as destinations: both
+    bootstraps and a Path A message, through the real OFTs, endpoints and enforced options;
+    `DeployLzOft.s.sol`, `LzOftLeaves.s.sol`, and `script/deploy/LzOftDeploy.sol`, which both
+    and the fork test share. Fraxtal is not yet in `deploy/chains.toml` or `layerzero.toml`, so
+    the two scripts cannot run there until it is added by `deploy/README.md`'s procedure.
 13. `docs`: the binding's short spec, the trust section in the user-facing docs, the
     findings folded into `provider-research.md`, and `todo.md`.
 
@@ -286,7 +291,9 @@ destinations, and 96 bytes of offset and length words for the struct and the pro
 bytes more than the calls alone for 8 destinations. No bootstrap fee is charged. Creation stores two slots per destination
 (its leaf hash, and `dstOft`, `eid` and its index packed) plus two for the account, and
 reads one peer each, on top of today's account creation; building a proof reads the
-account's `n` leaf hashes. All are measured in step 11.
+account's `n` leaf hashes. The fork test's Fraxtal to Ethereum bootstrap quoted 7.08 FRAX at
+Fraxtal block 43,069,455, with the default 1,000,000 lzCompose gas; the byte and storage
+costs above are not yet measured on their own.
 
 ## Checks before merge
 
