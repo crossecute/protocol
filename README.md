@@ -487,7 +487,7 @@ over interop), plus `layerzero-oft`, through an operator's own OFT.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 937 passing, 2 skipped (the fork tests, without RPCs)
+cd contracts/evm && forge test        # 937 passing, 3 skipped (the fork tests, without RPCs)
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

@@ -199,7 +199,22 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 | Bootstrap to the factory, 8 destinations, one call | 658,788 |
 | Payload to an existing receiver, no calls | 34,246 |
 
-Measured 2026-10-25 against the mock endpoint and OFT.
+Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+(`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
+of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
+and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
+a send with a compose message (250,000 to both):
+
+| Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
+| --- | --- | --- |
+| Bootstrap, lzCompose into the factory, 2 destinations | 648,794 | 648,878 |
+| Bootstrap, the OFT's `lzReceive` | 105,151 | 84,692 |
+| Payload, lzCompose into the receiver | 42,138 | 42,081 |
+| Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
+
+Measured 2026-10-25. A payload costs about 7,900 more than against the mocks and a bootstrap
+about 2,100 less; each stays well under its default. The `lzReceive` figure leaves out the
+endpoint's clearing of the verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote

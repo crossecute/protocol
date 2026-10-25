@@ -40,7 +40,7 @@ abstract contract DeliveryGasMeter is Test {
 
     /// @notice The smallest gas limit under which `message` reaches `to` from `sender`, every
     ///         account it touches cold. State is left as it was.
-    function _minGas(address to, address sender, bytes memory message) private returns (uint256 hi) {
+    function _minGas(address to, address sender, bytes memory message) internal returns (uint256 hi) {
         uint256 snapshot = vm.snapshotState();
         vm.startStateDiffRecording();
         _meteredDelivery(MEASURE_CEILING, to, sender, message);
