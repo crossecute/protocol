@@ -42,12 +42,10 @@ the seventh; what they mean for an operator is in the README.
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
   there to zero, and the owner can limit which accounts bootstrap with an allowlist.
-- **`layerzero-oft`'s delivery gas is not measured.** Its bootstrap carries
-  `DeliveryGas.BOOTSTRAP`, 1,000,000, as lzCompose gas, and its messages `DeliveryGas.PAYLOAD`,
-  but `ProviderDeliveryGasSpec` needs a transceiver and does not run against it. The factory's
-  compose (proof check, account creation, the bootstrap calls) and a receiver's need their
-  own measurement, as do the byte and storage costs
-  [`provider-research.md` §9](provider-research.md#9-layerzero-oft-as-a-carrier) computes.
+- **`layerzero-oft`'s delivery gas is measured against mocks only.** A bootstrap through the
+  factory costs 650,959 to 658,788 and a payload 34,246
+  ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), within its defaults. A
+  measurement through a live OFT's `lzReceive` and endpoint, on a fork, would replace the mocks.
 
 ## 2. Chain checks before mainnet
 

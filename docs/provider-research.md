@@ -970,7 +970,9 @@ Computed, not measured. Against the plain binding a message carries 72 more byte
 (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step. A bootstrap adds
 160 bytes of account fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
 offset and length words, against the plain binding's envelope. Creation stores two slots per
-destination and two for the account.
+destination and two for the account. The destination's gas is measured: a bootstrap through
+the factory costs 650,959 to 658,788 and a payload 34,246, against mocks
+([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)).
 
 ---
 

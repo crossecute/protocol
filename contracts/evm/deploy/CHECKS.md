@@ -170,23 +170,35 @@ reverts `IGP: no gas oracle for domain` for such a domain.
 
 A bootstrap creates an account on the destination, so the gas it is sent with must cover
 that. `ProviderDeliveryGasSpec` (`test/protocols/ProviderBindingSpec.t.sol`) measures each
-delivery through every binding's fixture and fails if a `DeliveryGas` default is not at
-least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers. Each is the
-smallest gas limit under which the delivery succeeds from cold storage, less what the same
-message costs delivered to a contract that does nothing:
+delivery through every binding's fixture with `DeliveryGasMeter`, and fails if a `DeliveryGas`
+default is not at least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers.
+Each is the smallest gas limit under which the delivery succeeds from cold storage, less what
+the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 624,348 | 623,809 | 678,100 | 629,707 | 667,854 |
-| The same with one call to an address with no code | 631,005 | 630,472 | 684,754 | 636,469 | 675,625 |
-| Report arriving at the home transceiver | 127,275 | 126,742 | 127,393 | 124,497 | n/a (170,877) |
-| Payload to an existing receiver, no calls | 24,903 | 24,394 | 27,624 | 23,183 | 67,651 |
+| Bootstrap to a plain transceiver, no calls | 624,484 | 623,943 | 678,164 | 629,844 | 668,001 |
+| The same with one call to an address with no code | 631,141 | 630,606 | 684,818 | 636,605 | 675,771 |
+| Report arriving at the home transceiver | 127,263 | 126,730 | 127,381 | 124,485 | n/a (170,877) |
+| Payload to an existing receiver, no calls | 24,891 | 24,382 | 27,612 | 23,171 | 67,651 |
 
-Measured 2026-10-21 against mock gateways. Wormhole's numbers include verifying the VAA
+Measured 2026-10-25 against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
 row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
 report; the spec measures one there only because it runs every delivery on every binding.
+
+`layerzero-oft` has no transceiver, so `LzOftDeliveryGasTest` measures it with the same meter
+(`forge test --mc LzOftDeliveryGasTest -vv`). Its defaults are lzCompose gas, the factory's or
+the receiver's frame; the OFT's own lzReceive gas is the operator's enforced options:
+
+| Delivery, `layerzero-oft` | Gas |
+| --- | --- |
+| Bootstrap to the factory, 1 destination, no calls | 650,959 |
+| Bootstrap to the factory, 8 destinations, one call | 658,788 |
+| Payload to an existing receiver, no calls | 34,246 |
+
+Measured 2026-10-25 against the mock endpoint and OFT.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
