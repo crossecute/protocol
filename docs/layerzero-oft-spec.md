@@ -28,7 +28,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
   destination (`LzOftMessage.leaf`).
 - **Destination root**: the root `LzOftMessage.root` computes over an account's leaves, in
   ascending `chainKey` order. Bound into the account's address.
-- **Factory**: `LzOftFactory`, the CREATE2 deployer of every account of this binding, and the
+- **Factory**: `LzOftAccountFactory`, the CREATE2 deployer of every account of this binding, and the
   compose target of every bootstrap.
 
 ## 2. OFT prerequisites
@@ -56,7 +56,7 @@ them for a candidate.
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
 - **L1.2** An account's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
-  the factory with `CrossProxy`'s initcode (`LzOftFactory.accountSalt`, `predictAccount`), where
+  the factory with `CrossProxy`'s initcode (`LzOftAccountFactory.accountSalt`, `predictAccount`), where
   `homeEid` is the eid of the home OFT's endpoint. One account has one address on every chain
   in its root.
 - **L1.3** The home factory MUST compute `destRoot` itself from the leaves it is given, and

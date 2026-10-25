@@ -11,12 +11,12 @@ import {CrossAccounts} from "src/account/CrossAccounts.sol";
 import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {ILzOftFactory} from "src/protocols/layerzero/ILzOftFactory.sol";
+import {ILzOftAccountFactory} from "src/protocols/layerzero/ILzOftAccountFactory.sol";
 import {ILzOftTransmitterInit} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 
-/// @title LzOftFactory
+/// @title LzOftAccountFactory
 /// @notice Creates every `layerzero-oft` account: the transmitter on its home, when its
 ///         operator calls `createTransmitter`, and each receiver, when the account's bootstrap
 ///         arrives as an OFT compose.
@@ -29,7 +29,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another account.
-contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
+contract LzOftAccountFactory is ILzOftAccountFactory, ILayerZeroComposer {
     /// @notice One destination, as the operator lists it at creation.
     struct Leaf {
         bytes32 chainKey;
@@ -152,7 +152,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
         emit TransmitterCreated(msg.sender, account, salt, homeEid, homeOft, destRoot);
     }
 
-    /// @inheritdoc ILzOftFactory
+    /// @inheritdoc ILzOftAccountFactory
     function bootstrapRoute(address account, bytes32 chainKey)
         external
         view

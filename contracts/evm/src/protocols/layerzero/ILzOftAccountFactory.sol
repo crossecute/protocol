@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 /// @notice What a `layerzero-oft` account reads from the factory that created it, beyond the
 ///         views `TransmitterBase` reads from any transceiver.
-interface ILzOftFactory {
+interface ILzOftAccountFactory {
     /// @notice Where `account`'s bootstrap to `chainKey` goes, the home eid and root bound into
     ///         the account's address, and the proof of that destination in the root.
     /// @dev Reverts for a chain the account was not created with.

@@ -904,7 +904,7 @@ destination, read from the table rather than computed.
 ## 9. LayerZero OFT as a carrier
 
 The `layerzero-oft` binding, held to [`layerzero-oft-spec.md`](layerzero-oft-spec.md) and
-built as `LzOftFactory`, `LzOftTransmitter`, `LzOftReceiver` and `LzOftMessage` in
+built as `LzOftAccountFactory`, `LzOftTransmitter`, `LzOftReceiver` and `LzOftMessage` in
 `contracts/evm/src/protocols/layerzero/`. It reads, and vendors, only `IOFT`,
 `OFTComposeMsgCodec` and `ILayerZeroComposer` (§8).
 

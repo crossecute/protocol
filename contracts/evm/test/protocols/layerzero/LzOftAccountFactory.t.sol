@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {LzOftFactory} from "src/protocols/layerzero/LzOftFactory.sol";
+import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
@@ -24,7 +24,7 @@ contract Sink {
 /// @dev Two chains in one EVM, each a state snapshot. The factory and its logic are deployed by
 ///      CREATE2 at fixed salts, so they land at one address on both, as Nick's proxy places
 ///      them; each copy reads its own `block.chainid` at deployment.
-abstract contract LzOftFactoryBase is Test {
+abstract contract LzOftAccountFactoryBase is Test {
     uint256 constant HOME = 8453;
     uint256 constant DEST = 42161;
     uint32 constant HOME_EID = 30184;
@@ -37,7 +37,7 @@ abstract contract LzOftFactoryBase is Test {
     bytes32 homeKey = ChainKey.forEvm(HOME);
     bytes32 destKey = ChainKey.forEvm(DEST);
 
-    LzOftFactory factory;
+    LzOftAccountFactory factory;
     MockLzEndpoint endpoint;
     MockOft oft;
     address homeOftAddress;
@@ -48,15 +48,15 @@ abstract contract LzOftFactoryBase is Test {
         vm.chainId(chainId);
         LzOftTransmitter t = new LzOftTransmitter{salt: bytes32(0)}();
         LzOftReceiver r = new LzOftReceiver{salt: bytes32(0)}();
-        factory = new LzOftFactory{salt: bytes32(0)}(address(t), address(r));
+        factory = new LzOftAccountFactory{salt: bytes32(0)}(address(t), address(r));
         endpoint = new MockLzEndpoint{salt: bytes32(chainId)}();
         endpoint.setEid(localEid);
         oft = new MockOft{salt: bytes32(chainId)}(address(endpoint));
     }
 
-    function _leaves(address dstOft) internal view returns (LzOftFactory.Leaf[] memory leaves) {
-        leaves = new LzOftFactory.Leaf[](1);
-        leaves[0] = LzOftFactory.Leaf(destKey, DEST_EID, dstOft);
+    function _leaves(address dstOft) internal view returns (LzOftAccountFactory.Leaf[] memory leaves) {
+        leaves = new LzOftAccountFactory.Leaf[](1);
+        leaves[0] = LzOftAccountFactory.Leaf(destKey, DEST_EID, dstOft);
     }
 
     function _calls(address sink) internal pure returns (Call[] memory calls) {
@@ -65,7 +65,7 @@ abstract contract LzOftFactoryBase is Test {
     }
 }
 
-contract LzOftFactoryHomeTest is LzOftFactoryBase {
+contract LzOftAccountFactoryHomeTest is LzOftAccountFactoryBase {
     address constant DST_OFT = address(0xD057);
 
     function setUp() public {
@@ -73,7 +73,7 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
         oft.setPeer(DEST_EID, DST_OFT);
     }
 
-    function _create(LzOftFactory.Leaf[] memory leaves) internal returns (LzOftTransmitter) {
+    function _create(LzOftAccountFactory.Leaf[] memory leaves) internal returns (LzOftTransmitter) {
         vm.prank(owner);
         return LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), leaves)));
     }
@@ -93,13 +93,13 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
     /// @dev Every stored destination proves into the root the address binds, for any count.
     function testFuzz_everyDestinationProvesIntoTheRoot(uint8 count) public {
         uint256 n = bound(count, 1, 12);
-        LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](n);
+        LzOftAccountFactory.Leaf[] memory leaves = new LzOftAccountFactory.Leaf[](n);
         for (uint256 i; i < n; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast) bounded above
             uint32 eid = uint32(40_000 + i);
             address dst = address(uint160(0xD000 + i));
             oft.setPeer(eid, dst);
-            leaves[i] = LzOftFactory.Leaf(bytes32(i + 1), eid, dst);
+            leaves[i] = LzOftAccountFactory.Leaf(bytes32(i + 1), eid, dst);
         }
         LzOftTransmitter account = _create(leaves);
 
@@ -116,30 +116,30 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
     }
 
     function test_noDestinationsIsRefused() public {
-        vm.expectRevert(LzOftFactory.NoDestinations.selector);
-        _create(new LzOftFactory.Leaf[](0));
+        vm.expectRevert(LzOftAccountFactory.NoDestinations.selector);
+        _create(new LzOftAccountFactory.Leaf[](0));
     }
 
     /// @dev Strictly ascending, which also refuses a chain listed twice.
     function test_unsortedOrRepeatedLeavesAreRefused() public {
         oft.setPeer(1, address(1));
         oft.setPeer(2, address(2));
-        LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](2);
-        leaves[0] = LzOftFactory.Leaf(bytes32(uint256(2)), 2, address(2));
-        leaves[1] = LzOftFactory.Leaf(bytes32(uint256(1)), 1, address(1));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.LeavesNotSorted.selector, 1));
+        LzOftAccountFactory.Leaf[] memory leaves = new LzOftAccountFactory.Leaf[](2);
+        leaves[0] = LzOftAccountFactory.Leaf(bytes32(uint256(2)), 2, address(2));
+        leaves[1] = LzOftAccountFactory.Leaf(bytes32(uint256(1)), 1, address(1));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.LeavesNotSorted.selector, 1));
         _create(leaves);
 
         leaves[1] = leaves[0];
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.LeavesNotSorted.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.LeavesNotSorted.selector, 1));
         _create(leaves);
     }
 
     function test_aLeafForThisChainIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](1);
-        leaves[0] = LzOftFactory.Leaf(homeKey, HOME_EID, DST_OFT);
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.BadLeaf.selector, 0));
+        LzOftAccountFactory.Leaf[] memory leaves = new LzOftAccountFactory.Leaf[](1);
+        leaves[0] = LzOftAccountFactory.Leaf(homeKey, HOME_EID, DST_OFT);
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.BadLeaf.selector, 0));
         _create(leaves);
     }
 
@@ -147,9 +147,9 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
     ///      from it, so that bootstrap could never land.
     function test_aLeafWithTheHomesEidIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](1);
-        leaves[0] = LzOftFactory.Leaf(destKey, HOME_EID, DST_OFT);
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.BadLeaf.selector, 0));
+        LzOftAccountFactory.Leaf[] memory leaves = new LzOftAccountFactory.Leaf[](1);
+        leaves[0] = LzOftAccountFactory.Leaf(destKey, HOME_EID, DST_OFT);
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.BadLeaf.selector, 0));
         _create(leaves);
     }
 
@@ -167,7 +167,7 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
 
     function test_aHomeOftWithoutAnEndpointIsRefused() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotAnOft.selector, address(0xC0DE)));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.NotAnOft.selector, address(0xC0DE)));
         factory.createTransmitter(SALT, address(0xC0DE), _leaves(DST_OFT));
     }
 
@@ -181,7 +181,7 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
 
     function test_aChainNotListedHasNoRoute() public {
         LzOftTransmitter account = _create(_leaves(DST_OFT));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotADestination.selector, address(account), homeKey));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.NotADestination.selector, address(account), homeKey));
         factory.bootstrapRoute(address(account), homeKey);
     }
 
@@ -189,12 +189,12 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
         LzOftTransmitter account = _create(_leaves(DST_OFT));
         vm.prank(address(account));
         assertEq(factory.predictReceiver(destKey, owner, SALT), abi.encodePacked(address(account)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.UnknownAccount.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.UnknownAccount.selector, address(this)));
         factory.predictReceiver(destKey, owner, SALT);
     }
 }
 
-contract LzOftFactoryDestinationTest is LzOftFactoryBase {
+contract LzOftAccountFactoryDestinationTest is LzOftAccountFactoryBase {
     address constant HOME_OFT = address(0x40F7);
     Sink sink;
     bytes32 root;
@@ -250,7 +250,9 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         fake.setPeer(HOME_EID, HOME_OFT);
         bytes memory m = _queue(fake, account, _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(
-            abi.encodeWithSelector(LzOftFactory.NotInRoot.selector, LzOftMessage.leaf(destKey, DEST_EID, address(fake)))
+            abi.encodeWithSelector(
+                LzOftAccountFactory.NotInRoot.selector, LzOftMessage.leaf(destKey, DEST_EID, address(fake))
+            )
         );
         _run(fake, m);
     }
@@ -258,7 +260,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
     /// @dev The factory has no endpoint of its own; the one the claimed OFT uses must call.
     function test_aCallerOtherThanTheOftsEndpointIsRefused() public {
         bytes memory m = _queue(oft, account, _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheEndpoint.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.NotTheEndpoint.selector, address(this)));
         factory.lzCompose(address(oft), GUID, m, EXECUTOR, "");
     }
 
@@ -268,13 +270,13 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         bytes32 otherRoot = LzOftMessage.leaf(ChainKey.forEvm(10), 30111, address(oft));
         address other = factory.predictAccount(owner, SALT, homeKey, HOME_EID, HOME_OFT, otherRoot);
         bytes memory m = _queue(oft, other, _bootstrap(otherRoot, new bytes32[](0)));
-        vm.expectPartialRevert(LzOftFactory.NotInRoot.selector);
+        vm.expectPartialRevert(LzOftAccountFactory.NotInRoot.selector);
         _run(oft, m);
     }
 
     function test_aSenderOtherThanTheAccountIsRefused() public {
         bytes memory m = _queue(oft, address(0xBAD), _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheAccount.selector, address(0xBAD), account));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.NotTheAccount.selector, address(0xBAD), account));
         _run(oft, m);
     }
 
@@ -286,7 +288,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         oft.setPeer(elsewhere, HOME_OFT);
         bytes memory m =
             oft.receivePacket(elsewhere, GUID, address(factory), account, _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheHomeEid.selector, elsewhere, HOME_EID));
+        vm.expectRevert(abi.encodeWithSelector(LzOftAccountFactory.NotTheHomeEid.selector, elsewhere, HOME_EID));
         _run(oft, m);
     }
 
@@ -329,7 +331,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
 }
 
 /// @dev Home creates and sends; the destination receives the exact bytes the home OFT was given.
-contract LzOftFactoryRoundTripTest is LzOftFactoryBase {
+contract LzOftAccountFactoryRoundTripTest is LzOftAccountFactoryBase {
     function test_aBootstrapRoundTripsAndPathAFollows() public {
         uint256 start = vm.snapshotState();
 

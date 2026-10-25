@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {ILzOftFactory} from "src/protocols/layerzero/ILzOftFactory.sol";
+import {ILzOftAccountFactory} from "src/protocols/layerzero/ILzOftAccountFactory.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -14,7 +14,7 @@ import {deployAccount} from "test/DeployCrossProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
 /// @dev The factory's account-facing surface, with one destination per chain the test sets.
-contract MockOftFactory is ILzOftFactory {
+contract MockOftAccountFactory is ILzOftAccountFactory {
     struct Route {
         uint32 eid;
         address dstOft;
@@ -53,7 +53,7 @@ contract MockOftFactory is ILzOftFactory {
 
 contract LzOftTransmitterTest is Test {
     MockOft oft;
-    MockOftFactory factory;
+    MockOftAccountFactory factory;
     LzOftTransmitter account;
 
     address owner = address(0xA11CE);
@@ -66,7 +66,7 @@ contract LzOftTransmitterTest is Test {
     function setUp() public {
         oft = new MockOft(address(0xE9));
         oft.setPeer(DEST_EID, DST_OFT);
-        factory = new MockOftFactory();
+        factory = new MockOftAccountFactory();
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
         factory.setRoute(destKey, DEST_EID, DST_OFT, proof);
@@ -141,7 +141,7 @@ contract LzOftTransmitterTest is Test {
 
     function test_aChainTheFactoryDoesNotHoldIsRefused() public {
         bytes32 other = ChainKey.forEvm(10);
-        vm.expectRevert(abi.encodeWithSelector(MockOftFactory.NotInRoot.selector, other));
+        vm.expectRevert(abi.encodeWithSelector(MockOftAccountFactory.NotInRoot.selector, other));
         account.quoteBootstrap(10, _calls(), new bytes[](0));
     }
 

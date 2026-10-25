@@ -11,7 +11,7 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {LzOftFactory} from "src/protocols/layerzero/LzOftFactory.sol";
+import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
@@ -78,7 +78,7 @@ abstract contract LzOftForkBase is Test {
     uint256 fraxtal;
     uint256 ethereum;
     uint256 arbitrum;
-    LzOftFactory factory;
+    LzOftAccountFactory factory;
     LzOftTransmitter account;
 
     /// @dev Leaves the Fraxtal fork selected.
@@ -99,7 +99,7 @@ abstract contract LzOftForkBase is Test {
         return true;
     }
 
-    function _leaves() internal view returns (LzOftFactory.Leaf[] memory) {
+    function _leaves() internal view returns (LzOftAccountFactory.Leaf[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](2);
         destinations[0] = LzOftDestination(1, ETH_EID);
         destinations[1] = LzOftDestination(42161, ARB_EID);
@@ -107,7 +107,7 @@ abstract contract LzOftForkBase is Test {
     }
 
     /// @dev On the Fraxtal fork, funded for every send's fee.
-    function _createAccount(LzOftFactory.Leaf[] memory leaves) internal {
+    function _createAccount(LzOftAccountFactory.Leaf[] memory leaves) internal {
         factory = LzOftDeploy.factory();
         account = LzOftTransmitter(payable(factory.createTransmitter(SALT, FRAXTAL_OFT, leaves)));
         vm.deal(address(account), 100 ether);
@@ -189,7 +189,7 @@ contract LzOftForkTest is LzOftForkBase {
     function test_frxUsdCarriesABootstrapToEachDestinationAndAMessageAfter() public {
         if (!_forks()) vm.skip(true);
 
-        LzOftFactory.Leaf[] memory leaves = _leaves();
+        LzOftAccountFactory.Leaf[] memory leaves = _leaves();
         for (uint256 i; i < leaves.length; ++i) {
             assertEq(leaves[i].oft, leaves[i].eid == ETH_EID ? ETH_OFT : ARB_OFT, "the lockbox's peers are Frax's");
         }

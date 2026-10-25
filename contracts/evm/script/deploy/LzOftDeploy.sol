@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {LzOftFactory} from "src/protocols/layerzero/LzOftFactory.sol";
+import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {arachnidDeploy, check} from "script/deploy/CrossProxyDeploy.sol";
@@ -21,10 +21,12 @@ library LzOftDeploy {
     /// @notice The factory, deployed with its logic through Arachnid's factory at salt zero on
     ///         first use, so all three sit at one address on every chain that runs the same
     ///         initcode.
-    function factory() internal returns (LzOftFactory f) {
+    function factory() internal returns (LzOftAccountFactory f) {
         address t = arachnidDeploy(type(LzOftTransmitter).creationCode);
         address r = arachnidDeploy(type(LzOftReceiver).creationCode);
-        f = LzOftFactory(arachnidDeploy(abi.encodePacked(type(LzOftFactory).creationCode, abi.encode(t, r))));
+        f = LzOftAccountFactory(
+            arachnidDeploy(abi.encodePacked(type(LzOftAccountFactory).creationCode, abi.encode(t, r)))
+        );
         check(f.transmitterImplementation() == t, "the factory arms transmitters with the logic beside it");
         check(f.receiverImplementation() == r, "the factory arms receivers with the logic beside it");
         check(f.localChainKey() == ChainKey.local(), "the factory names this chain");
@@ -35,13 +37,13 @@ library LzOftDeploy {
     function leaves(address homeOft, LzOftDestination[] memory destinations)
         internal
         view
-        returns (LzOftFactory.Leaf[] memory out)
+        returns (LzOftAccountFactory.Leaf[] memory out)
     {
-        out = new LzOftFactory.Leaf[](destinations.length);
+        out = new LzOftAccountFactory.Leaf[](destinations.length);
         for (uint256 i; i < destinations.length; ++i) {
             bytes32 peer = IOAppCore(homeOft).peers(destinations[i].eid);
             check(peer != bytes32(0) && uint256(peer) >> 160 == 0, "the home OFT peers an EVM OFT for the eid");
-            out[i] = LzOftFactory.Leaf(
+            out[i] = LzOftAccountFactory.Leaf(
                 ChainKey.forEvm(destinations[i].chainId), destinations[i].eid, address(uint160(uint256(peer)))
             );
         }
@@ -56,7 +58,7 @@ library LzOftDeploy {
     ///         has the leaf's eid, and the OFT peers `homeOft` back.
     /// @dev The home factory cannot check the first two, so a leaf that fails them would be
     ///      bound into the account's address and its bootstrap would never land.
-    function checkOnDestination(LzOftFactory.Leaf memory leaf, uint32 homeEid, address homeOft) internal view {
+    function checkOnDestination(LzOftAccountFactory.Leaf memory leaf, uint32 homeEid, address homeOft) internal view {
         check(leaf.chainKey == ChainKey.local(), "the leaf names the chain it is checked on");
         check(IOAppCore(leaf.oft).endpoint().eid() == leaf.eid, "the destination OFT's endpoint has the leaf's eid");
         check(

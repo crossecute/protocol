@@ -6,7 +6,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {LzOftFactory} from "src/protocols/layerzero/LzOftFactory.sol";
+import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
@@ -30,7 +30,7 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
 
     MockLzEndpoint endpoint;
     MockOft oft;
-    LzOftFactory factory;
+    LzOftAccountFactory factory;
 
     function setUp() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
@@ -38,7 +38,7 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         endpoint.setEid(DEST_EID);
         oft = new MockOft(address(endpoint));
         oft.setPeer(HOME_EID, HOME_OFT);
-        factory = new LzOftFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()));
+        factory = new LzOftAccountFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()));
     }
 
     /// @dev This chain's leaf first, then `n - 1` others, so the proof has `ceil(log2 n)` words.

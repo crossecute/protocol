@@ -9,7 +9,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {ILzOftFactory} from "src/protocols/layerzero/ILzOftFactory.sol";
+import {ILzOftAccountFactory} from "src/protocols/layerzero/ILzOftAccountFactory.sol";
 
 /// @dev The initializer the factory arms a transmitter with; `LzOftTransmitter.initialize` is
 ///      overloaded, so it is named here for `abi.encodeCall`.
@@ -136,7 +136,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         returns (SendParam memory param, Destination memory d)
     {
         (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof) =
-            ILzOftFactory(transceiver).bootstrapRoute(address(this), chainKey);
+            ILzOftAccountFactory(transceiver).bootstrapRoute(address(this), chainKey);
         LzOftMessage.requirePeer(homeOft, eid, dstOft);
 
         bytes memory compose = LzOftMessage.encodeBootstrap(
