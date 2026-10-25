@@ -151,11 +151,11 @@ contract DivergingFormulaTransceiver is AnyGatewayTransceiver {
     }
 
     function create(address owner, bytes32 salt) external returns (address) {
-        return _createCrossAccount(owner, salt, localChainKey, address(0), new Call[](0), "");
+        return _createCrossAccount(owner, salt, localChainKey, address(0), new Call[](0));
     }
 
     /// @dev `MinimalAccount` takes no arguments.
-    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory, bytes memory)
+    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
         internal
         pure
         override
@@ -227,7 +227,7 @@ contract ZkHarness is LzZkSyncTransceiver {
     constructor(address _endpoint) LzZkSyncTransceiver(_endpoint, zkSyncTransceiverExtension()) {}
 
     function create(address o, bytes32 s) external returns (address) {
-        return _createCrossAccount(o, s, home(), address(0x7A11), new Call[](0), "");
+        return _createCrossAccount(o, s, home(), address(0x7A11), new Call[](0));
     }
 }
 

@@ -104,9 +104,7 @@ contract MockTransceiver is AnyGatewayTransceiver {
     ///      `_bootstrapInbound` directly. The carried transmitter sits at the receiver's own
     ///      address, as it does for an account homed on a parity chain.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(
-            transmitter, bytes32(0), home(), _predictCrossAccount(transmitter, bytes32(0), home()), calls, ""
-        );
+        _bootstrapInbound(transmitter, bytes32(0), home(), _predictCrossAccount(transmitter, bytes32(0), home()), calls);
     }
 }
 

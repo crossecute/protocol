@@ -294,8 +294,8 @@ contract TransceiverTest is Test {
     }
 
     /// @dev `bootstrap` and `quoteBootstrap` share `_bootstrapEnvelope`, so the quote prices the
-    ///      exact bytes sent, and by default those are `Envelope.encodeBootstrap`'s. The harness
-    ///      charges one wei per byte and this route has no bootstrap fee.
+    ///      exact bytes sent, which are `Envelope.encodeBootstrap`'s. The harness charges one wei
+    ///      per byte and this route has no bootstrap fee.
     function test_aBootstrapAndItsQuoteEncodeTheSameEnvelope() public {
         Sym base = _chain(BASE, false);
         address transmitter = ext(address(base)).predictTransmitter(alice, SALT);

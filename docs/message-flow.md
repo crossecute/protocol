@@ -130,9 +130,8 @@ Hop by hop:
 - `_onInbound(route, sender, message)` on the destination's transceiver:
   `_authenticateOrigin` runs first, mapping the route to a chain and requiring the sender to
   be that chain's counterpart; `_handleInbound` decodes and calls `_bootstrapInbound(owner,
-  salt, origin, transmitter, calls, bindingData)`, with `origin` the chain `_authenticateOrigin`
-  established, which becomes the account's home, and `bindingData` empty unless the
-  binding has its own bootstrap kind. Creation and the payload happen in this
+  salt, origin, transmitter, calls)`, with `origin` the chain `_authenticateOrigin`
+  established, which becomes the account's home. Creation and the payload happen in this
   delivery: a bootstrap is never deferred.
 - That deploys `CrossProxy` at `accountSalt(owner, salt, origin)`, by CREATE2 with no
   constructor arguments, and calls `upgradeInitializeAndLock(receiverImpl,
