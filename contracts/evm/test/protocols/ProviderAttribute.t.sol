@@ -25,6 +25,14 @@ contract ProviderAttributeHarness {
     function none(bytes[] memory attributes) external pure {
         ProviderAttribute.none(attributes);
     }
+
+    function bodyAmong(bytes[] memory attributes, bytes4 selector, bytes4[] memory supported)
+        external
+        pure
+        returns (bool, bytes memory)
+    {
+        return ProviderAttribute.bodyAmong(attributes, selector, supported);
+    }
 }
 
 contract ProviderAttributeTest is Test {
@@ -162,5 +170,53 @@ contract ProviderAttributeTest is Test {
         bytes memory bad = abi.encodePacked(bytes4(0xdeadbeef), uint256(1));
         _expectUnsupported(bad);
         h.uintValue(_attrs(bad, abi.encodePacked(SEL, uint256(2))), SEL, type(uint256).max, 0);
+    }
+
+    /* ================================= bodyAmong ================================= */
+
+    bytes4 constant OTHER = bytes4(keccak256("crossecute.test.other"));
+
+    function _both() internal pure returns (bytes4[] memory supported) {
+        supported = new bytes4[](2);
+        supported[0] = SEL;
+        supported[1] = OTHER;
+    }
+
+    function test_bodyAmongReadsEitherOfTwoTogether() public view {
+        bytes[] memory attrs = _attrs(abi.encodePacked(SEL, hex"aa"), abi.encodePacked(OTHER, hex"bbbb"));
+        (bool present, bytes memory out) = h.bodyAmong(attrs, OTHER, _both());
+        assertTrue(present);
+        assertEq(out, hex"bbbb");
+        (present, out) = h.bodyAmong(attrs, SEL, _both());
+        assertTrue(present);
+        assertEq(out, hex"aa");
+    }
+
+    function test_bodyAmongReportsAnAbsentOne() public view {
+        (bool present, bytes memory out) = h.bodyAmong(_attrs(abi.encodePacked(SEL, hex"aa")), OTHER, _both());
+        assertFalse(present);
+        assertEq(out.length, 0);
+        (present,) = h.bodyAmong(new bytes[](0), SEL, _both());
+        assertFalse(present);
+    }
+
+    /// @dev Refused even when the caller asks for the attribute that is well formed, so a send
+    ///      and its quote cannot disagree by reading different ones.
+    function test_bodyAmongRefusesAnUnsupportedOneWhicheverIsAskedFor() public {
+        bytes memory bad = abi.encodePacked(bytes4(0xdeadbeef), hex"00");
+        bytes[] memory attrs = _attrs(abi.encodePacked(SEL, hex"aa"), bad);
+        _expectUnsupported(bad);
+        h.bodyAmong(attrs, SEL, _both());
+    }
+
+    function test_bodyAmongRefusesADuplicate() public {
+        bytes memory second = abi.encodePacked(SEL, hex"bb");
+        _expectUnsupported(second);
+        h.bodyAmong(_attrs(abi.encodePacked(SEL, hex"aa"), second), OTHER, _both());
+    }
+
+    function test_bodyAmongRefusesOneShorterThanASelector() public {
+        _expectUnsupported(hex"0102");
+        h.bodyAmong(_attrs(hex"0102"), SEL, _both());
     }
 }
