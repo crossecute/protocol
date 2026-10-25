@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
+import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {transceiverConfig} from "test/Harness.sol";
@@ -16,26 +17,19 @@ function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, 
     return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, bytes32(homeProviderId), calls));
 }
 
-/// @title ProviderFixture
-/// @notice One provider's mocks, deployments, and delivery path. Every spec in
-///         `ProviderBindingSpec.t.sol` inherits this, and a provider's suites inherit its one
-///         concrete fixture, so each fact about a provider is written once.
+/// @title ProviderAccountFixture
+/// @notice What a provider's accounts need of a fixture: their logic, the provider's gateway,
+///         and its delivery path. The receiver and transmitter specs inherit this alone, so a
+///         binding with no transceiver (`layerzero-oft`) runs them too.
 /// @dev No hook here has a default body: Solidity would then require every suite combining a
 ///      spec with a fixture that overrides it to restate the override.
-abstract contract ProviderFixture is Test {
+abstract contract ProviderAccountFixture is Test {
     /// @dev The chain every spec sends to and delivers from.
     uint256 internal constant REMOTE_CHAIN_ID = 8453;
-
-    /// @notice A new implementation of the provider's plain transceiver, wrapped in its harness.
-    function _transceiverImplementation() internal virtual returns (address);
 
     function _receiverImplementation() internal virtual returns (address);
 
     function _transmitterImplementation() internal virtual returns (address);
-
-    /// @notice Deploy the plain transceiver through the provider's deploy script, naming
-    ///         `homeId` as the governor home's provider id.
-    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal virtual returns (address);
 
     /// @notice The address the provider delivers through: its endpoint, router, mailbox, Core
     ///         bridge, or messenger.
@@ -50,17 +44,8 @@ abstract contract ProviderFixture is Test {
     ///         through the provider. One external call.
     function _deliverBypassingGateway(address to, bytes32 sender, bytes memory message) internal virtual;
 
-    function _setProviderFee(uint256 fee) internal virtual;
-
-    /// @notice What a quote names when the provider's mocks charge `providerFee`.
-    function _expectedQuoteFor(uint256 providerFee) internal view virtual returns (uint256);
-
     /// @notice The provider's id for `REMOTE_CHAIN_ID`; zero for a provider with no id table.
     function _remoteProviderId() internal pure virtual returns (uint256);
-
-    /// @notice Provider-side configuration of transceiver `t` to send to and accept from
-    ///         `counterpart` on `REMOTE_CHAIN_ID`, as `t`'s owner.
-    function _configureRemote(address t, address counterpart) internal virtual;
 
     /// @notice The receiver initializer; `defaultReceiverInit` for all but LayerZero.
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)
@@ -69,6 +54,32 @@ abstract contract ProviderFixture is Test {
         virtual
         returns (bytes memory);
 
+    /// @notice The transmitter initializer, for `owner`.
+    function _initializeTransmitter(address owner) internal view virtual returns (bytes memory);
+}
+
+/// @title ProviderFixture
+/// @notice One provider's mocks, deployments, and delivery path. Every spec in
+///         `ProviderBindingSpec.t.sol` that needs a transceiver inherits this, and a provider's
+///         suites inherit its one concrete fixture, so each fact about a provider is written
+///         once.
+abstract contract ProviderFixture is ProviderAccountFixture {
+    /// @notice A new implementation of the provider's plain transceiver, wrapped in its harness.
+    function _transceiverImplementation() internal virtual returns (address);
+
+    /// @notice Deploy the plain transceiver through the provider's deploy script, naming
+    ///         `homeId` as the governor home's provider id.
+    function _deploy(TransceiverDeployment memory d, uint256 homeId) internal virtual returns (address);
+
+    function _setProviderFee(uint256 fee) internal virtual;
+
+    /// @notice What a quote names when the provider's mocks charge `providerFee`.
+    function _expectedQuoteFor(uint256 providerFee) internal view virtual returns (uint256);
+
+    /// @notice Provider-side configuration of transceiver `t` to send to and accept from
+    ///         `counterpart` on `REMOTE_CHAIN_ID`, as `t`'s owner.
+    function _configureRemote(address t, address counterpart) internal virtual;
+
     /// @notice The attributes every send through this provider carries, where a test means none
     ///         beyond what the provider requires: Wormhole's signed quote.
     function _attributes() internal view virtual returns (bytes[] memory);
@@ -76,6 +87,12 @@ abstract contract ProviderFixture is Test {
     /// @notice What the provider needs set on `account_` before it can send to the remote
     ///         chain, as its `owner`.
     function _prepareAccount(address account_, address owner) internal virtual {}
+
+    /// @notice `OwnableTransmitter.initialize`'s shape, which `TransceiverBase` arms every
+    ///         transmitter with.
+    function _initializeTransmitter(address owner) internal view virtual override returns (bytes memory) {
+        return abi.encodeCall(OwnableTransmitter.initialize, (owner, address(0xB0B), bytes32(0)));
+    }
 
     function _config() internal returns (TransceiverConfig memory) {
         return transceiverConfig(_receiverImplementation());

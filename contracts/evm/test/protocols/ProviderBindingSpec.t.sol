@@ -3,7 +3,12 @@ pragma solidity ^0.8.20;
 
 import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
-import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
+import {
+    ProviderAccountFixture,
+    ProviderFixture,
+    ProviderIdFixture,
+    ProviderGasFixture
+} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
@@ -23,7 +28,6 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Roles} from "src/messaging/Roles.sol";
@@ -372,13 +376,10 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
 /// @title ProviderTransmitterSpec
 /// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
 ///         called by the provider's own gateway, finds nothing to run.
-abstract contract ProviderTransmitterSpec is ProviderFixture {
+abstract contract ProviderTransmitterSpec is ProviderAccountFixture {
     /// @notice A transmitter behind a proxy, initialized.
     function _transmitter() internal returns (address) {
-        return deployAccount(
-            _transmitterImplementation(),
-            abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
-        );
+        return deployAccount(_transmitterImplementation(), _initializeTransmitter(address(this)));
     }
 
     function test_inboundToATransmitterReverts() public {
@@ -421,7 +422,7 @@ contract GatewayGrabber {
     }
 }
 
-abstract contract ProviderReceiveSpec is ProviderFixture {
+abstract contract ProviderReceiveSpec is ProviderAccountFixture {
     event Delivered(uint256 callCount);
 
     address internal constant SOURCE_TRANSMITTER = address(0xABCD);
