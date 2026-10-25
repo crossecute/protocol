@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {Hashes} from "@openzeppelin/contracts/utils/cryptography/Hashes.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
@@ -126,7 +125,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
             revert NotAnOft(homeOft);
         }
         bytes32[] memory hashes = _checkLeaves(homeOft, leaves);
-        bytes32 destRoot = _root(hashes);
+        bytes32 destRoot = LzOftMessage.root(hashes);
 
         bytes32 s = accountSalt(msg.sender, salt, localChainKey, homeOft, destRoot);
         account = Create2.computeAddress(s, CROSS_PROXY_INIT_CODE_HASH);
@@ -155,7 +154,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     {
         Destination memory d = _destinations[account][chainKey];
         if (d.oft == address(0)) revert NotADestination(account, chainKey);
-        return (d.eid, d.oft, _accounts[account].destRoot, _proof(_leafHashes[account], d.index));
+        return (d.eid, d.oft, _accounts[account].destRoot, LzOftMessage.proof(_leafHashes[account], d.index));
     }
 
     /// @notice No receiver is reported: every chain this binding reaches uses Ethereum's CREATE2.
@@ -254,44 +253,5 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
             LzOftMessage.requirePeer(homeOft, l.eid, l.oft);
             hashes[i] = LzOftMessage.leaf(l.chainKey, l.eid, l.oft);
         }
-    }
-
-    /// @dev On a copy: `createTransmitter` stores the leaves it hashes from.
-    function _root(bytes32[] memory leaves) private pure returns (bytes32) {
-        bytes32[] memory level = new bytes32[](leaves.length);
-        for (uint256 i; i < leaves.length; ++i) {
-            level[i] = leaves[i];
-        }
-        for (uint256 n = level.length; n > 1;) {
-            n = _up(level, n);
-        }
-        return level[0];
-    }
-
-    /// @dev The sibling path `_root` hashes `index` along. `level` is overwritten level by
-    ///      level, so the caller passes a memory copy of the stored leaves.
-    function _proof(bytes32[] memory level, uint256 index) private pure returns (bytes32[] memory proof) {
-        bytes32[] memory path = new bytes32[](64);
-        uint256 depth;
-        for (uint256 n = level.length; n > 1; index /= 2) {
-            uint256 sibling = index ^ 1;
-            if (sibling < n) path[depth++] = level[sibling];
-            n = _up(level, n);
-        }
-        proof = new bytes32[](depth);
-        for (uint256 i; i < depth; ++i) {
-            proof[i] = path[i];
-        }
-    }
-
-    /// @dev One level up, in place: neighbours paired with the commutative hash
-    ///      `MerkleProof.verify` uses, and an unpaired last node carried up unchanged, so its
-    ///      proof skips that level. Returns the new level's length.
-    function _up(bytes32[] memory level, uint256 n) private pure returns (uint256) {
-        for (uint256 i; i < n / 2; ++i) {
-            level[i] = Hashes.commutativeKeccak256(level[2 * i], level[2 * i + 1]);
-        }
-        if (n % 2 == 1) level[n / 2] = level[n - 1];
-        return (n + 1) / 2;
     }
 }
