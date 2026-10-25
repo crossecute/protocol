@@ -300,9 +300,10 @@ bytes (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step,
 lzCompose. A bootstrap carries those 72 bytes plus the account fields `(owner, salt,
 homeChainKey, homeOft, destRoot)`, 160 bytes, a proof of `ceil(log2 n)` words for `n`
 destinations, and 96 bytes of offset and length words for the struct and the proof: 256
-bytes more than the calls alone for 8 destinations. No bootstrap fee is charged. Creation stores one slot per destination
-(`dstOft` and `eid` packed) and reads one peer each, on top of today's account creation;
-building a proof reads the account's `n` leaves. All are measured in step 11.
+bytes more than the calls alone for 8 destinations. No bootstrap fee is charged. Creation stores two slots per destination
+(its leaf hash, and `dstOft`, `eid` and its index packed) plus two for the account, and
+reads one peer each, on top of today's account creation; building a proof reads the
+account's `n` leaf hashes. All are measured in step 11.
 
 ## Checks before merge
 

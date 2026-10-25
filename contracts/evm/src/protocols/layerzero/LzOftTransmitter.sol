@@ -11,6 +11,12 @@ import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {ILzOftFactory} from "src/protocols/layerzero/ILzOftFactory.sol";
 
+/// @dev The initializer the factory arms a transmitter with; `LzOftTransmitter.initialize` is
+///      overloaded, so it is named here for `abi.encodeCall`.
+interface ILzOftTransmitterInit {
+    function initialize(address owner, address factory, bytes32 salt, address homeOft) external;
+}
+
 /// @notice A `layerzero-oft` account on its home: sends every message, its bootstraps
 ///         included, through its operator's OFT, as the `send` caller the destination
 ///         authenticates by `composeFrom`.
@@ -20,7 +26,7 @@ import {ILzOftFactory} from "src/protocols/layerzero/ILzOftFactory.sol";
 ///      it, and it relays nothing.
 ///
 /// @dev Not an OApp: the OFT is the sender LayerZero sees, so this carries no OApp storage.
-contract LzOftTransmitter is OwnableTransmitter {
+contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
     bytes4 public constant LZ_OFT_AMOUNT_ATTRIBUTE = LzOftMessage.AMOUNT_ATTRIBUTE;
 
@@ -49,6 +55,7 @@ contract LzOftTransmitter is OwnableTransmitter {
         address homeOft_
     )
         external
+        override
         initializer
     {
         __OwnableTransmitter_init(owner_, factory_, salt_);

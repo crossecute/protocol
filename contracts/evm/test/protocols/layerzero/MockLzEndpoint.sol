@@ -30,6 +30,16 @@ contract MockLzEndpoint {
 
     MessagingFee public fee;
     uint256 public feePerByte;
+    /// @dev EndpointV2's own eid, immutable there.
+    uint32 internal _eid;
+
+    function eid() external view returns (uint32) {
+        return _eid;
+    }
+
+    function setEid(uint32 eid_) external {
+        _eid = eid_;
+    }
 
     /// @dev EndpointV2 refuses a send paying less than the quote, as this does.
     error InsufficientFee(uint256 required, uint256 supplied);
