@@ -14,7 +14,7 @@ the seventh; what they mean for an operator is in the README.
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07; §4's destination gas, 2026-10-21).
+(2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
@@ -42,20 +42,17 @@ the seventh; what they mean for an operator is in the README.
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
   there to zero, and the owner can limit which accounts bootstrap with an allowlist.
-- **`layerzero-oft`'s delivery gas is measured against mocks only.** A bootstrap through the
-  factory costs 650,959 to 658,788 and a payload 34,246
-  ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), within its defaults. A
-  measurement through a live OFT's `lzReceive` and endpoint, on a fork, would replace the mocks.
 
 ## 2. Chain checks before mainnet
 
-- **`layerzero-oft` has no deploy checks, and Fraxtal is not configured.** `DeployLzOft.s.sol`
+- **Fraxtal is not configured, so `layerzero-oft` cannot deploy there.** `DeployLzOft.s.sol`
   and `LzOftLeaves.s.sol` read `deploy/chains.toml` and `providers/layerzero.toml`, which do not
-  list Fraxtal, the home `test/fork/LzOftFork.t.sol` uses for frxUSD. Adding it follows
-  [`deploy/README.md`](../contracts/evm/deploy/README.md), and
-  [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) needs a section for the binding: that
-  Arachnid's factory places the factory at its one address, and, per candidate OFT, the
-  prerequisites O1 to O7 of [`layerzero-oft-spec.md`](layerzero-oft-spec.md#2-oft-prerequisites).
+  list Fraxtal, the home `test/fork/LzOftFork.t.sol` uses for frxUSD. frxUSD passes every other
+  check in [CHECKS §7](../contracts/evm/deploy/CHECKS.md#7-layerzero-oft). Adding Fraxtal follows
+  [`deploy/README.md`](../contracts/evm/deploy/README.md) and is blocked by #94: every
+  LayerZero pathway touching Fraxtal defaults to the dead DVN, which the plain LayerZero binding
+  would have to pin, and CCIP, the governance's second proposer, reaches Fraxtal only from
+  Ethereum and Base.
 
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
@@ -112,9 +109,10 @@ the seventh; what they mean for an operator is in the README.
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
   initializer sets together are covered only by the suites that read them back.
-- **One fork test, and CI does not run it.** Every binding is tested against a mock of its
-  provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint and
-  skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
+- **Two fork tests, and CI runs neither.** Every binding is tested against a mock of its
+  provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint, and
+  `test/fork/LzOftFork.t.sol` carries a `layerzero-oft` account and measures its delivery gas
+  through frxUSD; both skip without their RPC URLs, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
 - **`deploy/governance.toml` is unset.** The governor's owner and salt, and each provider's
