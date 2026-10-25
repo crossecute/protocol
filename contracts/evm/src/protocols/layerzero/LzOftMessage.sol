@@ -22,6 +22,12 @@ library LzOftMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant AMOUNT_ATTRIBUTE = bytes4(keccak256("crossecute.lz-oft.amount"));
 
+    /// @dev Where the payload starts in the message `OFTCore` composes with: `nonce(8) |
+    ///      srcEid(4) | amountLD(32) | composeFrom(32)` precede it. `OFTComposeMsgCodec` keeps
+    ///      the offset private and returns the payload in memory, which a receiver cannot pass
+    ///      to `_onMessageFrom`.
+    uint256 internal constant COMPOSE_MSG_OFFSET = 76;
+
     /// @dev The OFT no longer names `expected` as its peer for `eid`.
     error PeerChanged(uint32 eid, bytes32 expected, bytes32 actual);
 

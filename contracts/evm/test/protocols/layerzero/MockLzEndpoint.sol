@@ -7,6 +7,7 @@ import {
     MessagingReceipt
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 
 /// @notice Minimal endpoint surface the bindings actually call: `quote`, `send`,
 ///         `setDelegate`, `lzToken`, and the library and config calls `LzMessage` pins a DVN
@@ -138,5 +139,34 @@ contract MockLzEndpoint {
 
     function configOf(address oapp, address lib, uint32 eid, uint32 configType) external view returns (bytes memory) {
         return _configs[oapp][lib][eid][configType];
+    }
+
+    /* ================================== compose ================================== */
+
+    /// @dev `MessagingComposer`'s queue and markers: any caller queues for any `to`, keyed by
+    ///      the caller, and `lzCompose` marks before it calls, so a success is final.
+    mapping(address => mapping(address => mapping(bytes32 => mapping(uint16 => bytes32)))) public composeQueue;
+    bytes32 internal constant RECEIVED_MESSAGE_HASH = bytes32(uint256(1));
+
+    error ComposeExists();
+    error ComposeNotFound(bytes32 expected, bytes32 actual);
+
+    function sendCompose(address to, bytes32 guid, uint16 index, bytes calldata message) external {
+        if (composeQueue[msg.sender][to][guid][index] != bytes32(0)) revert ComposeExists();
+        composeQueue[msg.sender][to][guid][index] = keccak256(message);
+    }
+
+    function lzCompose(
+        address from,
+        address to,
+        bytes32 guid,
+        uint16 index,
+        bytes calldata message,
+        bytes calldata extraData
+    ) external payable {
+        bytes32 expected = composeQueue[from][to][guid][index];
+        if (expected != keccak256(message)) revert ComposeNotFound(expected, keccak256(message));
+        composeQueue[from][to][guid][index] = RECEIVED_MESSAGE_HASH;
+        ILayerZeroComposer(to).lzCompose{value: msg.value}(from, guid, message, msg.sender, extraData);
     }
 }

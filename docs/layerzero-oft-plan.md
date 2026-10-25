@@ -130,7 +130,8 @@ the stored `(eid, dstOft)`, rechecks `homeOft.peers(eid) == dstOft`, and calls
 | `dstOft.peers(homeEid) == homeOft` | the pathway still trusts the home OFT |
 | `composeFrom == sourceTransmitter` | the account called `send` |
 
-It moves any `amountLD` to the account before running the payload. `executor` and
+Any `amountLD` was credited to the receiver before the compose ran, and the receiver is the
+account on that chain, so nothing moves. `executor` and
 `_extraData` are not authenticated and are not read.
 
 Bootstraps and Path A messages go to different compose targets, so the factory never sees a
@@ -275,7 +276,7 @@ Each item is one commit. Steps 1 and 2 are done.
 7. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`.
 8. `feat(lz-oft)`: `LzOftTransmitter`: the amount attribute, the bootstrap read from the
    factory, and the bootstrap and Path A sends and quotes with the peer check.
-9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, the token move, then
+9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, then
    `_onMessageFrom`.
 10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter` with the leaf checks and on-chain root,
     the stored leaves and the proof view, the transceiver views, and the bootstrap `lzCompose`

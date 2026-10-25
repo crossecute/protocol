@@ -3,11 +3,15 @@ pragma solidity ^0.8.20;
 
 import {SendParam, OFTReceipt} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {MessagingFee, MessagingReceipt} from "@layerzerolabs/oapp-evm/contracts/oapp/OAppSender.sol";
+import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
+import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 
 /// @notice The send side of an OFT as `OFTCore` behaves: a quote priced per byte of the compose
 ///         message, a send that refuses less than the quote, and `_debitView`'s dust removal
 ///         and slippage check, against a decimal conversion rate the test sets.
 /// @dev Records each send with its caller, which `OFTMsgCodec` would encode as `composeFrom`.
+///      `receivePacket` stands in for `OFTCore._lzReceive` after its DVNs verified a packet:
+///      it credits `to`, then queues the compose `OFTComposeMsgCodec` encodes.
 contract MockOft {
     struct Sent {
         address from;
@@ -58,6 +62,31 @@ contract MockOft {
         _sent.push(Sent(msg.sender, p, msg.value, refundTo));
         receipt.fee = fee;
         oftReceipt = OFTReceipt(sentLD, sentLD);
+    }
+
+    mapping(address => uint256) public balanceOf;
+    uint64 internal _nonce;
+
+    /// @dev `OFTCore._lzReceive`: credit, then queue the compose with the endpoint.
+    function receivePacket(
+        uint32 srcEid,
+        bytes32 guid,
+        address to,
+        uint256 amountLD,
+        address from,
+        bytes memory composeMsg
+    ) external returns (bytes memory message) {
+        balanceOf[to] += amountLD;
+        message = OFTComposeMsgCodec.encode(
+            ++_nonce, srcEid, amountLD, abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(from), composeMsg)
+        );
+        MockLzEndpoint(endpoint).sendCompose(to, guid, 0, message);
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
     }
 
     function sentLength() external view returns (uint256) {
