@@ -28,6 +28,7 @@ contract LzOftLeaves is Script {
         address homeOft = vm.envAddress("LZ_OFT_HOME");
         uint32 homeEid = IOAppCore(homeOft).endpoint().eid();
         ChainEntry memory home = ChainConfig.chainWithId(cs, block.chainid);
+        check(home.derivation == Derivation.Parity, "the home is a parity chain");
         check(ChainConfig.providerId(dir, cs, "layerzero", home) == homeEid, "the home OFT's eid is layerzero.toml's");
 
         string[] memory names = vm.envString("LZ_OFT_DESTINATIONS", ",");
