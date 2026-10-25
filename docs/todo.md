@@ -126,6 +126,11 @@ the seventh; what they mean for an operator is in the README.
   which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
   Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
   5.4.0, and `src/` does not import `Bytes`.
+- **An account cannot bootstrap after `transferOwnership` (#95).** Its address derives from the
+  owner at creation, but every bootstrap sends the current `owner()`. The plain bindings refuse
+  it at home with nothing paid; `layerzero-oft` pays the fee, marks the chain, and is refused
+  at the destination for good. Undecided whether a transferred account should bootstrap at
+  all; at minimum `layerzero-oft` should refuse at home before paying.
 
 ## 4. Post-launch: non-EVM destinations
 
