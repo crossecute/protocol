@@ -33,8 +33,10 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
 ## 2. OFT prerequisites
 
-An account MUST NOT be created on an OFT that fails one of these. `LzOftLeaves.s.sol` and
-`test/fork/LzOftFork.t.sol` check them for a candidate.
+An account MUST NOT be created on an OFT that fails one of these.
+[`deploy/CHECKS.md` §7](../contracts/evm/deploy/CHECKS.md#7-layerzero-oft) says how to check
+each, with frxUSD's results; `LzOftLeaves.s.sol` and `test/fork/LzOftFork.t.sol` run some of
+them for a candidate.
 
 | | Requirement | Why |
 | --- | --- | --- |
