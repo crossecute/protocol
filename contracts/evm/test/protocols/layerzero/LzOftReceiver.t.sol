@@ -2,10 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {LzOftReceiver, ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -27,6 +25,8 @@ contract Target {
     }
 }
 
+/// @dev What is specific to an OFT compose. The checks every receiver shares run in
+///      `LzOftBinding.t.sol` through `ProviderWideSenderSpec`.
 contract LzOftReceiverTest is Test {
     MockLzEndpoint endpoint;
     MockOft localOft;
@@ -68,11 +68,6 @@ contract LzOftReceiverTest is Test {
         endpoint.lzCompose(address(oft), address(receiver), GUID, 0, m, "");
     }
 
-    function test_aComposeFromTheTransmitterRunsThePayload() public {
-        _deliver(localOft, HOME_EID, TRANSMITTER);
-        assertEq(target.hits(), 1);
-    }
-
     /// @dev Any contract can queue a compose for any `to`; the endpoint reports it as `_from`.
     function test_aComposeQueuedByAnotherContractIsRefused() public {
         MockOft fake = new MockOft(address(endpoint));
@@ -80,19 +75,6 @@ contract LzOftReceiverTest is Test {
         bytes memory m = fake.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
         vm.expectRevert(abi.encodeWithSelector(LzOftReceiver.NotTheOft.selector, address(fake)));
         endpoint.lzCompose(address(fake), address(receiver), GUID, 0, m, "");
-    }
-
-    function test_anotherSourceEidIsRefused() public {
-        bytes memory m = localOft.receivePacket(30110, GUID, address(receiver), TRANSMITTER, _payload());
-        vm.expectRevert(abi.encodeWithSelector(ReceiverBase.NotHomeOrigin.selector, bytes32(uint256(30110))));
-        endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
-    }
-
-    /// @dev Another account's send through the same OFT pair carries that account as `composeFrom`.
-    function test_anotherSenderIsRefused() public {
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), address(0xBAD), _payload());
-        vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
-        endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
     }
 
     function test_aRePeeredLocalOftIsRefused() public {
@@ -107,16 +89,6 @@ contract LzOftReceiverTest is Test {
             )
         );
         endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
-    }
-
-    function test_onlyTheEndpointDelivers() public {
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, address(this), receiver.GATEWAY_ROLE()
-            )
-        );
-        receiver.lzCompose(address(localOft), GUID, m, EXECUTOR, "");
     }
 
     /// @dev C29: the endpoint marks a compose before calling, so a success is final.
@@ -139,14 +111,6 @@ contract LzOftReceiverTest is Test {
         assertEq(target.hits(), 1);
     }
 
-    function test_revokingTheEndpointDisconnectsIt() public {
-        vm.prank(TRANSMITTER);
-        receiver.revokeGateway(address(endpoint));
-        bytes memory m = localOft.receivePacket(HOME_EID, GUID, address(receiver), TRANSMITTER, _payload());
-        vm.expectPartialRevert(IAccessControl.AccessControlUnauthorizedAccount.selector);
-        endpoint.lzCompose(address(localOft), address(receiver), GUID, 0, m, "");
-    }
-
     function test_thePlainInitializerIsRefused() public {
         LzOftReceiver logic = new LzOftReceiver();
         vm.expectRevert(LzOftReceiver.UseLzOftInitializer.selector);
@@ -158,6 +122,5 @@ contract LzOftReceiverTest is Test {
         assertEq(receiver.homeOrigin(), bytes32(uint256(HOME_EID)));
         assertEq(receiver.homeOft(), HOME_OFT);
         assertEq(receiver.localOft(), address(localOft));
-        assertTrue(receiver.hasRole(receiver.GATEWAY_ROLE(), address(endpoint)));
     }
 }

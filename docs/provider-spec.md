@@ -829,7 +829,11 @@ A binding is compliant when it passes the shared specs in
 `test/protocols/ProviderBindingSpec.t.sol`. Each is an abstract Foundry contract that a
 binding's suite inherits together with the binding's one fixture: a `<Provider>Fixture`
 extending `ProviderFixture` (`test/protocols/ProviderFixture.sol`), which says how to deploy
-the provider's contracts against its mocks, how it delivers, and what it charges. A suite adds
+the provider's contracts against its mocks, how it delivers, and what it charges. The specs
+about accounts alone (`ProviderTransmitterSpec`, `ProviderReceiveSpec`,
+`ProviderWideSenderSpec`) need only `ProviderAccountFixture`, the part of it about the
+account logic and the delivery path, so `layerzero-oft`, which has no transceiver, runs them
+through `LzOftFixture`. A suite adds
 only what its specs ask of the provider beyond that, such as what its mocks were paid or
 which revert it expects. Properties that hold for only some providers are mixins applied only
 to those, rather than flags:
@@ -844,10 +848,10 @@ to those, rather than flags:
 | `ProviderDefaultGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | C32 |
 | `ProviderDeliveryGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | Each `DeliveryGas` default is at least 10% above what its delivery measures through the binding's fixture ([deploy/CHECKS.md §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)) |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
-| `ProviderTransmitterSpec` | all six | C9 |
+| `ProviderTransmitterSpec` | all six, and `layerzero-oft` | C9 |
 | `ProviderTransmitterSendSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | An account's own send through the binding's real transmitter is paid from its balance whatever `msg.value` is ([R7.1](#r7-fees-and-value), #55), at `DeliveryGas.PAYLOAD` (C32) |
-| `ProviderReceiveSpec` | all six | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
-| `ProviderWideSenderSpec` | all but the two OP Stack providers (sender is an address) | C10 |
+| `ProviderReceiveSpec` | all six, and `layerzero-oft` | C4, C5, C6 (account), C18, C24 (account); the receiver grants the gateway its role |
+| `ProviderWideSenderSpec` | all but the two OP Stack providers (sender is an address), and `layerzero-oft` | C10 |
 | `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver), C33; only the provider delivers |
 | `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole, `op-stack-l2-l2` (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
