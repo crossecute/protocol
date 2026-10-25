@@ -26,33 +26,12 @@ library ProviderAttribute {
         ) revert UnsupportedAttribute(attribute);
         if (attributes.length > 1) revert UnsupportedAttribute(attributes[1]);
 
+        out = new bytes(attribute.length - 4);
+        for (uint256 i; i < out.length; ++i) {
+            out[i] = attribute[i + 4];
+        }
         // forge-lint: disable-next-line(boolean-cst) the `present` flag
-        return (true, _bodyOf(attribute));
-    }
-
-    /// @notice `body`, for a binding that accepts several attributes together: the bytes after
-    ///         `selector` in the attribute it leads, or `present == false` when none does.
-    /// @dev Every attribute is checked, in order, before any is read: each must be led by one of
-    ///      `supported` and none may appear twice, so a send is refused on the same input
-    ///      whichever attribute its caller asks for.
-    function bodyAmong(bytes[] memory attributes, bytes4 selector, bytes4[] memory supported)
-        internal
-        pure
-        returns (bool present, bytes memory out)
-    {
-        for (uint256 i; i < attributes.length; ++i) {
-            bytes memory attribute = attributes[i];
-            if (attribute.length < 4 || !_contains(supported, _selectorOf(attribute))) {
-                revert UnsupportedAttribute(attribute);
-            }
-            for (uint256 j; j < i; ++j) {
-                if (_selectorOf(attributes[j]) == _selectorOf(attribute)) revert UnsupportedAttribute(attribute);
-            }
-        }
-        for (uint256 i; i < attributes.length; ++i) {
-            // forge-lint: disable-next-line(boolean-cst) the `present` flag
-            if (_selectorOf(attributes[i]) == selector) return (true, _bodyOf(attributes[i]));
-        }
+        return (true, out);
     }
 
     /// @notice The `uint256` in a single `abi.encodePacked(selector, abi.encode(value))`
@@ -75,22 +54,6 @@ library ProviderAttribute {
     /// @notice For a binding that supports no attribute: the first given is refused.
     function none(bytes[] memory attributes) internal pure {
         if (attributes.length != 0) revert UnsupportedAttribute(attributes[0]);
-    }
-
-    /// @dev Callers check `attribute.length >= 4` first.
-    function _bodyOf(bytes memory attribute) private pure returns (bytes memory out) {
-        // forge-lint: disable-next-line(calls-loop) allocation, not a call
-        out = new bytes(attribute.length - 4);
-        for (uint256 i; i < out.length; ++i) {
-            out[i] = attribute[i + 4];
-        }
-    }
-
-    function _contains(bytes4[] memory set, bytes4 selector) private pure returns (bool) {
-        for (uint256 i; i < set.length; ++i) {
-            if (set[i] == selector) return true;
-        }
-        return false;
     }
 
     /// @dev Callers check `attribute.length >= 4` first.
