@@ -55,12 +55,13 @@ them for a candidate.
 - **L1.1** The factory and its two logic contracts MUST be deployed through Arachnid's factory
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
 - **L1.2** An account's CREATE2 salt MUST be
-  `keccak256(abi.encode(owner, salt, homeChainKey, homeOft, destRoot))`, deployed by the
-  factory with `CrossProxy`'s initcode (`LzOftFactory.accountSalt`, `predictAccount`). One
-  account has one address on every chain in its root.
+  `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
+  the factory with `CrossProxy`'s initcode (`LzOftFactory.accountSalt`, `predictAccount`), where
+  `homeEid` is the eid of the home OFT's endpoint. One account has one address on every chain
+  in its root.
 - **L1.3** The home factory MUST compute `destRoot` itself from the leaves it is given, and
   refuse leaves that are empty, not in strictly ascending `chainKey` order, name its own chain,
-  carry a zero eid or OFT, or name an OFT the home OFT does not peer.
+  carry a zero eid or OFT or the home's eid, or name an OFT the home OFT does not peer.
 
 ### L2. Sends
 
@@ -71,7 +72,7 @@ them for a candidate.
 - **L2.3** Every send and quote MUST refuse a destination its home OFT no longer peers as the
   account recorded or created it (`LzOftMessage.requirePeer`).
 - **L2.4** A bootstrap MUST be sent to the factory, and carry
-  `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeOft, destRoot, proof, calls)`, with
+  `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)`, with
   the proof the home factory builds from the stored leaves. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
@@ -86,8 +87,10 @@ them for a candidate.
 
 - **L4.1** The factory MUST refuse a compose unless, in order: the caller is the endpoint the
   delivering OFT (`_from`) names; `(localChainKey, endpoint.eid(), _from)` proves into the
-  message's `destRoot`; `_from` peers the message's `homeOft` for the compose's source eid; and
-  `composeFrom` is the account the message's fields derive (L1.2).
+  message's `destRoot`; the compose's source eid is the message's `homeEid`, and `_from` peers
+  the message's `homeOft` for it; and `composeFrom` is the account the message's fields derive
+  (L1.2). The eid check keeps the account's receiver on another chain, where the same OFT
+  address may be deployed and peered, from becoming a new receiver's home.
 - **L4.2** Nothing MUST move before those checks pass. Native value the executor attaches
   MUST reach the account before its receiver is armed.
 - **L4.3** The receiver MUST be armed with the account as its source transmitter, the source
@@ -121,14 +124,14 @@ the account).
 | Rule | Tests |
 | --- | --- |
 | L1.1 | `LzOftForkTest`, which deploys through `LzOftDeploy.factory` on each fork and compares the addresses |
-| L1.2 | `test_theAccountLandsWhereItsFieldsDerive`, `testFuzz_everyDestinationProvesIntoTheRoot` |
-| L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedLeavesAreRefused`, `test_aLeafForThisChainIsRefused`, `test_aLeafTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
+| L1.2 | `test_theAccountLandsWhereItsFieldsDerive`, `testFuzz_everyDestinationProvesIntoTheRoot`, `test_theHomeEidIsBoundIntoTheAddress` |
+| L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedLeavesAreRefused`, `test_aLeafForThisChainIsRefused`, `test_aLeafWithTheHomesEidIsRefused`, `test_aLeafTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
 | L2.1, L2.4 | `test_theBootstrapGoesThroughTheHomeOftFromTheAccount`, `test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose`, `LzOftForkTest` |
 | L2.2 | the same two, which compare the value paid with the quote |
 | L2.3 | `test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote`, `test_aRePeerAfterTheBootstrapRefusesMessages` |
 | L2.5 | `test_theOptionsAttributeReplacesTheDefaultWhole`, `test_aSecondAttributeIsRefused`, `test_anotherBindingsAttributeIsRefused`, `test_onlyTheOptionsAttributeIsSupported` |
 | L3.1 | `test_aSendMovesNoTokensAndCarriesTheDefaultCompose`, `LzOftForkTest` |
-| L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aLeafForAnotherChainIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheAccountIsRefused`, `test_aForgedRootCreatesAnotherAccount`, `test_aSecondBootstrapIsRefused` |
+| L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aLeafForAnotherChainIsRefused`, `test_aComposeFromAnotherEidThanTheHomesIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheAccountIsRefused`, `test_aForgedRootCreatesAnotherAccount`, `test_aSecondBootstrapIsRefused` |
 | L4.2, L4.3 | `test_valueReachesTheAccount`, `test_theBootstrapCreatesTheReceiverAtTheAccountsAddress` |
 | L5.1 | `ProviderReceiveSpec`, `test_aComposeQueuedByAnotherContractIsRefused`, `test_aRePeeredLocalOftIsRefused` |
 | C29 | `test_aDeliveredComposeCannotRunAgain`, `test_aFailedComposeIsRetried` |

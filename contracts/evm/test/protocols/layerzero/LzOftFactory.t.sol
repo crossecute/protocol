@@ -80,8 +80,9 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
 
     function test_theAccountLandsWhereItsFieldsDerive() public {
         LzOftTransmitter account = _create(_leaves(DST_OFT));
-        (,, bytes32 root,) = factory.bootstrapRoute(address(account), destKey);
-        assertEq(address(account), factory.predictAccount(owner, SALT, homeKey, address(oft), root));
+        (,, uint32 homeEid, bytes32 root,) = factory.bootstrapRoute(address(account), destKey);
+        assertEq(homeEid, HOME_EID, "the home OFT's endpoint's eid");
+        assertEq(address(account), factory.predictAccount(owner, SALT, homeKey, HOME_EID, address(oft), root));
         assertEq(root, LzOftMessage.leaf(destKey, DEST_EID, DST_OFT), "one leaf is its own root");
         assertEq(account.owner(), owner);
         assertEq(account.homeOft(), address(oft));
@@ -104,14 +105,14 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
 
         bytes32 root;
         for (uint256 i; i < n; ++i) {
-            (uint32 eid, address dst, bytes32 r, bytes32[] memory proof) =
+            (uint32 eid, address dst,, bytes32 r, bytes32[] memory proof) =
                 factory.bootstrapRoute(address(account), leaves[i].chainKey);
             root = r;
             assertEq(eid, leaves[i].eid);
             assertEq(dst, leaves[i].oft);
             assertTrue(MerkleProof.verify(proof, r, LzOftMessage.leaf(leaves[i].chainKey, eid, dst)), "proves");
         }
-        assertEq(address(account), factory.predictAccount(owner, SALT, homeKey, address(oft), root));
+        assertEq(address(account), factory.predictAccount(owner, SALT, homeKey, HOME_EID, address(oft), root));
     }
 
     function test_noDestinationsIsRefused() public {
@@ -138,6 +139,16 @@ contract LzOftFactoryHomeTest is LzOftFactoryBase {
         oft.setPeer(HOME_EID, DST_OFT);
         LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](1);
         leaves[0] = LzOftFactory.Leaf(homeKey, HOME_EID, DST_OFT);
+        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.BadLeaf.selector, 0));
+        _create(leaves);
+    }
+
+    /// @dev No other chain shares the home's eid, and the destination factory refuses a compose
+    ///      from it, so that bootstrap could never land.
+    function test_aLeafWithTheHomesEidIsRefused() public {
+        oft.setPeer(HOME_EID, DST_OFT);
+        LzOftFactory.Leaf[] memory leaves = new LzOftFactory.Leaf[](1);
+        leaves[0] = LzOftFactory.Leaf(destKey, HOME_EID, DST_OFT);
         vm.expectRevert(abi.encodeWithSelector(LzOftFactory.BadLeaf.selector, 0));
         _create(leaves);
     }
@@ -194,12 +205,12 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         oft.setPeer(HOME_EID, HOME_OFT);
         sink = new Sink();
         root = LzOftMessage.leaf(destKey, DEST_EID, address(oft));
-        account = factory.predictAccount(owner, SALT, homeKey, HOME_OFT, root);
+        account = factory.predictAccount(owner, SALT, homeKey, HOME_EID, HOME_OFT, root);
     }
 
     function _bootstrap(bytes32 destRoot, bytes32[] memory proof) internal view returns (bytes memory) {
         return LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(owner, SALT, homeKey, HOME_OFT, destRoot, proof, _calls(address(sink)))
+            LzOftMessage.Bootstrap(owner, SALT, homeKey, HOME_EID, HOME_OFT, destRoot, proof, _calls(address(sink)))
         );
     }
 
@@ -255,7 +266,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
     ///      chain proves nothing here.
     function test_aLeafForAnotherChainIsRefused() public {
         bytes32 otherRoot = LzOftMessage.leaf(ChainKey.forEvm(10), 30111, address(oft));
-        address other = factory.predictAccount(owner, SALT, homeKey, HOME_OFT, otherRoot);
+        address other = factory.predictAccount(owner, SALT, homeKey, HOME_EID, HOME_OFT, otherRoot);
         bytes memory m = _queue(oft, other, _bootstrap(otherRoot, new bytes32[](0)));
         vm.expectPartialRevert(LzOftFactory.NotInRoot.selector);
         _run(oft, m);
@@ -265,6 +276,24 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         bytes memory m = _queue(oft, address(0xBAD), _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheAccount.selector, address(0xBAD), account));
         _run(oft, m);
+    }
+
+    /// @dev The account's own receiver on another chain, where the same OFT address is deployed
+    ///      and peered, sends the account's bootstrap: `composeFrom` is the account there too, so
+    ///      only the bound eid tells it from the home.
+    function test_aComposeFromAnotherEidThanTheHomesIsRefused() public {
+        uint32 elsewhere = 30111;
+        oft.setPeer(elsewhere, HOME_OFT);
+        bytes memory m =
+            oft.receivePacket(elsewhere, GUID, address(factory), account, _bootstrap(root, new bytes32[](0)));
+        vm.expectRevert(abi.encodeWithSelector(LzOftFactory.NotTheHomeEid.selector, elsewhere, HOME_EID));
+        _run(oft, m);
+    }
+
+    /// @dev The eid is part of the address: the same fields with another home eid are another
+    ///      account.
+    function test_theHomeEidIsBoundIntoTheAddress() public view {
+        assertNotEq(factory.predictAccount(owner, SALT, homeKey, 30111, HOME_OFT, root), account);
     }
 
     function test_anOftThatNoLongerPeersTheHomeIsRefused() public {
@@ -280,7 +309,7 @@ contract LzOftFactoryDestinationTest is LzOftFactoryBase {
         MockOft fake = new MockOft(address(endpoint));
         fake.setPeer(HOME_EID, HOME_OFT);
         bytes32 forged = LzOftMessage.leaf(destKey, DEST_EID, address(fake));
-        address elsewhere = factory.predictAccount(owner, SALT, homeKey, HOME_OFT, forged);
+        address elsewhere = factory.predictAccount(owner, SALT, homeKey, HOME_EID, HOME_OFT, forged);
         _run(fake, _queue(fake, elsewhere, _bootstrap(forged, new bytes32[](0))));
 
         assertGt(elsewhere.code.length, 0);

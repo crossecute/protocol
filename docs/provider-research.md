@@ -968,10 +968,11 @@ Ethereum with the default 1,000,000 lzCompose gas quoted 7.08 FRAX at Fraxtal bl
 
 Computed, not measured. Against the plain binding a message carries 72 more bytes
 (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step. A bootstrap adds
-160 bytes of account fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
+192 bytes of account fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
 offset and length words, against the plain binding's envelope. Creation stores two slots per
 destination and two for the account. The destination's gas is measured: a bootstrap through
-the factory costs 650,959 to 658,788 and a payload 34,246, against mocks
+the factory costs 651,291 to 659,121 and a payload 34,246 against mocks, and 649,133 and
+42,138 through frxUSD into Ethereum
 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)).
 
 ---

@@ -135,12 +135,12 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         view
         returns (SendParam memory param, Destination memory d)
     {
-        (uint32 eid, address dstOft, bytes32 destRoot, bytes32[] memory proof) =
+        (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof) =
             ILzOftFactory(transceiver).bootstrapRoute(address(this), chainKey);
         LzOftMessage.requirePeer(homeOft, eid, dstOft);
 
         bytes memory compose = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(owner(), accountSalt, ChainKey.local(), homeOft, destRoot, proof, calls)
+            LzOftMessage.Bootstrap(owner(), accountSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
         );
         param = LzOftMessage.sendParam(eid, transceiver, compose, attributes, DeliveryGas.BOOTSTRAP);
         d = Destination(eid, dstOft);

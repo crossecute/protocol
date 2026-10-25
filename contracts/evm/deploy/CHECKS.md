@@ -195,8 +195,8 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 650,959 |
-| Bootstrap to the factory, 8 destinations, one call | 658,788 |
+| Bootstrap to the factory, 1 destination, no calls | 651,291 |
+| Bootstrap to the factory, 8 destinations, one call | 659,121 |
 | Payload to an existing receiver, no calls | 34,246 |
 
 Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
@@ -207,8 +207,8 @@ a send with a compose message (250,000 to both):
 
 | Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
 | --- | --- | --- |
-| Bootstrap, lzCompose into the factory, 2 destinations | 648,794 | 648,878 |
-| Bootstrap, the OFT's `lzReceive` | 105,151 | 84,692 |
+| Bootstrap, lzCompose into the factory, 2 destinations | 649,133 | 649,218 |
+| Bootstrap, the OFT's `lzReceive` | 105,826 | 85,369 |
 | Payload, lzCompose into the receiver | 42,138 | 42,081 |
 | Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
 
@@ -311,8 +311,8 @@ salt zero (§1), so the address follows from their bytecode alone. A dry run pri
 must be empty until the deploy:
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x0069E3286a931745264b7f7e6b1B15cA513aA887
-cast code 0x0069E3286a931745264b7f7e6b1B15cA513aA887 --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x80C905D57d4645e3695E50749cc63ce50DE25af8
+cast code 0x80C905D57d4645e3695E50749cc63ce50DE25af8 --rpc-url $RPC   # 0x until deployed
 ```
 
 Any change to the three contracts moves the address, so it is rerun after one. The script

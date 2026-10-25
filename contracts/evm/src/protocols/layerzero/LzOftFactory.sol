@@ -26,7 +26,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      only arguments, which are themselves the same on every chain, so this has one address
 ///      everywhere and an account has one address everywhere.
 ///
-/// @dev An account's CREATE2 salt binds `(owner, salt, homeChainKey, homeOft, destRoot)`.
+/// @dev An account's CREATE2 salt binds `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another account.
@@ -46,6 +46,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
 
     struct Account {
         address homeOft;
+        uint32 homeEid;
         bytes32 destRoot;
     }
 
@@ -62,7 +63,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     mapping(address account => mapping(bytes32 chainKey => Destination)) internal _destinations;
 
     event TransmitterCreated(
-        address indexed owner, address indexed account, bytes32 salt, address homeOft, bytes32 destRoot
+        address indexed owner, address indexed account, bytes32 salt, uint32 homeEid, address homeOft, bytes32 destRoot
     );
     event ReceiverCreated(address indexed account, uint32 homeEid, address localOft);
 
@@ -75,6 +76,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     error NotADestination(address account, bytes32 chainKey);
     error UnknownAccount(address account);
     error NotTheEndpoint(address caller);
+    error NotTheHomeEid(uint32 srcEid, uint32 homeEid);
     error NotInRoot(bytes32 leaf);
     error NotTheAccount(address composeFrom, address account);
     error ValueNotForwarded(address account);
@@ -91,21 +93,27 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
 
     /* ================================= addresses =============================== */
 
-    function accountSalt(address owner, bytes32 salt, bytes32 homeChainKey, address homeOft, bytes32 destRoot)
-        public
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(owner, salt, homeChainKey, homeOft, destRoot));
+    function accountSalt(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        uint32 homeEid,
+        address homeOft,
+        bytes32 destRoot
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot));
     }
 
-    function predictAccount(address owner, bytes32 salt, bytes32 homeChainKey, address homeOft, bytes32 destRoot)
-        public
-        view
-        returns (address)
-    {
+    function predictAccount(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        uint32 homeEid,
+        address homeOft,
+        bytes32 destRoot
+    ) public view returns (address) {
         return Create2.computeAddress(
-            accountSalt(owner, salt, homeChainKey, homeOft, destRoot), CROSS_PROXY_INIT_CODE_HASH
+            accountSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot), CROSS_PROXY_INIT_CODE_HASH
         );
     }
 
@@ -114,20 +122,19 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     /// @notice Create the caller's account, homed here, reaching exactly `leaves`.
     ///
     /// @dev The owner is `msg.sender`, so nobody can claim the address another party will
-    ///      occupy. Each leaf is checked against `homeOft`'s peers now, and again at each send.
+    ///      occupy. The home eid is `homeOft`'s endpoint's. Each leaf is checked against
+    ///      `homeOft`'s peers now, and again at each send.
     ///      A leaf whose `eid` is another chain's is not caught here, since nothing on this chain
     ///      maps an eid to a chain; that bootstrap's compose fails at the destination.
     function createTransmitter(bytes32 salt, address homeOft, Leaf[] calldata leaves)
         external
         returns (address account)
     {
-        if (homeOft.code.length == 0 || address(IOAppCore(homeOft).endpoint()).code.length == 0) {
-            revert NotAnOft(homeOft);
-        }
-        bytes32[] memory hashes = _checkLeaves(homeOft, leaves);
+        uint32 homeEid = _homeEid(homeOft);
+        bytes32[] memory hashes = _checkLeaves(homeOft, homeEid, leaves);
         bytes32 destRoot = LzOftMessage.root(hashes);
 
-        bytes32 s = accountSalt(msg.sender, salt, localChainKey, homeOft, destRoot);
+        bytes32 s = accountSalt(msg.sender, salt, localChainKey, homeEid, homeOft, destRoot);
         account = Create2.computeAddress(s, CROSS_PROXY_INIT_CODE_HASH);
         CrossAccounts.requireVacant(account, msg.sender, salt);
         CrossAccounts.requireLanded(account, CrossAccounts.deploy(s, _crossProxyInitCode));
@@ -137,24 +144,25 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
             abi.encodeCall(ILzOftTransmitterInit.initialize, (msg.sender, address(this), salt, homeOft))
         );
 
-        _accounts[account] = Account(homeOft, destRoot);
+        _accounts[account] = Account(homeOft, homeEid, destRoot);
         _leafHashes[account] = hashes;
         for (uint256 i; i < leaves.length; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast,costly-loop) index bounded; one write each
             _destinations[account][leaves[i].chainKey] = Destination(leaves[i].eid, leaves[i].oft, uint64(i));
         }
-        emit TransmitterCreated(msg.sender, account, salt, homeOft, destRoot);
+        emit TransmitterCreated(msg.sender, account, salt, homeEid, homeOft, destRoot);
     }
 
     /// @inheritdoc ILzOftFactory
     function bootstrapRoute(address account, bytes32 chainKey)
         external
         view
-        returns (uint32 eid, address dstOft, bytes32 destRoot, bytes32[] memory proof)
+        returns (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof)
     {
         Destination memory d = _destinations[account][chainKey];
         if (d.oft == address(0)) revert NotADestination(account, chainKey);
-        return (d.eid, d.oft, _accounts[account].destRoot, LzOftMessage.proof(_leafHashes[account], d.index));
+        Account memory a = _accounts[account];
+        return (d.eid, d.oft, a.homeEid, a.destRoot, LzOftMessage.proof(_leafHashes[account], d.index));
     }
 
     /// @notice No receiver is reported: every chain this binding reaches uses Ethereum's CREATE2.
@@ -177,9 +185,11 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     ///         chain's OFT.
     ///
     /// @dev Checks, in order: the endpoint `_from` uses is the caller; `_from` is this chain's
-    ///      leaf in the root the message names; `_from` peers the message's `homeOft` for the
-    ///      source eid, so the packet came from it, verified by `_from`'s own DVNs; and
-    ///      `composeFrom` is the account the message's fields derive.
+    ///      leaf in the root the message names; the source eid is the message's `homeEid`, and
+    ///      `_from` peers the message's `homeOft` for it, so the packet came from it, verified by
+    ///      `_from`'s own DVNs; and `composeFrom` is the account the message's fields derive.
+    ///      Without the eid check, the account's receiver on another chain with the same OFT
+    ///      address could send this compose and become the receiver's home.
     ///
     /// @dev The account sends no tokens, so the compose carries an amount of 0 and nothing is
     ///      credited here. Any native value the executor attaches goes to the account.
@@ -221,10 +231,11 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
         if (!MerkleProof.verify(b.proof, b.destRoot, leaf)) revert NotInRoot(leaf);
 
         srcEid = OFTComposeMsgCodec.srcEid(message);
+        if (srcEid != b.homeEid) revert NotTheHomeEid(srcEid, b.homeEid);
         if (b.homeOft == address(0)) revert NotAnOft(address(0));
         LzOftMessage.requirePeer(from, srcEid, b.homeOft);
 
-        s = accountSalt(b.owner, b.salt, b.homeChainKey, b.homeOft, b.destRoot);
+        s = accountSalt(b.owner, b.salt, b.homeChainKey, b.homeEid, b.homeOft, b.destRoot);
         account = Create2.computeAddress(s, CROSS_PROXY_INIT_CODE_HASH);
         address composeFrom = ProviderAddress.evmSender(OFTComposeMsgCodec.composeFrom(message));
         if (composeFrom != account) revert NotTheAccount(composeFrom, account);
@@ -243,13 +254,26 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
 
     /* ================================== leaves ================================= */
 
-    function _checkLeaves(address homeOft, Leaf[] calldata leaves) private view returns (bytes32[] memory hashes) {
+    function _homeEid(address homeOft) private view returns (uint32) {
+        if (homeOft.code.length == 0) revert NotAnOft(homeOft);
+        ILayerZeroEndpointV2 endpoint = IOAppCore(homeOft).endpoint();
+        if (address(endpoint).code.length == 0) revert NotAnOft(homeOft);
+        return endpoint.eid();
+    }
+
+    function _checkLeaves(address homeOft, uint32 homeEid, Leaf[] calldata leaves)
+        private
+        view
+        returns (bytes32[] memory hashes)
+    {
         if (leaves.length == 0) revert NoDestinations();
         hashes = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
             Leaf calldata l = leaves[i];
             if (i != 0 && l.chainKey <= leaves[i - 1].chainKey) revert LeavesNotSorted(i);
-            if (l.chainKey == localChainKey || l.eid == 0 || l.oft == address(0)) revert BadLeaf(i);
+            if (l.chainKey == localChainKey || l.eid == 0 || l.eid == homeEid || l.oft == address(0)) {
+                revert BadLeaf(i);
+            }
             LzOftMessage.requirePeer(homeOft, l.eid, l.oft);
             hashes[i] = LzOftMessage.leaf(l.chainKey, l.eid, l.oft);
         }

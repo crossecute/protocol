@@ -26,12 +26,15 @@ library LzOftMessage {
 
     /// @notice The bootstrap's compose message: what the destination factory derives the
     ///         account from and checks the sending OFT against.
-    /// @dev No eid and no destination OFT: the factory proves its own chain key, its endpoint's
-    ///      eid and the delivering OFT into `destRoot`, so nothing here names them.
+    /// @dev No destination eid or OFT: the factory proves its own chain key, its endpoint's eid
+    ///      and the delivering OFT into `destRoot`, so nothing here names them. `homeEid` is
+    ///      bound into the address with `homeChainKey`, since nothing on a destination maps one
+    ///      to the other.
     struct Bootstrap {
         address owner;
         bytes32 salt;
         bytes32 homeChainKey;
+        uint32 homeEid;
         address homeOft;
         bytes32 destRoot;
         bytes32[] proof;

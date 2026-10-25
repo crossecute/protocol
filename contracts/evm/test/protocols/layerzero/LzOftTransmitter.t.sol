@@ -22,6 +22,7 @@ contract MockOftFactory is ILzOftFactory {
     }
 
     bytes32 public destRoot = keccak256("root");
+    uint32 public constant HOME_EID = 30255;
     mapping(bytes32 => Route) internal _routes;
 
     error NotInRoot(bytes32 chainKey);
@@ -33,11 +34,11 @@ contract MockOftFactory is ILzOftFactory {
     function bootstrapRoute(address, bytes32 chainKey)
         external
         view
-        returns (uint32, address, bytes32, bytes32[] memory)
+        returns (uint32, address, uint32, bytes32, bytes32[] memory)
     {
         Route memory r = _routes[chainKey];
         if (r.eid == 0) revert NotInRoot(chainKey);
-        return (r.eid, r.dstOft, destRoot, r.proof);
+        return (r.eid, r.dstOft, HOME_EID, destRoot, r.proof);
     }
 
     function reportsReceiver(bytes32) external pure returns (bool) {
@@ -111,7 +112,9 @@ contract LzOftTransmitterTest is Test {
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
         bytes memory expected = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(owner, SALT, ChainKey.local(), address(oft), factory.destRoot(), proof, _calls())
+            LzOftMessage.Bootstrap(
+                owner, SALT, ChainKey.local(), factory.HOME_EID(), address(oft), factory.destRoot(), proof, _calls()
+            )
         );
         assertEq(s.param.composeMsg, expected, "the fields the destination derives the account from");
 

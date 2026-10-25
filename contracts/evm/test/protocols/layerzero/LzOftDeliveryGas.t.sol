@@ -50,10 +50,12 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         }
         bytes32 destRoot = LzOftMessage.root(leaves);
         bytes32[] memory proof = LzOftMessage.proof(leaves, 0);
-        account = factory.predictAccount(OWNER, SALT, homeKey, HOME_OFT, destRoot);
+        account = factory.predictAccount(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot);
         return (
             account,
-            LzOftMessage.encodeBootstrap(LzOftMessage.Bootstrap(OWNER, SALT, homeKey, HOME_OFT, destRoot, proof, calls))
+            LzOftMessage.encodeBootstrap(
+                LzOftMessage.Bootstrap(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot, proof, calls)
+            )
         );
     }
 

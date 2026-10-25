@@ -143,7 +143,14 @@ contract LzOftMessageTest is Test {
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(0xCA11), 7, hex"abcd");
         LzOftMessage.Bootstrap memory b = LzOftMessage.Bootstrap(
-            address(0xA11CE), keccak256("salt"), keccak256("home"), address(0x0F7), keccak256("root"), proof, calls
+            address(0xA11CE),
+            keccak256("salt"),
+            keccak256("home"),
+            30255,
+            address(0x0F7),
+            keccak256("root"),
+            proof,
+            calls
         );
 
         LzOftMessage.Bootstrap memory out = h.roundTrip(b);
