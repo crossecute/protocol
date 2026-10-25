@@ -16,6 +16,11 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 library CrossProxyInitCode {
     error StoreFailed();
 
+    /// @notice What every CREATE2 prediction of an account hashes.
+    function hash() internal pure returns (bytes32) {
+        return keccak256(type(CrossProxy).creationCode);
+    }
+
     /// @notice Deploy the code-only contract. `CrossProxy`'s initcode appears only in the caller's
     ///         initcode when this runs from a constructor.
     function store() internal returns (address at) {

@@ -311,8 +311,8 @@ salt zero (§1), so the address follows from their bytecode alone. A dry run pri
 must be empty until the deploy:
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x80C905D57d4645e3695E50749cc63ce50DE25af8
-cast code 0x80C905D57d4645e3695E50749cc63ce50DE25af8 --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32
+cast code 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32 --rpc-url $RPC   # 0x until deployed
 ```
 
 Any change to the three contracts moves the address, so it is rerun after one. The script

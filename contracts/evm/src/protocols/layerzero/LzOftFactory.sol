@@ -7,7 +7,6 @@ import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
 import {CrossAccounts} from "src/account/CrossAccounts.sol";
 import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -54,7 +53,7 @@ contract LzOftFactory is ILzOftFactory, ILayerZeroComposer {
     address public immutable receiverImplementation;
     /// @notice This chain's key, read at deployment, so each chain's copy knows its own chain.
     bytes32 public immutable localChainKey;
-    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
+    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = CrossProxyInitCode.hash();
     address internal immutable _crossProxyInitCode;
 
     mapping(address account => Account) internal _accounts;
