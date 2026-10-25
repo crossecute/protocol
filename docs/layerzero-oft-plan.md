@@ -45,14 +45,18 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
    message the destination will refuse.
 7. **The reverse-peer check runs at the destination on every receive and bootstrap**:
    `dstOft.peers(homeEid) == homeOft`.
-8. **`amountLD` may be non-zero.** The amount is an ERC-7786 attribute, 0 when absent.
-9. **New parameters ride ERC-7786 attributes.** `sendMessage`, `bootstrap` and their quotes
-   keep their signatures. The binding answers `supportsAttribute` for two new attributes: the
-   amount, and on a bootstrap the destination's leaf and proof.
-10. **The provider is named `layerzero-oft`, and the existing one stays `layerzero`.** It is
+8. **`amountLD` may be non-zero.** It rides an ERC-7786 attribute, 0 when absent.
+9. **No interface changes.** `sendMessage`, `bootstrap` and their quotes keep their
+   signatures, and `supportsAttribute` answers for the amount attribute only.
+10. **The home factory stores each account's destinations.** At creation it takes the
+    leaves, checks each against `homeOft.peers(eid)`, computes the root itself and stores
+    `(eid, dstOft)` per destination. At bootstrap the account reads its destination and proof
+    from the factory, so the owner passes nothing beyond `bootstrap`'s usual arguments, and no
+    root can be bound into an address without leaves that produce it.
+11. **The provider is named `layerzero-oft`, and the existing one stays `layerzero`.** It is
     not registered as a message provider: no registry route, provenance bar, bootstrap fee or
     receiver report applies to it.
-11. **EVM chains with Ethereum's CREATE2 only.** zkSync and Tron derive addresses with other
+12. **EVM chains with Ethereum's CREATE2 only.** zkSync and Tron derive addresses with other
     formulas, so a factory there cannot create the receiver at the account's address.
 
 ## Account address and the destination root
@@ -67,9 +71,9 @@ account  = CREATE2(factory, salt', CROSS_PROXY_INIT_CODE_HASH);
 64-byte inner node from being read as a leaf. `chainKey` is the destination's crossecute
 chain key and `eid` its LayerZero endpoint id.
 
-The root and its leaves are built off-chain by whoever creates the account, from
-`deploy/providers/layerzero.toml`'s eids and the OFT's peers. The transmitter stores only
-the root. One account has one address on every chain in its root. The same owner and salt
+The factory computes the root from the leaves the creator passes, in sorted order with no
+duplicate `chainKey`, and stores the leaves under the account. The creator builds the leaf
+list from `deploy/providers/layerzero.toml`'s eids. One account has one address on every chain in its root. The same owner and salt
 with a different root, or a different `homeOft`, are a different account. A forged root
 therefore creates some other account and never the victim's.
 
@@ -79,17 +83,18 @@ with another binding's.
 
 ## Flows
 
-**Creation, at home.** The operator calls `factory.createTransmitter(salt, homeOft, destRoot)`,
+**Creation, at home.** The operator calls `factory.createTransmitter(salt, homeOft, leaves)`,
 with `msg.sender` as the owner, as `TransceiverBase.createTransmitter` does. The factory
-checks that `homeOft` reports an endpoint with code, then deploys, arms and locks the account
-with `(owner, factory, salt, homeOft, destRoot)`.
+checks that `homeOft` reports an endpoint with code and that `homeOft.peers(eid) == dstOft`
+for every leaf, computes `destRoot`, stores the leaves under the account, then deploys, arms
+and locks the account with `(owner, factory, salt, homeOft)`.
 
 **Bootstrap, at home.** The owner calls the account's existing `bootstrap(destinationChainId,
-calls, attributes)`, with the leaf attribute `(eid, dstOft, proof)` and optionally the amount.
-The account:
+calls, attributes)`, optionally with the amount attribute. The account:
 
-1. verifies the proof against its stored root for `(chainKey, eid, dstOft)`;
-2. checks `homeOft.peers(eid) == dstOft`;
+1. reads `(eid, dstOft, destRoot, proof)` for the chain from the factory, which refuses a
+   chain not in the account's leaves and builds the proof from the stored leaves;
+2. checks `homeOft.peers(eid) == dstOft`, since the peer may have changed since creation;
 3. records `chainKey → (eid, dstOft)` and the route and counterpart, as `_markBootstrapped`
    does today;
 4. calls `homeOft.send` with `to = factory`, `amountLD` from the attribute,
@@ -140,9 +145,9 @@ Path A payload and a receiver never sees a bootstrap. No envelope tag is needed 
   so an OFT that takes a fee reverts rather than delivering less.
 - **Failed composes.** Tokens are credited to `to` before the compose runs and stay there
   until it is retried, which anyone can do. A real bootstrap fails the factory's checks only
-  if the root itself is wrong, for example a leaf whose `eid` is another chain's. The home
-  cannot detect that, so the root-building script checks each leaf's `eid` against
-  `layerzero.toml` and `homeOft.peers(eid)`.
+  if a leaf pairs a `chainKey` with another chain's `eid`. The home factory checks the peer
+  but cannot map an eid to a chain, so `LzOftLeaves.s.sol` checks each leaf's `eid` against
+  `layerzero.toml`.
 - **Assumption.** Fee-on-transfer and rebasing tokens break the exact forward and are not
   supported.
 
@@ -231,7 +236,7 @@ apply. Step 12 writes the short spec this binding meets instead.
 | `src/protocols/layerzero/` | `LzTransceiver`, `LzTransmitter`, `LzReceiver`, `LzDivergentTransceiver` | `LzOftFactory`, `LzOftTransmitter`, `LzOftReceiver`, `LzOftMessage` |
 | shared there | `LzMessage` (options encoding) | the same file |
 | `test/protocols/layerzero/` | `LzFixture`, `LzBinding.t.sol`, `LzTransceiver.t.sol`, `MockLzEndpoint` | `LzOftFixture`, `LzOftBinding.t.sol`, `LzOftFactory.t.sol`, `MockOft` |
-| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol` (Nick's proxy, no arguments that vary by chain), `LzOftRoot.s.sol` |
+| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol` (Nick's proxy, no arguments that vary by chain), `LzOftLeaves.s.sol` |
 
 - **Options encoding is shared.** The lzCompose option goes in `LzMessage` next to the
   lzReceive one. `LzOftMessage` holds what targets an OFT: the compose messages, `send` and
@@ -261,20 +266,22 @@ Each item is one commit. Steps 1 and 2 are done.
    No behavior change.
 6. `refactor(transmitter)`: `_sendBootstrap` and `_quoteBootstrap`. No behavior change.
 7. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`.
-8. `feat(lz-oft)`: `LzOftTransmitter`: the stored root, the leaf and amount attributes, the
-   bootstrap and Path A sends and quotes with the peer check, and the dust check.
+8. `feat(lz-oft)`: `LzOftTransmitter`: the amount attribute, the bootstrap read from the
+   factory, the bootstrap and Path A sends and quotes with the peer check, and the dust check.
 9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, the token move, then
    `_onMessageFrom`.
-10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter`, the transceiver views, and the
-    bootstrap `lzCompose` with the four checks and the token forward.
+10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter` with the leaf checks and on-chain root,
+    the stored leaves and the proof view, the transceiver views, and the bootstrap `lzCompose`
+    with the four checks and the token forward.
 11. `test(lz-oft)`: the fixture on `ProviderBindingSpec` where its specs apply, a mock OFT that
     follows `OFTCore`'s encoding, and binding tests: a fake OFT and a fake endpoint calling the
-    factory, a valid proof for another chain, a forged root, a router as the `send` caller,
+    factory, a valid proof for another chain, a forged root, unsorted or duplicate leaves, a
+    leaf the home OFT does not peer, a bootstrap to a chain not in the leaves, a router as the `send` caller,
     re-peered home and destination, a non-dust-free amount, a reported amount larger than the
     credit, quote and send agreeing for a bootstrap and a message, replay (C29), and 0 and
     non-zero amount round trips.
 12. `test(fork)` and `feat(deploy)`: a compose through a live OFT on two chains, decoding
-    `[44:76]` to the account; `DeployLzOft.s.sol` and `LzOftRoot.s.sol`.
+    `[44:76]` to the account; `DeployLzOft.s.sol` and `LzOftLeaves.s.sol`.
 13. `docs`: the binding's short spec, the trust section in the user-facing docs, the
     findings folded into `provider-research.md`, and `todo.md`.
 
@@ -284,7 +291,9 @@ LayerZero prices per byte. Against the plain binding, each Path A message carrie
 bytes (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step, the
 lzCompose. A bootstrap carries those 72 bytes plus the account fields `(owner, salt,
 homeChainKey, homeOft, destRoot, eid)`, 192 bytes, and a proof of `ceil(log2 n)` words for
-`n` destinations plus its offset and length words: 160 bytes for 8. No bootstrap fee is charged. Both are measured in step 11.
+`n` destinations plus its offset and length words: 160 bytes for 8. No bootstrap fee is charged. Creation stores one slot per destination
+(`dstOft` and `eid` packed) and reads one peer each, on top of today's account creation;
+building a proof reads the account's `n` leaves. All are measured in step 11.
 
 ## Checks before merge
 
