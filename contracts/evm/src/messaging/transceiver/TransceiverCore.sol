@@ -148,10 +148,6 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error ZeroOwner();
     /// @dev The caller is not the account `(owner, salt)` resolves to.
     error NotTheAccount(address owner, bytes32 salt, address caller);
-    error CrossAccountExists(address owner, bytes32 salt, address account);
-    /// @dev `_predictCrossAccount` and `_deployAccount` disagree: a variant on a diverging chain
-    ///      overrode one and not the other.
-    error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
     error NoTreasury();
     /// @dev The counterpart on that chain is not a 20-byte EVM address, so no EVM CREATE2

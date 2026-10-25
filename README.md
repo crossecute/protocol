@@ -269,7 +269,7 @@ summary: the file is always the newer statement.
 | Question                                                                 | Answered in                           |
 | ------------------------------------------------------------------------ | ------------------------------------- |
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
-| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
+| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount`, with the shared steps in `CrossAccounts` |
 | Why one transceiver makes both transmitters and receivers               | `TransceiverBase`                     |
 | Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |

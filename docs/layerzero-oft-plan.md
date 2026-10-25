@@ -222,8 +222,9 @@ apply. Step 12 writes the short spec this binding meets instead.
    One implementer, which the repo's rules normally count against a hook; the bootstrap path
    is private today and there is no other way in.
 2. **The deploy, arm, lock and address check in `TransceiverBase._createCrossAccount`** move
-   into a shared internal library that both it and the factory call. A library, not a base,
-   so neither contract's storage layout changes (R8.2).
+   into `src/account/CrossAccounts.sol`, which both it and the factory call. A library, not a
+   base, so neither contract's storage layout changes (R8.2). The address check is its own
+   function, run before the initializer is built, as `_createCrossAccount` did before.
 3. **Commits `0046342` and `f2c418e` are undone.** The `BOOTSTRAP_OFT` kind has no sender or
    receiver in this design, and `bindingData` and the virtual `_bootstrapEnvelope` have no
    implementer. `TransceiverBase`'s single encoder for `bootstrap` and `quoteBootstrap` is

@@ -19,7 +19,7 @@ import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {home, transceiverConfig, AnyGatewayTransceiver, ext} from "test/Harness.sol";
 import {transceiverExtension, zkSyncTransceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
-import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {CrossAccounts} from "src/account/CrossAccounts.sol";
 
 /// @dev Something with code, to clone.
 contract Impl {
@@ -193,9 +193,7 @@ contract DivergingFormulaTest is Test {
         );
         assertTrue(predicted != wouldDeployTo, "the two formulas disagree, by construction");
 
-        vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.AccountAddressMismatch.selector, predicted, wouldDeployTo)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CrossAccounts.AccountAddressMismatch.selector, predicted, wouldDeployTo));
         t.create(owner, bytes32(0));
     }
 
@@ -302,7 +300,7 @@ contract DivergentTransceiverTest is Test {
         ZkHarness z = _zk();
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverCore.AccountAddressMismatch.selector,
+                CrossAccounts.AccountAddressMismatch.selector,
                 ext(address(z)).predictCrossAccount(owner, SALT, home()),
                 Create2.computeAddress(
                     ext(address(z)).accountSalt(owner, SALT, home()), z.CROSS_PROXY_INIT_CODE_HASH(), address(z)

@@ -12,7 +12,7 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossAccounts} from "src/account/CrossAccounts.sol";
 import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -150,19 +150,16 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      and deployment through a system contract against a pre-published bytecode hash, so
     ///      a variant there emits `new CrossProxy{salt: s}()`. Tron diverges only in the formula.
     function _deployAccount(bytes32 salt) internal virtual returns (address deployed) {
-        return Create2.deploy(0, salt, CrossProxyInitCode.load(_crossProxyInitCode));
+        return CrossAccounts.deploy(salt, _crossProxyInitCode);
     }
 
     /// @notice Deploy an owner's account and arm it: a transmitter if it is homed here, a
     ///         receiver otherwise, through the same argument-free proxy.
     ///
-    /// @dev Deploy, arm, and lock happen in one call, so no account ever has logic and a live
-    ///      upgrade key at once.
-    ///
-    /// @dev Asserts the deployment landed where `_predictCrossAccount` said. Every address the
-    ///      protocol publishes comes from that prediction: a transmitter's recorded
-    ///      counterpart, a receiver's `sourceTransmitter`, the account a report is forwarded
-    ///      to. Without the check a mismatch still fails, but with no revert reason.
+    /// @dev The checks around the deployment are `CrossAccounts`', shared with every other
+    ///      account creator. The prediction it holds the deployment to is the one every published
+    ///      address comes from: a transmitter's recorded counterpart, a receiver's
+    ///      `sourceTransmitter`, the account a report is forwarded to.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
     function _createCrossAccount(
@@ -178,15 +175,14 @@ abstract contract TransceiverBase is TransceiverCore {
         if (implementation == address(0)) revert NoAccountImplementation();
 
         account = _predictCrossAccount(owner, salt, homeChainKey);
-        if (account.code.length != 0) revert CrossAccountExists(owner, salt, account);
+        CrossAccounts.requireVacant(account, owner, salt);
 
         address deployed = _deployAccount(_accountSalt(owner, salt, homeChainKey));
-        if (deployed != account) revert AccountAddressMismatch(account, deployed);
+        CrossAccounts.requireLanded(account, deployed);
 
-        ICrossProxy(account)
-            .upgradeInitializeAndLock(
-                implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
-            );
+        CrossAccounts.arm(
+            account, implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
+        );
 
         emit CrossAccountCreated(owner, account, salt, homeChainKey);
     }

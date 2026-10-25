@@ -29,6 +29,7 @@ import {
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {CrossAccounts} from "src/account/CrossAccounts.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is AnyGatewayReceiver {
@@ -371,7 +372,7 @@ contract CommitFinalizeTest is Test {
         assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")), "the bootstrap payload landed");
 
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
+            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
         );
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
     }
@@ -404,7 +405,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.CrossAccountExists.selector, transmitter, bytes32(0), address(r))
+            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), address(r))
         );
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
     }
@@ -588,7 +589,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver(payable(predicted)).finalize(first);
 
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
+            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
         );
         t.inbound(transmitter, _deferred(predicted, hashOf(_otherCalls())));
     }
