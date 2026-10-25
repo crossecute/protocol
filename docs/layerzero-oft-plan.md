@@ -1,13 +1,14 @@
 # Plan: the `layerzero-oft` binding
 
-A LayerZero binding whose Path A rides an OFT the account's operator already runs. The
-transmitter sends each payload as a 0-amount `oft.send` with the payload as `composeMsg`,
-and the receiver takes it in `lzCompose`. The OFT's DVNs, executor, enforced options and
-peers are already configured by its operator, so the binding sets none of them.
+A LayerZero binding with no crossecute messaging of its own. Every message, the bootstrap
+included, is an `oft.send` that the account itself makes through an OFT its own team
+operates, with the message as `composeMsg`. A factory with no owner, deployed at the same
+address on every chain, creates the account on its home and its receivers elsewhere.
 
-Path B is unchanged in shape: a bootstrap goes transceiver to transceiver over a LayerZero
-OApp, as `LzTransceiver` does today. Receivers are therefore created at the same CREATE2
-address on every parity chain.
+The point is the trust set. The OFT's operator trusts their own OFT and its DVNs,
+LayerZero's endpoint, and immutable code at fixed addresses whose source they can audit. No
+governor, transceiver peering or crossecute DVN configuration is in the path, on Path A or
+Path B.
 
 This file is the plan for the tracking PR. Once the binding lands, the findings move into
 [`provider-research.md`](provider-research.md) as a section next to
@@ -15,36 +16,135 @@ This file is the plan for the tracking PR. Once the binding lands, the findings 
 
 ## Decisions taken
 
-1. **The transmitter calls `oft.send` itself.** `composeFrom` is `msg.sender` of `send`, so a
-   router or multicall in between would make every message unauthenticable.
-2. **The receiver authenticates with `composeFrom`.** No proof field is added to the payload.
-   A payload is public once sent, so anything inside it can be copied. A signature would make
-   receivers learn the signer set.
-3. **One fixed OFT per transmitter and per receiver.** No rotation. An operator who replaces
-   the OFT either upgrades it in place (same address) or migrates to a new OFT and a new
-   crossecute account.
-4. **Bootstrap carries the OFT pair.** At bootstrap the transmitter reads
-   `homeOft.peers(dstEid)`, and `(homeOft, dstOft)` travels in the bootstrap. The destination
-   checks `dstOft.peers(homeEid) == homeOft` before it creates the receiver.
-5. **The reverse-peer check also runs on every receive**, in one internal function shared
-   with the bootstrap check.
-6. **The transmitter checks the home peer on every send.** `homeOft.peers(dstEid)` must
-   still equal the `dstOft` the bootstrap sent. A mismatch reverts at home, rather than
-   paying for a message the receiver will refuse.
-7. **The pair travels in a new envelope kind, `BOOTSTRAP_OFT`.** It is `BOOTSTRAP` with
-   two fixed words, `homeOft` and `destinationOft`, after `transmitter`. Existing kinds keep
-   their bytes. Prepending a self-call to `calls` was rejected: signers approve `calls`, and
-   the receiver would run a call no signer approved.
-8. **The transmitter holds all OFT state; the transceiver holds none.** The transmitter
-   stores `homeOft` and, per destination, the `dstOft` it read at bootstrap. The transceiver
-   reads the pair from the bootstrapping account when it builds the envelope and stores
-   nothing.
-9. **`homeOft` is set by a write-once, owner-only `setOft`**, matching `LzTransmitter.setPeer`.
-   It refuses an address whose `IOAppCore(oft).endpoint()` is not this chain's endpoint, which
-   catches an address from the wrong chain or one that is not an OApp. Bootstrap refuses an
-   account that has not set it.
-10. **The provider is named `layerzero-oft`, and the existing one stays `layerzero`.**
-    Renaming the existing provider to `layerzero-oapp` was considered and not taken.
+1. **The account calls `oft.send` itself, for Path A and for the bootstrap.** `composeFrom`
+   is `msg.sender` of `send`, so a router, multicall or transceiver in between would put its
+   own address there and the destination could no longer tell which account sent it.
+2. **No destination transceivers.** A factory is the `lzCompose` target for bootstraps and the
+   CREATE2 deployer of every account of this binding. It has no owner, no configuration and
+   no upgrade path. It is deployed through Nick's deterministic deployment proxy
+   (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so its address and code are the same on
+   every chain. Nick's proxy cannot be the compose target itself: its fallback reads calldata
+   as salt and initcode.
+3. **The factory is also the home side.** The account's address is CREATE2 over the factory,
+   so the factory that creates the receiver on a destination must be the one that created the
+   transmitter at home. The OFT's operator calls it once at home to create the account. It
+   implements the views `TransmitterBase` reads from its transceiver (`predictReceiver`,
+   `reportsReceiver`, `routeTo`) and refuses the bootstrap and quote functions, since the
+   account sends its own.
+4. **The destination set is fixed at creation and bound into the address.** The OFT's
+   address differs per chain, and a factory on a destination cannot read `homeOft.peers(eid)`
+   on the home chain, so something fixed in advance must say which `_from` is the real OFT
+   there. That is a Merkle root of the destinations, part of the account's CREATE2 salt. A
+   chain not in the root needs a new account, the same as a migration to a new OFT.
+5. **One fixed OFT per account**, `homeOft`, also bound into the salt. No rotation. An
+   operator who replaces the OFT either upgrades it in place (same address) or migrates to a
+   new OFT and a new account. Re-peering a destination to a new OFT address cuts that
+   destination off from every existing account.
+6. **The peer check runs at home on every send and bootstrap.** `homeOft.peers(eid)` must
+   equal the destination's `dstOft`. A mismatch reverts at home rather than paying for a
+   message the destination will refuse.
+7. **The reverse-peer check runs at the destination on every receive and bootstrap**:
+   `dstOft.peers(homeEid) == homeOft`.
+8. **`amountLD` may be non-zero.** The amount is an ERC-7786 attribute, 0 when absent.
+9. **New parameters ride ERC-7786 attributes.** `sendMessage`, `bootstrap` and their quotes
+   keep their signatures. The binding answers `supportsAttribute` for two new attributes: the
+   amount, and on a bootstrap the destination's leaf and proof.
+10. **The provider is named `layerzero-oft`, and the existing one stays `layerzero`.** It is
+    not registered as a message provider: no registry route, provenance bar, bootstrap fee or
+    receiver report applies to it.
+11. **EVM chains with Ethereum's CREATE2 only.** zkSync and Tron derive addresses with other
+    formulas, so a factory there cannot create the receiver at the account's address.
+
+## Account address and the destination root
+
+```solidity
+leaf     = keccak256(bytes.concat(keccak256(abi.encode(chainKey, eid, dstOft))));
+salt'    = keccak256(abi.encode(owner, salt, homeChainKey, homeOft, destRoot));
+account  = CREATE2(factory, salt', CROSS_PROXY_INIT_CODE_HASH);
+```
+
+`destRoot` is an OpenZeppelin `MerkleProof` root over sorted pairs. The double hash keeps a
+64-byte inner node from being read as a leaf. `chainKey` is the destination's crossecute
+chain key and `eid` its LayerZero endpoint id.
+
+The root and its leaves are built off-chain by whoever creates the account, from
+`deploy/providers/layerzero.toml`'s eids and the OFT's peers. The transmitter stores only
+the root. One account has one address on every chain in its root. The same owner and salt
+with a different root, or a different `homeOft`, are a different account. A forged root
+therefore creates some other account and never the victim's.
+
+`salt'` differs from `TransceiverCore._accountSalt`'s `(owner, salt, homeChainKey)`, and the
+deployer is the factory rather than a transceiver, so this binding's accounts never collide
+with another binding's.
+
+## Flows
+
+**Creation, at home.** The operator calls `factory.createTransmitter(salt, homeOft, destRoot)`,
+with `msg.sender` as the owner, as `TransceiverBase.createTransmitter` does. The factory
+checks that `homeOft` reports an endpoint with code, then deploys, arms and locks the account
+with `(owner, factory, salt, homeOft, destRoot)`.
+
+**Bootstrap, at home.** The owner calls the account's existing `bootstrap(destinationChainId,
+calls, attributes)`, with the leaf attribute `(eid, dstOft, proof)` and optionally the amount.
+The account:
+
+1. verifies the proof against its stored root for `(chainKey, eid, dstOft)`;
+2. checks `homeOft.peers(eid) == dstOft`;
+3. records `chainKey → (eid, dstOft)` and the route and counterpart, as `_markBootstrapped`
+   does today;
+4. calls `homeOft.send` with `to = factory`, `amountLD` from the attribute,
+   `minAmountLD = amountLD`, and `composeMsg = (owner, salt, homeChainKey, homeOft,
+   destRoot, eid, proof, calls)`.
+
+**Bootstrap, at the destination.** The real `dstOft` credits `amountLD` to the factory and
+queues the compose. In `lzCompose(_from, guid, message, ...)` the factory checks, in order:
+
+| Check | Proves |
+| --- | --- |
+| `msg.sender == IOAppCore(_from).endpoint()` | the endpoint `_from` uses delivered it; the factory has no endpoint of its own, so a fake endpoint fails here |
+| proof places `(localChainKey, endpoint.eid(), _from)` in `destRoot` | `_from` is this account's OFT on this chain; `localChainKey` comes from `block.chainid` |
+| `srcEid == homeEid` and `IOAppCore(_from).peers(homeEid) == homeOft` | the packet came from `homeOft`, verified by `_from`'s own DVNs |
+| `composeFrom == account` | the account called `send`; the account address is derived from the message's own fields |
+
+It then creates the receiver at `account`, armed with `(account, homeChainKey, homeEid,
+homeOft, _from, calls)`, and forwards `amountLD` of `IOFT(_from).token()` to it. The amount
+is trusted only after the first three checks, since a fake OFT can report any amount. Once
+`_from` is proven, the endpoint runs each guid once, so the forward cannot spend tokens
+another bootstrap brought.
+
+**Path A.** The owner calls `sendMessage(recipient, payload, attributes)`. The account reads
+the stored `(eid, dstOft)`, rechecks `homeOft.peers(eid) == dstOft`, and calls
+`homeOft.send` with `to = receiver`. No proof. The receiver's `lzCompose` checks:
+
+| Check | Proves |
+| --- | --- |
+| `msg.sender == endpoint` (`GATEWAY_ROLE`) | it came through the endpoint |
+| `_from == dstOft` | the fixed local OFT queued it |
+| `srcEid == homeEid` | it came in on the home pathway |
+| `dstOft.peers(homeEid) == homeOft` | the pathway still trusts the home OFT |
+| `composeFrom == sourceTransmitter` | the account called `send` |
+
+It moves any `amountLD` to the account before running the payload. `executor` and
+`_extraData` are not authenticated and are not read.
+
+Bootstraps and Path A messages go to different compose targets, so the factory never sees a
+Path A payload and a receiver never sees a bootstrap. No envelope tag is needed between them.
+
+## Tokens
+
+- **Funding.** `send` debits `msg.sender`, which is the account. A mint/burn OFT burns from
+  it. An adapter pulls through `transferFrom`, so the owner approves the adapter in a prior
+  `execute`.
+- **Dust and slippage.** The OFT debits only `removeDust(amountLD)`. The account refuses an
+  amount that is not dust-free, so no remainder is stranded, and sets `minAmountLD = amountLD`,
+  so an OFT that takes a fee reverts rather than delivering less.
+- **Failed composes.** Tokens are credited to `to` before the compose runs and stay there
+  until it is retried, which anyone can do. A real bootstrap fails the factory's checks only
+  if the root itself is wrong, for example a leaf whose `eid` is another chain's. The home
+  cannot detect that, so the root-building script checks each leaf's `eid` against
+  `layerzero.toml` and `homeOft.peers(eid)`.
+- **Assumption.** Fee-on-transfer and rebasing tokens break the exact forward and are not
+  supported.
 
 ## What LayerZero guarantees
 
@@ -55,47 +155,35 @@ vendored, since nothing here compiles against them.
 
 - `OFTMsgCodec.encode` writes `sendTo | amountSD | addressToBytes32(msg.sender) | composeMsg`
   when `composeMsg` is non-empty. The caller cannot set the third field.
-- `OFTCore._lzReceive` calls `endpoint.sendCompose(to, guid, 0, m)` with
+- `OFTCore._lzReceive` credits `to`, then calls `endpoint.sendCompose(to, guid, 0, m)` with
   `m = nonce(8) | srcEid(4) | amountLD(32) | composeFrom(32) | composeMsg`, so `composeFrom`
   sits at bytes `[44:76]` and the payload at `[76:]`.
 - `sendCompose` stores the hash under `composeQueue[msg.sender][to]`, so the `_from` that
-  `lzCompose` reports is whoever queued it.
+  `lzCompose` reports is whoever queued it. Any contract can queue a compose for any `to`,
+  which is why the factory needs the root.
 - `lzCompose` writes `RECEIVED_MESSAGE_HASH` before it calls the composer, so a success is
   final and a revert rolls the mark back (P7, R3.5).
 - `msgInspector` runs only on the send side, in `_buildMsgAndOptions`.
 
-## Receiver checks
+## Trust
 
-| Check | Proves |
-| --- | --- |
-| `msg.sender == endpoint` (`GATEWAY_ROLE`) | it came through the endpoint, and `revokeGateway` can disconnect it |
-| `_from == dstOft` | the fixed local OFT queued it |
-| `srcEid == homeEid` | it came in on the home pathway |
-| `dstOft.peers(homeEid) == homeOft` | the pathway still trusts the home OFT |
-| `composeFrom == transmitter` | the transmitter called `send` |
+The account trusts, on every chain in its root:
 
-`executor` and `_extraData` are not authenticated and are not read.
-
-## Trust this binding adds
-
-The account inherits the OFT operator's security on every chain the OFT reaches:
-
-- **Owner.** Re-peering is caught by the per-receive check. Everything else the owner
-  controls, such as pausing, `msgInspector` and fee or minimum-amount rules, can stop the
-  admin channel but not forge it.
-- **Delegate.** It can weaken the DVN set or the libraries. Nothing in this binding detects
+- **The OFT's owner.** Re-peering is caught by the peer checks, and cuts the destination off.
+  Pausing, `msgInspector` and fee or minimum-amount rules can stop the channel but not forge
+  it.
+- **The OFT's delegate.** It can weaken the DVN set or the libraries. Nothing here detects
   that.
-- **Upgrade admin**, for a proxied OFT. An upgrade can change `composeFrom` encoding or
-  remove compose support.
+- **The OFT's upgrade admin**, for a proxied OFT. An upgrade can change the `composeFrom`
+  encoding or remove compose support.
+- **The factory, the transmitter and receiver logic, and `CrossProxy`**, all immutable and at
+  fixed addresses.
 
-The binding is meant for an OFT the account's own team operates, not a third party's. A
-paused or broken OFT blocks the payload that would fix it, and with a fixed OFT the only way
-out is migrating the account, which needs a working channel to hand roles off. Both belong
-in the user-facing docs, not only here.
+It does not trust the crossecute governor, any transceiver, or crossecute's DVN pins.
 
-The reverse-peer check at bootstrap catches one-way peering, which would otherwise create a
-receiver that every later message fails to reach. It does not protect against an operator
-who controls both ends, since a fake `dstOft` can return any peer.
+The binding is meant for an OFT the account's own team operates. A paused or broken OFT
+blocks the payload that would fix it, and with a fixed OFT the only way out is migrating the
+account, which needs a working channel to hand roles off. Both belong in the user-facing docs.
 
 ## Provider prerequisites (P1 to P15)
 
@@ -103,126 +191,100 @@ who controls both ends, since a fake `dstOft` can return any peer.
 | --- | --- |
 | P1 | `composeMsg` is arbitrary `bytes` |
 | P2 | Any contract can call `send`, and any address can be a compose target |
-| P3 | `SendParam.to` is the receiver |
+| P3 | `SendParam.to` is the factory or the receiver |
 | P4 | `srcEid` and `composeFrom` are in the compose message |
 | P5 | Compose is unordered. The OFT's own `lzReceive` is unordered unless the operator opted in, which onboarding checks |
 | P6 | Anyone can call `endpoint.lzCompose` again for a failed compose |
 | P7 | Mark before call, as above |
 | P8, P9 | `oft.quoteSend` is a view, and `send` is paid in native currency |
-| P10 | The OFT address goes in the init call, not the initcode |
-| P11 | Path B is unchanged, so the receiver report is unchanged |
+| P10 | The OFT address and root go in the init call and the salt, not the initcode |
+| P11 | No receiver report: every chain in scope uses Ethereum's CREATE2 |
 | P12 | `extraOptions` carries the lzCompose gas, merged with the OFT's enforced options |
-| P13 | Limited to the chains where the OFT is deployed and peered |
-| P14 | The account no longer inherits the OApp SDK, which removes its storage from the account |
-| P15 | Unchanged, since Path B is unchanged |
+| P13 | Limited to the chains in the account's root |
+| P14 | The account does not inherit the OApp SDK, so carries no OApp storage |
+| P15 | Not applicable: no transceiver-to-transceiver bootstrap |
 
-## Changes to the shared bases
+The parts of `provider-spec.md` that assume a registered provider with transceivers (the
+registry route, provenance, bootstrap fees, receiver reports, governor configuration) do not
+apply. Step 12 writes the short spec this binding meets instead.
 
-Decisions 7 and 8 need three hooks that do not exist today. Each has one implementer, which
-the repo's rules normally count against a hook. Here there is no other way in: the bootstrap
-path is private in `TransmitterBase` and non-virtual in `TransceiverBase`.
+## Changes to the shared code
 
-1. **`TransmitterBase`: a virtual `_beforeBootstrap(bytes32 chainKey)`**, empty by default,
-   called from `_bootstrapCalls` after `_markBootstrapped` and before the transceiver is
-   called. `LzOftTransmitter` reads `homeOft.peers(dstEid)`, refuses zero, and stores it
-   as that destination's `dstOft`.
-2. **`TransceiverBase`: a virtual `_bootstrapEnvelope(owner, salt, transmitter, calls)`**,
-   returning `Envelope.encodeBootstrap(...)` by default. `bootstrap` and `quoteBootstrap` both
-   call it, so the send and its quote encode in one place. `LzOftTransceiver` reads the
-   pair from the account through a view and encodes `BOOTSTRAP_OFT`. A quote taken
-   before the account exists, or before `_beforeBootstrap` has run, encodes zero words. The
-   fee is the same, since the words are fixed width.
-3. **`TransceiverBase`: a `bytes bindingData` parameter on `_bootstrapInbound`,
-   `_createCrossAccount` and `_accountInitializer`**, empty for every existing binding.
-   `LzOftTransceiver` overrides `_handleInbound` to decode `BOOTSTRAP_OFT` and passes the
-   pair through. Existing overrides of `_accountInitializer` change only their signature.
+1. **`TransmitterBase`: two virtual hooks for the bootstrap's transport**, `_sendBootstrap`
+   and `_quoteBootstrap`, defaulting to today's transceiver calls in `_bootstrapCalls` and
+   `_quoteBootstrapCalls`. `LzOftTransmitter` overrides both to build one compose message
+   and send or quote it through `homeOft`, so the send and its quote encode in one place.
+   One implementer, which the repo's rules normally count against a hook; the bootstrap path
+   is private today and there is no other way in.
+2. **The deploy, arm, lock and address check in `TransceiverBase._createCrossAccount`** move
+   into a shared internal library that both it and the factory call. A library, not a base,
+   so neither contract's storage layout changes (R8.2).
+3. **Commits `0046342` and `f2c418e` are undone.** The `BOOTSTRAP_OFT` kind has no sender or
+   receiver in this design, and `bindingData` and the virtual `_bootstrapEnvelope` have no
+   implementer. `TransceiverBase`'s single encoder for `bootstrap` and `quoteBootstrap` is
+   kept as a private function, with its test, since it still keeps the two from drifting.
 
 ## Repository layout
 
-The OFT binding is a second message provider, `layerzero-oft`, next to `layerzero`, the way
-`op-stack-l2-l2` sits next to `op-stack-l1-l2`. The name is hashed into the registry's
-`messageProvider`, which fixes the transceiver's address and so every account's, so it
-cannot change after the first deployment. Its accounts have different addresses from a
-`layerzero` account with the same owner and salt.
-
-Both builds share one directory per area, told apart by a prefix, as OP Stack's are:
-
 | Area | `layerzero` (unchanged) | `layerzero-oft` (new) |
 | --- | --- | --- |
-| `src/protocols/layerzero/` | `LzTransceiver`, `LzTransmitter`, `LzReceiver`, `LzDivergentTransceiver` | `LzOftTransceiver`, `LzOftTransmitter`, `LzOftReceiver`, `LzOftMessage` |
-| shared there | `LzMessage` (send, quote, DVN pins, options), `LzTransceiverBase`, `LzHomePeer`, `LzWriteOncePeer` | the same files |
-| `test/protocols/layerzero/` | `LzFixture`, `LzBinding.t.sol`, `LzTransceiver.t.sol`, `MockLzEndpoint` | `LzOftFixture`, `LzOftBinding.t.sol`, `LzOftTransceiver.t.sol`, `MockOft` |
-| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol`, `deploy/LzOftDeploy.sol` |
-| `deploy/providers/` | `layerzero.toml` (eids) | `layerzero-oft.toml` (chains only) |
+| `src/protocols/layerzero/` | `LzTransceiver`, `LzTransmitter`, `LzReceiver`, `LzDivergentTransceiver` | `LzOftFactory`, `LzOftTransmitter`, `LzOftReceiver`, `LzOftMessage` |
+| shared there | `LzMessage` (options encoding) | the same file |
+| `test/protocols/layerzero/` | `LzFixture`, `LzBinding.t.sol`, `LzTransceiver.t.sol`, `MockLzEndpoint` | `LzOftFixture`, `LzOftBinding.t.sol`, `LzOftFactory.t.sol`, `MockOft` |
+| `script/` | `DeployLz.s.sol`, `deploy/LzDeploy.sol` | `DeployLzOft.s.sol` (Nick's proxy, no arguments that vary by chain), `LzOftRoot.s.sol` |
 
-What is shared and what is not:
-
-- **Path B is shared.** `LzOftTransceiver` extends `LzTransceiverBase`, so eids, write-once
-  peers, DVN pins and the bootstrap's `lzReceive` are the same code. It overrides only
-  `_bootstrapEnvelope`, `_handleInbound` and `_accountInitializer`.
 - **Options encoding is shared.** The lzCompose option goes in `LzMessage` next to the
-  lzReceive one, rather than in a second encoder. `LzOftMessage` holds only what targets an
-  OFT: `send` and `quote` through `oft.send` and `oft.quoteSend`, and the peer check.
+  lzReceive one. `LzOftMessage` holds what targets an OFT: the compose messages, `send` and
+  `quote` through `oft.send` and `oft.quoteSend`, the peer checks and the leaf hash.
 - **The accounts share nothing with the plain build's accounts.** `LzOftTransmitter` is an
   `OwnableTransmitter` that calls an OFT, and `LzOftReceiver` is a `ReceiverBase` and an
-  `ILayerZeroComposer`. Neither is an OApp, so neither carries OApp storage.
-- **Eids have one source.** `layerzero-oft.toml` lists which chains the provider is deployed
-  on, and `ChainConfig` reads their eids from `layerzero.toml`, so the two cannot disagree.
-  This needs a small change to `ChainConfig.providerId`, so a provider can name another
-  provider's id table.
-- **`MockLzEndpoint` gains `sendCompose` and `lzCompose`** for the `layerzero-oft` tests, rather than
-  a second endpoint mock. The plain build's tests never call them.
-- **Deploy-side lists** name the new provider: `GasAttribute` (compose gas instead of
-  lzReceive gas), `governance.toml`'s `[providers]`, and `ChainConfig.t.sol`'s provider list.
-
-Moving `LzTransceiverBase` out of `LzTransceiver.sol` into its own file would make the
-sharing easier to see, but it is not needed and is left out of this PR.
+  `ILayerZeroComposer`. Neither is an OApp.
+- **No constructor argument varies by chain.** The logic contracts read the endpoint from the
+  OFT, and the factory takes only the logic addresses, which are themselves the same on every
+  chain. `localChainKey` is computed from `block.chainid`.
+- **`MockLzEndpoint` gains `sendCompose` and `lzCompose`**, rather than a second endpoint mock.
+- **No registry or provider-table entries.** `deploy/providers/layerzero-oft.toml`, the
+  `ChainConfig` change and `governance.toml` entry from the earlier plan are dropped. Eids for
+  root-building come from `layerzero.toml`.
 
 ## Work, in commit order
 
-Each item is one commit.
+Each item is one commit. Steps 1 and 2 are done.
 
 1. `docs`: this plan.
-2. `chore(lib)`: vendor `IOFT` (`SendParam`, `MessagingFee`, `OFTReceipt`),
-   `ILayerZeroComposer` and `OFTComposeMsgCodec` from `devtools`, with provenance headers.
-3. `feat(envelope)`: `BOOTSTRAP_OFT`, its encoder and decoder, and `kindOf`'s bound.
-   Tests for the tag checks and the round trip.
-4. `refactor(transceiver)`: `_bootstrapEnvelope`, used by `bootstrap` and `quoteBootstrap`,
-   and `bindingData` threaded to `_accountInitializer`. No behavior change: existing
-   envelopes and every existing binding's tests are unchanged.
-5. `refactor(transmitter)`: the empty `_beforeBootstrap` hook. No behavior change.
-6. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`: `send` and
-   `quote` through `oft.send` and `oft.quoteSend`, and the peer check used by every caller.
-7. `feat(lz-oft)`: `LzOftTransmitter`: `setOft` with the endpoint check, `_beforeBootstrap`
-   storing `dstOft`, the pair view the transceiver reads, and send and quote with the home
-   peer check (decision 6).
-8. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks above, then
+2. `chore(lib)`: vendor `IOFT`, `ILayerZeroComposer` and `OFTComposeMsgCodec`, with provenance
+   headers.
+3. `revert`: `0046342` (`BOOTSTRAP_OFT`).
+4. `refactor(transceiver)`: undo `f2c418e`'s `bindingData` and make `_bootstrapEnvelope`
+   private, keeping its test.
+5. `refactor(transceiver)`: the shared deploy-and-arm library, used by `_createCrossAccount`.
+   No behavior change.
+6. `refactor(transmitter)`: `_sendBootstrap` and `_quoteBootstrap`. No behavior change.
+7. `feat(lz-oft)`: the lzCompose option in `LzMessage`, and `LzOftMessage`.
+8. `feat(lz-oft)`: `LzOftTransmitter`: the stored root, the leaf and amount attributes, the
+   bootstrap and Path A sends and quotes with the peer check, and the dust check.
+9. `feat(lz-oft)`: `LzOftReceiver`: `lzCompose` with the five checks, the token move, then
    `_onMessageFrom`.
-9. `feat(lz-oft)`: `LzOftTransceiver` on `LzTransceiverBase` for Path B. At home it encodes
-   `BOOTSTRAP_OFT` from the account's pair. At the destination it runs the reverse-peer
-   check and arms the receiver with `(homeEid, homeOft, dstOft)`.
-10. `test(lz-oft)`: the fixture on `ProviderBindingSpec`, a mock OFT that follows `OFTCore`'s
-    encoding, and binding tests: a fake OFT calling `sendCompose`, a router as the `send`
-    caller, a re-peered home and destination, one-way peering at bootstrap, `setOft` with a
-    wrong endpoint, a bootstrap before `setOft`, quote and send agreeing before and after
-    the account exists, replay (C29) and a 0-amount compose round trip.
-11. `test(fork)`: a 0-amount compose through a live OFT on two chains, decoding `[44:76]` to
-    the transmitter. Doubles as the onboarding check for a candidate OFT.
-12. `feat(deploy)`: `providers/layerzero-oft.toml`, `ChainConfig` reading its eids from
-    `layerzero.toml`, `script/deploy/LzOftDeploy.sol`, `script/DeployLzOft.s.sol`, the
-    deploy-side provider lists, and the `CHECKS.md` sections.
-13. `docs`: fold this plan into `provider-research.md` and `provider-spec.md`, add the
-    trust section to the user-facing docs, and update `todo.md`.
-
-Out of scope for this PR: the zkSync and Tron variants (`LzDivergentTransceiver`), which
-follow once the plain binding is settled.
+10. `feat(lz-oft)`: `LzOftFactory`: `createTransmitter`, the transceiver views, and the
+    bootstrap `lzCompose` with the four checks and the token forward.
+11. `test(lz-oft)`: the fixture on `ProviderBindingSpec` where its specs apply, a mock OFT that
+    follows `OFTCore`'s encoding, and binding tests: a fake OFT and a fake endpoint calling the
+    factory, a valid proof for another chain, a forged root, a router as the `send` caller,
+    re-peered home and destination, a non-dust-free amount, a reported amount larger than the
+    credit, quote and send agreeing for a bootstrap and a message, replay (C29), and 0 and
+    non-zero amount round trips.
+12. `test(fork)` and `feat(deploy)`: a compose through a live OFT on two chains, decoding
+    `[44:76]` to the account; `DeployLzOft.s.sol` and `LzOftRoot.s.sol`.
+13. `docs`: the binding's short spec, the trust section in the user-facing docs, the
+    findings folded into `provider-research.md`, and `todo.md`.
 
 ## Cost
 
 LayerZero prices per byte. Against the plain binding, each Path A message carries 72 more
 bytes (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step, the
-lzCompose. Bootstraps on this binding carry 64 more bytes for the OFT pair. Both are
-measured in step 10 and recorded in `CHECKS.md`.
+lzCompose. A bootstrap carries those 72 bytes plus the account fields `(owner, salt,
+homeChainKey, homeOft, destRoot, eid)`, 192 bytes, and a proof of `ceil(log2 n)` words for
+`n` destinations plus its offset and length words: 160 bytes for 8. No bootstrap fee is charged. Both are measured in step 11.
 
 ## Checks before merge
 
