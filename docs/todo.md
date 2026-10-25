@@ -6,7 +6,8 @@ what rather than by size.
 [`message-flow.md`](message-flow.md) and [`encoding.md`](encoding.md) describe the design;
 this file is the gap between that design and the tree.
 [`provider-spec.md`](provider-spec.md) is what the six bindings under
-`contracts/evm/src/protocols/` are held to; what they mean for an operator is in the README.
+`contracts/evm/src/protocols/` are held to, and [`layerzero-oft-spec.md`](layerzero-oft-spec.md)
+the seventh; what they mean for an operator is in the README.
 
 ---
 
@@ -41,8 +42,22 @@ this file is the gap between that design and the tree.
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
   there to zero, and the owner can limit which accounts bootstrap with an allowlist.
+- **`layerzero-oft`'s delivery gas is not measured.** Its bootstrap carries
+  `DeliveryGas.BOOTSTRAP`, 1,000,000, as lzCompose gas, and its messages `DeliveryGas.PAYLOAD`,
+  but `ProviderDeliveryGasSpec` needs a transceiver and does not run against it. The factory's
+  compose (proof check, account creation, the bootstrap calls) and a receiver's need their
+  own measurement, as do the byte and storage costs
+  [`provider-research.md` §9](provider-research.md#9-layerzero-oft-as-a-carrier) computes.
 
 ## 2. Chain checks before mainnet
+
+- **`layerzero-oft` has no deploy checks, and Fraxtal is not configured.** `DeployLzOft.s.sol`
+  and `LzOftLeaves.s.sol` read `deploy/chains.toml` and `providers/layerzero.toml`, which do not
+  list Fraxtal, the home `test/fork/LzOftFork.t.sol` uses for frxUSD. Adding it follows
+  [`deploy/README.md`](../contracts/evm/deploy/README.md), and
+  [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) needs a section for the binding: that
+  Arachnid's factory places the factory at its one address, and, per candidate OFT, the
+  prerequisites O1 to O7 of [`layerzero-oft-spec.md`](layerzero-oft-spec.md#2-oft-prerequisites).
 
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
