@@ -595,7 +595,7 @@ contract TransportTest is Test {
     /// @dev The quote reduces a conduit envelope to its chain, so the send must too: an
     ///      input the quote prices is one the send accepts, and the route stored is the bare
     ///      identifier inbound lookups match.
-    function test_bootstrapToAcceptsAnConduitEnvelopeLikeItsQuote() public {
+    function test_bootstrapToAcceptsAConduitEnvelopeLikeItsQuote() public {
         (MockTransceiver t, MockTransmitter acct) = _conduit();
         bytes memory envelope = Erc7930.encodeEvm(DEST, address(0xBEEF));
 

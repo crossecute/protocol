@@ -78,7 +78,7 @@ lands on the transmitter, the receiver, and the transceiver independently.
 Before any code is written, the provider must be able to do all fifteen of these. A "no" on
 any of P1 through P10 disqualifies the provider outright; P11 through P14 are costs rather
 than blockers, and each has a stated fallback. P15 is not about the provider at all: it is a
-per-destination check, and a chain that fails it is one this protocol cannot stand an
+per-destination check, and a chain that fails it is one this protocol cannot stand a
 conduit up on however good the transport is.
 
 | # | Requirement | Why the protocol needs it |

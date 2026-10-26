@@ -46,7 +46,7 @@ struct RegistrySeed {
 /// @dev It holds a directory of chainKeys and message providers, and the per-chain policy a
 ///      transceiver consults before recording anything: `provenanceFor`, `isSuspended`,
 ///      `validateLocation`, `expectedTransceiver`, and `commitmentFor`. It holds no routes and
-///      no counterparts, and no conduit reads it, so a compromised registry cannot misroute an
+///      no counterparts, and no conduit reads it, so a compromised registry cannot misroute a
 ///      conduit's payload.
 ///
 /// @dev Fixed: no proxy and no upgrade path, and a transceiver's pointer to it is write-once.

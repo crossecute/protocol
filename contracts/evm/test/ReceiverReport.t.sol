@@ -253,7 +253,7 @@ contract ReceiverReportTest is WiresHome {
 
     /// @dev A dry float takes the whole bootstrap down, and that is the correct shape.
     ///      The send is nested inside a delivery callback where `msg.value` is zero, so it
-    ///      is paid from this contract's balance. Swallowing the failure would create an
+    ///      is paid from this contract's balance. Swallowing the failure would create a
     ///      conduit here that the home chain could never address: `CrossProxy` arms
     ///      exactly once and `initialize` is single-shot, so there is no second bootstrap
     ///      to carry a second report. All or nothing is the only recoverable outcome.

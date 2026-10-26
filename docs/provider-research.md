@@ -402,7 +402,7 @@ route table existed to hold.
 | `_onInbound(route, sender, message)` | called from `receiveMessage(receiveId, sender, payload)`, splitting the sender envelope with `Erc7930.toChainIdentifier` for the route and `parseStrict(...).addr` for the sender |
 | `attributes` | passed straight through |
 
-The inbound split is the useful part: `Erc7930.toChainIdentifier` already reduces an
+The inbound split is the useful part: `Erc7930.toChainIdentifier` already reduces a
 conduit envelope to a bare chain identifier, which is exactly the `route` the transceiver's
 `chainKeyOfRoute` expects. `_authenticateOrigin` needs no override.
 
@@ -924,7 +924,7 @@ vendored: nothing here compiles against them.
   `[44:76]`, the payload at `[76:]`.
 - `sendCompose` keys the queue by `msg.sender`, so the `_from` `lzCompose` reports is whoever
   queued it, and any contract can queue a compose for any target. A destination therefore has
-  to know which `_from` is the real OFT before it trusts a first compose, which is why an
+  to know which `_from` is the real OFT before it trusts a first compose, which is why a
   conduit's destinations are bound into its address.
 - `lzCompose` writes `RECEIVED_MESSAGE_HASH` before it calls the composer, so a success is
   final and a revert rolls the mark back (P7, R3.5).

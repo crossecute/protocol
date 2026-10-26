@@ -157,7 +157,7 @@ contract RolesTest is Test {
     ///      `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. There is no
     ///      caller a grant could come from. Not the transceiver that created it, not the msig,
     ///      not the conduit's own owner.
-    function test_nothingCanAddAGatewayToAnConduit() public {
+    function test_nothingCanAddAGatewayToAConduit() public {
         assertEq(receiver.getRoleMemberCount(receiver.DEFAULT_ADMIN_ROLE()), 0, "and nothing holds what administers it");
 
         address[3] memory tryers = [receiver.parentTransceiver(), msig, address(0xB0B)];

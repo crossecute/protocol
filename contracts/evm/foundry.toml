@@ -21,7 +21,7 @@ optimizer = true
 optimizer_runs = 200
 # The default embeds an IPFS hash of the source, comments included, in the trailing
 # metadata. That put every derived address one comment edit away from moving, which is
-# not a property this protocol can have: CrossProxy's initcode hash is what fixes an
+# not a property this protocol can have: CrossProxy's initcode hash is what fixes a
 # conduit's address on every chain, and the registry stores initcode hashes to derive
 # transceiver locations. "none" drops the source hash; cbor_metadata = false drops the
 # rest of the trailer, leaving initcode that depends on the code and nothing else.

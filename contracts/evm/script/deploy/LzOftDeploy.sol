@@ -15,7 +15,7 @@ struct LzOftDestination {
 }
 
 /// @title LzOftDeploy
-/// @notice The `layerzero-oft` contracts, deployed where production puts them, and the checks an
+/// @notice The `layerzero-oft` contracts, deployed where production puts them, and the checks a
 ///         conduit's destination list must pass, shared by the scripts and the fork test.
 library LzOftDeploy {
     /// @notice The factory, deployed with its logic through Arachnid's factory at salt zero on

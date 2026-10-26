@@ -25,7 +25,7 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 ///
 /// @dev A conduit's CREATE2 salt is `(owner, salt, homeChainKey)` and nothing else, so one
 ///      transmitter has one receiver per destination, at an address fixed before the first
-///      message, and the transmitter a conduit has here never collides with the receiver an
+///      message, and the transmitter a conduit has here never collides with the receiver a
 ///      conduit homed elsewhere has here. A receiver is made only by an authenticated bootstrap.
 ///
 /// @dev Runs no payload of its own: an inbound message is an `Envelope`, acted on in
