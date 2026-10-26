@@ -124,6 +124,28 @@ contract LzOftTransmitterTest is Test {
         assertTrue(conduit.isBootstrapped(destKey));
     }
 
+    /// @dev The destination derives the conduit from the compose message, so it must name the
+    ///      owner the conduit was created with, not the current one.
+    function test_theBootstrapNamesTheDeployerAfterAnOwnershipTransfer() public {
+        address newOwner = address(0xB0B);
+        vm.prank(owner);
+        conduit.transferOwnership(newOwner);
+
+        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        vm.prank(newOwner);
+        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = keccak256("sibling");
+        bytes memory expected = LzOftMessage.encodeBootstrap(
+            LzOftMessage.Bootstrap(
+                owner, SALT, ChainKey.local(), factory.HOME_EID(), address(oft), factory.destRoot(), proof, _calls()
+            )
+        );
+        assertEq(oft.sent(0).param.composeMsg, expected);
+        assertEq(oft.sent(0).value, quote);
+    }
+
     function test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote() public {
         oft.setPeer(DEST_EID, address(0xBAD));
         bytes memory err = abi.encodeWithSelector(

@@ -336,6 +336,25 @@ contract TransportTest is Test {
         acct.bootstrap(DEST, _calls(), new bytes[](0));
     }
 
+    /// @dev The deployer, not the current owner, feeds the conduit's address derivation, so
+    ///      transferring ownership leaves every receiver address where it was.
+    function test_bootstrapKeepsTheDeployerAfterAnOwnershipTransfer() public {
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
+        address newOwner = address(0xB0B);
+        assertEq(acct.deployer(), owner);
+
+        vm.prank(owner);
+        acct.transferOwnership(newOwner);
+        assertEq(acct.deployer(), owner, "ownership moved, the deployer must not");
+
+        vm.expectEmit(true, true, false, true, address(t));
+        emit TransceiverCore.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
+        vm.prank(newOwner);
+        acct.bootstrap(DEST, _calls(), new bytes[](0));
+        address expected = address(bytes20(t.predictReceiver(ChainKey.forEvm(DEST), owner, SALT)));
+        assertEq(acct.recipientOn(DEST), Erc7930.encodeEvm(DEST, expected));
+    }
+
     function test_providerDataTravelsPerSend() public {
         vm.prank(owner);
         transmitter.sendMessage(_recip(DEST), Payload.encodeCalls(_calls()), _attrs());
@@ -678,9 +697,8 @@ contract TransportTest is Test {
 
     /* =============================== the authority ============================= */
 
-    /// @dev The base has no ownership of its own. It states the requirement (`_owner` and
-    ///      `_checkOwner`), and the concrete contract answers from whatever authority it
-    ///      already has. That is what lets a conduit inherit a provider SDK that brings
+    /// @dev The base has no ownership of its own. It states the requirement (`_checkOwner`), and the
+    ///      concrete contract answers from whatever authority it already has. That is what lets a conduit inherit a provider SDK that brings
     ///      its own `Ownable` without two ownership systems living in one contract.
     function test_theBaseContributesNoOwnershipSurface() public view {
         // `TransmitterBase` declares no owner storage and no `owner()`. The one reachable

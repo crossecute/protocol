@@ -182,8 +182,7 @@ the transmitter and the transceiver.
 
 | Seam | Declared in | Obligation |
 | --- | --- | --- |
-| `_owner()` | `TransmitterBase._owner` | Answer from the SDK's own ownership if it brings one, otherwise from `OwnableUpgradeable`. |
-| `_checkOwner()` | `TransmitterBase._checkOwner` | Same. Note `TransmitterBase` uses `onlyConduitOwner`, not `onlyOwner`, precisely so an SDK's `onlyOwner` does not collide. |
+| `_checkOwner()` | `TransmitterBase._checkOwner` | Answer from the SDK's own ownership if it brings one, otherwise from `OwnableUpgradeable`. Note `TransmitterBase` uses `onlyConduitOwner`, not `onlyOwner`, precisely so an SDK's `onlyOwner` does not collide. |
 | `initialize(address owner, address transceiver, bytes32 salt)` | `ITransmitterInit`, in `TransceiverCore.sol` | MUST exist with that exact signature, or the transceiver's `_conduitInitializer` MUST be overridden to encode a different one. |
 
 ### 4.3 Required on the receiver
