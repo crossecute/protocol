@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Re-vendors the 12 files behind the LayerZero binding: OApp's upgradeable core/sender/
-# receiver + their interface closure, hand-copied because neither package has a
+# Re-vendors the 17 files behind the LayerZero bindings: OApp's upgradeable core/sender/
+# receiver + their interface closure, and for the `layerzero-oft` binding `IOFT`,
+# `OFTComposeMsgCodec` and `ILayerZeroComposer`, hand-copied because no package has a
 # dedicated repo of its own that isolates just these files (see docs/provider-research.md §8).
 #
 # Usage: contracts/evm/script/vendor/layerzero.sh
@@ -32,6 +33,24 @@ for f in IOAppCore IOAppReceiver; do
     "$INTERFACES_SRC/$f.sol" "$INTERFACES_DEST/$f.sol" "$DEVTOOLS_NOTE"
 done
 
+# The non-upgradeable OAppSender and OAppCore are only `IOFT`'s import closure: it takes
+# `MessagingFee` and `MessagingReceipt` through OAppSender. Nothing here inherits them.
+OAPP_SRC="packages/oapp-evm/contracts/oapp"
+OAPP_DEST="contracts/evm/lib/layerzero-oapp-evm/contracts/oapp"
+for f in OAppSender OAppCore; do
+  vendor_file "$DEVTOOLS_REPO" "$DEVTOOLS_COMMIT" "$OAPP_SRC/$f.sol" "$OAPP_DEST/$f.sol" "$DEVTOOLS_NOTE"
+done
+
+# --- @layerzerolabs/oft-evm ---
+# Same monorepo and pin. That binding calls an operator's OFT and decodes its compose
+# message, and never inherits OFTCore.
+OFT_NOTE=$'@layerzerolabs/oft-evm has no dedicated repo of its own; this is its\n// actual home. See docs/provider-research.md §8.'
+OFT_SRC="packages/oft-evm/contracts"
+OFT_DEST="contracts/evm/lib/layerzero-oft-evm/contracts"
+for f in interfaces/IOFT libs/OFTComposeMsgCodec; do
+  vendor_file "$DEVTOOLS_REPO" "$DEVTOOLS_COMMIT" "$OFT_SRC/$f.sol" "$OFT_DEST/$f.sol" "$OFT_NOTE"
+done
+
 # --- @layerzerolabs/lz-evm-protocol-v2 ---
 # LayerZero-Labs/LayerZero-v2 carries the whole V2 stack, on-chain and off; same
 # reasoning, different repo.
@@ -42,6 +61,6 @@ V2_NOTE=$'@layerzerolabs/lz-evm-protocol-v2 has no standalone package repo of it
 V2_SRC="packages/layerzero-v2/evm/protocol/contracts/interfaces"
 V2_DEST="contracts/evm/lib/layerzero-protocol-v2/contracts/interfaces"
 for f in ILayerZeroEndpointV2 ILayerZeroReceiver IMessageLibManager IMessagingComposer \
-  IMessagingChannel IMessagingContext; do
+  IMessagingChannel IMessagingContext ILayerZeroComposer; do
   vendor_file "$V2_REPO" "$V2_COMMIT" "$V2_SRC/$f.sol" "$V2_DEST/$f.sol" "$V2_NOTE"
 done

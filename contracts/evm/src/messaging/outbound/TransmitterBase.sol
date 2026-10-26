@@ -315,9 +315,10 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      envelope: `_evmIdentifier` is `eip155` by construction, `_typedIdentifier` refuses
     ///      a non-EVM destination, and `_opaqueIdentifier` refuses an EVM one.
     ///
-    /// @dev Pays the transceiver's `quoteBootstrap` from this account's balance, as
-    ///      `sendMessage` does. Each bootstrap has a public quote with the same arguments, for
-    ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
+    /// @dev Pays `_quoteBootstrap`, the transceiver's quote by default, from this account's
+    ///      balance, as `sendMessage` does. Each bootstrap has a public quote with the same
+    ///      arguments, for funding the balance ahead of time. Pass empty `attributes` for the
+    ///      gateway's default.
     function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
         external
         payable
@@ -363,7 +364,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     }
 
     /// @notice What standing this account up on a chain that has none would cost.
-    /// @dev Priced by the transceiver, which sends path B. The `(owner, salt)` check is not
+    /// @dev Priced by `_quoteBootstrap`, as `bootstrap` pays. The `(owner, salt)` check is not
     ///      applied: a quote spends nothing and may be taken before the account exists.
     function quoteBootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
         external
@@ -406,7 +407,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         bytes32 chainKey = ChainKey.fromIdentifier(identifier);
         _requireNotBootstrapped(chainKey);
 
-        return IAccountTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
+        return _quoteBootstrap(chainKey, calls, attributes);
     }
 
     /* =========================== destination identifiers ======================= */
@@ -442,12 +443,36 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
     function _bootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes) private {
         bytes32 chainKey = _markBootstrapped(identifier);
-        IAccountTransceiver t = IAccountTransceiver(transceiver);
 
-        uint256 fee = t.quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
+        uint256 fee = _quoteBootstrap(chainKey, calls, attributes);
         _requireFunded(fee);
+        _sendBootstrap(chainKey, calls, attributes, fee);
+    }
+
+    /// @notice What the typed bootstrap to `chainKey` costs, as `bootstrap` and `quoteBootstrap`
+    ///         both price it.
+    /// @dev The transceiver's price by default. A binding that sends its own bootstrap overrides
+    ///      this and `_sendBootstrap` together, so the quote prices what the send carries. Runs
+    ///      after `_markBootstrapped` on a send and without it on a quote, so an override must not
+    ///      read what that records.
+    function _quoteBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
+        return IAccountTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
+    }
+
+    /// @notice Send the typed bootstrap to `chainKey`, paying `fee` from this balance.
+    /// @dev Through the transceiver by default. Runs after `_markBootstrapped`, so a re-entrant
+    ///      second bootstrap meets the record.
+    function _sendBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes, uint256 fee)
+        internal
+        virtual
+    {
         // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
+        IAccountTransceiver(transceiver).bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
     }
 
     function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)

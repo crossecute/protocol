@@ -106,10 +106,31 @@ library LzMessage {
     /// @dev Without the attribute: type-3 options with one executor `lzReceive` option carrying
     ///      `defaultGas` and no value. Empty options revert in the send library
     ///      (`LZ_ULN_InvalidWorkerOptions`), and no OApp here sets enforced options (#50).
-    function options(bytes[] memory attributes, uint256 defaultGas) internal pure returns (bytes memory out) {
+    function options(bytes[] memory attributes, uint256 defaultGas) internal pure returns (bytes memory) {
+        // forge-lint: disable-next-line(unsafe-typecast) a `DeliveryGas` constant
+        return _optionsOr(attributes, abi.encodePacked(uint16(3), uint8(1), uint16(17), uint8(1), uint128(defaultGas)));
+    }
+
+    /// @notice `options`, for a message sent through an OFT with a compose message.
+    /// @dev Without the attribute: one executor `lzCompose` option for compose index 0 carrying
+    ///      `gas` and no value (`defaultComposeOptions`).
+    function composeOptions(bytes[] memory attributes, uint256 gas) internal pure returns (bytes memory) {
+        return _optionsOr(attributes, defaultComposeOptions(gas));
+    }
+
+    /// @notice Type-3 options with one executor `lzCompose` option for compose index 0.
+    /// @dev No `lzReceive` option: the OFT's enforced options for a send with a compose message
+    ///      carry its own receive gas. An OFT without them is refused at home, where the executor
+    ///      quotes zero receive gas (`Executor_ZeroLzReceiveGasProvided`).
+    function defaultComposeOptions(uint256 gas) internal pure returns (bytes memory) {
+        // forge-lint: disable-next-line(unsafe-typecast) a `DeliveryGas` constant
+        return abi.encodePacked(uint16(3), uint8(1), uint16(19), uint8(3), uint16(0), uint128(gas));
+    }
+
+    /// @dev The options attribute's raw bytes, which replace the default whole.
+    function _optionsOr(bytes[] memory attributes, bytes memory defaults) private pure returns (bytes memory out) {
         bool present;
         (present, out) = ProviderAttribute.body(attributes, OPTIONS_ATTRIBUTE, 0);
-        // forge-lint: disable-next-line(unsafe-typecast) a `DeliveryGas` constant
-        if (!present) out = abi.encodePacked(uint16(3), uint8(1), uint16(17), uint8(1), uint128(defaultGas));
+        if (!present) out = defaults;
     }
 }

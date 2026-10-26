@@ -19,8 +19,9 @@ behind prerequisite P7, rules R3.5 through R3.7, and compliance tests C29 throug
 implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 [Hyperlane](#5-hyperlane-as-a-native-binding) sections are the reasoning behind
 `contracts/evm/src/protocols/ccip/` and `.../hyperlane/`, and [§6](#6-wormhole-core-vs-the-relayer-are-two-different-bindings),
-[§7](#7-op-stack-as-a-native-binding), and [§8](#8-layerzero-as-a-native-binding) the same for
-`.../wormhole/`, `.../op-stack/`, and `.../layerzero/`.
+[§7](#7-op-stack-as-a-native-binding), [§8](#8-layerzero-as-a-native-binding) and
+[§9](#9-layerzero-oft-as-a-carrier) the same for `.../wormhole/`, `.../op-stack/`, and
+`.../layerzero/`.
 
 | Section | Pinned to | Goes stale when |
 | --- | --- | --- |
@@ -32,6 +33,7 @@ implementing the standard directly; the [CCIP](#4-ccip-as-a-native-binding) and
 | [6. Wormhole](#6-wormhole-core-vs-the-relayer-are-two-different-bindings) | `wormhole-foundation/wormhole`, `main` branch, commit `2df4000c` (`IWormhole.sol`); `wormhole-foundation/wormhole-solidity-sdk`, `main` branch, commit `2cb855ea` (`IWormholeRelayer.sol`) | Wormhole Core adds general-message dedupe (it does not have it today), or the Relayer interface's delivery/quote shape changes |
 | [7. OP Stack](#7-op-stack-as-a-native-binding) | `ethereum-optimism/optimism`, `develop` branch, commit `0abfb166` (`ICrossDomainMessenger.sol`); commit `dfe4f947` (`IL2ToL2CrossDomainMessenger.sol`, `ICrossL2Inbox.sol`) | Optimism changes `relayMessage`'s calling convention, how `xDomainMessageSender` or `crossDomainMessageSource` is scoped, or interop's message format |
 | [8. LayerZero](#8-layerzero-as-a-native-binding) | `@layerzerolabs/oapp-evm-upgradeable@0.1.3`, `@layerzerolabs/oapp-evm@0.4.1`; per-file commits in `script/vendor/layerzero.sh` | LayerZero moves OApp's storage namespace or its peer check |
+| [9. LayerZero OFT](#9-layerzero-oft-as-a-carrier) | `devtools` and `LayerZero-v2` at `script/vendor/layerzero.sh`'s commits; frxUSD's deployment as read on 2026-10-25 | LayerZero changes how `composeFrom` is encoded or a compose is queued, or Frax re-peers or replaces frxUSD |
 
 ---
 
@@ -813,7 +815,8 @@ are in `contracts/evm/script/vendor/layerzero.sh`.
 
 Verified against `@layerzerolabs/oapp-evm-upgradeable@0.1.3` (it imports interfaces from
 `@layerzerolabs/oapp-evm`, 0.4.1 at the time of checking). Both are vendored under
-`contracts/evm/lib/`.
+`contracts/evm/lib/`. So are `IOFT` and `OFTComposeMsgCodec` from `@layerzerolabs/oft-evm`,
+and `ILayerZeroComposer`, for the `layerzero-oft` binding ([§9](#9-layerzero-oft-as-a-carrier)).
 
 ```solidity
 abstract contract OAppCoreUpgradeable is IOAppCore, OwnableUpgradeable {
@@ -867,7 +870,7 @@ back out of it, rather than out of a route lookup.
 | `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
-| `_accountInitializer(owner, salt, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
+| `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
 | the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are one owner rather than two authorities. A binding must not add a third |
 | `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 
@@ -898,6 +901,80 @@ destination, read from the table rather than computed.
   nothing extra to verify. The receiver checks `GATEWAY_ROLE` on top, so `revokeGateway` still
   disconnects LayerZero.
 
+## 9. LayerZero OFT as a carrier
+
+The `layerzero-oft` binding, held to [`layerzero-oft-spec.md`](layerzero-oft-spec.md) and
+built as `LzOftAccountFactory`, `LzOftTransmitter`, `LzOftReceiver` and `LzOftMessage` in
+`contracts/evm/src/protocols/layerzero/`. It reads, and vendors, only `IOFT`,
+`OFTComposeMsgCodec` and `ILayerZeroComposer` (§8).
+
+### What LayerZero guarantees
+
+Read on 2026-10-24 and 2026-10-25 in `LayerZero-Labs/devtools` (`packages/oft-evm`) and
+`LayerZero-Labs/LayerZero-v2` (`MessagingComposer.sol`, `PacketV1Codec.sol`,
+`ExecutorOptions.sol`, `ExecutorFeeLib.sol`), on main and at the commits
+`script/vendor/layerzero.sh` pins. `OFTCore`, `OFTMsgCodec` and `MessagingComposer` are not
+vendored: nothing here compiles against them.
+
+- `OFTMsgCodec.encode` writes `sendTo | amountSD | addressToBytes32(msg.sender) | composeMsg`
+  when `composeMsg` is non-empty. The caller of `send` cannot set the third field, which is
+  what makes `composeFrom` an authentication.
+- `OFTCore._lzReceive` credits `to`, then calls `endpoint.sendCompose(to, guid, 0, m)` with
+  `m = nonce(8) | srcEid(4) | amountLD(32) | composeFrom(32) | composeMsg`: `composeFrom` at
+  `[44:76]`, the payload at `[76:]`.
+- `sendCompose` keys the queue by `msg.sender`, so the `_from` `lzCompose` reports is whoever
+  queued it, and any contract can queue a compose for any target. A destination therefore has
+  to know which `_from` is the real OFT before it trusts a first compose, which is why an
+  account's destinations are bound into its address.
+- `lzCompose` writes `RECEIVED_MESSAGE_HASH` before it calls the composer, so a success is
+  final and a revert rolls the mark back (P7, R3.5).
+- `msgInspector` runs only on the send side, in `_buildMsgAndOptions`.
+- An `lzCompose` executor option is `index(2) | gas(16)` under option type 3. The executor
+  refuses options with no `lzReceive` gas (`Executor_ZeroLzReceiveGasProvided`), so an OFT
+  must supply that gas in its enforced options for a send with a compose message.
+- `_debitView` refuses a received amount below `minAmountLD` (`SlippageExceeded`). The binding
+  sends 0 with a minimum of 0, so it never applies.
+- `PacketV1Codec` puts the nonce at `[1:9]`, the guid at `[81:113]` and the message at
+  `[113:]`, which `test/fork/LzOftFork.t.sol` reads.
+
+### Why there is no transceiver
+
+The first design kept LayerZero's transceiver for the bootstrap. It would have put the
+governor's peering and DVN pins on the path that tells a destination which OFT to trust, so
+a weak pin there could stand up a receiver bound to the wrong OFT. Without a transceiver the
+account trusts only its own OFT's verification, the endpoint, and immutable code, at the
+cost of a destination set fixed at creation. An OFT whose address were the same on every
+chain could avoid that cost, but no assumption here relies on one.
+
+### frxUSD, as checked
+
+Read over public RPCs on 2026-10-25, from the addresses at
+https://docs.frax.com/protocol/crosschain/addresses:
+
+| Chain | Contract | Endpoint eid | Peers |
+| --- | --- | --- | --- |
+| Fraxtal (252) | lockbox `0x96A394058E2b84A89bac9667B19661Ed003cF5D4` | 30255 | Ethereum's lockbox, Arbitrum's OFT |
+| Ethereum (1) | lockbox `0x566a6442A5A6e9895B9dCA97cC7879D632c6e4B0` | 30101 | Fraxtal's lockbox |
+| Arbitrum (42161) | OFT `0x80Eede496655FB9047dd39d9f418d5483ED600df` | 30110 | Fraxtal's lockbox |
+
+All three use the endpoint at `0x1a44076050125825900e736c501f859c50fE728c`. The Fraxtal
+lockbox's enforced options give a send with a compose message 250,000 lzReceive gas toward
+both destinations, and it sets no `msgInspector`. Frax's contracts use opcodes after
+`paris`, so the fork test runs under `cancun`. Through them, a bootstrap from Fraxtal to
+Ethereum with the default 1,000,000 lzCompose gas quoted 7.08 FRAX at Fraxtal block
+43,069,455. Fraxtal is not yet in `deploy/chains.toml`.
+
+### Cost
+
+Computed, not measured. Against the plain binding a message carries 72 more bytes
+(`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step. A bootstrap adds
+192 bytes of account fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
+offset and length words, against the plain binding's envelope. Creation stores two slots per
+destination and two for the account. The destination's gas is measured: a bootstrap through
+the factory costs 651,291 to 659,121 and a payload 34,246 against mocks, and 649,133 and
+42,138 through frxUSD into Ethereum
+([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)).
+
 ---
 
 ## Parked: NEAR Intents and Chain Signatures
@@ -923,7 +1000,7 @@ Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derive
 as "the account" at all: an architecture question upstream of "add a binding," not a peer
 of the five in `provider-research.md`.
 
-**Not required by, and must not block, the six bindings that exist.** Recorded here
+**Not required by, and must not block, the seven bindings that exist.** Recorded here
 so it isn't rediscovered under time pressure. The next step, if ever pursued, is
 source-verified research in the format above, of `v1.signer`
 and NEAR's validator threshold-signing scheme itself, not of the Intents/Verifier

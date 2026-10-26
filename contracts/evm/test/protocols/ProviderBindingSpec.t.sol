@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Vm, VmSafe} from "forge-std/Vm.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
-import {ProviderFixture, ProviderIdFixture, ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
+import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
+import {
+    ProviderAccountFixture,
+    ProviderFixture,
+    ProviderIdFixture,
+    ProviderGasFixture
+} from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployAccount} from "test/DeployCrossProxy.sol";
@@ -23,7 +29,6 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Roles} from "src/messaging/Roles.sol";
@@ -372,13 +377,10 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
 /// @title ProviderTransmitterSpec
 /// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
 ///         called by the provider's own gateway, finds nothing to run.
-abstract contract ProviderTransmitterSpec is ProviderFixture {
+abstract contract ProviderTransmitterSpec is ProviderAccountFixture {
     /// @notice A transmitter behind a proxy, initialized.
     function _transmitter() internal returns (address) {
-        return deployAccount(
-            _transmitterImplementation(),
-            abi.encodeCall(OwnableTransmitter.initialize, (address(this), address(0xB0B), bytes32(0)))
-        );
+        return deployAccount(_transmitterImplementation(), _initializeTransmitter(address(this)));
     }
 
     function test_inboundToATransmitterReverts() public {
@@ -421,7 +423,7 @@ contract GatewayGrabber {
     }
 }
 
-abstract contract ProviderReceiveSpec is ProviderFixture {
+abstract contract ProviderReceiveSpec is ProviderAccountFixture {
     event Delivered(uint256 callCount);
 
     address internal constant SOURCE_TRANSMITTER = address(0xABCD);
@@ -801,30 +803,18 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
 
 /// @dev Accepts any delivery entry point and does nothing: what a delivery costs outside the
 ///      receiver.
-contract NoOpReceiver {
-    fallback() external payable {}
-}
 
 /// @title ProviderDeliveryGasSpec
 /// @notice What each delivery costs through the provider's fixture, with its `DeliveryGas`
-///         default at least 10% above it (deploy/CHECKS.md §4).
-/// @dev A measurement is the smallest gas limit on the call into the fixture's delivery under
-///      which it succeeds, every account it touches cold, less the same for the same message
-///      delivered to a contract that does nothing. What is left runs inside the receiver's
-///      frame, scaled up by 64/63 at the gateway's call, so it slightly overstates the gas
-///      limit a gateway must pass. It is measured against mock gateways, and Wormhole's mock
-///      Core verifies no guardian signatures. Coverage builds unoptimized and is exempt.
-abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture {
-    uint256 internal constant MEASURE_CEILING = 5_000_000;
-
-    address private noOp;
-
+///         default at least 10% above it (deploy/CHECKS.md §4), measured by `DeliveryGasMeter`.
+/// @dev Against mock gateways, and Wormhole's mock Core verifies no guardian signatures.
+///      Coverage builds unoptimized and is exempt.
+abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture, DeliveryGasMeter {
     function setUp() public override {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         TransceiverConfig memory c = _config();
         c.transmitterImplementation = _transmitterImplementation();
         transceiver = _deployTransceiver(c, 0);
-        noOp = address(new NoOpReceiver());
     }
 
     function test_aBootstrapWithNoCallsFitsTheDefault() public {
@@ -872,47 +862,11 @@ abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture {
         _assertFits("payload, no calls", _measure(receiver, ORIGIN_TRANSMITTER, payload), DeliveryGas.PAYLOAD);
     }
 
-    function _assertFits(string memory delivery, uint256 measured, uint256 defaultGas) internal {
-        emit log_named_uint(delivery, measured);
-        assertLe(measured * 11 / 10, defaultGas, delivery);
-    }
-
-    function _measure(address to, address sender, bytes memory message) internal returns (uint256) {
-        return _minGas(to, sender, message) - _minGas(noOp, sender, message);
-    }
-
-    /// @notice The smallest gas limit under which `message` reaches `to` from `sender`, every
-    ///         account it touches cold. State is left as it was.
-    function _minGas(address to, address sender, bytes memory message) private returns (uint256 hi) {
-        uint256 snapshot = vm.snapshotState();
-        vm.startStateDiffRecording();
-        _deliverWith(MEASURE_CEILING, to, sender, message);
-        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
-
-        uint256 lo;
-        hi = MEASURE_CEILING;
-        assertTrue(_coldDeliveryWith(hi, snapshot, accesses, to, sender, message), "it succeeds at the ceiling");
-        while (hi - lo > 1) {
-            uint256 mid = (lo + hi) / 2;
-            if (_coldDeliveryWith(mid, snapshot, accesses, to, sender, message)) hi = mid;
-            else lo = mid;
-        }
-        vm.revertToState(snapshot);
-    }
-
-    /// @dev This contract is left warm: it is the caller, and a gateway is warm the same way.
-    function _coldDeliveryWith(
-        uint256 gas,
-        uint256 snapshot,
-        Vm.AccountAccess[] memory accesses,
-        address to,
-        address sender,
-        bytes memory message
-    ) private returns (bool) {
-        vm.revertToState(snapshot);
-        for (uint256 i; i < accesses.length; ++i) {
-            if (accesses[i].account != address(this)) vm.cool(accesses[i].account);
-        }
+    function _meteredDelivery(uint256 gas, address to, address sender, bytes memory message)
+        internal
+        override
+        returns (bool)
+    {
         return _deliverWith(gas, to, sender, message);
     }
 }

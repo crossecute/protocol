@@ -121,16 +121,17 @@ transceiver is born with (`accountBytecodeHash`), which comes from zksolc and TR
 ### 2. EIP-152, if the chain may compute BLAKE2b commitments
 
 `Blake2b256` calls the F function at `0x09`. Call it for BLAKE2b-256(`"abc"`), one final
-block, and compare with any other implementation
+block of EIP-152's 213-byte input, and compare with any other implementation
 (`bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319`):
 
 ```sh
-cast call 0x0000000000000000000000000000000000000009 --rpc-url $RPC 0x0000000c28c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b6162630000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000001
+cast call 0x0000000000000000000000000000000000000009 --rpc-url $RPC 0x0000000c28c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b61626300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000001
 ```
 
 The first 32 bytes of the 64 returned must equal the digest.
 
-Results: correct on Ethereum, Base, Arbitrum, and OP Mainnet. zkSync Era reverts. On Tron,
+Results, rerun on 2026-10-25 with this 213-byte input (an earlier one was 211 bytes, #93):
+correct on Ethereum, Base, Arbitrum, and OP Mainnet. zkSync Era reverts. On Tron,
 `0x09` is `BatchValidateSign`; java-tron puts BLAKE2F at `0x020009`, behind
 `allowTvmCompatibleEvm`, which is off on mainnet. `Blake2b256` fails closed on both, because
 it requires a 64-byte return.
@@ -170,23 +171,50 @@ reverts `IGP: no gas oracle for domain` for such a domain.
 
 A bootstrap creates an account on the destination, so the gas it is sent with must cover
 that. `ProviderDeliveryGasSpec` (`test/protocols/ProviderBindingSpec.t.sol`) measures each
-delivery through every binding's fixture and fails if a `DeliveryGas` default is not at
-least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers. Each is the
-smallest gas limit under which the delivery succeeds from cold storage, less what the same
-message costs delivered to a contract that does nothing:
+delivery through every binding's fixture with `DeliveryGasMeter`, and fails if a `DeliveryGas`
+default is not at least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers.
+Each is the smallest gas limit under which the delivery succeeds from cold storage, less what
+the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 624,348 | 623,809 | 678,100 | 629,707 | 667,854 |
-| The same with one call to an address with no code | 631,005 | 630,472 | 684,754 | 636,469 | 675,625 |
-| Report arriving at the home transceiver | 127,275 | 126,742 | 127,393 | 124,497 | n/a (170,877) |
-| Payload to an existing receiver, no calls | 24,903 | 24,394 | 27,624 | 23,183 | 67,651 |
+| Bootstrap to a plain transceiver, no calls | 624,484 | 623,943 | 678,164 | 629,844 | 668,001 |
+| The same with one call to an address with no code | 631,141 | 630,606 | 684,818 | 636,605 | 675,771 |
+| Report arriving at the home transceiver | 127,263 | 126,730 | 127,381 | 124,485 | n/a (170,877) |
+| Payload to an existing receiver, no calls | 24,891 | 24,382 | 27,612 | 23,171 | 67,651 |
 
-Measured 2026-10-21 against mock gateways. Wormhole's numbers include verifying the VAA
+Measured 2026-10-25 against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
 row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
 report; the spec measures one there only because it runs every delivery on every binding.
+
+`layerzero-oft` has no transceiver, so `LzOftDeliveryGasTest` measures it with the same meter
+(`forge test --mc LzOftDeliveryGasTest -vv`). Its defaults are lzCompose gas, the factory's or
+the receiver's frame; the OFT's own lzReceive gas is the operator's enforced options:
+
+| Delivery, `layerzero-oft` | Gas |
+| --- | --- |
+| Bootstrap to the factory, 1 destination, no calls | 651,291 |
+| Bootstrap to the factory, 8 destinations, one call | 659,121 |
+| Payload to an existing receiver, no calls | 34,246 |
+
+Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+(`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
+of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
+and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
+a send with a compose message (250,000 to both):
+
+| Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
+| --- | --- | --- |
+| Bootstrap, lzCompose into the factory, 2 destinations | 649,133 | 649,218 |
+| Bootstrap, the OFT's `lzReceive` | 105,826 | 85,369 |
+| Payload, lzCompose into the receiver | 42,138 | 42,081 |
+| Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
+
+Measured 2026-10-25. A payload costs about 7,900 more than against the mocks and a bootstrap
+about 2,100 less; each stays well under its default. The `lzReceive` figure leaves out the
+endpoint's clearing of the verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
@@ -270,6 +298,68 @@ cast call <l1Messenger> "OTHER_MESSENGER()(address)" --rpc-url $L1_RPC
 
 Results: Base and OP Mainnet both pair with their listed L1 messengers. Arbitrum and zkSync
 have no code at the predeploy, as expected.
+
+### 7. `layerzero-oft`
+
+The binding has no transceiver and no provider ids, so §3's lanes and §5's verification are
+those of the OFT an account sends through. Two things are checked: that the factory lands at
+its one address, and, per candidate OFT, the prerequisites O1 to O7 of
+[`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
+
+**Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
+salt zero (§1), so the address follows from their bytecode alone. A dry run prints it, and it
+must be empty until the deploy:
+
+```sh
+forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32
+cast code 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32 --rpc-url $RPC   # 0x until deployed
+```
+
+Any change to the three contracts moves the address, so it is rerun after one. The script
+refuses a chain `chains.toml` does not list as `parity`.
+
+**Per OFT.** `<oft>` is the OFT on the chain `RPC` reaches, `<eid>` the other end's eid, and
+`<peer32>` the other end's OFT as `bytes32`:
+
+```sh
+cast call <oft> "peers(uint32)(bytes32)" <eid> --rpc-url $RPC                      # O2: the other end, both ways
+cast call <oft> "enforcedOptions(uint32,uint16)(bytes)" <eid> 2 --rpc-url $RPC     # O3: type 3 with an lzReceive option
+cast call <oft> "nextNonce(uint32,bytes32)(uint64)" <eid> <peer32> --rpc-url $RPC  # O5: 0, unordered
+cast call <oft> "owner()(address)" --rpc-url $RPC                                  # O7
+cast call $LZ_ENDPOINT "delegates(address)(address)" <oft> --rpc-url $RPC         # O7
+cast storage <oft> 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103 --rpc-url $RPC  # O7: ERC-1967 admin
+# The DVNs an account trusts: the ULN config (type 2) of the send library on the home, and of
+# the receive library on each destination for the home's eid.
+cast call $LZ_ENDPOINT "getSendLibrary(address,uint32)(address)" <oft> <eid> --rpc-url $RPC
+cast call $LZ_ENDPOINT "getReceiveLibrary(address,uint32)(address,bool)" <oft> <eid> --rpc-url $RPC
+cast call $LZ_ENDPOINT "getConfig(address,address,uint32,uint32)(bytes)" <oft> <lib> <eid> 2 --rpc-url $RPC
+```
+
+O1 (`composeFrom` is the sender) and O4 (a send of 0 tokens) are behavior, not state: a fork
+test like `LzOftForkTest` checks both from the packet the real OFT sends. `LzOftLeaves.s.sol`
+reads the peers and checks each destination's eid on its own chain. O6 is `chains.toml`, and
+O7 is the operator's judgment of who holds the roles read above.
+
+Results for frxUSD, 2026-10-25 (Fraxtal over `https://rpc.frax.com`):
+
+| | Fraxtal (home) | Ethereum | Arbitrum |
+| --- | --- | --- | --- |
+| OFT | lockbox `0x96A394058E2b84A89bac9667B19661Ed003cF5D4` | lockbox `0x566a6442A5A6e9895B9dCA97cC7879D632c6e4B0` | OFT `0x80Eede496655FB9047dd39d9f418d5483ED600df` |
+| Arachnid's factory | Ethereum's code | Ethereum's code | Ethereum's code |
+| Factory address | empty | empty | empty |
+| Peers (O2) | both destinations | the lockbox | the lockbox |
+| Enforced lzReceive gas, compose send (O3) | 250,000 to both | | |
+| `nextNonce` from Fraxtal (O5) | | 0 | 0 |
+| `owner()` | `0x5f25218ed9474b721d6a38c115107428E832fA2E` | `0xfFFffF4F3baC444b2C0ecf2A1840d018bE783937` | `0x3da490b19F300E7cb2280426C8aD536dB2df445c` |
+| Delegate | the owner | `0xB1748C79709f4Ba2Dd82834B8c82D4a505003f27` | the owner |
+| ERC-1967 admin | `0x223a681fc5c5522c85c96157c0efa18cd6c5405c` | the same | the same |
+| Its `owner()` | `0xC4EB45d80DC1F079045E75D5d55de8eD1c1090E6` | `0xb898Ad2976b4d8f2E21521C9db16b7497825E503` | the OFT's owner |
+| DVNs, each pathway | 5 of 5 required, 5 confirmations, LayerZero Labs' among them | 5 of 5, 5 confirmations, likewise | 5 of 5, 5 confirmations, likewise |
+
+`LzOftForkTest` passes O1 and O4 through all three. Fraxtal fails O6: it is not in
+`chains.toml` (#94), so `DeployLzOft.s.sol` and `LzOftLeaves.s.sol` refuse it, and only the
+fork test has deployed the factory there. Every OApp owner is a 171-byte contract; who signs
+for it was not checked.
 
 ## What these checks do not cover
 

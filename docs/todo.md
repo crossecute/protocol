@@ -6,14 +6,15 @@ what rather than by size.
 [`message-flow.md`](message-flow.md) and [`encoding.md`](encoding.md) describe the design;
 this file is the gap between that design and the tree.
 [`provider-spec.md`](provider-spec.md) is what the six bindings under
-`contracts/evm/src/protocols/` are held to; what they mean for an operator is in the README.
+`contracts/evm/src/protocols/` are held to, and [`layerzero-oft-spec.md`](layerzero-oft-spec.md)
+the seventh; what they mean for an operator is in the README.
 
 ---
 
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07; §4's destination gas, 2026-10-21).
+(2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
@@ -43,6 +44,15 @@ this file is the gap between that design and the tree.
   there to zero, and the owner can limit which accounts bootstrap with an allowlist.
 
 ## 2. Chain checks before mainnet
+
+- **Fraxtal is not configured, so `layerzero-oft` cannot deploy there.** `DeployLzOft.s.sol`
+  and `LzOftLeaves.s.sol` read `deploy/chains.toml` and `providers/layerzero.toml`, which do not
+  list Fraxtal, the home `test/fork/LzOftFork.t.sol` uses for frxUSD. frxUSD passes every other
+  check in [CHECKS §7](../contracts/evm/deploy/CHECKS.md#7-layerzero-oft). Adding Fraxtal follows
+  [`deploy/README.md`](../contracts/evm/deploy/README.md) and is blocked by #94: every
+  LayerZero pathway touching Fraxtal defaults to the dead DVN, which the plain LayerZero binding
+  would have to pin, and CCIP, the governance's second proposer, reaches Fraxtal only from
+  Ethereum and Base.
 
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
@@ -99,9 +109,10 @@ this file is the gap between that design and the tree.
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
   initializer sets together are covered only by the suites that read them back.
-- **One fork test, and CI does not run it.** Every binding is tested against a mock of its
-  provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint and
-  skips without `ETH_RPC_URL`, which CI does not set. C11, and C29 to C31 for every provider
+- **Two fork tests, and CI runs neither.** Every binding is tested against a mock of its
+  provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint, and
+  `test/fork/LzOftFork.t.sol` carries a `layerzero-oft` account and measures its delivery gas
+  through frxUSD; both skip without their RPC URLs, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
 - **`deploy/governance.toml` is unset.** The governor's owner and salt, and each provider's
@@ -115,6 +126,11 @@ this file is the gap between that design and the tree.
   which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
   Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
   5.4.0, and `src/` does not import `Bytes`.
+- **An account cannot bootstrap after `transferOwnership` (#95).** Its address derives from the
+  owner at creation, but every bootstrap sends the current `owner()`. The plain bindings refuse
+  it at home with nothing paid; `layerzero-oft` pays the fee, marks the chain, and is refused
+  at the destination for good. Undecided whether a transferred account should bootstrap at
+  all; at minimum `layerzero-oft` should refuse at home before paying.
 
 ## 4. Post-launch: non-EVM destinations
 

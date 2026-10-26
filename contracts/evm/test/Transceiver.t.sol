@@ -293,6 +293,22 @@ contract TransceiverTest is Test {
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
 
+    /// @dev `bootstrap` and `quoteBootstrap` share `_bootstrapEnvelope`, so the quote prices the
+    ///      exact bytes sent, which are `Envelope.encodeBootstrap`'s. The harness charges one wei
+    ///      per byte and this route has no bootstrap fee.
+    function test_aBootstrapAndItsQuoteEncodeTheSameEnvelope() public {
+        Sym base = _chain(BASE, false);
+        address transmitter = ext(address(base)).predictTransmitter(alice, SALT);
+        uint256 quote = base.quoteBootstrap(_key(ETH), alice, SALT, _calls(), new bytes[](0));
+        vm.deal(transmitter, quote);
+        vm.prank(transmitter);
+        base.bootstrap{value: quote}(_key(ETH), alice, SALT, _calls(), new bytes[](0));
+
+        bytes memory expected = Envelope.encodeBootstrap(alice, SALT, toBytes32(transmitter), _calls());
+        assertEq(base.sentPayload(), expected, "the plain bootstrap's bytes");
+        assertEq(quote, expected.length, "the quote prices those bytes");
+    }
+
     /// @dev This chain is never a destination: an account homed here is its transmitter.
     function test_aBootstrapToThisChainIsRefused() public {
         Sym t = _chain(BASE, false);

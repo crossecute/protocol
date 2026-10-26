@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {CrossAccounts} from "src/account/CrossAccounts.sol";
 import {
     ZkSyncTransceiver,
     TronTransceiver,
@@ -179,7 +180,7 @@ contract DivergentTransceiverTest is Test {
         address predicted = ext(address(t)).predictCrossAccount(alice, SALT, t.localChainKey());
 
         vm.prank(alice);
-        vm.expectPartialRevert(TransceiverCore.AccountAddressMismatch.selector);
+        vm.expectPartialRevert(CrossAccounts.AccountAddressMismatch.selector);
         t.createTransmitter(SALT);
         assertEq(predicted.code.length, 0);
     }

@@ -243,6 +243,7 @@ src/
 script/
   deploy/         shared deploy checks, one deploy per provider    tests deploy through these
   Deploy*.s.sol   production entry points, one per provider
+  LzOftLeaves.s.sol  a layerzero-oft account's destinations, built and checked
   vendor/         provenance drivers for hand-copied SDK files
 deploy/           chains.toml, providers/*.toml: chain facts, provider ids
 ```
@@ -269,7 +270,7 @@ summary: the file is always the newer statement.
 | Question                                                                 | Answered in                           |
 | ------------------------------------------------------------------------ | ------------------------------------- |
 | Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
-| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount` |
+| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount`, with the shared steps in `CrossAccounts` |
 | Why one transceiver makes both transmitters and receivers               | `TransceiverBase`                     |
 | Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |
@@ -325,7 +326,9 @@ Then, per destination, add what the chain needs:
 Six native bindings live under `src/protocols/`. Each is held to
 [`docs/provider-spec.md`](docs/provider-spec.md). Each is one transceiver per chain, with
 zkSync and Tron variants where the provider reaches those chains. On a transceiver, the
-delivery's origin names a chain and the sender must be that chain's counterpart. Where the
+delivery's origin names a chain and the sender must be that chain's counterpart. A seventh,
+`layerzero-oft`, has no transceiver: an account sends through an OFT its own team operates,
+and is held to [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md). Where the
 bindings differ is in who delivers a message to an account and what authenticates it:
 
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
@@ -336,6 +339,7 @@ bindings differ is in who delivers a message to an account and what authenticate
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
 | OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the account's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
 | OP Stack, L2 ↔ L2 | `receiveOpStackMessage`, from the `L2ToL2CrossDomainMessenger` | `GATEWAY_ROLE` and `crossDomainMessageSender()` read during the relay | the messenger |
+| LayerZero through an OFT | `lzCompose`, from the endpoint | `GATEWAY_ROLE`, the delivering OFT, its peer for the home, and `composeFrom` as the source transmitter | the endpoint |
 
 What an operator or integrator has to know:
 
@@ -381,6 +385,19 @@ What an operator or integrator has to know:
   `op-stack-l2-l2`'s messenger takes no value and no gas limit, so the quote is zero and any
   attribute is refused; the relay is a separate transaction whose sender picks the gas. A send
   reaches only a routed chain, which should be one in the sender's dependency set.
+- **A `layerzero-oft` account trusts its OFT, not this protocol's operators.** No governor,
+  transceiver or crossecute DVN setting is in its path. What it trusts, on every chain it
+  reaches, is the OFT's owner, whose re-peering cuts a destination off and whose pausing or
+  inspector can stop the channel but not forge it; the OFT's delegate, who can weaken its DVNs
+  or libraries, which nothing here detects; for a proxied OFT, its upgrade admin, who can
+  change how `composeFrom` is encoded; LayerZero's endpoint; and the factory, logic and
+  `CrossProxy`, all immutable at one address everywhere. It is meant for an OFT the account's
+  own team operates. A paused or broken OFT blocks the very payload that would repair it, and
+  since the OFT is fixed, the only way out is migrating the account, which needs a working
+  channel to hand its roles off.
+- **A `layerzero-oft` account reaches only the chains it was created with.** They are bound
+  into its address, so another chain means another account. It carries no tokens, and reaches
+  no zkSync or Tron chain.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
@@ -454,6 +471,8 @@ What an operator or integrator has to know:
   what changes off the EVM
 - [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
   implement to be compliant, and what the provider itself must be capable of. Normative
+- [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
+  binding is held to, and what an OFT must be before an account uses it. Normative
 - [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
   guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
   it goes stale on their schedule rather than ours
@@ -464,11 +483,11 @@ What an operator or integrator has to know:
 The EVM side is built and tested: account creation, the approval map, cancellation,
 execution, per-destination commitment schemes, both message paths end to end in-process,
 and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack (L1 ↔ L2, and L2 ↔ L2
-over interop).
+over interop), plus `layerzero-oft`, through an operator's own OFT.
 
 ```
 git submodule update --init           # forge-std, OZ, OZ-upgradeable, from the crossecute forks
-cd contracts/evm && forge test        # 829 passing, 1 skipped (the fork test)
+cd contracts/evm && forge test        # 942 passing, 3 skipped (the fork tests, without RPCs)
 ```
 
 CI runs the same build and tests, plus `forge fmt --check` and `forge lint`, on every pull

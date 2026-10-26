@@ -10,7 +10,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -77,7 +77,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      initcode in every runtime that reads this (#70); an immutable puts it in initcode only.
     ///      Computed rather than written out so a build with other compiler settings, such as
     ///      `forge coverage`'s unoptimized one, derives the accounts it deploys.
-    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = keccak256(type(CrossProxy).creationCode);
+    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = CrossProxyInitCode.hash();
 
     /// The transmitter logic every account homed here is armed with. Write-once: accounts
     /// lock when armed, so a change would split them into two logic versions by creation time.
@@ -148,10 +148,6 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error ZeroOwner();
     /// @dev The caller is not the account `(owner, salt)` resolves to.
     error NotTheAccount(address owner, bytes32 salt, address caller);
-    error CrossAccountExists(address owner, bytes32 salt, address account);
-    /// @dev `_predictCrossAccount` and `_deployAccount` disagree: a variant on a diverging chain
-    ///      overrode one and not the other.
-    error AccountAddressMismatch(address predicted, address deployed);
     error NoAccountImplementation();
     error NoTreasury();
     /// @dev The counterpart on that chain is not a 20-byte EVM address, so no EVM CREATE2

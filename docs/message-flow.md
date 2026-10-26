@@ -126,7 +126,7 @@ Hop by hop:
 - `bootstrap(chainKey, owner, salt, calls, attributes)` on the home's transceiver:
   `msg.sender` must be the account homed there, `_requireRoutable(chainKey)` applies the
   registry's grade, the suspension flag, and the provenance bar, and
-  `_sendMessage(_recipientOn(chainKey), Envelope.encodeBootstrap(...), attributes)` sends.
+  `_sendMessage(_recipientOn(chainKey), _bootstrapEnvelope(...), attributes)` sends.
 - `_onInbound(route, sender, message)` on the destination's transceiver:
   `_authenticateOrigin` runs first, mapping the route to a chain and requiring the sender to
   be that chain's counterpart; `_handleInbound` decodes and calls `_bootstrapInbound(owner,
