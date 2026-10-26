@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {CrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy} from "src/conduit/CrossProxy.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -63,7 +63,7 @@ contract DeployChecksTest is LzFixture {
     }
 
     /// @dev R8.4: a record whose initcode hash is not solc's predicts every transceiver and
-    ///      account somewhere else.
+    ///      conduit somewhere else.
     function test_aRecordedInitCodeHashThatIsNotSolcsIsRefused() public {
         ChainRegistry registry = _seeded(address(this), SALT, keccak256("zksolc"));
         TransceiverDeployment memory d = _from(registry, address(this), SALT);

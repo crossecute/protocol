@@ -17,13 +17,13 @@ function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, 
     return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, bytes32(homeProviderId), calls));
 }
 
-/// @title ProviderAccountFixture
-/// @notice What a provider's accounts need of a fixture: their logic, the provider's gateway,
+/// @title ProviderConduitFixture
+/// @notice What a provider's conduits need of a fixture: their logic, the provider's gateway,
 ///         and its delivery path. The receiver and transmitter specs inherit this alone, so a
 ///         binding with no transceiver (`layerzero-oft`) runs them too.
 /// @dev No hook here has a default body: Solidity would then require every suite combining a
 ///      spec with a fixture that overrides it to restate the override.
-abstract contract ProviderAccountFixture is Test {
+abstract contract ProviderConduitFixture is Test {
     /// @dev The chain every spec sends to and delivers from.
     uint256 internal constant REMOTE_CHAIN_ID = 8453;
 
@@ -63,7 +63,7 @@ abstract contract ProviderAccountFixture is Test {
 ///         `ProviderBindingSpec.t.sol` that needs a transceiver inherits this, and a provider's
 ///         suites inherit its one concrete fixture, so each fact about a provider is written
 ///         once.
-abstract contract ProviderFixture is ProviderAccountFixture {
+abstract contract ProviderFixture is ProviderConduitFixture {
     /// @notice A new implementation of the provider's plain transceiver, wrapped in its harness.
     function _transceiverImplementation() internal virtual returns (address);
 
@@ -84,9 +84,9 @@ abstract contract ProviderFixture is ProviderAccountFixture {
     ///         beyond what the provider requires: Wormhole's signed quote.
     function _attributes() internal view virtual returns (bytes[] memory);
 
-    /// @notice What the provider needs set on `account_` before it can send to the remote
+    /// @notice What the provider needs set on `conduit_` before it can send to the remote
     ///         chain, as its `owner`.
-    function _prepareAccount(address account_, address owner) internal virtual {}
+    function _prepareConduit(address conduit_, address owner) internal virtual {}
 
     /// @notice `OwnableTransmitter.initialize`'s shape, which `TransceiverBase` arms every
     ///         transmitter with.

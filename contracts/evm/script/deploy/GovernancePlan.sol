@@ -48,7 +48,7 @@ struct Plan {
 ///
 /// @dev Computed from `deploy/` alone, with no chain read, so the same commit always yields the
 ///      same bytes. Every address is predicted: step 1's from `governance.toml`, a provider's
-///      transceiver from its record, and the governor's account under a provider from both.
+///      transceiver from its record, and the governor's conduit under a provider from both.
 ///      These hold on parity chains, which is why zkSync and Tron are left out.
 ///
 /// @dev The order is forced. A transceiver's route and provider id need nothing, but a LayerZero
@@ -81,7 +81,7 @@ library GovernancePlan {
             // Its lanes need no id and are not built here; a listed chain must not be skipped.
             check(!OpStackInteropConfig.isMember(dir, p.all, p.all[i]), "op-stack-l2-l2 lanes are not scripted");
         }
-        // Each proposer's account exists on a chain only once it is bootstrapped there, and the
+        // Each proposer's conduit exists on a chain only once it is bootstrapped there, and the
         // first one's bootstrap is what schedules that chain's registry.
         for (uint256 i; i < p.chains.length; ++i) {
             if (p.chains[i].chainId == p.g.home.chainId) continue;
@@ -100,7 +100,7 @@ library GovernancePlan {
 
     /// @notice The governor's transmitter at home under `provider`, and its receiver elsewhere.
     function governor(Plan memory p, string memory provider) internal pure returns (address) {
-        return ChainDeploy.governorAccount(p.g, provider);
+        return ChainDeploy.governorConduit(p.g, provider);
     }
 
     /* ================================== lanes ================================= */
@@ -281,10 +281,10 @@ library GovernancePlan {
     {
         uint256 id = idFor(p, name, p.g.home, x);
         if (id == 0) return txs;
-        address account = governor(p, name);
+        address conduit = governor(p, name);
         if (_is(name, "layerzero")) {
             // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
-            txs = _push(txs, Tx(account, 0, abi.encodeCall(IOAppCore.setPeer, (uint32(id), _word(account)))));
+            txs = _push(txs, Tx(conduit, 0, abi.encodeCall(IOAppCore.setPeer, (uint32(id), _word(conduit)))));
         }
         Call[] memory calls = laneCalls(p, name, x);
         uint256 gas = DeliveryGas.BOOTSTRAP + calls.length * CALL_GAS;
@@ -294,7 +294,7 @@ library GovernancePlan {
         }
         bytes memory data =
             abi.encodeCall(TransmitterBase.bootstrap, (x.chainId, calls, GasAttribute.forMultisig(name, gas)));
-        txs = _push(txs, Tx(account, 0, data));
+        txs = _push(txs, Tx(conduit, 0, data));
     }
 
     /// @notice Step 5's LayerZero peers off the home, by the governor's owner once each chain's

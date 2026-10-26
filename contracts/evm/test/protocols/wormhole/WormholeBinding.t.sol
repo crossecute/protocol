@@ -258,9 +258,9 @@ contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
         assertTrue(sw.ran());
     }
 
-    /// @dev C31: each account keeps its own consumed set, so one consuming its message does not
+    /// @dev C31: each conduit keeps its own consumed set, so one consuming its message does not
     ///      stop another receiving its own with the same source and sequence.
-    function test_theDedupeIsPerAccount() public {
+    function test_theDedupeIsPerConduit() public {
         WormholeReceiver other = WormholeReceiver(payable(_deployReceiver(new Call[](0))));
         bytes memory first = _validVaa(0);
         WormholeReceiver(payable(receiver)).executeVAAv1(first);
@@ -379,19 +379,19 @@ contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFix
     /// @dev The owner's calldata holds no quote, so it may wait on a multisig indefinitely.
     function test_anOwnerSendsPublishOnly() public {
         _setProviderFee(0.01 ether);
-        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        bytes memory recipient = TransmitterBase(conduit).recipientOn(REMOTE_CHAIN_ID);
         uint256 requests = executor.requestsLength();
-        uint256 before = account.balance;
+        uint256 before = conduit.balance;
         vm.warp(block.timestamp + 30 days);
-        vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).sendMessage(recipient, "x", _publishOnly());
-        assertEq(before - account.balance, CORE_MESSAGE_FEE);
+        vm.prank(CONDUIT_OWNER);
+        TransmitterBase(conduit).sendMessage(recipient, "x", _publishOnly());
+        assertEq(before - conduit.balance, CORE_MESSAGE_FEE);
         assertEq(executor.requestsLength(), requests, "no relay provider paid");
-        assertEq(core.published(core.publishedLength() - 1).emitter, account);
+        assertEq(core.published(core.publishedLength() - 1).emitter, conduit);
     }
 
     function test_theTransmitterSupportsBothAttributes() public view {
-        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.EXECUTION_ATTRIBUTE));
-        assertTrue(TransmitterBase(account).supportsAttribute(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE));
+        assertTrue(TransmitterBase(conduit).supportsAttribute(WormholeMessage.EXECUTION_ATTRIBUTE));
+        assertTrue(TransmitterBase(conduit).supportsAttribute(WormholeMessage.PUBLISH_ONLY_ATTRIBUTE));
     }
 }

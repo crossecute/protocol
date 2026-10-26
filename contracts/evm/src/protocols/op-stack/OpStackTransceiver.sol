@@ -80,8 +80,8 @@ contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
     }
 
     /// @inheritdoc TransceiverBase
-    /// @dev A receiver's gateway is the messenger here that reaches its account's home.
-    function _accountInitializer(
+    /// @dev A receiver's gateway is the messenger here that reaches its conduit's home.
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -89,7 +89,7 @@ contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
         Call[] memory calls
     ) internal view virtual override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
         }
         return abi.encodeCall(IOpStackReceiverInit.initialize, (sourceTransmitter, calls, messengerFor(homeChainKey)));
     }

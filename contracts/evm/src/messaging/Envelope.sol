@@ -49,12 +49,12 @@ library Envelope {
     ///      is never in the path again. A payload that should wait carries a self-call to
     ///      `commit`.
     ///
-    /// @dev Names the owner and salt, from which the destination derives the account address.
+    /// @dev Names the owner and salt, from which the destination derives the conduit address.
     ///      A transceiver is shared, so nothing the bridge reports says who authorized the
     ///      message.
     ///
     /// @dev Carries the transmitter the receiver will answer to. The origin transceiver sends
-    ///      only for the account `(owner, salt)` resolves to there, so the value is vouched for
+    ///      only for the conduit `(owner, salt)` resolves to there, so the value is vouched for
     ///      by the same authenticated message, and no destination needs another chain's
     ///      address formula to derive it. A fixed word rather than `bytes`, which would add an
     ///      offset and a length word to every bootstrap: an EVM address left-padded, or a
@@ -95,8 +95,8 @@ library Envelope {
     ///      whose CREATE2 formulas differ, and non-EVM chains such as Starknet.
     ///
     /// @dev No request id: the chain comes from the authenticated origin and `(owner, salt)`
-    ///      is stated here, which identifies the account the home's transceiver forwards the
-    ///      report to. The account refuses a second report.
+    ///      is stated here, which identifies the conduit the home's transceiver forwards the
+    ///      report to. The conduit refuses a second report.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the reporting chain.
     function encodeReceiverReport(address owner, bytes32 salt, bytes memory interop)
         internal

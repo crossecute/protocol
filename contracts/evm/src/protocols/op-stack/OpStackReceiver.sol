@@ -12,11 +12,11 @@ interface IOpStackReceiverInit {
     function initialize(address sourceTransmitter, Call[] calldata calls, address messenger) external;
 }
 
-/// @notice Per-user account on a non-home chain, for `op-stack-l1-l2`.
+/// @notice Per-user conduit on a non-home chain, for `op-stack-l1-l2`.
 /// @dev The origin is the messenger that called, the one granted `GATEWAY_ROLE`, which relays
-///      only from the account's home.
+///      only from the conduit's home.
 contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverInit {
-    /// @dev Refused, not just unused: it would arm the account with no gateway.
+    /// @dev Refused, not just unused: it would arm the conduit with no gateway.
     error UseOpStackInitializer();
 
     function initialize(address, bytes32, Call[] calldata) external pure override {

@@ -24,7 +24,7 @@ contract DestinationNamingTest is Test {
     ChainRegistry registry;
     LzTransceiver t;
 
-    /// The transceiver's owner, the msig's account here.
+    /// The transceiver's owner, the msig's conduit here.
     address msig;
     bytes32 provider;
 
@@ -38,7 +38,7 @@ contract DestinationNamingTest is Test {
 
     /// @dev One caller configures both the registry and the transceiver here, so each test
     ///      reads as one configuration step. Production owners differ (a timelock and the
-    ///      msig's account); nothing below depends on which one holds which.
+    ///      msig's conduit); nothing below depends on which one holds which.
     function setUp() public {
         t = LzTransceiver(
             payable(address(
@@ -75,15 +75,15 @@ contract DestinationNamingTest is Test {
         );
     }
 
-    /// @dev An account envelope reduces to its chain, so every address on a chain yields
+    /// @dev A conduit envelope reduces to its chain, so every address on a chain yields
     ///      one key and `ChainKey.fromIdentifier` accepts either form.
     function test_chainKeyIsStableAcrossAddressesOnAChain() public pure {
         bytes memory acct = Erc7930.encodeEvm(8453, address(0xBEEF));
         assertEq(ChainKey.fromIdentifier(acct), ChainKey.forEvm(8453));
     }
 
-    /// @dev No chain is the anchor. A transceiver keeps no home of its own: an account's home
-    ///      is a field of the account (`accountSalt`), and a delivery's origin is whichever
+    /// @dev No chain is the anchor. A transceiver keeps no home of its own: a conduit's home
+    ///      is a field of the conduit (`conduitSalt`), and a delivery's origin is whichever
     ///      configured chain authenticated it.
     function test_aTransceiverHasNoHome() public view {
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("homeChainKey()"));
@@ -143,7 +143,7 @@ contract DestinationNamingTest is Test {
         t.routeTo(key);
     }
 
-    /// @dev Removal stops onboarding, not accounts: the transceiver keeps the counterpart it has, and
+    /// @dev Removal stops onboarding, not conduits: the transceiver keeps the counterpart it has, and
     ///      the chain accepts no new counterpart until it is added back.
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
@@ -243,9 +243,9 @@ contract DestinationNamingTest is Test {
         assertFalse(t.hasRoute(key));
     }
 
-    /// @dev An account envelope reduces to the right chain, but it is not the bare identifier
+    /// @dev A conduit envelope reduces to the right chain, but it is not the bare identifier
     ///      an inbound route arrives as, so inbound lookups would never match it.
-    function test_anAccountEnvelopeIsNotARoute() public {
+    function test_aConduitEnvelopeIsNotARoute() public {
         bytes32 baseKey = ChainKey.forEvm(8453);
         vm.prank(msig);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, baseKey));

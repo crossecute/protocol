@@ -9,7 +9,7 @@ import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
 /// @notice Both `layerzero-oft` scripts refuse a chain whose CREATE2 is not Ethereum's: there
-///         the factory, and every account it creates, would sit at another address.
+///         the factory, and every conduit it creates, would sit at another address.
 /// @dev zkSync Era is in `deploy/chains.toml` as `zksync`, with a LayerZero eid.
 contract LzOftScriptsTest is Test {
     uint256 constant ZKSYNC = 324;

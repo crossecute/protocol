@@ -47,11 +47,11 @@ library LzDeploy {
         TransceiverDeployment memory d,
         uint32 homeEid,
         address homeDvn,
-        bytes32 accountBytecodeHash
+        bytes32 conduitBytecodeHash
     ) internal returns (address t) {
         t = deployTransceiverProxy(
             d,
-            abi.encodeCall(LzZkSyncTransceiver.initialize, (d.config, homeEid, homeDvn, accountBytecodeHash)),
+            abi.encodeCall(LzZkSyncTransceiver.initialize, (d.config, homeEid, homeDvn, conduitBytecodeHash)),
             address(0)
         );
         _checkHome(t, d.config, homeEid, homeDvn);

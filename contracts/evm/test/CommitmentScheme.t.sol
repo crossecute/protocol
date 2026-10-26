@@ -125,7 +125,7 @@ contract CommitmentSchemeTest is Test {
 
     /// @dev An empty array would be the seed alone, a valid approval of nothing, so every
     ///      fold refuses one.
-    /// @dev #27: a chain without EIP-152 has an empty account at 0x09, which answers a call
+    /// @dev #27: a chain without EIP-152 has an empty conduit at 0x09, which answers a call
     ///      with success and no data. That must revert, not hash to zeros.
     function test_aMissingBlake2fPrecompileReverts() public {
         bytes[] memory elements = new bytes[](1);

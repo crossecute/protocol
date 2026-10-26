@@ -13,7 +13,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 ///         its storage is the transceiver's and `msg.sender` is the transceiver's caller.
 ///
 /// @dev Provider-agnostic: every provider's transceiver on a chain can name the same one. A
-///      chain whose account addresses diverge uses the matching variant in
+///      chain whose conduit addresses diverge uses the matching variant in
 ///      `DivergentTransceiver.sol`, which derives as that chain's `TransceiverBase` does.
 ///
 /// @dev Holds no upgrade path and calls no address it reads from storage except the registry the
@@ -39,8 +39,8 @@ contract TransceiverExtension is TransceiverCore {
     ///      it accepts only the transceiver's self-call, as `Roles.grantRole` does (#68).
     function initializeBase(TransceiverConfig memory c, bool addressesDiverge_) external onlyInitializing {
         if (msg.sender != address(this)) revert NotSelf(msg.sender);
-        if (c.transmitterImplementation == address(0)) revert NoAccountImplementation();
-        if (c.receiverImplementation == address(0)) revert NoAccountImplementation();
+        if (c.transmitterImplementation == address(0)) revert NoConduitImplementation();
+        if (c.receiverImplementation == address(0)) revert NoConduitImplementation();
         if (c.treasury == address(0)) revert NoTreasury();
         if (c.governorOwner == address(0)) revert ZeroOwner();
 
@@ -56,10 +56,10 @@ contract TransceiverExtension is TransceiverCore {
         emit AddressesDivergeSet(addressesDiverge_);
         _treasury = c.treasury;
 
-        __Ownable_init(_predictCrossAccount(c.governorOwner, c.governorSalt, governorHome));
+        __Ownable_init(_predictCrossConduit(c.governorOwner, c.governorSalt, governorHome));
 
         // Born accepting the governor's home as an origin: the owner is the governor's
-        // account here, which only a bootstrap from that home can create.
+        // conduit here, which only a bootstrap from that home can create.
         if (address(c.chainRegistry) != address(0)) {
             _setRouting(c.chainRegistry, c.messageProvider, c.minCounterpartProvenance);
             // Only the owner, which that bootstrap creates, could set a counterpart, so the
@@ -162,8 +162,8 @@ contract TransceiverExtension is TransceiverCore {
         _setCounterpart(chainKey, addr);
     }
 
-    /// @notice Name the contract that decides which accounts may bootstrap. Zero lets every
-    ///         account.
+    /// @notice Name the contract that decides which conduits may bootstrap. Zero lets every
+    ///         conduit.
     function setBootstrapAllowlist(IBootstrapAllowlist allowlist) external onlyOwner {
         _bootstrapAllowlist = allowlist;
         emit BootstrapAllowlistSet(address(allowlist));
@@ -176,7 +176,7 @@ contract TransceiverExtension is TransceiverCore {
         emit OperatorSet(operator_);
     }
 
-    /// @notice Set what standing an account up on `chainKey` costs. The owner's or the operator's.
+    /// @notice Set what standing a conduit up on `chainKey` costs. The owner's or the operator's.
     /// @dev Rebindable: a price redirects nothing. Zero halts bootstraps to a reporting chain.
     function setBootstrapFee(bytes32 chainKey, uint256 fee) external {
         if (msg.sender != _operator && msg.sender != owner()) revert NotOwnerOrOperator(msg.sender);
@@ -200,19 +200,19 @@ contract TransceiverExtension is TransceiverCore {
 
     /* ==================================== views ==================================== */
 
-    /// @notice The salt an owner's account deploys at, on every chain. See `_accountSalt`.
-    function accountSalt(address owner, bytes32 salt, bytes32 homeChainKey) external pure returns (bytes32) {
-        return _accountSalt(owner, salt, homeChainKey);
+    /// @notice The salt an owner's conduit deploys at, on every chain. See `_conduitSalt`.
+    function conduitSalt(address owner, bytes32 salt, bytes32 homeChainKey) external pure returns (bytes32) {
+        return _conduitSalt(owner, salt, homeChainKey);
     }
 
-    /// @notice Where an owner's account lives on this chain, before it exists.
-    function predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
-        return _predictCrossAccount(owner, salt, homeChainKey);
+    /// @notice Where an owner's conduit lives on this chain, before it exists.
+    function predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
+        return _predictCrossConduit(owner, salt, homeChainKey);
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.
     function predictTransmitter(address owner, bytes32 salt) external view returns (address) {
-        return _localAccount(owner, salt);
+        return _localConduit(owner, salt);
     }
 
     /// @notice The exact report bytes for `(owner, salt)` and `receiver`, so its cost can be

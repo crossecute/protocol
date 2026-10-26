@@ -10,7 +10,7 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 
-/// @notice The account home most suites use: Ethereum.
+/// @notice The conduit home most suites use: Ethereum.
 function home() pure returns (bytes32) {
     return ChainKey.forEvm(1);
 }
@@ -52,7 +52,7 @@ function ext(address transceiver) pure returns (TransceiverExtension) {
 
 /// @notice A test transceiver with its own extension, deployed with it, so each copy reads the
 ///         chain id it is deployed under as a production pair does. A harness that derives
-///         accounts its own way overrides `_newExtension` with an extension that derives alike.
+///         conduits its own way overrides `_newExtension` with an extension that derives alike.
 abstract contract TestTransceiver is TransceiverBase {
     constructor() TransceiverBase(_newExtension()) {}
 
@@ -113,28 +113,28 @@ abstract contract UnsendableTransmitter is OwnableTransmitter {
 /// @dev A harness trusts any gateway, which no deployment may do. Overriding the membership
 ///      read rather than granting a role keeps each test on its own subject.
 abstract contract AnyGatewayReceiver is ReceiverBase {
-    function hasRole(bytes32 role, address account) public view virtual override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
+    function hasRole(bytes32 role, address conduit) public view virtual override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, conduit);
     }
 }
 
 /// @dev See `AnyGatewayReceiver`.
 abstract contract AnyGatewayTransceiver is UnsendableTransceiver {
-    function hasRole(bytes32 role, address account) public view virtual override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
+    function hasRole(bytes32 role, address conduit) public view virtual override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, conduit);
     }
 }
 
 /// @dev See `AnyGatewayReceiver`.
 abstract contract AnyGatewayTransmitter is UnsendableTransmitter {
-    function hasRole(bytes32 role, address account) public view virtual override returns (bool) {
-        return role == GATEWAY_ROLE || super.hasRole(role, account);
+    function hasRole(bytes32 role, address conduit) public view virtual override returns (bool) {
+        return role == GATEWAY_ROLE || super.hasRole(role, conduit);
     }
 }
 
 /// @notice A transceiver owned by an address the test names, for suites about routing and
 ///         counterparts rather than how the owner is derived (`Transceiver.t.sol` covers that).
-///         It never creates an account, so the implementations only have to be non-zero.
+///         It never creates a conduit, so the implementations only have to be non-zero.
 contract OwnedTransceiver is AnyGatewayTransceiver {
     function initialize(address owner_) external initializer {
         TransceiverConfig memory c = transceiverConfig(owner_, address(0x1E19), address(0x1E19), address(0x7EA5));

@@ -102,12 +102,12 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
         super.setPeer(eid, peer);
     }
 
-    /* =============================== account manufacture ============================== */
+    /* =============================== conduit manufacture ============================== */
 
     /// @inheritdoc TransceiverBase
-    /// @dev A receiver's peer is its transmitter on the account's home, so it is armed with that
+    /// @dev A receiver's peer is its transmitter on the conduit's home, so it is armed with that
     ///      home's eid, from the same table that admitted the bootstrap.
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -115,7 +115,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
         Call[] memory calls
     ) internal view virtual override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
         }
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint32 setter
         uint32 homeEid = uint32(_providerIdFor(homeChainKey));

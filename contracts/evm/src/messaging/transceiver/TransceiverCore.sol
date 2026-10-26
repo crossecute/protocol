@@ -10,21 +10,21 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
-import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
+import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-/// @notice What a transceiver needs from the transmitter logic it arms an account with.
+/// @notice What a transceiver needs from the transmitter logic it arms a conduit with.
 interface ITransmitterInit {
     function initialize(address owner, address transceiver, bytes32 salt) external;
 }
 
-/// @notice The one thing a transceiver tells an account after creating it.
-/// @dev The single exception to a transceiver having no authority over an account: the
-///      account cannot learn its receiver's address on a chain this one cannot derive, and
+/// @notice The one thing a transceiver tells a conduit after creating it.
+/// @dev The single exception to a transceiver having no authority over a conduit: the
+///      conduit cannot learn its receiver's address on a chain this one cannot derive, and
 ///      only its transceiver authenticates the message carrying it.
-interface IAccountReceiverReport {
+interface IConduitReceiverReport {
     function onDestinationReceiverReported(bytes32 chainKey, bytes calldata receiver) external;
 }
 
@@ -35,7 +35,7 @@ struct TransceiverConfig {
     address[] gateways;
     address transmitterImplementation;
     address receiverImplementation;
-    /// The governor's account, named by its owner, salt, and home: its transmitter
+    /// The governor's conduit, named by its owner, salt, and home: its transmitter
     /// on that home, its receiver everywhere else. It owns this transceiver.
     address governorOwner;
     bytes32 governorSalt;
@@ -62,34 +62,34 @@ struct TransceiverConfig {
 ///      so the fields below sit at the same slots in each (R8.2). A provider's own fields come
 ///      after them and are never touched by the extension.
 abstract contract TransceiverCore is Initializable, OutboundBase, Roles, OwnableUpgradeable {
-    /// This chain's chainKey: the home of every account this transceiver creates as a
+    /// This chain's chainKey: the home of every conduit this transceiver creates as a
     /// transmitter.
     /// @dev An immutable of each implementation, fixed when it is deployed on this chain, so a
-    ///      chain split cannot move an account's derivation. `TransceiverBase` refuses an
+    ///      chain split cannot move a conduit's derivation. `TransceiverBase` refuses an
     ///      extension whose value differs from its own.
     bytes32 public immutable localChainKey;
 
-    /// @notice The initcode hash every crossecute account deploys from, for transmitters and
+    /// @notice The initcode hash every crossecute conduit deploys from, for transmitters and
     ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
     /// @dev An input to Ethereum's CREATE2 formula only. zkSync deploys from a zksolc artifact
-    ///      hash instead; see `_predictCrossAccount`.
+    ///      hash instead; see `_predictCrossConduit`.
     /// @dev Immutable, not constant: a constant is evaluated at runtime, which would put the
     ///      initcode in every runtime that reads this (#70); an immutable puts it in initcode only.
     ///      Computed rather than written out so a build with other compiler settings, such as
-    ///      `forge coverage`'s unoptimized one, derives the accounts it deploys.
+    ///      `forge coverage`'s unoptimized one, derives the conduits it deploys.
     bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = CrossProxyInitCode.hash();
 
-    /// The transmitter logic every account homed here is armed with. Write-once: accounts
+    /// The transmitter logic every conduit homed here is armed with. Write-once: conduits
     /// lock when armed, so a change would split them into two logic versions by creation time.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     address internal _transmitterImplementation;
-    /// The receiver logic every account homed elsewhere is armed with. Write-once.
+    /// The receiver logic every conduit homed elsewhere is armed with. Write-once.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     address internal _receiverImplementation;
 
-    /// Whether account addresses here differ from Ethereum's CREATE2. When true, every receiver
+    /// Whether conduit addresses here differ from Ethereum's CREATE2. When true, every receiver
     /// created here is reported to its home, which cannot derive it. Write-once, and set by the
-    /// contract rather than its caller, so it cannot disagree with `_predictCrossAccount`.
+    /// contract rather than its caller, so it cannot disagree with `_predictCrossConduit`.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     bool internal _addressesDiverge;
 
@@ -102,9 +102,9 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      and Tron reach only `Unique`, so this decides whether this transceiver talks to them.
     Provenance internal _minCounterpartProvenance;
 
-    /// chainKey => what standing an account up there costs, on top of the message fee.
+    /// chainKey => what standing a conduit up there costs, on top of the message fee.
     /// @dev Pays for the return leg on a chain that has one: a diverging chain reports each
-    ///      account home from its float. Zero by default, so parity destinations, which never
+    ///      conduit home from its float. Zero by default, so parity destinations, which never
     ///      report, pay nothing. The fee lands in this chain's treasury in this chain's
     ///      currency; the float there is funded out of band.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
@@ -118,20 +118,20 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     /// True only while a receiver report is being sent, which pays from this contract's float.
     bool internal _reporting;
 
-    /// May set bootstrap fees besides the owner. The owner is the governor's account, which off
+    /// May set bootstrap fees besides the owner. The owner is the governor's conduit, which off
     /// the governor's home acts only through a cross-chain message, so this lets a local key
     /// price or halt bootstraps (#78). Set and replaced by the owner.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverExtension`
     address internal _operator;
 
-    /// Where set, the only accounts that may bootstrap or be quoted one. Set by the owner; zero
-    /// lets every account.
+    /// Where set, the only conduits that may bootstrap or be quoted one. Set by the owner; zero
+    /// lets every conduit.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     IBootstrapAllowlist internal _bootstrapAllowlist;
 
-    event CrossAccountCreated(address indexed owner, address indexed account, bytes32 salt, bytes32 homeChainKey);
+    event CrossConduitCreated(address indexed owner, address indexed conduit, bytes32 salt, bytes32 homeChainKey);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
-    ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the account.
+    ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the conduit.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
     event TransmitterImplementationSet(address implementation);
     event ReceiverImplementationSet(address implementation);
@@ -141,14 +141,14 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     event OperatorSet(address operator);
     event BootstrapAllowlistSet(address allowlist);
     event BootstrapFeePaid(bytes32 indexed chainKey, address indexed to, uint256 amount);
-    event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address account);
+    event DestinationReceiverReported(bytes32 indexed chainKey, address indexed owner, bytes32 salt, address conduit);
     event ReceiverReported(bytes32 indexed home, address indexed owner, bytes32 salt, address receiver);
     event Withdrawn(address indexed to, uint256 amount);
 
     error ZeroOwner();
-    /// @dev The caller is not the account `(owner, salt)` resolves to.
-    error NotTheAccount(address owner, bytes32 salt, address caller);
-    error NoAccountImplementation();
+    /// @dev The caller is not the conduit `(owner, salt)` resolves to.
+    error NotTheConduit(address owner, bytes32 salt, address caller);
+    error NoConduitImplementation();
     error NoTreasury();
     /// @dev The counterpart on that chain is not a 20-byte EVM address, so no EVM CREATE2
     ///      prediction applies there.
@@ -177,7 +177,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error ChainDoesNotReport(bytes32 chainKey);
     /// @dev The registry or provider id is already set to a different value. See `setRouting`.
     error RoutingAlreadySet();
-    /// @dev This chain is never a destination or an origin: an account homed here is its
+    /// @dev This chain is never a destination or an origin: a conduit homed here is its
     ///      transmitter, and a receiver here would collide with it.
     error IsLocalChain(bytes32 chainKey);
     /// @dev The caller sent less than the destination's fee.
@@ -189,51 +189,51 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error SourceTransmitterNotEvm(bytes32 transmitter);
     /// @dev A receiver homed on a `Predetermined` chain landed off its transmitter's address, so
     ///      the origin's provider id, route, or transceiver address disagree with this chain's.
-    ///      Refused on the first bootstrap rather than leaving every such account unreachable.
+    ///      Refused on the first bootstrap rather than leaving every such conduit unreachable.
     error ParityBroken(address receiver, address sourceTransmitter);
     error NotTreasury(address caller);
     error NotOwnerOrOperator(address caller);
-    error NotAllowed(address account);
+    error NotAllowed(address conduit);
     error WithdrawFailed(uint256 amount);
 
     constructor() {
         localChainKey = ChainKey.local();
     }
 
-    /* ============================== account derivation ============================= */
+    /* ============================== conduit derivation ============================= */
 
-    /// @notice The salt an owner's account deploys at, on every chain.
+    /// @notice The salt an owner's conduit deploys at, on every chain.
     /// @dev The owner is the identity every chain names; the salt lets one owner hold several
-    ///      accounts; the home separates the same owner and salt homed on two chains, whose
+    ///      conduits; the home separates the same owner and salt homed on two chains, whose
     ///      transmitter on one would otherwise sit where the other's receiver lands. The home
     ///      is its own field: adding or XORing it into `salt` would let one owner make two
     ///      homes collide. `abi.encode` is fixed-width, so no two triples collide.
-    function _accountSalt(address owner, bytes32 salt, bytes32 homeChainKey) internal pure returns (bytes32) {
+    function _conduitSalt(address owner, bytes32 salt, bytes32 homeChainKey) internal pure returns (bytes32) {
         return keccak256(abi.encode(owner, salt, homeChainKey));
     }
 
-    /// @notice Where an owner's account lives on this chain, before it exists.
+    /// @notice Where an owner's conduit lives on this chain, before it exists.
     /// @dev Ethereum's CREATE2, identical wherever the formula holds since all three inputs
     ///      are: this address (one per provider on every chain), the salt, and a constant
     ///      initcode. zkSync and Tron derive differently, so a variant there overrides this,
-    ///      in both its `TransceiverBase` and its extension, and `_deployAccount` with it;
-    ///      `_createCrossAccount` checks the two agree.
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    ///      in both its `TransceiverBase` and its extension, and `_deployConduit` with it;
+    ///      `_createCrossConduit` checks the two agree.
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual
         returns (address)
     {
         return Create2.computeAddress(
-            _accountSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, address(this)
+            _conduitSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
-    /// @notice `(owner, salt)`'s account homed on this chain: its transmitter here.
+    /// @notice `(owner, salt)`'s conduit homed on this chain: its transmitter here.
     /// @dev One expression for the bootstrap caller check, the transmitter a bootstrap and its
-    ///      quote carry, and every lookup of an account a report is for, so they cannot drift.
-    function _localAccount(address owner, bytes32 salt) internal view returns (address) {
-        return _predictCrossAccount(owner, salt, localChainKey);
+    ///      quote carry, and every lookup of a conduit a report is for, so they cannot drift.
+    function _localConduit(address owner, bytes32 salt) internal view returns (address) {
+        return _predictCrossConduit(owner, salt, localChainKey);
     }
 
     /// @notice The exact report bytes for `(owner, salt)` and `receiver`.
@@ -297,7 +297,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
 
     /// @notice Where a provider returns an overpaid fee: whoever paid it.
     /// @dev A report's overpayment returns to the float it was paid from. Anything else, a
-    ///      bootstrap above all, refunds the account that paid.
+    ///      bootstrap above all, refunds the conduit that paid.
     function _refundTo() internal view virtual override returns (address) {
         return _reporting ? address(this) : msg.sender;
     }

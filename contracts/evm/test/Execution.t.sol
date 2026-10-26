@@ -73,7 +73,7 @@ contract ExecutionTest is Test {
     /* ================================ allowlist ================================ */
 
     /// @dev The default allows everything, and that is not a missing check. A receiver is
-    ///      a full-power account answering to one owner, the same way a Safe is: anything
+    ///      a full-power conduit answering to one owner, the same way a Safe is: anything
     ///      that can deliver an authenticated message to it can already make it do
     ///      anything. A `(target, selector)` gate was never what stood between a forged
     ///      message and execution: a compromised bridge could forge a commitment hash

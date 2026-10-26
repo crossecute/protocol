@@ -49,13 +49,13 @@ contract PairedTron is TronTransceiver, Unsent {
         __DivergentTransceiver_init(c, keccak256("tron-solc CrossProxy"));
     }
 
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossConduit(owner, salt, homeChainKey);
     }
 
     function _parityAddress(bytes32 chainKey)
@@ -100,13 +100,13 @@ contract TransceiverExtensionTest is Test {
         tron.initialize(_config());
 
         bytes32 governorHome = keccak256(_config().governorHome);
-        assertEq(plain.owner(), ext(address(plain)).predictCrossAccount(governor, bytes32(0), governorHome));
-        assertEq(tron.owner(), ext(address(tron)).predictCrossAccount(governor, bytes32(0), governorHome));
+        assertEq(plain.owner(), ext(address(plain)).predictCrossConduit(governor, bytes32(0), governorHome));
+        assertEq(tron.owner(), ext(address(tron)).predictCrossConduit(governor, bytes32(0), governorHome));
         assertTrue(plain.owner() != tron.owner(), "the two formulas differ, so a mismatch is visible");
     }
 
     /// @dev The extension derives the owner, so one of another chain type would arm every
-    ///      account at an address this contract never creates.
+    ///      conduit at an address this contract never creates.
     function test_anExtensionOfAnotherChainTypeIsRefused() public {
         PairedTron tron = new PairedTron(address(new TransceiverExtension()));
         vm.expectRevert(TransceiverBase.ExtensionMismatch.selector);

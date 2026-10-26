@@ -3,7 +3,7 @@
 #
 # `derivation` is how the chain places contracts, which decides every grade (see README.md):
 #   "parity"  a standard EVM chain where Arachnid's factory places `CrossProxyDeployer`, so every
-#             provider's transceiver, and every account, has the address it has everywhere else
+#             provider's transceiver, and every conduit, has the address it has everywhere else
 #   "zksync"  EraVM's CREATE2, so nothing it deploys shares an address with a parity chain
 #   "tron"    TVM's CREATE2 (0x41 prefix), likewise
 #   "other"   an EVM chain without Arachnid's factory

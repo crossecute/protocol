@@ -12,7 +12,7 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Move} from "src/addressing/Move.sol";
-import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
 
 /// @notice A provider a registry is born knowing, with the CREATE2 inputs its contracts
 ///         deploy from.
@@ -24,7 +24,7 @@ struct ProviderSeed {
 }
 
 /// @notice What a registry is born knowing: enough for a transceiver on this chain to accept,
-///         with no owner call, the bootstrap that creates its owner (the governor's account).
+///         with no owner call, the bootstrap that creates its owner (the governor's conduit).
 /// @dev Identical on every chain, so the registry lands at one CREATE2 address on each. Empty
 ///      on a chain configured by its owner from the start.
 struct RegistrySeed {
@@ -46,8 +46,8 @@ struct RegistrySeed {
 /// @dev It holds a directory of chainKeys and message providers, and the per-chain policy a
 ///      transceiver consults before recording anything: `provenanceFor`, `isSuspended`,
 ///      `validateLocation`, `expectedTransceiver`, and `commitmentFor`. It holds no routes and
-///      no counterparts, and no account reads it, so a compromised registry cannot misroute an
-///      account's payload.
+///      no counterparts, and no conduit reads it, so a compromised registry cannot misroute a
+///      conduit's payload.
 ///
 /// @dev Fixed: no proxy and no upgrade path, and a transceiver's pointer to it is write-once.
 ///      A chain's grade is write-once too; the plugins (validator,
@@ -67,7 +67,7 @@ contract ChainRegistry is Ownable {
     EnumerableSet.Bytes32Set private _messageProviders;
     /// messageProvider => the name it hashes from.
     mapping(bytes32 => string) private _messageProviderName;
-    /// messageProvider => the CREATE2 inputs its transceiver and accounts deploy from.
+    /// messageProvider => the CREATE2 inputs its transceiver and conduits deploy from.
     mapping(bytes32 => ProviderDeployment) private _deployment;
 
     /// messageProvider => the transceiver on this chain that serves it.
@@ -169,7 +169,7 @@ contract ChainRegistry is Ownable {
     /// @dev The grade is write-once and has no default, so whether the chain reports its
     ///      receivers is fixed when it is first registered, even across a removal. The same
     ///      grade again is a no-op.
-    /// @param identifier ERC-7930 bytes. An account envelope is accepted and reduced to
+    /// @param identifier ERC-7930 bytes. A conduit envelope is accepted and reduced to
     ///                   its chain identifier form.
     function addChainKey(bytes calldata identifier, Provenance provenance)
         external
@@ -201,7 +201,7 @@ contract ChainRegistry is Ownable {
     /// @dev Stops onboarding only: `validateLocation` requires membership, so no transceiver
     ///      can record a new counterpart there. Its identifier and grade stay, so transceivers
     ///      keep bootstrapping to it and accepting its reports; removal must not strand
-    ///      accounts. Cutting a chain off is `setSuspended`, which still applies after removal.
+    ///      conduits. Cutting a chain off is `setSuspended`, which still applies after removal.
     function removeChainKey(bytes32 chainKey) external onlyOwner {
         if (!_chainKeys.remove(chainKey)) revert UnknownChainKey();
         emit ChainKeyRemoved(chainKey);
@@ -210,7 +210,7 @@ contract ChainRegistry is Ownable {
     /// @notice Refuse a chain, or stop refusing it.
     /// @dev Every transceiver here reads this with the grade, in `_counterpartOn`, so a
     ///      suspended chain gets no bootstrap or report and is accepted as no origin. It can only
-    ///      refuse, so lifting it is as safe as setting it. Accounts already standing on the
+    ///      refuse, so lifting it is as safe as setting it. Conduits already standing on the
     ///      chain still send to each other directly. Applies to a removed chain too: any chain
     ///      ever registered can be cut off.
     function setSuspended(bytes32 chainKey, bool suspended) external onlyOwner {
@@ -263,7 +263,7 @@ contract ChainRegistry is Ownable {
     /// @notice Record the CREATE2 inputs a provider's contracts deploy from.
     ///
     /// @dev Write-once: changing it moves the provider's transceiver on every chain and every
-    ///      account under it. The identical record again is a no-op.
+    ///      conduit under it. The identical record again is a no-op.
     ///
     /// @dev Deploys nothing; it lets any chain reproduce the addresses. A record that does not
     ///      match the deployment yields predictions that match nothing.
@@ -318,12 +318,12 @@ contract ChainRegistry is Ownable {
             AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(d.deployedBy, d.salt), d.crossProxyInitCodeHash);
     }
 
-    /// @notice Where an owner's account lands on `chainKey`, before it exists: the
-    ///         transceiver from the provider's salt, then the account from the transceiver.
-    /// @dev The account salt must match `TransceiverCore._accountSalt`; it is written out
+    /// @notice Where an owner's conduit lands on `chainKey`, before it exists: the
+    ///         transceiver from the provider's salt, then the conduit from the transceiver.
+    /// @dev The conduit salt must match `TransceiverCore._conduitSalt`; it is written out
     ///      rather than imported, and `test/SaltedDeployment.t.sol` asserts the two agree.
-    /// @param homeChainKey The chain the account is homed on, which need not be `chainKey`.
-    function predictCrossAccount(
+    /// @param homeChainKey The chain the conduit is homed on, which need not be `chainKey`.
+    function predictCrossConduit(
         bytes32 chainKey,
         bytes32 messageProvider,
         address owner,
@@ -356,7 +356,7 @@ contract ChainRegistry is Ownable {
         return _provenanceOf[chainKey];
     }
 
-    /// @notice Whether accounts on `chainKey` must report their own address home.
+    /// @notice Whether conduits on `chainKey` must report their own address home.
     /// @dev True exactly where this contract cannot recompute addresses, so it cannot
     ///      disagree with the grades. Where a receiver landed is held by its transmitter, not
     ///      here. The home's side of `TransceiverExtension.addressesDiverge`.

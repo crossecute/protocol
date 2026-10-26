@@ -27,7 +27,7 @@ struct UlnConfig {
 ///      from its own balance.
 ///
 /// @dev They call the endpoint directly rather than OApp's `_lzSend`, whose default
-///      `_payNative` requires `msg.value` to equal the fee: an account pays from its balance,
+///      `_payNative` requires `msg.value` to equal the fee: a conduit pays from its balance,
 ///      a bootstrap from `msg.value` less the transceiver's fee, a report from the float (#55).
 library LzMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes

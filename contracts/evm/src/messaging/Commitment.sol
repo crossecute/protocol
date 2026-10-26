@@ -31,7 +31,7 @@ enum Scheme {
 /// @title Commitment
 /// @notice The commitment over a call array, bound to exactly one destination.
 ///
-/// @dev Seeded with the destination's chainKey, since accounts share addresses across chains
+/// @dev Seeded with the destination's chainKey, since conduits share addresses across chains
 ///      and a commitment must not replay between them. A chainKey rather than a chain id
 ///      because non-EVM chains have none; on the EVM it still derives from `block.chainid`.
 ///

@@ -21,7 +21,7 @@ interface ILzOftReceiverInit {
     ) external;
 }
 
-/// @notice A `layerzero-oft` account on a destination: takes each message as an OFT compose,
+/// @notice A `layerzero-oft` conduit on a destination: takes each message as an OFT compose,
 ///         from its operator's OFT here, sent by its transmitter through the OFT on its home.
 ///
 /// @dev `lzCompose` authenticates, in order: the endpoint (`GATEWAY_ROLE`, so `revokeGateway`
@@ -31,7 +31,7 @@ interface ILzOftReceiverInit {
 ///      caller cannot set, and the OFT queues a compose only for a packet its own DVNs
 ///      verified from a peer.
 contract LzOftReceiver is ReceiverBase, ILayerZeroComposer, ILzOftReceiverInit {
-    /// @notice The OFT on this account's home, which this chain's OFT must still peer.
+    /// @notice The OFT on this conduit's home, which this chain's OFT must still peer.
     address public homeOft;
     /// @notice This chain's OFT, the only `_from` accepted.
     address public localOft;
@@ -43,7 +43,7 @@ contract LzOftReceiver is ReceiverBase, ILayerZeroComposer, ILzOftReceiverInit {
         revert UseLzOftInitializer();
     }
 
-    /// @dev The factory proved `localOft_` into the account's root and checked its endpoint and
+    /// @dev The factory proved `localOft_` into the conduit's root and checked its endpoint and
     ///      peer before calling this. The home is named by eid, as `srcEid` reports it.
     function initialize(
         address sourceTransmitter_,

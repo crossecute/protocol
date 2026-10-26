@@ -17,7 +17,7 @@ the seventh; what they mean for an operator is in the README.
 (2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
-  bootstrap, 250,000 for a report) come from Forge's EVM, where an account creation costs
+  bootstrap, 250,000 for a report) come from Forge's EVM, where a conduit creation costs
   about 624,000 to 678,000. On a local EraVM node a bootstrap's execution needs about 385,000
   to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
@@ -30,7 +30,7 @@ the seventh; what they mean for an operator is in the README.
   same gas limit as the payload's calls. A fork test against a real Core and a signed VAA
   can measure it.
 - **The report float is not sized.** A zkSync or Tron transceiver pays every return report
-  from its own float, in its own currency, for accounts homed on any chain, while each home
+  from its own float, in its own currency, for conduits homed on any chain, while each home
   charges its bootstrap fee in the home's currency. Nothing moves the fee to the chain that
   pays; the float is funded out of band, and how much it needs depends on traffic from every
   home. Mass bootstrapping can also spend it down on purpose (#78, pinned by
@@ -41,7 +41,7 @@ the seventh; what they mean for an operator is in the README.
   every report the float pays ([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
-  there to zero, and the owner can limit which accounts bootstrap with an allowlist.
+  there to zero, and the owner can limit which conduits bootstrap with an allowlist.
 
 ## 2. Chain checks before mainnet
 
@@ -57,14 +57,14 @@ the seventh; what they mean for an operator is in the README.
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).
   The Ethereum side quotes on a fork; the zkSync side needs a zkSync Sepolia run.
-- **One account deployed on zkSync Era and on Shasta.** The formulas are checked: zkSync's
+- **One conduit deployed on zkSync Era and on Shasta.** The formulas are checked: zkSync's
   matches `ContractDeployer.getNewAddressCreate2` on mainnet, and Tron's `0x41` preimage is
   java-tron's own (`WalletUtil.generateContractAddress2`), which settles the docs
   contradiction. On a local EraVM node, a zkSync transceiver born with the hash read from a
-  deployed `CrossProxy` created its account where it predicted (2026-10-20, CHECKS §4). Still
-  unverified is the `accountBytecodeHash` of the production zksolc and TRON-solc builds,
-  which needs a funded deployment. It fails closed if wrong (`AccountAddressMismatch` on
-  every account creation), so the cost is a redeploy.
+  deployed `CrossProxy` created its conduit where it predicted (2026-10-20, CHECKS §4). Still
+  unverified is the `conduitBytecodeHash` of the production zksolc and TRON-solc builds,
+  which needs a funded deployment. It fails closed if wrong (`ConduitAddressMismatch` on
+  every conduit creation), so the cost is a redeploy.
 - **A chain without Arachnid's factory is unsupported.** It is `Unique` in every registry and
   grades every other chain `Unique` in its own (#33), so its transceivers cannot be born
   configured: the governor's home is not `Predetermined` from there, and `initialize` refuses
@@ -72,7 +72,7 @@ the seventh; what they mean for an operator is in the README.
   an explicit counterpart in the registry seed.
 - **zkSync and Tron cannot compute BLAKE2b commitments.** EraVM has no EIP-152, and Tron's
   `0x09` is `BatchValidateSign`, with BLAKE2F off on mainnet; `Blake2b256` fails closed on
-  both. An account homed there cannot use the BLAKE2b scheme.
+  both. A conduit homed there cannot use the BLAKE2b scheme.
 - **Hyperlane's verification can change.** Each destination's default ISM is mapped per origin
   in [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination); the
   Mailbox owner can replace it, so it is rechecked before mainnet.
@@ -111,7 +111,7 @@ the seventh; what they mean for an operator is in the README.
   initializer sets together are covered only by the suites that read them back.
 - **Two fork tests, and CI runs neither.** Every binding is tested against a mock of its
   provider. `test/fork/LzDvnFork.t.sol` checks #51 against Ethereum's LayerZero endpoint, and
-  `test/fork/LzOftFork.t.sol` carries a `layerzero-oft` account and measures its delivery gas
+  `test/fork/LzOftFork.t.sol` carries a `layerzero-oft` conduit and measures its delivery gas
   through frxUSD; both skip without their RPC URLs, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
@@ -126,10 +126,10 @@ the seventh; what they mean for an operator is in the README.
   which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
   Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
   5.4.0, and `src/` does not import `Bytes`.
-- **An account cannot bootstrap after `transferOwnership` (#95).** Its address derives from the
+- **A conduit cannot bootstrap after `transferOwnership` (#95).** Its address derives from the
   owner at creation, but every bootstrap sends the current `owner()`. The plain bindings refuse
   it at home with nothing paid; `layerzero-oft` pays the fee, marks the chain, and is refused
-  at the destination for good. Undecided whether a transferred account should bootstrap at
+  at the destination for good. Undecided whether a transferred conduit should bootstrap at
   all; at minimum `layerzero-oft` should refuse at home before paying.
 
 ## 4. Post-launch: non-EVM destinations
@@ -156,7 +156,7 @@ blocks it.
   once and wrong forever.
 - **A Move receiver model.** Move has no general dynamic dispatch, so a receiver can verify
   a commitment perfectly and have no way to perform the approved calls. It also has no
-  per-owner deployment, so the one-account-per-owner model and its single address do not
+  per-owner deployment, so the one-conduit-per-owner model and its single address do not
   survive. The largest unresolved piece of non-EVM support: see
   [`encoding.md`](encoding.md#commitments-off-the-evm).
 - **A Cardano receiver model, or a decision that Cardano is out of scope.** eUTxO

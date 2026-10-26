@@ -19,7 +19,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
 
     /// @notice CCIP Router on this chain. On the implementation, so it never reaches a derived
-    ///         account address.
+    ///         conduit address.
     address public immutable router;
 
     constructor(address router_, address extension_) TransceiverBase(extension_) {

@@ -13,7 +13,7 @@ import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OpStackReceiver, IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";

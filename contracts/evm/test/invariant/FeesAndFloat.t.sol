@@ -29,7 +29,7 @@ uint256 constant PER_BYTE = 1 gwei;
 uint256 constant BOOTSTRAP_FEE = 0.01 ether;
 address constant PROVIDER = address(0xFEE5);
 
-contract FeeAccount is AnyGatewayTransmitter {}
+contract FeeConduit is AnyGatewayTransmitter {}
 
 contract FeeReceiver is AnyGatewayReceiver {}
 
@@ -42,7 +42,7 @@ contract RegistryParityExtension is TransceiverExtension {
 }
 
 /// @notice A diverging transceiver, so it both charges bootstrap fees and pays reports from its
-///         float. It derives accounts Ethereum's way, since the zkSync and Tron formulas fail
+///         float. It derives conduits Ethereum's way, since the zkSync and Tron formulas fail
 ///         closed on Forge's EVM; nothing here depends on the formula.
 contract FloatTransceiver is AnyGatewayTransceiver {
     error NoBalanceForTheReport();
@@ -88,13 +88,13 @@ contract FloatTransceiver is AnyGatewayTransceiver {
     }
 }
 
-/// @notice The treasury's owner, every account's owner, and the only actor: bootstraps from a
-///         few accounts to three destinations, delivers bootstraps that are reported home from
+/// @notice The treasury's owner, every conduit's owner, and the only actor: bootstraps from a
+///         few conduits to three destinations, delivers bootstraps that are reported home from
 ///         the float, tops the float up, collects it, and makes the calls that must be refused.
 /// @dev Expectations are written before the call they describe: an unexpected revert undoes
 ///      them with the call, and `fail-on-revert` reports it.
 contract FloatHandler is Test {
-    uint256 constant ACCOUNTS = 4;
+    uint256 constant CONDUITS = 4;
     uint256 constant DESTINATIONS = 3;
     uint256 constant FUNDING = 1 ether;
     uint256 constant MAX_FEE = 0.1 ether;
@@ -105,8 +105,8 @@ contract FloatHandler is Test {
     ChainRegistry public registry;
     bytes32 public provider;
 
-    address[] public accounts;
-    mapping(uint256 account => mapping(uint256 destination => bool)) public booted;
+    address[] public conduits;
+    mapping(uint256 conduit => mapping(uint256 destination => bool)) public booted;
     mapping(uint256 destination => uint256) public fee;
 
     uint256 public feesCharged;
@@ -124,18 +124,18 @@ contract FloatHandler is Test {
 
     function setTransceiver(FloatTransceiver t_) external {
         t = t_;
-        for (uint256 i; i < ACCOUNTS; ++i) {
+        for (uint256 i; i < CONDUITS; ++i) {
             address a = t_.createTransmitter(salt(i));
             vm.deal(a, FUNDING);
-            accounts.push(a);
+            conduits.push(a);
         }
         for (uint256 d; d < DESTINATIONS; ++d) {
             fee[d] = reporting(d) ? BOOTSTRAP_FEE : 0;
         }
     }
 
-    function accountsFunded() external pure returns (uint256) {
-        return ACCOUNTS * FUNDING;
+    function conduitsFunded() external pure returns (uint256) {
+        return CONDUITS * FUNDING;
     }
 
     function salt(uint256 i) public pure returns (bytes32) {
@@ -151,7 +151,7 @@ contract FloatHandler is Test {
         return d < 2;
     }
 
-    /// Homes whose accounts bootstrap to this transceiver, all paid for from its one float.
+    /// Homes whose conduits bootstrap to this transceiver, all paid for from its one float.
     function homeChain(uint256 h) public pure returns (uint256) {
         return [uint256(1), 10, 8453][h];
     }
@@ -169,7 +169,7 @@ contract FloatHandler is Test {
     {
         address owner = address(uint160(0xA0000 + n));
         bytes32 homeKey = ChainKey.forEvm(homeChain(h));
-        address transmitter = registry.predictCrossAccount(homeKey, provider, owner, bytes32(n), homeKey);
+        address transmitter = registry.predictCrossConduit(homeKey, provider, owner, bytes32(n), homeKey);
         route = Erc7930.encodeEvmChain(homeChain(h));
         counterpart = abi.encodePacked(registry.predictTransceiver(homeKey, provider));
         message = Envelope.encodeBootstrap(owner, bytes32(n), toBytes32(transmitter), new Call[](0));
@@ -181,13 +181,13 @@ contract FloatHandler is Test {
     }
 
     function messageFee(uint256 i) public view returns (uint256) {
-        return Envelope.encodeBootstrap(address(this), salt(i), toBytes32(accounts[i]), calls()).length * PER_BYTE;
+        return Envelope.encodeBootstrap(address(this), salt(i), toBytes32(conduits[i]), calls()).length * PER_BYTE;
     }
 
-    function bootstrap(uint256 accountSeed, uint256 destinationSeed) external {
-        uint256 i = accountSeed % ACCOUNTS;
+    function bootstrap(uint256 conduitSeed, uint256 destinationSeed) external {
+        uint256 i = conduitSeed % CONDUITS;
         uint256 d = destinationSeed % DESTINATIONS;
-        TransmitterBase a = TransmitterBase(payable(accounts[i]));
+        TransmitterBase a = TransmitterBase(payable(conduits[i]));
         bytes32 key = ChainKey.forEvm(chainId(d));
         if (booted[i][d]) {
             vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, key));
@@ -202,25 +202,25 @@ contract FloatHandler is Test {
         a.bootstrap(chainId(d), calls(), new bytes[](0));
     }
 
-    /// @dev The account calling the transceiver directly with less than the fee.
-    function underpay(uint256 accountSeed, uint256 destinationSeed, uint256 value) external {
-        uint256 i = accountSeed % ACCOUNTS;
+    /// @dev The conduit calling the transceiver directly with less than the fee.
+    function underpay(uint256 conduitSeed, uint256 destinationSeed, uint256 value) external {
+        uint256 i = conduitSeed % CONDUITS;
         uint256 d = destinationSeed % DESTINATIONS;
         bytes32 key = ChainKey.forEvm(chainId(d));
         if (fee[d] == 0) return;
         value = bound(value, 0, fee[d] - 1);
-        vm.prank(accounts[i]);
+        vm.prank(conduits[i]);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.InsufficientBootstrapFee.selector, fee[d], value));
         t.bootstrap{value: value}(key, address(this), salt(i), calls(), new bytes[](0));
     }
 
-    /// @dev Anyone but the account, paying in full.
-    function bootstrapAsStranger(uint256 accountSeed, uint256 destinationSeed) external {
-        uint256 i = accountSeed % ACCOUNTS;
+    /// @dev Anyone but the conduit, paying in full.
+    function bootstrapAsStranger(uint256 conduitSeed, uint256 destinationSeed) external {
+        uint256 i = conduitSeed % CONDUITS;
         uint256 d = destinationSeed % DESTINATIONS;
         vm.deal(address(this), address(this).balance + MAX_FEE + 1 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, address(this), salt(i), address(this))
+            abi.encodeWithSelector(TransceiverCore.NotTheConduit.selector, address(this), salt(i), address(this))
         );
         t.bootstrap{value: MAX_FEE + 1 ether}(
             ChainKey.forEvm(chainId(d)), address(this), salt(i), calls(), new bytes[](0)
@@ -237,7 +237,7 @@ contract FloatHandler is Test {
     }
 
     /// @dev A bootstrap from one of the homes arrives, creates a receiver, and is reported home from the
-    ///      float. A float that cannot pay reverts the delivery, account creation with it.
+    ///      float. A float that cannot pay reverts the delivery, conduit creation with it.
     function deliver(uint256 homeSeed) external {
         uint256 n = ++inbound;
         (bytes memory route, bytes memory counterpart, bytes memory message) = delivery(homeSeed % HOMES, n);
@@ -298,7 +298,7 @@ contract FeesAndFloatInvariantTest is Test {
         handler = new FloatHandler(registry, provider);
 
         TransceiverConfig memory c = transceiverConfig(
-            address(0x5165), address(new FeeAccount()), address(new FeeReceiver()), address(handler.treasury())
+            address(0x5165), address(new FeeConduit()), address(new FeeReceiver()), address(handler.treasury())
         );
         t = FloatTransceiver(
             payable(deployTransceiver(
@@ -306,7 +306,7 @@ contract FeesAndFloatInvariantTest is Test {
                 ))
         );
         registry.setLocalTransceiver(provider, address(t));
-        // R8.4: the record names the initcode hash every EVM chain deploys accounts from.
+        // R8.4: the record names the initcode hash every EVM chain deploys conduits from.
         registry.setProviderDeployment(provider, address(0xD1), keccak256("provider"), t.CROSS_PROXY_INIT_CODE_HASH());
 
         for (uint256 h; h < 3; ++h) {
@@ -371,12 +371,12 @@ contract FeesAndFloatInvariantTest is Test {
     /// forge-config: default.invariant.fail-on-revert = true
     /// forge-config: default.invariant.runs = 128
     /// forge-config: default.invariant.depth = 100
-    function invariant_eachAccountPaidExactlyItsQuotes() public view {
+    function invariant_eachConduitPaidExactlyItsQuotes() public view {
         uint256 held;
         for (uint256 i; i < 4; ++i) {
-            held += handler.accounts(i).balance;
+            held += handler.conduits(i).balance;
         }
-        assertEq(held, handler.accountsFunded() - handler.feesCharged() - handler.messageFees(), "accounts");
+        assertEq(held, handler.conduitsFunded() - handler.feesCharged() - handler.messageFees(), "conduits");
     }
 
     /// forge-config: default.invariant.fail-on-revert = true
@@ -398,7 +398,7 @@ contract FeesAndFloatInvariantTest is Test {
         }
     }
 
-    /// @notice #78: the float pays reports for accounts homed anywhere, so once it cannot pay
+    /// @notice #78: the float pays reports for conduits homed anywhere, so once it cannot pay
     ///         one, a bootstrap from every home is refused, not only from the home that spent it.
     /// forge-config: default.invariant.fail-on-revert = true
     /// forge-config: default.invariant.runs = 128
@@ -416,7 +416,7 @@ contract FeesAndFloatInvariantTest is Test {
         bytes32 zkSync = ChainKey.forEvm(handler.chainId(0));
         vm.prank(t.owner());
         ext(address(t)).setBootstrapFee(zkSync, 1);
-        TransmitterBase a = TransmitterBase(payable(handler.accounts(0)));
+        TransmitterBase a = TransmitterBase(payable(handler.conduits(0)));
         uint256 treasuryBefore = address(handler.treasury()).balance;
         uint256 zkSyncId = handler.chainId(0);
         Call[] memory c = handler.calls();

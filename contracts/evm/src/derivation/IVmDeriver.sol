@@ -10,7 +10,7 @@ pragma solidity ^0.8.20;
 ///      passes an ABI-encoded blob and the deriver decodes the shape its scheme requires.
 ///
 ///      What is uniform is the two ends. Every implementation takes a canonical ERC-7930
-///      chain identifier plus a params blob, and returns a canonical ERC-7930 account
+///      chain identifier plus a params blob, and returns a canonical ERC-7930 conduit
 ///      envelope for the same chain. The registry can therefore store the result without
 ///      knowing which VM produced it.
 ///
@@ -22,7 +22,7 @@ pragma solidity ^0.8.20;
 interface IVmDeriver {
     /// @param chainIdentifier Canonical ERC-7930 chain identifier (zero-length address).
     /// @param params          `abi.encode(Scheme, bytes)`: see `VmDeriver.Scheme`.
-    /// @return interop        Canonical ERC-7930 account envelope on that same chain.
+    /// @return interop        Canonical ERC-7930 conduit envelope on that same chain.
     function deriveAddress(bytes calldata chainIdentifier, bytes calldata params)
         external
         view

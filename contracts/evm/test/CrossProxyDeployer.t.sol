@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/conduit/CrossProxyDeployer.sol";
 import {ARACHNID} from "script/deploy/CrossProxyDeploy.sol";
 import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
 

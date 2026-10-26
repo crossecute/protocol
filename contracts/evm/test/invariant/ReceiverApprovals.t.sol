@@ -7,7 +7,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AnyGatewayReceiver} from "test/Harness.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployCrossProxy.sol";
 
 contract ApprovalReceiver is AnyGatewayReceiver {}
 
@@ -149,7 +149,7 @@ contract ReceiverApprovalsInvariantTest is Test {
         target = new Target();
         handler = new ApprovalHandler(target);
         receiver = ReceiverBase(
-            payable(deployAccount(
+            payable(deployConduit(
                     address(new ApprovalReceiver()),
                     abi.encodeCall(ReceiverBase.initialize, (address(handler), ChainKey.local(), new Call[](0)))
                 ))

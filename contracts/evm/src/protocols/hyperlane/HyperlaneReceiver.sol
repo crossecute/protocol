@@ -5,7 +5,7 @@ import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user account on a non-home chain.
+/// @notice Per-user conduit on a non-home chain.
 /// @dev Implements `IMessageRecipient.handle` directly, gated `onlyRole(GATEWAY_ROLE)`,
 ///      rather than inheriting `MailboxClient` (OZ 4.9.3) or `Router`, whose
 ///      enrolled-router-per-domain check would bypass the registry's provenance dial. See
@@ -16,7 +16,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 contract HyperlaneReceiver is ProviderReceiver, IMessageRecipient {
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
-    ///         so this never moves a derived account address.
+    ///         so this never moves a derived conduit address.
     address public immutable mailbox;
 
     constructor(address mailbox_) {

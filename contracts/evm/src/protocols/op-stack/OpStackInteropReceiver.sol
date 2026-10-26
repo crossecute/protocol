@@ -5,7 +5,7 @@ import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
 import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 
-/// @notice Per-user account on a non-home chain, for `op-stack-l2-l2`.
+/// @notice Per-user conduit on a non-home chain, for `op-stack-l2-l2`.
 /// @dev The origin is the source chain id the messenger reports, which must be the home's.
 contract OpStackInteropReceiver is ProviderReceiver, IOpStackRecipient {
     function _providerGateway() internal pure override returns (address) {

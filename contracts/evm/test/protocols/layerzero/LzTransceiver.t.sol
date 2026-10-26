@@ -91,7 +91,7 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzFixture {
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
         address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         assertEq(endpoint.receiveLibraryOf(receiver, BASE_EID), endpoint.RECEIVE_LIBRARY());
         assertEq(
             endpoint.configOf(receiver, endpoint.RECEIVE_LIBRARY(), BASE_EID, LzMessage.ULN_CONFIG_TYPE), onlyDvn(DVN)
@@ -165,17 +165,17 @@ contract LzZkSyncTransceiverTest is ProviderZkSyncSpec, LzFixture {
         return address(new LzZkSyncHarness(address(endpoint)));
     }
 
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
         internal
         override
         returns (address)
     {
-        return LzDeploy.zkSyncTransceiver(d, 0, address(0), accountBytecodeHash);
+        return LzDeploy.zkSyncTransceiver(d, 0, address(0), conduitBytecodeHash);
     }
 
     function _assertReportSent() internal view override {
         MockLzEndpoint.Sent memory s = endpoint.sent(0);
-        assertEq(s.dstEid, BASE_EID, "to the account's home");
+        assertEq(s.dstEid, BASE_EID, "to the conduit's home");
         assertEq(s.refundAddress, zk, "an overpayment returns to the float, not the relayer");
     }
 }
@@ -238,7 +238,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
 }
 
 contract LzDeliveryGasTest is ProviderDeliveryGasSpec, LzFixture {
-    function _prepareAccount(address account_, address owner) internal override {
-        _peerWithItsReceiver(account_, owner);
+    function _prepareConduit(address conduit_, address owner) internal override {
+        _peerWithItsReceiver(conduit_, owner);
     }
 }

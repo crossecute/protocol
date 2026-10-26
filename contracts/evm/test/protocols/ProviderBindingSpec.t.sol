@@ -5,14 +5,14 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {SlotReuse} from "test/protocols/SlotReuse.t.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {
-    ProviderAccountFixture,
+    ProviderConduitFixture,
     ProviderFixture,
     ProviderIdFixture,
     ProviderGasFixture
 } from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployCrossProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -202,7 +202,7 @@ abstract contract ProviderFeeSpec is ProviderSendSpec {
 }
 
 /// @title ProviderRefundSpec
-/// @notice C25 (R7.2): a transceiver's overpayment is refunded to its caller, the account on
+/// @notice C25 (R7.2): a transceiver's overpayment is refunded to its caller, the conduit on
 ///         path B, never to itself. A transmitter refunds to itself, as the payer
 ///         (`Transport.t.sol`). For providers that refund (LayerZero, Hyperlane, Wormhole); CCIP
 ///         keeps overpayment.
@@ -286,13 +286,13 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
 }
 
 /// @title ProviderTransmitterSendSpec
-/// @notice An account's own send (path A) through the binding's transmitter, paid from the
-///         account's balance whatever `msg.value` is (R7.1), at the payload default gas.
+/// @notice A conduit's own send (path A) through the binding's transmitter, paid from the
+///         conduit's balance whatever `msg.value` is (R7.1), at the payload default gas.
 abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
-    address internal constant ACCOUNT_OWNER = address(0xA11CE);
-    address payable internal account;
+    address internal constant CONDUIT_OWNER = address(0xA11CE);
+    address payable internal conduit;
 
-    /// @dev The remote chain is `Predetermined`, so the account's receiver there shares its
+    /// @dev The remote chain is `Predetermined`, so the conduit's receiver there shares its
     ///      address and the transceiver's counterpart is the transceiver's own.
     function setUp() public virtual {
         TransceiverConfig memory c = _config();
@@ -308,27 +308,27 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         vm.stopPrank();
         _configureRemote(transceiver, transceiver);
 
-        vm.prank(ACCOUNT_OWNER);
-        account = payable(t.createTransmitter(bytes32(0)));
-        vm.deal(account, 1 ether);
-        _prepareAccount(account, ACCOUNT_OWNER);
-        vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+        vm.prank(CONDUIT_OWNER);
+        conduit = payable(t.createTransmitter(bytes32(0)));
+        vm.deal(conduit, 1 ether);
+        _prepareConduit(conduit, CONDUIT_OWNER);
+        vm.prank(CONDUIT_OWNER);
+        TransmitterBase(conduit).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
     }
 
-    function test_aFundedAccountSendsWithNoValueAttached() public {
+    function test_aFundedConduitSendsWithNoValueAttached() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
         bytes memory payload = Payload.encodeCalls(calls);
-        bytes memory recipient = TransmitterBase(account).recipientOn(REMOTE_CHAIN_ID);
+        bytes memory recipient = TransmitterBase(conduit).recipientOn(REMOTE_CHAIN_ID);
         _setProviderFee(0.01 ether);
-        uint256 quote = TransmitterBase(account).quoteMessage(recipient, payload, _attributes());
-        uint256 before = account.balance;
+        uint256 quote = TransmitterBase(conduit).quoteMessage(recipient, payload, _attributes());
+        uint256 before = conduit.balance;
 
-        vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).sendMessage(recipient, payload, _attributes());
+        vm.prank(CONDUIT_OWNER);
+        TransmitterBase(conduit).sendMessage(recipient, payload, _attributes());
 
-        assertEq(before - account.balance, quote, "the quote, from the balance");
+        assertEq(before - conduit.balance, quote, "the quote, from the balance");
         assertEq(_lastGasLimit(), DeliveryGas.PAYLOAD, "at the payload default");
     }
 }
@@ -377,10 +377,10 @@ abstract contract ProviderEvmRecipientSpec is ProviderSendSpec {
 /// @title ProviderTransmitterSpec
 /// @notice C9 (R3.1): a transmitter has no inbound path. Its provider's delivery callback,
 ///         called by the provider's own gateway, finds nothing to run.
-abstract contract ProviderTransmitterSpec is ProviderAccountFixture {
+abstract contract ProviderTransmitterSpec is ProviderConduitFixture {
     /// @notice A transmitter behind a proxy, initialized.
     function _transmitter() internal returns (address) {
-        return deployAccount(_transmitterImplementation(), _initializeTransmitter(address(this)));
+        return deployConduit(_transmitterImplementation(), _initializeTransmitter(address(this)));
     }
 
     function test_inboundToATransmitterReverts() public {
@@ -423,7 +423,7 @@ contract GatewayGrabber {
     }
 }
 
-abstract contract ProviderReceiveSpec is ProviderAccountFixture {
+abstract contract ProviderReceiveSpec is ProviderConduitFixture {
     event Delivered(uint256 callCount);
 
     address internal constant SOURCE_TRANSMITTER = address(0xABCD);
@@ -437,7 +437,7 @@ abstract contract ProviderReceiveSpec is ProviderAccountFixture {
     /// @notice A new receiver behind a proxy whose initializer runs `calls` as its bootstrap
     ///         payload.
     function _deployReceiver(Call[] memory calls) internal returns (address) {
-        return deployAccount(_receiverImplementation(), _initializeReceiver(SOURCE_TRANSMITTER, calls));
+        return deployConduit(_receiverImplementation(), _initializeReceiver(SOURCE_TRANSMITTER, calls));
     }
 
     function _emptyPayload() internal pure returns (bytes memory) {
@@ -449,7 +449,7 @@ abstract contract ProviderReceiveSpec is ProviderAccountFixture {
     }
 
     /// @notice Deliver from this receiver's own transmitter address, but on an origin other than
-    ///         its home: a contract at that address elsewhere is not the account's transmitter.
+    ///         its home: a contract at that address elsewhere is not the conduit's transmitter.
     function _deliverFromUnconfiguredOrigin() internal {
         _deliver(receiver, _remoteProviderId() + 1, toBytes32(SOURCE_TRANSMITTER), _emptyPayload());
     }
@@ -487,7 +487,7 @@ abstract contract ProviderReceiveSpec is ProviderAccountFixture {
         calls[0] =
             Call({target: next, value: 0, data: abi.encodeCall(IAccessControl.grantRole, (GATEWAY_ROLE, second))});
 
-        address r = deployAccount(implementation, _initializeReceiver(SOURCE_TRANSMITTER, calls));
+        address r = deployConduit(implementation, _initializeReceiver(SOURCE_TRANSMITTER, calls));
 
         assertEq(r, next);
         assertTrue(IAccessControl(r).hasRole(GATEWAY_ROLE, second));
@@ -517,7 +517,7 @@ abstract contract ProviderReceiveSpec is ProviderAccountFixture {
         _deployReceiver(calls);
     }
 
-    /// @dev `revokeGateway` is an account's only way to disconnect a transport, so it must cut
+    /// @dev `revokeGateway` is a conduit's only way to disconnect a transport, so it must cut
     ///      delivery even where the provider authenticates before this protocol's code runs.
     function test_aRevokedGatewayCannotDeliver() public {
         vm.prank(SOURCE_TRANSMITTER);
@@ -526,13 +526,13 @@ abstract contract ProviderReceiveSpec is ProviderAccountFixture {
         _deliverFrom(SOURCE_TRANSMITTER);
     }
 
-    /// @dev C24 for the account, which holds the provider's delivery state beside its own.
+    /// @dev C24 for the conduit, which holds the provider's delivery state beside its own.
     function test_aDeliveryWritesOverNoOtherField() public {
         vm.startStateDiffRecording();
         _deliverFrom(SOURCE_TRANSMITTER);
-        address[] memory accounts = new address[](1);
-        accounts[0] = receiver;
-        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+        address[] memory conduits = new address[](1);
+        conduits[0] = receiver;
+        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), conduits);
     }
 }
 
@@ -571,8 +571,8 @@ abstract contract ProviderGovernorHomeSpec is ProviderIdFixture {
 abstract contract ProviderInboundFixture is ProviderFixture {
     /// @dev The origin's transceiver as this one records it. `Unique`, so no parity check.
     address internal constant ORIGIN_TRANSCEIVER = address(0xC0DE);
-    address internal constant ACCOUNT_OWNER = address(0xA11CE);
-    bytes32 internal constant ACCOUNT_SALT = keccak256("account");
+    address internal constant CONDUIT_OWNER = address(0xA11CE);
+    bytes32 internal constant CONDUIT_SALT = keccak256("account");
     address internal constant ORIGIN_TRANSMITTER = address(0x7A11);
 
     /// @notice The transceiver under test, emitting `InboundHandled(origin)` as it handles a
@@ -602,7 +602,7 @@ abstract contract ProviderInboundFixture is ProviderFixture {
     }
 
     function _bootstrap() internal pure returns (bytes memory) {
-        return Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), new Call[](0));
+        return Envelope.encodeBootstrap(CONDUIT_OWNER, CONDUIT_SALT, toBytes32(ORIGIN_TRANSMITTER), new Call[](0));
     }
 
     /// @dev External so a test can cap the gas the provider delivers with.
@@ -623,7 +623,7 @@ abstract contract ProviderInboundFixture is ProviderFixture {
 ///         configured origin, arriving through the provider's own path, creates a receiver
 ///         configured for that provider; a wrong sender is refused; and the float can be funded
 ///         and leaves only to the treasury.
-/// @dev The plain variant only. zkSync and Tron variants fail closed at account creation on
+/// @dev The plain variant only. zkSync and Tron variants fail closed at conduit creation on
 ///      Forge's EVM, so their suites pin their own overrides instead.
 abstract contract ProviderInboundSpec is ProviderInboundFixture {
     event InboundHandled(bytes32 chainKey);
@@ -711,18 +711,18 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         emit InboundHandled(chainKey);
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
-        address receiver = ext(address(t)).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        address receiver = ext(address(t)).predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
 
     /// @dev C33: a gas attribute is the sender's to size. A bootstrap delivered with too little
-    ///      gas reverts whole and leaves no account, so the provider's retry at a higher limit
+    ///      gas reverts whole and leaves no conduit, so the provider's retry at a higher limit
     ///      creates it. 200,000 is under every measured bootstrap (deploy/CHECKS.md §4).
     function test_aBootstrapCutShortByGasSucceedsOnRetryWithMore() public {
         bytes32 chainKey = _wire();
         address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
 
         assertFalse(
             _deliverWith(200_000, transceiver, ORIGIN_TRANSCEIVER, _bootstrap()), "the delivery runs out of gas"
@@ -742,7 +742,7 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         bytes32 chainKey = _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
         address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         bytes memory payload = Payload.encodeCalls(new Call[](0));
 
         vm.expectRevert();
@@ -795,9 +795,9 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         vm.startStateDiffRecording();
         _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
-        address[] memory accounts = new address[](1);
-        accounts[0] = transceiver;
-        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), accounts);
+        address[] memory conduits = new address[](1);
+        conduits[0] = transceiver;
+        SlotReuse.assertNone(vm.stopAndReturnStateDiff(), conduits);
     }
 }
 
@@ -830,25 +830,25 @@ abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture, DeliveryGas
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
         bytes memory message =
-            Envelope.encodeBootstrap(ACCOUNT_OWNER, ACCOUNT_SALT, toBytes32(ORIGIN_TRANSMITTER), calls);
+            Envelope.encodeBootstrap(CONDUIT_OWNER, CONDUIT_SALT, toBytes32(ORIGIN_TRANSMITTER), calls);
         _assertFits("bootstrap, one call", _measure(transceiver, ORIGIN_TRANSCEIVER, message), DeliveryGas.BOOTSTRAP);
     }
 
-    /// @dev `REMOTE_CHAIN_ID` is graded `Unique`, so it reports, and the account has dispatched
+    /// @dev `REMOTE_CHAIN_ID` is graded `Unique`, so it reports, and the conduit has dispatched
     ///      its bootstrap there, which is what the report answers.
     function test_aReportArrivingHomeFitsTheDefault() public {
         bytes32 chainKey = _wire();
         vm.prank(TransceiverBase(payable(transceiver)).owner());
         ext(transceiver).setBootstrapFee(chainKey, 1);
-        vm.prank(ACCOUNT_OWNER);
-        address payable account = payable(TransceiverBase(payable(transceiver)).createTransmitter(bytes32(0)));
-        vm.deal(account, 1 ether);
-        _prepareAccount(account, ACCOUNT_OWNER);
-        vm.prank(ACCOUNT_OWNER);
-        TransmitterBase(account).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+        vm.prank(CONDUIT_OWNER);
+        address payable conduit = payable(TransceiverBase(payable(transceiver)).createTransmitter(bytes32(0)));
+        vm.deal(conduit, 1 ether);
+        _prepareConduit(conduit, CONDUIT_OWNER);
+        vm.prank(CONDUIT_OWNER);
+        TransmitterBase(conduit).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
 
         bytes memory report = Envelope.encodeReceiverReport(
-            ACCOUNT_OWNER, bytes32(0), Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBEEF))
+            CONDUIT_OWNER, bytes32(0), Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBEEF))
         );
         _assertFits("report arriving home", _measure(transceiver, ORIGIN_TRANSCEIVER, report), DeliveryGas.REPORT);
     }
@@ -857,7 +857,7 @@ abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture, DeliveryGas
     function test_aPayloadWithNoCallsFitsTheDefault() public {
         bytes32 chainKey = _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
-        address receiver = ext(transceiver).predictCrossAccount(ACCOUNT_OWNER, ACCOUNT_SALT, chainKey);
+        address receiver = ext(transceiver).predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         _assertFits("payload, no calls", _measure(receiver, ORIGIN_TRANSMITTER, payload), DeliveryGas.PAYLOAD);
     }
@@ -887,7 +887,7 @@ interface IReportHarness {
 
 /// @title ProviderZkSyncSpec
 /// @notice A zkSync transceiver always diverges, so it reports each receiver it creates to the
-///         account's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
+///         conduit's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
 ///         paid from the float, and any overpayment must return to the float, not the relayer.
 abstract contract ProviderZkSyncSpec is ProviderGasFixture {
     address internal constant HOME_TRANSCEIVER = address(0xC0DE);
@@ -899,7 +899,7 @@ abstract contract ProviderZkSyncSpec is ProviderGasFixture {
     function _zkSyncImplementation() internal virtual returns (address);
 
     /// @notice Deploy `d` as the zkSync transceiver through the provider's deploy script.
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
         internal
         virtual
         returns (address);

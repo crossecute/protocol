@@ -9,7 +9,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {ILzOftAccountFactory} from "src/protocols/layerzero/ILzOftAccountFactory.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @dev The initializer the factory arms a transmitter with; `LzOftTransmitter.initialize` is
 ///      overloaded, so it is named here for `abi.encodeCall`.
@@ -17,7 +17,7 @@ interface ILzOftTransmitterInit {
     function initialize(address owner, address factory, bytes32 salt, address homeOft) external;
 }
 
-/// @notice A `layerzero-oft` account on its home: sends every message, its bootstraps
+/// @notice A `layerzero-oft` conduit on its home: sends every message, its bootstraps
 ///         included, through its operator's OFT, as the `send` caller the destination
 ///         authenticates by `composeFrom`.
 ///
@@ -34,7 +34,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         address oft;
     }
 
-    /// @notice The OFT this account sends through, bound into its address by the factory.
+    /// @notice The OFT this conduit sends through, bound into its address by the factory.
     address public homeOft;
 
     mapping(bytes32 chainKey => Destination) internal _destinations;
@@ -91,7 +91,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         return LzOftMessage.quote(homeOft, _messageParam(recipient, payload, attributes));
     }
 
-    /// @dev `recipient` is the receiver `sendMessage` already matched to this account's record,
+    /// @dev `recipient` is the receiver `sendMessage` already matched to this conduit's record,
     ///      so its chain has a bootstrapped destination. The peer is checked again because the
     ///      OFT's owner can change it after the bootstrap.
     function _messageParam(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
@@ -128,7 +128,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         LzOftMessage.send(homeOft, param, fee, _refundTo());
     }
 
-    /// @dev Sent to the factory on the destination, which derives this account from the message
+    /// @dev Sent to the factory on the destination, which derives this conduit from the message
     ///      and proves the delivering OFT into `destRoot`.
     function _bootstrapParam(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
         private
@@ -136,11 +136,11 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         returns (SendParam memory param, Destination memory d)
     {
         (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof) =
-            ILzOftAccountFactory(transceiver).bootstrapRoute(address(this), chainKey);
+            ILzOftConduitFactory(transceiver).bootstrapRoute(address(this), chainKey);
         LzOftMessage.requirePeer(homeOft, eid, dstOft);
 
         bytes memory compose = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(owner(), accountSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
+            LzOftMessage.Bootstrap(owner(), conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
         );
         param = LzOftMessage.sendParam(eid, transceiver, compose, attributes, DeliveryGas.BOOTSTRAP);
         d = Destination(eid, dstOft);

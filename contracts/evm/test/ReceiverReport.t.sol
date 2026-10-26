@@ -48,7 +48,7 @@ contract Receiver is AnyGatewayReceiver {}
 
 /// @dev A transceiver whose divergence flag is an initializer choice, so both arms can be
 ///      exercised against otherwise identical contracts. A diverging one stands in for the
-///      zkSync and Tron variants, whose account creation fails closed on Forge's EVM.
+///      zkSync and Tron variants, whose conduit creation fails closed on Forge's EVM.
 contract ReportingTransceiver is AnyGatewayTransceiver {
     bytes public sentRecipient;
     bytes public sentPayload;
@@ -111,7 +111,7 @@ contract ReportingTransceiver is AnyGatewayTransceiver {
     ///      authenticating the origin. The carried transmitter sits at the receiver's own
     ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, home(), _predictCrossAccount(owner, salt, home()), calls);
+        _bootstrapInbound(owner, salt, home(), _predictCrossConduit(owner, salt, home()), calls);
     }
 }
 
@@ -159,14 +159,14 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 0, "no message left");
-        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0, "but the account exists");
+        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0, "but the conduit exists");
     }
 
     /// @dev And it would be a downgrade, not merely waste. A derivation is `Predetermined`;
     ///      anything arriving over a bridge is graded `Unique`, which is strictly less.
-    function test_theParityChainStillCreatesTheAccountAtThePredictedAddress() public {
+    function test_theParityChainStillCreatesTheConduitAtThePredictedAddress() public {
         ReportingTransceiver s = _remote(false);
-        address predicted = ext(address(s)).predictCrossAccount(owner, SALT, home());
+        address predicted = ext(address(s)).predictCrossConduit(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -175,11 +175,11 @@ contract ReceiverReportTest is WiresHome {
 
     /* ============================ the diverging case =========================== */
 
-    /// @dev Where the home cannot derive it, this chain says so. One message per account
+    /// @dev Where the home cannot derive it, this chain says so. One message per conduit
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
         ReportingTransceiver s = _remote(true);
-        address created = ext(address(s)).predictCrossAccount(owner, SALT, home());
+        address created = ext(address(s)).predictCrossConduit(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -203,7 +203,7 @@ contract ReceiverReportTest is WiresHome {
         ReportingTransceiver s = _remote(true);
         s.setReportFee(0.01 ether);
         vm.deal(address(s), 1 ether);
-        address created = ext(address(s)).predictCrossAccount(owner, SALT, home());
+        address created = ext(address(s)).predictCrossConduit(owner, SALT, home());
         gas = bound(gas, 30_000, 1_500_000);
 
         // forge-lint: disable-next-line(return-bomb) the harness returns nothing
@@ -215,12 +215,12 @@ contract ReceiverReportTest is WiresHome {
         } else {
             assertEq(address(s).balance, 1 ether, "nothing left the float");
             assertEq(s.sentCount(), 0);
-            assertEq(created.code.length, 0, "and no account");
+            assertEq(created.code.length, 0, "and no conduit");
         }
     }
 
     /// @dev The report names `(owner, salt)`, not the address alone: the home derives the
-    ///      account from it plus the authenticated origin, so no request id is needed.
+    ///      conduit from it plus the authenticated origin, so no request id is needed.
     function test_theReportCarriesThePairTheHomeKeysOn() public {
         ReportingTransceiver s = _remote(true);
 
@@ -231,14 +231,14 @@ contract ReceiverReportTest is WiresHome {
             keccak256(s.sentPayload()),
             keccak256(
                 Envelope.encodeReceiverReport(
-                    a, b, Erc7930.encodeEvm(block.chainid, ext(address(s)).predictCrossAccount(a, b, home()))
+                    a, b, Erc7930.encodeEvm(block.chainid, ext(address(s)).predictCrossConduit(a, b, home()))
                 )
             )
         );
     }
 
-    /// @dev Two accounts, two reports, each naming its own pair.
-    function test_eachAccountReportsItself() public {
+    /// @dev Two conduits, two reports, each naming its own pair.
+    function test_eachConduitReportsItself() public {
         ReportingTransceiver s = _remote(true);
 
         s.inbound(owner, SALT, new Call[](0));
@@ -253,11 +253,11 @@ contract ReceiverReportTest is WiresHome {
 
     /// @dev A dry float takes the whole bootstrap down, and that is the correct shape.
     ///      The send is nested inside a delivery callback where `msg.value` is zero, so it
-    ///      is paid from this contract's balance. Swallowing the failure would create an
-    ///      account here that the home chain could never address: `CrossProxy` arms
+    ///      is paid from this contract's balance. Swallowing the failure would create a
+    ///      conduit here that the home chain could never address: `CrossProxy` arms
     ///      exactly once and `initialize` is single-shot, so there is no second bootstrap
     ///      to carry a second report. All or nothing is the only recoverable outcome.
-    function test_aFailedReportRevertsTheAccountCreation() public {
+    function test_aFailedReportRevertsTheConduitCreation() public {
         ReportingTransceiver s = _remote(true);
         s.setSendReverts(true);
 
@@ -265,14 +265,14 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length,
+            ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length,
             0,
-            "no account, so the bootstrap can be retried once funded"
+            "no conduit, so the bootstrap can be retried once funded"
         );
     }
 
     /// @dev The provenance bar covers the report as it covers the bootstrap (#40): a home graded
-    ///      below it is not sent to, and the account creation reverts with it, so the bootstrap
+    ///      below it is not sent to, and the conduit creation reverts with it, so the bootstrap
     ///      can be retried once the bar or the grade allows it.
     function test_aReportToAHomeBelowTheBarIsRefused() public {
         ReportingTransceiver s = new ReportingTransceiver();
@@ -291,7 +291,7 @@ contract ReceiverReportTest is WiresHome {
             )
         );
         s.inbound(owner, SALT, new Call[](0));
-        assertEq(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length, 0, "no account");
+        assertEq(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length, 0, "no conduit");
     }
 
     /// @notice The report is priced, not handed the balance.
@@ -313,13 +313,13 @@ contract ReceiverReportTest is WiresHome {
 
     /// @dev The helper is what makes the quote reachable. The payload is built inside a
     ///      delivery callback from the envelope layout, this chain's id, and the address the
-    ///      account will land at; without a view producing those exact bytes, anyone funding
+    ///      conduit will land at; without a view producing those exact bytes, anyone funding
     ///      a float would be pricing a guess.
     function test_theReportPayloadHelperMatchesWhatIsSent() public {
         ReportingTransceiver s = _remote(true);
         vm.deal(address(s), 1 ether);
 
-        address receiver = ext(address(s)).predictCrossAccount(owner, SALT, home());
+        address receiver = ext(address(s)).predictCrossConduit(owner, SALT, home());
         bytes memory expected = ext(address(s)).reportPayload(owner, SALT, receiver);
 
         // Priced through the surface `OutboundBase` now exposes, before anything is sent.
@@ -347,7 +347,7 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
-        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0);
     }
 
     /// @dev A transceiver with no treasury could never release its float, so it is refused.
@@ -366,7 +366,7 @@ contract ReceiverReportTest is WiresHome {
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertTrue(ext(address(s)).predictCrossAccount(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0);
     }
 
     /* ================================ the flag ================================= */
@@ -447,7 +447,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     HomeTransceiver homeSide;
     ReportingTransceiver remote;
     ChainRegistry registry;
-    Transmitter account;
+    Transmitter conduit;
 
     address msig = address(0x5165);
     address owner = address(0xA11CE);
@@ -490,12 +490,12 @@ contract ReceiverReportRoundTripTest is WiresHome {
         ext(address(homeSide)).setBootstrapFee(remoteKey, 1);
         vm.stopPrank();
 
-        // The account the report is about. It has to exist and to have been stood up on the
+        // The conduit the report is about. It has to exist and to have been stood up on the
         // reporting chain, because that is what gives it a counterpart slot for that chain.
         vm.startPrank(owner);
-        account = Transmitter(payable(homeSide.createTransmitter(SALT)));
-        vm.deal(address(account), 1 ether);
-        account.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
+        conduit = Transmitter(payable(homeSide.createTransmitter(SALT)));
+        vm.deal(address(conduit), 1 ether);
+        conduit.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
         vm.stopPrank();
     }
 
@@ -517,37 +517,37 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      receiver. It was paid for, and undeliverable. Now nothing is recorded until the report
     ///      arrives.
     function test_aReportingChainIsNotSendableUntilItHasReported() public {
-        assertTrue(account.isBootstrapped(remoteKey), "the bootstrap went");
-        assertFalse(account.isReachable(remoteKey), "but the receiver is not known yet");
+        assertTrue(conduit.isBootstrapped(remoteKey), "the bootstrap went");
+        assertFalse(conduit.isReachable(remoteKey), "but the receiver is not known yet");
 
         // Both hoisted: an external call inside the pranked expression consumes the prank,
         // and one inside `expectRevert`'s next call would be the call it measures.
-        bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, address(account));
-        bytes memory payload = account.payloadForCalls(new Call[](0));
+        bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, address(conduit));
+        bytes memory payload = conduit.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, remoteKey));
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
 
         // The report lands, and only then does the destination become sendable, at the
         // address the remote actually created, not at the guess.
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        assertTrue(account.isReachable(remoteKey), "now it is");
-        assertEq(account.counterpartOn(remoteKey), abi.encodePacked(created));
+        assertTrue(conduit.isReachable(remoteKey), "now it is");
+        assertEq(conduit.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
     /// @dev And a second bootstrap is still refused in the meantime. The dispatch record is
     ///      what prevents that, which is why it had to become a fact of its own rather than
     ///      being read off the counterpart table.
     function test_aSecondBootstrapIsRefusedWhileTheReportIsOutstanding() public {
-        assertFalse(account.isReachable(remoteKey));
+        assertFalse(conduit.isReachable(remoteKey));
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, remoteKey));
-        account.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
+        conduit.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
     }
 
     /* ======================== no payload runs on a homeSide ========================= */
@@ -557,7 +557,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///
     /// @dev `_onDestinationReceiver` takes its `chainKey` from `_authenticateOrigin`. If an
     ///      authenticated transceiver could deliver a call array, or call the report handler
-    ///      directly, it could pin an account's receiver on a chain it has nothing to do with,
+    ///      directly, it could pin a conduit's receiver on a chain it has nothing to do with,
     ///      write-once and so unrecoverable. A transceiver runs no payload and the handler is
     ///      internal, so neither entry exists. `test_aChainCannotReportAnAddressOnAnotherChain`
     ///      covers the envelope path.
@@ -592,21 +592,21 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertEq(address(homeSide).balance, 5 ether, "the balance is intact");
     }
 
-    /// @dev The whole point of the file. The reporting side creates an account and puts a report
-    ///      on the wire; those exact bytes go into the home side; the account answers with the
+    /// @dev The whole point of the file. The reporting side creates a conduit and puts a report
+    ///      on the wire; those exact bytes go into the home side; the conduit answers with the
     ///      address the reporting side actually created. No `Envelope.encode*` in the assertion.
     function test_theReportingSidesBytesDecodeAtHome() public {
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
 
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         assertEq(
-            account.counterpartOn(remoteKey),
+            conduit.counterpartOn(remoteKey),
             abi.encodePacked(created),
-            "the account recorded the address actually created"
+            "the conduit recorded the address actually created"
         );
-        assertEq(account.destinationReceiverOn(remoteKey), abi.encodePacked(created));
+        assertEq(conduit.destinationReceiverOn(remoteKey), abi.encodePacked(created));
     }
 
     /// @dev And it reaches the send path, which is the reason the report moved off the
@@ -615,17 +615,17 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      not before.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
+        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, created);
-        bytes memory payload = account.payloadForCalls(new Call[](0));
+        bytes memory payload = conduit.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev A replayed report is refused by the account now, not by the registry slot.
+    /// @dev A replayed report is refused by the conduit now, not by the registry slot.
     function test_aReplayedReportIsRefused() public {
         bytes memory produced = _report();
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
@@ -634,7 +634,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
     }
 
-    /// @dev And there is no override, not even the owner's. An account's peer decides where
+    /// @dev And there is no override, not even the owner's. A conduit's peer decides where
     ///      a payload lands, so it is the one value the protocol will not let anyone choose
     ///      after the fact. A wrong report is permanent for that destination, which costs
     ///      only the chain whose transceiver was already compromised to produce it.
@@ -642,17 +642,17 @@ contract ReceiverReportRoundTripTest is WiresHome {
         bytes memory produced = _report();
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        address created = ext(address(remote)).predictCrossAccount(owner, SALT, home());
-        assertTrue(account.isReceiverPinned(remoteKey));
+        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
+        assertTrue(conduit.isReceiverPinned(remoteKey));
 
-        (bool ok,) = address(account)
+        (bool ok,) = address(conduit)
             .call(
                 abi.encodeWithSignature(
                     "setDestinationReceiver(bytes32,bytes)", remoteKey, abi.encodePacked(address(0xC0FFEE))
                 )
             );
         assertFalse(ok, "no owner override exists");
-        assertEq(account.counterpartOn(remoteKey), abi.encodePacked(created));
+        assertEq(conduit.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
     /// @dev A chain the home can derive may not report. Its own derivation is `Predetermined` and a
@@ -673,7 +673,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     }
 
     /// @dev A chain may only report addresses on itself. An ERC-7930 envelope names its own
-    ///      chain, and the account is keyed by the origin the home authenticated; without
+    ///      chain, and the conduit is keyed by the origin the home authenticated; without
     ///      this a counterpart could contradict its own envelope.
     function test_aChainCannotReportAnAddressOnAnotherChain() public {
         vm.prank(msig);
@@ -685,8 +685,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
     }
 
-    /// @dev And the account keeps the bootstrap presumption, so nothing was half-recorded.
-    function test_aRejectedReportLeavesTheAccountUntouched() public {
+    /// @dev And the conduit keeps the bootstrap presumption, so nothing was half-recorded.
+    function test_aRejectedReportLeavesTheConduitUntouched() public {
         vm.prank(msig);
         registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
 
@@ -695,19 +695,19 @@ contract ReceiverReportRoundTripTest is WiresHome {
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), elsewhere);
 
         // Nothing was recorded, which on a reporting chain is the state before the report:
-        // the account is bootstrapped there and not yet reachable.
-        assertTrue(account.isBootstrapped(remoteKey));
-        assertFalse(account.isReachable(remoteKey));
-        assertFalse(account.isReceiverPinned(remoteKey));
+        // the conduit is bootstrapped there and not yet reachable.
+        assertTrue(conduit.isBootstrapped(remoteKey));
+        assertFalse(conduit.isReachable(remoteKey));
+        assertFalse(conduit.isReceiverPinned(remoteKey));
     }
 
-    /// @dev Only the account's own transceiver may report to it. The home transceiver is trusted for this
+    /// @dev Only the conduit's own transceiver may report to it. The home transceiver is trusted for this
     ///      one call because it authenticated the origin; anyone else calling directly is
-    ///      not, and the account says so itself rather than relying on the home transceiver being the
+    ///      not, and the conduit says so itself rather than relying on the home transceiver being the
     ///      only party that knows the function exists.
-    function test_nobodyElseCanReportToTheAccount() public {
+    function test_nobodyElseCanReportToTheConduit() public {
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.NotTransceiver.selector, address(this)));
-        account.onDestinationReceiverReported(remoteKey, abi.encodePacked(address(0xBAD)));
+        conduit.onDestinationReceiverReported(remoteKey, abi.encodePacked(address(0xBAD)));
     }
 }
 
@@ -715,12 +715,12 @@ contract ReceiverReportRoundTripTest is WiresHome {
 ///
 /// @dev It is not a bridge for the money. The fee accrues on the home chain in the home
 ///      currency; the reporting chain's float needs the destination's currency on the destination. What it
-///      buys is that the funding is recovered from the accounts that create the obligation
+///      buys is that the funding is recovered from the conduits that create the obligation
 ///      rather than subsidised, and the msig moves it across out of band.
 contract BootstrapFeeTest is Test {
     HomeTransceiver t;
     ChainRegistry registry;
-    Transmitter account;
+    Transmitter conduit;
 
     address msig = address(0x5165);
     address owner = address(0xA11CE);
@@ -758,8 +758,8 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.prank(owner);
-        account = Transmitter(payable(t.createTransmitter(SALT)));
-        vm.deal(address(account), 10 ether);
+        conduit = Transmitter(payable(t.createTransmitter(SALT)));
+        vm.deal(address(conduit), 10 ether);
     }
 
     /// @dev A parity destination pays nothing. It sends no report and creates no obligation,
@@ -767,7 +767,7 @@ contract BootstrapFeeTest is Test {
     function test_aParityDestinationIsNotCharged() public {
         assertEq(ext(address(t)).bootstrapFee(parityKey), 0);
         vm.prank(owner);
-        account.bootstrap(PARITY, new Call[](0), new bytes[](0));
+        conduit.bootstrap(PARITY, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, 0);
     }
 
@@ -778,11 +778,11 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
 
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
     /// @dev A zero fee is the owner's halt for bootstraps to a reporting destination (#78), so
@@ -792,43 +792,43 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(t.owner());
         ext(address(t)).setBootstrapFee(divergingKey, FEE);
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, FEE, "charged the restored fee");
     }
 
-    /// @dev Send and quote refuse the same accounts, so a transmitter's bootstrap, which quotes
+    /// @dev Send and quote refuse the same conduits, so a transmitter's bootstrap, which quotes
     ///      first, fails before it spends anything. The elements forms are called on the
     ///      transceiver directly, since the transmitter sends them only to non-EVM chains.
-    function test_anAllowlistRefusesTheAccountsItDoesNotList() public {
+    function test_anAllowlistRefusesTheConduitsItDoesNotList() public {
         Allowlist list = new Allowlist();
         vm.prank(t.owner());
         ext(address(t)).setBootstrapAllowlist(list);
-        bytes memory refused = abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(account));
+        bytes memory refused = abi.encodeWithSelector(TransceiverCore.NotAllowed.selector, address(conduit));
         bytes[] memory elements = new bytes[](0);
 
         vm.expectRevert(refused);
         t.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
         vm.prank(owner);
         vm.expectRevert(refused);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
         vm.expectRevert(refused);
         t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
-        vm.prank(address(account));
+        vm.prank(address(conduit));
         vm.expectRevert(refused);
         t.bootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
 
-        list.allow(address(account));
+        list.allow(address(conduit));
         t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
-    /// @dev Only the owner sets or clears it; cleared, every account bootstraps again.
+    /// @dev Only the owner sets or clears it; cleared, every conduit bootstraps again.
     function test_onlyTheOwnerSetsTheAllowlist() public {
         Allowlist list = new Allowlist();
         address operator = makeAddr("operator");
@@ -845,7 +845,7 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
     /// @dev The operator prices and halts bootstraps without the owner, whose actions off the
@@ -860,12 +860,12 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(operator);
         ext(address(t)).setBootstrapFee(divergingKey, FEE);
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
     }
 
     /// @dev Only the owner names or removes the operator, and a removed one sets nothing.
@@ -895,7 +895,7 @@ contract BootstrapFeeTest is Test {
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         assertEq(treasury.balance, FEE, "paid, not accrued");
         assertEq(address(t).balance, 0, "and the transceiver holds none of it");
@@ -905,7 +905,7 @@ contract BootstrapFeeTest is Test {
     ///      only place a fee is ever withdrawn from now.
     function test_theMsigMovesFeesOnFromTheTreasury() public {
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(msig);
         Treasury(payable(treasury)).withdraw(msig, FEE);
@@ -914,24 +914,24 @@ contract BootstrapFeeTest is Test {
 
     /// @dev Underpaying reverts rather than eating the provider's payment. The alternative
     ///      is a bootstrap that dispatches with a shortfall taken out of the message fee and
-    ///      fails on arrival. The account always pays the quote, so this guards the transceiver's own
+    ///      fails on arrival. The conduit always pays the quote, so this guards the transceiver's own
     ///      entry point.
     function test_underpayingTheFeeReverts() public {
-        vm.deal(address(account), FEE);
-        vm.prank(address(account));
+        vm.deal(address(conduit), FEE);
+        vm.prank(address(conduit));
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.InsufficientBootstrapFee.selector, FEE, FEE - 1));
         t.bootstrap{value: FEE - 1}(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
     }
 
-    /// @dev An account that cannot cover the quote, fee included, sends nothing and pays
+    /// @dev A conduit that cannot cover the quote, fee included, sends nothing and pays
     ///      nobody.
-    function test_anUnfundedAccountCannotBootstrap() public {
-        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
-        vm.deal(address(account), quote - 1);
+    function test_anUnfundedConduitCannotBootstrap() public {
+        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        vm.deal(address(conduit), quote - 1);
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, quote, quote - 1));
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
         assertEq(treasury.balance, 0);
     }
 
@@ -944,30 +944,30 @@ contract BootstrapFeeTest is Test {
         assertGt(withoutFee, 0, "and the message still costs something");
     }
 
-    /// @dev The account pays exactly its quote, whatever it holds, and the binding is told
+    /// @dev The conduit pays exactly its quote, whatever it holds, and the binding is told
     ///      what is left after the fee.
-    function test_theAccountPaysTheQuoteAndTheBindingSeesItLessTheFee() public {
-        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
-        uint256 before = address(account).balance;
+    function test_theConduitPaysTheQuoteAndTheBindingSeesItLessTheFee() public {
+        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 before = address(conduit).balance;
 
         vm.prank(owner);
-        account.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
-        assertEq(before - address(account).balance, quote, "the quote, not the balance");
+        assertEq(before - address(conduit).balance, quote, "the quote, not the balance");
         assertEq(t.lastSendValue(), quote - FEE, "message value, fee already taken");
     }
 
     /// @dev `msg.value` tops the balance up and is not a price: the same quote is paid and
-    ///      the rest stays on the account.
-    function test_attachedValueStaysOnTheAccount() public {
-        vm.deal(address(account), 0);
+    ///      the rest stays on the conduit.
+    function test_attachedValueStaysOnTheConduit() public {
+        vm.deal(address(conduit), 0);
         vm.deal(owner, 1 ether);
-        uint256 quote = account.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
 
         vm.prank(owner);
-        account.bootstrap{value: 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap{value: 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
 
-        assertEq(address(account).balance, 1 ether - quote);
+        assertEq(address(conduit).balance, 1 ether - quote);
         assertEq(t.lastSendValue(), quote - FEE);
     }
 
@@ -1025,7 +1025,7 @@ contract Rejector {
 contract Allowlist is IBootstrapAllowlist {
     mapping(address => bool) public isAllowed;
 
-    function allow(address account) external {
-        isAllowed[account] = true;
+    function allow(address conduit) external {
+        isAllowed[conduit] = true;
     }
 }

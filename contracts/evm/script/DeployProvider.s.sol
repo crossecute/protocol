@@ -14,7 +14,7 @@ import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/
 
 /// @title DeployProvider
 /// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
-///         its account implementations, its transceiver implementation, and the transceiver,
+///         its conduit implementations, its transceiver implementation, and the transceiver,
 ///         deployed through `CrossProxyDeployer` from the registry's record.
 ///
 /// @dev The governor's owner, salt, and home come from `deploy/governance.toml`, and the

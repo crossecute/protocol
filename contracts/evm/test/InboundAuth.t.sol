@@ -31,8 +31,8 @@ contract MockReceiver is AnyGatewayReceiver {
 
 /// @dev Stands in for a protocol adapter: translates an SDK callback into the three
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
-/// @dev A transmitter with an inert send, so an account can be stood up on a destination
-///      without a provider behind it. A report has to land on a real account now.
+/// @dev A transmitter with an inert send, so a conduit can be stood up on a destination
+///      without a provider behind it. A report has to land on a real conduit now.
 contract Transmitter is AnyGatewayTransmitter {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
@@ -44,8 +44,8 @@ contract Transmitter is AnyGatewayTransmitter {
     }
 }
 
-/// @dev One transceiver, which is both ends: it creates receivers for accounts homed on an
-///      origin it authenticates, and receives reports for accounts homed here.
+/// @dev One transceiver, which is both ends: it creates receivers for conduits homed on an
+///      origin it authenticates, and receives reports for conduits homed here.
 contract Node is AnyGatewayTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
         TransceiverConfig memory c = transceiverConfig(governor, transmitterImpl, receiverImpl, address(0x7EA5));
@@ -62,7 +62,7 @@ contract Node is AnyGatewayTransceiver {
         return bytes32(0);
     }
 
-    /// @dev The account prices its bootstrap before sending it.
+    /// @dev The conduit prices its bootstrap before sending it.
     function _quoteMessage(bytes memory, bytes memory, bytes[] memory) internal pure override returns (uint256) {
         return 0;
     }
@@ -113,7 +113,7 @@ contract InboundAuthTest is Test {
     function test_aBootstrapFromTheCounterpartStandsTheReceiverUp() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
 
-        MockReceiver r = MockReceiver(payable(ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey)));
+        MockReceiver r = MockReceiver(payable(ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey)));
         assertEq(r.sourceTransmitter(), address(uint160(uint256(_homeTransmitter()))), "its peer is the carried one");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }
@@ -133,23 +133,23 @@ contract InboundAuthTest is Test {
         node.arrive(Erc7930.encodeEvmChain(8453), HOME_SENDER, msg_);
     }
 
-    /// @dev A receiver may call its transceiver, but only an account homed on this chain may
+    /// @dev A receiver may call its transceiver, but only a conduit homed on this chain may
     ///      bootstrap from it, and a receiver here is homed elsewhere.
     function test_aReceiverCannotBootstrapFromHere() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
-        address receiver = ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey);
+        address receiver = ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey);
 
         vm.deal(receiver, 1 ether);
         vm.prank(receiver);
         vm.expectRevert(
-            abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, transmitter, bytes32(0), receiver)
+            abi.encodeWithSelector(TransceiverCore.NotTheConduit.selector, transmitter, bytes32(0), receiver)
         );
         node.bootstrap{value: 1 ether}(homeKey, transmitter, bytes32(0), _boot(), new bytes[](0));
     }
 
     /* ================================== reports ================================== */
 
-    /// @dev A chain that reports is one this contract cannot derive an account on: `eip155`
+    /// @dev A chain that reports is one this contract cannot derive a conduit on: `eip155`
     ///      graded below `Predetermined` is the zkSync and Tron shape.
     function _wireReportingChain(uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
@@ -169,7 +169,7 @@ contract InboundAuthTest is Test {
     function test_theOriginIsResolvedAndTheReportRecorded() public {
         address counterpart = address(0xC0DE);
         bytes32 baseKey = _wireReportingChain(8453, counterpart);
-        Transmitter acct = _standUpAccount(8453);
+        Transmitter acct = _standUpConduit(8453);
 
         bytes memory interop = Erc7930.encodeEvm(8453, address(0xBEEF));
         node.arrive(
@@ -185,9 +185,9 @@ contract InboundAuthTest is Test {
         );
     }
 
-    /// @dev The account is what the report writes to now, so it has to exist and to have
+    /// @dev The conduit is what the report writes to now, so it has to exist and to have
     ///      been stood up on that destination.
-    function _standUpAccount(uint256 chainId) internal returns (Transmitter acct) {
+    function _standUpConduit(uint256 chainId) internal returns (Transmitter acct) {
         vm.startPrank(transmitter);
         acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
         vm.deal(address(acct), 1 ether);
@@ -219,7 +219,7 @@ contract InboundAuthTest is Test {
         // Graded `Unique`: the chain's addresses cannot be recomputed here, so any
         // claim about them is worth exactly the bridge that carried it.
         bytes32 chainKey = _wireReportingChain(8453, counterpart);
-        _standUpAccount(8453);
+        _standUpConduit(8453);
 
         // At the weakest bar the message is accepted.
         bytes memory report =
@@ -244,7 +244,7 @@ contract InboundAuthTest is Test {
     function test_aSuspendedChainIsRefusedBothWays() public {
         address counterpart = address(0xC0DE);
         bytes32 baseKey = _wireReportingChain(8453, counterpart);
-        _standUpAccount(8453);
+        _standUpConduit(8453);
         bytes memory report =
             Envelope.encodeReceiverReport(transmitter, bytes32(0), Erc7930.encodeEvm(8453, address(0xBEEF)));
 
@@ -333,9 +333,9 @@ contract InboundAuthTest is Test {
         return Envelope.decodeBootstrap(m);
     }
 
-    /// @dev The transmitter chain 1 would carry for `transmitter`'s account.
+    /// @dev The transmitter chain 1 would carry for `transmitter`'s conduit.
     function _homeTransmitter() internal view returns (bytes32) {
-        return bytes32(uint256(uint160(ext(address(node)).predictCrossAccount(transmitter, bytes32(0), homeKey))));
+        return bytes32(uint256(uint160(ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey))));
     }
 
     function _bootstrapMsg() internal view returns (bytes memory) {

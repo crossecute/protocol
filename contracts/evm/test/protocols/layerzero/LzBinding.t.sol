@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
 
 import {Call} from "src/messaging/Call.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
@@ -165,25 +165,25 @@ contract LzTransmitterInboundTest is ProviderTransmitterSpec, LzWriteOncePeerChe
 }
 
 contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
-    function _prepareAccount(address account_, address owner) internal override {
-        _peerWithItsReceiver(account_, owner);
+    function _prepareConduit(address conduit_, address owner) internal override {
+        _peerWithItsReceiver(conduit_, owner);
     }
 
-    /// @dev #51: the owner reconfigures the account's sends, such as toward zkSync whose default
+    /// @dev #51: the owner reconfigures the conduit's sends, such as toward zkSync whose default
     ///      DVN refuses every message, by naming itself delegate through OApp's `setDelegate`.
-    function test_theOwnerCanReconfigureTheAccount() public {
+    function test_theOwnerCanReconfigureTheConduit() public {
         address lib = endpoint.SEND_LIBRARY();
         SetConfigParam[] memory params = new SetConfigParam[](1);
         params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, hex"c0ffee");
 
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
-        LzTransmitter(account).setDelegate(address(0xBAD));
+        LzTransmitter(conduit).setDelegate(address(0xBAD));
 
-        vm.startPrank(ACCOUNT_OWNER);
-        LzTransmitter(account).setDelegate(ACCOUNT_OWNER);
-        endpoint.setConfig(account, lib, params);
+        vm.startPrank(CONDUIT_OWNER);
+        LzTransmitter(conduit).setDelegate(CONDUIT_OWNER);
+        endpoint.setConfig(conduit, lib, params);
         vm.stopPrank();
-        assertEq(endpoint.configOf(account, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
+        assertEq(endpoint.configOf(conduit, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
     }
 }

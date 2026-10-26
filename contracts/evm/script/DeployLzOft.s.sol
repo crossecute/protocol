@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
-import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
+import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 
 /// @title DeployLzOft
 /// @notice The `layerzero-oft` factory and its logic on this chain. Permissionless: no owner,
@@ -13,9 +13,9 @@ import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.s
 ///         the same contracts at the same addresses.
 ///
 /// @dev Only a `parity` chain in `deploy/chains.toml`: elsewhere CREATE2 places the factory, and
-///      so every account, at another address, or Arachnid's factory is missing.
+///      so every conduit, at another address, or Arachnid's factory is missing.
 contract DeployLzOft is Script {
-    function run() external returns (LzOftAccountFactory factory) {
+    function run() external returns (LzOftConduitFactory factory) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry memory local = ChainConfig.chainWithId(ChainConfig.chains(dir), block.chainid);
         check(local.derivation == Derivation.Parity, "layerzero-oft deploys only on a parity chain");

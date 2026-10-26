@@ -10,7 +10,7 @@ import {Treasury} from "src/treasury/Treasury.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
 import {VM, ARACHNID, DeployCheck, check, arachnidDeploy} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 
@@ -20,7 +20,7 @@ struct Governance {
     address owner;
     bytes32 salt;
     uint256 timelockDelay;
-    /// The providers whose governor accounts propose and cancel on every timelock.
+    /// The providers whose governor conduits propose and cancel on every timelock.
     string[2] proposers;
     bytes32 crossProxyInitCodeHash;
     /// In the file's key order, which every chain reads identically.
@@ -110,12 +110,12 @@ library ChainDeploy {
         return Erc7930.encodeEvmChain(g.home.chainId);
     }
 
-    /// @notice Where the governor's account under `provider` sits on a parity chain: the
-    ///         transceiver from its record, then the account from the transceiver, as
-    ///         `ChainRegistry.predictCrossAccount` derives them.
+    /// @notice Where the governor's conduit under `provider` sits on a parity chain: the
+    ///         transceiver from its record, then the conduit from the transceiver, as
+    ///         `ChainRegistry.predictCrossConduit` derives them.
     /// @dev On the home this is the governor's transmitter, elsewhere the receiver its bootstrap
     ///      creates, which is each of that provider's transceivers' owner.
-    function governorAccount(Governance memory g, string memory provider) internal pure returns (address) {
+    function governorConduit(Governance memory g, string memory provider) internal pure returns (address) {
         return AddressDerive.create2(
             transceiver(g, provider),
             keccak256(abi.encode(g.owner, g.salt, ChainKey.forEvm(g.home.chainId))),
@@ -132,8 +132,8 @@ library ChainDeploy {
 
     function proposers(Governance memory g) internal pure returns (address[] memory ps) {
         ps = new address[](2);
-        ps[0] = governorAccount(g, g.proposers[0]);
-        ps[1] = governorAccount(g, g.proposers[1]);
+        ps[0] = governorConduit(g, g.proposers[0]);
+        ps[1] = governorConduit(g, g.proposers[1]);
     }
 
     function seed(Governance memory g) internal pure returns (RegistrySeed memory) {
@@ -188,8 +188,8 @@ library ChainDeploy {
         check(t.getMinDelay() == g.timelockDelay, "the timelock's delay");
         address[] memory ps = proposers(g);
         for (uint256 i; i < ps.length; ++i) {
-            check(t.hasRole(t.PROPOSER_ROLE(), ps[i]), "a governor account proposes");
-            check(t.hasRole(t.CANCELLER_ROLE(), ps[i]), "a governor account cancels");
+            check(t.hasRole(t.PROPOSER_ROLE(), ps[i]), "a governor conduit proposes");
+            check(t.hasRole(t.CANCELLER_ROLE(), ps[i]), "a governor conduit cancels");
         }
         check(t.hasRole(t.EXECUTOR_ROLE(), address(0)), "execution is open");
 

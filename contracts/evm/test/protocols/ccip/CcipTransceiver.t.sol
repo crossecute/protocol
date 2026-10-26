@@ -30,17 +30,17 @@ contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
         return address(new CcipZkSyncHarness(address(router)));
     }
 
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
         internal
         override
         returns (address)
     {
-        return CcipDeploy.zkSyncTransceiver(d, address(router), 0, accountBytecodeHash);
+        return CcipDeploy.zkSyncTransceiver(d, address(router), 0, conduitBytecodeHash);
     }
 
     function _assertReportSent() internal view override {
         MockCcipRouter.Sent memory s = router.sent(0);
-        assertEq(s.destChainSelector, BASE_SELECTOR, "to the account's home");
+        assertEq(s.destChainSelector, BASE_SELECTOR, "to the conduit's home");
         assertEq(s.receiver, abi.encode(HOME_TRANSCEIVER), "to its transceiver there");
     }
 

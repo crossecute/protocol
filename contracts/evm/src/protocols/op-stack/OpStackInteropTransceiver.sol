@@ -60,7 +60,7 @@ contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
 
     /// @inheritdoc TransceiverBase
     /// @dev A receiver names its home by the chain id the messenger reports as the source.
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -68,7 +68,7 @@ contract OpStackInteropTransceiver is TransceiverBase, IOpStackRecipient {
         Call[] memory calls
     ) internal view override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
         }
         bytes32 home = bytes32(Erc7930.evmChainId(Erc7930.parseStrict(routeFor(homeChainKey))));
         return abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, home, calls));

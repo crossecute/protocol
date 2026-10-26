@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {CrossAccounts} from "src/account/CrossAccounts.sol";
+import {CrossConduits} from "src/conduit/CrossConduits.sol";
 import {
     ZkSyncTransceiver,
     TronTransceiver,
@@ -13,7 +13,7 @@ import {
     ZkSyncTransceiverExtension,
     TronTransceiverExtension
 } from "src/messaging/transceiver/DivergentTransceiver.sol";
-import {DivergentAccounts} from "src/messaging/transceiver/DivergentAccounts.sol";
+import {DivergentConduits} from "src/messaging/transceiver/DivergentConduits.sol";
 import {unseeded} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -48,17 +48,17 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
         return super._parityAddress(chainKey);
     }
 
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossConduit(owner, salt, homeChainKey);
     }
 
-    function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._deployAccount(salt);
+    function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._deployConduit(salt);
     }
 
     function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
@@ -90,19 +90,19 @@ contract TronSym is TronTransceiver, SymHarness {
         return super._parityAddress(chainKey);
     }
 
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossConduit(owner, salt, homeChainKey);
     }
 }
 
 /// @dev The zkSync and Tron transceivers. Forge runs Ethereum's EVM, so these pin that each
 ///      derives with its chain's formula, that the formula reaches the owner and the default
-///      counterpart, and that account creation fails closed here rather than misdeploying.
+///      counterpart, and that conduit creation fails closed here rather than misdeploying.
 contract DivergentTransceiverTest is Test {
     bytes32 constant HASH = keccak256("zksolc CrossProxy");
     bytes32 constant SALT = keccak256("account");
@@ -126,8 +126,8 @@ contract DivergentTransceiverTest is Test {
     function testFuzz_zkSyncDerivesTheEraWay(address o, bytes32 salt, bytes32 home) public {
         ZkSym t = _zk();
         assertEq(
-            ext(address(t)).predictCrossAccount(o, salt, home),
-            AddressDerive.zksyncCreate2(address(t), ext(address(t)).accountSalt(o, salt, home), HASH, keccak256(""))
+            ext(address(t)).predictCrossConduit(o, salt, home),
+            AddressDerive.zksyncCreate2(address(t), ext(address(t)).conduitSalt(o, salt, home), HASH, keccak256(""))
         );
     }
 
@@ -135,8 +135,8 @@ contract DivergentTransceiverTest is Test {
         TronSym t = new TronSym();
         t.initialize(_config(), HASH);
         assertEq(
-            ext(address(t)).predictCrossAccount(o, salt, home),
-            AddressDerive.tronCreate2(address(t), ext(address(t)).accountSalt(o, salt, home), HASH)
+            ext(address(t)).predictCrossConduit(o, salt, home),
+            AddressDerive.tronCreate2(address(t), ext(address(t)).conduitSalt(o, salt, home), HASH)
         );
     }
 
@@ -144,9 +144,9 @@ contract DivergentTransceiverTest is Test {
     ///      set before the base initializer runs.
     function test_theOwnerIsDerivedTheEraWay() public {
         ZkSym t = _zk();
-        address viaEra = ext(address(t)).predictCrossAccount(msig, bytes32(0), ChainKey.forEvm(1));
+        address viaEra = ext(address(t)).predictCrossConduit(msig, bytes32(0), ChainKey.forEvm(1));
         address viaEthereum = Create2.computeAddress(
-            ext(address(t)).accountSalt(msig, bytes32(0), ChainKey.forEvm(1)),
+            ext(address(t)).conduitSalt(msig, bytes32(0), ChainKey.forEvm(1)),
             t.CROSS_PROXY_INIT_CODE_HASH(),
             address(t)
         );
@@ -170,17 +170,17 @@ contract DivergentTransceiverTest is Test {
     function test_aZeroBytecodeHashIsRefused() public {
         ZkSym t = new ZkSym();
         TransceiverConfig memory c = _config();
-        vm.expectRevert(DivergentAccounts.ZeroAccountBytecodeHash.selector);
+        vm.expectRevert(DivergentConduits.ZeroConduitBytecodeHash.selector);
         t.initialize(c, bytes32(0));
     }
 
     /// @dev On Forge's EVM the deployment lands at Ethereum's address and the guard refuses.
-    function test_accountCreationFailsClosedOnAnEthereumEvm() public {
+    function test_conduitCreationFailsClosedOnAnEthereumEvm() public {
         ZkSym t = _zk();
-        address predicted = ext(address(t)).predictCrossAccount(alice, SALT, t.localChainKey());
+        address predicted = ext(address(t)).predictCrossConduit(alice, SALT, t.localChainKey());
 
         vm.prank(alice);
-        vm.expectPartialRevert(CrossAccounts.AccountAddressMismatch.selector);
+        vm.expectPartialRevert(CrossConduits.ConduitAddressMismatch.selector);
         t.createTransmitter(SALT);
         assertEq(predicted.code.length, 0);
     }
@@ -188,7 +188,7 @@ contract DivergentTransceiverTest is Test {
     /* ============================ the default counterpart ========================== */
 
     /// @dev A transmitter homed on zkSync records this as its receiver on a parity chain: the
-    ///      account's address there under Ethereum's formula and the recorded solc initcode
+    ///      conduit's address there under Ethereum's formula and the recorded solc initcode
     ///      hash, not its own Era address nor this compiler's hash (#30). Forge compiles with
     ///      solc, so a distinct recorded hash stands in for the zksolc/solc difference.
     function test_aZkSyncHomePredictsItsReceiversTheEthereumWay() public {
@@ -207,11 +207,11 @@ contract DivergentTransceiverTest is Test {
 
         address there = registry.predictTransceiver(base, provider);
         address receiver =
-            Create2.computeAddress(ext(address(t)).accountSalt(alice, SALT, t.localChainKey()), solcHash, there);
+            Create2.computeAddress(ext(address(t)).conduitSalt(alice, SALT, t.localChainKey()), solcHash, there);
 
         assertEq(t.predictReceiver(base, alice, SALT), abi.encodePacked(receiver));
         assertTrue(
-            receiver != ext(address(t)).predictCrossAccount(alice, SALT, t.localChainKey()), "not the Era address"
+            receiver != ext(address(t)).predictCrossConduit(alice, SALT, t.localChainKey()), "not the Era address"
         );
     }
 

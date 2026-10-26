@@ -66,7 +66,7 @@ library AddressDerive {
     /// @notice Creation-code hash of an EIP-1167 minimal proxy for `implementation`.
     /// @dev For a destination whose contracts are EIP-1167 clones, reached through
     ///      `VmDeriver`'s clone schemes: the address is CREATE2 over the deployer, the salt, and
-    ///      this hash. This protocol's own accounts are `CrossProxy`, not clones.
+    ///      this hash. This protocol's own conduits are `CrossProxy`, not clones.
     ///
     ///      The 55-byte layout is EIP-1167 verbatim: 10 bytes of creation code, then the
     ///      45-byte runtime with the implementation address spliced in at byte 20:
