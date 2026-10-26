@@ -114,8 +114,8 @@ standard EVM chain, creating transmitters for conduits homed on its chain and re
 conduits homed elsewhere. The conduit's home is whichever chain the bootstrap authenticated
 as its origin, never a field the message states.
 
-The message carries the owner and their salt, from which the destination derives the conduit's
-own address, and the transmitter's address, which the receiver will answer to. The home's
+The message carries the creating owner and their salt, from which the destination derives the
+conduit's own address, and the transmitter's address, which the receiver will answer to. The home's
 transceiver sends only for the conduit that pair resolves to, so the destination needs no
 other chain's address formula, and zkSync and Tron can be homes too. The dashed return arrow
 fires only where `addressesDiverge`, which is zkSync and Tron as destinations. Elsewhere the
@@ -195,7 +195,8 @@ because all three inputs are the same everywhere, so is the address. The home ch
 of the salt, so the same owner and salt homed on two chains are two conduits, and an owner
 can mine `salt` for a vanity or gas-cheap address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
-logic and driven by messages from the first. Same address, different half.
+logic and driven by messages from the first. Same address, different half. The transmitter records its creating owner as `deployer` and
+sends that owner in every bootstrap, so transferring ownership does not move a receiver's address.
 
 **Any chain can be home.** An owner picks a home per conduit by calling `createTransmitter`
 there, and every other chain already has what it needs to receive from it: one deployment

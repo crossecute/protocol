@@ -17,10 +17,6 @@ abstract contract OwnableTransmitter is TransmitterBase, OwnableUpgradeable {
         __TransmitterBase_init(owner_, transceiver_, salt_);
     }
 
-    function _owner() internal view override returns (address) {
-        return owner();
-    }
-
     function _checkOwner() internal view virtual override(TransmitterBase, OwnableUpgradeable) {
         OwnableUpgradeable._checkOwner();
     }

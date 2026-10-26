@@ -140,7 +140,7 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         LzOftMessage.requirePeer(homeOft, eid, dstOft);
 
         bytes memory compose = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(owner(), conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
+            LzOftMessage.Bootstrap(deployer, conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
         );
         param = LzOftMessage.sendParam(eid, transceiver, compose, attributes, DeliveryGas.BOOTSTRAP);
         d = Destination(eid, dstOft);

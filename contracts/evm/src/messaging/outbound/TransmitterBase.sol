@@ -69,7 +69,7 @@ interface IConduitTransceiver {
 /// @dev The destination is a parameter, not state: one transmitter fans out to every chain,
 ///      with one receiver per destination.
 ///
-/// @dev Ownership is declared through `_owner`/`_checkOwner` and the modifier is
+/// @dev Ownership is declared through `_checkOwner` and the modifier is
 ///      `onlyConduitOwner`, so a provider SDK that brings its own `onlyOwner` does not
 ///      collide. Every binding answers through `OwnableTransmitter`, whose inherited
 ///      `renounceOwnership` bricks the conduit, since every entry point is owner-gated. Left
@@ -86,6 +86,10 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// The caller-chosen half of this conduit's CREATE2 salt, stored because `bootstrap` must
     /// state it and an address cannot be reversed into its salt.
     bytes32 public conduitSalt;
+    /// The owner at creation, fixed for the conduit's life. It is the identity the CREATE2
+    /// salt and every receiver address derive from, so bootstrap and prediction use it and not
+    /// the current owner, which can change without moving any address.
+    address public deployer;
 
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
     event DestinationBootstrapped(bytes32 indexed destinationChainKey);
@@ -197,9 +201,6 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     function _requireNotBootstrapped(bytes32 chainKey) private view {
         if (_bootstrapDispatched[chainKey]) revert AlreadyBootstrapped(chainKey);
     }
-
-    /// @notice The conduit's owner. Declared, not implemented: see the contract note.
-    function _owner() internal view virtual returns (address);
 
     /// @notice Reverts unless the caller is the owner. Declared, not implemented.
     function _checkOwner() internal view virtual;
@@ -395,7 +396,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
         return
             IConduitTransceiver(transceiver)
-                .quoteBootstrapElements(chainKey, _owner(), conduitSalt, elements, attributes);
+                .quoteBootstrapElements(chainKey, deployer, conduitSalt, elements, attributes);
     }
 
     function _quoteBootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes)
@@ -461,7 +462,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         virtual
         returns (uint256)
     {
-        return IConduitTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), conduitSalt, calls, attributes);
+        return IConduitTransceiver(transceiver).quoteBootstrap(chainKey, deployer, conduitSalt, calls, attributes);
     }
 
     /// @notice Send the typed bootstrap to `chainKey`, paying `fee` from this balance.
@@ -472,7 +473,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         virtual
     {
         // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        IConduitTransceiver(transceiver).bootstrap{value: fee}(chainKey, _owner(), conduitSalt, calls, attributes);
+        IConduitTransceiver(transceiver).bootstrap{value: fee}(chainKey, deployer, conduitSalt, calls, attributes);
     }
 
     function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)
@@ -481,10 +482,10 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         bytes32 chainKey = _markBootstrapped(identifier);
         IConduitTransceiver t = IConduitTransceiver(transceiver);
 
-        uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), conduitSalt, elements, attributes);
+        uint256 fee = t.quoteBootstrapElements(chainKey, deployer, conduitSalt, elements, attributes);
         _requireFunded(fee);
         // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapElements{value: fee}(chainKey, _owner(), conduitSalt, elements, attributes);
+        t.bootstrapElements{value: fee}(chainKey, deployer, conduitSalt, elements, attributes);
     }
 
     /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
@@ -514,7 +515,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         if (!t.reportsReceiver(chainKey)) {
-            _setCounterpart(chainKey, t.predictReceiver(chainKey, _owner(), conduitSalt));
+            _setCounterpart(chainKey, t.predictReceiver(chainKey, deployer, conduitSalt));
         }
 
         emit DestinationBootstrapped(chainKey);
@@ -603,6 +604,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
         transceiver = transceiver_;
         conduitSalt = salt_;
+        deployer = owner_;
         emit TransmitterConfigured(owner_, transceiver_);
     }
 }
