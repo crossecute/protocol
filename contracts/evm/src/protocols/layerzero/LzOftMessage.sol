@@ -25,7 +25,7 @@ library LzOftMessage {
     error PeerChanged(uint32 eid, bytes32 expected, bytes32 actual);
 
     /// @notice The bootstrap's compose message: what the destination factory derives the
-    ///         account from and checks the sending OFT against.
+    ///         conduit from and checks the sending OFT against.
     /// @dev No destination eid or OFT: the factory proves its own chain key, its endpoint's eid
     ///      and the delivering OFT into `destRoot`, so nothing here names them. `homeEid` is
     ///      bound into the address with `homeChainKey`, since nothing on a destination maps one
@@ -71,7 +71,7 @@ library LzOftMessage {
         if (actual != want) revert PeerChanged(eid, want, actual);
     }
 
-    /// @notice A destination's leaf in an account's `destRoot`.
+    /// @notice A destination's leaf in a conduit's `destRoot`.
     /// @dev Hashed twice, so a 64-byte inner node of the tree is never read as a leaf.
     function leaf(bytes32 chainKey, uint32 eid, address oft) internal pure returns (bytes32) {
         return keccak256(bytes.concat(keccak256(abi.encode(chainKey, eid, oft))));

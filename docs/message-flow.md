@@ -18,10 +18,10 @@ contract is right.
 
 ## Three properties the whole design turns on
 
-**The home chain is a property of the account.** Any chain can be home: an owner picks one
-per account by calling `createTransmitter` there, and it is part of the account's address.
-Every chain runs one transceiver per provider, which creates transmitters for accounts homed
-on its chain and receivers for accounts homed elsewhere. Everything below reads "home" and
+**The home chain is a property of the conduit.** Any chain can be home: an owner picks one
+per conduit by calling `createTransmitter` there, and it is part of the conduit's address.
+Every chain runs one transceiver per provider, which creates transmitters for conduits homed
+on its chain and receivers for conduits homed elsewhere. Everything below reads "home" and
 "destination" rather than "Ethereum" and "elsewhere" for that reason.
 
 1. **A transmitter is its own message-provider endpoint.** It sends to its receiver
@@ -48,12 +48,12 @@ flowchart LR
 
 Every check on that path, in the order a message meets them:
 
-- `sendMessage(recipient, payload, attributes)` is `onlyAccountOwner`. The recipient is
+- `sendMessage(recipient, payload, attributes)` is `onlyConduitOwner`. The recipient is
   checked against the stored counterpart, not trusted, and the destination must already be
   bootstrapped.
-- `recipient` is `<erc7930: chain, receiver>`, the receiver this account recorded for that
+- `recipient` is `<erc7930: chain, receiver>`, the receiver this conduit recorded for that
   chain, which `recipientOn` returns, and `payload` is `abi.encode(calls)`, both built by the
-  caller. The receiver is the account's own address only when both chains use Ethereum's
+  caller. The receiver is the conduit's own address only when both chains use Ethereum's
   CREATE2. The transmitter quotes them in the same call and `_sendMessage`
   hands them to the gateway with exactly that fee, paid from the transmitter's balance.
   Attached `msg.value` only tops the balance up.
@@ -120,37 +120,37 @@ flowchart LR
 
 Hop by hop:
 
-- `transmitter.bootstrap(chainId, calls)` is `onlyAccountOwner`, and refuses a destination
-  this account has already bootstrapped. It asks its transceiver's `quoteBootstrap` and
+- `transmitter.bootstrap(chainId, calls)` is `onlyConduitOwner`, and refuses a destination
+  this conduit has already bootstrapped. It asks its transceiver's `quoteBootstrap` and
   forwards exactly that, bootstrap fee included, from its own balance.
 - `bootstrap(chainKey, owner, salt, calls, attributes)` on the home's transceiver:
-  `msg.sender` must be the account homed there, `_requireRoutable(chainKey)` applies the
+  `msg.sender` must be the conduit homed there, `_requireRoutable(chainKey)` applies the
   registry's grade, the suspension flag, and the provenance bar, and
   `_sendMessage(_recipientOn(chainKey), _bootstrapEnvelope(...), attributes)` sends.
 - `_onInbound(route, sender, message)` on the destination's transceiver:
   `_authenticateOrigin` runs first, mapping the route to a chain and requiring the sender to
   be that chain's counterpart; `_handleInbound` decodes and calls `_bootstrapInbound(owner,
   salt, origin, transmitter, calls)`, with `origin` the chain `_authenticateOrigin`
-  established, which becomes the account's home. Creation and the payload happen in this
+  established, which becomes the conduit's home. Creation and the payload happen in this
   delivery: a bootstrap is never deferred.
-- That deploys `CrossProxy` at `accountSalt(owner, salt, origin)`, by CREATE2 with no
+- That deploys `CrossProxy` at `conduitSalt(owner, salt, origin)`, by CREATE2 with no
   constructor arguments, and calls `upgradeInitializeAndLock(receiverImpl,
   initialize(transmitter, calls))`, which installs the logic, executes the calls, and drops
   the upgrade key in one call. From a home graded `Predetermined` the receiver must sit at the
   carried transmitter's address, or the bootstrap reverts `ParityBroken`: an origin whose
   provider id, route, or transceiver address disagree with this chain's fails its first
-  bootstrap rather than every account.
+  bootstrap rather than every conduit.
 - The dashed return leg is `_reportReceiver(origin, owner, salt, receiver)`, sent only where
   `addressesDiverge` is set. It arrives at the home's `_handleInbound`, which passes it to
-  `_onDestinationReceiver` and on to the account's own counterpart slot, not the registry.
+  `_onDestinationReceiver` and on to the conduit's own counterpart slot, not the registry.
 
 Four facts about that path are worth stating here, because no single file holds all of
 them:
 
-**The message carries the owner, their salt, and the transmitter.** The account's own address
+**The message carries the owner, their salt, and the transmitter.** The conduit's own address
 derives from the owner, the salt, and the home, and a CREATE2 address cannot be derived from
 itself. The receiver's peer is the transmitter's address at home, carried as a 32-byte word
-(an EVM address left-padded). The home's transceiver sends only for the account `(owner, salt)`
+(an EVM address left-padded). The home's transceiver sends only for the conduit `(owner, salt)`
 resolves to there, so the authenticated message vouches for it and the destination needs no
 other chain's address formula. That is what lets zkSync and Tron be homes. Where both chains
 use Ethereum's CREATE2 it is also the receiver's own address; on zkSync and Tron it is not.
@@ -166,15 +166,15 @@ would spend a message to restate a derivation it already has. The flag is fixed 
 contract: false on a plain transceiver, true on the zkSync and Tron variants.
 `TransceiverBase._bootstrapInbound` argues the rest.
 
-**A failed report takes the account creation with it.** The send is nested inside the
+**A failed report takes the conduit creation with it.** The send is nested inside the
 delivery callback, where `msg.value` is zero, so a diverging transceiver pays from its float
 and an underfunded one reverts. That is the correct shape, not something to catch: creating
-the account anyway would leave the home permanently unable to address it, since `CrossProxy`
+the conduit anyway would leave the home permanently unable to address it, since `CrossProxy`
 arms exactly once and there is no second bootstrap to carry a second report. All or nothing
 keeps the operation retryable once the float is funded.
 
 **An empty float moves the report's cost to whoever retries; it does not strand the
-account.** Every provider that reaches zkSync or Tron (LayerZero, CCIP, Hyperlane) keeps a
+conduit.** Every provider that reaches zkSync or Tron (LayerZero, CCIP, Hyperlane) keeps a
 reverted delivery retryable by anyone, LayerZero and Hyperlane with no expiry in their
 contracts and CCIP with none in its documentation. Hyperlane's `Mailbox.process` and
 LayerZero's `EndpointV2.lzReceive` forward the retry's `msg.value` to the transceiver, so the
@@ -202,8 +202,8 @@ chain, parity ones included, but also refuses reports and deliveries from it unt
 
 **Limiting who bootstraps.** The owner can name an `IBootstrapAllowlist`
 (`setBootstrapAllowlist`), after which a bootstrap and its quote are refused (`NotAllowed`)
-for any account it does not allow. The check is on the account, which `bootstrap` requires
-to be `msg.sender`, so both refuse the same accounts. It applies to every destination,
+for any conduit it does not allow. The check is on the conduit, which `bootstrap` requires
+to be `msg.sender`, so both refuse the same conduits. It applies to every destination,
 reporting or not, and setting zero lifts it.
 
 On an EVM destination nothing persists past the transaction: deploy, arm, execute, and lock
@@ -219,7 +219,7 @@ per destination with `setPeer`, and it cannot be changed after.
 
 ## Wire formats
 
-An account's channel carries exactly one shape, so its payload needs no tag. A transceiver's
+A conduit's channel carries exactly one shape, so its payload needs no tag. A transceiver's
 envelope leads with its kind (`Envelope.BOOTSTRAP` 1, `BOOTSTRAP_ELEMENTS` 2,
 `RECEIVER_REPORT` 3), and each decoder refuses a kind it does not act on before reading the
 rest, so a wrong shape is refused by name rather than misread. Kinds start at 1, so an
@@ -233,12 +233,12 @@ separately from its message.
 | home → destination transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes32 transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes32 transmitter, bytes[] elements)` elsewhere |
 | destination → home transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
-**Both transceiver channels identify the account by owner and salt rather than by its
+**Both transceiver channels identify the conduit by owner and salt rather than by its
 address.** A transceiver is shared by every owner, so nothing the bridge reports says who
 authorized the message. The pair rather than the address, because the address is a
-derivation of it. That is also what lets the home find the reporting account without a
+derivation of it. That is also what lets the home find the reporting conduit without a
 request id. A bootstrap also carries the transmitter's address, as the receiver's peer rather than as
-the account's identity.
+the conduit's identity.
 
 A call is `(address target, uint256 value, bytes data)`: the tuple ERC-7579 and ERC-7821
 use, so payload-building tooling that already speaks those formats works without custom
@@ -265,10 +265,10 @@ RolesEnumerable            ← TransmitterBase, ReceiverBase
 Executor                   ← TransmitterBase, ReceiverBase
 ReentrancyGuardUpgradeable ← ReceiverBase
 
-OutboundBase → TransmitterBase                  the home account
+OutboundBase → TransmitterBase                  the home conduit
 OutboundBase → TransceiverCore → TransceiverBase → DivergentTransceiver → ZkSyncTransceiver / TronTransceiver
                TransceiverCore → TransceiverExtension → DivergentTransceiverExtension → zkSync / Tron variants
-ReceiverBase                                    the destination account; not an OutboundBase
+ReceiverBase                                    the destination conduit; not an OutboundBase
 ```
 
 `TransceiverBase` is the only contract with both a send side and a receive side, and its
@@ -281,16 +281,16 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 
 | Contract | What it is | Public surface |
 | --- | --- | --- |
-| `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. Grants are `onlyInitializing`, so membership arrives while a contract is armed and never afterwards: an initializer grants through the internal `_grantInitialRole`, and the public `grantRole` accepts only the contract's own call, which a receiver's bootstrap payload can make (#68). `RolesEnumerable` adds on-chain enumeration for accounts; a transceiver's fixed set is read from its `RoleGranted` logs. | `hasRole`; `getRoleMembers` on accounts |
+| `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. Grants are `onlyInitializing`, so membership arrives while a contract is armed and never afterwards: an initializer grants through the internal `_grantInitialRole`, and the public `grantRole` accepts only the contract's own call, which a receiver's bootstrap payload can make (#68). `RolesEnumerable` adds on-chain enumeration for conduits; a transceiver's fixed set is read from its `RoleGranted` logs. | `hasRole`; `getRoleMembers` on conduits |
 | `messaging/Executor.sol` | The shared execution loop. In order, all or nothing, reverting with `CallFailed(index, reason)`. | `isAllowed(address, bytes4)`, open by default |
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
-| `messaging/outbound/TransmitterBase.sol` | The per-user account on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
-| `messaging/inbound/ReceiverBase.sol` | The destination-side account. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for accounts homed here and receivers for accounts homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own account on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
-| `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `accountSalt`, `predictCrossAccount`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
+| `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
+| `messaging/inbound/ReceiverBase.sol` | The destination-side conduit. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
+| `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `conduitSalt`, `predictCrossConduit`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
 | `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `CROSS_PROXY_INIT_CODE_HASH` |
-| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `accountBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
-| `messaging/transceiver/DivergentAccounts.sol` | The zkSync and Tron account formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `accountBytecodeHash` |
+| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `conduitBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
+| `messaging/transceiver/DivergentConduits.sol` | The zkSync and Tron conduit formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `conduitBytecodeHash` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 
 ### Facts that span contracts
@@ -301,23 +301,23 @@ These are the ones you cannot get by reading a single file.
 chains that report.** The first says a bootstrap was dispatched; the second says the
 receiver's address is known. Where the address is pre-deterministic they agree from the
 first transaction. On zkSync, Tron, and every non-EVM VM nothing is recorded until
-`onDestinationReceiverReported` arrives. The account asks its transceiver which case it is
-in, through `IAccountTransceiver.reportsReceiver`, because derivability is a property of the
-chain and an account holds no registry.
+`onDestinationReceiverReported` arrives. The conduit asks its transceiver which case it is
+in, through `IConduitTransceiver.reportsReceiver`, because derivability is a property of the
+chain and a conduit holds no registry.
 
 **One role covers both directions.** A contract accepting deliveries from one address while
 sending through another would trust two transports and authenticate against one, and nothing
 would say so. `OutboundBase` carries no role: each contract inherits one, a transceiver
-`Roles` and an account `RolesEnumerable`, and a receiver never sends yet has the strictest
+`Roles` and a conduit `RolesEnumerable`, and a receiver never sends yet has the strictest
 need to know which gateway is real.
 
-**Only an account holds approvals.** `ReceiverBase` gates `commit`, `cancel`, and `execute`
+**Only a conduit holds approvals.** `ReceiverBase` gates `commit`, `cancel`, and `execute`
 on its source transmitter or a payload it is already executing. A transceiver holds no
 approval map: a bootstrap creates the receiver and runs
 its payload in one delivery, so there is nothing to approve. A first payload that should wait
 carries a call to the new receiver's own `commit`.
 
-**A transceiver runs no payload.** `Executor.isAllowed` defaults to true on an account. A
+**A transceiver runs no payload.** `Executor.isAllowed` defaults to true on a conduit. A
 transceiver has no `_execute`, so an authenticated counterpart can make it do exactly what
 `_handleInbound` does with an `Envelope` and nothing else.
 
@@ -380,17 +380,17 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   how much they receive.
 - `finalize` is permissionless; `execute` is gated. Exactly one of "the payload is checked"
   or "the caller is checked" holds, and each entry point picks a different one.
-- Account addresses are CREATE2 on `(owner, salt, homeChainKey)`, fixed for the life of the
-  protocol and pinnable in a signed payload. Each account has one address on every parity
-  chain; the same owner and salt homed on two chains are two accounts.
+- Conduit addresses are CREATE2 on `(owner, salt, homeChainKey)`, fixed for the life of the
+  protocol and pinnable in a signed payload. Each conduit has one address on every parity
+  chain; the same owner and salt homed on two chains are two conduits.
 - Approvals are an unordered map of hash to outstanding count. Nothing has a position, so
   nothing can block.
 - The provenance bar gates what a transceiver sends and accepts (a bootstrap, a receiver
-  report, an inbound delivery), not an account's later sends, which leave from its transmitter.
-- A destination is bootstrapped exactly once per account, and a send to one that has not
+  report, an inbound delivery), not a conduit's later sends, which leave from its transmitter.
+- A destination is bootstrapped exactly once per conduit, and a send to one that has not
   been is refused locally rather than paid for and failed on arrival.
 - A bootstrap fee lands in the treasury in the transaction that charges it, and a bootstrap's
-  quote is its message fee plus that fee, which is exactly what the account pays. A
+  quote is its message fee plus that fee, which is exactly what the conduit pays. A
   transceiver's float pays only for receiver reports and otherwise leaves only to its treasury.
 
 ## TODO

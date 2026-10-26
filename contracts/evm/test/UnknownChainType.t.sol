@@ -40,12 +40,12 @@ contract UnknownChainTypeTest is Test {
     uint16 constant CT_UNKNOWN = 0x0042;
 
     bytes chainId;
-    bytes account;
+    bytes conduit;
 
     function setUp() public {
         registry = new ChainRegistry(owner, unseeded());
         chainId = Erc7930.encodeChainId(CT_UNKNOWN, hex"cafe");
-        account = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"0011223344556677");
+        conduit = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"0011223344556677");
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
@@ -106,7 +106,7 @@ contract UnknownChainTypeTest is Test {
         registry.validateLocation(chainKey, wrongWidth);
 
         // And a well-formed one passes.
-        registry.validateLocation(chainKey, account);
+        registry.validateLocation(chainKey, conduit);
     }
 
     /* =============================== what does not ============================= */

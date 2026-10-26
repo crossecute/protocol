@@ -30,7 +30,7 @@ library ChainKey {
     }
 
     /// @notice The key for any chain, from an ERC-7930 envelope.
-    /// @dev Accepts an account envelope as well as a bare chain identifier;
+    /// @dev Accepts a conduit envelope as well as a bare chain identifier;
     ///      `toChainIdentifier` reduces it, so every address on a chain yields one key.
     ///      `parseStrict` runs inside, so a non-canonical framing reverts here rather
     ///      than becoming a key nothing else can reproduce.

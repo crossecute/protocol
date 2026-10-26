@@ -9,12 +9,12 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 ///         address it, and the two primitives that put a message on the wire.
 ///
 /// @dev Split from `TransmitterBase` because a transceiver needs the mechanics but must not
-///      have an account's owner. The setters are `internal` and ungated; each side wraps them
-///      in its own authority (`onlyOwner` on a transceiver, `onlyAccountOwner` on an account).
+///      have a conduit's owner. The setters are `internal` and ungated; each side wraps them
+///      in its own authority (`onlyOwner` on a transceiver, `onlyConduitOwner` on a conduit).
 ///
 /// @dev One table serves every sender: an ERC-7930 recipient is the route (chain) joined to
 ///      the counterpart (address). A transceiver's counterpart is the provider's transceiver
-///      on that chain, and an account's is its own receiver, stored rather than assumed equal
+///      on that chain, and a conduit's is its own receiver, stored rather than assumed equal
 ///      to this address, which is wrong wherever the CREATE2 formula differs from Ethereum's.
 ///
 /// @dev Leads the inheritance list on `TransmitterBase` and `TransceiverBase`, so its fields
@@ -57,7 +57,7 @@ abstract contract OutboundBase {
     ///
     /// @dev The route must be the chain's canonical ERC-7930 chain identifier, and
     ///      `keccak256(route)` must be the chainKey: otherwise the reverse index would
-    ///      attribute one chain's messages to another, and an account homed there would be
+    ///      attribute one chain's messages to another, and a conduit homed there would be
     ///      looked for under the wrong key (#25). A key therefore has exactly one valid route,
     ///      which makes the table write-once and injective without further checks: re-writing
     ///      it is a no-op, and any other route for the key is refused above.
@@ -158,7 +158,7 @@ abstract contract OutboundBase {
     /* ================================== sending ================================ */
 
     /// @notice Where a provider's excess fee goes back to: whoever paid it.
-    /// @dev On a transceiver's `bootstrap` that is `msg.sender`, the only account it accepts.
+    /// @dev On a transceiver's `bootstrap` that is `msg.sender`, the only conduit it accepts.
     ///      Never the transceiver's `address(this)`, which would pool every user's excess.
     ///      `TransmitterBase` pays from its own balance and overrides this to itself, as
     ///      `TransceiverBase` does while a report pays from its float.
@@ -169,7 +169,7 @@ abstract contract OutboundBase {
     /// @notice Put the payload on the wire. No default, so a binding that omits it does not
     ///         compile.
     ///
-    /// @dev One primitive for every channel: a payload to an account, a bootstrap to a transceiver,
+    /// @dev One primitive for every channel: a payload to a conduit, a bootstrap to a transceiver,
     ///      and a receiver report home are all `bytes` to an ERC-7930 address.
     ///
     /// @dev Spend `value`, never `msg.value`. On a transmitter `value` is the quote and
@@ -207,7 +207,7 @@ abstract contract OutboundBase {
 
     /// @notice What sending `payload` to `recipient` would cost, in this chain's native
     ///         currency.
-    /// @dev On every sender, not only accounts: a transceiver's receiver report is paid from
+    /// @dev On every sender, not only conduits: a transceiver's receiver report is paid from
     ///      its float, which someone has to price in order to fund. Ungated, since it spends
     ///      and writes nothing; `TransmitterBase` overrides it to apply its send's checks.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)

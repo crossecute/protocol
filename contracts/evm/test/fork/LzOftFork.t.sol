@@ -11,7 +11,7 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
+import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
@@ -53,7 +53,7 @@ contract PacketReader {
     }
 }
 
-/// @notice frxUSD as Frax deploys it: an account homed on Fraxtal sends through the frxUSD
+/// @notice frxUSD as Frax deploys it: a conduit homed on Fraxtal sends through the frxUSD
 ///         lockbox there, to Ethereum (lockbox) and Arbitrum (OFT).
 ///
 /// @dev Each send runs the real OFT and endpoint on its home fork, with the OFT's own enforced
@@ -78,8 +78,8 @@ abstract contract LzOftForkBase is Test {
     uint256 fraxtal;
     uint256 ethereum;
     uint256 arbitrum;
-    LzOftAccountFactory factory;
-    LzOftTransmitter account;
+    LzOftConduitFactory factory;
+    LzOftTransmitter conduit;
 
     /// @dev Leaves the Fraxtal fork selected.
     function _forks() internal returns (bool) {
@@ -99,7 +99,7 @@ abstract contract LzOftForkBase is Test {
         return true;
     }
 
-    function _leaves() internal view returns (LzOftAccountFactory.Leaf[] memory) {
+    function _leaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](2);
         destinations[0] = LzOftDestination(1, ETH_EID);
         destinations[1] = LzOftDestination(42161, ARB_EID);
@@ -107,10 +107,10 @@ abstract contract LzOftForkBase is Test {
     }
 
     /// @dev On the Fraxtal fork, funded for every send's fee.
-    function _createAccount(LzOftAccountFactory.Leaf[] memory leaves) internal {
+    function _createConduit(LzOftConduitFactory.Leaf[] memory leaves) internal {
         factory = LzOftDeploy.factory();
-        account = LzOftTransmitter(payable(factory.createTransmitter(SALT, FRAXTAL_OFT, leaves)));
-        vm.deal(address(account), 100 ether);
+        conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, FRAXTAL_OFT, leaves)));
+        vm.deal(address(conduit), 100 ether);
     }
 
     /// @dev The packet the last call made the home endpoint emit.
@@ -159,28 +159,28 @@ abstract contract LzOftForkBase is Test {
 contract LzOftForkTest is LzOftForkBase {
     function _commitCall(bytes32 commitment) internal view returns (Call[] memory calls) {
         calls = new Call[](1);
-        calls[0] = Call(address(account), 0, abi.encodeCall(ICommitFinalize.commit, (commitment)));
+        calls[0] = Call(address(conduit), 0, abi.encodeCall(ICommitFinalize.commit, (commitment)));
     }
 
     function _bootstrap(uint256 chainId, uint256 fork, address dstOft) internal {
         vm.selectFork(fraxtal);
         Call[] memory calls = _commitCall(keccak256(abi.encode("bootstrap", chainId)));
-        uint256 quote = account.quoteBootstrap(chainId, calls, new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(chainId, calls, new bytes[](0));
         assertGt(quote, 0, "the lockbox's enforced options price a compose send");
         vm.recordLogs();
-        account.bootstrap(chainId, calls, new bytes[](0));
+        conduit.bootstrap(chainId, calls, new bytes[](0));
         bytes memory packet = _sentPacket();
         (,,, bytes32 sendTo, uint64 amountSD, bytes32 composeFrom) = reader.read(packet);
         assertEq(sendTo, bytes32(uint256(uint160(address(factory)))), "to the factory");
         assertEq(amountSD, 0, "no tokens");
-        assertEq(composeFrom, bytes32(uint256(uint160(address(account)))), "composeFrom is the account");
+        assertEq(composeFrom, bytes32(uint256(uint160(address(conduit)))), "composeFrom is the conduit");
 
         vm.selectFork(fork);
         assertEq(address(LzOftDeploy.factory()), address(factory), "one factory address on every chain");
         _land(dstOft, address(factory), packet);
 
-        LzOftReceiver r = LzOftReceiver(payable(address(account)));
-        assertEq(r.sourceTransmitter(), address(account));
+        LzOftReceiver r = LzOftReceiver(payable(address(conduit)));
+        assertEq(r.sourceTransmitter(), address(conduit));
         assertEq(r.homeOrigin(), bytes32(uint256(FRAXTAL_EID)));
         assertEq(r.localOft(), dstOft);
         assertTrue(r.isCommitted(keccak256(abi.encode("bootstrap", chainId))), "ran the bootstrap call");
@@ -189,7 +189,7 @@ contract LzOftForkTest is LzOftForkBase {
     function test_frxUsdCarriesABootstrapToEachDestinationAndAMessageAfter() public {
         if (!_forks()) vm.skip(true);
 
-        LzOftAccountFactory.Leaf[] memory leaves = _leaves();
+        LzOftConduitFactory.Leaf[] memory leaves = _leaves();
         for (uint256 i; i < leaves.length; ++i) {
             assertEq(leaves[i].oft, leaves[i].eid == ETH_EID ? ETH_OFT : ARB_OFT, "the lockbox's peers are Frax's");
         }
@@ -200,7 +200,7 @@ contract LzOftForkTest is LzOftForkBase {
         LzOftDeploy.checkOnDestination(leaves[leaves[0].eid == ARB_EID ? 0 : 1], FRAXTAL_EID, FRAXTAL_OFT);
 
         vm.selectFork(fraxtal);
-        _createAccount(leaves);
+        _createConduit(leaves);
 
         _bootstrap(1, ethereum, ETH_OFT);
         _bootstrap(42161, arbitrum, ARB_OFT);
@@ -208,20 +208,20 @@ contract LzOftForkTest is LzOftForkBase {
         // Path A, to the receiver the Ethereum bootstrap created.
         vm.selectFork(fraxtal);
         bytes32 later = keccak256("path A");
-        bytes memory recipient = account.recipientOn(1);
-        bytes memory payload = account.payloadForCalls(_commitCall(later));
+        bytes memory recipient = conduit.recipientOn(1);
+        bytes memory payload = conduit.payloadForCalls(_commitCall(later));
         vm.recordLogs();
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
         bytes memory packet = _sentPacket();
         vm.selectFork(ethereum);
-        _land(ETH_OFT, address(account), packet);
-        assertTrue(ReceiverBase(payable(address(account))).isCommitted(later), "Path A ran on Ethereum");
+        _land(ETH_OFT, address(conduit), packet);
+        assertTrue(ReceiverBase(payable(address(conduit))).isCommitted(later), "Path A ran on Ethereum");
     }
 }
 
 /// @notice `layerzero-oft`'s deliveries through frxUSD, measured as `LzOftDeliveryGasTest`
 ///         measures them against mocks: the endpoint's `lzCompose` into the factory or the
-///         receiver against the `DeliveryGas` default the account sends, and the OFT's
+///         receiver against the `DeliveryGas` default the conduit sends, and the OFT's
 ///         `lzReceive` against the lzReceive gas the home lockbox enforces for that eid.
 /// @dev The lzReceive figure is the OFT's frame alone, without the endpoint's own clearing of
 ///      the verified payload around it. Its baseline is zero: the OFT's work is the cost.
@@ -237,23 +237,23 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         vm.selectFork(fraxtal);
         uint256 enforced = reader.lzReceiveGas(IEnforcedOptions(FRAXTAL_OFT).enforcedOptions(eid, SEND_AND_CALL));
         vm.recordLogs();
-        account.bootstrap(chainId, new Call[](0), new bytes[](0));
+        conduit.bootstrap(chainId, new Call[](0), new bytes[](0));
         bytes memory packet = _sentPacket();
 
         vm.selectFork(fork);
         assertEq(address(LzOftDeploy.factory()), address(factory), "one factory address on every chain");
         _deliver(oft, packet, address(factory), enforced, DeliveryGas.BOOTSTRAP, string.concat(chain, ", bootstrap"));
-        assertGt(address(account).code.length, 0, "the receiver exists");
+        assertGt(address(conduit).code.length, 0, "the receiver exists");
 
         vm.selectFork(fraxtal);
-        bytes memory payload = account.payloadForCalls(new Call[](0));
-        bytes memory recipient = account.recipientOn(chainId);
+        bytes memory payload = conduit.payloadForCalls(new Call[](0));
+        bytes memory recipient = conduit.recipientOn(chainId);
         vm.recordLogs();
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
         packet = _sentPacket();
 
         vm.selectFork(fork);
-        _deliver(oft, packet, address(account), enforced, DeliveryGas.PAYLOAD, string.concat(chain, ", payload"));
+        _deliver(oft, packet, address(conduit), enforced, DeliveryGas.PAYLOAD, string.concat(chain, ", payload"));
     }
 
     /// @dev Measures, then delivers for real, so the next message finds the state it would.
@@ -282,7 +282,7 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         // Deployed on the local chain, so carried to each fork from there.
         vm.makePersistent(noOp);
         if (!_forks()) vm.skip(true);
-        _createAccount(_leaves());
+        _createConduit(_leaves());
         _deliveries(1, ethereum, ETH_OFT, ETH_EID, "ethereum");
         _deliveries(42161, arbitrum, ARB_OFT, ARB_EID, "arbitrum");
     }

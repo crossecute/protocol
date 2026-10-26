@@ -99,7 +99,7 @@ cast code 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C --rpc-url $RPC             
 
 Code at Arachnid's address does not make a chain parity: zkSync Era has it too (README §1).
 
-For a zkSync or Tron chain, the account formula must match the chain's own. On zkSync Era,
+For a zkSync or Tron chain, the conduit formula must match the chain's own. On zkSync Era,
 `ContractDeployer` computes it for any inputs, and `AddressDerive.zksyncCreate2` must agree:
 
 ```sh
@@ -115,8 +115,8 @@ instead; mainnet has it on (`wallet/getchainparameters`).
 
 Results: Arachnid's factory matches on all five EVM chains and is absent on Tron and Shasta;
 the deployer's address is empty on all five. zkSync's formula matched `ContractDeployer` on
-mainnet. Tron's matches the source. What neither shows is the account bytecode hash each
-transceiver is born with (`accountBytecodeHash`), which comes from zksolc and TRON-solc.
+mainnet. Tron's matches the source. What neither shows is the conduit bytecode hash each
+transceiver is born with (`conduitBytecodeHash`), which comes from zksolc and TRON-solc.
 
 ### 2. EIP-152, if the chain may compute BLAKE2b commitments
 
@@ -169,7 +169,7 @@ reverts `IGP: no gas oracle for domain` for such a domain.
 
 ### 4. Destination gas
 
-A bootstrap creates an account on the destination, so the gas it is sent with must cover
+A bootstrap creates a conduit on the destination, so the gas it is sent with must cover
 that. `ProviderDeliveryGasSpec` (`test/protocols/ProviderBindingSpec.t.sol`) measures each
 delivery through every binding's fixture with `DeliveryGasMeter`, and fails if a `DeliveryGas`
 default is not at least 10% above it; `forge test --mc DeliveryGasTest -vv` prints the numbers.
@@ -302,7 +302,7 @@ have no code at the predeploy, as expected.
 ### 7. `layerzero-oft`
 
 The binding has no transceiver and no provider ids, so §3's lanes and §5's verification are
-those of the OFT an account sends through. Two things are checked: that the factory lands at
+those of the OFT a conduit sends through. Two things are checked: that the factory lands at
 its one address, and, per candidate OFT, the prerequisites O1 to O7 of
 [`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
 
@@ -328,7 +328,7 @@ cast call <oft> "nextNonce(uint32,bytes32)(uint64)" <eid> <peer32> --rpc-url $RP
 cast call <oft> "owner()(address)" --rpc-url $RPC                                  # O7
 cast call $LZ_ENDPOINT "delegates(address)(address)" <oft> --rpc-url $RPC         # O7
 cast storage <oft> 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103 --rpc-url $RPC  # O7: ERC-1967 admin
-# The DVNs an account trusts: the ULN config (type 2) of the send library on the home, and of
+# The DVNs a conduit trusts: the ULN config (type 2) of the send library on the home, and of
 # the receive library on each destination for the home's eid.
 cast call $LZ_ENDPOINT "getSendLibrary(address,uint32)(address)" <oft> <eid> --rpc-url $RPC
 cast call $LZ_ENDPOINT "getReceiveLibrary(address,uint32)(address,bool)" <oft> <eid> --rpc-url $RPC
@@ -363,7 +363,7 @@ for it was not checked.
 
 ## What these checks do not cover
 
-- That an account deploys where `ZkSyncAccounts` and `TronAccounts` predict, with the real
+- That a conduit deploys where `ZkSyncConduits` and `TronConduits` predict, with the real
   zksolc and TRON-solc artifacts. It needs one funded deployment per chain. On a local EraVM
   node it did, with foundry-zksync's build (§4).
 - What pubdata adds to a delivery on zkSync (§4).

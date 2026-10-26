@@ -13,7 +13,7 @@ import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {ext} from "test/Harness.sol";
 import {Transmitter, HomeTransceiver} from "test/ReceiverReport.t.sol";
 
-/// @dev Sends its own bootstrap, as the `layerzero-oft` account will.
+/// @dev Sends its own bootstrap, as the `layerzero-oft` conduit will.
 contract HookedTransmitter is Transmitter {
     uint256 constant PRICE = 7;
 
@@ -36,7 +36,7 @@ contract HookedTransmitter is Transmitter {
 ///      hooks, and the transceiver is not called.
 contract TransmitterBootstrapHooksTest is Test {
     HomeTransceiver t;
-    HookedTransmitter account;
+    HookedTransmitter conduit;
 
     address msig = address(0x5165);
     address owner = address(0xA11CE);
@@ -61,32 +61,32 @@ contract TransmitterBootstrapHooksTest is Test {
         vm.stopPrank();
 
         vm.prank(owner);
-        account = HookedTransmitter(payable(t.createTransmitter(SALT)));
-        vm.deal(address(account), 1 ether);
+        conduit = HookedTransmitter(payable(t.createTransmitter(SALT)));
+        vm.deal(address(conduit), 1 ether);
     }
 
     function test_theQuoteIsTheHooks() public view {
-        assertEq(account.quoteBootstrap(DESTINATION, _calls(), new bytes[](0)), 7);
+        assertEq(conduit.quoteBootstrap(DESTINATION, _calls(), new bytes[](0)), 7);
         assertNotEq(t.quoteBootstrap(destinationKey, owner, SALT, _calls(), new bytes[](0)), 7, "not the transceiver's");
     }
 
     function test_theSendIsTheHooksAndPaysTheQuote() public {
         vm.prank(owner);
-        account.bootstrap(DESTINATION, _calls(), new bytes[](0));
+        conduit.bootstrap(DESTINATION, _calls(), new bytes[](0));
 
-        assertEq(account.sentTo(), destinationKey);
-        assertEq(account.sentFee(), 7, "the hook's quote");
-        assertEq(account.sentCalls(), 1);
-        assertTrue(account.isBootstrapped(destinationKey), "recorded before the hook ran");
+        assertEq(conduit.sentTo(), destinationKey);
+        assertEq(conduit.sentFee(), 7, "the hook's quote");
+        assertEq(conduit.sentCalls(), 1);
+        assertTrue(conduit.isBootstrapped(destinationKey), "recorded before the hook ran");
         assertEq(t.lastSendValue(), 0, "the transceiver sent nothing");
     }
 
     /// @dev The balance check reads the hook's quote, not the transceiver's.
-    function test_anUnfundedAccountCannotBootstrapThroughTheHooks() public {
-        vm.deal(address(account), 6);
+    function test_anUnfundedConduitCannotBootstrapThroughTheHooks() public {
+        vm.deal(address(conduit), 6);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, 7, 6));
-        account.bootstrap(DESTINATION, _calls(), new bytes[](0));
+        conduit.bootstrap(DESTINATION, _calls(), new bytes[](0));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {

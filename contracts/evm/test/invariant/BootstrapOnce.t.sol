@@ -8,7 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {AnyGatewayTransmitter} from "test/Harness.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployCrossProxy.sol";
 
 uint256 constant BOOTSTRAP_FEE = 3;
 uint256 constant SEND_FEE = 5;
@@ -70,7 +70,7 @@ contract StubTransceiver {
     }
 }
 
-/// @notice The account owner, and the only actor: bootstraps, reports, and sends to a few chains,
+/// @notice The conduit owner, and the only actor: bootstraps, reports, and sends to a few chains,
 ///         two of which report their receiver, and tracks what each call must have done.
 /// @dev Expectations are written before the call they describe: an unexpected revert undoes
 ///      them with the call, and `fail-on-revert` reports it.
@@ -157,7 +157,7 @@ contract BootstrapHandler is Test {
     }
 }
 
-/// @notice `message-flow.md`: a destination is bootstrapped exactly once per account, and a send
+/// @notice `message-flow.md`: a destination is bootstrapped exactly once per conduit, and a send
 ///         to one that has not been is refused locally rather than paid for and failed on
 ///         arrival. On a reporting chain that holds until the receiver is reported.
 contract BootstrapOnceInvariantTest is Test {
@@ -172,7 +172,7 @@ contract BootstrapOnceInvariantTest is Test {
         stub = new StubTransceiver();
         handler = new BootstrapHandler(stub);
         transmitter = TransmitterBase(
-            payable(deployAccount(
+            payable(deployConduit(
                     address(new FeeTransmitter(sink)),
                     abi.encodeCall(OwnableTransmitter.initialize, (address(handler), address(stub), bytes32(0)))
                 ))
@@ -222,7 +222,7 @@ contract BootstrapOnceInvariantTest is Test {
         assertEq(
             address(transmitter).balance,
             FUNDED - handler.boots() * BOOTSTRAP_FEE - handler.sends() * SEND_FEE,
-            "the account kept the rest"
+            "the conduit kept the rest"
         );
     }
 }

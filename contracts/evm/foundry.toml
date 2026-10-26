@@ -22,7 +22,7 @@ optimizer_runs = 200
 # The default embeds an IPFS hash of the source, comments included, in the trailing
 # metadata. That put every derived address one comment edit away from moving, which is
 # not a property this protocol can have: CrossProxy's initcode hash is what fixes an
-# account's address on every chain, and the registry stores initcode hashes to derive
+# conduit's address on every chain, and the registry stores initcode hashes to derive
 # transceiver locations. "none" drops the source hash; cbor_metadata = false drops the
 # rest of the trailer, leaving initcode that depends on the code and nothing else.
 bytecode_hash = "none"
@@ -99,7 +99,7 @@ exclude_lints = [
     # A revert inside a loop is how an all-or-nothing check over an array is written.
     "require-revert-in-loop",
     # The three value transfers it found now emit first; every other hit follows no call,
-    # or only a call into this protocol's own account proxy.
+    # or only a call into this protocol's own conduit proxy.
     "reentrancy-events",
     # Detector heuristics. They flag what tests and mocks do on purpose (an unread return, a
     # mock that refunds its caller), so they are enforced on src/ alone, by the profile below.

@@ -49,8 +49,8 @@ function checkTransceiver(address t, TransceiverDeployment memory d, address pro
     bytes32 home = keccak256(c.governorHome);
 
     check(
-        tb.owner() == te.predictCrossAccount(c.governorOwner, c.governorSalt, home),
-        "owner is the governor's account on its home"
+        tb.owner() == te.predictCrossConduit(c.governorOwner, c.governorSalt, home),
+        "owner is the governor's conduit on its home"
     );
     check(te.treasury() == c.treasury, "treasury");
     check(te.transmitterImplementation() == c.transmitterImplementation, "transmitter implementation");

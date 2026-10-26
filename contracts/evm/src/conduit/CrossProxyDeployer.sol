@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
 
 // Where `CrossProxyDeployer` sits: Arachnid's factory at salt zero, so the same address on every
 // standard EVM chain. A `Predetermined` chain is one whose transceivers were deployed through it

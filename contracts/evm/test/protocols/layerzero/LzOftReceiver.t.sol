@@ -7,7 +7,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployCrossProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 
@@ -45,7 +45,7 @@ contract LzOftReceiverTest is Test {
         localOft.setPeer(HOME_EID, HOME_OFT);
         target = new Target();
         receiver = LzOftReceiver(
-            payable(deployAccount(
+            payable(deployConduit(
                     address(new LzOftReceiver()),
                     abi.encodeCall(
                         ILzOftReceiverInit.initialize,

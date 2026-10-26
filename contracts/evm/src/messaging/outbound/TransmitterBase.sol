@@ -14,9 +14,9 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 
-/// @title IAccountTransceiver
-/// @notice Everything an account needs from the transceiver whose address it stores.
-interface IAccountTransceiver {
+/// @title IConduitTransceiver
+/// @notice Everything a conduit needs from the transceiver whose address it stores.
+interface IConduitTransceiver {
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -51,29 +51,29 @@ interface IAccountTransceiver {
 
     /// @notice Whether a destination reports its receiver address back, rather than this
     ///         chain deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
-    ///         every non-EVM VM. Asked here because an account holds no registry.
+    ///         every non-EVM VM. Asked here because a conduit holds no registry.
     function reportsReceiver(bytes32 chainKey) external view returns (bool);
 
     /// @notice The chain identifier the governor configured a destination under, including one
-    ///         this account has not bootstrapped yet.
+    ///         this conduit has not bootstrapped yet.
     function routeTo(bytes32 chainKey) external view returns (bytes memory);
 
-    /// @notice Where this account's receiver will sit on a chain that does not report it.
+    /// @notice Where this conduit's receiver will sit on a chain that does not report it.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
 }
 
 /// @title TransmitterBase
-/// @notice The per-user account on the home chain, and the source-side entry point. One
+/// @notice The per-user conduit on the home chain, and the source-side entry point. One
 ///         transmitter per protocol per user, routing to every destination.
 ///
 /// @dev The destination is a parameter, not state: one transmitter fans out to every chain,
 ///      with one receiver per destination.
 ///
 /// @dev Ownership is declared through `_owner`/`_checkOwner` and the modifier is
-///      `onlyAccountOwner`, so a provider SDK that brings its own `onlyOwner` does not
+///      `onlyConduitOwner`, so a provider SDK that brings its own `onlyOwner` does not
 ///      collide. Every binding answers through `OwnableTransmitter`, whose inherited
-///      `renounceOwnership` bricks the account, since every entry point is owner-gated. Left
-///      available on purpose, so an owner can retire an account for good.
+///      `renounceOwnership` bricks the conduit, since every entry point is owner-gated. Left
+///      available on purpose, so an owner can retire a conduit for good.
 ///
 /// @dev No registry pointer: chainKeys derive purely and the transceiver does the directory
 ///      lookups.
@@ -83,27 +83,27 @@ interface IAccountTransceiver {
 abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerable, Executor, IERC7786GatewaySource {
     /// The local transceiver for this protocol, which carries every message out.
     address public transceiver;
-    /// The caller-chosen half of this account's CREATE2 salt, stored because `bootstrap` must
+    /// The caller-chosen half of this conduit's CREATE2 salt, stored because `bootstrap` must
     /// state it and an address cannot be reversed into its salt.
-    bytes32 public accountSalt;
+    bytes32 public conduitSalt;
 
     event TransmitterConfigured(address indexed owner, address indexed transceiver);
     event DestinationBootstrapped(bytes32 indexed destinationChainKey);
-    /// @dev A destination reported an address this account could not derive. Distinct from
+    /// @dev A destination reported an address this conduit could not derive. Distinct from
     ///      `CounterpartSet`, which also fires for the derived address at bootstrap.
     event DestinationReceiverReported(bytes32 indexed destinationChainKey, bytes receiver);
     /// @dev An execution the owner drove directly, as distinct from one a commitment discharged.
     event Executed(address indexed caller, uint256 callCount);
 
     error NoTransceiver();
-    /// @dev The recipient is not the receiver this account recorded for that chain.
-    error RecipientIsNotThisAccount(bytes recipient);
+    /// @dev The recipient is not the receiver this conduit recorded for that chain.
+    error RecipientIsNotThisConduit(bytes recipient);
     /// @dev No receiver known on that chain, so a payload would fail on delivery after the fee
     ///      is spent.
     error NotBootstrapped(bytes32 destinationChainKey);
     /// @dev `CrossProxy` arms once, so a second bootstrap would pay a fee to revert on arrival.
     error AlreadyBootstrapped(bytes32 destinationChainKey);
-    /// @dev Something that is not this account's transceiver tried to report a receiver.
+    /// @dev Something that is not this conduit's transceiver tried to report a receiver.
     error NotTransceiver(address caller);
     /// @dev A receiver's address is reported once; a second report, replayed or hostile, is
     ///      refused. See `_receiverPinned`.
@@ -112,7 +112,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     error TypedPayloadToNonEvmDestination();
     /// @dev An EVM receiver decodes only `Call[]`, so opaque elements would be undeliverable.
     error OpaquePayloadToEvmDestination();
-    /// @dev This account's balance, including the call's `msg.value`, cannot cover the fee.
+    /// @dev This conduit's balance, including the call's `msg.value`, cannot cover the fee.
     error InsufficientBalance(uint256 fee, uint256 balance);
 
     /// @notice Whether a bootstrap to `destinationChainKey` has been dispatched.
@@ -124,24 +124,24 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///
     /// @dev A permanently undeliverable bootstrap (a wrong route, a destination that never
     ///      accepts it) blocks any retry from here. Both causes are write-once transceiver
-    ///      misconfiguration that strands the account anyway.
+    ///      misconfiguration that strands the conduit anyway.
     function isBootstrapped(bytes32 destinationChainKey) public view returns (bool) {
         return _bootstrapDispatched[destinationChainKey];
     }
 
-    /// @notice Whether this account has been stood up on an EVM chain, by plain chain id.
+    /// @notice Whether this conduit has been stood up on an EVM chain, by plain chain id.
     function isBootstrappedOn(uint256 destinationChainId) external view returns (bool) {
         return _bootstrapDispatched[ChainKey.forEvm(destinationChainId)];
     }
 
-    /// @notice Whether this account can be sent to on `destinationChainKey` yet.
+    /// @notice Whether this conduit can be sent to on `destinationChainKey` yet.
     /// @dev Equals `isBootstrapped` where the receiver's address is known at dispatch. On
     ///      zkSync, Tron, and every non-EVM VM it stays false until the destination's report lands.
     function isReachable(bytes32 destinationChainKey) external view returns (bool) {
         return hasCounterpart(destinationChainKey);
     }
 
-    /// @notice This account's receiver on `destinationChainKey`, in that chain's own format.
+    /// @notice This conduit's receiver on `destinationChainKey`, in that chain's own format.
     function destinationReceiverOn(bytes32 destinationChainKey) external view returns (bytes memory) {
         return counterpartOn(destinationChainKey);
     }
@@ -153,21 +153,21 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      transceiver on that chain to be compromised or misbuilt, losing the chain either way.
     mapping(bytes32 destinationChainKey => bool) private _receiverPinned;
 
-    /// @notice Destinations this account has dispatched a bootstrap to.
+    /// @notice Destinations this conduit has dispatched a bootstrap to.
     /// @dev Separate from the counterpart table: on a reporting chain a bootstrap is recorded,
     ///      so a second cannot be paid for, while the destination stays unreachable until its
     ///      receiver is known.
     mapping(bytes32 destinationChainKey => bool) private _bootstrapDispatched;
 
-    /// @notice The transceiver reports where the destination actually created this account's
+    /// @notice The transceiver reports where the destination actually created this conduit's
     ///         receiver.
     ///
     /// @dev Recorded as the counterpart `sendMessage` checks against, since the registry is
     ///      off the send path.
     ///
-    /// @dev The transceiver authenticated the origin chain and derived this account from the
-    ///      report's `(owner, salt)`, so it cannot aim a report at an account the reporting
-    ///      chain did not name. It can report a wrong address for a real account on its own
+    /// @dev The transceiver authenticated the origin chain and derived this conduit from the
+    ///      report's `(owner, salt)`, so it cannot aim a report at a conduit the reporting
+    ///      chain did not name. It can report a wrong address for a real conduit on its own
     ///      chain, which is permanent (see `_receiverPinned`).
     function onDestinationReceiverReported(bytes32 destinationChainKey, bytes calldata receiver) external {
         if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
@@ -198,20 +198,20 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (_bootstrapDispatched[chainKey]) revert AlreadyBootstrapped(chainKey);
     }
 
-    /// @notice The account's owner. Declared, not implemented: see the contract note.
+    /// @notice The conduit's owner. Declared, not implemented: see the contract note.
     function _owner() internal view virtual returns (address);
 
     /// @notice Reverts unless the caller is the owner. Declared, not implemented.
     function _checkOwner() internal view virtual;
 
-    modifier onlyAccountOwner() {
+    modifier onlyConduitOwner() {
         _checkOwner();
         _;
     }
 
     /* ================================== send =================================== */
 
-    /// @notice Put a payload on the wire for this account's receiver on another chain.
+    /// @notice Put a payload on the wire for this conduit's receiver on another chain.
     ///
     /// @dev The ERC-7786 source entry point, and the only send: the recipient is an ERC-7930
     ///      address carrying its own chain.
@@ -220,10 +220,10 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      elements, so pairing it with the right destination type is the caller's job;
     ///      `payloadForCalls` and `payloadForElements` build it. Path B enforces the pairing.
     ///
-    /// @dev The recipient must be this account's recorded receiver on that chain; see
+    /// @dev The recipient must be this conduit's recorded receiver on that chain; see
     ///      `_requireOwnRecipient`.
     ///
-    /// @dev Priced here, in the same call, and paid from this account's balance, so the owner
+    /// @dev Priced here, in the same call, and paid from this conduit's balance, so the owner
     ///      approves a payload rather than a payload and a price. `msg.value` only tops the
     ///      balance up.
     ///
@@ -232,7 +232,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         external
         payable
-        onlyAccountOwner
+        onlyConduitOwner
         returns (bytes32 sendId)
     {
         _requireOwnRecipient(recipient);
@@ -247,16 +247,16 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return _sendMessage(recipient, payload, attributes, fee);
     }
 
-    /// @notice Whether this account understands a per-send attribute. Required by ERC-7786
+    /// @notice Whether this conduit understands a per-send attribute. Required by ERC-7786
     ///         and answered by the binding; none here.
     function supportsAttribute(bytes4) external view virtual returns (bool) {
         return false;
     }
 
-    /// @notice The recipient `sendMessage` takes for this account on `destinationChainId`: its
+    /// @notice The recipient `sendMessage` takes for this conduit on `destinationChainId`: its
     ///         recorded receiver there, as an ERC-7930 address. Reverts until the receiver is
     ///         known.
-    /// @dev Not this account's own address: the two differ wherever this chain or the
+    /// @dev Not this conduit's own address: the two differ wherever this chain or the
     ///      destination derives addresses differently from Ethereum.
     function recipientOn(uint256 destinationChainId) public view returns (bytes memory) {
         bytes32 chainKey = ChainKey.forEvm(destinationChainId);
@@ -267,7 +267,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapTo`'s first
     ///         argument, and the value a route is configured under.
     /// @dev `Erc7930` is internal-only, so off-chain callers need this builder to reach the
-    ///      `bytes` entry points. It names a chain, where `recipientOn` names an account on one.
+    ///      `bytes` entry points. It names a chain, where `recipientOn` names a conduit on one.
     function chainIdentifierFor(uint256 destinationChainId) public pure returns (bytes memory) {
         return _evmIdentifier(destinationChainId);
     }
@@ -282,12 +282,12 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return Payload.encodeElements(elements);
     }
 
-    /// @notice The recipient must be the receiver this account recorded for that chain.
+    /// @notice The recipient must be the receiver this conduit recorded for that chain.
     ///         Returns the chainKey so nothing parses twice.
     ///
     /// @dev Compares against the stored counterpart, not `address(this)`: the receiver is at
     ///      this address only where Ethereum's CREATE2 holds, not on zkSync, Tron, or a non-EVM
-    ///      chain. The whole recipient is compared, so the right account on the wrong chain is
+    ///      chain. The whole recipient is compared, so the right conduit on the wrong chain is
     ///      refused too.
     ///
     /// @dev Checks bootstrap first so an unreached destination reverts `NotBootstrapped`
@@ -299,30 +299,30 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         _requireBootstrapped(chainKey);
 
         if (keccak256(recipient) != keccak256(_recipientOn(chainKey))) {
-            revert RecipientIsNotThisAccount(recipient);
+            revert RecipientIsNotThisConduit(recipient);
         }
     }
 
     /* ================================= bootstrap =============================== */
 
-    /// @notice Stand this account up on a chain that has none, and run a payload there.
+    /// @notice Stand this conduit up on a chain that has none, and run a payload there.
     ///
     /// @dev Path B: with no receiver yet, the message goes to the transceiver on that chain.
-    ///      It passes the owner and salt, from which the destination derives this account's
+    ///      It passes the owner and salt, from which the destination derives this conduit's
     ///      address; the transceiver checks they resolve to `msg.sender`.
     ///
     /// @dev The typed/opaque pairing is enforced here, the last point that holds the ERC-7930
     ///      envelope: `_evmIdentifier` is `eip155` by construction, `_typedIdentifier` refuses
     ///      a non-EVM destination, and `_opaqueIdentifier` refuses an EVM one.
     ///
-    /// @dev Pays `_quoteBootstrap`, the transceiver's quote by default, from this account's
+    /// @dev Pays `_quoteBootstrap`, the transceiver's quote by default, from this conduit's
     ///      balance, as `sendMessage` does. Each bootstrap has a public quote with the same
     ///      arguments, for funding the balance ahead of time. Pass empty `attributes` for the
     ///      gateway's default.
     function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
         external
         payable
-        onlyAccountOwner
+        onlyConduitOwner
     {
         _bootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
     }
@@ -331,18 +331,18 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls, bytes[] calldata attributes)
         external
         payable
-        onlyAccountOwner
+        onlyConduitOwner
     {
         _bootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
     }
 
-    /// @notice `bootstrap`, in the portable form: for standing this account up on Solana,
+    /// @notice `bootstrap`, in the portable form: for standing this conduit up on Solana,
     ///         Sui, Starknet, or anything else with no `Call`.
     function bootstrapTo(
         bytes calldata destinationChainIdentifier,
         bytes[] calldata elements,
         bytes[] calldata attributes
-    ) external payable onlyAccountOwner {
+    ) external payable onlyConduitOwner {
         _bootstrapElements(_opaqueIdentifier(destinationChainIdentifier), elements, attributes);
     }
 
@@ -363,9 +363,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return _quoteMessage(recipient, payload, attributes);
     }
 
-    /// @notice What standing this account up on a chain that has none would cost.
+    /// @notice What standing this conduit up on a chain that has none would cost.
     /// @dev Priced by `_quoteBootstrap`, as `bootstrap` pays. The `(owner, salt)` check is not
-    ///      applied: a quote spends nothing and may be taken before the account exists.
+    ///      applied: a quote spends nothing and may be taken before the conduit exists.
     function quoteBootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
         external
         view
@@ -394,8 +394,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         _requireNotBootstrapped(chainKey);
 
         return
-            IAccountTransceiver(transceiver)
-                .quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
+            IConduitTransceiver(transceiver)
+                .quoteBootstrapElements(chainKey, _owner(), conduitSalt, elements, attributes);
     }
 
     function _quoteBootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes)
@@ -461,7 +461,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         virtual
         returns (uint256)
     {
-        return IAccountTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), accountSalt, calls, attributes);
+        return IConduitTransceiver(transceiver).quoteBootstrap(chainKey, _owner(), conduitSalt, calls, attributes);
     }
 
     /// @notice Send the typed bootstrap to `chainKey`, paying `fee` from this balance.
@@ -472,19 +472,19 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         virtual
     {
         // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        IAccountTransceiver(transceiver).bootstrap{value: fee}(chainKey, _owner(), accountSalt, calls, attributes);
+        IConduitTransceiver(transceiver).bootstrap{value: fee}(chainKey, _owner(), conduitSalt, calls, attributes);
     }
 
     function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)
         private
     {
         bytes32 chainKey = _markBootstrapped(identifier);
-        IAccountTransceiver t = IAccountTransceiver(transceiver);
+        IConduitTransceiver t = IConduitTransceiver(transceiver);
 
-        uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), accountSalt, elements, attributes);
+        uint256 fee = t.quoteBootstrapElements(chainKey, _owner(), conduitSalt, elements, attributes);
         _requireFunded(fee);
         // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapElements{value: fee}(chainKey, _owner(), accountSalt, elements, attributes);
+        t.bootstrapElements{value: fee}(chainKey, _owner(), conduitSalt, elements, attributes);
     }
 
     /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
@@ -498,13 +498,13 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      record. A revert unwinds it with everything else.
     ///
     /// @dev Records the receiver only where its address is already known (the chain does not
-    ///      report), as the transceiver predicts it there: this account's own address only when
+    ///      report), as the transceiver predicts it there: this conduit's own address only when
     ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
     ///      unreachable until the report arrives, rather than addressed at a guess.
     function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
         if (transceiver == address(0)) revert NoTransceiver();
         // Reduced to the bare chain identifier the route table holds, so the send accepts
-        // exactly what the quote does: an account envelope names the same chain.
+        // exactly what the quote does: a conduit envelope names the same chain.
         bytes memory route = Erc7930.toChainIdentifier(identifier);
         chainKey = keccak256(route);
         _requireNotBootstrapped(chainKey);
@@ -512,9 +512,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, route);
 
-        IAccountTransceiver t = IAccountTransceiver(transceiver);
+        IConduitTransceiver t = IConduitTransceiver(transceiver);
         if (!t.reportsReceiver(chainKey)) {
-            _setCounterpart(chainKey, t.predictReceiver(chainKey, _owner(), accountSalt));
+            _setCounterpart(chainKey, t.predictReceiver(chainKey, _owner(), conduitSalt));
         }
 
         emit DestinationBootstrapped(chainKey);
@@ -530,7 +530,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///
     /// @dev Payable; value passes to the calls, and anything unspent stays at this
     ///      owner-controlled address.
-    function execute(Call[] calldata calls) external payable onlyAccountOwner {
+    function execute(Call[] calldata calls) external payable onlyConduitOwner {
         if (calls.length == 0) revert EmptyExecution();
         emit Executed(msg.sender, calls.length);
         _execute(calls);
@@ -562,7 +562,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @dev EVM destinations only. Every `Call[]` chain hashes with keccak256, which
     ///      `ReceiverBase` enforces from bytecode frozen alongside this, so the answer cannot go
     ///      stale. Non-EVM destinations are previewed through `ChainRegistry.commitmentFor`,
-    ///      whose per-chain plugins can grow after this account is frozen.
+    ///      whose per-chain plugins can grow after this conduit is frozen.
     ///
     /// @dev `pure`, so it runs off-chain against the exact array the signers reviewed.
     function commitmentFor(uint256 destinationChainId, Call[] memory calls) public pure returns (bytes32) {
@@ -587,7 +587,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     receive() external payable {}
 
     /// @inheritdoc OutboundBase
-    /// @dev Path A: this account paid from its own balance. Path B refunds come here too, as
+    /// @dev Path A: this conduit paid from its own balance. Path B refunds come here too, as
     ///      the transceiver's caller.
     function _refundTo() internal view override returns (address) {
         return address(this);
@@ -602,7 +602,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (transceiver_ == address(0)) revert NoTransceiver();
 
         transceiver = transceiver_;
-        accountSalt = salt_;
+        conduitSalt = salt_;
         emit TransmitterConfigured(owner_, transceiver_);
     }
 }

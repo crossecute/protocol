@@ -37,7 +37,7 @@ contract GovernancePayloadsWithTestConfig is GovernancePayloads {
 ///         time: every transaction succeeds in the order the files are numbered, and leaves every
 ///         parity chain with the tables `deploy/` describes.
 /// @dev Parity chains share every address, so each chain is deployed from a clean state. A
-///      bootstrap's and a message's payload is run as the governor's account it would arrive at,
+///      bootstrap's and a message's payload is run as the governor's conduit it would arrive at,
 ///      which is the owner of every transceiver it calls and a proposer on the timelock.
 contract GovernancePlanTest is Test {
     function _plan() internal view returns (Plan memory) {
@@ -105,11 +105,11 @@ contract GovernancePlanTest is Test {
         }
     }
 
-    /// @notice Run a payload as `account` would on arrival, holding each call to its budget.
-    function _arrive(Plan memory p, ChainEntry memory chain, address account, Call[] memory calls) internal {
+    /// @notice Run a payload as `conduit` would on arrival, holding each call to its budget.
+    function _arrive(Plan memory p, ChainEntry memory chain, address conduit, Call[] memory calls) internal {
         uint256 scheduleBudget = GovernancePlan.scheduleGas(p, chain);
         for (uint256 i; i < calls.length; ++i) {
-            uint256 used = _call(account, calls[i].target, calls[i].value, calls[i].data);
+            uint256 used = _call(conduit, calls[i].target, calls[i].value, calls[i].data);
             bool isSchedule = calls[i].target == address(ChainDeploy.predict(p.g).timelock);
             assertLe(used * 11 / 10, isSchedule ? scheduleBudget : GovernancePlan.CALL_GAS, "a call fits its budget");
         }
@@ -140,8 +140,8 @@ contract GovernancePlanTest is Test {
             for (uint256 j; j < p.g.providers.length; ++j) {
                 string memory name = p.g.providers[j].name;
                 if (GovernancePlan.idFor(p, name, p.g.home, p.chains[i]) == 0) continue;
-                address account = GovernancePlan.governor(p, name);
-                assertTrue(TransmitterBase(payable(account)).isBootstrappedOn(p.chains[i].chainId), "bootstrapped");
+                address conduit = GovernancePlan.governor(p, name);
+                assertTrue(TransmitterBase(payable(conduit)).isBootstrappedOn(p.chains[i].chainId), "bootstrapped");
             }
         }
     }

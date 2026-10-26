@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Script, console} from "forge-std/Script.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
 import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
@@ -31,12 +31,12 @@ contract GasLimitedMailbox is MockHyperlaneMailbox {
 }
 
 interface IAccountCodeStorage {
-    function getRawCodeHash(address account) external view returns (bytes32);
+    function getRawCodeHash(address conduit) external view returns (bytes32);
 }
 
 /// @notice Deploys a Hyperlane zkSync transceiver, with the mock mailbox as its gateway, for
 ///         `era-delivery-gas.sh` to measure deliveries on an EraVM node. Run with
-///         `forge script --zk-compile`; under solc the account guard refuses every bootstrap.
+///         `forge script --zk-compile`; under solc the conduit guard refuses every bootstrap.
 /// @dev Deployed with `new CrossProxy()` and the admin call rather than `CrossProxyDeployer`,
 ///      whose raw-initcode CREATE2 EraVM cannot run. Neither changes what a delivery costs.
 contract EraDeliveryGas is Script {
@@ -51,8 +51,8 @@ contract EraDeliveryGas is Script {
         address implementation = address(new HyperlaneZkSyncTransceiver(address(mailbox), extension));
         address receiverImplementation = HyperlaneDeploy.receiverImplementation(address(mailbox));
 
-        // The versioned hash EraVM's deployer keys accounts by, read from a deployed copy.
-        bytes32 accountBytecodeHash =
+        // The versioned hash EraVM's deployer keys conduits by, read from a deployed copy.
+        bytes32 conduitBytecodeHash =
             IAccountCodeStorage(ACCOUNT_CODE_STORAGE).getRawCodeHash(address(new CrossProxy()));
 
         (, address deployer,) = vm.readCallers();
@@ -66,7 +66,7 @@ contract EraDeliveryGas is Script {
                 implementation,
                 abi.encodeCall(
                     HyperlaneZkSyncTransceiver.initialize,
-                    (transceiverConfig(receiverImplementation), 0, accountBytecodeHash)
+                    (transceiverConfig(receiverImplementation), 0, conduitBytecodeHash)
                 )
             );
         // The float that pays each bootstrap's report.
@@ -76,8 +76,8 @@ contract EraDeliveryGas is Script {
 
         console.log("mailbox", address(mailbox));
         console.log("transceiver", t);
-        console.log("accountBytecodeHash");
-        console.logBytes32(accountBytecodeHash);
+        console.log("conduitBytecodeHash");
+        console.logBytes32(conduitBytecodeHash);
 
         // The owner's calls, which the runner sends from the impersonated owner.
         console.log("ownerCalls");
@@ -96,7 +96,7 @@ contract EraDeliveryGas is Script {
             abi.encodeCall(HyperlaneTransceiverBase.setDomain, (ChainKey.forEvm(HOME_DOMAIN), HOME_DOMAIN))
         );
 
-        // Two bootstraps for fresh owners, so each creates an account against cold storage, and
+        // Two bootstraps for fresh owners, so each creates a conduit against cold storage, and
         // a payload for the first one's receiver once it exists.
         console.log("messages");
         console.logBytes(_bootstrap(address(0xA110), address(mailbox), 0));
@@ -105,7 +105,7 @@ contract EraDeliveryGas is Script {
         console.logBytes32(home);
     }
 
-    /// @notice A bootstrap for `owner`'s account from the home's transmitter `0x7A11`, with
+    /// @notice A bootstrap for `owner`'s conduit from the home's transmitter `0x7A11`, with
     ///         `callCount` calls to the mailbox's `fee()`. A fresh `owner` keeps storage cold.
     function _bootstrap(address owner, address mailbox, uint256 callCount) internal pure returns (bytes memory) {
         Call[] memory calls = new Call[](callCount);

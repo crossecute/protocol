@@ -10,11 +10,11 @@ import {Provenance} from "src/registry/Provenance.sol";
 ///      `TransceiverBase._counterpartOn` falls back on. The salt can be mined for leading zero
 ///      bytes, which are cheaper in the calldata that names the address.
 struct ProviderDeployment {
-    /// The account that called `CrossProxyDeployer.deploy`, the same on every chain.
+    /// The conduit that called `CrossProxyDeployer.deploy`, the same on every chain.
     address deployedBy;
     /// The mined salt it passed, identical on every chain.
     bytes32 salt;
-    /// keccak256 of `CrossProxy`'s initcode as solc builds it: transceivers and accounts are
+    /// keccak256 of `CrossProxy`'s initcode as solc builds it: transceivers and conduits are
     /// both `CrossProxy`. Recorded rather than computed, since a zkSync or Tron registry's
     /// own compiler builds a different one.
     bytes32 crossProxyInitCodeHash;
@@ -56,7 +56,7 @@ interface IChainRegistryRefs {
     ///         `paramsCommitment` a `resolveCounterpart` transaction must carry.
     function deriveParams(bytes32 chainKey) external view returns (bytes memory);
 
-    /// @notice Whether accounts on `chainKey` must report their own address home, which is
+    /// @notice Whether conduits on `chainKey` must report their own address home, which is
     ///         the only thing this directory says about receivers. Where one actually landed
     ///         is held by the transmitter that sends to it.
     function requiresReceiverCallback(bytes32 chainKey) external view returns (bool);

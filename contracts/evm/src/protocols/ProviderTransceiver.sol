@@ -32,7 +32,7 @@ abstract contract ProviderTransceiver is TransceiverBase, ProviderChainId {
     /// @inheritdoc TransceiverBase
     /// @dev A receiver names its home by the provider's id for it, from the table that admitted
     ///      the bootstrap, since that is how its deliveries report their origin.
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -40,7 +40,7 @@ abstract contract ProviderTransceiver is TransceiverBase, ProviderChainId {
         Call[] memory calls
     ) internal view virtual override returns (bytes memory) {
         if (homeChainKey == localChainKey) {
-            return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+            return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
         }
         return
             abi.encodeCall(IReceiverInit.initialize, (sourceTransmitter, bytes32(_providerIdFor(homeChainKey)), calls));

@@ -16,7 +16,7 @@ contract HyperlaneTransmitter is OwnableTransmitter {
 
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
-    ///         so this never moves a derived account address.
+    ///         so this never moves a derived conduit address.
     address public immutable mailbox;
 
     constructor(address mailbox_) {

@@ -23,17 +23,17 @@ contract HyperlaneZkSyncTransceiverTest is ProviderZkSyncSpec, HyperlaneFixture 
         return address(new HyperlaneZkSyncHarness(address(mailbox)));
     }
 
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 accountBytecodeHash)
+    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
         internal
         override
         returns (address)
     {
-        return HyperlaneDeploy.zkSyncTransceiver(d, address(mailbox), 0, accountBytecodeHash);
+        return HyperlaneDeploy.zkSyncTransceiver(d, address(mailbox), 0, conduitBytecodeHash);
     }
 
     function _assertReportSent() internal view override {
         MockHyperlaneMailbox.Sent memory s = mailbox.sent(0);
-        assertEq(s.destinationDomain, BASE_DOMAIN, "to the account's home");
+        assertEq(s.destinationDomain, BASE_DOMAIN, "to the conduit's home");
         assertEq(s.recipientAddress, toBytes32(HOME_TRANSCEIVER), "to its transceiver there");
         assertEq(s.refundTo, zk, "an overpayment returns to the float, not the relayer");
     }

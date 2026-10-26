@@ -9,7 +9,7 @@ import {OpStackConfig} from "script/deploy/OpStackDeploy.sol";
 import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy} from "src/conduit/CrossProxy.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";

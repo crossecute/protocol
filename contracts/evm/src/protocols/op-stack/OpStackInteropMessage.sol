@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IL2ToL2CrossDomainMessenger} from "@optimism/interfaces/L2/IL2ToL2CrossDomainMessenger.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
+import {IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
@@ -63,7 +63,7 @@ library OpStackInteropMessage {
         if (value != 0) revert OpStackMessage.OpStackValueNotSupported(value);
         ProviderAttribute.none(attributes);
         // forge-lint: disable-next-line(unused-return) called for its revert on an unrouted chain
-        IAccountTransceiver(routes).routeTo(Erc7930.chainKey(recipient));
+        IConduitTransceiver(routes).routeTo(Erc7930.chainKey(recipient));
         destination = Erc7930.evmChainId(Erc7930.parseStrict(recipient));
         if (destination == block.chainid) revert InteropToThisChain();
         target = ProviderAddress.evmRecipient(recipient);

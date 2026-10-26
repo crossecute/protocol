@@ -5,15 +5,15 @@ import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTCompo
 import {Call} from "src/messaging/Call.sol";
 import {LzOftReceiver, ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter, ILzOftTransmitterInit} from "src/protocols/layerzero/LzOftTransmitter.sol";
-import {ProviderAccountFixture} from "test/protocols/ProviderFixture.sol";
+import {ProviderConduitFixture} from "test/protocols/ProviderFixture.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
-/// @notice `layerzero-oft` for the account specs: a delivery is a compose this chain's OFT
-///         queues and the endpoint runs, from the account's home eid, with the sender as
+/// @notice `layerzero-oft` for the conduit specs: a delivery is a compose this chain's OFT
+///         queues and the endpoint runs, from the conduit's home eid, with the sender as
 ///         `composeFrom`.
-/// @dev Accounts only: this binding has no transceiver, so it runs no spec that needs one.
-abstract contract LzOftFixture is ProviderAccountFixture {
+/// @dev Conduits only: this binding has no transceiver, so it runs no spec that needs one.
+abstract contract LzOftFixture is ProviderConduitFixture {
     uint32 internal constant HOME_EID = 30184;
     address internal constant HOME_OFT = address(0x40F7);
 

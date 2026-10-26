@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy} from "src/conduit/CrossProxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -67,7 +67,7 @@ contract DeployChainTest is Test {
         assertEq(address(first.registry), address(second.registry));
     }
 
-    /// @dev The timelock is built from accounts step 1 predicts; they must be the ones each
+    /// @dev The timelock is built from conduits step 1 predicts; they must be the ones each
     ///      step-2 transceiver names as its owner, or no governor could ever propose.
     function test_aProposerIsTheOwnerItsTransceiverIsBornWith() public {
         skipUnderCoverage();
@@ -101,16 +101,16 @@ contract DeployChainTest is Test {
         vm.stopPrank();
 
         address governor = TransceiverBase(payable(t)).owner();
-        assertEq(governor, ChainDeploy.governorAccount(g, "ccip"));
+        assertEq(governor, ChainDeploy.governorConduit(g, "ccip"));
         assertTrue(c.timelock.hasRole(c.timelock.PROPOSER_ROLE(), governor));
     }
 
-    /// @dev A governor account schedules, anyone executes after the delay, and the registry
+    /// @dev A governor conduit schedules, anyone executes after the delay, and the registry
     ///      takes the call: the timelock owns it.
     function test_aProposalReachesTheRegistryAfterTheDelay() public {
         skipUnderCoverage();
         ChainContracts memory c = _runOn(8453);
-        address proposer = ChainDeploy.governorAccount(g, "layerzero");
+        address proposer = ChainDeploy.governorConduit(g, "layerzero");
         bytes memory call =
             abi.encodeCall(ChainRegistry.addChainKey, (Erc7930.encodeEvmChain(10), Provenance.Predetermined));
 

@@ -7,8 +7,8 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import {CrossProxy, ICrossProxy} from "src/account/CrossProxy.sol";
-import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
+import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
+import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -35,7 +35,7 @@ contract LogicB {
     }
 }
 
-/// @dev Stands in for the transceiver: deploys an account and hands it its logic.
+/// @dev Stands in for the transceiver: deploys a conduit and hands it its logic.
 contract Deployer {
     function deploy(bytes32 salt) external returns (address) {
         return Create2.deploy(0, salt, type(CrossProxy).creationCode);
@@ -95,7 +95,7 @@ contract CrossProxyTest is Test {
         assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
     }
 
-    /// @dev R8.3: every chain's build must derive the same accounts, and the transceiver now
+    /// @dev R8.3: every chain's build must derive the same conduits, and the transceiver now
     ///      computes the hash from its own build, so this is what catches a settings change.
     ///      Coverage builds unoptimized and is exempt.
     function test_theInitCodeHashIsPinned() public {
@@ -105,7 +105,7 @@ contract CrossProxyTest is Test {
         );
     }
 
-    /// @dev A transceiver deploys accounts from the stored copy, so it must be the initcode byte
+    /// @dev A transceiver deploys conduits from the stored copy, so it must be the initcode byte
     ///      for byte, whatever the call.
     function test_theStoredInitCodeIsTheInitCode() public {
         InitCodeStore store = new InitCodeStore();
@@ -150,7 +150,7 @@ contract CrossProxyTest is Test {
     /// @dev Nobody else ever had it, including while the proxy is blank.
     ///
     /// @dev A blank proxy delegates to the zero address, which succeeds silently: a call
-    ///      to an account with no code returns empty rather than reverting. So a stranger's
+    ///      to a conduit with no code returns empty rather than reverting. So a stranger's
     ///      attempt is not refused, it is simply ignored: it changes nothing and installs
     ///      nothing. That is only tolerable because a blank proxy never survives the
     ///      transaction that created it; `TransceiverBase` deploys, arms, and locks in
@@ -171,7 +171,7 @@ contract CrossProxyTest is Test {
     /// @dev After the lock the admin selector stops existing, rather than reverting
     ///      forever. That is why the operation is routed inside `fallback` instead of
     ///      declared: a declared function would shadow that selector on the implementation
-    ///      for the life of the account.
+    ///      for the life of the conduit.
     function test_theAdminSelectorDelegatesAfterTheLock() public {
         address p = deployer.deploy(SALT);
         deployer.arm(p, address(new Shadower()), "");

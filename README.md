@@ -1,6 +1,6 @@
 # crossecute protocol
 
-Secure multisig operations across chains, anchored on whichever one each account chooses.
+Secure multisig operations across chains, anchored on whichever one each conduit chooses.
 
 ## Why
 
@@ -9,12 +9,12 @@ six proposals per change, six sets of funded signers. Everything below follows f
 reducing that to one.
 
 **A signer is removed once, not N times.** The signer set exists only in the multisig on the
-account's home, whichever chain the team picks. Receivers elsewhere never learn who the signers
+conduit's home, whichever chain the team picks. Receivers elsewhere never learn who the signers
 are: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a signer
 change. Rotating a compromised key is one transaction, not N with a live attacker in the gaps.
 
 **One decision, one authorization, one fan-out.** A change touching six chains is one payload,
-approved once, dispatched from one transaction on the account's home. Team and DAO process stops
+approved once, dispatched from one transaction on the conduit's home. Team and DAO process stops
 scaling with the number of chains.
 
 The atomicity is in the authorization, not the settlement: messages land when their bridges
@@ -25,8 +25,8 @@ payloads when only one was approved.
 
 **No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
 deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here every
-operation starts on the account's home, so one interface covers all of them, and a chain needs
-no Safe at all: the authority on every other chain is the account this protocol deploys.
+operation starts on the conduit's home, so one interface covers all of them, and a chain needs
+no Safe at all: the authority on every other chain is the conduit this protocol deploys.
 
 **Gas is funded in one place.** A multisig only one person can afford to execute is not
 decentralized, so an operable Safe per chain means N signers funded on M chains in M
@@ -37,10 +37,10 @@ delivery callback. A payload that spends native
 currency draws on the receiver's address, which is derivable and fundable before the
 receiver exists: topped up once, not per signer.
 
-**One admin address everywhere.** The same CREATE2 address holds the account on every
+**One admin address everywhere.** The same CREATE2 address holds the conduit on every
 supported chain, which unifies access control. Chains whose CREATE2 formula differs from
 EIP-1014's, such as Tron and zkSync, derive their own address and report it back to the
-account's home.
+conduit's home.
 
 **One payload to verify, not M.** Reviewing calldata is the expensive part of an operation,
 and M chains means M batches reviewed separately plus the work of confirming they agree.
@@ -48,23 +48,23 @@ Here it is one batch, reviewed in totality. The commitment folds the destination
 in with the calls, so an approval names what runs _and_ where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
-**What it costs.** The account's home chain and the message provider enter the trust path. A
-halt at home delays everything, and a provider that can forge a message can drive an account. No
+**What it costs.** The conduit's home chain and the message provider enter the trust path. A
+halt at home delays everything, and a provider that can forge a message can drive a conduit. No
 shared failure is what N independent multisigs buy with N of everything else. The exposure is
 narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes
-it, after which it has no upgrade function; an account's upgrade key dies in the call that arms
+it, after which it has no upgrade function; a conduit's upgrade key dies in the call that arms
 it; and the registry has no upgrade path at all. None is ever live and replaceable. No shared
 contract sits in the path of a normal message.
 
 The rest of the bill, stated plainly:
 
-- **A home cannot move.** It is part of the account's address. A team that wants another
-  home makes another account.
+- **A home cannot move.** It is part of the conduit's address. A team that wants another
+  home makes another conduit.
 - **Configuration is N × N.** Every chain's transceiver needs every other chain's route and
   provider id. Their one source is `contracts/evm/deploy/`, which
   `script/GovernancePayloads.s.sol` turns into the governance payloads for the parity chains.
 - **A registry bug means new transceivers.** The registry is fixed and a transceiver's pointer
-  to it is write-once, so a fix moves that chain's accounts.
+  to it is write-once, so a fix moves that chain's conduits.
 - **Governance is slow on purpose.** A registry or treasury change crosses a bridge and then
   waits out a timelock.
 - **OP Stack is two providers.** `op-stack-l1-l2` connects Ethereum and each OP Stack chain;
@@ -110,24 +110,24 @@ flowchart LR
 ```
 
 Both transceivers are the same contract: one per chain per provider, at one address on every
-standard EVM chain, creating transmitters for accounts homed on its chain and receivers for
-accounts homed elsewhere. The account's home is whichever chain the bootstrap authenticated
+standard EVM chain, creating transmitters for conduits homed on its chain and receivers for
+conduits homed elsewhere. The conduit's home is whichever chain the bootstrap authenticated
 as its origin, never a field the message states.
 
-The message carries the owner and their salt, from which the destination derives the account's
+The message carries the owner and their salt, from which the destination derives the conduit's
 own address, and the transmitter's address, which the receiver will answer to. The home's
-transceiver sends only for the account that pair resolves to, so the destination needs no
+transceiver sends only for the conduit that pair resolves to, so the destination needs no
 other chain's address formula, and zkSync and Tron can be homes too. The dashed return arrow
 fires only where `addressesDiverge`, which is zkSync and Tron as destinations. Elsewhere the
 home derived the receiver's address before the first message left. The report is sent from
 inside the delivery callback at the fee its own quote names, paid from the transceiver's
-float, so an underfunded float reverts and takes the account creation with it: all or
+float, so an underfunded float reverts and takes the conduit creation with it: all or
 nothing, and retryable by anyone, who can bring the report's cost with the retry (see
 [path B](docs/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)). This runs
 once per chain.
 
-A bootstrap may carry the account's whole first payload. Without a gas attribute it is sent
-with 1,000,000 gas (`DeliveryGas.BOOTSTRAP`), which covers creating the account and a few
+A bootstrap may carry the conduit's whole first payload. Without a gas attribute it is sent
+with 1,000,000 gas (`DeliveryGas.BOOTSTRAP`), which covers creating the conduit and a few
 calls on an EVM chain. A larger payload should pass a gas attribute, or carry only a call to
 the new receiver's own `commit`, so anyone can `finalize` the payload there later and pay
 for it.
@@ -142,7 +142,7 @@ included, and the receiver accepts only its own transport and its own transmitte
 side. Execution is in order and all or nothing.
 
 A payload either runs when it lands or waits for someone to supply it. Nothing on the wire
-distinguishes the two: committing is a call, not a message kind, which is why an account's
+distinguishes the two: committing is a call, not a message kind, which is why a conduit's
 payload carries no message-type tag. Only the envelopes transceivers exchange are tagged.
 
 #### 3a · Execute on arrival
@@ -189,25 +189,25 @@ the local chainKey, so an array approved for one chain cannot be finalized on an
 
 ## The idea
 
-**One owner, one address, every chain.** An owner's account is deployed at
+**One owner, one address, every chain.** An owner's conduit is deployed at
 `CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), CrossProxy)`, and
 because all three inputs are the same everywhere, so is the address. The home chain is part
-of the salt, so the same owner and salt homed on two chains are two accounts, and an owner
+of the salt, so the same owner and salt homed on two chains are two conduits, and an owner
 can mine `salt` for a vanity or gas-cheap address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver
 logic and driven by messages from the first. Same address, different half.
 
-**Any chain can be home.** An owner picks a home per account by calling `createTransmitter`
+**Any chain can be home.** An owner picks a home per conduit by calling `createTransmitter`
 there, and every other chain already has what it needs to receive from it: one deployment
-serves every home. The home is fixed for the life of the account. A chain's registry
+serves every home. The home is fixed for the life of the conduit. A chain's registry
 derives Sui addresses and previews BLAKE2b commitments with the EIP-152 precompile, where
 those plugins are configured; on a chain without it they revert rather than answer wrongly,
 and which target chains have it is unverified.
 
-**Governance is an account like any other.** Every transceiver is owned by the governor's
-own account on its chain, derived at initialization from the governor's owner, salt, and
+**Governance is a conduit like any other.** Every transceiver is owned by the governor's
+own conduit on its chain, derived at initialization from the governor's owner, salt, and
 home rather than typed, and configured by payloads sent from that home like any other
-account's. The governor's home is a deployment parameter, not a fixed chain; it has to be
+conduit's. The governor's home is a deployment parameter, not a fixed chain; it has to be
 `Predetermined` from every chain, since each transceiver is born accepting the bootstrap
 that creates its owner. No Safe, key, or deployer handover is needed on any other chain.
 
@@ -232,18 +232,18 @@ src/
   messaging/      Commitment, Call, Payload, Envelope, Executor, Roles
                   IErc7786                                  vendored, ERC-7786's two
     outbound/     OutboundBase -> TransmitterBase -> OwnableTransmitter
-    inbound/      ReceiverBase                          what an account receives with
+    inbound/      ReceiverBase                          what a conduit receives with
     transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
                   TransceiverExtension -> zkSync / Tron     init, owner config, views; one per chain
-                  DivergentAccounts                         zkSync and Tron derivation
-  account/        CrossProxy                                what both halves, and transceivers, are
+                  DivergentConduits                         zkSync and Tron derivation
+  conduit/        CrossProxy                                what both halves, and transceivers, are
                   CrossProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
 script/
   deploy/         shared deploy checks, one deploy per provider    tests deploy through these
   Deploy*.s.sol   production entry points, one per provider
-  LzOftLeaves.s.sol  a layerzero-oft account's destinations, built and checked
+  LzOftLeaves.s.sol  a layerzero-oft conduit's destinations, built and checked
   vendor/         provenance drivers for hand-copied SDK files
 deploy/           chains.toml, providers/*.toml: chain facts, provider ids
 ```
@@ -269,8 +269,8 @@ summary: the file is always the newer statement.
 
 | Question                                                                 | Answered in                           |
 | ------------------------------------------------------------------------ | ------------------------------------- |
-| Why one address, and why a proxy rather than a clone                     | `account/CrossProxy.sol`              |
-| How an account is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossAccount`, with the shared steps in `CrossAccounts` |
+| Why one address, and why a proxy rather than a clone                     | `conduit/CrossProxy.sol`              |
+| How a conduit is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossConduit`, with the shared steps in `CrossConduits` |
 | Why one transceiver makes both transmitters and receivers               | `TransceiverBase`                     |
 | Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |
@@ -282,10 +282,10 @@ summary: the file is always the newer statement.
 | Why routes live on the transceiver rather than in the registry           | `TransceiverExtension.setRoute`       |
 | Why the owner configures and the roles are not authorities               | `messaging/Roles.sol`, `TransceiverBase` |
 | Why the bootstrap fee is paid to the treasury in the same transaction    | `TransceiverBase._bootstrapSendValue` |
-| Why each account is homed on its authenticated origin                   | `TransceiverBase._handleInbound`      |
+| Why each conduit is homed on its authenticated origin                   | `TransceiverBase._handleInbound`      |
 | Why the report float pays reports and leaves only at the treasury's call | `TransceiverExtension.withdraw`, `Treasury.collect` |
 | Why a chain's grade is write-once and suspension is the cut-off          | `registry/ChainRegistry.sol`          |
-| Why zkSync and Tron derive accounts their own way, and what is unverified  | `transceiver/DivergentAccounts.sol`   |
+| Why zkSync and Tron derive conduits their own way, and what is unverified  | `transceiver/DivergentConduits.sol`   |
 | Why a chain type needs more than a `ChainType` constant                  | `addressing/Erc7930.sol`              |
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `OutboundBase._recipientOn`           |
@@ -327,9 +327,9 @@ Six native bindings live under `src/protocols/`. Each is held to
 [`docs/provider-spec.md`](docs/provider-spec.md). Each is one transceiver per chain, with
 zkSync and Tron variants where the provider reaches those chains. On a transceiver, the
 delivery's origin names a chain and the sender must be that chain's counterpart. A seventh,
-`layerzero-oft`, has no transceiver: an account sends through an OFT its own team operates,
+`layerzero-oft`, has no transceiver: a conduit sends through an OFT its own team operates,
 and is held to [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md). Where the
-bindings differ is in who delivers a message to an account and what authenticates it:
+bindings differ is in who delivers a message to a conduit and what authenticates it:
 
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
 | --- | --- | --- | --- |
@@ -337,7 +337,7 @@ bindings differ is in who delivers a message to an account and what authenticate
 | CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter | the off-ramp |
 | Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
-| OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the account's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
+| OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the conduit's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
 | OP Stack, L2 ↔ L2 | `receiveOpStackMessage`, from the `L2ToL2CrossDomainMessenger` | `GATEWAY_ROLE` and `crossDomainMessageSender()` read during the relay | the messenger |
 | LayerZero through an OFT | `lzCompose`, from the endpoint | `GATEWAY_ROLE`, the delivering OFT, its peer for the home, and `composeFrom` as the source transmitter | the endpoint |
 
@@ -345,19 +345,19 @@ What an operator or integrator has to know:
 
 - **Transports are fixed at initialization, and a disconnect is permanent.** `grantRole` is
   `onlyInitializing`, so a provider that migrates its endpoint means redeploying the
-  transceiver unless its initializer's `gateways` named both endpoints up front. On an account,
+  transceiver unless its initializer's `gateways` named both endpoints up front. On a conduit,
   `revokeGateway` only subtracts. A receiver that drops its transport has no way to
   reconnect, and because `CrossProxy` arms once it cannot be redeployed at that address, so
-  that owner's account on that chain stops receiving for good. This is deliberate: a
+  that owner's conduit on that chain stops receiving for good. This is deliberate: a
   re-grant path would be a fallback-override surface.
 - **Provider ids named at deploy cannot be corrected.** Each entry in a transceiver's id
   table (eid, selector, domain, or Wormhole chain) and every LayerZero peer is write-once. A
   receiver's peer is set by its initializer; a transceiver's or transmitter's is set once per
-  eid by its owner. Fixing a wrong one means a redeploy, or for a transmitter a new account.
+  eid by its owner. Fixing a wrong one means a redeploy, or for a transmitter a new conduit.
 - **LayerZero's inbound check is partly in vendored code.** Auditing it means reading
   `lib/layerzero-oapp-evm-upgradeable/.../OAppCoreUpgradeable.sol` and
   `OAppReceiverUpgradeable.sol` alongside `src/protocols/layerzero/`. Every other binding
-  checks in this repo's own code. Each LayerZero account is its own OApp delegate.
+  checks in this repo's own code. Each LayerZero conduit is its own OApp delegate.
 - **Provider-side security configuration is mostly the provider's default.** No contract here
   sets a LayerZero library configuration or a Hyperlane `interchainSecurityModule()`, so the
   Mailbox owner's replaceable `defaultIsm` and LayerZero's default configuration decide what
@@ -376,7 +376,7 @@ What an operator or integrator has to know:
   Core alone, and whoever submits the signed VAA to `executeVAAv1` delivers it, paying the
   destination gas. A send with neither reverts (#53).
 - **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends
-  nothing from the account, and the binding refuses a nonzero `value` because the messenger
+  nothing from the conduit, and the binding refuses a nonzero `value` because the messenger
   would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,
   the messenger that reaches it, write-once: on Ethereum one `L1CrossDomainMessenger` per OP
   Stack chain, on each OP Stack chain the `L2CrossDomainMessenger` predeploy, which reaches
@@ -385,29 +385,29 @@ What an operator or integrator has to know:
   `op-stack-l2-l2`'s messenger takes no value and no gas limit, so the quote is zero and any
   attribute is refused; the relay is a separate transaction whose sender picks the gas. A send
   reaches only a routed chain, which should be one in the sender's dependency set.
-- **A `layerzero-oft` account trusts its OFT, not this protocol's operators.** No governor,
+- **A `layerzero-oft` conduit trusts its OFT, not this protocol's operators.** No governor,
   transceiver or crossecute DVN setting is in its path. What it trusts, on every chain it
   reaches, is the OFT's owner, whose re-peering cuts a destination off and whose pausing or
   inspector can stop the channel but not forge it; the OFT's delegate, who can weaken its DVNs
   or libraries, which nothing here detects; for a proxied OFT, its upgrade admin, who can
   change how `composeFrom` is encoded; LayerZero's endpoint; and the factory, logic and
-  `CrossProxy`, all immutable at one address everywhere. It is meant for an OFT the account's
+  `CrossProxy`, all immutable at one address everywhere. It is meant for an OFT the conduit's
   own team operates. A paused or broken OFT blocks the very payload that would repair it, and
-  since the OFT is fixed, the only way out is migrating the account, which needs a working
+  since the OFT is fixed, the only way out is migrating the conduit, which needs a working
   channel to hand its roles off.
-- **A `layerzero-oft` account reaches only the chains it was created with.** They are bound
-  into its address, so another chain means another account. It carries no tokens, and reaches
+- **A `layerzero-oft` conduit reaches only the chains it was created with.** They are bound
+  into its address, so another chain means another conduit. It carries no tokens, and reaches
   no zkSync or Tron chain.
 - **Vendored provider code has no update path.** SDK files are hand-copied into `lib/`,
   pinned per file to a commit by `contracts/evm/script/vendor/<provider>.sh`. An upstream
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
-  deployed contract, since transceivers and accounts lock on initialization.
+  deployed contract, since transceivers and conduits lock on initialization.
 
 ## Assumptions
 
 - `CrossProxyDeployer` is created through Arachnid's CREATE2 factory (`0x4e59..`), which puts
   it at one address on every standard EVM chain; transceivers are created through
-  `CrossProxyDeployer`, and accounts by their transceiver's own CREATE2. A chain is
+  `CrossProxyDeployer`, and conduits by their transceiver's own CREATE2. A chain is
   `Predetermined` only if its transceivers were deployed that way; zkSync and Tron, whose
   CREATE2 formulas differ, and any chain without Arachnid's factory are `Unique`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
@@ -417,14 +417,14 @@ What an operator or integrator has to know:
   `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
   comments included, which would otherwise put every derived address one comment edit
   away from moving.
-- Transceivers and accounts are all `CrossProxy`, and each locks in the same call that arms
+- Transceivers and conduits are all `CrossProxy`, and each locks in the same call that arms
   it. `CrossProxyDeployer` deploys a transceiver, installs its implementation, runs its
   initializer, and zeroes the admin in one call, under a salt bound to its caller so nobody
   else can take the address first. The implementation has no upgrade function. A
   transceiver decides which cross-chain payloads are authentic, so a live upgrade key would
   be a standing ability to forge one, and there is no reachable state in which one exists.
 - Nothing is upgraded after deployment. `ChainRegistry` is a plain contract with no proxy, so
-  accounts, transceivers, and the registry all keep sequential storage with no gaps: no later
+  conduits, transceivers, and the registry all keep sequential storage with no gaps: no later
   version ever has to match their layout.
 - OpenZeppelin 5.4.0 and forge-std 1.16.2, submodules pinned to exact commits and fetched
   from forks in the crossecute org, each holding its commit under its own tag, so a deleted
@@ -432,7 +432,7 @@ What an operator or integrator has to know:
   `contracts/evm/foundry.lock`; a bump made with `git` alone has to update it by hand. The
   OZ version is an address-determining input like the compiler pin: `CrossProxy`'s initcode
   compiles OZ's `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes
-  any of their bytes moves every account on every chain. These are the versions to ship on.
+  any of their bytes moves every conduit on every chain. These are the versions to ship on.
   OZ 5.5's `Arrays` uses `mcopy`, which breaks `AccessControlEnumerableUpgradeable` at
   `paris` (`Roles.sol`), and v6's `ReentrancyGuardTransient` needs Cancun. ERC-7786's two
   interfaces are vendored at `src/messaging/IErc7786.sol` instead of imported, because they
@@ -441,16 +441,16 @@ What an operator or integrator has to know:
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the bootstrap fee, which the transceiver's owner or its operator sets, and to a provider's
   price. A fee lands in the chain's treasury, so an operator can overcharge but not take it.
-- A transceiver's owner can limit which accounts bootstrap through it by naming an
+- A transceiver's owner can limit which conduits bootstrap through it by naming an
   `IBootstrapAllowlist` (`setBootstrapAllowlist`), and lift it by setting zero. It gates
-  bootstraps and their quotes only: an account's messages to receivers it already has go
+  bootstraps and their quotes only: a conduit's messages to receivers it already has go
   from its transmitter and never reach the check. The allowlist is an external call on every
   bootstrap, so one that reverts halts bootstraps from that chain.
 - Each chain has one `ChainRegistry` and one `Treasury`, shared by every provider there. A
   chain's grade, and so whether it reports its receivers, is given when it is registered and
   never changes; a chain can be suspended, which only refuses. Both are `Ownable`. The
   deployment design gives each chain one `TimelockController` with a 48-hour delay as their
-  owner, where the governor's accounts under two providers propose and cancel, so a compromised
+  owner, where the governor's conduits under two providers propose and cancel, so a compromised
   provider can freeze them but not take them. `script/DeployChain.s.sol` deploys it from
   `contracts/evm/deploy/governance.toml` and reads the design back.
 - A bootstrap fee is forwarded to the chain's `Treasury` in the transaction that charges it,
@@ -458,7 +458,7 @@ What an operator or integrator has to know:
   reports, funded out of band, which pays those reports and otherwise leaves only when the
   treasury pulls it with `Treasury.collect`.
 - Ownership is the only live authority, and it cannot admit a transport, drop one, or
-  repoint a treasury. An account is one owner's, so a receiver may drop its own gateway through
+  repoint a treasury. A conduit is one owner's, so a receiver may drop its own gateway through
   `revokeGateway`, which is the only membership change that survives initialization
   anywhere. `renounceOwnership` stays available everywhere: it retires that transmitter,
   transceiver, registry, or treasury for good, and that is the owner's call.
@@ -472,7 +472,7 @@ What an operator or integrator has to know:
 - [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
   implement to be compliant, and what the provider itself must be capable of. Normative
 - [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
-  binding is held to, and what an OFT must be before an account uses it. Normative
+  binding is held to, and what an OFT must be before a conduit uses it. Normative
 - [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
   guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
   it goes stale on their schedule rather than ours
@@ -480,7 +480,7 @@ What an operator or integrator has to know:
 
 ## Status
 
-The EVM side is built and tested: account creation, the approval map, cancellation,
+The EVM side is built and tested: conduit creation, the approval map, cancellation,
 execution, per-destination commitment schemes, both message paths end to end in-process,
 and native bindings for LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack (L1 ↔ L2, and L2 ↔ L2
 over interop), plus `layerzero-oft`, through an operator's own OFT.

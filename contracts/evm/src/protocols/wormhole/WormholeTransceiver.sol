@@ -19,7 +19,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
 
     /// @notice Core bridge and Executor on this chain. On the implementation, so they never
-    ///         reach a derived account address.
+    ///         reach a derived conduit address.
     address public immutable coreBridge;
     address public immutable executor;
 

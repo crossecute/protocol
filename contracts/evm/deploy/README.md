@@ -16,7 +16,7 @@ Every grade follows from this, so it comes first. It is the chain's `derivation`
 
 | Derivation | What it is | Graded by others | Grades others | Consequences |
 | --- | --- | --- | --- | --- |
-| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by every chain but `other` | `Predetermined` if they are parity | Accounts share their address with every parity chain; the deploy scripts support it |
+| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by every chain but `other` | `Predetermined` if they are parity | Conduits share their address with every parity chain; the deploy scripts support it |
 | `zksync` | EraVM's CREATE2 | `Unique` | `Predetermined` if they are parity; otherwise `Unique`, itself included | Its transceivers report every receiver home, paid from a float; no production script yet |
 | `tron` | TVM's CREATE2 (`0x41` prefix) | `Unique` | as zkSync | As zkSync |
 | `other` | EVM without Arachnid's factory | `Unique` | `Unique`, itself included | Its transceivers cannot be born configured (the governor's home is not `Predetermined` from it, which `initialize` refuses); unsupported until the home's counterpart can be seeded ([todo §2](../../../docs/todo.md#2-chain-checks-before-mainnet)) |
@@ -70,8 +70,8 @@ It deploys the chain's `TimelockController`, then `ChainRegistry(timelock, seed)
 `Treasury(timelock)`, through Arachnid's factory. Every argument comes from
 [`governance.toml`](governance.toml), so each lands at one address on every parity chain: the
 seed names the governor's home, graded `Predetermined`, and each provider's deployment record,
-and the timelock's proposers are the governor's accounts under the two providers it names. Any
-account may broadcast, and a rerun deploys nothing. It refuses a chain that is not parity, a
+and the timelock's proposers are the governor's conduits under the two providers it names. Any
+conduit may broadcast, and a rerun deploys nothing. It refuses a chain that is not parity, a
 `governance.toml` with an owner, caller, or salt unset, and a build whose `CrossProxy` initcode
 hash is not the one `governance.toml` records, since every registry records that value for
 every provider (R8.4). Never change `governance.toml` once a chain is deployed: every address
@@ -120,7 +120,7 @@ Everything here is governance, and it runs in both directions: the new chain lea
 every existing chain, and every existing chain learns about the new one. That is the N × N
 part. The order is forced. A bootstrap and a counterpart both need the chain registered
 first, and the new chain has no owner, and its timelock no proposer, until the governor's
-bootstrap creates the governor's accounts there.
+bootstrap creates the governor's conduits there.
 
 1. **Prepare the home** (§6 step 3). On the governor's home, through its timelock,
    `addChainKey(newChain, grade)` with `ChainConfig.gradeOf(home, newChain)`; then, by the

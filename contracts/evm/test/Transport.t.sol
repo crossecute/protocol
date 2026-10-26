@@ -6,7 +6,7 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
-import {TransmitterBase, IAccountTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
+import {TransmitterBase, IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -54,7 +54,7 @@ contract MockTransmitter is AnyGatewayTransmitter {
         sentValue = value;
         sentRefund = _refundTo();
         ++sentCount;
-        // Pays the stand-in provider, so the account's balance shows what the send spent.
+        // Pays the stand-in provider, so the conduit's balance shows what the send spent.
         (bool ok,) = PROVIDER.call{value: value}("");
         require(ok);
         return bytes32(0);
@@ -94,7 +94,7 @@ contract MockTransceiver is AnyGatewayTransceiver {
         __TransceiverBase_init(c);
     }
 
-    function _accountInitializer(address, bytes32, bytes32, address, Call[] memory)
+    function _conduitInitializer(address, bytes32, bytes32, address, Call[] memory)
         internal
         pure
         override
@@ -146,7 +146,7 @@ contract MockTransceiver is AnyGatewayTransceiver {
     }
 
     /// @dev A different rate from the transmitter's, so a bootstrap quote that answered
-    ///      from the account instead of delegating to here is visible in the number.
+    ///      from the conduit instead of delegating to here is visible in the number.
     uint256 public constant WEI_PER_BYTE = 11;
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
@@ -176,16 +176,16 @@ contract TransportTest is Test {
     uint256 constant DEST = 8453;
     bytes32 constant SALT = keccak256("acct");
 
-    /// @dev The account sits at the address its transceiver derives for it, because
+    /// @dev The conduit sits at the address its transceiver derives for it, because
     ///      `bootstrap` refuses any caller that is not that address. Sending now requires
     ///      the destination to have been bootstrapped, so the fixture performs the real
-    ///      sequence rather than reaching into storage: stand the account up on dest, then
+    ///      sequence rather than reaching into storage: stand the conduit up on dest, then
     ///      send to it.
     function setUp() public {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(transceiver)).predictCrossAccount(owner, SALT, transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictCrossConduit(owner, SALT, transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), SALT);
@@ -197,25 +197,25 @@ contract TransportTest is Test {
         sink = new Sink();
     }
 
-    /// @dev Stand the account up on a non-EVM destination, the way a real deployment does:
+    /// @dev Stand the conduit up on a non-EVM destination, the way a real deployment does:
     ///      the bootstrap records no receiver there, and the destination's report supplies
-    ///      the address it actually created. Without the report the account has no reachable
+    ///      the address it actually created. Without the report the conduit has no reachable
     ///      receiver there.
     function _bootstrapTo(bytes memory identifier) internal {
         bytes[] memory none = new bytes[](0);
         vm.prank(owner);
         transmitter.bootstrapTo(identifier, none, none);
-        // The address the destination reported home. Only the account's transceiver may write it.
+        // The address the destination reported home. Only the conduit's transceiver may write it.
         vm.prank(address(transceiver));
         transmitter.onDestinationReceiverReported(ChainKey.fromIdentifier(identifier), SOL_RECEIVER);
     }
 
-    /// @dev The account's address on the non-EVM destination, which is not derivable here.
+    /// @dev The conduit's address on the non-EVM destination, which is not derivable here.
     bytes constant SOL_RECEIVER = hex"0badc0de";
 
     bytes[] internal NONE;
 
-    /// @dev A non-EVM recipient: the account's address there is not `address(this)` and is
+    /// @dev A non-EVM recipient: the conduit's address there is not `address(this)` and is
     ///      not derivable here, which is why `sendMessage` only binds the address check on
     ///      eip155 destinations.
     function _solRecipient(bytes memory chainIdentifier) internal pure returns (bytes memory) {
@@ -228,14 +228,14 @@ contract TransportTest is Test {
         a[0] = hex"c0ffee";
     }
 
-    /// @dev The account's own interoperable address on a chain, computed here rather than
-    ///      read off the account, so it costs no external call and cannot swallow a prank.
+    /// @dev The conduit's own interoperable address on a chain, computed here rather than
+    ///      read off the conduit, so it costs no external call and cannot swallow a prank.
     function _recip(uint256 chainId) internal view returns (bytes memory) {
         return Erc7930.encodeEvm(chainId, address(transmitter));
     }
 
     /// @dev One `sendMessage` now, so the tests spell the destination the way the ERC does:
-    ///      an interoperable address the account builds for itself.
+    ///      an interoperable address the conduit builds for itself.
     function _sendCalls(uint256 chainId, Call[] memory calls) internal {
         transmitter.sendMessage(_recip(chainId), Payload.encodeCalls(calls), NONE);
     }
@@ -261,7 +261,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev The account prices the send itself and pays exactly that from its balance.
+    /// @dev The conduit prices the send itself and pays exactly that from its balance.
     function test_sendPaysItsOwnQuoteFromTheBalance() public {
         bytes memory payload = Payload.encodeCalls(_calls());
         uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
@@ -271,11 +271,11 @@ contract TransportTest is Test {
         transmitter.sendMessage(_recip(DEST), payload, NONE);
 
         assertEq(transmitter.sentValue(), quote, "the binding is handed the quote");
-        assertEq(before - address(transmitter).balance, quote, "and nothing else left the account");
+        assertEq(before - address(transmitter).balance, quote, "and nothing else left the conduit");
     }
 
     /// @dev Attached value tops the balance up rather than setting the price: the send
-    ///      still spends the quote, and the rest stays on the account.
+    ///      still spends the quote, and the rest stays on the conduit.
     function test_attachedValueIsNotThePrice() public {
         bytes memory payload = Payload.encodeCalls(_calls());
         uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
@@ -289,7 +289,7 @@ contract TransportTest is Test {
         assertEq(address(transmitter).balance, 0.3 ether - quote);
     }
 
-    /// @dev An account that cannot cover the quote refuses before anything reaches the wire.
+    /// @dev A conduit that cannot cover the quote refuses before anything reaches the wire.
     function test_anUnfundedSendReverts() public {
         bytes memory payload = Payload.encodeCalls(_calls());
         uint256 quote = transmitter.quoteMessage(_recip(DEST), payload, NONE);
@@ -326,9 +326,9 @@ contract TransportTest is Test {
     }
 
     /// @dev Path B is not a gateway source, so it emits its own record naming
-    ///      `(chainKey, owner, salt)`, which identifies the account.
+    ///      `(chainKey, owner, salt)`, which identifies the conduit.
     function test_bootstrapEmitsItsOwnRecord() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
 
         vm.expectEmit(true, true, false, true, address(t));
         emit TransceiverCore.BootstrapSent(ChainKey.forEvm(DEST), owner, SALT);
@@ -362,7 +362,7 @@ contract TransportTest is Test {
         assertEq(transmitter.attributeCount(), 1, "opaque destination");
         vm.stopPrank();
 
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
         vm.startPrank(owner);
         acct.bootstrap(DEST, _calls(), _attrs());
         assertEq(t.attributeCount(), 1, "bootstrap");
@@ -398,20 +398,20 @@ contract TransportTest is Test {
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev An account's peer is itself, and the recipient is checked against that. Taking
+    /// @dev A conduit's peer is itself, and the recipient is checked against that. Taking
     ///      the destination as an argument reopened something that used to be structural,
     ///      so a recipient naming anything else on an EVM chain is refused here rather than
-    ///      arriving at a contract that is not this account's receiver.
-    function test_aRecipientThatIsNotThisAccountIsRefused() public {
+    ///      arriving at a contract that is not this conduit's receiver.
+    function test_aRecipientThatIsNotThisConduitIsRefused() public {
         bytes memory notUs = Erc7930.encodeEvm(DEST, address(0xBEEF));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, notUs));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisConduit.selector, notUs));
         transmitter.sendMessage(notUs, Payload.encodeCalls(_calls()), NONE);
     }
 
     /// @dev The check binds on EVM and only there, deliberately. On a non-EVM chain the
-    ///      account is not a 20-byte address and is not derivable from here, so there is
+    ///      conduit is not a 20-byte address and is not derivable from here, so there is
     ///      nothing to compare against; the same is true on zkSync and Tron, which is what
     ///      `addressesDiverge` names from the other end. The recipient is the caller's to
     ///      get right there, and this test records that rather than hiding it.
@@ -429,10 +429,10 @@ contract TransportTest is Test {
     }
 
     /// @dev The check is universal now, which it could not be while it was derived. A
-    ///      derived check had to be skipped wherever the account's address is not
+    ///      derived check had to be skipped wherever the conduit's address is not
     ///      `address(this)`, which left every non-EVM recipient unchecked. Comparing against
     ///      the recorded receiver binds on every chain, so the 32-byte pubkey of somebody
-    ///      else's account is refused here rather than on arrival.
+    ///      else's conduit is refused here rather than on arrival.
     function test_aNonEvmRecipientThatIsNotTheRecordedReceiverIsRefused() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         _bootstrapTo(sol);
@@ -442,7 +442,7 @@ contract TransportTest is Test {
         bytes memory payload = Payload.encodeElements(new bytes[](0));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, impostor));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisConduit.selector, impostor));
         transmitter.sendMessage(impostor, payload, NONE);
     }
 
@@ -522,7 +522,7 @@ contract TransportTest is Test {
     ///      resolves back to the caller before anything crosses, and carries that caller as
     ///      the transmitter the receiver will answer to.
     function test_bootstrapStatesTheOwnerAndSalt() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
 
         vm.prank(owner);
         acct.bootstrap(DEST, _calls(), new bytes[](0));
@@ -531,10 +531,10 @@ contract TransportTest is Test {
         assertEq(t.bootCount(), 1);
         assertEq(gotOwner, owner);
         assertEq(gotSalt, SALT);
-        assertEq(gotTransmitter, bytes32(uint256(uint160(address(acct)))), "the account that sent it");
+        assertEq(gotTransmitter, bytes32(uint256(uint160(address(acct)))), "the conduit that sent it");
     }
 
-    /// @dev An account sitting at the address `(owner, SALT)` derives to, which is what
+    /// @dev A conduit sitting at the address `(owner, SALT)` derives to, which is what
     ///      the transceiver checks `msg.sender` against.
     function _decodeTyped(bytes memory m) internal pure returns (address o, bytes32 s, bytes32 src, Call[] memory c) {
         uint8 kind;
@@ -542,23 +542,23 @@ contract TransportTest is Test {
         assertEq(kind, Envelope.BOOTSTRAP, "tagged as a bootstrap");
     }
 
-    function _account() internal returns (MockTransceiver t, MockTransmitter acct) {
+    function _conduit() internal returns (MockTransceiver t, MockTransmitter acct) {
         t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
         vm.deal(at, 1 ether);
     }
 
-    /// @dev Where the destination's transceiver is not at this account's transceiver's
-    ///      address, as on a zkSync or Tron home, the receiver is not at this account's
+    /// @dev Where the destination's transceiver is not at this conduit's transceiver's
+    ///      address, as on a zkSync or Tron home, the receiver is not at this conduit's
     ///      address either. The transmitter records where the transceiver predicts it, and
     ///      `recipientOn` returns that.
     function test_theTransmitterRecordsThePredictedReceiverNotItself() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
         address there = address(0xC0DE);
         t.setThere(there);
 
@@ -566,7 +566,7 @@ contract TransportTest is Test {
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         address receiver = Create2.computeAddress(
-            ext(address(t)).accountSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
+            ext(address(t)).conduitSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
         );
         assertEq(acct.destinationReceiverOn(ChainKey.forEvm(DEST)), abi.encodePacked(receiver));
         assertTrue(receiver != address(acct), "not its own address");
@@ -580,23 +580,23 @@ contract TransportTest is Test {
         transmitter.recipientOn(elsewhere);
     }
 
-    /// @dev A caller that is not the account `(owner, salt)` names cannot bootstrap it,
-    ///      so the only account anyone can stand up is the one that answers to them.
-    function test_bootstrapRefusesACallerThatIsNotTheAccount() public {
+    /// @dev A caller that is not the conduit `(owner, salt)` names cannot bootstrap it,
+    ///      so the only conduit anyone can stand up is the one that answers to them.
+    function test_bootstrapRefusesACallerThatIsNotTheConduit() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, owner, SALT, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheConduit.selector, owner, SALT, address(this)));
         t.bootstrap(ChainKey.forEvm(DEST), owner, SALT, _calls(), NONE);
     }
 
     /* ========================= path B: the two forms =========================== */
 
-    /// @dev The quote reduces an account envelope to its chain, so the send must too: an
+    /// @dev The quote reduces a conduit envelope to its chain, so the send must too: an
     ///      input the quote prices is one the send accepts, and the route stored is the bare
     ///      identifier inbound lookups match.
-    function test_bootstrapToAcceptsAnAccountEnvelopeLikeItsQuote() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+    function test_bootstrapToAcceptsAnConduitEnvelopeLikeItsQuote() public {
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
         bytes memory envelope = Erc7930.encodeEvm(DEST, address(0xBEEF));
 
         uint256 quoted = acct.quoteBootstrapTo(envelope, _calls(), new bytes[](0));
@@ -610,9 +610,9 @@ contract TransportTest is Test {
     }
 
     /// @dev A non-EVM chain needs its own bootstrap, because it needs its own payload
-    ///      form. The account is stood up the same way; what differs is what it is handed.
+    ///      form. The conduit is stood up the same way; what differs is what it is handed.
     function test_bootstrapToCarriesOpaqueElementsToANonEvmChain() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
@@ -622,7 +622,7 @@ contract TransportTest is Test {
 
         (uint8 kind, address gotOwner, bytes32 gotSalt, bytes32 gotTransmitter, bytes[] memory got) =
             abi.decode(t.sentPayload(), (uint8, address, bytes32, bytes32, bytes[]));
-        assertEq(gotTransmitter, bytes32(uint256(uint160(address(acct)))), "the account that sent it");
+        assertEq(gotTransmitter, bytes32(uint256(uint160(address(acct)))), "the conduit that sent it");
         assertEq(kind, Envelope.BOOTSTRAP_ELEMENTS, "tagged as the elements form");
         assertEq(t.bootCount(), 1);
         assertEq(gotOwner, owner);
@@ -634,7 +634,7 @@ contract TransportTest is Test {
     ///      speaks chainKeys, which are hashes and cannot be asked what chain type they
     ///      came from, so this is the last point that could catch it.
     function test_typedBootstrapIsRefusedForANonEvmChain() public {
-        (, MockTransmitter acct) = _account();
+        (, MockTransmitter acct) = _conduit();
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         vm.prank(owner);
@@ -643,7 +643,7 @@ contract TransportTest is Test {
     }
 
     function test_opaqueBootstrapIsRefusedForAnEvmChain() public {
-        (, MockTransmitter acct) = _account();
+        (, MockTransmitter acct) = _conduit();
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"0102030405";
 
@@ -656,7 +656,7 @@ contract TransportTest is Test {
 
     /// @dev The envelope-taking typed form reaches an EVM chain, same as the chain-id one.
     function test_bootstrapToReachesAnEvmChainWithTypedCalls() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
 
         bytes memory identifier = acct.chainIdentifierFor(DEST);
 
@@ -665,14 +665,14 @@ contract TransportTest is Test {
         assertEq(t.bootCount(), 1);
     }
 
-    /// @dev Both forms prove the caller is the account, not just the typed one.
+    /// @dev Both forms prove the caller is the conduit, not just the typed one.
     function test_theOpaqueBootstrapAlsoChecksTheCaller() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
         bytes[] memory elements = new bytes[](1);
         elements[0] = hex"01";
 
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheAccount.selector, owner, SALT, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NotTheConduit.selector, owner, SALT, address(this)));
         t.bootstrapElements(ChainKey.forEvm(DEST), owner, SALT, elements, NONE);
     }
 
@@ -680,7 +680,7 @@ contract TransportTest is Test {
 
     /// @dev The base has no ownership of its own. It states the requirement (`_owner` and
     ///      `_checkOwner`), and the concrete contract answers from whatever authority it
-    ///      already has. That is what lets an account inherit a provider SDK that brings
+    ///      already has. That is what lets a conduit inherit a provider SDK that brings
     ///      its own `Ownable` without two ownership systems living in one contract.
     function test_theBaseContributesNoOwnershipSurface() public view {
         // `TransmitterBase` declares no owner storage and no `owner()`. The one reachable
@@ -688,7 +688,7 @@ contract TransportTest is Test {
         assertEq(transmitter.owner(), owner);
     }
 
-    /// @dev And its modifier is `onlyAccountOwner`, not `onlyOwner`, two base classes
+    /// @dev And its modifier is `onlyConduitOwner`, not `onlyOwner`, two base classes
     ///      declaring one modifier name would force every derived contract to override it,
     ///      which is the same collision the seam exists to avoid, one level down.
     function test_theSeamGatesEveryEntryPoint() public {
@@ -705,8 +705,8 @@ contract TransportTest is Test {
     /* ================================= preview ================================= */
 
     /// @dev The transmitter previews EVM destinations and nothing else. The portable
-    ///      overload that took a `Scheme` is gone: a preview frozen with the account can
-    ///      only answer for primitives that existed when the account was created, so
+    ///      overload that took a `Scheme` is gone: a preview frozen with the conduit can
+    ///      only answer for primitives that existed when the conduit was created, so
     ///      non-EVM destinations are previewed through `ChainRegistry.commitmentFor`
     ///      instead. What remains still refuses a shape it cannot answer for, rather than
     ///      guessing: a preview you can compute for a message you cannot send is a trap.
@@ -816,7 +816,7 @@ contract TransportTest is Test {
             Envelope.encodeBootstrap(
                 owner,
                 SALT,
-                bytes32(uint256(uint160(ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey())))),
+                bytes32(uint256(uint160(ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey())))),
                 calls
             )
             .length * t.WEI_PER_BYTE(),
@@ -824,10 +824,10 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev A quote is taken before the account it prices exists, so it cannot carry
-    ///      `bootstrap`'s "you must be the account" check. There is nothing to protect on
+    /// @dev A quote is taken before the conduit it prices exists, so it cannot carry
+    ///      `bootstrap`'s "you must be the conduit" check. There is nothing to protect on
     ///      a view that spends nothing.
-    function test_bootstrapQuoteDoesNotRequireTheCallerToBeTheAccount() public {
+    function test_bootstrapQuoteDoesNotRequireTheCallerToBeTheConduit() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
@@ -852,33 +852,33 @@ contract TransportTest is Test {
     /* ================================== refund ================================= */
 
     /// @dev The party who overpaid is the party who gets it back. On path A that is the
-    ///      account, which paid from its own balance, not the owner who submitted the send.
-    function test_pathARefundsToTheAccount() public {
+    ///      conduit, which paid from its own balance, not the owner who submitted the send.
+    function test_pathARefundsToTheConduit() public {
         vm.prank(owner);
         _sendCalls(DEST, _calls());
         assertEq(transmitter.sentRefund(), address(transmitter));
     }
 
-    /// @dev On path B it is the account, and never the transceiver. This is the one this
+    /// @dev On path B it is the conduit, and never the transceiver. This is the one this
     ///      has to get right: a shared transceiver refunding to itself would pool every
     ///      user's excess into infrastructure with no per-user way out. `bootstrap` refuses
-    ///      any caller that is not the account, so the transceiver cannot be its own
+    ///      any caller that is not the conduit, so the transceiver cannot be its own
     ///      caller and cannot be the refund target.
-    function test_pathBRefundsToTheAccountNotTheTransceiver() public {
-        (MockTransceiver t, MockTransmitter acct) = _account();
+    function test_pathBRefundsToTheConduitNotTheTransceiver() public {
+        (MockTransceiver t, MockTransmitter acct) = _conduit();
 
         vm.prank(owner);
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
-        assertEq(t.bootRefund(), address(acct), "the account that asked for the message");
+        assertEq(t.bootRefund(), address(acct), "the conduit that asked for the message");
         assertTrue(t.bootRefund() != address(t), "never the shared transceiver");
     }
 
-    /// @dev A refund is a plain value transfer, so the account has to be able to take one.
+    /// @dev A refund is a plain value transfer, so the conduit has to be able to take one.
     ///      Without `receive` on the transmitter the refund reverts and takes the bootstrap
     ///      with it, which is the one message that cannot be retried cheaply.
-    function test_theAccountCanReceiveARefund() public {
-        (, MockTransmitter acct) = _account();
+    function test_theConduitCanReceiveARefund() public {
+        (, MockTransmitter acct) = _conduit();
 
         uint256 before = address(acct).balance;
         vm.deal(address(this), 1 ether);
@@ -889,7 +889,7 @@ contract TransportTest is Test {
 
     /* ============================== the bootstrap gate ========================= */
 
-    /// @dev A send to a chain this account is not on has nothing to arrive at. The peer
+    /// @dev A send to a chain this conduit is not on has nothing to arrive at. The peer
     ///      address holds no code there, so the payload fails on delivery with the fee
     ///      already spent. Refusing locally turns a paid-for failure into a free one.
     function test_sendToAnUnbootstrappedDestinationReverts() public {
@@ -947,7 +947,7 @@ contract TransportTest is Test {
     /// @dev The two builders name one chain, which is what lets a caller pick an entry point
     ///      on ergonomics rather than on reach. `chainIdentifierFor` is `bootstrapTo`'s
     ///      argument and `recipientOn` is `sendMessage`'s, and the second is the first with
-    ///      this account's recorded receiver appended, so a destination reached by either
+    ///      this conduit's recorded receiver appended, so a destination reached by either
     ///      spelling resolves to the same chainKey.
     ///
     ///      It is a real check rather than a tautology because `Erc7930` is a library of
@@ -994,7 +994,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(t)).predictCrossAccount(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         MockTransmitter acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -1015,31 +1015,31 @@ contract TransportTest is Test {
         assertEq(sink.total(), 3);
     }
 
-    /* ============================ the account's view =========================== */
+    /* ============================ the conduit's view =========================== */
 
-    /// @dev An account holds one transceiver address and one interface over it. `routeTo`
-    ///      joins bootstrap and the quotes on `IAccountTransceiver` rather than living on a
-    ///      second type. It answers for a destination the account has not bootstrapped,
+    /// @dev A conduit holds one transceiver address and one interface over it. `routeTo`
+    ///      joins bootstrap and the quotes on `IConduitTransceiver` rather than living on a
+    ///      second type. It answers for a destination the conduit has not bootstrapped,
     ///      which is the one thing its own table cannot do: that table is written by
     ///      `bootstrap`, so before the first message to a chain it holds nothing.
-    function test_theAccountInterfaceResolvesARoute() public {
+    function test_theConduitInterfaceResolvesARoute() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
         assertEq(
-            IAccountTransceiver(address(t)).routeTo(ChainKey.forEvm(DEST)),
+            IConduitTransceiver(address(t)).routeTo(ChainKey.forEvm(DEST)),
             Erc7930.encodeEvmChain(8453),
             "the provider's own name for the chain, opaque"
         );
     }
 
-    /// @dev An account records its own destinations rather than being configured with them,
-    ///      which is the property the old "an account holds no route table" test was really
+    /// @dev A conduit records its own destinations rather than being configured with them,
+    ///      which is the property the old "a conduit holds no route table" test was really
     ///      protecting. It does hold one now, but every row is written by `bootstrap` from
     ///      the identifier the caller already supplied: there is no admin surface on the
-    ///      account, nothing a msig has to migrate when a destination is added, and no
+    ///      conduit, nothing a msig has to migrate when a destination is added, and no
     ///      provider vocabulary in it.
-    function test_theAccountRecordsItsDestinationsRatherThanBeingConfigured() public view {
+    function test_theConduitRecordsItsDestinationsRatherThanBeingConfigured() public view {
         assertEq(
             transmitter.routeTo(ChainKey.forEvm(DEST)),
             transmitter.chainIdentifierFor(DEST),
@@ -1055,7 +1055,7 @@ contract TransportTest is Test {
     }
 }
 
-/// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so an account's
+/// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so a conduit's
 ///      address there is not the one it occupies at home. That is the case the whole
 ///      counterpart table exists for: a derived peer is wrong on exactly these chains, and
 ///      being `eip155` they cannot be excluded by chain type the way a non-EVM chain is.
@@ -1072,7 +1072,7 @@ contract DivergingDestinationTest is Test {
     function setUp() public {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
-        address at = ext(address(transceiver)).predictCrossAccount(owner, bytes32(0), transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictCrossConduit(owner, bytes32(0), transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), bytes32(0));
@@ -1090,7 +1090,7 @@ contract DivergingDestinationTest is Test {
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, recipient));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisConduit.selector, recipient));
         transmitter.sendMessage(recipient, payload, new bytes[](0));
     }
 
@@ -1123,7 +1123,7 @@ contract DivergingDestinationTest is Test {
         transmitter.onDestinationReceiverReported(key, DIVERGED);
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisAccount.selector, stale));
+        vm.expectRevert(abi.encodeWithSelector(TransmitterBase.RecipientIsNotThisConduit.selector, stale));
         transmitter.sendMessage(stale, payload, new bytes[](0));
     }
 

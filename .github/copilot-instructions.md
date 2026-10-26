@@ -5,7 +5,7 @@ this file covers what a review should look for.
 
 ## What this repo is
 
-Cross-chain account contracts under `contracts/evm/`. An account's address is derived from
+Cross-chain conduit contracts under `contracts/evm/`. A conduit's address is derived from
 `CrossProxy`'s initcode and must be identical on every chain. Messages move between chains
 through provider bindings (LayerZero, CCIP, Hyperlane, Wormhole, OP Stack) under
 `src/protocols/`. Most configuration is write-once and the transceivers cannot be upgraded,
@@ -44,7 +44,7 @@ it in the comment. If you could not write or run one, say so.
 
 ## Checks on `src/`, highest priority first
 
-Read the shared code before the bindings: `src/messaging/` and `src/account/`, then the
+Read the shared code before the bindings: `src/messaging/` and `src/conduit/`, then the
 shared files in `src/protocols/`, then each provider. When the same change repeats across
 bindings or across a provider's plain, zkSync, and Tron variants, review one copy in full and
 compare the rest against it.
@@ -52,7 +52,7 @@ compare the rest against it.
 1. **Address parity and storage.** No change to `CrossProxy`'s initcode or constructor, to
    `CROSS_PROXY_INIT_CODE_HASH`, or to compiler settings in `foundry.toml` (R8). No storage
    appended to a base's sequential layout, and contracts that share storage by `DELEGATECALL`
-   must have the same layout. A mistake here moves every account address or corrupts state,
+   must have the same layout. A mistake here moves every conduit address or corrupts state,
    and cannot be fixed after deployment.
 2. **Inbound authentication.** Each binding authenticates the origin in its transport's own
    naming before `_onInbound` or `_onMessageFrom` runs. Look for an origin, sender, or emitter

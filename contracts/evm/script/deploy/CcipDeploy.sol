@@ -44,10 +44,10 @@ library CcipDeploy {
         TransceiverDeployment memory d,
         address router,
         uint64 homeSelector,
-        bytes32 accountBytecodeHash
+        bytes32 conduitBytecodeHash
     ) internal returns (address t) {
         t = deployTransceiverProxy(
-            d, abi.encodeCall(CcipZkSyncTransceiver.initialize, (d.config, homeSelector, accountBytecodeHash)), router
+            d, abi.encodeCall(CcipZkSyncTransceiver.initialize, (d.config, homeSelector, conduitBytecodeHash)), router
         );
         checkGovernorHomeId(t, d.config, homeSelector);
     }

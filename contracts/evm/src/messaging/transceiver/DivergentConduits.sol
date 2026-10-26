@@ -3,17 +3,17 @@ pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {CrossProxy} from "src/account/CrossProxy.sol";
+import {CrossProxy} from "src/conduit/CrossProxy.sol";
 
-/// @title DivergentAccounts
-/// @notice Account derivation for the chains whose CREATE2 differs from Ethereum's: zkSync Era
+/// @title DivergentConduits
+/// @notice Conduit derivation for the chains whose CREATE2 differs from Ethereum's: zkSync Era
 ///         and Tron. Shared by every transceiver deployed there.
 ///
 /// @dev Both are `eip155`, so only the transceiver's own bytecode can know its chain's formula.
 ///
 /// @dev Forge runs Ethereum's EVM, so the suite pins only that each override reproduces
 ///      `AddressDerive`'s formula, that the bytecode hash is write-once, and that a mismatch
-///      is refused by `_createCrossAccount`. Deploying one account on Era and on Shasta is
+///      is refused by `_createCrossConduit`. Deploying one conduit on Era and on Shasta is
 ///      still open: see [todo](../../../../../docs/todo.md#2-chain-checks-before-mainnet).
 ///
 /// @dev zksolc 1.5.17 over era-solc 0.8.28-1.0.2 builds `CrossProxy` and every contract a
@@ -21,32 +21,32 @@ import {CrossProxy} from "src/account/CrossProxy.sol";
 ///      `ripemd160`, and zksolc rejects a compilation unit that contains it at all.
 ///
 /// @dev Not a `TransceiverBase`: a mixin that did inherit it would meet every transceiver base's
-///      own overrides in a diamond. Each transceiver overrides `_predictCrossAccount`, in both
-///      its `TransceiverBase` and its extension, and `_deployAccount` with a one-line call into the
+///      own overrides in a diamond. Each transceiver overrides `_predictCrossConduit`, in both
+///      its `TransceiverBase` and its extension, and `_deployConduit` with a one-line call into the
 ///      helpers below.
-abstract contract DivergentAccounts is Initializable {
-    /// The hash this chain's deployer keys an account address by, in that chain's own form.
+abstract contract DivergentConduits is Initializable {
+    /// The hash this chain's deployer keys a conduit address by, in that chain's own form.
     /// @dev Write-once. Not `CROSS_PROXY_INIT_CODE_HASH`, which hashes the local compiler's
     ///      `creationCode` and is not what either deployer keys by: zkSync hashes a zksolc
     ///      artifact into an EraVM versioned hash, and Tron uses TRON-solc's initcode.
-    bytes32 public accountBytecodeHash;
+    bytes32 public conduitBytecodeHash;
 
-    event AccountBytecodeHashSet(bytes32 accountBytecodeHash);
+    event ConduitBytecodeHashSet(bytes32 conduitBytecodeHash);
 
-    error ZeroAccountBytecodeHash();
+    error ZeroConduitBytecodeHash();
 
-    /// @param accountBytecodeHash_ For zkSync, `AddressDerive.hashL2Bytecode` over the
+    /// @param conduitBytecodeHash_ For zkSync, `AddressDerive.hashL2Bytecode` over the
     ///        zksolc artifact for `CrossProxy`. For Tron, `keccak256` of Tron-solc's
-    ///        `CrossProxy` initcode. Getting it wrong does not misdeliver: every account
-    ///        creation reverts `AccountAddressMismatch` until it is right.
-    function __DivergentAccounts_init(bytes32 accountBytecodeHash_) internal onlyInitializing {
-        if (accountBytecodeHash_ == bytes32(0)) revert ZeroAccountBytecodeHash();
-        accountBytecodeHash = accountBytecodeHash_;
-        emit AccountBytecodeHashSet(accountBytecodeHash_);
+    ///        `CrossProxy` initcode. Getting it wrong does not misdeliver: every conduit
+    ///        creation reverts `ConduitAddressMismatch` until it is right.
+    function __DivergentConduits_init(bytes32 conduitBytecodeHash_) internal onlyInitializing {
+        if (conduitBytecodeHash_ == bytes32(0)) revert ZeroConduitBytecodeHash();
+        conduitBytecodeHash = conduitBytecodeHash_;
+        emit ConduitBytecodeHashSet(conduitBytecodeHash_);
     }
 }
 
-/// @title ZkSyncAccounts
+/// @title ZkSyncConduits
 /// @notice zkSync Era, which diverges in both seams.
 ///
 /// @dev The address: `zksyncCreate2` folds `keccak256("zksyncCreate2")`, the padded sender,
@@ -56,37 +56,37 @@ abstract contract DivergentAccounts is Initializable {
 /// @dev The deployment: EraVM cannot deploy raw initcode; `new CrossProxy{salt: s}()` is what
 ///      zksolc lowers into the `ContractDeployer` system call. zksolc only warns on the base's
 ///      `Create2.deploy`, so a transceiver missing this override would build and fail on its
-///      first account.
+///      first conduit.
 ///
 /// @dev Under solc, `new ... {salt:}` is ordinary CREATE2, so in this repo's build the
 ///      deployment lands at Ethereum's address and the guard refuses: it fails closed.
-abstract contract ZkSyncAccounts is DivergentAccounts {
+abstract contract ZkSyncConduits is DivergentConduits {
     /// @dev `CrossProxy` takes no constructor arguments, so the input is empty.
     bytes32 internal constant EMPTY_CONSTRUCTOR_INPUT_HASH = keccak256("");
 
-    /// @notice Where this contract deploys an account at `accountSalt` on Era.
-    function _zkSyncAccount(bytes32 accountSalt) internal view returns (address) {
+    /// @notice Where this contract deploys a conduit at `conduitSalt` on Era.
+    function _zkSyncConduit(bytes32 conduitSalt) internal view returns (address) {
         return
-            AddressDerive.zksyncCreate2(address(this), accountSalt, accountBytecodeHash, EMPTY_CONSTRUCTOR_INPUT_HASH);
+            AddressDerive.zksyncCreate2(address(this), conduitSalt, conduitBytecodeHash, EMPTY_CONSTRUCTOR_INPUT_HASH);
     }
 
-    /// @notice Deploy an account the way Era can: through the `ContractDeployer` system call.
-    function _zkSyncDeploy(bytes32 accountSalt) internal returns (address) {
-        return address(new CrossProxy{salt: accountSalt}());
+    /// @notice Deploy a conduit the way Era can: through the `ContractDeployer` system call.
+    function _zkSyncDeploy(bytes32 conduitSalt) internal returns (address) {
+        return address(new CrossProxy{salt: conduitSalt}());
     }
 }
 
-/// @title TronAccounts
+/// @title TronConduits
 /// @notice Tron, which diverges in the formula only.
 ///
 /// @dev EIP-1014's preimage with `0x41` in place of `0xff`, as java-tron computes it (see
 ///      `AddressDerive.tronCreate2`). The TRON-solc bytecode hash is unverified until one
-///      account is deployed on Shasta and compared.
+///      conduit is deployed on Shasta and compared.
 ///
-/// @dev Tron runs raw-initcode CREATE2, so the base's `_deployAccount` stands.
-abstract contract TronAccounts is DivergentAccounts {
-    /// @notice Where this contract deploys an account at `accountSalt` on Tron.
-    function _tronAccount(bytes32 accountSalt) internal view returns (address) {
-        return AddressDerive.tronCreate2(address(this), accountSalt, accountBytecodeHash);
+/// @dev Tron runs raw-initcode CREATE2, so the base's `_deployConduit` stands.
+abstract contract TronConduits is DivergentConduits {
+    /// @notice Where this contract deploys a conduit at `conduitSalt` on Tron.
+    function _tronConduit(bytes32 conduitSalt) internal view returns (address) {
+        return AddressDerive.tronCreate2(address(this), conduitSalt, conduitBytecodeHash);
     }
 }

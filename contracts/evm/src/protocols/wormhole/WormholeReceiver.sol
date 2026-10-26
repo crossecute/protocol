@@ -6,14 +6,14 @@ import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Per-user account on a non-home chain.
+/// @notice Per-user conduit on a non-home chain.
 /// @dev `GATEWAY_ROLE` is held by the Core bridge, which never calls in: `executeVAAv1` is
 ///      permissionless and checks the role's membership instead of `msg.sender`, so
 ///      `revokeGateway(coreBridge)` still disconnects Wormhole. See `WormholeMessage.verify`.
 contract WormholeReceiver is ProviderReceiver, IVaaV1Receiver {
     /// @notice Core bridge on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its initcode,
-    ///         so this never moves a derived account address.
+    ///         so this never moves a derived conduit address.
     address public immutable coreBridge;
 
     constructor(address coreBridge_) {

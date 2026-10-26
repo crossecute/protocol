@@ -19,7 +19,7 @@ interface ILzReceiverInit {
     function initialize(address sourceTransmitter, Call[] calldata calls, uint32 homeEid, address homeDvn) external;
 }
 
-/// @notice Per-user account on a non-home chain.
+/// @notice Per-user conduit on a non-home chain.
 /// @dev Receiver-only: inherits `OAppReceiverUpgradeable`, not the combined `OAppUpgradeable`,
 ///      since this contract never sends via LayerZero.
 contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzReceiverInit {

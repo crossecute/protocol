@@ -8,13 +8,13 @@ import {check, DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
-import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
+import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 
 /// @title LzOftLeaves
-/// @notice The destination list a `layerzero-oft` account is created with, built and checked.
+/// @notice The destination list a `layerzero-oft` conduit is created with, built and checked.
 ///         Reads nothing it is not told and sends nothing: the operator passes the result to
-///         `LzOftAccountFactory.createTransmitter`.
+///         `LzOftConduitFactory.createTransmitter`.
 ///
 /// @dev Run on the home chain. From the environment: `LZ_OFT_HOME`, the operator's OFT here, and
 ///      `LZ_OFT_DESTINATIONS`, comma-separated `deploy/chains.toml` names. Each destination's eid
@@ -22,7 +22,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      is then checked on its own chain over `<NAME>_RPC_URL`, the one check the home factory
 ///      cannot make: that the eid is that chain's.
 contract LzOftLeaves is Script {
-    function run() external returns (LzOftAccountFactory.Leaf[] memory leaves, bytes32 destRoot) {
+    function run() external returns (LzOftConduitFactory.Leaf[] memory leaves, bytes32 destRoot) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry[] memory cs = ChainConfig.chains(dir);
         address homeOft = vm.envAddress("LZ_OFT_HOME");

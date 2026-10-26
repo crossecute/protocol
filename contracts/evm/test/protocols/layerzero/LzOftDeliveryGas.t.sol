@@ -6,7 +6,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {LzOftAccountFactory} from "src/protocols/layerzero/LzOftAccountFactory.sol";
+import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
@@ -30,7 +30,7 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
 
     MockLzEndpoint endpoint;
     MockOft oft;
-    LzOftAccountFactory factory;
+    LzOftConduitFactory factory;
 
     function setUp() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
@@ -38,11 +38,11 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         endpoint.setEid(DEST_EID);
         oft = new MockOft(address(endpoint));
         oft.setPeer(HOME_EID, HOME_OFT);
-        factory = new LzOftAccountFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()));
+        factory = new LzOftConduitFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()));
     }
 
     /// @dev This chain's leaf first, then `n - 1` others, so the proof has `ceil(log2 n)` words.
-    function _bootstrap(uint256 n, Call[] memory calls) internal view returns (address account, bytes memory) {
+    function _bootstrap(uint256 n, Call[] memory calls) internal view returns (address conduit, bytes memory) {
         bytes32[] memory leaves = new bytes32[](n);
         leaves[0] = LzOftMessage.leaf(factory.localChainKey(), DEST_EID, address(oft));
         for (uint256 i = 1; i < n; ++i) {
@@ -50,9 +50,9 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         }
         bytes32 destRoot = LzOftMessage.root(leaves);
         bytes32[] memory proof = LzOftMessage.proof(leaves, 0);
-        account = factory.predictAccount(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot);
+        conduit = factory.predictConduit(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot);
         return (
-            account,
+            conduit,
             LzOftMessage.encodeBootstrap(
                 LzOftMessage.Bootstrap(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot, proof, calls)
             )
@@ -60,9 +60,9 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
     }
 
     function test_aBootstrapWithOneDestinationAndNoCallsFitsTheDefault() public {
-        (address account, bytes memory message) = _bootstrap(1, new Call[](0));
+        (address conduit, bytes memory message) = _bootstrap(1, new Call[](0));
         _assertFits(
-            "bootstrap, 1 destination, no calls", _measure(address(factory), account, message), DeliveryGas.BOOTSTRAP
+            "bootstrap, 1 destination, no calls", _measure(address(factory), conduit, message), DeliveryGas.BOOTSTRAP
         );
     }
 
@@ -71,19 +71,19 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
     function test_aBootstrapWithEightDestinationsAndOneCallFitsTheDefault() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});
-        (address account, bytes memory message) = _bootstrap(8, calls);
+        (address conduit, bytes memory message) = _bootstrap(8, calls);
         _assertFits(
-            "bootstrap, 8 destinations, one call", _measure(address(factory), account, message), DeliveryGas.BOOTSTRAP
+            "bootstrap, 8 destinations, one call", _measure(address(factory), conduit, message), DeliveryGas.BOOTSTRAP
         );
     }
 
     /// @dev The receiver's overhead only: `PAYLOAD` also pays for the caller's calls.
     function test_aPayloadWithNoCallsFitsTheDefault() public {
-        (address account, bytes memory message) = _bootstrap(1, new Call[](0));
-        this.deliver(address(factory), account, message);
-        assertGt(account.code.length, 0, "the receiver exists");
+        (address conduit, bytes memory message) = _bootstrap(1, new Call[](0));
+        this.deliver(address(factory), conduit, message);
+        assertGt(conduit.code.length, 0, "the receiver exists");
         bytes memory payload = Payload.encodeCalls(new Call[](0));
-        _assertFits("payload, no calls", _measure(account, account, payload), DeliveryGas.PAYLOAD);
+        _assertFits("payload, no calls", _measure(conduit, conduit, payload), DeliveryGas.PAYLOAD);
     }
 
     /// @dev External so a test can cap the gas the delivery runs with.

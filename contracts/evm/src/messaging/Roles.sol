@@ -19,7 +19,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///
 /// @dev Not enumerable here: a transceiver's members are fixed at initialization, each grant
 ///      emits `RoleGranted`, and enumeration would cost every transceiver a kilobyte it does
-///      not have under EIP-170 (#29). Accounts, whose receivers can revoke, add it through
+///      not have under EIP-170 (#29). Conduits, whose receivers can revoke, add it through
 ///      `RolesEnumerable`.
 abstract contract Roles is AccessControlUpgradeable {
     /// @notice May deliver a message to this contract and carry one out of it. The only role.
@@ -30,7 +30,7 @@ abstract contract Roles is AccessControlUpgradeable {
     error GrantNotFromSelf(address caller);
 
     /// @notice Grant a role from this contract's own bootstrap payload, so an owner's first
-    ///         payload can name its account's gateway. Closes when initialization does.
+    ///         payload can name its conduit's gateway. Closes when initialization does.
     ///
     /// @dev `onlyInitializing` replaces OZ's admin gate. No role has an admin, so after arming
     ///      no caller can add a member: not the owner, the governor, the creating transceiver, or a
@@ -40,65 +40,65 @@ abstract contract Roles is AccessControlUpgradeable {
     ///
     /// @dev `public` because it overrides OZ's `grantRole`; a separate entry point would leave
     ///      the inherited one reachable.
-    function grantRole(bytes32 role, address account) public virtual override onlyInitializing {
+    function grantRole(bytes32 role, address conduit) public virtual override onlyInitializing {
         if (msg.sender != address(this)) revert GrantNotFromSelf(msg.sender);
-        _grantRole(role, account);
+        _grantRole(role, conduit);
     }
 
     /// @notice An initializer's own grant, such as the provider endpoint it names as a gateway.
-    function _grantInitialRole(bytes32 role, address account) internal onlyInitializing {
-        _grantRole(role, account);
+    function _grantInitialRole(bytes32 role, address conduit) internal onlyInitializing {
+        _grantRole(role, conduit);
     }
 
-    /// @notice Whether `account` holds `role`.
+    /// @notice Whether `conduit` holds `role`.
     /// @dev Re-declared so an override below names one base.
-    function hasRole(bytes32 role, address account) public view virtual override returns (bool) {
-        return super.hasRole(role, account);
+    function hasRole(bytes32 role, address conduit) public view virtual override returns (bool) {
+        return super.hasRole(role, conduit);
     }
 }
 
 /// @title RolesEnumerable
-/// @notice `Roles`, with the member set readable on-chain, for accounts: a receiver can drop a
+/// @notice `Roles`, with the member set readable on-chain, for conduits: a receiver can drop a
 ///         gateway through `revokeGateway`, so what remains is worth reading directly.
 /// @dev `AccessControlEnumerableUpgradeable` compiles at `paris` only through OZ 5.4, since
 ///      5.5's `Arrays` uses `mcopy`; a bump past 5.4 breaks this inheritance first (README,
 ///      Assumptions).
 abstract contract RolesEnumerable is Roles, AccessControlEnumerableUpgradeable {
-    function grantRole(bytes32 role, address account)
+    function grantRole(bytes32 role, address conduit)
         public
         virtual
         override(Roles, AccessControlUpgradeable, IAccessControl)
         onlyInitializing
     {
-        super.grantRole(role, account);
+        super.grantRole(role, conduit);
     }
 
-    function hasRole(bytes32 role, address account)
+    function hasRole(bytes32 role, address conduit)
         public
         view
         virtual
         override(Roles, AccessControlUpgradeable, IAccessControl)
         returns (bool)
     {
-        return super.hasRole(role, account);
+        return super.hasRole(role, conduit);
     }
 
-    function _grantRole(bytes32 role, address account)
+    function _grantRole(bytes32 role, address conduit)
         internal
         virtual
         override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
         returns (bool)
     {
-        return super._grantRole(role, account);
+        return super._grantRole(role, conduit);
     }
 
-    function _revokeRole(bytes32 role, address account)
+    function _revokeRole(bytes32 role, address conduit)
         internal
         virtual
         override(AccessControlUpgradeable, AccessControlEnumerableUpgradeable)
         returns (bool)
     {
-        return super._revokeRole(role, account);
+        return super._revokeRole(role, conduit);
     }
 
     function supportsInterface(bytes4 interfaceId)

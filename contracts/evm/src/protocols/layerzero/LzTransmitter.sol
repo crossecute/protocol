@@ -18,16 +18,16 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
 
     /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
     ///        because the implementation address lives in the proxy's ERC-1967 slot, not its
-    ///        initcode, so this never moves a derived account address.
+    ///        initcode, so this never moves a derived conduit address.
     constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
 
     /// @dev No peer set here: peers are per-destination, and a one-shot initializer cannot
-    ///      know every chain this account will ever reach. The owner calls `setPeer` once per
+    ///      know every chain this conduit will ever reach. The owner calls `setPeer` once per
     ///      destination before its first send there; `LzWriteOncePeer` makes it final.
     function initialize(address owner_, address transceiver_, bytes32 salt_) external override initializer {
-        // Delegate = self: R6.4, any provider-side authority over an account is the account.
+        // Delegate = self: R6.4, any provider-side authority over a conduit is the conduit.
         __OAppSender_init(address(this));
         __OwnableTransmitter_init(owner_, transceiver_, salt_);
     }
@@ -43,7 +43,7 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
 
     /// @dev `recipient`'s address half is unused: LayerZero delivers to whatever `setPeer`
     ///      recorded for the eid, not to an address in the payload. `value` is the quote, paid
-    ///      from the account's balance whatever `msg.value` is (R7.1).
+    ///      from the conduit's balance whatever `msg.value` is (R7.1).
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override

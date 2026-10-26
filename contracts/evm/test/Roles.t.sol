@@ -17,7 +17,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {UnsendableTransmitter} from "test/Harness.sol";
 
-/// @dev An account names its transport in the call that arms it, which is the only moment
+/// @dev A conduit names its transport in the call that arms it, which is the only moment
 ///      anything can: `GATEWAY` has no role admin, so no grant ever succeeds. Granting ahead of
 ///      `__ReceiverBase_init` is the documented shape. A binding's provider setup goes in
 ///      front of the bootstrap payload, and this is that setup.
@@ -59,8 +59,8 @@ contract RoleHarness is RolesEnumerable {
 
     /// @dev Proves the window is what closes the grant, rather than a caller check: this is
     ///      the same call the initializer makes, made one transaction later.
-    function grantLate(bytes32 role, address account) external {
-        _grantInitialRole(role, account);
+    function grantLate(bytes32 role, address conduit) external {
+        _grantInitialRole(role, conduit);
     }
 }
 
@@ -152,12 +152,12 @@ contract RolesTest is Test {
 
     /* ========================== nothing can be granted ============================== */
 
-    /// @dev An account's transport is frozen the moment it is armed, and not because a slot
+    /// @dev A conduit's transport is frozen the moment it is armed, and not because a slot
     ///      refuses a second write: `GATEWAY` has no role admin, so it defaults to
     ///      `DEFAULT_ADMIN_ROLE`, which this protocol grants to nobody anywhere. There is no
     ///      caller a grant could come from. Not the transceiver that created it, not the msig,
-    ///      not the account's own owner.
-    function test_nothingCanAddAGatewayToAnAccount() public {
+    ///      not the conduit's own owner.
+    function test_nothingCanAddAGatewayToAnConduit() public {
         assertEq(receiver.getRoleMemberCount(receiver.DEFAULT_ADMIN_ROLE()), 0, "and nothing holds what administers it");
 
         address[3] memory tryers = [receiver.parentTransceiver(), msig, address(0xB0B)];
@@ -240,12 +240,12 @@ contract RolesTest is Test {
         h.initialize(gateways);
     }
 
-    /* ============================ an account may drop one =========================== */
+    /* ============================ a conduit may drop one =========================== */
 
     /// @dev A receiver can drop its transport and cannot replace it. That is the one
     ///      membership change surviving initialization anywhere in the protocol, and the
     ///      direction is deliberate: a gateway that can deliver can forge, so going deaf is
-    ///      the recoverable failure and a compromised transport driving the account is not.
+    ///      the recoverable failure and a compromised transport driving the conduit is not.
     function test_aReceiverDropsItsGatewayOnItsTransmittersSayS0() public {
         assertTrue(receiver.hasRole(gatewayRole, GATEWAY));
 

@@ -125,8 +125,8 @@ float pay its own report (#78).
 Not checked: which OffRamp version each CCIP lane runs.
 
 **What this settles.** The protocol needs no `requestId` and no per-message nonce of its
-own. Correlation never needed one: the home derives the reporting account from the
-authenticated origin plus the stated `(owner, salt)`, and the account pins the first report.
+own. Correlation never needed one: the home derives the reporting conduit from the
+authenticated origin plus the stated `(owner, salt)`, and the conduit pins the first report.
 Idempotency does need one, and it exists at the transport for every candidate here except
 the two raw signature primitives. Adding a protocol-level id would put a field on every
 channel plus a growing set on every receiver to buy something seven of nine already give.
@@ -162,16 +162,16 @@ capture.
 | **Arbitrum** | minutes, retryable ticket, auto-redeem when funded | **~7 days**, `ArbSys.sendTxToL1` then `Outbox.executeTransaction` after the challenge window | no |
 | **Avalanche ICM** | n/a: C-Chain and Avalanche L1s, not Ethereum | n/a | **seconds, any-to-any**, which is the one mesh in this table |
 
-**The asymmetry looks fatal and mostly is not.** Each account is one-directional by
+**The asymmetry looks fatal and mostly is not.** Each conduit is one-directional by
 construction: its home sends and every destination is a leaf, and the only return leg is the
 receiver report. That report fires only where `addressesDiverge`, which is false on both
-rollup stacks, since they use Ethereum's CREATE2 formula and the home computes an account's
-address before the first message. So an account homed on Ethereum reaching OP Stack and
+rollup stacks, since they use Ethereum's CREATE2 formula and the home computes a conduit's
+address before the first message. So a conduit homed on Ethereum reaching OP Stack and
 Arbitrum chains over their canonical bridges never needs the slow direction at all.
 
-**It is fatal the other way round.** An account homed on an L2 that reaches its L1 over
+**It is fatal the other way round.** A conduit homed on an L2 that reaches its L1 over
 the canonical bridge puts every bootstrap and every payload through the seven-day window.
-Any chain can be an account's home, so nothing refuses this; it is a cost to state wherever
+Any chain can be a conduit's home, so nothing refuses this; it is a cost to state wherever
 an L2 is offered as a home, and a reason to reach the L1 over a mesh provider instead.
 
 ### Address aliasing, which is the concrete trap
@@ -269,7 +269,7 @@ CREATE2 via Arachnid's factory, from 0x0  ->  0xb2e363e5…da1e80a1   (0x0 has r
 The factory is a contract doing the create, and it fails or succeeds purely on who
 originated the call. So allowlisting this protocol's transceiver buys nothing.
 
-**What that costs is bootstrap, and only bootstrap.** An account is created inside the
+**What that costs is bootstrap, and only bootstrap.** A conduit is created inside the
 inbound delivery callback, so `tx.origin` there is whoever submitted the delivery
 transaction: the provider's relayer or executor, not us and not the owner. On such a chain
 path B works only if that relayer is allowlisted, and
@@ -287,7 +287,7 @@ deliveries on both chains come from one signing EOA, and it holds no role on eit
 | DFK Chain | `None` | **`None`** |
 | Dexalot | `None` | **`None`** |
 
-**And no arbitrary account can fix that for itself.** Granting is Admin-only, and the
+**And no arbitrary conduit can fix that for itself.** Granting is Admin-only, and the
 precompile refuses everyone else by name:
 
 ```
@@ -318,7 +318,7 @@ that salt and initcode, which is the same check that settled Aurora.
 **Teleporter imposes the same-address property this protocol already relies on.**
 `receiveCrossChainMessage` requires `warpMessage.originSenderAddress == address(this)`: the
 messenger will only accept a message from a messenger at its own address on the source
-chain. That is the account-is-its-own-peer rule one layer down, arrived at independently,
+chain. That is the conduit-is-its-own-peer rule one layer down, arrived at independently,
 and it means an ICM binding inherits a deployment constraint the protocol was going to
 impose anyway.
 
@@ -339,14 +339,14 @@ salt deadbeef…   0x70e2fc1339425ad82497b92828ac23248b804297
 So Aurora is plain `LzTransceiver` and nothing else: stock solc, so
 `CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR itself is a
 different question and not this one: `ChainType.NEAR` is for a Rust receiver addressed by a
-named or implicit account, and unlike Move it is not blocked on dispatch, since
+named or implicit conduit, and unlike Move it is not blocked on dispatch, since
 `Promise::function_call` takes the method name as a runtime string.
 
 **The same trick does not settle Tron.** Arachnid's factory relies on a pre-signed Ethereum
 transaction and is absent from both Tron mainnet and Shasta, so there is no live CREATE2
 factory to `eth_call`. java-tron's source settles the formula instead
 ([CHECKS §1](../contracts/evm/deploy/CHECKS.md#1-contracts-land-where-the-protocol-expects));
-the account bytecode hash still needs a funded deployment.
+the conduit bytecode hash still needs a funded deployment.
 
 **Avalanche is the odd one and the interesting one.** ICM is a real mesh, sub-minute and
 bidirectional, which is a better shape than anything else here; it just cannot reach
@@ -403,7 +403,7 @@ route table existed to hold.
 | `attributes` | passed straight through |
 
 The inbound split is the useful part: `Erc7930.toChainIdentifier` already reduces an
-account envelope to a bare chain identifier, which is exactly the `route` the transceiver's
+conduit envelope to a bare chain identifier, which is exactly the `route` the transceiver's
 `chainKeyOfRoute` expects. `_authenticateOrigin` needs no override.
 
 ### What ERC-7786 gives up
@@ -432,7 +432,7 @@ audited, maintained, and one fewer library to own.
 
 Two things block a straight swap. It is a `draft-`, which OpenZeppelin explicitly excludes
 from its API stability guarantee and may change in a MINOR release, and this codebase freezes
-accounts against exact bytes. And `Erc7930.parseStrict` enforces strictness the registry
+conduits against exact bytes. And `Erc7930.parseStrict` enforces strictness the registry
 depends on, rejecting non-minimal `eip155` references and trailing bytes; whether `parseV1`
 matches has not been checked. Neither is a reason not to do it, both are reasons it is its
 own task with its own vectors.
@@ -776,7 +776,7 @@ separately, by calling `xDomainMessageSender()` on the messenger (`msg.sender` f
 called contract's own perspective) during the execution `relayMessage` triggers. A binding
 must call this itself and must not accept a "sender" as part of `message`'s own payload; an
 entry point that trusted a self-declared sender argument would let anyone impersonate this
-account's transmitter simply by encoding a claim to that effect in `message`, since nothing
+conduit's transmitter simply by encoding a claim to that effect in `message`, since nothing
 about `sendMessage` checks who is calling it or what they claim. `_onMessageFrom` still
 does the real comparison against `sourceTransmitter`; what changes is where the value being
 compared comes from.
@@ -841,14 +841,14 @@ abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradea
 **One constructor argument, and it does not matter.** It is on the *implementation*, and an
 implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
 initcode, so `CrossProxy` stays argument-free and no derived address moves. The endpoint
-being an `immutable` is correct rather than merely tolerable: every account on a chain uses
+being an `immutable` is correct rather than merely tolerable: every conduit on a chain uses
 the same endpoint, which is exactly what an implementation-level immutable expresses.
 
 **It fits our layout without collisions.** `OAppCoreUpgradeable` keeps its peer mapping in
 ERC-7201 namespaced storage (`OAPP_CORE_STORAGE_LOCATION`), as do `OAppOptionsType3`,
-`PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `accountSalt`,
+`PreCrime`, and the simulator. So it cannot collide with `sourceTransmitter`, `conduitSalt`,
 or the approval map however our layout changes, which also removes the storage-gap
-question for accounts specifically.
+question for conduits specifically.
 
 **`Ownable` is deliberately left uninitialized.** The package says so in a comment: *"Ownable
 is not initialized here on purpose. It should be initialized in the child contract to
@@ -867,10 +867,10 @@ back out of it, rather than out of a route lookup.
 | --- | --- |
 | `_sendMessage(recipient, payload, attributes)` | `endpoint.send{value}(MessagingParams(eid, peer, payload, options, false), refund)` through the linked `LzMessage.send`, not `_lzSend`, whose `_payNative` requires `msg.value` to equal the fee (#55): `eid` from the binding's own chainKey→eid table keyed on `ChainKey.fromIdentifier(recipient)`, `options` decoded from `attributes`, `refund` from `_refundTo()` |
 | `_quoteMessage(recipient, payload, attributes)` | `endpoint.quote(MessagingParams(...), address(this)).nativeFee`, over the same `eid` and `options` the send resolves |
-| `GATEWAY_ROLE` | granted to `address(endpoint)` in the account's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
+| `GATEWAY_ROLE` | granted to `address(endpoint)` in the conduit's initializer, or to whatever routes `lzReceive` into `receiveMessage` |
 | `_onMessage(bytes payload)` | reached through `receiveMessage`, which `_lzReceive` calls |
 | `_onInbound(route, sender, message)` | called from `_lzReceive` on a transceiver, with `route` the stored chain identifier for `origin.srcEid` and `sender` narrowed per R4.2 |
-| `_accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the account locks in the same call |
+| `_conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | must build `__OApp_init(delegate)` **and** the peer, since the conduit locks in the same call |
 | the owner / `_checkOwner` | `TransceiverBase` is `OwnableUpgradeable`, and OApp brings OpenZeppelin's own, so the two are one owner rather than two authorities. A binding must not add a third |
 | `GATEWAY_ROLE` | named at initialization, ungrantable afterwards; the endpoint goes in the `gateways` array |
 
@@ -888,12 +888,12 @@ destination, read from the table rather than computed.
 
 - **`__OAppCore_init` calls `endpoint.setDelegate(_delegate)`, and the delegate is
   `address(this)`.** Settled: inside `upgradeInitializeAndLock`'s delegatecall that is the
-  account, so each account is its own delegate and no other party can reconfigure it (a
+  conduit, so each conduit is its own delegate and no other party can reconfigure it (a
   transmitter's owner may name itself delegate; a receiver has no owner). The
-  cost is that every account creation touches the endpoint, which is real gas on the
+  cost is that every conduit creation touches the endpoint, which is real gas on the
   bootstrap path and the concrete form of "peers and any send-side security configuration
   are per-user rather than shared". Recorded as R6.4 in the spec, which generalises it: any
-  provider-side authority over an account is the account.
+  provider-side authority over a conduit is the conduit.
 - **OApp authenticates inbound before our code runs.** `lzReceive` does
   `if (address(endpoint) != msg.sender) revert OnlyEndpoint(...)` then
   `if (_getPeerOrRevert(_origin.srcEid) != _origin.sender) revert OnlyPeer(...)`. That is
@@ -904,7 +904,7 @@ destination, read from the table rather than computed.
 ## 9. LayerZero OFT as a carrier
 
 The `layerzero-oft` binding, held to [`layerzero-oft-spec.md`](layerzero-oft-spec.md) and
-built as `LzOftAccountFactory`, `LzOftTransmitter`, `LzOftReceiver` and `LzOftMessage` in
+built as `LzOftConduitFactory`, `LzOftTransmitter`, `LzOftReceiver` and `LzOftMessage` in
 `contracts/evm/src/protocols/layerzero/`. It reads, and vendors, only `IOFT`,
 `OFTComposeMsgCodec` and `ILayerZeroComposer` (§8).
 
@@ -925,7 +925,7 @@ vendored: nothing here compiles against them.
 - `sendCompose` keys the queue by `msg.sender`, so the `_from` `lzCompose` reports is whoever
   queued it, and any contract can queue a compose for any target. A destination therefore has
   to know which `_from` is the real OFT before it trusts a first compose, which is why an
-  account's destinations are bound into its address.
+  conduit's destinations are bound into its address.
 - `lzCompose` writes `RECEIVED_MESSAGE_HASH` before it calls the composer, so a success is
   final and a revert rolls the mark back (P7, R3.5).
 - `msgInspector` runs only on the send side, in `_buildMsgAndOptions`.
@@ -942,7 +942,7 @@ vendored: nothing here compiles against them.
 The first design kept LayerZero's transceiver for the bootstrap. It would have put the
 governor's peering and DVN pins on the path that tells a destination which OFT to trust, so
 a weak pin there could stand up a receiver bound to the wrong OFT. Without a transceiver the
-account trusts only its own OFT's verification, the endpoint, and immutable code, at the
+conduit trusts only its own OFT's verification, the endpoint, and immutable code, at the
 cost of a destination set fixed at creation. An OFT whose address were the same on every
 chain could avoid that cost, but no assumption here relies on one.
 
@@ -968,9 +968,9 @@ Ethereum with the default 1,000,000 lzCompose gas quoted 7.08 FRAX at Fraxtal bl
 
 Computed, not measured. Against the plain binding a message carries 72 more bytes
 (`sendTo`, `amountSD`, `composeFrom`) and pays for a second executor step. A bootstrap adds
-192 bytes of account fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
+192 bytes of conduit fields, `ceil(log2 n)` proof words for `n` destinations and 96 bytes of
 offset and length words, against the plain binding's envelope. Creation stores two slots per
-destination and two for the account. The destination's gas is measured: a bootstrap through
+destination and two for the conduit. The destination's gas is measured: a bootstrap through
 the factory costs 651,291 to 659,121 and a payload 34,246 against mocks, and 649,133 and
 42,138 through frxUSD into Ethereum
 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)).
@@ -997,7 +997,7 @@ transceiver shape at all: there is no message delivered and no gateway to authen
 since a Chain-Signatures transaction is broadcast directly by whoever holds the signature
 and is indistinguishable on the destination chain from any other EOA's transaction.
 Adopting it would mean deciding how a destination chain trusts a NEAR-MPC-derived address
-as "the account" at all: an architecture question upstream of "add a binding," not a peer
+as "the conduit" at all: an architecture question upstream of "add a binding," not a peer
 of the five in `provider-research.md`.
 
 **Not required by, and must not block, the seven bindings that exist.** Recorded here

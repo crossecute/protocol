@@ -16,7 +16,7 @@ abstract contract Executor {
 
     /// @notice Call policy. The default allows everything.
     ///
-    /// @dev Open by default: accounts are full-power and answer to one owner, like a Safe, and
+    /// @dev Open by default: conduits are full-power and answer to one owner, like a Safe, and
     ///      anything that can deliver an authorized payload could forge a commitment as easily
     ///      as a call. Failing closed would revert every payload, the bootstrap payload
     ///      included, until overridden.

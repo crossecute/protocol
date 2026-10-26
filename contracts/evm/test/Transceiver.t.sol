@@ -75,7 +75,7 @@ contract Sym is SymHarness {
     }
 
     /// @dev A diverging chain on Forge's EVM, standing in for the zkSync and Tron variants,
-    ///      whose account creation fails closed here.
+    ///      whose conduit creation fails closed here.
     function initializeDiverging(TransceiverConfig memory c, bool diverges) external initializer {
         __TransceiverBase_init(c, diverges);
     }
@@ -188,9 +188,9 @@ contract TransceiverTest is Test {
 
     /* =================================== identity ================================= */
 
-    /// @dev The owner is the msig's own account on each chain, derived rather than typed: its
+    /// @dev The owner is the msig's own conduit on each chain, derived rather than typed: its
     ///      transmitter at home, and at that same address on every parity chain.
-    function test_theOwnerIsTheMsigsOwnAccount() public {
+    function test_theOwnerIsTheMsigsOwnConduit() public {
         uint256 world = vm.snapshotState();
         Sym eth = _chain(ETH, false);
         address onEth = eth.owner();
@@ -201,14 +201,14 @@ contract TransceiverTest is Test {
         assertEq(base.owner(), onEth, "and its receiver on a parity chain, at the same address");
     }
 
-    function test_anAccountHomedHereGetsATransmitter() public {
+    function test_aConduitHomedHereGetsATransmitter() public {
         Sym t = _chain(BASE, false);
 
         vm.prank(alice);
-        address account = t.createTransmitter(SALT);
+        address conduit = t.createTransmitter(SALT);
 
-        assertEq(account, ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)));
-        assertEq(RecordingTransmitter(account).owner(), alice, "transmitter logic, owned by its caller");
+        assertEq(conduit, ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)));
+        assertEq(RecordingTransmitter(conduit).owner(), alice, "transmitter logic, owned by its caller");
     }
 
     /// @dev #28: a chain other than the governor's home has no owner until a bootstrap from
@@ -266,7 +266,7 @@ contract TransceiverTest is Test {
 
     /* ============================ a bootstrap end to end =========================== */
 
-    /// @dev The whole path between two transceivers: an account homed on Base
+    /// @dev The whole path between two transceivers: a conduit homed on Base
     ///      bootstraps Ethereum, and its receiver there lands on its transmitter's address and
     ///      answers to it.
     function test_aBootstrapCrossesBetweenTwoChains() public {
@@ -281,14 +281,14 @@ contract TransceiverTest is Test {
 
         bytes memory sent = base.sentPayload();
         assertEq(base.sentRecipient(), Erc7930.encodeEvm(ETH, address(base)), "to the transceiver on Ethereum");
-        assertEq(base.sentRefundTo(), transmitter, "a bootstrap's overpayment refunds the account");
+        assertEq(base.sentRefundTo(), transmitter, "a bootstrap's overpayment refunds the conduit");
 
         vm.revertToState(world);
         Sym eth = _chain(ETH, false);
         assertEq(address(eth), address(base), "one address on both chains");
         eth.arrive(_route(BASE), abi.encodePacked(address(eth)), sent);
 
-        address receiver = ext(address(eth)).predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(eth)).predictCrossConduit(alice, SALT, _key(BASE));
         assertEq(receiver, transmitter, "the receiver sits on its transmitter's address");
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
@@ -309,7 +309,7 @@ contract TransceiverTest is Test {
         assertEq(quote, expected.length, "the quote prices those bytes");
     }
 
-    /// @dev This chain is never a destination: an account homed here is its transmitter.
+    /// @dev This chain is never a destination: a conduit homed here is its transmitter.
     function test_aBootstrapToThisChainIsRefused() public {
         Sym t = _chain(BASE, false);
         address transmitter = ext(address(t)).predictTransmitter(alice, SALT);
@@ -324,12 +324,12 @@ contract TransceiverTest is Test {
     function test_aTransmitterCannotBootstrapItsOwnChain() public {
         Sym t = _chainWith(BASE, false, address(new MockTransmitter()));
         vm.prank(alice);
-        MockTransmitter account = MockTransmitter(payable(t.createTransmitter(SALT)));
-        vm.deal(address(account), 1 ether);
+        MockTransmitter conduit = MockTransmitter(payable(t.createTransmitter(SALT)));
+        vm.deal(address(conduit), 1 ether);
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.IsLocalChain.selector, _key(BASE)));
-        account.bootstrap(BASE, _calls(), new bytes[](0));
+        conduit.bootstrap(BASE, _calls(), new bytes[](0));
     }
 
     function test_theElementsFormIsRefusedOnAnEvmChain() public {
@@ -355,7 +355,7 @@ contract TransceiverTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverCore.ParityBroken.selector,
-                ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)),
+                ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
                 wrong
             )
         );
@@ -364,16 +364,16 @@ contract TransceiverTest is Test {
 
     /// @dev The case the check exists for: an origin whose provider id is mapped to the wrong
     ///      chain. The carried transmitter is right for its real home, but the receiver lands
-    ///      under the mapped one, so every account from there would be unreachable.
+    ///      under the mapped one, so every conduit from there would be unreachable.
     function test_anOriginMappedToTheWrongChainRefusesItsFirstBootstrap() public {
         Sym t = _chain(ETH, false);
-        address realTransmitter = ext(address(t)).predictCrossAccount(alice, SALT, _key(10));
+        address realTransmitter = ext(address(t)).predictCrossConduit(alice, SALT, _key(10));
         bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(realTransmitter), _calls());
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverCore.ParityBroken.selector,
-                ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE)),
+                ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
                 realTransmitter
             )
         );
@@ -389,7 +389,7 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(ZK), abi.encodePacked(zkTransceiver), m);
 
-        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(ZK));
+        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(ZK));
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), zkTransmitter);
     }
 
@@ -404,13 +404,13 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
 
-        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE));
         assertEq(t.sentCount(), 1, "one report");
         assertEq(t.sentRecipient(), Erc7930.encodeEvm(BASE, address(t)), "to the home");
         assertEq(t.sentPayload(), ext(address(t)).reportPayload(alice, SALT, receiver));
         assertEq(t.sentRefundTo(), address(t), "the report's overpayment returns to the float");
 
-        // Outside a report, a bootstrap's overpayment refunds the account again.
+        // Outside a report, a bootstrap's overpayment refunds the conduit again.
         address transmitter = ext(address(t)).predictTransmitter(alice, SALT);
         uint256 quote = t.quoteBootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
         vm.deal(transmitter, quote);
@@ -436,7 +436,7 @@ contract TransceiverTest is Test {
         vm.prank(t.owner());
         ext(address(t)).setBootstrapFee(_key(BASE), fee);
 
-        address receiver = ext(address(t)).predictCrossAccount(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE));
         bytes32 nestedSalt = keccak256("nested");
         address nested = ext(address(t)).predictTransmitter(receiver, nestedSalt);
         uint256 paid = 0.05 ether;
@@ -471,17 +471,17 @@ contract TransceiverTest is Test {
         assertEq(report.refundTo, address(t), "refunded to the float");
     }
 
-    /// @dev The same contract receives reports for the accounts homed here.
-    function test_aReportReachesTheAccountHomedHere() public {
+    /// @dev The same contract receives reports for the conduits homed here.
+    function test_aReportReachesTheConduitHomedHere() public {
         Sym t = _chain(ETH, false);
         vm.prank(alice);
-        address account = t.createTransmitter(SALT);
+        address conduit = t.createTransmitter(SALT);
 
         bytes memory zkReceiver = Erc7930.encodeEvm(ZK, address(0x2CBEEF));
         t.arrive(_route(ZK), abi.encodePacked(zkTransceiver), Envelope.encodeReceiverReport(alice, SALT, zkReceiver));
 
-        assertEq(RecordingTransmitter(account).reportedChain(), _key(ZK));
-        assertEq(RecordingTransmitter(account).reportedReceiver(), abi.encodePacked(address(0x2CBEEF)));
+        assertEq(RecordingTransmitter(conduit).reportedChain(), _key(ZK));
+        assertEq(RecordingTransmitter(conduit).reportedReceiver(), abi.encodePacked(address(0x2CBEEF)));
     }
 
     /* ================================== the float ================================= */
@@ -506,7 +506,7 @@ contract TransceiverTest is Test {
             transceiverConfig(msig, address(new RecordingTransmitter()), address(0), address(1));
 
         Sym fresh = new Sym();
-        vm.expectRevert(TransceiverCore.NoAccountImplementation.selector);
+        vm.expectRevert(TransceiverCore.NoConduitImplementation.selector);
         fresh.initialize(c);
 
         c.receiverImplementation = address(new Rcv());

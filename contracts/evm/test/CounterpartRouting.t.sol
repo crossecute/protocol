@@ -141,7 +141,7 @@ contract CounterpartRoutingTest is Test {
     ///      address derivation is Pedersen and cannot run on the EVM at any price, so the
     ///      destination has to create the receiver and report it back. Which chains are like
     ///      that is a property of the chain and belongs in this directory; where a given
-    ///      account's receiver landed is a property of that account and lives on its
+    ///      conduit's receiver landed is a property of that conduit and lives on its
     ///      transmitter, which is also the only contract that reads it. The round trip is
     ///      covered in `ReceiverReport.t.sol`.
     function test_theRegistrySaysWhichChainsReport() public {
@@ -227,7 +227,7 @@ contract CounterpartRoutingTest is Test {
     }
 
     /// @dev The default is already in use the moment the chain is graded, so a counterpart
-    ///      there may only restate it. Any other address would repoint a lane accounts already
+    ///      there may only restate it. Any other address would repoint a lane conduits already
     ///      derive from, and every bootstrap through it would fail `ParityBroken`. A chain where
     ///      parity does not hold is graded `Unique` and declares its counterpart.
     function test_aPredeterminedDefaultCannotBeRepointed() public {

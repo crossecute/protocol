@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/account/CrossProxyDeployer.sol";
+import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/conduit/CrossProxyDeployer.sol";
 
 /// @dev Shared by every deploy, in tests and on chain, so a check written here holds in both.
 ///      Forge runs both, so the cheatcode address is present to read proxy slots.
@@ -46,7 +46,7 @@ function crossProxyDeployer() returns (CrossProxyDeployer) {
 
 /// @notice Deploy a `CrossProxy` for `deployedBy` at `salt`, armed with `implementation` and
 ///         `data` and locked in the same call.
-/// @param deployedBy The account making the `deploy` call: the test contract, or the
+/// @param deployedBy The conduit making the `deploy` call: the test contract, or the
 ///        broadcaster. It is hashed into the address, so naming the wrong one fails here.
 function deployCrossProxy(address deployedBy, bytes32 salt, address implementation, bytes memory data)
     returns (address proxy)

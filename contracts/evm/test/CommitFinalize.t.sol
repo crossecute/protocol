@@ -7,7 +7,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {ICrossProxy} from "src/account/CrossProxy.sol";
+import {ICrossProxy} from "src/conduit/CrossProxy.sol";
 import {deployTransceiver, crossProxyDeployer} from "test/DeployCrossProxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -29,7 +29,7 @@ import {
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {CrossAccounts} from "src/account/CrossAccounts.sol";
+import {CrossConduits} from "src/conduit/CrossConduits.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is AnyGatewayReceiver {
@@ -103,9 +103,9 @@ contract MockTransceiver is AnyGatewayTransceiver {
 
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches
     ///      `_bootstrapInbound` directly. The carried transmitter sits at the receiver's own
-    ///      address, as it does for an account homed on a parity chain.
+    ///      address, as it does for a conduit homed on a parity chain.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(transmitter, bytes32(0), home(), _predictCrossAccount(transmitter, bytes32(0), home()), calls);
+        _bootstrapInbound(transmitter, bytes32(0), home(), _predictCrossConduit(transmitter, bytes32(0), home()), calls);
     }
 }
 
@@ -181,7 +181,7 @@ contract CommitFinalizeTest is Test {
     ///      ways: inside the bootstrap payload as a self-call (see `_deferred`), or from
     ///      the source transmitter directly. This uses the second, because bootstrap
     ///      happens once per transmitter and most of these tests need several approvals.
-    /// @dev The peer is the account address, not the owner. An owner's transmitter and
+    /// @dev The peer is the conduit address, not the owner. An owner's transmitter and
     ///      their receivers share one address, so the contract this receiver answers to
     ///      sits at exactly the address the receiver occupies here.
     function _arrive(address owner_, Call[] memory calls) internal returns (MockReceiver r) {
@@ -193,7 +193,7 @@ contract CommitFinalizeTest is Test {
     /// @dev Stand the receiver up if it does not exist. Bootstrap is once per transmitter
     ///      and refuses a second, so this is what repeat arrivals go through.
     function _bootstrapped(MockTransceiver t_, address tx_) internal returns (MockReceiver r) {
-        address predicted = ext(address(t_)).predictCrossAccount(tx_, bytes32(0), home());
+        address predicted = ext(address(t_)).predictCrossConduit(tx_, bytes32(0), home());
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -355,24 +355,24 @@ contract CommitFinalizeTest is Test {
 
     /// @dev There is no public creation path for a receiver. One exists because a bootstrap
     ///      message arrived, and nothing else. An open one would let anyone deploy an owner's
-    ///      account empty, one transaction ahead of their bootstrap, and permanently deny it:
+    ///      conduit empty, one transaction ahead of their bootstrap, and permanently deny it:
     ///      `CrossProxy` arms exactly once. `createTransmitter` creates only the caller's own
-    ///      account homed here.
+    ///      conduit homed here.
     function test_thereIsNoPublicReceiverCreationPath() public {
         (bool a,) = address(t).call(abi.encodeWithSignature("createReceiver(address)", transmitter));
         assertFalse(a, "no createReceiver(address)");
     }
 
-    /// @dev An account is created once. A second bootstrap for the same owner reverts
+    /// @dev A conduit is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
-    function test_anOwnerGetsExactlyOneAccount() public {
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+    function test_anOwnerGetsExactlyOneConduit() public {
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")), "the bootstrap payload landed");
 
         vm.expectRevert(
-            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
+            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), predicted)
         );
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
     }
@@ -391,7 +391,7 @@ contract CommitFinalizeTest is Test {
             );
         assertFalse(ok, "no bootstrapInbound on the ABI");
         assertEq(
-            ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home()).code.length,
+            ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home()).code.length,
             0,
             "and nothing was created"
         );
@@ -405,7 +405,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver r = _arrive(transmitter, calls);
 
         vm.expectRevert(
-            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), address(r))
+            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), address(r))
         );
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
     }
@@ -416,7 +416,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -433,7 +433,7 @@ contract CommitFinalizeTest is Test {
     ///      so the address does not move between payloads: it is knowable before the first
     ///      message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -450,8 +450,8 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public view {
         assertTrue(
-            ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home())
-                != ext(address(t)).predictCrossAccount(address(0xBEEF), bytes32(0), home()),
+            ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())
+                != ext(address(t)).predictCrossConduit(address(0xBEEF), bytes32(0), home()),
             "transmitter must vary the address"
         );
     }
@@ -508,7 +508,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home())));
+        MockReceiver r = MockReceiver(payable(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())));
 
         assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -530,7 +530,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = ext(address(rt)).predictCrossAccount(transmitter, bytes32(0), home());
+        address addr = ext(address(rt)).predictCrossConduit(transmitter, bytes32(0), home());
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -561,7 +561,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -569,7 +569,7 @@ contract CommitFinalizeTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] != TransceiverCore.CrossAccountCreated.selector) continue;
+            if (logs[i].topics[0] != TransceiverCore.CrossConduitCreated.selector) continue;
             found = true;
             assertEq(address(uint160(uint256(logs[i].topics[1]))), transmitter);
             assertEq(address(uint160(uint256(logs[i].topics[2]))), predicted);
@@ -581,15 +581,15 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with: a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
 
         vm.expectEmit(true, true, false, true, address(t));
-        emit TransceiverCore.CrossAccountCreated(transmitter, predicted, bytes32(0), home());
+        emit TransceiverCore.CrossConduitCreated(transmitter, predicted, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
         vm.expectRevert(
-            abi.encodeWithSelector(CrossAccounts.CrossAccountExists.selector, transmitter, bytes32(0), predicted)
+            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), predicted)
         );
         t.inbound(transmitter, _deferred(predicted, hashOf(_otherCalls())));
     }
@@ -608,7 +608,7 @@ contract CommitFinalizeTest is Test {
     ///      half-configured transceiver, it is one that should never have been deployed.
     function test_receiverImplementationIsRequiredAtInitialization() public {
         MockTransceiver bare = new MockTransceiver();
-        vm.expectRevert(TransceiverCore.NoAccountImplementation.selector);
+        vm.expectRevert(TransceiverCore.NoConduitImplementation.selector);
         bare.initialize(msig, address(0));
     }
 
@@ -701,8 +701,8 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev A transceiver's transports are fixed in both directions, which is the asymmetry
-    ///      against an account. It is shared by every owner on its chain, so dropping a
-    ///      gateway here would take every account's bootstrap path with it; an account's is
+    ///      against a conduit. It is shared by every owner on its chain, so dropping a
+    ///      gateway here would take every conduit's bootstrap path with it; a conduit's is
     ///      one owner's to drop, and `ReceiverBase.revokeGateway` is where that lives.
     function test_aTransceiverCanNeitherAddNorDropAGateway() public {
         MsigTransceiver m = _msigTransceiver();
@@ -755,14 +755,14 @@ contract CommitFinalizeTest is Test {
 
     /* ======================== isolation between senders ======================= */
 
-    /// @dev An account's approvals live in the account, and isolation is structural. There
+    /// @dev A conduit's approvals live in the conduit, and isolation is structural. There
     ///      is exactly one receiver per transmitter, because the CREATE2 salt is the
     ///      transmitter, so there is no shared slot and no per-sender bookkeeping to get
     ///      wrong. The transceiver holds no approvals at all.
-    function test_anAccountsApprovalsLiveInTheAccount() public {
+    function test_aConduitsApprovalsLiveInTheConduit() public {
         t.inbound(
             transmitter,
-            _deferred(ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home()), hashOf(_calls()))
+            _deferred(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home()), hashOf(_calls()))
         );
 
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("pendingOf(address)", transmitter));
@@ -771,7 +771,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "and no approval map of its own");
 
         assertTrue(
-            MockReceiver(payable(ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home())))
+            MockReceiver(payable(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())))
                 .isCommitted(hashOf(_calls())),
             "the approval lives with the sender it belongs to"
         );
@@ -798,7 +798,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = ext(address(rt)).predictCrossAccount(transmitter, bytes32(0), home());
+        address poisoned = ext(address(rt)).predictCrossConduit(transmitter, bytes32(0), home());
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -813,7 +813,7 @@ contract CommitFinalizeTest is Test {
 
         // The other sender is entirely unaffected, now and repeatedly.
         RevertingReceiver r2 =
-            RevertingReceiver(payable(ext(address(rt)).predictCrossAccount(transmitter2, bytes32(0), home())));
+            RevertingReceiver(payable(ext(address(rt)).predictCrossConduit(transmitter2, bytes32(0), home())));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 
@@ -865,7 +865,7 @@ contract CommitFinalizeTest is Test {
     /// @dev A bootstrap is never deferred: the receiver is created and its payload run in the
     ///      delivery that carries them. A transceiver therefore holds no approvals and runs no
     ///      payload, so no origin can approve, cancel, or finalize anything on the contract
-    ///      every account's bootstrap goes through. Absence beats a gate: there is no function
+    ///      every conduit's bootstrap goes through. Absence beats a gate: there is no function
     ///      a future predicate change could expose.
     function test_aTransceiverHoldsNoApprovalsAndRunsNoPayload() public {
         bytes[] memory absent = new bytes[](6);
@@ -892,7 +892,7 @@ contract CommitFinalizeTest is Test {
     ///      receiver and runs a payload that approves a hash on the receiver itself, and
     ///      anyone finalizes it there later.
     function test_aDeferredFirstPayloadIsCommittedOnTheReceiver() public {
-        address predicted = ext(address(t)).predictCrossAccount(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
         Call[] memory later = _calls();
 
         t.inbound(transmitter, _deferred(predicted, hashOf(later)));

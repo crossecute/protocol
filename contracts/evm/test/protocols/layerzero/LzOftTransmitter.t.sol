@@ -5,16 +5,16 @@ import {Test} from "forge-std/Test.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {ILzOftAccountFactory} from "src/protocols/layerzero/ILzOftAccountFactory.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {deployAccount} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployCrossProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
-/// @dev The factory's account-facing surface, with one destination per chain the test sets.
-contract MockOftAccountFactory is ILzOftAccountFactory {
+/// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
+contract MockOftConduitFactory is ILzOftConduitFactory {
     struct Route {
         uint32 eid;
         address dstOft;
@@ -45,7 +45,7 @@ contract MockOftAccountFactory is ILzOftAccountFactory {
         return false;
     }
 
-    /// @dev Parity: the receiver sits at the calling account's address.
+    /// @dev Parity: the receiver sits at the calling conduit's address.
     function predictReceiver(bytes32, address, bytes32) external view returns (bytes memory) {
         return abi.encodePacked(msg.sender);
     }
@@ -53,8 +53,8 @@ contract MockOftAccountFactory is ILzOftAccountFactory {
 
 contract LzOftTransmitterTest is Test {
     MockOft oft;
-    MockOftAccountFactory factory;
-    LzOftTransmitter account;
+    MockOftConduitFactory factory;
+    LzOftTransmitter conduit;
 
     address owner = address(0xA11CE);
     bytes32 constant SALT = keccak256("acct");
@@ -66,20 +66,20 @@ contract LzOftTransmitterTest is Test {
     function setUp() public {
         oft = new MockOft(address(0xE9));
         oft.setPeer(DEST_EID, DST_OFT);
-        factory = new MockOftAccountFactory();
+        factory = new MockOftConduitFactory();
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
         factory.setRoute(destKey, DEST_EID, DST_OFT, proof);
 
-        account = LzOftTransmitter(
-            payable(deployAccount(
+        conduit = LzOftTransmitter(
+            payable(deployConduit(
                     address(new LzOftTransmitter()),
                     abi.encodeWithSignature(
                         "initialize(address,address,bytes32,address)", owner, address(factory), SALT, address(oft)
                     )
                 ))
         );
-        vm.deal(address(account), 1 ether);
+        vm.deal(address(conduit), 1 ether);
     }
 
     function _calls() internal pure returns (Call[] memory calls) {
@@ -89,19 +89,19 @@ contract LzOftTransmitterTest is Test {
 
     function _bootstrap() internal {
         vm.prank(owner);
-        account.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(DEST, _calls(), new bytes[](0));
     }
 
     /* ================================= bootstrap =============================== */
 
-    /// @dev The account is the `send` caller, so the destination reads it as `composeFrom`.
-    function test_theBootstrapGoesThroughTheHomeOftFromTheAccount() public {
-        uint256 quote = account.quoteBootstrap(DEST, _calls(), new bytes[](0));
+    /// @dev The conduit is the `send` caller, so the destination reads it as `composeFrom`.
+    function test_theBootstrapGoesThroughTheHomeOftFromTheConduit() public {
+        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
         _bootstrap();
 
         assertEq(oft.sentLength(), 1);
         MockOft.Sent memory s = oft.sent(0);
-        assertEq(s.from, address(account), "the account calls send");
+        assertEq(s.from, address(conduit), "the conduit calls send");
         assertEq(s.value, quote, "pays its quote");
         assertEq(s.param.dstEid, DEST_EID);
         assertEq(s.param.to, bytes32(uint256(uint160(address(factory)))), "to the factory");
@@ -116,12 +116,12 @@ contract LzOftTransmitterTest is Test {
                 owner, SALT, ChainKey.local(), factory.HOME_EID(), address(oft), factory.destRoot(), proof, _calls()
             )
         );
-        assertEq(s.param.composeMsg, expected, "the fields the destination derives the account from");
+        assertEq(s.param.composeMsg, expected, "the fields the destination derives the conduit from");
 
-        (uint32 eid, address dstOft) = account.destinationOf(destKey);
+        (uint32 eid, address dstOft) = conduit.destinationOf(destKey);
         assertEq(eid, DEST_EID);
         assertEq(dstOft, DST_OFT);
-        assertTrue(account.isBootstrapped(destKey));
+        assertTrue(conduit.isBootstrapped(destKey));
     }
 
     function test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote() public {
@@ -133,34 +133,34 @@ contract LzOftTransmitterTest is Test {
             bytes32(uint256(uint160(address(0xBAD))))
         );
         vm.expectRevert(err);
-        account.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
         vm.prank(owner);
         vm.expectRevert(err);
-        account.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(DEST, _calls(), new bytes[](0));
     }
 
     function test_aChainTheFactoryDoesNotHoldIsRefused() public {
         bytes32 other = ChainKey.forEvm(10);
-        vm.expectRevert(abi.encodeWithSelector(MockOftAccountFactory.NotInRoot.selector, other));
-        account.quoteBootstrap(10, _calls(), new bytes[](0));
+        vm.expectRevert(abi.encodeWithSelector(MockOftConduitFactory.NotInRoot.selector, other));
+        conduit.quoteBootstrap(10, _calls(), new bytes[](0));
     }
 
     /* ================================== Path A ================================= */
 
     function test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose() public {
         _bootstrap();
-        bytes memory recipient = account.recipientOn(DEST);
+        bytes memory recipient = conduit.recipientOn(DEST);
         bytes memory payload = Payload.encodeCalls(_calls());
 
-        uint256 quote = account.quoteMessage(recipient, payload, new bytes[](0));
+        uint256 quote = conduit.quoteMessage(recipient, payload, new bytes[](0));
         vm.prank(owner);
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
 
         MockOft.Sent memory s = oft.sent(1);
-        assertEq(s.from, address(account));
+        assertEq(s.from, address(conduit));
         assertEq(s.value, quote);
         assertEq(s.param.dstEid, DEST_EID);
-        assertEq(s.param.to, bytes32(uint256(uint160(address(account)))), "the receiver, at this address on parity");
+        assertEq(s.param.to, bytes32(uint256(uint160(address(conduit)))), "the receiver, at this address on parity");
         assertEq(s.param.composeMsg, payload);
         assertEq(s.param.extraOptions, LzMessage.defaultComposeOptions(DeliveryGas.PAYLOAD));
     }
@@ -169,14 +169,14 @@ contract LzOftTransmitterTest is Test {
     function test_aRePeerAfterTheBootstrapRefusesMessages() public {
         _bootstrap();
         oft.setPeer(DEST_EID, address(0xBAD));
-        bytes memory recipient = account.recipientOn(DEST);
+        bytes memory recipient = conduit.recipientOn(DEST);
         bytes memory payload = Payload.encodeCalls(_calls());
 
         vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
-        account.quoteMessage(recipient, payload, new bytes[](0));
+        conduit.quoteMessage(recipient, payload, new bytes[](0));
         vm.prank(owner);
         vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
-        account.sendMessage(recipient, payload, new bytes[](0));
+        conduit.sendMessage(recipient, payload, new bytes[](0));
     }
 
     /* ============================== initialization ============================= */
@@ -188,13 +188,13 @@ contract LzOftTransmitterTest is Test {
     }
 
     function test_theHomeOftIsSet() public view {
-        assertEq(account.homeOft(), address(oft));
-        assertEq(account.transceiver(), address(factory));
+        assertEq(conduit.homeOft(), address(oft));
+        assertEq(conduit.transceiver(), address(factory));
     }
 
     function test_onlyTheOptionsAttributeIsSupported() public view {
-        assertTrue(account.supportsAttribute(LzMessage.OPTIONS_ATTRIBUTE));
-        assertFalse(account.supportsAttribute(bytes4(keccak256("crossecute.lz-oft.amount"))));
-        assertFalse(account.supportsAttribute(bytes4(0xdeadbeef)));
+        assertTrue(conduit.supportsAttribute(LzMessage.OPTIONS_ATTRIBUTE));
+        assertFalse(conduit.supportsAttribute(bytes4(keccak256("crossecute.lz-oft.amount"))));
+        assertFalse(conduit.supportsAttribute(bytes4(0xdeadbeef)));
     }
 }

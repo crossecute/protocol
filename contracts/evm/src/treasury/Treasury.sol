@@ -14,7 +14,7 @@ interface IReportFloat {
 /// @notice Where a chain's bootstrap fees and report float land, and the one contract that can
 ///         move them out.
 ///
-/// @dev A destination, not an authority: it configures nothing and reaches no account. Its one
+/// @dev A destination, not an authority: it configures nothing and reaches no conduit. Its one
 ///      outgoing call pulls a transceiver's float, which can only come here. Its owner decides
 ///      where funds go next; each transceiver's write-once `treasury` decides where they arrive,
 ///      so a compromised withdrawal path cannot redirect fees at the source.

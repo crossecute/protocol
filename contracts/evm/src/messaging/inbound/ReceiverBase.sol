@@ -50,10 +50,10 @@ interface IReceiverInit is ICommitFinalize, ICancel, IExecute {
 ///      chooses their order. `cancel` takes the hash, so it cannot go stale like an index.
 ///
 /// @dev All state is storage, set in the single-shot `initialize`: immutables would live in
-///      the implementation and be shared by every account.
+///      the implementation and be shared by every conduit.
 ///
 /// @dev `Commitment.hashCalls` seeds with `ChainKey.local()`, so an array approved for one
-///      chain cannot be finalized on another where the same account address exists.
+///      chain cannot be finalized on another where the same conduit address exists.
 ///
 /// @dev Uses OZ 5.4's `ReentrancyGuardUpgradeable`, whose state is ERC-7201 namespaced; 5.4's
 ///      plain `ReentrancyGuard` would take a sequential slot. `__ReceiverBase_init` starts it
@@ -80,9 +80,9 @@ abstract contract ReceiverBase is
     /// The transceiver that created this receiver. Not `transceiver`, which on
     /// `TransmitterBase` means the other direction.
     address public parentTransceiver;
-    /// The account's home as the transport names an origin: the provider's id for it, or its
+    /// The conduit's home as the transport names an origin: the provider's id for it, or its
     /// chainKey over an ERC-7786 gateway. Set once, at initialization.
-    /// @dev The transmitter's address on another chain is not always this account's: where the
+    /// @dev The transmitter's address on another chain is not always this conduit's: where the
     ///      provider's transceiver is not yet deployed, its `deployedBy` can place code there.
     bytes32 public homeOrigin;
 
@@ -99,7 +99,7 @@ abstract contract ReceiverBase is
     error NotSourceTransmitter();
     error ZeroTransmitter();
     error ZeroHomeOrigin();
-    /// @dev The message came from a chain other than this account's home.
+    /// @dev The message came from a chain other than this conduit's home.
     error NotHomeOrigin(bytes32 origin);
     /// @dev No approval matches the array supplied.
     error CommitmentMismatch();
@@ -113,22 +113,22 @@ abstract contract ReceiverBase is
     ///      transmitter.
     error UnauthenticatedSender(bytes sender);
 
-    /// @notice Whether `account` is the transmitter this receiver was created for.
-    function isSourceTransmitter(address account) public view returns (bool) {
-        return account != address(0) && account == sourceTransmitter;
+    /// @notice Whether `conduit` is the transmitter this receiver was created for.
+    function isSourceTransmitter(address conduit) public view returns (bool) {
+        return conduit != address(0) && conduit == sourceTransmitter;
     }
 
     /// @notice Who may drive this receiver: its transmitter, and a payload it is executing.
     ///
     /// @dev Not the transceiver: after initialization it has no authority here, so one
-    ///      compromised transceiver cannot drive every account it created.
+    ///      compromised transceiver cannot drive every conduit it created.
     ///
     /// @dev `address(this)` lets a deferred payload call this receiver's own `commit`. Only
     ///      `_execute` can produce it, reachable from an authenticated inbound message or a
     ///      gated entry point. Stated explicitly because receiver and transmitter addresses
     ///      differ on zkSync and Tron.
-    function isAuthorizedCaller(address account) public view returns (bool) {
-        return account == address(this) || isSourceTransmitter(account);
+    function isAuthorizedCaller(address conduit) public view returns (bool) {
+        return conduit == address(this) || isSourceTransmitter(conduit);
     }
 
     modifier onlySourceTransmitter() {
@@ -138,7 +138,7 @@ abstract contract ReceiverBase is
 
     /* ================================ initializing ============================== */
 
-    /// @notice Bind this account to its transmitter and run the payload it was created for.
+    /// @notice Bind this conduit to its transmitter and run the payload it was created for.
     /// @dev For a binding that needs no setup of its own; one that does declares its own
     ///      `initialize` and calls `__ReceiverBase_init` last.
     function initialize(address sourceTransmitter_, bytes32 homeOrigin_, Call[] calldata calls)
@@ -306,7 +306,7 @@ abstract contract ReceiverBase is
     /// @dev Both checks are required on an `external` entry point: the gateway role says the
     ///      transport is trusted, and `_onMessageFrom` requires the sender to be this
     ///      receiver's own transmitter on its home, so a shared gateway cannot land one
-    ///      account's payload in another's receiver. Compared against the stored
+    ///      conduit's payload in another's receiver. Compared against the stored
     ///      `sourceTransmitter`, not `address(this)`, mirroring
     ///      `TransmitterBase._requireOwnRecipient`.
     ///
@@ -327,7 +327,7 @@ abstract contract ReceiverBase is
     }
 
     /// @notice Deliver `payload` if `origin` and `sender`, as the provider reported them, are
-    ///         this account's home and its transmitter there.
+    ///         this conduit's home and its transmitter there.
     /// @param origin The source chain in `homeOrigin`'s naming.
     function _onMessageFrom(bytes32 origin, address sender, bytes calldata payload) internal {
         if (origin != homeOrigin) revert NotHomeOrigin(origin);

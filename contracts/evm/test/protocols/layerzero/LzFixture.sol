@@ -88,7 +88,7 @@ abstract contract LzFixture is ProviderGasFixture {
         return LzDeploy.transceiver(d, uint32(homeId), address(0));
     }
 
-    /// @dev A receiver's peer is its transmitter on the account's home.
+    /// @dev A receiver's peer is its transmitter on the conduit's home.
     function _initializeReceiver(address sourceTransmitter, Call[] memory calls)
         internal
         pure
@@ -116,11 +116,11 @@ abstract contract LzFixture is ProviderGasFixture {
 
     /// @dev The peer must be the counterpart (#62), so a transceiver with no registry, as the
     ///      send suite's is, gets one that records `counterpart` on a `Unique` remote chain.
-    /// @notice `_prepareAccount` for LayerZero, which delivers only from a set peer: here the
-    ///         receiver, at the account's address.
-    function _peerWithItsReceiver(address account_, address owner) internal {
+    /// @notice `_prepareConduit` for LayerZero, which delivers only from a set peer: here the
+    ///         receiver, at the conduit's address.
+    function _peerWithItsReceiver(address conduit_, address owner) internal {
         vm.prank(owner);
-        LzTransmitter(payable(account_)).setPeer(BASE_EID, toBytes32(account_));
+        LzTransmitter(payable(conduit_)).setPeer(BASE_EID, toBytes32(conduit_));
     }
 
     function _configureRemote(address t, address counterpart) internal override {

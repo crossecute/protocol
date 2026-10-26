@@ -20,27 +20,27 @@ import {
 contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
     constructor(address router_, address extension_) CcipTransceiverBase(router_, extension_) {}
 
-    /// @param accountBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
+    /// @param conduitBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
     ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
-    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 accountBytecodeHash_)
+    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 conduitBytecodeHash_)
         external
         initializer
     {
         __CcipTransceiver_init(c, governorHomeSelector);
-        __DivergentTransceiver_init(c, accountBytecodeHash_);
+        __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossConduit(owner, salt, homeChainKey);
     }
 
-    function _deployAccount(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._deployAccount(salt);
+    function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._deployConduit(salt);
     }
 
     function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
@@ -56,14 +56,14 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         return super._parityAddress(chainKey);
     }
 
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
         Call[] memory calls
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 
     function supportsInterface(bytes4 interfaceId)
@@ -80,22 +80,22 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
 contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
     constructor(address router_, address extension_) CcipTransceiverBase(router_, extension_) {}
 
-    /// @param accountBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
-    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 accountBytecodeHash_)
+    /// @param conduitBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
+    function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 conduitBytecodeHash_)
         external
         initializer
     {
         __CcipTransceiver_init(c, governorHomeSelector);
-        __DivergentTransceiver_init(c, accountBytecodeHash_);
+        __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossAccount(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossAccount(owner, salt, homeChainKey);
+        return super._predictCrossConduit(owner, salt, homeChainKey);
     }
 
     function _parityAddress(bytes32 chainKey)
@@ -107,14 +107,14 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         return super._parityAddress(chainKey);
     }
 
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
         Call[] memory calls
     ) internal view override(TransceiverBase, ProviderTransceiver) returns (bytes memory) {
-        return super._accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
+        return super._conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls);
     }
 
     function supportsInterface(bytes4 interfaceId)

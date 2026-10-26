@@ -105,7 +105,7 @@ contract VmDeriver is IVmDeriver {
         returns (bytes memory interop)
     {
         Erc7930.Interop memory io = Erc7930.parseStrict(chainIdentifier);
-        // A chain identifier carries no account. Being handed a populated envelope means
+        // A chain identifier carries no conduit. Being handed a populated envelope means
         // the caller is confused about which end of the derivation it is on.
         if (io.addr.length != 0) revert NotChainIdentifier();
 
@@ -248,7 +248,7 @@ contract VmDeriver is IVmDeriver {
             return abi.encodePacked(AddressDerive.nearEthImplicitAccount(pubkey64));
         }
         if (s == Scheme.NearImplicit) {
-            // The ed25519 pubkey is the account id. Identity, kept explicit so the
+            // The ed25519 pubkey is the conduit id. Identity, kept explicit so the
             // envelope width is unambiguous.
             bytes32 pubkey = abi.decode(p, (bytes32));
             return abi.encodePacked(pubkey);

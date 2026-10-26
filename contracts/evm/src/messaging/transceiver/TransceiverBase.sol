@@ -5,42 +5,42 @@ import {
     TransceiverCore,
     TransceiverConfig,
     ITransmitterInit,
-    IAccountReceiverReport
+    IConduitReceiverReport
 } from "src/messaging/transceiver/TransceiverCore.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {CrossAccounts} from "src/account/CrossAccounts.sol";
-import {CrossProxyInitCode} from "src/account/CrossProxyInitCode.sol";
+import {CrossConduits} from "src/conduit/CrossConduits.sol";
+import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
 /// @title TransceiverBase
-/// @notice One transceiver per chain per provider. It creates transmitters for accounts homed
-///         here and receivers for accounts homed on any configured origin, and it sends and
+/// @notice One transceiver per chain per provider. It creates transmitters for conduits homed
+///         here and receivers for conduits homed on any configured origin, and it sends and
 ///         accepts both bootstraps and receiver reports.
 ///
-/// @dev An account's CREATE2 salt is `(owner, salt, homeChainKey)` and nothing else, so one
+/// @dev A conduit's CREATE2 salt is `(owner, salt, homeChainKey)` and nothing else, so one
 ///      transmitter has one receiver per destination, at an address fixed before the first
-///      message, and the transmitter an account has here never collides with the receiver an
-///      account homed elsewhere has here. A receiver is made only by an authenticated bootstrap.
+///      message, and the transmitter a conduit has here never collides with the receiver an
+///      conduit homed elsewhere has here. A receiver is made only by an authenticated bootstrap.
 ///
 /// @dev Runs no payload of its own: an inbound message is an `Envelope`, acted on in
-///      `_handleInbound`, and a bootstrap creates the account and runs its payload in the same
+///      `_handleInbound`, and a bootstrap creates the conduit and runs its payload in the same
 ///      delivery. A first payload that should wait carries a call to the new receiver's own
 ///      `commit`. No approvals are held here, so no origin can approve or cancel on another's
 ///      behalf.
 ///
-/// @dev Owned by the governor's account on this chain, derived at initialization
+/// @dev Owned by the governor's conduit on this chain, derived at initialization
 ///      rather than typed, and configured by payloads the governor sends from its home. The owner
 ///      configures and can move no money. `GATEWAY_ROLE` is fixed at initialization with no
-///      revoke path, since a transceiver's transports serve every account on its chain; a
+///      revoke path, since a transceiver's transports serve every conduit on its chain; a
 ///      compromised transport means a new transceiver.
 ///
-/// @dev Holds what a bootstrap, a delivery, and an account's send reach. Initialization, owner
+/// @dev Holds what a bootstrap, a delivery, and a conduit's send reach. Initialization, owner
 ///      configuration, and views no contract calls live in `extension`, reached through
 ///      `fallback`, which keeps every binding under EIP-170 (#70). The extension is an
 ///      implementation immutable, so it changes only with a new transceiver, as this code does.
@@ -48,12 +48,12 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @notice The `TransceiverExtension` every selector not declared here runs in.
     address public immutable extension;
 
-    /// The contract `_deployAccount` reads `CrossProxy`'s initcode from (`CrossProxyInitCode`),
+    /// The contract `_deployConduit` reads `CrossProxy`'s initcode from (`CrossProxyInitCode`),
     /// written by this implementation's constructor. Zero on zkSync, which deploys by hash.
     address internal immutable _crossProxyInitCode;
 
     error NoExtension();
-    /// @dev The extension derives accounts, or names this chain, differently from this contract.
+    /// @dev The extension derives conduits, or names this chain, differently from this contract.
     error ExtensionMismatch();
 
     constructor(address extension_) {
@@ -62,8 +62,8 @@ abstract contract TransceiverBase is TransceiverCore {
         _crossProxyInitCode = _storeCrossProxyInitCode();
     }
 
-    /// @notice Write `CrossProxy`'s initcode for `_deployAccount` to read.
-    /// @dev A variant whose `_deployAccount` does not read it overrides this to store nothing.
+    /// @notice Write `CrossProxy`'s initcode for `_deployConduit` to read.
+    /// @dev A variant whose `_deployConduit` does not read it overrides this to store nothing.
     function _storeCrossProxyInitCode() internal virtual returns (address) {
         return CrossProxyInitCode.store();
     }
@@ -85,7 +85,7 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /* ================================ initialization ============================== */
 
-    /// @notice For a transceiver that derives account addresses Ethereum's way.
+    /// @notice For a transceiver that derives conduit addresses Ethereum's way.
     function __TransceiverBase_init(TransceiverConfig memory c) internal onlyInitializing {
         __TransceiverBase_init(c, false);
     }
@@ -97,28 +97,28 @@ abstract contract TransceiverBase is TransceiverCore {
     ///
     /// @dev A self-call, so the extension can refuse any caller but this contract
     ///      (`TransceiverExtension.initializeBase`). The owner it derived must be the one this
-    ///      contract derives: an extension of another chain type would arm accounts at
+    ///      contract derives: an extension of another chain type would arm conduits at
     ///      addresses this contract does not create.
     ///
     /// @dev A transceiver decides which payloads are authentic, so a live upgrade key would be
     ///      a standing ability to forge any message. There is none: a transceiver is a
     ///      `CrossProxy` that `CrossProxyDeployer` arms with this initializer and locks in one
     ///      call, and neither this contract nor its extension has an upgrade function. A bug
-    ///      in either is fixed only by redeploying, which re-derives every account.
+    ///      in either is fixed only by redeploying, which re-derives every conduit.
     function __TransceiverBase_init(TransceiverConfig memory c, bool addressesDiverge_) internal onlyInitializing {
         if (TransceiverCore(extension).localChainKey() != localChainKey) revert ExtensionMismatch();
         TransceiverExtension(address(this)).initializeBase(c, addressesDiverge_);
-        if (owner() != _predictCrossAccount(c.governorOwner, c.governorSalt, keccak256(c.governorHome))) {
+        if (owner() != _predictCrossConduit(c.governorOwner, c.governorSalt, keccak256(c.governorHome))) {
             revert ExtensionMismatch();
         }
     }
 
-    /* ============================== account manufacture ============================ */
+    /* ============================== conduit manufacture ============================ */
 
-    /// @notice Where `(owner, salt)`'s receiver will sit on `chainKey`, for an account homed on
+    /// @notice Where `(owner, salt)`'s receiver will sit on `chainKey`, for a conduit homed on
     ///         this chain, where `chainKey` derives addresses with Ethereum's CREATE2.
     /// @dev Ethereum's CREATE2 over this provider's transceiver there, which is the counterpart
-    ///      on that chain. It equals the account's own address only when this chain also uses
+    ///      on that chain. It equals the conduit's own address only when this chain also uses
     ///      that formula, which is why a transmitter records this rather than `address(this)`.
     ///
     /// @dev The initcode hash is the destination's, not this compiler's: on zkSync and Tron
@@ -132,74 +132,74 @@ abstract contract TransceiverBase is TransceiverCore {
             if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
         }
         return abi.encodePacked(
-            Create2.computeAddress(_accountSalt(owner, salt, localChainKey), initCodeHash, _evmCounterpartOn(chainKey))
+            Create2.computeAddress(_conduitSalt(owner, salt, localChainKey), initCodeHash, _evmCounterpartOn(chainKey))
         );
     }
 
     /// @notice Create the caller's transmitter.
     /// @dev The owner is `msg.sender`, never an argument, so no one can claim the address
     ///      another party will occupy on every chain.
-    /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one account.
-    /// @return account The transmitter, at the address its receivers occupy on parity chains.
-    function createTransmitter(bytes32 salt) external returns (address account) {
-        account = _createCrossAccount(msg.sender, salt, localChainKey, address(0), new Call[](0));
+    /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one conduit.
+    /// @return conduit The transmitter, at the address its receivers occupy on parity chains.
+    function createTransmitter(bytes32 salt) external returns (address conduit) {
+        conduit = _createCrossConduit(msg.sender, salt, localChainKey, address(0), new Call[](0));
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
     /// @dev Separate from the prediction because zkSync diverges in both: a different formula,
     ///      and deployment through a system contract against a pre-published bytecode hash, so
     ///      a variant there emits `new CrossProxy{salt: s}()`. Tron diverges only in the formula.
-    function _deployAccount(bytes32 salt) internal virtual returns (address deployed) {
-        return CrossAccounts.deploy(salt, _crossProxyInitCode);
+    function _deployConduit(bytes32 salt) internal virtual returns (address deployed) {
+        return CrossConduits.deploy(salt, _crossProxyInitCode);
     }
 
-    /// @notice Deploy an owner's account and arm it: a transmitter if it is homed here, a
+    /// @notice Deploy an owner's conduit and arm it: a transmitter if it is homed here, a
     ///         receiver otherwise, through the same argument-free proxy.
     ///
-    /// @dev The checks around the deployment are `CrossAccounts`', shared with every other
-    ///      account creator. The prediction it holds the deployment to is the one every published
+    /// @dev The checks around the deployment are `CrossConduits`', shared with every other
+    ///      conduit creator. The prediction it holds the deployment to is the one every published
     ///      address comes from: a transmitter's recorded counterpart, a receiver's
-    ///      `sourceTransmitter`, the account a report is forwarded to.
+    ///      `sourceTransmitter`, the conduit a report is forwarded to.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
-    function _createCrossAccount(
+    function _createCrossConduit(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
         address sourceTransmitter,
         Call[] memory calls
-    ) internal returns (address account) {
+    ) internal returns (address conduit) {
         if (owner == address(0)) revert ZeroOwner();
 
-        address implementation = _accountImplementation(homeChainKey);
-        if (implementation == address(0)) revert NoAccountImplementation();
+        address implementation = _conduitImplementation(homeChainKey);
+        if (implementation == address(0)) revert NoConduitImplementation();
 
-        account = _predictCrossAccount(owner, salt, homeChainKey);
-        CrossAccounts.requireVacant(account, owner, salt);
+        conduit = _predictCrossConduit(owner, salt, homeChainKey);
+        CrossConduits.requireVacant(conduit, owner, salt);
 
-        address deployed = _deployAccount(_accountSalt(owner, salt, homeChainKey));
-        CrossAccounts.requireLanded(account, deployed);
+        address deployed = _deployConduit(_conduitSalt(owner, salt, homeChainKey));
+        CrossConduits.requireLanded(conduit, deployed);
 
-        CrossAccounts.arm(
-            account, implementation, _accountInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
+        CrossConduits.arm(
+            conduit, implementation, _conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
         );
 
-        emit CrossAccountCreated(owner, account, salt, homeChainKey);
+        emit CrossConduitCreated(owner, conduit, salt, homeChainKey);
     }
 
-    /// @notice The logic an account homed on `homeChainKey` is armed with.
-    function _accountImplementation(bytes32 homeChainKey) internal view virtual returns (address) {
+    /// @notice The logic a conduit homed on `homeChainKey` is armed with.
+    function _conduitImplementation(bytes32 homeChainKey) internal view virtual returns (address) {
         return homeChainKey == localChainKey ? _transmitterImplementation : _receiverImplementation;
     }
 
     /// @notice The initializer that logic is armed with, run by delegatecall inside the
-    ///         upgrade so the account is never live and uninitialized.
-    /// @dev The proxy locks in the same call, and an account's own configuration is gated on
+    ///         upgrade so the conduit is never live and uninitialized.
+    /// @dev The proxy locks in the same call, and a conduit's own configuration is gated on
     ///      its owner, not this contract, so all provider setup must be in this calldata. A
-    ///      transmitter takes its salt, since an account cannot recover it from its own
+    ///      transmitter takes its salt, since a conduit cannot recover it from its own
     ///      address; a receiver answers to the transmitter its bootstrap carried, on its home,
     ///      named here by chainKey as an ERC-7786 gateway reports it.
-    function _accountInitializer(
+    function _conduitInitializer(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -214,15 +214,15 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /* =================================== bootstrap ================================= */
 
-    /// @notice Stand an account up on a chain that has none, and carry its payload.
+    /// @notice Stand a conduit up on a chain that has none, and carry its payload.
     ///
-    /// @dev Callable only by the account `(owner, salt)` resolves to when homed on this chain,
+    /// @dev Callable only by the conduit `(owner, salt)` resolves to when homed on this chain,
     ///      which is what lets the owner and salt travel in the message without a caller
-    ///      claiming another identity. An account homed elsewhere bootstraps from its own home.
+    ///      claiming another identity. A conduit homed elsewhere bootstraps from its own home.
     ///
     /// @dev `_minCounterpartProvenance` applies here through `_requireRoutable`, as it does to
     ///      every message this transceiver sends to or accepts from a chain (`_counterpartOn`).
-    ///      An account's later sends leave from its transmitter, which does not read it.
+    ///      A conduit's later sends leave from its transmitter, which does not read it.
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -258,7 +258,7 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /// @notice What `bootstrap` would cost, before anything is spent.
     /// @dev Applies `_requireRoutable`, so it fails wherever the send would, but not
-    ///      `bootstrap`'s caller check: a quote is taken before the account exists.
+    ///      `bootstrap`'s caller check: a quote is taken before the conduit exists.
     function quoteBootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -268,7 +268,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrap(
             destinationChainKey,
-            _bootstrapEnvelope(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), calls),
+            _bootstrapEnvelope(owner, salt, _transmitterWord(_allowedConduit(owner, salt)), calls),
             attributes
         );
     }
@@ -283,7 +283,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ) external view returns (uint256 nativeFee) {
         return _quoteBootstrap(
             destinationChainKey,
-            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_allowedAccount(owner, salt)), elements),
+            Envelope.encodeBootstrapElements(owner, salt, _transmitterWord(_allowedConduit(owner, salt)), elements),
             attributes
         );
     }
@@ -298,21 +298,21 @@ abstract contract TransceiverBase is TransceiverCore {
         return Envelope.encodeBootstrap(owner, salt, transmitter, calls);
     }
 
-    /// @notice Refuse any caller but the account `(owner, salt)` resolves to here, and return
+    /// @notice Refuse any caller but the conduit `(owner, salt)` resolves to here, and return
     ///         it as the bootstrap carries it.
     function _bootstrapCaller(address owner, bytes32 salt) private view returns (bytes32) {
-        address account = _allowedAccount(owner, salt);
-        if (account != msg.sender) revert NotTheAccount(owner, salt, msg.sender);
-        return _transmitterWord(account);
+        address conduit = _allowedConduit(owner, salt);
+        if (conduit != msg.sender) revert NotTheConduit(owner, salt, msg.sender);
+        return _transmitterWord(conduit);
     }
 
-    /// @notice The account `(owner, salt)` resolves to here, refused unless the allowlist, where
+    /// @notice The conduit `(owner, salt)` resolves to here, refused unless the allowlist, where
     ///         one is set, allows it.
-    /// @dev Shared by `bootstrap` and its quotes so they refuse the same accounts.
-    function _allowedAccount(address owner, bytes32 salt) private view returns (address account) {
-        account = _localAccount(owner, salt);
+    /// @dev Shared by `bootstrap` and its quotes so they refuse the same conduits.
+    function _allowedConduit(address owner, bytes32 salt) private view returns (address conduit) {
+        conduit = _localConduit(owner, salt);
         IBootstrapAllowlist allowlist = _bootstrapAllowlist;
-        if (address(allowlist) != address(0) && !allowlist.isAllowed(account)) revert NotAllowed(account);
+        if (address(allowlist) != address(0) && !allowlist.isAllowed(conduit)) revert NotAllowed(conduit);
     }
 
     /// @dev One send path for both envelope forms. The provenance bar lives inside
@@ -408,7 +408,7 @@ abstract contract TransceiverBase is TransceiverCore {
     }
 
     /// @notice Act on an authenticated message.
-    /// @dev A report is for an account homed here. A bootstrap creates a receiver homed on the
+    /// @dev A report is for a conduit homed here. A bootstrap creates a receiver homed on the
     ///      authenticated origin, never on a chain the message states. Each decoder checks the
     ///      `Envelope` kind, so a wrong shape is refused by name rather than misread.
     function _handleInbound(bytes32 origin, bytes calldata message) internal virtual {
@@ -423,7 +423,7 @@ abstract contract TransceiverBase is TransceiverCore {
         _bootstrapInbound(owner, salt, origin, address(uint160(uint256(transmitter))), calls);
     }
 
-    /// @notice Stand up the receiver of an account homed on `home`, and run its first payload.
+    /// @notice Stand up the receiver of a conduit homed on `home`, and run its first payload.
     ///
     /// @dev Never deferred: the receiver is created and its payload run in the delivery that
     ///      carries them, reachable only from an authenticated `_onInbound`.
@@ -438,7 +438,7 @@ abstract contract TransceiverBase is TransceiverCore {
         address sourceTransmitter,
         Call[] memory calls
     ) internal {
-        address receiver = _createCrossAccount(owner, salt, home, sourceTransmitter, calls);
+        address receiver = _createCrossConduit(owner, salt, home, sourceTransmitter, calls);
         if (_addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
         } else if (receiver != sourceTransmitter && _chainRegistry.provenanceFor(home) == Provenance.Predetermined) {
@@ -448,9 +448,9 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /* ================================== the report ================================= */
 
-    /// @notice Tell the account's home where its receiver landed.
+    /// @notice Tell the conduit's home where its receiver landed.
     /// @dev Paid from this contract's float, since it is nested in a delivery where
-    ///      `msg.value` is zero. A failed send reverts the account creation with it, which
+    ///      `msg.value` is zero. A failed send reverts the conduit creation with it, which
     ///      keeps the bootstrap retryable once the float is topped up.
     function _reportReceiver(bytes32 home, address owner, bytes32 salt, address receiver) internal {
         emit ReceiverReported(home, owner, salt, receiver);
@@ -463,23 +463,23 @@ abstract contract TransceiverBase is TransceiverCore {
         _reporting = false;
     }
 
-    /// @notice A destination reports where it created the receiver of an account homed here.
+    /// @notice A destination reports where it created the receiver of a conduit homed here.
     ///
     /// @dev For chains this one cannot derive: Starknet's Pedersen derivation, and zkSync's and
     ///      Tron's CREATE2 formulas. Internal, so reachable only from an authenticated
     ///      `_onInbound`.
     ///
-    /// @dev Written to the account, not the registry, because the transmitter is what
+    /// @dev Written to the conduit, not the registry, because the transmitter is what
     ///      addresses that receiver and the registry is out of the send path. The registry
     ///      still decides which chains may report (`requiresReceiverCallback`), so a chain this
     ///      one derives cannot replace a `Predetermined` fact with a reported one.
     ///
-    /// @dev The destination cannot choose the account: `chainKey` is authenticated and the
-    ///      account is `_localAccount` of the stated pair, the derivation `bootstrap` checked the
-    ///      caller against. The account refuses a second report.
+    /// @dev The destination cannot choose the conduit: `chainKey` is authenticated and the
+    ///      conduit is `_localConduit` of the stated pair, the derivation `bootstrap` checked the
+    ///      caller against. The conduit refuses a second report.
     ///
     /// @dev The reported address must be on the reporting chain. An authenticated transceiver
-    ///      can still report a wrong address on its own chain; the account keeps the first
+    ///      can still report a wrong address on its own chain; the conduit keeps the first
     ///      one, so a compromised transceiver costs only its own chain.
     /// @param interop Canonical ERC-7930 bytes for the receiver on the destination.
     function _onDestinationReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes memory interop) internal {
@@ -492,9 +492,9 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes32 reported = Erc7930.chainKey(interop);
         if (reported != chainKey) revert ReportedChainMismatch(chainKey, reported);
 
-        address account = _localAccount(owner, salt);
-        IAccountReceiverReport(account).onDestinationReceiverReported(chainKey, Erc7930.parseStrict(interop).addr);
-        emit DestinationReceiverReported(chainKey, owner, salt, account);
+        address conduit = _localConduit(owner, salt);
+        IConduitReceiverReport(conduit).onDestinationReceiverReported(chainKey, Erc7930.parseStrict(interop).addr);
+        emit DestinationReceiverReported(chainKey, owner, salt, conduit);
     }
 
     /// @notice Whether `chainKey` reports its receiver address back, rather than this

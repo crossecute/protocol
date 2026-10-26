@@ -19,7 +19,7 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
 
     /// @notice Hyperlane Mailbox on this chain. On the implementation, so it never reaches a
-    ///         derived account address.
+    ///         derived conduit address.
     address public immutable mailbox;
 
     constructor(address mailbox_, address extension_) TransceiverBase(extension_) {

@@ -66,7 +66,7 @@ contract LibraryHarness {
 }
 
 /// @notice Covers the claim that a chain onboarded later, hashing in a way nobody had
-///         written when the live accounts were compiled, is previewable without touching
+///         written when the live conduits were compiled, is previewable without touching
 ///         a single frozen contract.
 ///
 /// @dev The seam only earns its place if it reproduces the frozen fold exactly. A preview
@@ -165,7 +165,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /// @dev The capability moved, it was not dropped. `TransmitterBase` used to answer
     ///      this shape through `commitmentForChain(bytes, Scheme, bytes[])`, which was
-    ///      removed because a preview frozen with the account can only ever name
+    ///      removed because a preview frozen with the conduit can only ever name
     ///      primitives that already existed. For a destination the enum does cover, the
     ///      registry returns the identical value, so nothing a signer could ask before
     ///      has become unanswerable, it is asked somewhere that can still learn.
@@ -189,7 +189,7 @@ contract CommitmentSchemePluginTest is Test {
 
     /// @dev The whole point. A chain whose hash has no `Scheme` member, on a chain type
     ///      with no `ChainType` constant, becomes previewable with one owner transaction.
-    ///      No account is redeployed, no frozen bytecode is consulted, and every chain
+    ///      No conduit is redeployed, no frozen bytecode is consulted, and every chain
     ///      already wired keeps answering exactly as before.
     function test_newSchemeNeedsNoEnumMemberAndNoRedeploy() public {
         bytes[] memory elements = _elements();

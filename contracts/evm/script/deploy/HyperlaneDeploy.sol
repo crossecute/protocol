@@ -44,11 +44,11 @@ library HyperlaneDeploy {
         TransceiverDeployment memory d,
         address mailbox,
         uint32 homeDomain,
-        bytes32 accountBytecodeHash
+        bytes32 conduitBytecodeHash
     ) internal returns (address t) {
         t = deployTransceiverProxy(
             d,
-            abi.encodeCall(HyperlaneZkSyncTransceiver.initialize, (d.config, homeDomain, accountBytecodeHash)),
+            abi.encodeCall(HyperlaneZkSyncTransceiver.initialize, (d.config, homeDomain, conduitBytecodeHash)),
             mailbox
         );
         checkGovernorHomeId(t, d.config, homeDomain);

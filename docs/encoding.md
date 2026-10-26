@@ -136,7 +136,7 @@ already built, and `bytes` cannot be asked which form it holds, so the pairing i
 caller's to get right. `payloadForCalls` and `payloadForElements` exist so it is at least
 spelled the same way here as it is decoded there. The receiver still decodes the single
 shape its own VM implies. Both sides know which before a byte is written, so a field saying
-so would carry a value each already holds: **every account channel carries exactly one
+so would carry a value each already holds: **every conduit channel carries exactly one
 shape.** `Envelope` is the exception, and is tagged by kind, because a transceiver channel
 carries bootstraps and reports and does not stay one-directional.
 
@@ -303,15 +303,15 @@ commitment is computed off-chain and carried in an opaque element that calls tha
 own `commit`, which is the same mechanism every deferred payload uses.
 
 **Where the scheme is a parameter, and where it is not.** The enum is how `Commitment`
-dispatches internally and is compiled into every account, but no transmitter entry point
+dispatches internally and is compiled into every conduit, but no transmitter entry point
 takes one.
 
 `commitmentFor`/`commitmentForChain` name an EVM destination, and every chain that executes
 `Call[]` hashes with keccak256, so both stay keccak-only and `pure`: exactly one primitive
-they can ever need, which is what makes it safe for them to be frozen with the account. The
+they can ever need, which is what makes it safe for them to be frozen with the conduit. The
 overload that took a `Scheme` is **gone**, because it was frozen in the worst possible place:
-the set of primitives it could name was fixed at the account's creation, so a chain onboarded
-later would be unpreviewable on every account already live. Non-EVM destinations are
+the set of primitives it could name was fixed at the conduit's creation, so a chain onboarded
+later would be unpreviewable on every conduit already live. Non-EVM destinations are
 previewed through `ChainRegistry.commitmentFor`, where the primitive is an
 `ICommitmentScheme` bound per chainKey and the set grows with one owner transaction.
 
@@ -353,7 +353,7 @@ treatment: assert it against a derived value in that chain's own test suite.
 
 | VM | Verify | Execute an arbitrary approved array |
 | --- | --- | --- |
-| EVM | yes | **yes**: a full-power account |
+| EVM | yes | **yes**: a full-power conduit |
 | Solana | yes | **yes**, via CPI, with the account list committed |
 | Starknet | yes, awkwardly | **yes**: multicall is already idiomatic |
 | Aptos / Sui | yes | **no**: Move has no general dynamic dispatch |
@@ -401,20 +401,20 @@ wrong layer.
 Three claims argued in the contracts are EVM properties presented as protocol properties,
 and the Move case is where each of them breaks.
 
-**"Accounts are full-power and answer to one owner, like a Safe"** (`messaging/Executor.sol`).
+**"Conduits are full-power and answer to one owner, like a Safe"** (`messaging/Executor.sol`).
 That is the justification for `isAllowed` defaulting to `true` and for treating the call
 policy as a self-imposed restriction rather than a defence. On a Move
 chain the receiver is vocabulary-limited whether anyone wants it to be or not, so the
 premise is false there, and the merkle-policy work is moot, because **the vocabulary is
-the policy**. Non-EVM receivers are constrained accounts by construction.
+the policy**. Non-EVM receivers are constrained conduits by construction.
 
-**One argument-free `CrossProxy` per account, at a CREATE2 address derived from
-`(owner, salt, home)`** (`account/CrossProxy.sol`, `TransceiverCore._accountSalt`). Move modules
+**One argument-free `CrossProxy` per conduit, at a CREATE2 address derived from
+`(owner, salt, home)`** (`conduit/CrossProxy.sol`, `TransceiverCore._conduitSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
-Move deployment is one module holding a table keyed by owner. The one-account-per-owner
+Move deployment is one module holding a table keyed by owner. The one-conduit-per-owner
 model, and the single address that goes with it, does not survive the trip.
 
-**Approvals live in each account's own receiver, so an unrelayed payload stalls nothing**
+**Approvals live in each conduit's own receiver, so an unrelayed payload stalls nothing**
 (`inbound/ReceiverBase.sol`). That rests on one receiver per transmitter. Under a shared Move
 module every owner's approvals sit in one module, so isolation becomes bookkeeping again, and
 whatever a Move receiver does about it has to be argued separately rather than inherited.
