@@ -57,8 +57,9 @@ In this repo:
 - Values that must agree across chains depend on each other: a route and its chainKey, a
   home key and a provider id, the addresses of one provider's transceivers.
 - A send and its quote are the paired operations most likely to drift.
-- LayerZero, CCIP, and Hyperlane price a payload per byte, so a change to a payload's size is a
-  cost change on those three; Wormhole's Executor and the two OP Stack providers do not.
+- LayerZero and CCIP price a payload per byte, so a change to a payload's size is a cost
+  change on those two. Hyperlane's default paymaster prices the named gas limit, not the
+  length; Wormhole's Executor and the two OP Stack providers do not price per byte either.
 - Lint with `forge lint`; for files under `src/`, also run it with
   `FOUNDRY_PROFILE=lint-src`, which is what CI enforces there.
 - Run `forge build --sizes src` after a change to a deployed contract: CI fails any over

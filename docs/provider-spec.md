@@ -385,9 +385,11 @@ send nothing, and its provider fails [P9](#2-provider-prerequisites-the-go-or-no
 
 **R2.3 It MUST price the exact bytes the send would carry.** The quote is taken over
 `Payload.encodeCalls(calls)` or `_bootstrapEnvelope(owner, salt, transmitter, calls)`, the same
-function `sendMessage` puts on the wire, not over an estimate of the length. LayerZero, CCIP,
-and Hyperlane price per byte; Wormhole's Executor and the two OP Stack providers do not, and the rule costs them
-nothing. This is what makes a quote a number the send can pay rather than a number it must
+function `sendMessage` puts on the wire, not over an estimate of the length. LayerZero and
+CCIP price per byte. Hyperlane's default interchain gas paymaster prices the gas limit the
+sender names and never reads the length, but `quoteDispatch` hands the body to every hook, so
+a configured hook can. Wormhole's Executor and the two OP Stack providers do not, and the rule
+costs them nothing. This is what makes a quote a number the send can pay rather than a number it must
 pad, and it is why the public surface below takes exactly `sendMessage`'s arguments.
 
 **R2.4 It MUST use the same route, destination, and options resolution as the send.** Any

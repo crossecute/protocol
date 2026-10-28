@@ -421,7 +421,7 @@ contract HomeTransceiver is AnyGatewayTransceiver {
         return bytes32(0);
     }
 
-    /// @dev Priced per byte, like every real provider, so the surcharge is visibly on top
+    /// @dev Priced per byte, like LayerZero and CCIP, so the surcharge is visibly on top
     ///      of a message price rather than standing in for one.
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
         internal
