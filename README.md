@@ -477,6 +477,9 @@ What an operator or integrator has to know:
 - [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
   guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
   it goes stale on their schedule rather than ours
+- [`docs/signed-dispatch-spec.md`](docs/signed-dispatch-spec.md): a proposed path on which a
+  destination runs a payload the owner's signers signed, relayed by anyone, with no provider.
+  Design, not built
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status
