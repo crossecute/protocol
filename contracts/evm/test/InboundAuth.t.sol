@@ -321,7 +321,7 @@ contract InboundAuthTest is Test {
         assertEq(got[0].data, data);
     }
 
-    /// @dev Every provider prices per byte, so the transmitter is a fixed word: a dynamic
+    /// @dev LayerZero and CCIP price per byte, so the transmitter is a fixed word: a dynamic
     ///      `bytes` field would add an offset and a length word to every bootstrap as well.
     function test_theTransmitterCostsOneWord() public view {
         bytes memory withTransmitter = Envelope.encodeBootstrap(transmitter, bytes32(0), _homeTransmitter(), _boot());

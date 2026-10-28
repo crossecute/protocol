@@ -52,6 +52,8 @@ contract MockHyperlaneMailbox {
     }
 
     /// @dev At least 1 wei on a routed domain: a real routed domain always charges for its relay.
+    ///      The per-byte term is not the default paymaster's, which prices the gas limit; it
+    ///      lets C12 see that the binding quoted the exact body, as a body-reading hook would.
     function quoteDispatch(uint32 domain, bytes32, bytes calldata body, bytes calldata metadata)
         public
         view

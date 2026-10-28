@@ -60,7 +60,7 @@ contract MockTransmitter is AnyGatewayTransmitter {
         return bytes32(0);
     }
 
-    /// @dev Priced per byte, which is what every real provider does, so a test can tell a
+    /// @dev Priced per byte, as LayerZero and CCIP do, so a test can tell a
     ///      quote that read the payload from one that guessed at its size.
     uint256 public constant WEI_PER_BYTE = 7;
 

@@ -222,8 +222,9 @@ abstract contract ProviderRefundSpec is ProviderFeeSpec {
 }
 
 /// @title ProviderPayloadPricedSpec
-/// @notice C12 (R2.3), for providers that price by payload length and carry the payload as
-///         given (LayerZero, CCIP, Hyperlane; Wormhole wraps it and OP Stack does not price it).
+/// @notice C12 (R2.3), for providers that quote over the payload as given: LayerZero and CCIP
+///         price its length; Hyperlane's default paymaster does not, but `quoteDispatch` hands
+///         the body to every hook. Wormhole wraps it and OP Stack does not price it.
 abstract contract ProviderPayloadPricedSpec is ProviderFeeSpec {
     function _setProviderFeePerByte(uint256 perByte) internal virtual;
 
