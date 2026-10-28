@@ -364,6 +364,16 @@ What an operator or integrator has to know:
   counts as a verified message. The one exception is a LayerZero pathway whose default is the
   dead DVN, such as every pathway touching zkSync: its transceiver pins LayerZero Labs' DVN
   with `setDvn`, write-once per eid, and a receiver it creates inherits that pin (#51).
+- **Attestation-based providers prove who signed, not what happened.** LayerZero, CCIP,
+  Hyperlane and Wormhole accept a message because parties outside the source chain attest to
+  it: LayerZero's DVNs, Chainlink's node operators, the validators behind the Mailbox's ISM,
+  and Wormhole's guardians. A valid attestation shows that enough of those keys signed, not
+  that the source chain emitted the message, so a sender trusts that a quorum of them is
+  honest and that whoever controls the set does not replace it: LayerZero's default
+  configuration (or LayerZero Labs, on a pinned pathway), Chainlink, the Mailbox owner, and
+  Wormhole's guardian governance. Nothing here checks a proof of the source chain's consensus.
+  The OP Stack providers have no signer set; they trust the chains themselves. Verification
+  that does not rest on a provider's signers is open in [`docs/todo.md` §4](docs/todo.md#4-verification-independent-of-the-provider).
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
