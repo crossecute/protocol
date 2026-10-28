@@ -34,7 +34,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [7. Errors](#7-errors) | |
 | [8. Keeping a Safe home in step](#8-keeping-a-safe-home-in-step) | the guard |
 | [9. Open: integration with this repository](#9-open-integration-with-this-repository) | |
-| [10. Wire format and cost](#10-wire-format-and-cost) | measured sizes and gas, a packed layout, who charges per byte |
+| [10. Wire format and cost](#10-wire-format-and-cost) | measured sizes and gas, a packed layout, who charges per byte, home chain cost |
 | [11. Required tests](#11-required-tests) | |
 | [12. Decisions](#12-decisions) | what was chosen and why |
 
@@ -511,9 +511,48 @@ Checked against provider source on 2026-10-28:
 - **Hyperlane:** the default `InterchainGasPaymaster` charges for the gas limit the sender
   names plus a fixed per-domain overhead, and never reads the message length. The relayer pays
   the calldata. [`provider-spec.md`](provider-spec.md) R2.3 says Hyperlane prices per byte,
-  which is wrong for the default paymaster.
+  which is wrong for the default paymaster; corrected in
+  [crossecute/protocol#102](https://github.com/crossecute/protocol/pull/102).
 - **Wormhole's Executor and the OP Stack providers:** do not price per byte, per
   [`provider-spec.md`](provider-spec.md); not rechecked here.
+
+### 10.6 Home chain cost
+
+Every provider checked hashes the full message and emits it in an event at send: LayerZero's
+`EndpointV2` emits `PacketSent` with the encoded packet, CCIP's `OnRamp` emits
+`CCIPMessageSent` with the message data, and Hyperlane's `Mailbox` emits `Dispatch` with the
+message. Log data costs 8 gas per byte, so the home pays for every byte it sends, whoever pays
+on the destination.
+
+Measured with the same benchmark: one home transaction sending a 3-of-5 dispatch to 24 chains,
+one ERC-20 `transfer` each. A root of 24 leaves gives 16 proofs of 5 levels and 8 of 4. The
+transaction passes through a forwarder that copies its input to memory, as a Safe's
+`execTransaction` does. The home decodes the input, computes each `callsHash` (the ABI leaf
+carries it; the packed message does not), builds 24 messages, and hands each to a mock
+provider that only hashes the message and emits it. The home's input format is not specified
+by this document (section 9); the benchmark's packed input is the 10.3 fields once, followed
+by each destination's section.
+
+| Home transaction, 24 chains | ABI | Packed |
+| --- | --- | --- |
+| Input bytes | 19,232 | 7,240 |
+| Input calldata gas | 151,364 | 100,492 |
+| Bytes handed to providers | 78,848 | 13,760 |
+| Execution gas | 1,591,380 | 485,581 |
+| of which log data (8 gas per byte) | 630,784 | 110,080 |
+| Total, size-dependent part | about 1.74M | about 0.59M |
+
+Not included, and the same in both: each provider's fixed cost per send (fees, nonces, worker
+payments, the same-transaction quote of [`provider-spec.md`](provider-spec.md) R2.6), the
+Safe's own overhead and signatures, and the L1 data fee where the home is an L2, which makes
+the input size difference cost more.
+
+Even packed, the tree and signatures are 300 of each message's 584 or 552 bytes, copied into
+all 24 messages: 7,200 of 13,760 bytes. That is inherent to per-chain delivery, since each
+destination needs the signatures and none of these providers sends one message to several
+chains. Only a delivery path that broadcasts to every chain, such as the custom provider in
+[crossecute/protocol#101](https://github.com/crossecute/protocol/issues/101), could send it
+once.
 
 ## 11. Required tests
 
