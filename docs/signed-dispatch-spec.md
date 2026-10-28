@@ -34,7 +34,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [7. Errors](#7-errors) | |
 | [8. Keeping a Safe home in step](#8-keeping-a-safe-home-in-step) | the guard |
 | [9. Open: integration with this repository](#9-open-integration-with-this-repository) | |
-| [10. Size and cost](#10-size-and-cost-estimates-not-measured) | |
+| [10. Wire format and cost](#10-wire-format-and-cost) | measured sizes and gas, a packed layout, who charges per byte |
 | [11. Required tests](#11-required-tests) | |
 | [12. Decisions](#12-decisions) | what was chosen and why |
 
@@ -358,26 +358,162 @@ as the conduit.
 - **Failed calls.** Section 6.1 follows the Compound Timelock model (revert, stay retryable,
   expire). Aave's and Safe's behavior for comparison has not been verified.
 
-## 10. Size and cost (estimates, not measured)
+## 10. Wire format and cost
 
-| Item | Bytes |
-| --- | --- |
-| Dispatch root fields | 96 |
-| Leaf | 224 |
-| Proof | 32 per level; `ceil(log2(leaves))` levels |
-| ECDSA key node / signature | about 160 / 65 |
-| P-256 key node / signature | about 192 / 64 |
+Status of 10.3: proposed, not decided. Sections 3 to 6 define what is hashed and signed;
+this section defines only what travels. As in [`encoding.md`](encoding.md#two-things-kept-separate),
+the two are independent: the wire can change without changing a leaf hash, a tree hash or a
+digest, so signing and the off-chain tree are unaffected.
 
-The bundle adds to every message. LayerZero, CCIP and Hyperlane price a payload per byte, so
-on those three it is a direct cost; Wormhole's Executor and the OP Stack providers do not
-price per byte. A 3-of-5 ECDSA tree adds roughly 1.1 KB per message before the proof.
+Numbers below were measured on 2026-10-28 with a scratch Foundry benchmark, not in this
+repository: OpenZeppelin 5.4, solc 0.8.28, optimizer at 200 runs, `paris`, and this
+repository's `Commitment.hashCalls` and `ChainKey.local`. The bundle is one leaf of a
+five-leaf root (proof depth 3) carrying one ERC-20 `transfer` (68 bytes of calldata, no
+value). Both decoders compute the same digest; the packed one is plain Solidity over calldata
+slices, with no assembly.
 
-Signature checks dominate the destination's gas: about 3,000 per ECDSA recover; 3,450 per
-P-256 check under RIP-7212 or 6,900 under EIP-7951 where the precompile exists, and hundreds
-of thousands where OpenZeppelin falls back to Solidity. The check counts against the gas
-limit the provider delivers with. The digest cache means a root with several leaves for one
-chain pays for signatures once on that chain. A nested signer tree such as Optimism's 2-of-2
-upgrade Safe, whose owners are themselves Safes, needs measuring before caps are set.
+### 10.1 Measured size and gas
+
+| Bundle | ABI bytes | Packed bytes | ABI calldata gas | Packed calldata gas |
+| --- | --- | --- | --- | --- |
+| 1-of-1 | 1,632 | 308 | 11,484 | 4,136 |
+| 3-of-5 | 3,232 | 520 | 20,776 | 7,492 |
+| 2-of-2 over two 2-of-3 | 4,192 | 611 | 25,948 | 8,948 |
+| Rotation, 3-of-5 | 4,192 | 409 | 22,588 | 6,436 |
+| Plain payload today, no signatures | 320 | 97 | 1,940 | 1,012 |
+
+"ABI" is `abi.encode` of every field in sections 3.2 to 3.6. Calldata gas is 16 per non-zero
+byte and 4 per zero byte; in the 3-of-5 ABI bundle 2,578 of 3,232 bytes are zero. The 1.1 KB
+this section estimated before was low, because it counted key and signature bytes and left
+out ABI offsets, length words and padding.
+
+Destination execution gas for decoding, `hashCalls`, the leaf hash, the proof, the digest, the
+tree hash and the signature checks (not nonce, timing, the duplicate-key check or the calls):
+
+| Bundle | ABI | Packed |
+| --- | --- | --- |
+| 1-of-1 | 37,283 | 31,090 |
+| 3-of-5 | 64,021 | 45,636 |
+| 2-of-2 over two 2-of-3 | 81,308 | 55,009 |
+
+The packed form is cheaper to execute as well as to send. Decoding nested dynamic ABI arrays
+into memory costs more than the cursor reads that replace it, so there is no gas trade-off to
+make: for 3-of-5 the destination saves about 18,400 execution gas and 13,300 calldata gas per
+message.
+
+Signature checks are the largest remaining part: about 3,000 gas per ECDSA recover; 3,450 per
+P-256 check under RIP-7212 or 6,900 under EIP-7951 where the precompile exists, and hundreds of
+thousands where OpenZeppelin falls back to Solidity. The digest cache means a root with several
+leaves for one chain pays for signatures once on that chain. All of it counts against the gas
+limit the provider delivers with; on Hyperlane that is this repository's fixed
+`DeliveryGas.PAYLOAD` (200,000), shared with the calls.
+
+### 10.2 Fields derived instead of sent
+
+Every field the destination can compute is dropped. Each was already computed or read by a
+check in 6.1 or 6.2, which compared it to the sent copy; the check becomes "use the computed
+value", so deriving adds no gas.
+
+| Field | Derived from | Gas |
+| --- | --- | --- |
+| `tag` | constant | 3 |
+| `chainKey` | `ChainKey.local()` | 2,245 measured, already paid for `hashCalls` |
+| `conduit` | `address(this)` | 12 measured |
+| `callsHash` | `hashCalls(chainKey, calls)` | already paid in check 4 |
+| `root` | `MerkleProof.processProof(proof, leafHash)` | already paid in check 5 |
+| Rotation `newEpoch` | stored `epoch + 1` | already read in 6.2 check 1 |
+| Rotation `prevRotationHash` | stored `rotationHash` | already read in 6.2 check 2 |
+| `validAfter` when `validAfterKind` is 0 | absent | 0 |
+| Tree child indexes | pre-order layout | 0 |
+
+Deriving the root is safe because the signatures are checked over the root computed from this
+leaf and proof: a leaf the signers did not include gives a root they did not sign. The double
+hash still keeps a leaf from being read as an internal node.
+
+`epoch` stays on the wire (8 bytes) although it could be read from storage, so that a bundle
+signed after a rotation that has not arrived yet still fails as `WrongEpoch`, which section 7
+says to retry once the rotation lands. Every other mismatch (chain, conduit, calls, proof) now gives a root the
+signers did not sign and fails as `BadSignatures`; off-chain tooling recomputes the root to
+say which.
+
+### 10.3 Layout (proposed)
+
+All integers are big-endian. The decoder MUST consume exactly the message length.
+
+```
+dispatch = 0x01 | epoch(8) | validUntil(8) | nonce(8) | validAfterKind(1) | [validAfter(8)]
+           | depth(1) | proof(32 × depth) | calls | tree
+rotation = 0x02 | newTree | currentTree
+calls    = count(4) | call × count
+call     = flags(1) | target(20) | [value(32) if flags == 1] | len(4) | data(len)
+tree     = one node, children in pre-order
+node     = 0x00 | address(20)                               ECDSA key, did not sign
+         | 0x80 | address(20) | r(32) | vs(32)             ECDSA key, signed (EIP-2098)
+         | 0x01 | x(32) | y(32)                             P-256 key, did not sign
+         | 0x81 | x(32) | y(32) | r(32) | s(32)             P-256 key, signed
+         | 0x02 | threshold(1) | count(1) | node × count    threshold
+```
+
+- The leading kind byte separates dispatches from rotations on one channel. `encoding.md`
+  drops the tag only while a channel carries one shape; this channel carries two.
+- A signature follows its key, so there is no separate list and no empty entries. ECDSA uses
+  the 64-byte EIP-2098 form, checked with OpenZeppelin's `ECDSA.tryRecover(hash, r, vs)`, which
+  still rejects high `s`. Wallets produce 65 bytes; the builder converts.
+- Pre-order with a child count replaces the `children` index list and the rule that a child's
+  index exceeds its parent's: the layout cannot express a cycle or a shared child. The depth
+  and key-count caps (3.5) are enforced while parsing. A rotation's `newTree` has no signed
+  bits set.
+- `flags` is 0 or 1, and 1 requires a non-zero `value`, so each call has one encoding.
+- `count` and `len` use the u32 widths of the length-prefixed container proposed in
+  [`encoding.md`](encoding.md#open-the-opaque-container-is-still-abi-framed), so EVM and
+  non-EVM decoders share one cursor reader.
+
+The `call` encoding would apply to every conduit payload, not only signed dispatches: one
+transfer drops from 320 to 97 bytes. It reverses `encoding.md`'s rejection of a packed format,
+which said to revisit once bridge fees showed up in cost modelling. That change belongs in its
+own decision, since it touches every receiver.
+
+If 10.3 is adopted, these change with it: 3.5 (child indexes become the pre-order layout),
+3.6 (signatures move inline and ECDSA becomes 64 bytes), 6.1 checks 3 to 5 (comparisons become
+derivations), 6.2 checks 1 and 2 (likewise), 7 (`WrongChain`, `WrongConduit`, `BadCalls` and
+`BadProof` fold into `BadSignatures`, and a parse failure gets its own error), and 11 (the
+parser tests below).
+
+### 10.4 What the remaining bytes pay for
+
+3-of-5, 520 bytes:
+
+| Part | Bytes | |
+| --- | --- | --- |
+| Signatures | 192 | 3 × 64 |
+| Keys | 105 | 5 × (1 + 20); the conduit stores only the tree hash (decision 6) |
+| Threshold node | 3 | the "3 of 5" itself |
+| Proof | 97 | 1 + 3 × 32; grows with log2 of the root's leaf count |
+| Calls | 97 | 68 bytes of calldata, 20 of target, 9 of framing |
+| Header | 26 | kind, epoch, validUntil, nonce, validAfterKind |
+
+The keys are the only large part that could still go, by storing the tree instead of its hash.
+On the destination that costs more than it saves: five cold reads are 10,500 gas per message,
+against about 1,700 calldata gas for 105 bytes, and every rotation would write each key on
+every chain. Storing pays only where a provider charges more than about 84 destination gas per
+payload byte. Decision 6 stands.
+
+### 10.5 Who charges per byte
+
+Checked against provider source on 2026-10-28:
+
+- **LayerZero V2:** the executor fee includes `msgSize × gasPerByte` at the destination gas
+  price (`PriceFeed._estimateFeeWithDefaultModel`). OP Stack destinations add an L1 data term
+  per byte, and Arbitrum destinations a compressed one (47%). The DVN fee does not depend on
+  the payload.
+- **CCIP:** `FeeQuoter` adds `data.length × destGasPerPayloadByteBase` to the destination gas
+  it charges.
+- **Hyperlane:** the default `InterchainGasPaymaster` charges for the gas limit the sender
+  names plus a fixed per-domain overhead, and never reads the message length. The relayer pays
+  the calldata. [`provider-spec.md`](provider-spec.md) R2.3 says Hyperlane prices per byte,
+  which is wrong for the default paymaster.
+- **Wormhole's Executor and the OP Stack providers:** do not price per byte, per
+  [`provider-spec.md`](provider-spec.md); not rechecked here.
 
 ## 11. Required tests
 
@@ -401,6 +537,12 @@ Negative cases, each MUST revert with the listed error:
 - a reused nonce under both policies, and a lower nonce under the ordered one;
 - a call that re-enters the delivery path;
 - a rotation that skips an epoch or links to the wrong previous hash.
+
+If the packed layout (10.3) is adopted, the parser also needs: decode then re-encode returns the
+same bytes and the same fields; truncation at every byte offset reverts; trailing bytes revert;
+`flags` of 1 with a zero `value` reverts; a signed bit on a threshold node or in a rotation's
+`newTree` reverts; nesting past the depth cap reverts; and the ABI and packed forms of the same
+bundle give the same digest.
 
 Property tests: a satisfied tree stays satisfied when extra valid signatures are added; an
 unsatisfied tree stays unsatisfied when any signature is removed; the same signed bytes give
