@@ -132,7 +132,14 @@ the seventh; what they mean for an operator is in the README.
   at the destination for good. Undecided whether a transferred conduit should bootstrap at
   all; at minimum `layerzero-oft` should refuse at home before paying.
 
-## 4. Post-launch: non-EVM destinations
+## 4. Verification independent of the provider
+
+- **A forged provider message can drive a conduit.** On every binding but the OP Stack ones,
+  authenticity rests on the provider's signers (README, Message providers). The destination
+  should also check the owner's own signature, so a provider alone cannot deliver a payload.
+  Design open.
+
+## 5. Post-launch: non-EVM destinations
 
 Launch is EVM-only. No chain here is reachable until its vectors exist, so none of this
 blocks it.
@@ -176,7 +183,7 @@ blocks it.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 
-## 5. Post-launch: Superchain interop
+## 6. Post-launch: Superchain interop
 
 `op-stack-l2-l2` is built over the `L2ToL2CrossDomainMessenger` predeploy and tested against a
 mock, and deploys with an interop L2 as its governor's home. It is not deployable until interop
@@ -191,3 +198,4 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   is not settled. [Failure handling](message-flow.md#failure-handling) assumes indefinite
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
+
