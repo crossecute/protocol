@@ -61,7 +61,9 @@ Two limits remain:
 - **An attacker with a full quorum controls every chain**, home included. No destination rule
   protects against it.
 - **Signers must be plain keys.** Safe contract signatures (`v=0`), pre-approved hashes
-  (`v=1`) and ERC-1271 signers depend on home state and cannot be checked elsewhere.
+  (`v=1`) and ERC-1271 signers depend on home state and cannot be checked elsewhere. A
+  token-vote DAO can elect the signers instead; section 9 proposes how it alone could rotate
+  them.
 
 ## 2. Terms
 
@@ -392,6 +394,63 @@ as the conduit.
   The per-message limits remain: LayerZero's `maxMessageSize` per route and CCIP's
   `maxDataBytes` per lane bound one leaf, and the destination gas is set at send rather than
   by an executor at delivery.
+- **A rotation authority other than the signers (proposed).** A token-vote DAO cannot be a
+  signer (section 1), but it can elect the signers. Under 6.2 the current tree approves its
+  own replacement (decision 7), so a council the DAO votes out must sign its own removal and
+  can refuse. The proposal is a rotation authority fixed in the policy at creation, so bound
+  into the address through `policyHash` (4.1), of one of two kinds:
+
+  1. **A signer tree**, as today: the current tree, or a stricter rotation tree.
+  2. **Home state.** The DAO's executor writes the rotation at home, into a write-once slot
+     `rotationAt[epoch] = structHash(Rotation)` on the home conduit. A destination accepts a
+     rotation only with a storage proof of that slot against a home block hash it trusts.
+     Signatures from the current tree are not accepted for rotations.
+
+  Under kind 2 the trust model is: the council signs each dispatch and is checked on every
+  chain (6.1), and only the DAO decides who the council is. The slot is write-once, so a proof
+  from any later block stays valid, rotations still do not expire (decision 4), and a chain
+  added late replays them from epoch 1. The proof authenticates the rotation by itself, so
+  anyone can submit it directly to the destination; it needs no provider.
+
+  A conduit is only as safe as the weaker of its dispatch path and its rotation path, because
+  whoever can land a rotation can install their own keys and then sign any dispatch. A
+  rotation that arrives by a provider's authentication alone therefore returns the full
+  provider trust this spec removes. Several providers agreeing, as Aave's a.DI requires, is
+  weaker than kind 2 and MUST be described that way if offered.
+
+  Where the trusted home block hash comes from depends on the destination:
+
+  - **A rollup of the home chain** reads home block hashes natively (for example the OP Stack
+    `L1Block` predeploy). The proof against that hash is the only new code.
+  - **Any other chain** needs a light client of the home chain, in practice a ZK proof of
+    Ethereum's sync committee, which adds proving infrastructure and trusts that committee. A
+    chain that cannot afford one cannot use kind 2.
+  - **A home on an L2** waits for its state root to finalize on L1 (about 7 days on optimistic
+    rollups), then proves through both levels.
+
+  A Merkle-Patricia account and storage proof is typically a few kilobytes on Ethereum; not
+  measured here. Rotations are rare, so the cost is paid on the operation that matters least
+  for cost.
+
+  Two things kind 2 does not cover:
+
+  - **A dispatch already signed.** The council's dispatch runs as soon as it is delivered, and
+    a DAO vote takes days (Uniswap's path is 2 + 7 + 2). The DAO's power applies to future
+    dispatches: a rotation bumps the epoch, which voids every signed dispatch not yet run
+    (6.1 check 1). In this iteration the DAO can also gate each dispatch at home by being the
+    one that approves the root (the approve-then-send design above), which makes every
+    dispatch need both the DAO and the council. Under #101 signatures alone reach
+    destinations and that gate is gone, so the freeze is what stops a dispatch in flight; its
+    freeze tree would be rotated by the same authority.
+  - **Rotation lag.** Until a rotation lands on a chain, the old council can still execute
+    there. The freeze covers that window too.
+
+  If adopted, these change with it: 6.2 check 3 (a kind-2 check replaces the signature
+  check), 7 (an error for a failed state proof), 8 (the guard inverts: owner changes only
+  through a module the DAO's executor controls, matching `rotationAt`, and the owners' own
+  calls to the owner functions are blocked), 10 (proof size and gas), 11 (forged, stale-root
+  and wrong-slot proofs; a rotation signed by the current tree refused under kind 2) and
+  decision 7.
 - **Safe signing format.** Signers currently sign twice: the `Dispatch` and the Safe
   transaction that sends it. Whether Safe{Wallet}'s off-chain message signing yields
   per-owner signatures over a conduit-domain `Dispatch`, or the conduit must also accept the
