@@ -479,6 +479,9 @@ What an operator or integrator has to know:
   it goes stale on their schedule rather than ours
 - [`docs/signed-dispatch-spec.md`](docs/signed-dispatch-spec.md): owner signatures checked on
   every destination, so a provider alone cannot deliver a payload. Design, not built
+- [`docs/dao-governance-research.md`](docs/dao-governance-research.md): how Uniswap, Aave,
+  Arbitrum and Optimism execute votes across chains, and who can override them. Read
+  onchain on a date, so it goes stale on their schedule
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status
