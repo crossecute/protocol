@@ -397,8 +397,11 @@ as the conduit.
 - **A rotation authority other than the signers (proposed).** A token-vote DAO cannot be a
   signer (section 1), but it can elect the signers. Under 6.2 the current tree approves its
   own replacement (decision 7), so a council the DAO votes out must sign its own removal and
-  can refuse. The proposal is a rotation authority fixed in the policy at creation, so bound
-  into the address through `policyHash` (4.1), of one of two kinds:
+  can refuse. Arbitrum's council has the same gap today: its Safes have no guard, so 9 of 12
+  owners can change their own members
+  ([`dao-governance-research.md`](dao-governance-research.md#4-arbitrum)). The proposal is a
+  rotation authority fixed in the policy at creation, so bound into the address through
+  `policyHash` (4.1), of one of two kinds:
 
   1. **A signer tree**, as today: the current tree, or a stricter rotation tree.
   2. **Home state.** The DAO's executor writes the rotation at home, into a write-once slot
@@ -435,9 +438,11 @@ as the conduit.
   Two things kind 2 does not cover:
 
   - **A dispatch already signed.** The council's dispatch runs as soon as it is delivered, and
-    a DAO vote takes days (Uniswap's path is 2 + 7 + 2). The DAO's power applies to future
-    dispatches: a rotation bumps the epoch, which voids every signed dispatch not yet run
-    (6.1 check 1). In this iteration the DAO can also gate each dispatch at home by being the
+    a DAO vote takes days (about 9.4 for Uniswap: a 13,140-block delay, a 40,320-block vote
+    and a 2-day timelock, per
+    [`dao-governance-research.md`](dao-governance-research.md#2-uniswap)). The DAO's power
+    applies to future dispatches: a rotation bumps the epoch, which voids every signed
+    dispatch not yet run (6.1 check 1). In this iteration the DAO can also gate each dispatch at home by being the
     one that approves the root (the approve-then-send design above), which makes every
     dispatch need both the DAO and the council. Under #101 signatures alone reach
     destinations and that gate is gone, so the freeze is what stops a dispatch in flight; its
