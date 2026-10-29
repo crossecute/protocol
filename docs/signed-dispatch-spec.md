@@ -49,7 +49,8 @@ So a provider alone cannot deliver a payload: forging one needs the signers too.
 can still withhold or delay one, so liveness still rests on the providers.
 
 Every message reaches a destination only because the owner executed a transaction at home,
-which the existing providers require. That keeps two properties this iteration relies on:
+which the existing providers require: the send itself, or an approval of the root followed by
+sends from anyone (section 9). That keeps two properties this iteration relies on:
 
 - **The full quorum is met before anything is sent.** There is no message that fewer signers
   can send, which is why a sub-quorum freeze belongs to the custom provider (#101).
@@ -244,7 +245,8 @@ stores `epoch = 0`, `signerTreeHash = signerTreeHash0`, `rotationHash = genesisH
 6. **Collect.** Order signatures by key node index (3.6).
 7. **Send.** The owner executes one home transaction that hands the bundle to the home
    conduit, which sends each destination its own leaf, calls and proof, with the shared root
-   fields, tree and signatures, over the providers it uses today.
+   fields, tree and signatures, over the providers it uses today. Section 9 proposes
+   approving the root instead and sending the leaves in as many transactions as needed.
 
 Rotations follow the same steps without the tree: build the `Rotation`, review the new
 `Node[]` (every key and threshold), sign, collect, and send it to every chain.
@@ -348,7 +350,48 @@ as the conduit.
 - **Where the checks run.** Whether section 6 runs in the receiver's delivery handling for
   every payload, or behind a per-conduit flag set at creation.
 - **The approval map and cancellation.** How a signed bundle relates to home's approval map,
-  and whether a bundle is approved at home before it is sent.
+  and whether a bundle is approved at home before it is sent. One design follows, proposed
+  and not decided.
+- **Approving a root, then sending in batches (proposed).** Sending every leaf in the one home
+  transaction of step 7 bounds a dispatch twice: the transaction must fit the gas cap (16,777,216
+  on Ethereum since EIP-7825), and the owner must hold a quorum transaction for every send.
+  OneSig has neither bound, because each chain's executor submits its own leaf. Splitting the
+  home step removes both:
+
+  1. **Approve.** One quorum transaction at home approves the `Dispatch` digest, which covers
+     `root`, `epoch` and `validUntil`.
+  2. **Send.** Anyone then calls a home function with one leaf or a batch of leaves, each with
+     its calls and proof. Home recomputes each leaf hash and checks its proof against an
+     approved, unexpired root of the current epoch, then sends it as step 7 would. The calls
+     can span as many transactions as needed.
+  3. **Revoke.** The owner withdraws the approval; leaves not yet sent can no longer go out.
+     A rotation at home also ends sending under older roots, by the epoch check in 2.
+
+  The trust model in section 1 holds: nothing is sent without a quorum action at home, and
+  revoking at home works until a leaf is sent. Leaves already sent are out of reach, as in
+  step 7.
+
+  Who pays the provider fee decides the rest:
+
+  - **The caller pays (`msg.value`).** Recommended. A duplicate send costs only its sender,
+    and the destination refuses the second delivery by nonce (6.3), so home keeps no record
+    of what was sent. The caller sets the delivery attributes, such as the gas limit; a
+    delivery with too little gas fails without using its nonce, so the leaf can be sent
+    again. This is OneSig's model: whoever wants a leaf to run pays for it.
+  - **The conduit pays from its balance**, as `TransmitterBase` does today. Home then must
+    record each sent leaf, since a repeated send would spend the balance on a delivery the
+    destination refuses: a new storage slot per leaf, about 22,100 gas. The owner must also
+    fix the delivery attributes at approval, or a caller could underpay gas so deliveries
+    fail, or overpay to drain the balance.
+
+  Either way, a caller chooses the order of sends. Under the ordered nonce policy a delivered
+  nonce voids every lower one not yet run on that chain (6.3), so a caller who sends a higher
+  approved nonce first voids the lower one. A conduit that allows batched sends should use the
+  unordered policy, or ordered nonces that must be consecutive per chain, as OneSig's are.
+
+  The per-message limits remain: LayerZero's `maxMessageSize` per route and CCIP's
+  `maxDataBytes` per lane bound one leaf, and the destination gas is set at send rather than
+  by an executor at delivery.
 - **Safe signing format.** Signers currently sign twice: the `Dispatch` and the Safe
   transaction that sends it. Whether Safe{Wallet}'s off-chain message signing yields
   per-owner signatures over a conduit-domain `Dispatch`, or the conduit must also accept the
@@ -546,6 +589,11 @@ Not included, and the same in both: each provider's fixed cost per send (fees, n
 payments, the same-transaction quote of [`provider-spec.md`](provider-spec.md) R2.6), the
 Safe's own overhead and signatures, and the L1 data fee where the home is an L2, which makes
 the input size difference cost more.
+
+The fixed costs also bound how many chains one home transaction can reach under Ethereum's
+transaction gas cap of 16,777,216: about 16.7M divided by the size-dependent cost per chain
+(about 25,000 packed) plus each provider's fixed cost per send, which is not measured here.
+Section 9's approve-then-send design removes the single-transaction bound.
 
 Even packed, the tree and signatures are 300 of each message's 584 or 552 bytes, copied into
 all 24 messages: 7,200 of 13,760 bytes. That is inherent to per-chain delivery, since each
