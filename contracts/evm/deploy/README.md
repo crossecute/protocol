@@ -112,7 +112,7 @@ bytecode, and step 1's `ChainRegistry` there, comes from zksolc and TRON-solc.
 `op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home on an
 L2 it lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. Where the
 chain's registry was seeded with another home, register the L2 home there first. It lists none
-until interop is live ([todo §5](../../../docs/todo.md#5-post-launch-superchain-interop)).
+until interop is live ([todo §6](../../../docs/todo.md#6-post-launch-superchain-interop)).
 
 ## 5. Bring it into the protocol
 

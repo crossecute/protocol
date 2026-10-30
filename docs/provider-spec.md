@@ -95,7 +95,7 @@ conduit up on however good the transport is.
 | **P10** | No deployment-time registration that changes an address | Anything requiring the conduit to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `CrossProxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | A diverging transceiver's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
-| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
+| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#5-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Conduits are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 | **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. A conduit is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the relayer's signing key, not for any contract. |
 
@@ -916,7 +916,7 @@ message it ever carries.
 
 The suite is separate from, and does not replace, the `test/vectors/` corpus planned for the
 commitment half, which is
-[load-bearing for the scheme plugins](todo.md#4-post-launch-non-evm-destinations) and not
+[load-bearing for the scheme plugins](todo.md#5-post-launch-non-evm-destinations) and not
 built yet.
 
 ---
