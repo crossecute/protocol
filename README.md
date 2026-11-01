@@ -1,17 +1,22 @@
 # crossecute protocol
 
-Secure multisig operations across chains, anchored on whichever one each conduit chooses.
+Secure operations across chains from one owner, anchored on whichever chain each conduit chooses.
 
 ## Why
 
-A team on six chains runs six multisigs: six addresses, six signer sets to keep in step,
-six proposals per change, six sets of funded signers. Everything below follows from
-reducing that to one.
+A conduit's owner is any address that can make a call: an EOA, a multisig, a DAO's governor,
+or any other contract. The protocol never inspects what the owner is. It only authenticates
+the address.
 
-**A signer is removed once, not N times.** The signer set exists only in the multisig on the
-conduit's home, whichever chain the team picks. Receivers elsewhere never learn who the signers
-are: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a signer
-change. Rotating a compromised key is one transaction, not N with a live attacker in the gaps.
+Without it, an owner on six chains needs six admin accounts: six addresses to keep in step,
+six transactions per change, six balances to fund, and for a multisig, six signer sets.
+Everything below follows from reducing that to one.
+
+**Control changes once, not N times.** The owner's authority exists only on the conduit's
+home, whichever chain the owner picks. Receivers elsewhere never learn who or what the owner
+is: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a
+change of owner or of a multisig's signers. Rotating a compromised key is one transaction,
+not N with a live attacker in the gaps.
 
 **One decision, one authorization, one fan-out.** A change touching six chains is one payload,
 approved once, dispatched from one transaction on the conduit's home. Team and DAO process stops
@@ -23,17 +28,17 @@ back the others (see [Failure handling](docs/message-flow.md#failure-handling)).
 removes is divergence at the point of decision: six chains cannot hold six different
 payloads when only one was approved.
 
-**No per-chain multisig UI in the path.** Acting on a chain today needs someone's Safe
-deployment there and someone's interface up: canonical, Protofire's, or self-hosted. Here every
-operation starts on the conduit's home, so one interface covers all of them, and a chain needs
-no Safe at all: the authority on every other chain is the conduit this protocol deploys.
+**No per-chain admin setup in the path.** Acting on a chain today needs an admin account
+deployed there, and for a contract wallet, an interface for it on that chain. Here every
+operation starts on the conduit's home, so one setup covers all of them, and a chain needs no
+admin account of its own: the authority on every other chain is the conduit this protocol
+deploys.
 
-**Gas is funded in one place.** A multisig only one person can afford to execute is not
-decentralized, so an operable Safe per chain means N signers funded on M chains in M
-currencies. Here signers transact only at home. The bridge fee is paid there in one
-currency, by the transmitter from its own balance at the price quoted in the same
-transaction, so signers approve a payload and never a price. Execution runs inside the
-delivery callback. A payload that spends native
+**Gas is funded in one place.** An admin account per chain needs gas on every chain, and for
+a multisig that means N signers funded on M chains in M currencies. Here the owner transacts
+only at home. The bridge fee is paid there in one currency, by the transmitter from its own
+balance at the price quoted in the same transaction, so the owner approves a payload and
+never a price. Execution runs inside the delivery callback. A payload that spends native
 currency draws on the receiver's address, which is derivable and fundable before the
 receiver exists: topped up once, not per signer.
 
@@ -50,7 +55,7 @@ confirms its destination, and the same bytes cannot be replayed onto another cha
 
 **What it costs.** The conduit's home chain and the message provider enter the trust path. A
 halt at home delays everything, and a provider that can forge a message can drive a conduit. No
-shared failure is what N independent multisigs buy with N of everything else. The exposure is
+shared failure is what N independent admin accounts buy with N of everything else. The exposure is
 narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes
 it, after which it has no upgrade function; a conduit's upgrade key dies in the call that arms
 it; and the registry has no upgrade path at all. None is ever live and replaceable. No shared
@@ -210,7 +215,7 @@ own conduit on its chain, derived at initialization from the governor's owner, s
 home rather than typed, and configured by payloads sent from that home like any other
 conduit's. The governor's home is a deployment parameter, not a fixed chain; it has to be
 `Predetermined` from every chain, since each transceiver is born accepting the bootstrap
-that creates its owner. No Safe, key, or deployer handover is needed on any other chain.
+that creates its owner. No admin account, key, or deployer handover is needed on any other chain.
 
 **The send and receive surfaces are ERC-7786's.** `TransmitterBase` is an
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so `recipient` is a
@@ -383,7 +388,8 @@ What an operator or integrator has to know:
   contracts has to keep them.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA. Automatic delivery needs
   a relay provider's signed quote, fetched off-chain and passed with each send, which
-  expires an hour after it is issued. A multisig's send is publish-only instead: it pays
+  expires an hour after it is issued. A sender that cannot land its transaction within that
+  hour, such as a multisig collecting signatures, sends publish-only instead: it pays
   Core alone, and whoever submits the signed VAA to `executeVAAv1` delivers it, paying the
   destination gas. A send with neither reverts (#53).
 - **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends

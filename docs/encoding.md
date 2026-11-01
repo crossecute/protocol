@@ -401,7 +401,7 @@ wrong layer.
 Three claims argued in the contracts are EVM properties presented as protocol properties,
 and the Move case is where each of them breaks.
 
-**"Conduits are full-power and answer to one owner, like a Safe"** (`messaging/Executor.sol`).
+**"Conduits are full-power and answer to one owner, as its own account would"** (`messaging/Executor.sol`).
 That is the justification for `isAllowed` defaulting to `true` and for treating the call
 policy as a self-imposed restriction rather than a defence. On a Move
 chain the receiver is vocabulary-limited whether anyone wants it to be or not, so the
