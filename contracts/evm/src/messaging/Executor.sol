@@ -16,9 +16,9 @@ abstract contract Executor {
 
     /// @notice Call policy. The default allows everything.
     ///
-    /// @dev Open by default: conduits are full-power and answer to one owner, like a Safe, and
-    ///      anything that can deliver an authorized payload could forge a commitment as easily
-    ///      as a call. Failing closed would revert every payload, the bootstrap payload
+    /// @dev Open by default: conduits are full-power and answer to one owner, as its own account
+    ///      would, and anything that can deliver an authorized payload could forge a commitment
+    ///      as easily as a call. Failing closed would revert every payload, the bootstrap payload
     ///      included, until overridden.
     ///
     /// @dev Merkle-verified calls are not in v1. If added, the model is Veda's
