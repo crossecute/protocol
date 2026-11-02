@@ -127,26 +127,7 @@ the seventh; what they mean for an operator is in the README.
   Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
   5.4.0, and `src/` does not import `Bytes`.
 
-## 4. Verification independent of the provider
-
-- **A forged provider message can drive a conduit.** On every binding but the OP Stack ones,
-  authenticity rests on the provider's signers (README, Message providers). The destination
-  needs evidence of the owner's authorization that the provider cannot forge. Design open;
-  an owner signature is a candidate, with these constraints:
-  - The [owner model](../README.md#why) accepts any contract that can call, not just an
-    EOA or a wallet that supports signature validation. A signature requirement must say
-    how such an owner authorizes a message without silently excluding it.
-  - Receivers authenticate the home transmitter, not its current owner. A verifier for a
-    contract owner needs evidence of its authorization on the home chain; calling the same
-    address on the destination does not establish that.
-  - A verification key or policy learned only from the same provider's bootstrap does not
-    remove that provider's ability to forge authorization. Its initial binding, and any
-    later rotation, need an independently authenticated source.
-  - Cover bootstrap calls as well as later execution, commitment and cancellation calls;
-    bind the conduit, home, destination and payload, and define replay and ownership-change
-    behavior. Extra wire bytes also change LayerZero and CCIP quotes and delivery gas.
-
-## 5. Post-launch: non-EVM destinations
+## 4. Post-launch: non-EVM destinations
 
 Launch is EVM-only. No chain here is reachable until its vectors exist, so none of this
 blocks it.
@@ -190,7 +171,7 @@ blocks it.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 
-## 6. Post-launch: Superchain interop
+## 5. Post-launch: Superchain interop
 
 `op-stack-l2-l2` is built over the `L2ToL2CrossDomainMessenger` predeploy and tested against a
 mock, and deploys with an interop L2 as its governor's home. It is not deployable until interop
