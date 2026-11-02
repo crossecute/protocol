@@ -378,8 +378,7 @@ What an operator or integrator has to know:
   honest and that whoever controls the set does not replace it: LayerZero's default
   configuration (or LayerZero Labs, on a pinned pathway), Chainlink, the Mailbox owner, and
   Wormhole's guardian governance. Nothing here checks a proof of the source chain's consensus.
-  The OP Stack providers have no signer set; they trust the chains themselves. Verification
-  that does not rest on a provider's signers is open in [`docs/todo.md` §4](docs/todo.md#4-verification-independent-of-the-provider).
+  The OP Stack providers have no signer set; they trust the chains themselves.
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
