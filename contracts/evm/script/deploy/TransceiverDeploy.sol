@@ -5,7 +5,9 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
-import {ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
+import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
+import {AddressDerive} from "src/derivation/AddressDerive.sol";
+import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
 import {check, deployCrossProxy, arachnidDeploy} from "script/deploy/CrossProxyDeploy.sol";
 
@@ -78,18 +80,29 @@ function checkTransceiver(address t, TransceiverDeployment memory d, address pro
 /// @dev A diverging chain derives addresses its own way and records solc's initcode hash,
 ///      not its own compiler's (#30), so neither comparison applies there.
 function _checkDeploymentRecord(TransceiverBase tb, TransceiverExtension te, TransceiverDeployment memory d) view {
-    ProviderDeployment memory r = te.chainRegistry().providerDeployment(d.config.messageProvider);
+    IChainRegistryRefs registry = te.chainRegistry();
+    ProviderDeployment memory r = registry.providerDeployment(d.config.messageProvider);
     if (r.salt == bytes32(0) || te.addressesDiverge()) return;
-    check(r.deployedBy == d.deployedBy, "deployedBy is the recorded one");
+    check(
+        expectedDeployer(registry, d.config.messageProvider, tb.localChainKey()) == d.deployedBy,
+        "deployedBy is the deployer recorded for this chain"
+    );
     check(r.salt == d.salt, "salt is the recorded one");
     check(r.crossProxyInitCodeHash == tb.CROSS_PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
-    // At deployment a registry knows only its seed's home, which it requires `Predetermined`
-    // (§6 step 1), and the prediction is the same for every such chain.
     check(
-        te.chainRegistry().predictTransceiver(keccak256(d.config.governorHome), d.config.messageProvider)
+        AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(d.deployedBy, r.salt), r.crossProxyInitCodeHash)
             == address(tb),
-        "transceiver is where the registry predicts"
+        "transceiver is where its record and deployer predict"
     );
+}
+
+/// @notice Who must deploy `provider`'s transceiver on `chainKey`, this chain: the deployer the
+///         registry records for it, or, where it has no entry for its own chain yet, its current
+///         one. Other registries add this chain under their `currentDeployer` when it is
+///         added, so the two agree unless a rotation is still being applied.
+function expectedDeployer(IChainRegistryRefs registry, bytes32 provider, bytes32 chainKey) view returns (address) {
+    address recorded = registry.deployedBy(chainKey, provider);
+    return recorded != address(0) ? recorded : registry.currentDeployer();
 }
 
 /// @notice For a binding with a provider id table: the governor home's id is named at birth.

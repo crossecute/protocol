@@ -187,10 +187,11 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error FeeTransferFailed(address to, uint256 amount);
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);
-    /// @dev A receiver homed on a `Predetermined` chain landed off its transmitter's address, so
-    ///      the origin's provider id, route, or transceiver address disagree with this chain's.
-    ///      Refused on the first bootstrap rather than leaving every such conduit unreachable.
-    error ParityBroken(address receiver, address sourceTransmitter);
+    /// @dev The bootstrap carries a transmitter other than the one the home's transceiver derives
+    ///      for this conduit, so the origin's provider id, route, or transceiver address disagree
+    ///      with this chain's. Refused on the first bootstrap rather than leaving every such
+    ///      conduit unreachable.
+    error SourceTransmitterMismatch(address expected, address carried);
     error NotTreasury(address caller);
     error NotOwnerOrOperator(address caller);
     error NotAllowed(address conduit);
@@ -250,8 +251,9 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      authenticated, goes through here, so a suspended chain is cut off both ways.
     ///
     /// @dev An unset counterpart on a `Predetermined` chain is `_parityAddress(chainKey)`: every
-    ///      transceiver of a provider is a `CrossProxy` deployed through `CrossProxyDeployer` by
-    ///      one caller at one salt, which is what `Predetermined` means (#33).
+    ///      transceiver of a provider is a `CrossProxy` deployed through `CrossProxyDeployer` at
+    ///      one salt by the deployer the registry records for that chain, which is what
+    ///      `Predetermined` means (#33).
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(_chainRegistry) == address(0)) revert NoChainRegistry();
@@ -277,19 +279,13 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
         return address(bytes20(there));
     }
 
-    /// @notice Where this provider's transceiver sits on `chainKey`, a chain that uses
-    ///         Ethereum's CREATE2: the default counterpart there.
-    /// @dev This contract's own address wherever that formula holds here too. A transceiver on
-    ///      zkSync or Tron sits elsewhere, so it overrides this with `_registryParityAddress`.
-    function _parityAddress(bytes32) internal view virtual returns (address) {
-        return address(this);
-    }
-
-    /// @notice Where this provider's transceiver sits on the `Predetermined` chain `chainKey`, from
-    ///         the registry's write-once deployment record.
-    /// @dev Reverts while the provider's deployment is unrecorded, so nothing authenticates or
-    ///      is sent to a guessed address.
-    function _registryParityAddress(bytes32 chainKey) internal view returns (address) {
+    /// @notice Where this provider's transceiver sits on the `Predetermined` chain `chainKey`: the
+    ///         registry's prediction from the deployer recorded for that chain.
+    /// @dev Not `address(this)`: a chain added after a deployer rotation has a different
+    ///      deployer, hence a different address. Reverts while the provider's deployment, or its
+    ///      entry on `chainKey`, is unrecorded, so nothing authenticates or is sent to a guessed
+    ///      address.
+    function _parityAddress(bytes32 chainKey) internal view virtual returns (address) {
         return _chainRegistry.predictTransceiver(chainKey, _messageProvider);
     }
 

@@ -40,10 +40,11 @@ contract DestinationNamingTest is Test {
     ///      reads as one configuration step. Production owners differ (a timelock and the
     ///      msig's conduit); nothing below depends on which one holds which.
     function setUp() public {
+        address implementation = address(new LzTransceiver(ENDPOINT, transceiverExtension()));
         t = LzTransceiver(
             payable(address(
                     deployTransceiver(
-                        address(new LzTransceiver(ENDPOINT, transceiverExtension())),
+                        implementation,
                         abi.encodeCall(
                             LzTransceiver.initialize,
                             (transceiverConfig(address(new LzReceiver(ENDPOINT))), uint32(0), address(0))
@@ -56,6 +57,10 @@ contract DestinationNamingTest is Test {
 
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
+        registry.setProviderDeployment(
+            provider, bytes32(uint256(uint160(implementation))), t.CROSS_PROXY_INIT_CODE_HASH()
+        );
+        registry.setCurrentDeployer(address(this));
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);
         vm.stopPrank();
     }
@@ -94,11 +99,17 @@ contract DestinationNamingTest is Test {
         assertFalse(c, "no homeTransceiver");
     }
 
+    /// @dev Registers the chain and records this provider on it under this test, the deployer.
+    function _addChain(uint256 chainId, Provenance grade) internal returns (bytes32 key) {
+        key = registry.addChainKey(Erc7930.encodeEvmChain(chainId), grade);
+        registry.addProviderOnChain(key, provider, address(this));
+    }
+
     /* =========================== provider route table ========================== */
 
     function _wireBase() internal returns (bytes32 baseKey) {
         vm.startPrank(msig);
-        baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
+        baseKey = _addChain(8453, Provenance.Predetermined);
         ext(address(t)).setCounterpart(baseKey, Erc7930.encodeEvm(8453, address(t)));
         ext(address(t)).setRoute(baseKey, BASE_ROUTE);
         vm.stopPrank();
@@ -118,7 +129,7 @@ contract DestinationNamingTest is Test {
     function test_oneRouteCannotNameTwoChains() public {
         bytes32 baseKey = _wireBase();
         vm.startPrank(msig);
-        bytes32 arbKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
+        bytes32 arbKey = _addChain(42161, Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, arbKey));
         ext(address(t)).setRoute(arbKey, BASE_ROUTE);
         vm.stopPrank();
@@ -137,7 +148,7 @@ contract DestinationNamingTest is Test {
     ///      LayerZero-adjacent value and would send into the void.
     function test_unsetRouteRevertsRatherThanReadingAsZero() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
+        bytes32 key = _addChain(10, Provenance.Predetermined);
         vm.stopPrank();
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, key));
         t.routeTo(key);
@@ -147,7 +158,7 @@ contract DestinationNamingTest is Test {
     ///      the chain accepts no new counterpart until it is added back.
     function test_removingAChainStopsOnboardingButNotItsTransceiver() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
+        bytes32 key = _addChain(10, Provenance.Predetermined);
         ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
 
         registry.removeChainKey(key);
@@ -164,7 +175,7 @@ contract DestinationNamingTest is Test {
     /// @dev Suspension still cuts a removed chain off: removal must not disable it.
     function test_aRemovedChainCanStillBeCutOff() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
+        bytes32 key = _addChain(10, Provenance.Predetermined);
         ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         registry.removeChainKey(key);
         registry.setSuspended(key, true);
@@ -185,7 +196,7 @@ contract DestinationNamingTest is Test {
     ///      separately: otherwise a half-wired chain cannot be diagnosed.
     function test_counterpartIsReadableWithoutAnEid() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
+        bytes32 key = _addChain(10, Provenance.Predetermined);
         ext(address(t)).setCounterpart(key, Erc7930.encodeEvm(10, address(t)));
         vm.stopPrank();
 
@@ -235,7 +246,7 @@ contract DestinationNamingTest is Test {
     ///      the usual way to get one.
     function test_aRouteThatIsNotAChainIdentifierIsRefused() public {
         vm.startPrank(msig);
-        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(10), Provenance.Predetermined);
+        bytes32 key = _addChain(10, Provenance.Predetermined);
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.RouteKeyMismatch.selector, key));
         ext(address(t)).setRoute(key, abi.encodePacked(uint32(30111)));
         vm.stopPrank();

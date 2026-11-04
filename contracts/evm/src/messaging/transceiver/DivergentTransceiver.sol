@@ -28,10 +28,6 @@ abstract contract DivergentTransceiver is TransceiverBase, DivergentConduits {
         __DivergentConduits_init(conduitBytecodeHash_);
         __TransceiverBase_init(c, true);
     }
-
-    function _parityAddress(bytes32 chainKey) internal view virtual override returns (address) {
-        return _registryParityAddress(chainKey);
-    }
 }
 
 /// @title ZkSyncTransceiver
@@ -72,11 +68,7 @@ abstract contract TronTransceiver is DivergentTransceiver, TronConduits {
 }
 
 /// @notice `TransceiverExtension` for a `DivergentTransceiver`.
-abstract contract DivergentTransceiverExtension is TransceiverExtension, DivergentConduits {
-    function _parityAddress(bytes32 chainKey) internal view virtual override returns (address) {
-        return _registryParityAddress(chainKey);
-    }
-}
+abstract contract DivergentTransceiverExtension is TransceiverExtension, DivergentConduits {}
 
 /// @notice The extension every `ZkSyncTransceiver` on a chain names.
 contract ZkSyncTransceiverExtension is DivergentTransceiverExtension, ZkSyncConduits {

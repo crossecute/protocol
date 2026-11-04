@@ -7,11 +7,7 @@ import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {Call} from "src/messaging/Call.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {
-    DivergentTransceiver,
-    ZkSyncTransceiver,
-    TronTransceiver
-} from "src/messaging/transceiver/DivergentTransceiver.sol";
+import {ZkSyncTransceiver, TronTransceiver} from "src/messaging/transceiver/DivergentTransceiver.sol";
 
 /// @dev The overrides below only name both bases, as Solidity requires where each supplies an
 ///      implementation; `super` resolves by linearization to the one that does the work.
@@ -45,15 +41,6 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
 
     function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._storeCrossProxyInitCode();
-    }
-
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _conduitInitializer(
@@ -96,15 +83,6 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         returns (address)
     {
         return super._predictCrossConduit(owner, salt, homeChainKey);
-    }
-
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _conduitInitializer(

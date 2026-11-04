@@ -3,21 +3,28 @@ pragma solidity ^0.8.0;
 
 import {Provenance} from "src/registry/Provenance.sol";
 
-/// @notice The CREATE2 inputs a message provider's contracts deploy from.
+/// @notice The CREATE2 inputs a message provider's contracts share on every chain.
 ///
-/// @dev One caller and salt per provider, used through `CrossProxyDeployer` on every chain, put
-///      that provider's transceiver at one address everywhere: the property
-///      `TransceiverBase._counterpartOn` falls back on. The salt can be mined for leading zero
-///      bytes, which are cheaper in the calldata that names the address.
+/// @dev The caller that deploys a transceiver is per (provider, chain), held by the registry: one
+///      salt and caller put a transceiver at one address, and a rotated deployer moves only the
+///      chains added after it. The salt can be mined for leading zero bytes, which are cheaper in
+///      the calldata that names the address.
 struct ProviderDeployment {
-    /// The conduit that called `CrossProxyDeployer.deploy`, the same on every chain.
-    address deployedBy;
-    /// The mined salt it passed, identical on every chain.
+    /// The mined salt every deployer passes to `CrossProxyDeployer.deploy`.
     bytes32 salt;
     /// keccak256 of `CrossProxy`'s initcode as solc builds it: transceivers and conduits are
     /// both `CrossProxy`. Recorded rather than computed, since a zkSync or Tron registry's
     /// own compiler builds a different one.
     bytes32 crossProxyInitCodeHash;
+}
+
+/// @notice Whether sends may reach a provider's transceiver on a chain.
+/// @dev `Pending` is recorded and predicted but not sent to; `Live` is set by the registry's owner
+///      once the deployment there was checked independently of the deployer.
+enum Status {
+    None,
+    Pending,
+    Live
 }
 
 /// @notice The slice of `ChainRegistry` a transceiver needs: where remote things live, and how
@@ -38,13 +45,24 @@ interface IChainRegistryRefs {
     ///         deriver and inputs recorded for that chain. A transceiver stores the result.
     function expectedTransceiver(bytes32 chainKey) external view returns (bytes memory);
 
-    /// @notice The CREATE2 inputs `messageProvider`'s contracts deploy from; a zero salt means
-    ///         none is recorded.
+    /// @notice The CREATE2 inputs `messageProvider`'s contracts share; a zero salt means none is
+    ///         recorded.
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory);
 
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from the recorded
-    ///         factory, salt, and initcode hash. Reverts for a chain not graded `Predetermined`.
+    ///         factory, that chain's deployer, salt, and initcode hash. Reverts for a chain not
+    ///         graded `Predetermined`, and for one the provider was never added on.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) external view returns (address);
+
+    /// @notice Whether sends to `messageProvider`'s transceiver on `chainKey` are allowed.
+    function isLive(bytes32 chainKey, bytes32 messageProvider) external view returns (bool);
+
+    /// @notice Who deployed, or will deploy, `messageProvider`'s transceiver on `chainKey`; zero
+    ///         where it was never added.
+    function deployedBy(bytes32 chainKey, bytes32 messageProvider) external view returns (address);
+
+    /// @notice The deployer a provider added on a chain from now on is recorded under.
+    function currentDeployer() external view returns (address);
 
     /// @notice The canonical ERC-7930 chain identifier `chainKey` hashes from.
     function chainIdentifier(bytes32 chainKey) external view returns (bytes memory);

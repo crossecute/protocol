@@ -34,6 +34,7 @@ contract DeployChainTest is Test {
         g.home = read.home;
         g.owner = read.owner;
         g.salt = read.salt;
+        g.deployer = read.deployer;
         g.timelockDelay = read.timelockDelay;
         g.proposers = read.proposers;
         g.crossProxyInitCodeHash = read.crossProxyInitCodeHash;
@@ -75,7 +76,7 @@ contract DeployChainTest is Test {
         ProviderSeed memory record = GovernanceConfig.providerSeed(g, "ccip");
         address router = address(new RouterStub());
         TransceiverDeployment memory d = TransceiverDeployment({
-            deployedBy: record.deployedBy,
+            deployedBy: g.deployer,
             salt: record.salt,
             implementation: CcipDeploy.transceiverImplementation(router),
             config: TransceiverConfig({
@@ -96,7 +97,7 @@ contract DeployChainTest is Test {
                 ChainConfig.defaultDir(), ChainConfig.chains(ChainConfig.defaultDir()), "ccip", g.home
             )
         );
-        vm.startPrank(record.deployedBy);
+        vm.startPrank(g.deployer);
         address t = CcipDeploy.transceiver(d, router, homeSelector);
         vm.stopPrank();
 

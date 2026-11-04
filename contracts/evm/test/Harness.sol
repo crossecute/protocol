@@ -125,6 +125,27 @@ abstract contract AnyGatewayTransceiver is UnsendableTransceiver {
     }
 }
 
+/// @dev The extension of a `SharedAddressTransceiver`.
+contract SharedAddressExtension is TransceiverExtension {
+    function _parityAddress(bytes32) internal view override returns (address) {
+        return address(this);
+    }
+}
+
+/// @dev A transceiver for suites that are not about the deployer: every chain's transceiver of
+///      its provider sits at its own address, as it does while one deployer serves all chains.
+///      Suites about the per-chain deployer use `SaltedTransceiver` or a fixture that deploys
+///      through `CrossProxyDeployer`.
+abstract contract SharedAddressTransceiver is AnyGatewayTransceiver {
+    function _newExtension() internal virtual override returns (address) {
+        return address(new SharedAddressExtension());
+    }
+
+    function _parityAddress(bytes32) internal view virtual override returns (address) {
+        return address(this);
+    }
+}
+
 /// @dev See `AnyGatewayReceiver`.
 abstract contract AnyGatewayTransmitter is UnsendableTransmitter {
     function hasRole(bytes32 role, address conduit) public view virtual override returns (bool) {
@@ -135,7 +156,7 @@ abstract contract AnyGatewayTransmitter is UnsendableTransmitter {
 /// @notice A transceiver owned by an address the test names, for suites about routing and
 ///         counterparts rather than how the owner is derived (`Transceiver.t.sol` covers that).
 ///         It never creates a conduit, so the implementations only have to be non-zero.
-contract OwnedTransceiver is AnyGatewayTransceiver {
+contract OwnedTransceiver is SharedAddressTransceiver {
     function initialize(address owner_) external initializer {
         TransceiverConfig memory c = transceiverConfig(owner_, address(0x1E19), address(0x1E19), address(0x7EA5));
         c.governorHome = Erc7930.encodeEvmChain(block.chainid);

@@ -24,7 +24,7 @@ import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {unseeded} from "test/RegistrySeed.sol";
-import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
+import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -303,6 +303,7 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         bytes32 chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Predetermined);
+        _listAsDeployed(registry, provider, transceiver, chainKey);
         vm.startPrank(t.owner());
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         ext(address(t)).setRoute(chainKey, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
@@ -593,6 +594,7 @@ abstract contract ProviderInboundFixture is ProviderFixture {
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
+        _listAsDeployed(registry, provider, transceiver, chainKey);
 
         vm.startPrank(t.owner());
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
@@ -651,33 +653,34 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
     ///         provider's id for that home, with no owner call afterwards.
     /// @dev External so that an expected revert attaches to the deployment, not the first
     ///      contract created on the way.
-    function deployBornConfigured(IChainRegistryRefs registry) external returns (address) {
+    function deployBornConfigured(IChainRegistryRefs registry, address implementation) external returns (address) {
         TransceiverConfig memory c = _config();
         c.governorOwner = GOVERNOR;
         c.governorHome = Erc7930.encodeEvmChain(REMOTE_CHAIN_ID);
         c.chainRegistry = registry;
         c.messageProvider = keccak256("under-test");
         c.minCounterpartProvenance = Provenance.Unique;
-        return _deployTransceiver(c, _remoteProviderId());
+        return _deploy(_deployment(implementation, c), _remoteProviderId());
     }
 
-    function _seeded(Provenance homeGrade) internal returns (ChainRegistry) {
+    /// @dev The home's transceiver is recorded as this contract's deployment of `implementation`,
+    ///      which is where `deployBornConfigured` puts this chain's too.
+    function _seeded(Provenance homeGrade, address implementation) internal returns (ChainRegistry) {
         return new ChainRegistry(
-            address(this),
-            RegistrySeed({
-                governorHome: Erc7930.encodeEvmChain(REMOTE_CHAIN_ID),
-                governorHomeGrade: homeGrade,
-                providers: new ProviderSeed[](0)
-            })
+            address(this), _seedFor("under-test", implementation, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), homeGrade)
         );
     }
 
     /// @dev #28 end to end: a transceiver born knowing only the governor's home accepts the
     ///      governor's bootstrap through the provider's own callback, and the receiver it
     ///      creates is its owner. The sender is the default counterpart on a `Predetermined`
-    ///      home with no deployment record: this transceiver's own address.
+    ///      home: the registry's prediction, which is this transceiver's own address because the
+    ///      home was deployed by the same deployer.
     function test_aBornConfiguredTransceiverAcceptsTheGovernorsBootstrap() public {
-        address t = this.deployBornConfigured(IChainRegistryRefs(address(_seeded(Provenance.Predetermined))));
+        address implementation = _transceiverImplementation();
+        address t = this.deployBornConfigured(
+            IChainRegistryRefs(address(_seeded(Provenance.Predetermined, implementation))), implementation
+        );
         address owner = TransceiverBase(payable(t)).owner();
         assertEq(owner.code.length, 0, "the owner does not exist yet");
 
@@ -689,19 +692,21 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
     /// @dev #32: only the owner the bootstrap creates could set a counterpart, so a home whose
     ///      counterpart does not resolve at birth is refused rather than left unusable.
     function test_aGovernorHomeBelowPredeterminedIsRefusedAtBirth() public {
-        ChainRegistry registry = _seeded(Provenance.Unique);
+        address implementation = _transceiverImplementation();
+        ChainRegistry registry = _seeded(Provenance.Unique, implementation);
         vm.expectRevert(
             abi.encodeWithSelector(OutboundBase.NoCounterpartFor.selector, ChainKey.forEvm(REMOTE_CHAIN_ID))
         );
-        this.deployBornConfigured(IChainRegistryRefs(address(registry)));
+        this.deployBornConfigured(IChainRegistryRefs(address(registry)), implementation);
     }
 
     function test_aSuspendedGovernorHomeIsRefusedAtBirth() public {
-        ChainRegistry registry = _seeded(Provenance.Predetermined);
+        address implementation = _transceiverImplementation();
+        ChainRegistry registry = _seeded(Provenance.Predetermined, implementation);
         bytes32 home = ChainKey.forEvm(REMOTE_CHAIN_ID);
         registry.setSuspended(home, true);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, home));
-        this.deployBornConfigured(IChainRegistryRefs(address(registry)));
+        this.deployBornConfigured(IChainRegistryRefs(address(registry)), implementation);
     }
 
     function test_aBootstrapThroughTheProviderCreatesAConfiguredReceiver() public {
@@ -914,6 +919,7 @@ abstract contract ProviderZkSyncSpec is ProviderGasFixture {
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
+        _listAsDeployed(registry, provider, zk, home);
 
         TransceiverBase t = TransceiverBase(payable(zk));
         vm.startPrank(t.owner());

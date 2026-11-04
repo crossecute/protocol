@@ -60,6 +60,10 @@ contract StubTransceiver {
         return BOOTSTRAP_FEE;
     }
 
+    function isLive(bytes32) external pure returns (bool) {
+        return true;
+    }
+
     /// @dev A parity chain: the receiver sits at the transmitter's own address.
     function predictReceiver(bytes32, address, bytes32) external view returns (bytes memory) {
         return abi.encodePacked(msg.sender);

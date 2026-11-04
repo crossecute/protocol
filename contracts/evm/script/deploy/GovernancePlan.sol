@@ -39,6 +39,9 @@ struct Plan {
     /// The chains the plan configures: parity chains only.
     ChainEntry[] chains;
     Governance g;
+    /// `isOn` for each chain and provider, row-major by chain, computed once in `load`: reading
+    /// the provider files for every pair on every call exhausts memory.
+    bool[] deployed;
 }
 
 /// @title GovernancePlan
@@ -62,7 +65,7 @@ library GovernancePlan {
     ///      `GovernancePlanTest` holds every call's measured cost at least 10% below it.
     uint256 internal constant CALL_GAS = 100_000;
     /// @dev Destination gas per entry of a timelock batch, which `scheduleBatch` hashes and logs.
-    uint256 internal constant SCHEDULE_ENTRY_GAS = 20_000;
+    uint256 internal constant SCHEDULE_ENTRY_GAS = 25_000;
 
     function load(string memory dir, string memory governanceFile) internal view returns (Plan memory p) {
         p.dir = dir;
@@ -80,6 +83,12 @@ library GovernancePlan {
             p.chains[n++] = p.all[i];
             // Its lanes need no id and are not built here; a listed chain must not be skipped.
             check(!OpStackInteropConfig.isMember(dir, p.all, p.all[i]), "op-stack-l2-l2 lanes are not scripted");
+        }
+        p.deployed = new bool[](p.chains.length * p.g.providers.length);
+        for (uint256 i; i < p.chains.length; ++i) {
+            for (uint256 j; j < p.g.providers.length; ++j) {
+                p.deployed[i * p.g.providers.length + j] = isOn(p, p.g.providers[j].name, p.chains[i]);
+            }
         }
         // Each proposer's conduit exists on a chain only once it is bootstrapped there, and the
         // first one's bootstrap is what schedules that chain's registry.
@@ -179,35 +188,80 @@ library GovernancePlan {
     /* ================================ registries ============================== */
 
     /// @notice `local`'s registry entries: every parity chain graded as `ChainConfig.gradeOf`
-    ///         grades it, and each provider's transceiver there. Entries the seed already holds
-    ///         are no-ops.
+    ///         grades it, each provider added on every chain it was deployed to under the
+    ///         first-generation deployer, those but the home marked live, and each provider's
+    ///         transceiver here. Entries the seed already holds are no-ops.
+    /// @dev A chain is marked live in the batch the proposers schedule, so the delay is the window
+    ///      for checking each deployment independently of the deployer (`deploy/README.md`).
     function registryBatch(Plan memory p, ChainEntry memory local)
         internal
         view
         returns (address[] memory targets, uint256[] memory values, bytes[] memory payloads)
     {
         address registry = address(ChainDeploy.predict(p.g).registry);
-        Call[] memory calls;
+        Call[] memory calls = new Call[](p.chains.length * (1 + 2 * p.g.providers.length) + p.g.providers.length);
+        uint256 n = _chainCalls(p, local, registry, calls, 0);
+        n = _providerCalls(p, local, registry, calls, n);
+        n = _transceiverCalls(p, local, registry, calls, n);
+        targets = new address[](n);
+        values = new uint256[](n);
+        payloads = new bytes[](n);
+        for (uint256 i; i < n; ++i) {
+            (targets[i], payloads[i]) = (calls[i].target, calls[i].data);
+        }
+    }
+
+    function _chainCalls(Plan memory p, ChainEntry memory local, address registry, Call[] memory calls, uint256 n)
+        private
+        view
+        returns (uint256)
+    {
         for (uint256 i; i < p.chains.length; ++i) {
             bytes memory data = abi.encodeCall(
                 ChainRegistry.addChainKey,
                 (Erc7930.encodeEvmChain(p.chains[i].chainId), ChainConfig.gradeOf(local, p.chains[i]))
             );
-            calls = _push(calls, Call(registry, 0, data));
+            calls[n++] = Call(registry, 0, data);
         }
+        return n;
+    }
+
+    /// @dev Adds each provider deployed on a chain under the first-generation deployer, and marks it
+    ///      live unless the seed already did (the home) or the chain is `local`, which never sends
+    ///      to itself.
+    function _providerCalls(Plan memory p, ChainEntry memory local, address registry, Call[] memory calls, uint256 n)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 providers = p.g.providers.length;
+        for (uint256 i; i < p.chains.length; ++i) {
+            bytes32 key = ChainKey.forEvm(p.chains[i].chainId);
+            bool live = p.chains[i].chainId != p.g.home.chainId && p.chains[i].chainId != local.chainId;
+            for (uint256 j; j < providers; ++j) {
+                if (!p.deployed[i * providers + j]) continue;
+                bytes32 provider = keccak256(bytes(p.g.providers[j].name));
+                bytes memory add = abi.encodeCall(ChainRegistry.addProviderOnChain, (key, provider, p.g.deployer));
+                calls[n++] = Call(registry, 0, add);
+                if (live) calls[n++] = Call(registry, 0, abi.encodeCall(ChainRegistry.markLive, (key, provider)));
+            }
+        }
+        return n;
+    }
+
+    function _transceiverCalls(Plan memory p, ChainEntry memory local, address registry, Call[] memory calls, uint256 n)
+        private
+        view
+        returns (uint256)
+    {
         for (uint256 i; i < p.g.providers.length; ++i) {
             string memory name = p.g.providers[i].name;
             if (!isOn(p, name, local)) continue;
             bytes memory data =
                 abi.encodeCall(ChainRegistry.setLocalTransceiver, (keccak256(bytes(name)), transceiver(p, name)));
-            calls = _push(calls, Call(registry, 0, data));
+            calls[n++] = Call(registry, 0, data);
         }
-        targets = new address[](calls.length);
-        values = new uint256[](calls.length);
-        payloads = new bytes[](calls.length);
-        for (uint256 i; i < calls.length; ++i) {
-            (targets[i], payloads[i]) = (calls[i].target, calls[i].data);
-        }
+        return n;
     }
 
     /// @notice The call a proposer makes to schedule `local`'s registry batch.

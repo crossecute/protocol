@@ -228,7 +228,7 @@ contract CounterpartRoutingTest is Test {
 
     /// @dev The default is already in use the moment the chain is graded, so a counterpart
     ///      there may only restate it. Any other address would repoint a lane conduits already
-    ///      derive from, and every bootstrap through it would fail `ParityBroken`. A chain where
+    ///      derive from, and every bootstrap through it would fail `SourceTransmitterMismatch`. A chain where
     ///      parity does not hold is graded `Unique` and declares its counterpart.
     function test_aPredeterminedDefaultCannotBeRepointed() public {
         vm.startPrank(msig);

@@ -7,11 +7,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
-import {
-    DivergentTransceiver,
-    TronTransceiver,
-    TronTransceiverExtension
-} from "src/messaging/transceiver/DivergentTransceiver.sol";
+import {TronTransceiver, TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {transceiverConfig, ext} from "test/Harness.sol";
@@ -56,15 +52,6 @@ contract PairedTron is TronTransceiver, Unsent {
         returns (address)
     {
         return super._predictCrossConduit(owner, salt, homeChainKey);
-    }
-
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 }
 

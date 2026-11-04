@@ -26,12 +26,13 @@ contract DeployChecksTest is LzFixture {
 
     function _seeded(address deployedBy, bytes32 salt, bytes32 initCodeHash) internal returns (ChainRegistry) {
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("layerzero", deployedBy, salt, initCodeHash);
+        providers[0] = ProviderSeed("layerzero", salt, initCodeHash);
         return new ChainRegistry(
             address(this),
             RegistrySeed({
                 governorHome: Erc7930.encodeEvmChain(1),
                 governorHomeGrade: Provenance.Predetermined,
+                deployer: deployedBy,
                 providers: providers
             })
         );
@@ -81,7 +82,7 @@ contract DeployChecksTest is LzFixture {
     function test_aCallerOtherThanTheRecordedOneIsRefused() public {
         ChainRegistry registry = _seeded(address(0xD3), SALT, keccak256(type(CrossProxy).creationCode));
         TransceiverDeployment memory d = _from(registry, address(this), SALT);
-        _expect("deployedBy is the recorded one");
+        _expect("deployedBy is the deployer recorded for this chain");
         this.deploy(d);
     }
 

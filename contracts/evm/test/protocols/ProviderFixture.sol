@@ -9,6 +9,10 @@ import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol"
 import {Call} from "src/messaging/Call.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {transceiverConfig} from "test/Harness.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
+import {Provenance} from "src/registry/Provenance.sol";
+import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, Call[] memory calls)
     pure
@@ -115,6 +119,35 @@ abstract contract ProviderFixture is ProviderConduitFixture {
 
     function _deployTransceiver(TransceiverConfig memory c, uint256 homeId) internal returns (address) {
         return _deploy(_deployment(_transceiverImplementation(), c), homeId);
+    }
+
+    /// @notice A seed that records provider `name` as this contract's deployment of
+    ///         `implementation`, so the registry predicts the address `_deploy` gives it.
+    function _seedFor(string memory name, address implementation, bytes memory governorHome, Provenance grade)
+        internal
+        view
+        returns (RegistrySeed memory)
+    {
+        ProviderSeed[] memory providers = new ProviderSeed[](1);
+        providers[0] =
+            ProviderSeed(name, bytes32(uint256(uint160(implementation))), keccak256(type(CrossProxy).creationCode));
+        return RegistrySeed({
+            governorHome: governorHome, governorHomeGrade: grade, deployer: address(this), providers: providers
+        });
+    }
+
+    /// @notice Record transceiver `t`, as `_deployTransceiver` deployed it, in `registry` under
+    ///         `provider` and list it live on `chainKey`. This contract owns `registry`.
+    function _listAsDeployed(ChainRegistry registry, bytes32 provider, address t, bytes32 chainKey) internal {
+        address implementation = address(uint160(uint256(vm.load(t, ERC1967Utils.IMPLEMENTATION_SLOT))));
+        if (registry.providerDeployment(provider).salt == bytes32(0)) {
+            registry.setProviderDeployment(
+                provider, bytes32(uint256(uint160(implementation))), keccak256(type(CrossProxy).creationCode)
+            );
+        }
+        if (registry.currentDeployer() == address(0)) registry.setCurrentDeployer(address(this));
+        registry.addProviderOnChain(chainKey, provider, address(this));
+        registry.markLive(chainKey, provider);
     }
 }
 

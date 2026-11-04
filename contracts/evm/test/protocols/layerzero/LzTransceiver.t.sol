@@ -198,14 +198,19 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
             RegistrySeed({
                 governorHome: Erc7930.encodeEvmChain(1),
                 governorHomeGrade: Provenance.Predetermined,
+                deployer: address(0xDE91),
                 providers: providers
             })
         );
     }
 
     function test_theGovernorHomePeerIsBornSet() public {
-        ChainRegistry registry = _homeSeed(new ProviderSeed[](0));
-        address t = _deployTransceiver(_registryConfig(IChainRegistryRefs(address(registry))), HOME_EID);
+        address implementation = _transceiverImplementation();
+        ChainRegistry registry = new ChainRegistry(
+            address(this), _seedFor("layerzero", implementation, Erc7930.encodeEvmChain(1), Provenance.Predetermined)
+        );
+        address t =
+            _deploy(_deployment(implementation, _registryConfig(IChainRegistryRefs(address(registry)))), HOME_EID);
         assertEq(IOAppCore(t).peers(HOME_EID), toBytes32(t));
     }
 
@@ -213,7 +218,7 @@ contract LzGovernorHomeTest is ProviderGovernorHomeSpec, LzFixture {
     ///      registry's prediction from the provider's deployment record.
     function test_aDivergentTransceiversGovernorHomePeerIsThePredictedOne() public {
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256("account"));
+        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256("account"));
         ChainRegistry registry = _homeSeed(providers);
         address t = LzDeploy.zkSyncTransceiver(
             _deployment(
