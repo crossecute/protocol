@@ -2,8 +2,7 @@
 
 // Vendored, unmodified, from wormhole-foundation/wormhole-solidity-sdk @ 2cb855ea
 // (src/Executor/Request.sol).
-// Apache-2.0, like the rest of its source repo. No imports. See
-// https://github.com/crossecute/research/blob/main/protocol/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings.
+// Apache-2.0, like the rest of its source repo. No imports.
 
 pragma solidity ^0.8.19;
 

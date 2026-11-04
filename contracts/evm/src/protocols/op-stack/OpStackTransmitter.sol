@@ -10,8 +10,7 @@ import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 ///         the recipient's chain to.
 /// @dev Sender-only: no `receiveOpStackMessage`, so R3.1 is answered by absence rather than a
 ///      guard. Binds to `ICrossDomainMessenger`, not `OptimismPortal`: the messenger un-aliases
-///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused. See
-///      `https://github.com/crossecute/research/blob/main/protocol/provider-research.md#7-op-stack-as-a-native-binding`.
+///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused.
 contract OpStackTransmitter is OwnableTransmitter {
     bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
 

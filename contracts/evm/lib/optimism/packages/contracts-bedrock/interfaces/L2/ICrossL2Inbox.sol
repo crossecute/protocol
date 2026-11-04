@@ -3,7 +3,7 @@
 // Vendored, unmodified, from ethereum-optimism/optimism @ dfe4f947ca48f872ce207c3e1e36a9256beaa044
 // (packages/contracts-bedrock/interfaces/L2/ICrossL2Inbox.sol).
 // MIT, like the rest of contracts-bedrock. Imports only ICrossL2Inbox, vendored
-// beside it. See https://github.com/crossecute/research/blob/main/protocol/provider-research.md#7-op-stack-as-a-native-binding.
+// beside it.
 
 pragma solidity ^0.8.0;
 

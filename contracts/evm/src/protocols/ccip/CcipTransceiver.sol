@@ -14,7 +14,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///
 /// @dev One Router serves both directions (`ccipSend`/`getFee` and inbound `ccipReceive`), so
 ///      `GATEWAY_ROLE` names one address, granted at initialization rather than relying on the
-///      deployment to list it. See `https://github.com/crossecute/research/blob/main/protocol/provider-research.md#4-ccip-as-a-native-binding`.
+///      deployment to list it.
 abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageReceiver {
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
 

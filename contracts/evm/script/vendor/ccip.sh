@@ -4,15 +4,14 @@
 # Usage: contracts/evm/script/vendor/ccip.sh
 #
 # Bumping the pinned commit: edit COMMIT below, re-run, and diff the result before
-# committing. Update the citation in crossecute/research protocol/provider-research.md to
-# match, since it names this exact commit.
+# committing.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 source contracts/evm/script/vendor/lib.sh
 
 REPO="smartcontractkit/ccip"
 COMMIT="171f9f0c"
-NOTE=$'MIT-tagged in its own SPDX header, distinct from the BUSL-1.1 router/off-ramp\n// infrastructure this repo only ever calls. See\n// https://github.com/crossecute/research/blob/main/protocol/provider-research.md#4-ccip-as-a-native-binding.'
+NOTE=$'MIT-tagged in its own SPDX header, distinct from the BUSL-1.1 router/off-ramp\n// infrastructure this repo only ever calls.'
 DEST="contracts/evm/lib/ccip/contracts/src/v0.8/ccip"
 
 vendor_file "$REPO" "$COMMIT" \

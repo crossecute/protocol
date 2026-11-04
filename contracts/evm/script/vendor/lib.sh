@@ -5,8 +5,7 @@
 # (interfaces, a codec library) rather than pulling in a provider's full SDK repo as a
 # submodule, because none of them ship an isolated package for just those files: the
 # LayerZero, CCIP, and Hyperlane repos each mix the files a binding actually needs with
-# a much larger tree under a different license (see
-# crossecute/research protocol/provider-research.md for the per-provider reasoning). A driver script per
+# a much larger tree under a different license. A driver script per
 # provider calls vendor_file below once per file, naming the exact source commit; running
 # it again re-fetches every file fresh and reapplies the provenance header, so bumping a
 # pinned version is "edit the commit, re-run, diff" instead of a hand copy-paste.

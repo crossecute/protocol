@@ -3,7 +3,7 @@
 // Vendored, unmodified, from hyperlane-xyz/hyperlane-monorepo @ 983831f6
 // (solidity/contracts/interfaces/IInterchainSecurityModule.sol).
 // MIT OR Apache-2.0, like the rest of its source repo. No OpenZeppelin imports, unlike
-// MailboxClient/Router. See https://github.com/crossecute/research/blob/main/protocol/provider-research.md#5-hyperlane-as-a-native-binding.
+// MailboxClient/Router.
 
 pragma solidity >=0.6.11;
 
