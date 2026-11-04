@@ -115,8 +115,8 @@ the seventh; what they mean for an operator is in the README.
   through frxUSD; both skip without their RPC URLs, which CI does not set. C11, and C29 to C31 for every provider
   but Wormhole, test the transport rather than the binding, so until they run against each
   provider's real deployment, P7 and P9 remain documented assumptions.
-- **`deploy/governance.toml` is unset.** The governor's owner and salt, and each provider's
-  `deployed_by` and salt, are zero, and the deploy scripts refuse them. Its proposers,
+- **`deploy/governance.toml` is unset.** The governor's owner and salt, `deployed_by`, and each
+  provider's salt, are zero, and the deploy scripts refuse them. Its proposers,
   LayerZero and CCIP, are a default to confirm: they must be two providers that reach every
   chain from the home, which rules out both OP Stack providers, and Wormhole until its
   deliverer exists.

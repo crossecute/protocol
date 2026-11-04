@@ -16,15 +16,15 @@ Every grade follows from this, so it comes first. It is the chain's `derivation`
 
 | Derivation | What it is | Graded by others | Grades others | Consequences |
 | --- | --- | --- | --- | --- |
-| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by every chain but `other` | `Predetermined` if they are parity | Conduits share their address with every parity chain; the deploy scripts support it |
+| `parity` | Standard EVM; Arachnid's factory places `CrossProxyDeployer` at `0x4973…249C` | `Predetermined` by every chain but `other` | `Predetermined` if they are parity | Conduits share their address with every parity chain of the same deployer; the deploy scripts support it |
 | `zksync` | EraVM's CREATE2 | `Unique` | `Predetermined` if they are parity; otherwise `Unique`, itself included | Its transceivers report every receiver home, paid from a float; no production script yet |
 | `tron` | TVM's CREATE2 (`0x41` prefix) | `Unique` | as zkSync | As zkSync |
 | `other` | EVM without Arachnid's factory | `Unique` | `Unique`, itself included | Its transceivers cannot be born configured (the governor's home is not `Predetermined` from it, which `initialize` refuses); unsupported until the home's counterpart can be seeded ([todo §2](../../../docs/todo.md#2-chain-checks-before-mainnet)) |
 
 A chain is `Predetermined` from another exactly when it is a parity chain and the grading chain
 is not `other` (`ChainConfig.gradeOf`): a zkSync or Tron transceiver finds a parity chain's
-transceiver from the provider's deployment record, but a plain transceiver on an `other` chain
-sits off the shared address and can use no parity address (#33). Code at Arachnid's address does not settle it: zkSync Era returns
+transceiver from the registry's prediction, as every transceiver does, but a plain transceiver on
+an `other` chain sits off the shared address and can use no parity address (#33). Code at Arachnid's address does not settle it: zkSync Era returns
 the same 69 bytes there as Ethereum, but EraVM's CREATE2 would put `CrossProxyDeployer`
 elsewhere. Classify a chain by its VM, then let the deploy's own check confirm it:
 `crossProxyDeployer()` refuses a chain where the deployer does not land where Ethereum's
@@ -69,10 +69,10 @@ forge script script/DeployChain.s.sol --rpc-url <rpc> --broadcast
 It deploys the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and
 `Treasury(timelock)`, through Arachnid's factory. Every argument comes from
 [`governance.toml`](governance.toml), so each lands at one address on every parity chain: the
-seed names the governor's home, graded `Predetermined`, and each provider's deployment record,
-and the timelock's proposers are the governor's conduits under the two providers it names. Any
+seed names the governor's home, graded `Predetermined`, each provider's salt and initcode hash,
+and the first deployer (`deployed_by`), which it records live on the home. The timelock's proposers are the governor's conduits under the two providers it names. Any
 conduit may broadcast, and a rerun deploys nothing. It refuses a chain that is not parity, a
-`governance.toml` with an owner, caller, or salt unset, and a build whose `CrossProxy` initcode
+`governance.toml` with an owner, `deployed_by`, or salt unset, and a build whose `CrossProxy` initcode
 hash is not the one `governance.toml` records, since every registry records that value for
 every provider (R8.4). Never change `governance.toml` once a chain is deployed: every address
 derives from it.
@@ -80,10 +80,12 @@ derives from it.
 **Step 2, per provider:**
 
 ```
-forge script script/Deploy<Provider>.s.sol --rpc-url <rpc> --broadcast --sender <deployedBy>
+forge script script/Deploy<Provider>.s.sol --rpc-url <rpc> --broadcast --sender <deployer>
 ```
 
-The broadcaster must be the record's `deployedBy`; the salt is read from the record. The
+The broadcaster must be the deployer the registry records for this chain: the entry for its own
+chain if governance added one, otherwise `currentDeployer`, which is `deployed_by` until a
+rotation. The salt is read from the provider's record. The
 governor's owner, salt, and home come from [`governance.toml`](governance.toml), and the
 registry and treasury are step 1's, at the addresses it predicts. The rest comes from the
 environment, listed in [`DeployProvider.s.sol`](../script/DeployProvider.s.sol) and each
@@ -93,7 +95,9 @@ cannot be added later. Provider ids come from this directory.
 Before deploying, the script refuses a chain missing from `chains.toml` or not parity, a
 governor's home that is not `Predetermined` from it, and a registry that has not registered
 the home or whose grades disagree with this configuration. Every deployment then checks the proxy's address and lock, the
-transceiver's configuration, and the registry's record (R8.4).
+transceiver's configuration, and the registry's record (R8.4). The deployer chooses the
+implementation behind the proxy, and nothing on chain checks it, so no registry marks the
+transceiver live because the script passed: see "Marking a chain live".
 
 Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`. `forge script`
 deploys each before them, through Arachnid's factory, so it has one address on every parity
@@ -169,7 +173,55 @@ Transaction Builder batches numbered in the order they are submitted:
 5. `5-connect.json`, by the governor's owner once every file 4 has executed: each chain's
    LayerZero peers, which need its registry.
 
+`3-bootstrap.json` and the registry batches add each provider on every chain it was deployed to
+(`addProviderOnChain`, under `deployed_by`) and mark it live (`markLive`), except on the home,
+which the seed already records live. Schedule a batch only after step 2 is verified for every
+chain it lists (next section): the timelock delay is the review window, and `markLive` is
+never undone.
+
 The files are for the first deployment. For a chain added later, a rerun writes every entry
 again, and creating a transmitter or bootstrapping a chain a second time reverts, so submit only
 the entries that name the new chain. zkSync and Tron are left out: their transceivers
 are not at a predicted address, so neither they nor any lane to them is in these files.
+
+## Marking a chain live
+
+A registry refuses every bootstrap, send, and quote to a chain until its owner, the timelock,
+calls `markLive(chainKey, provider)`. The check the proposers make before scheduling it must not
+rely on the deployer, whose script checks (`checkTransceiver`) are its own. Read each of these
+from the chain, with an RPC the deployer does not control:
+
+1. Code at `registry.predictTransceiver(chainKey, provider)`, and the implementation in its
+   EIP-1967 slot has the code hash the build produces.
+2. `owner()` is the governor's conduit on that chain (`predictCrossConduit` of the governor's
+   owner, salt, and home), `chainRegistry()` is that chain's registry, `messageProvider()` is the
+   provider's id, and the proxy admin slot is zero.
+3. The treasury, gateways, and conduit implementations are the configured ones.
+
+Any other result leaves the entry `Pending`.
+
+## Rotating the deployer
+
+Use this when the account that broadcasts `CrossProxyDeployer.deploy` is compromised, or retired.
+Chains already `Live` keep their addresses: the deployer is write-once per (provider, chain).
+
+1. Pick the new deployer: any address that can call `CrossProxyDeployer.deploy` on every chain
+   to be added, a plain key or a contract at one address everywhere. It needs no role.
+2. Schedule `setCurrentDeployer(new)` on every registry. Schedule every later call with this
+   operation as its `predecessor`, so it executes first on every chain.
+3. For each (provider, chain) that is `Pending`, schedule `rekeyPending(chainKey, provider, new)`.
+   Until then the compromised key can still deploy at the old address, but it cannot be marked
+   live, so nothing is sent there. A `Live` entry cannot be re-keyed.
+4. For each chain added from now on, schedule `addProviderOnChain(chainKey, provider, new)`. A
+   registry that applied step 2 later than this reverts `DeployerMismatch` and can be retried
+   once it has.
+5. Deploy each new chain's contracts with `--sender <new>`, verify them (previous section), then
+   `markLive`.
+
+A chain deployed under another deployer has a different transceiver address, so every conduit
+homed elsewhere has a different receiver address there than its transmitter's, and
+`predictCrossConduit` gives it. Every transceiver reads each remote chain's transceiver from the
+registry, so a chain's peers (LayerZero's `setPeer`, Wormhole's emitters) are that prediction. The
+generated payloads in `out/governance/` cover the first generation only.
+
+The registry stores one 32-byte slot per (provider, chain).

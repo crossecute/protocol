@@ -41,7 +41,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
 | [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
 | [7. Prohibitions](#7-prohibitions) | the thirteen individually tempting mistakes |
-| [8. The compliance suite](#8-the-compliance-suite) | C1-C33, and which four would otherwise be found in production |
+| [8. The compliance suite](#8-the-compliance-suite) | C1-C36, and which four would otherwise be found in production |
 | [9. Worked skeleton](#9-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
 | [10. Checklist](#10-checklist) | every line true, and the binding is done |
 
@@ -53,7 +53,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | --- | --- |
 | **provider** | The third-party transport: LayerZero, CCIP, Hyperlane, Wormhole, and OP Stack as two providers, `op-stack-l1-l2` and `op-stack-l2-l2`. |
 | **binding** | The contracts in this repo that attach a provider to the protocol. |
-| **conduit** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain. |
+| **conduit** | A `CrossProxy` at `keccak256(abi.encode(owner, salt, homeChainKey))`: a transmitter at home, a receiver everywhere else. One address on every parity chain whose transceiver the same deployer deployed; a chain added after a deployer rotation has another ([R8.5](#r8-storage-and-address-parity)). |
 | **transceiver** | The shared contract, one per provider per chain, owned by the governor's own conduit there. It creates transmitters for conduits homed on its chain and receivers for conduits homed elsewhere. |
 | **home** | The chain a conduit was created on, chosen by its owner. Part of the conduit's address, and authenticated as the origin of its bootstrap. |
 | **route** | A chain's canonical ERC-7930 chain identifier, stored per chainKey by `setRoute`. A provider's own name for the chain (an eid, a selector, a domain) is a separate provider id, in `ProviderChainId`. |
@@ -277,8 +277,9 @@ nowhere, not a revert.
 which `TransmitterBase` enforces on every recipient, and a binding MUST NOT substitute its
 own notion of a peer. Where the SDK insists on a peer table, the binding SHOULD populate it
 from `counterpartOn(chainKey)` rather than from `address(this)`: the two agree only where both
-this chain and the destination use Ethereum's CREATE2 formula, and differ wherever either is
-zkSync or Tron, where deriving the peer names an address that holds no receiver.
+this chain and the destination use Ethereum's CREATE2 formula and their transceivers were
+deployed by the same deployer, and differ wherever either is zkSync or Tron, or a deployer
+rotation separates them, where deriving the peer names an address that holds no receiver.
 
 **R1.4** The recipient on path B is built by `_recipientOn(chainKey)` from the route and
 `_counterpartOn`. A binding MUST NOT assume the address half is 20 bytes without checking
@@ -305,6 +306,17 @@ either and falls back is non-compliant.
 refuses a second bootstrap to one it has. A binding inherits both gates and MUST NOT add a
 send entry point that bypasses them: the peer address on an un-bootstrapped chain holds no
 code, so such a send is a fee spent on a message that cannot be delivered.
+
+**R1.8** Nothing is sent, quoted, or bootstrapped to a chain whose transceiver the registry has
+not marked live for this provider (`DestinationNotLive`). `TransceiverBase` refuses a bootstrap
+and its quote, and `TransmitterBase` refuses a send and its quote by asking its transceiver
+(`isLive`), so a conduit still holds no registry. `Live` is the registry owner's mark, set after
+the deployment is checked without the deployer's help (§6), and is never undone. Until then the
+predicted address may hold code the deployer chose, because the implementation is not part of
+the CREATE2 address. A binding inherits the gate and MUST NOT send around it. A receiver report
+answers a delivery already authenticated from that chain and is not gated. A conduit whose
+receivers do not derive from a deployer-chosen transceiver (`layerzero-oft`) overrides
+`TransmitterBase._requireLive`.
 
 ### R2. Quote
 
@@ -499,7 +511,8 @@ another's receiver. The sender's chain must also be the conduit's home, `homeOri
 the transceiver arms the receiver with in the transport's own naming (the provider's id for
 the home, or its chainKey over a gateway): the transmitter's address on another chain is not
 always this conduit's, since wherever the provider's transceiver is not yet deployed its
-`deployedBy` can place code there (#61).
+deployer can place code there (#61). R1.8 keeps any message from reaching such a chain: it is
+sent to only once the registry has marked the transceiver there live.
 
 **R3.0.1 A conduit MUST be granted its gateway during initialization, and there is no
 later chance.** Every grant is `onlyInitializing`, so after the arming call there is
@@ -582,8 +595,8 @@ same codec function. Never hand-encode at one end.
 **R4.2** The `sender` bytes MUST be byte-identical to what the counterpart lookup returns.
 For an EVM counterpart that is 20 raw bytes: `TransceiverBase.counterpartOn` returns
 what `setCounterpart` stored, which is `Erc7930.parseStrict(interop).addr`, and the fallback
-returns `abi.encodePacked(_parityAddress(chainKey))`, the transceiver's own address unless it
-sits on zkSync or Tron, which derive it from the registry. Both are 20 bytes. A provider reporting a 32-byte
+returns `abi.encodePacked(_parityAddress(chainKey))`, the registry's prediction for that chain
+(`predictTransceiver`, from the deployer recorded for it). Both are 20 bytes. A provider reporting a 32-byte
 left-padded sender MUST be narrowed by the binding.
 
 ```solidity
@@ -737,11 +750,24 @@ compiler settings. `bytecode_hash = "none"` and `cbor_metadata = false` are pinn
 included, which would otherwise put every derived address one comment edit away from moving.
 
 **R8.4** `ChainRegistry.setProviderDeployment`'s `crossProxyInitCodeHash` MUST equal
-`TransceiverCore.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and its `deployedBy` MUST be
-the conduit that called `CrossProxyDeployer.deploy` for the provider's transceivers. The
-shared deploy asserts this for every binding (`script/deploy/TransceiverDeploy.sol`) rather
-than transcribing it. A diverging transceiver predicts its receivers on
-parity chains from this record, since its own constant comes from zksolc or TRON-solc.
+`TransceiverCore.CROSS_PROXY_INIT_CODE_HASH` as built by solc, and the deployer the registry
+records for a chain (`deployedBy(chainKey, provider)`) MUST be the account that broadcast
+`CrossProxyDeployer.deploy` for the provider's transceiver there. That account is an address
+that can call the deployer, not a conduit. The shared deploy asserts this for every binding
+(`script/deploy/TransceiverDeploy.sol`) rather than transcribing it. A diverging transceiver
+predicts its receivers on parity chains from this record, since its own constant comes from
+zksolc or TRON-solc.
+
+**R8.5** A transceiver's address is `CREATE2(CrossProxyDeployer, keccak256(deployer, salt),
+initcode)`, so a rotated deployer puts a chain's transceiver, and every conduit receiver under
+it, at another address. A transceiver MUST therefore take a remote counterpart from the
+registry (`_parityAddress` is `predictTransceiver`), never from `address(this)`, and a
+bootstrap MUST be refused unless its carried transmitter is the one the home's transceiver,
+as the registry records it, derives for that conduit (`SourceTransmitterMismatch`). A conduit
+has one address on the chains of one deployer, and a receiver on a chain of another is at
+`predictCrossConduit`'s answer, not at its transmitter's address. Chains already deployed never
+move: the deployer is write-once per (provider, chain), changed only for a chain still
+`Pending`.
 
 ### R9. Write-once discipline
 
@@ -769,12 +795,12 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 
 | # | Where | Call | Notes |
 | --- | --- | --- | --- |
-| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade and each provider with its deployment record (`setProviderDeployment`'s inputs, write-once). The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Deployed through Arachnid's factory with identical arguments, each sits at one address on every standard EVM chain. The timelock's design is 48 hours, the governor's conduits under two providers as proposers, execution open. |
-| 2 | every chain | Deploy `CrossProxyDeployer` and `TransceiverExtension` through Arachnid's factory once per chain, then each provider's transceiver implementation, naming that extension, and the transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, from the conduit and salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both conduit implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the conduit bytecode hash too, and name their own extension variant. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
+| 1 | every chain | Deploy the chain's `TimelockController`, then `ChainRegistry(timelock, seed)` and `Treasury(timelock)` | The seed registers the governor's home with its grade, each provider with its salt and initcode hash (`setProviderDeployment`'s inputs, write-once), and the first deployer, which is the registry's `currentDeployer` and the deployer of every provider on the home, recorded `Live`. The home must be `Predetermined` and not suspended: step 2 refuses a home whose counterpart does not resolve, since only the owner the bootstrap creates could set one, and its transceivers must sit where the record predicts through `CrossProxyDeployer`, as on every `Predetermined` chain. Deployed through Arachnid's factory with identical arguments, each sits at one address on every standard EVM chain. The timelock's design is 48 hours, the governor's conduits under two providers as proposers, execution open. |
+| 2 | every chain | Deploy `CrossProxyDeployer` and `TransceiverExtension` through Arachnid's factory once per chain, then each provider's transceiver implementation, naming that extension, and the transceiver with `CrossProxyDeployer.deploy(salt, implementation, initialize(config, governorHomeId))`, by the deployer the registry records for this chain (the seed's, or `currentDeployer` once rotated) and the salt the deployment record names | One call deploys, initializes, and locks the transceiver. The config names the gateways, both conduit implementations, the governor's owner, salt, and home (an identifier), the chain's treasury, and the registry, provider, and bar. `governorHomeId` is the provider's id for the governor's home; LayerZero also sets that eid's peer and pins its DVN. zkSync and Tron pass the conduit bytecode hash too, and name their own extension variant. Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`; `forge script` deploys each first, through Arachnid's factory, so it has one address on every parity chain, and zkSync and Tron link it when that chain's bytecode is built. Nothing else may be needed before step 4. |
 | 3 | governor's home | The governor creates its transmitter with `createTransmitter` and, through it, configures that chain's transceiver and proposes registry entries to its timelock for every other chain | The only chain whose owner exists at deployment. |
 | 4 | every other chain | The governor's transmitter bootstraps the chain | The transceiver accepts it as born, and the receiver it creates is that transceiver's owner. |
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`, which `script/GovernancePayloads.s.sol` turns into payloads for the parity chains. |
-| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
+| 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `addProviderOnChain(chainKey, provider, deployer)` for every provider deployed there, then `markLive` once that deployment is verified without the deployer (R1.8), `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `CrossProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
 | n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `CrossProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
@@ -789,7 +815,7 @@ too, so every check a deployment makes also runs in every test.
 Those shared checks hold the proxy to its predicted address, locked on its implementation;
 the transceiver to its configuration, gateways, and governor's home; and, where the registry
 records the provider's deployment, R8.4. The production script adds what holds only on chain:
-the salt and caller are the record's; the chain, the governor's home, and the provider ids are
+the salt is the record's and the broadcaster the deployer recorded for the chain; the chain, the governor's home, and the provider ids are
 in `deploy/`; and the registry has the home and grades every chain as `deploy/` does. 
 
 Steps 3 to 6 are scripted for the parity chains: `script/GovernancePayloads.s.sol` computes them
@@ -797,6 +823,13 @@ from `deploy/` alone, with every address predicted, and writes them as Safe Tran
 batches for the governor's owner, with the timelock executions anyone may submit, in the order
 above. No parity chain reports, so step 7 funds nothing among them. zkSync and Tron, and every
 lane to them, are not scripted ([todo §3](todo.md#3-infrastructure)).
+
+**Rotating the deployer.** If the deployer's key is compromised, the protocol keeps running
+and adds chains under a new one; the procedure is in
+[`deploy/README.md`](../contracts/evm/deploy/README.md#rotating-the-deployer). The registry holds
+one slot per (provider, chain), a 20-byte deployer and a status, written once when the
+provider is added on the chain: about 22,100 gas at the timelock, and 32 bytes of state per
+pair. `markLive` writes the same slot again. Reads add no storage to a conduit.
 
 ---
 
@@ -810,7 +843,8 @@ Collected, because each of these is individually tempting.
    only kinds are `Envelope`'s, and a binding adds none.
 4. **No registry read from a conduit.** The chainKey derivation is pure; keeping the
    directory dependency on the transceiver is what makes a transmitter a pure
-   commit-and-forward contract.
+   commit-and-forward contract. A transmitter asks its transceiver whether a destination is
+   live ([R1.8](#r1-send)) and never reads the registry itself.
 5. **No provider id outside the codec.** ([R5.2](#r5-the-route-codec))
 6. **No new write-once setters.** ([R9.1](#r9-write-once-discipline))
 7. **No second ownership authority** on a transceiver or a conduit. ([§4.4](#44-required-on-the-transceiver))
@@ -865,7 +899,7 @@ below. The column says where each line is held.
 | --- | --- | --- | --- |
 | C1 | `send_reachesTheProviderWithTheRightRoute` | The provider was handed the destination the recipient's chain resolves to: its id for that chain, which for `op-stack-l1-l2` is the messenger that reaches it. | `ProviderSendSpec`; transmitter lookup `ProviderIdTableSpec` |
 | C2 | `send_toUnconfiguredDestinationReverts` | Reverts rather than falling back to a default. | `ProviderSendSpec` |
-| C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain. | core `Transport.t.sol` `test_aRecipientThatIsNotThisConduitIsRefused` |
+| C3 | `send_addressesTheRecordedCounterpart` | Path A's destination is `counterpartOn(chainKey)`, which equals `address(this)` only on a parity chain of the same deployer. | core `Transport.t.sol` `test_aRecipientThatIsNotThisConduitIsRefused` |
 | C4 | `inbound_fromTheConfiguredOriginExecutes` | Round trip through `_onInbound`. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
 | C5 | `inbound_fromAnUnknownRouteReverts` | `UnknownRoute`, or the id table's refusal of an unmapped origin. | `ProviderIdTableSpec` (transceiver), `op-stack-l1-l2`'s `test_nothingIsAcceptedFromAMessengerWhoseChainIsUnrouted`, `ProviderReceiveSpec` (conduit) |
 | C6 | `inbound_fromTheWrongSenderReverts` | `NotCounterpart` on a transceiver. | `ProviderInboundSpec`, `ProviderReceiveSpec` |
@@ -884,7 +918,7 @@ below. The column says where each line is held.
 | C19 | `bootstrap_belowTheProvenanceBarReverts` | The bar refuses every message a transceiver sends to or accepts from a chain graded below it: a bootstrap, a receiver report, an inbound delivery. | core `CounterpartRouting.t.sol` `test_counterpartBelowProvenanceBarIsRefused`, `ReceiverReport.t.sol` `test_aReportToAHomeBelowTheBarIsRefused`, `InboundAuth.t.sol` `test_theProvenanceBarAppliesToInbound` |
 | C20 | `bootstrap_forSomebodyElsesConduitReverts` | `NotTheConduit`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheConduit` |
 | C21 | `parity_crossProxyInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; script side, `script/deploy/TransceiverDeploy.sol`, tested by `test/deploy/DeployChecks.t.sol` |
-| C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
+| C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain of one deployer. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `CrossProxy.t.sol` `test_twoImplementationsShareOneAddress` |
 | C23 | `parity_theBindingAddsNoConstructorArguments` | `type(CrossProxy).creationCode` unchanged. | core `CrossProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation`, `test_theInitCodeHashIsPinned` |
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
 | C25 | `fees_excessRefundsToTheConduitNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec` (transceiver), core `Transport.t.sol` `test_pathARefundsToTheConduit` (transmitter). CCIP keeps an overpayment; OP Stack takes no value |
@@ -896,6 +930,9 @@ below. The column says where each line is held.
 | C31 | `replay_theDedupeIsPerConduit` | Two conduits, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerConduit`. Others: fork test not built |
 | C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; a conduit's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`) and the stateful `invariant/FeesAndFloat.t.sol`. | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
 | C33 | `gas_aDeliveryShortOfGasIsRetriedWithMore` | Deliver a bootstrap with too little gas, then the same bootstrap with enough: the first MUST revert and create nothing, the second MUST create the conduit. Our half of [R1.5](#r1-send)'s no-floor rule; the provider's half, that a retry may raise the gas, is read from source in [provider-research §1](provider-research.md#1-what-each-transport-guarantees-about-replay). | `ProviderInboundSpec` `test_aBootstrapCutShortByGasSucceedsOnRetryWithMore` |
+| C34 | `live_aSendToAnUnlistedDestinationReverts` | A bootstrap, a send, and their quotes revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive`, `Transport.t.sol` `test_aSendAndItsQuoteAreRefusedWhileTheDestinationIsNotLive` |
+| C35 | `rotation_chainsOfTwoDeployersAuthenticateEachOther` | A chain deployed before a rotation and one deployed after it bootstrap each other and are authenticated at their own generation's address; the wrong generation's address is refused. [R8.5](#r8-storage-and-address-parity). | core `DeployerRotation.t.sol` `test_aFirstGenerationChainBootstrapsASecondGenerationOne`, `test_aSecondGenerationChainBootstrapsAFirstGenerationOne`, `test_aSenderAtTheWrongGenerationsAddressIsRefused`, `test_aCarriedTransmitterFromTheWrongGenerationIsRefused` |
+| C36 | `rotation_registryPredictionsMatchDeployments` | The registry's transceiver and conduit predictions equal what each generation deploys; a `Live` entry is never re-keyed and a `Pending` one is. | core `SaltedDeployment.t.sol` `test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt`, `RegistryDeployer.t.sol` |
 
 **C11 and C29 to C31 want fork tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness

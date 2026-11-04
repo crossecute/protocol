@@ -136,10 +136,12 @@ Hop by hop:
 - That deploys `CrossProxy` at `conduitSalt(owner, salt, origin)`, by CREATE2 with no
   constructor arguments, and calls `upgradeInitializeAndLock(receiverImpl,
   initialize(transmitter, calls))`, which installs the logic, executes the calls, and drops
-  the upgrade key in one call. From a home graded `Predetermined` the receiver must sit at the
-  carried transmitter's address, or the bootstrap reverts `ParityBroken`: an origin whose
-  provider id, route, or transceiver address disagree with this chain's fails its first
-  bootstrap rather than every conduit.
+  the upgrade key in one call. From a home graded `Predetermined` the carried transmitter must
+  be the one the home's transceiver derives for this conduit, from the address the registry
+  records for that transceiver, or the bootstrap reverts `SourceTransmitterMismatch`: an origin
+  whose provider id, route, or transceiver address disagree with this chain's fails its first
+  bootstrap rather than every conduit. Where both chains' transceivers share a deployer, the
+  receiver sits at the transmitter's address.
 - The dashed return leg is `_reportReceiver(origin, owner, salt, receiver)`, sent only where
   `addressesDiverge` is set. It arrives at the home's `_handleInbound`, which passes it to
   `_onDestinationReceiver` and on to the conduit's own counterpart slot, not the registry.
@@ -213,7 +215,7 @@ Move chains) need somewhere to hold the payload in between, which is a per-VM co
 After this, every subsequent message takes path A and the transceiver is not involved again.
 Nothing has to be pointed anywhere: the transmitter's peer is the receiver address its
 transceiver predicted at bootstrap, which is its own address wherever both chains use
-Ethereum's CREATE2, so it is derived rather than configured. The
+Ethereum's CREATE2 and one deployer, so it is derived rather than configured. The
 exception is LayerZero, which delivers to a peer the OApp stores: the owner records it once
 per destination with `setPeer`, and it cannot be changed after.
 
@@ -286,10 +288,10 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side conduit. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a receiver off its transmitter's address when that home is `Predetermined` (`ParityBroken`). Its default counterpart on a `Predetermined` chain is its own address. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain of one deployer. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a bootstrap whose carried transmitter is not the one the home's transceiver derives, as the registry records it, when that home is `Predetermined` (`SourceTransmitterMismatch`). It refuses to bootstrap, or quote a bootstrap to, a chain the registry has not marked live (`DestinationNotLive`). Its default counterpart on a `Predetermined` chain is the registry's prediction from the deployer recorded for that chain. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `CrossProxy` that `CrossProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
 | `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `conduitSalt`, `predictCrossConduit`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
 | `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `CROSS_PROXY_INIT_CODE_HASH` |
-| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and takes its default counterpart on a parity chain from the registry's record of its provider's deployment. | as `TransceiverBase`, plus `conduitBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
+| `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and, like every transceiver, takes its default counterpart on a parity chain from the registry's prediction. | as `TransceiverBase`, plus `conduitBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |
 | `messaging/transceiver/DivergentConduits.sol` | The zkSync and Tron conduit formulas and the write-once bytecode hash. A mixin with helpers rather than a `TransceiverBase`, to stay out of a diamond. | `conduitBytecodeHash` |
 | `messaging/Envelope.sol` | The two transceiver channels, each body led by its kind. `kindOf`, `encodeBootstrap` / `decodeBootstrap`, `encodeBootstrapElements`, `encodeReceiverReport` / `decodeReceiverReport`; each decoder refuses any other kind. There is no `decodeBootstrapElements`, because only a non-EVM chain receives one. No commitment envelope: committing is folded into the call array. | library, `internal` |
 
@@ -328,7 +330,7 @@ different one.
 **Provenance is two useful values and a null.** `Predetermined` means this chain can recompute
 an address on that one, because that chain deployed its transceivers through
 `CrossProxyDeployer`, which Arachnid's factory puts at one address, and this chain's transceiver
-knows where: at its own address, or on zkSync and Tron from the provider's deployment record.
+knows where: from the registry's prediction, the provider's salt under the deployer recorded for that chain.
 A chain without Arachnid's factory is `Unique` in every registry, its own included, and grades
 every other chain `Unique` in its own. `Unique` means it cannot and was told, so the value is worth
 exactly the bridge that carried it. `Unknown` means nothing has been declared; the registry
@@ -382,7 +384,7 @@ No fallback storage, and no payload size cap: the provider enforces the latter.
   or "the caller is checked" holds, and each entry point picks a different one.
 - Conduit addresses are CREATE2 on `(owner, salt, homeChainKey)`, fixed for the life of the
   protocol and pinnable in a signed payload. Each conduit has one address on every parity
-  chain; the same owner and salt homed on two chains are two conduits.
+  chain of one deployer; the same owner and salt homed on two chains are two conduits.
 - Approvals are an unordered map of hash to outstanding count. Nothing has a position, so
   nothing can block.
 - The provenance bar gates what a transceiver sends and accepts (a bootstrap, a receiver
