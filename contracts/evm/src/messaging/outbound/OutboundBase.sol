@@ -47,8 +47,6 @@ abstract contract OutboundBase {
     error RouteKeyMismatch(bytes32 chainKey);
     error UnknownRoute();
     error NoCounterpartFor(bytes32 chainKey);
-    /// @dev The registry has not marked the provider's transceiver on that chain live.
-    error DestinationNotLive(bytes32 chainKey);
     /// @dev For a binding whose provider cannot quote on-chain (P9). Zero would read as free.
     error QuoteNotImplemented();
 

@@ -184,6 +184,8 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     error InsufficientBootstrapFee(uint256 required, uint256 provided);
     /// @dev The destination reports its receivers, and its bootstrap fee is unset.
     error NoBootstrapFee(bytes32 chainKey);
+    /// @dev The registry has not marked the provider's transceiver on that chain live.
+    error DestinationNotLive(bytes32 chainKey);
     error FeeTransferFailed(address to, uint256 amount);
     /// @dev An EVM receiver can only answer to an EVM transmitter.
     error SourceTransmitterNotEvm(bytes32 transmitter);

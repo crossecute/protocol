@@ -307,16 +307,16 @@ refuses a second bootstrap to one it has. A binding inherits both gates and MUST
 send entry point that bypasses them: the peer address on an un-bootstrapped chain holds no
 code, so such a send is a fee spent on a message that cannot be delivered.
 
-**R1.8** Nothing is sent, quoted, or bootstrapped to a chain whose transceiver the registry has
-not marked live for this provider (`DestinationNotLive`). `TransceiverBase` refuses a bootstrap
-and its quote, and `TransmitterBase` refuses a send and its quote by asking its transceiver
-(`isLive`), so a conduit still holds no registry. `Live` is the registry owner's mark, set after
-the deployment is checked without the deployer's help (§6), and is never undone. Until then the
-predicted address may hold code the deployer chose, because the implementation is not part of
-the CREATE2 address. A binding inherits the gate and MUST NOT send around it. A receiver report
-answers a delivery already authenticated from that chain and is not gated. A conduit whose
-receivers do not derive from a deployer-chosen transceiver (`layerzero-oft`) overrides
-`TransmitterBase._requireLive`.
+**R1.8** No bootstrap, or quote of one, is accepted for a chain whose transceiver the registry has
+not marked live for this provider (`DestinationNotLive`). `TransceiverBase` enforces it. Path A
+needs no check of its own: a conduit sends only to a chain it bootstrapped, and its stored
+receiver there exists only because that bootstrap passed. `Live` is the registry owner's mark,
+set after the deployment is checked without the deployer's help (§6), and is never undone. Until
+then the predicted address may hold code the deployer chose, because the implementation is not
+part of the CREATE2 address. A binding inherits the gate and MUST NOT add a bootstrap around it.
+A receiver report answers a delivery already authenticated from that chain and is not gated.
+`layerzero-oft` has no transceiver and no deployer: its factory is deployed with fixed arguments,
+and each receiver address is bound to the OFT and proof root its bootstrap names.
 
 ### R2. Quote
 
@@ -843,8 +843,7 @@ Collected, because each of these is individually tempting.
    only kinds are `Envelope`'s, and a binding adds none.
 4. **No registry read from a conduit.** The chainKey derivation is pure; keeping the
    directory dependency on the transceiver is what makes a transmitter a pure
-   commit-and-forward contract. A transmitter asks its transceiver whether a destination is
-   live ([R1.8](#r1-send)) and never reads the registry itself.
+   commit-and-forward contract.
 5. **No provider id outside the codec.** ([R5.2](#r5-the-route-codec))
 6. **No new write-once setters.** ([R9.1](#r9-write-once-discipline))
 7. **No second ownership authority** on a transceiver or a conduit. ([§4.4](#44-required-on-the-transceiver))
@@ -930,7 +929,7 @@ below. The column says where each line is held.
 | C31 | `replay_theDedupeIsPerConduit` | Two conduits, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerConduit`. Others: fork test not built |
 | C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; a conduit's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`) and the stateful `invariant/FeesAndFloat.t.sol`. | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
 | C33 | `gas_aDeliveryShortOfGasIsRetriedWithMore` | Deliver a bootstrap with too little gas, then the same bootstrap with enough: the first MUST revert and create nothing, the second MUST create the conduit. Our half of [R1.5](#r1-send)'s no-floor rule; the provider's half, that a retry may raise the gas, is read from source in [provider-research §1](provider-research.md#1-what-each-transport-guarantees-about-replay). | `ProviderInboundSpec` `test_aBootstrapCutShortByGasSucceedsOnRetryWithMore` |
-| C34 | `live_aSendToAnUnlistedDestinationReverts` | A bootstrap, a send, and their quotes revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive`, `Transport.t.sol` `test_aSendAndItsQuoteAreRefusedWhileTheDestinationIsNotLive` |
+| C34 | `live_aBootstrapToAnUnlistedDestinationReverts` | A bootstrap and its quote revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after; a send to a chain still pending reverts `NotBootstrapped`. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive` |
 | C35 | `rotation_chainsOfTwoDeployersAuthenticateEachOther` | A chain deployed before a rotation and one deployed after it bootstrap each other and are authenticated at their own generation's address; the wrong generation's address is refused. [R8.5](#r8-storage-and-address-parity). | core `DeployerRotation.t.sol` `test_aFirstGenerationChainBootstrapsASecondGenerationOne`, `test_aSecondGenerationChainBootstrapsAFirstGenerationOne`, `test_aSenderAtTheWrongGenerationsAddressIsRefused`, `test_aCarriedTransmitterFromTheWrongGenerationIsRefused` |
 | C36 | `rotation_registryPredictionsMatchDeployments` | The registry's transceiver and conduit predictions equal what each generation deploys; a `Live` entry is never re-keyed and a `Pending` one is. | core `SaltedDeployment.t.sol` `test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt`, `RegistryDeployer.t.sol` |
 

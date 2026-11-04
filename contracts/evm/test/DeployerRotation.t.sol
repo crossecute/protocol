@@ -14,7 +14,6 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -234,7 +233,7 @@ contract DeployerRotationTest is Test {
     function test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive() public {
         (Sym eth, ChainRegistry registry) = _chain(ETH, D1, false);
         address transmitter = ext(address(eth)).predictTransmitter(alice, SALT);
-        bytes memory notLive = abi.encodeWithSelector(OutboundBase.DestinationNotLive.selector, _key(OP));
+        bytes memory notLive = abi.encodeWithSelector(TransceiverCore.DestinationNotLive.selector, _key(OP));
 
         vm.expectRevert(notLive);
         eth.quoteBootstrap(_key(OP), alice, SALT, _calls(), new bytes[](0));
@@ -259,7 +258,7 @@ contract DeployerRotationTest is Test {
         registry.rekeyPending(_key(BASE), provider, D2);
         assertEq(registry.predictTransceiver(_key(BASE), provider), _at(D2), "the retired key's address is dropped");
 
-        vm.expectRevert(abi.encodeWithSelector(OutboundBase.DestinationNotLive.selector, _key(BASE)));
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.DestinationNotLive.selector, _key(BASE)));
         eth.quoteBootstrap(_key(BASE), alice, SALT, _calls(), new bytes[](0));
 
         registry.markLive(_key(BASE), provider);

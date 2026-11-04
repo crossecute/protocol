@@ -60,9 +60,6 @@ interface IConduitTransceiver {
 
     /// @notice Where this conduit's receiver will sit on a chain that does not report it.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
-
-    /// @notice Whether the registry allows sends to the transceiver on a chain.
-    function isLive(bytes32 chainKey) external view returns (bool);
 }
 
 /// @title TransmitterBase
@@ -295,24 +292,17 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      refused too.
     ///
     /// @dev Checks bootstrap first so an unreached destination reverts `NotBootstrapped`
-    ///      rather than `NoRouteFor` from `_recipientOn`. The registry's `Live` mark is asked of
-    ///      the transceiver, which holds the registry; send and quote share this check.
+    ///      rather than `NoRouteFor` from `_recipientOn`. A stored receiver means the bootstrap
+    ///      passed the registry's live check, which is never undone, so sends are not checked again.
     function _requireOwnRecipient(bytes calldata recipient) private view returns (bytes32 chainKey) {
         if (recipient.length == 0) revert NoDestination();
 
         chainKey = ChainKey.fromIdentifier(recipient);
         _requireBootstrapped(chainKey);
-        _requireLive(chainKey);
 
         if (keccak256(recipient) != keccak256(_recipientOn(chainKey))) {
             revert RecipientIsNotThisConduit(recipient);
         }
-    }
-
-    /// @dev Refuses a destination whose transceiver the registry has not marked live. A binding
-    ///      whose receivers do not derive from a deployer-chosen transceiver overrides this.
-    function _requireLive(bytes32 chainKey) internal view virtual {
-        if (!IConduitTransceiver(transceiver).isLive(chainKey)) revert DestinationNotLive(chainKey);
     }
 
     /* ================================= bootstrap =============================== */

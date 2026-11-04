@@ -67,11 +67,6 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         return (d.eid, d.oft);
     }
 
-    /// @dev No gate: the factory has no deployer and every receiver address is bound by its salt
-    ///      to the OFT and proof root the bootstrap names, so nothing a deployer places can sit there.
-    // forge-lint: disable-next-line(empty-block) the override exists to remove the gate
-    function _requireLive(bytes32) internal pure override {}
-
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == LZ_OPTIONS_ATTRIBUTE;
     }

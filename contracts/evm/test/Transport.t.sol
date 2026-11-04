@@ -7,7 +7,6 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Vm} from "forge-std/Vm.sol";
 
 import {TransmitterBase, IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
-import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -83,17 +82,10 @@ contract MockReceiver is AnyGatewayReceiver {
     }
 }
 
-/// @dev The two registry answers these tests reach: every destination is live unless a test
-///      closes them, and none reports.
+/// @dev The two registry answers these tests reach: every destination is live, and none reports.
 contract LiveRegistry {
-    bool public closed;
-
-    function setLive(bool live) external {
-        closed = !live;
-    }
-
-    function isLive(bytes32, bytes32) external view returns (bool) {
-        return !closed;
+    function isLive(bytes32, bytes32) external pure returns (bool) {
+        return true;
     }
 
     function requiresReceiverCallback(bytes32) external pure returns (bool) {
@@ -108,13 +100,10 @@ contract MockTransceiver is SharedAddressTransceiver {
     uint256 public bootCount;
     address public bootRefund;
 
-    LiveRegistry public liveRegistry;
-
     function initialize(address, address impl) external initializer {
         TransceiverConfig memory c = transceiverConfig(address(0x5165), impl, impl, address(0x7EA5));
         c.governorHome = Erc7930.encodeEvmChain(block.chainid);
-        liveRegistry = new LiveRegistry();
-        c.chainRegistry = IChainRegistryRefs(address(liveRegistry));
+        c.chainRegistry = IChainRegistryRefs(address(new LiveRegistry()));
         __TransceiverBase_init(c);
     }
 
@@ -1018,26 +1007,6 @@ contract TransportTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, ChainKey.forEvm(DEST)));
         transmitter.quoteBootstrap(DEST, _calls(), NONE);
-    }
-
-    /// @dev The transceiver's registry decides whether a destination is sendable, and the quote
-    ///      applies the same check as the send, so neither can succeed where the other refuses.
-    function test_aSendAndItsQuoteAreRefusedWhileTheDestinationIsNotLive() public {
-        bytes memory recipient = _recip(DEST);
-        bytes memory payload = Payload.encodeCalls(_calls());
-        bytes memory notLive = abi.encodeWithSelector(OutboundBase.DestinationNotLive.selector, ChainKey.forEvm(DEST));
-
-        transceiver.liveRegistry().setLive(false);
-        vm.expectRevert(notLive);
-        transmitter.quoteMessage(recipient, payload, NONE);
-        vm.prank(owner);
-        vm.expectRevert(notLive);
-        transmitter.sendMessage(recipient, payload, NONE);
-
-        transceiver.liveRegistry().setLive(true);
-        assertGt(transmitter.quoteMessage(recipient, payload, NONE), 0);
-        vm.prank(owner);
-        transmitter.sendMessage(recipient, payload, NONE);
     }
 
     /// @dev And each is answerable in the state its own message belongs to: bootstrap is
