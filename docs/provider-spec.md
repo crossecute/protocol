@@ -41,7 +41,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 | [5. Normative rules](#5-normative-rules) | R1 send, R2 quote, R3 receive, R4 byte forms, R5 codec, R6 init, R7 fees, R8 parity, R9 write-once |
 | [6. Configuration](#6-configuration-a-compliant-deployment-performs) | the deployment, in order |
 | [7. Prohibitions](#7-prohibitions) | the thirteen individually tempting mistakes |
-| [8. The compliance suite](#8-the-compliance-suite) | C1-C36, and which four would otherwise be found in production |
+| [8. The compliance suite](#8-the-compliance-suite) | C1-C38, and which four would otherwise be found in production |
 | [9. Worked skeleton](#9-worked-skeleton-an-erc-7786-gateway-binding) | a gateway binding, abbreviated to the compliance-relevant lines |
 | [10. Checklist](#10-checklist) | every line true, and the binding is done |
 
@@ -315,6 +315,9 @@ set after the deployment is checked without the deployer's help (§6), and is ne
 then the predicted address may hold code the deployer chose, because the implementation is not
 part of the CREATE2 address. A binding inherits the gate and MUST NOT add a bootstrap around it.
 A receiver report answers a delivery already authenticated from that chain and is not gated.
+Inbound authentication is not gated either: it uses the registry's prediction as soon as the
+provider is added on a chain, `Pending` included, so a route, id, or peer to a chain MUST wait for
+`markLive` (`deploy/README.md`, "Marking a chain live").
 `layerzero-oft` has no transceiver and no deployer: its factory is deployed with fixed arguments,
 and each receiver address is bound to the OFT and proof root its bootstrap names.
 
@@ -511,8 +514,9 @@ another's receiver. The sender's chain must also be the conduit's home, `homeOri
 the transceiver arms the receiver with in the transport's own naming (the provider's id for
 the home, or its chainKey over a gateway): the transmitter's address on another chain is not
 always this conduit's, since wherever the provider's transceiver is not yet deployed its
-deployer can place code there (#61). R1.8 keeps any message from reaching such a chain: it is
-sent to only once the registry has marked the transceiver there live.
+deployer can place code there (#61). R1.8 keeps any message from being sent to such a chain: it
+is sent to only once the registry has marked the transceiver there live. Inbound is not gated
+(R1.8).
 
 **R3.0.1 A conduit MUST be granted its gateway during initialization, and there is no
 later chance.** Every grant is `onlyInitializing`, so after the arming call there is
@@ -929,9 +933,11 @@ below. The column says where each line is held.
 | C31 | `replay_theDedupeIsPerConduit` | Two conduits, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerConduit`. Others: fork test not built |
 | C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; a conduit's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`) and the stateful `invariant/FeesAndFloat.t.sol`. | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
 | C33 | `gas_aDeliveryShortOfGasIsRetriedWithMore` | Deliver a bootstrap with too little gas, then the same bootstrap with enough: the first MUST revert and create nothing, the second MUST create the conduit. Our half of [R1.5](#r1-send)'s no-floor rule; the provider's half, that a retry may raise the gas, is read from source in [provider-research §1](provider-research.md#1-what-each-transport-guarantees-about-replay). | `ProviderInboundSpec` `test_aBootstrapCutShortByGasSucceedsOnRetryWithMore` |
-| C34 | `live_aBootstrapToAnUnlistedDestinationReverts` | A bootstrap and its quote revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after; a send to a chain still pending reverts `NotBootstrapped`. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive` |
+| C34 | `live_aBootstrapToAnUnlistedDestinationReverts` | A bootstrap and its quote revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after; a send to a chain still pending reverts `NotBootstrapped`. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive`, `test_aTransmitterCannotBootstrapOrSendToAPendingChain` |
 | C35 | `rotation_chainsOfTwoDeployersAuthenticateEachOther` | A chain deployed before a rotation and one deployed after it bootstrap each other and are authenticated at their own generation's address; the wrong generation's address is refused. [R8.5](#r8-storage-and-address-parity). | core `DeployerRotation.t.sol` `test_aFirstGenerationChainBootstrapsASecondGenerationOne`, `test_aSecondGenerationChainBootstrapsAFirstGenerationOne`, `test_aSenderAtTheWrongGenerationsAddressIsRefused`, `test_aCarriedTransmitterFromTheWrongGenerationIsRefused` |
 | C36 | `rotation_registryPredictionsMatchDeployments` | The registry's transceiver and conduit predictions equal what each generation deploys; a `Live` entry is never re-keyed and a `Pending` one is. | core `SaltedDeployment.t.sol` `test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt`, `RegistryDeployer.t.sol` |
+| C37 | `live_aReceiverReportIsNotGated` | A report to a home the registry has not marked live is sent. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aReceiverReportIsSentToAHomeThatIsNotLive` |
+| C38 | `live_inboundIsNotGatedOnStatus` | A record of today's behaviour, not a requirement: a `Pending` chain's predicted address is authenticated inbound, and a chain the provider was never added on is refused (`NotOnChain`). [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_todayAPendingChainsPredictedAddressIsAuthenticatedInbound`, `test_aChainTheProviderWasNeverAddedOnIsRefusedInbound` |
 
 **C11 and C29 to C31 want fork tests, against the real endpoint.** A mock provider does
 whatever the harness makes it do. Exercising a binding against one proves the harness

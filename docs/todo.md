@@ -127,6 +127,24 @@ the seventh; what they mean for an operator is in the README.
   Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
   5.4.0, and `src/` does not import `Bytes`.
 
+- **A check that a deployment is the one to mark live.** Before `markLive`, the proposers read
+  code at the predicted address, the implementation's code hash, `owner()`, `chainRegistry()`,
+  `messageProvider()`, and the proxy admin slot, with an RPC the deployer does not control
+  (`contracts/evm/deploy/README.md`). It is a manual list; `GovernancePlan` marks live without
+  reading the chain. A script that performs it and refuses the batch otherwise would close that.
+- **Governance payloads for later deployer generations.** `out/governance/` adds every provider
+  under the first deployer. A chain added after a rotation needs `addProviderOnChain` under the
+  current one, a `rekeyPending` for each pending pair, and `predecessor` set on the timelock
+  operations.
+- **Gating inbound on `Live`, or binding `markLive` to a deployer.** Inbound authentication uses
+  the registry's prediction for a `Pending` entry, and `markLive` marks whatever the entry holds
+  when it executes. Both are handled by procedure now (README, "Marking a chain live"); a
+  `isLive` check in the default-counterpart branch and a `markLive(chainKey, provider,
+  expectedDeployer)` would handle them in code.
+- **A handshake in place of `markLive`.** The destination transceiver confirms itself with a
+  message the source registry records. It needs a first message to a chain with no live
+  counterpart, so a bootstrap path to define.
+
 ## 4. Post-launch: non-EVM destinations
 
 Launch is EVM-only. No chain here is reachable until its vectors exist, so none of this

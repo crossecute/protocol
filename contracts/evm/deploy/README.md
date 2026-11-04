@@ -127,17 +127,25 @@ first, and the new chain has no owner, and its timelock no proposer, until the g
 bootstrap creates the governor's conduits there.
 
 1. **Prepare the home** (§6 step 3). On the governor's home, through its timelock,
-   `addChainKey(newChain, grade)` with `ChainConfig.gradeOf(home, newChain)`; then, by the
+   `addChainKey(newChain, grade)` with `ChainConfig.gradeOf(home, newChain)`, then
+   `addProviderOnChain(newChain, provider, currentDeployer)` for each provider deployed on the
+   new chain and, once those deployments are verified ("Marking a chain live"), `markLive`:
+   the bootstrap below is refused until the home's registry has the chain live. Then, by the
    governor, configure each home transceiver for the new chain (the calls in step 4 below).
    The new chain's transceivers were born accepting the home, so nothing is needed there yet.
 2. **Bootstrap it** (§6 step 4). The governor's transmitter on the home bootstraps the new
    chain. The receiver it creates is the owner of each transceiver there.
 3. **Register chains** (§6 step 6), through each chain's timelock, which waits out its delay:
-   - on every other existing chain, `addChainKey(newChain, grade)` graded from that chain;
+   - on every other existing chain, `addChainKey(newChain, grade)` graded from that chain, then
+     `addProviderOnChain` and, after verification, `markLive` for each provider on the new
+     chain, in the same batch;
    - on the new chain, `addChainKey` for every existing chain, graded from the new chain,
-     and `setLocalTransceiver` for each provider.
+     `addProviderOnChain` and `markLive` for each provider on each (the home's entries are
+     seeded live), and `setLocalTransceiver` for each provider.
 4. **Configure transceivers** (§6 step 5), by payload from the home, on every chain for every
-   other chain it will talk to, once the chain it names is registered there:
+   other chain it will talk to, once the chain it names is registered there and marked live (a
+   chain that is only `Pending` is already authenticated inbound at its predicted address, so
+   no route or peer to it before `markLive`):
    - `setRoute`;
    - the provider's id setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`),
      with the id from `providers/`;
@@ -186,8 +194,9 @@ are not at a predicted address, so neither they nor any lane to them is in these
 
 ## Marking a chain live
 
-A registry refuses every bootstrap, send, and quote to a chain until its owner, the timelock,
-calls `markLive(chainKey, provider)`. The check the proposers make before scheduling it must not
+A registry refuses every bootstrap, and its quote, to a chain until its owner, the timelock,
+calls `markLive(chainKey, provider)`. A send follows only a bootstrap, so none reaches an
+unmarked chain either. The check the proposers make before scheduling it must not
 rely on the deployer, whose script checks (`checkTransceiver`) are its own. Read each of these
 from the chain, with an RPC the deployer does not control:
 
@@ -200,6 +209,21 @@ from the chain, with an RPC the deployer does not control:
 
 Any other result leaves the entry `Pending`.
 
+Three rules keep the review meaningful:
+
+- **Add and mark live in one batch, or mark live first.** A `Pending` entry already gets its
+  predicted address authenticated on inbound (`_authenticateOrigin` reads the prediction, not the
+  status), so an address nobody has verified can originate messages once a route to its chain
+  exists. Set no route, id, or peer to a chain until it is `Live`. The generated payloads add and
+  mark in one batch, so they never leave a chain `Pending` with a route. A chain the provider was
+  never added on is refused.
+- **`markLive` names no deployer.** It marks whatever the entry holds when it executes. Schedule it
+  with the operation that holds any `rekeyPending` or `addProviderOnChain` for the pair as its
+  `predecessor`, and read `deployedBy` and `predictTransceiver` again on the day it executes: a
+  re-key that lands between your review and the mark moves the address you reviewed.
+- **The seeded home is live with no review.** The first deployer's transceivers on the home are
+  not checked by any registry. Deploy them and run this list before relying on the seed.
+
 ## Rotating the deployer
 
 Use this when the account that broadcasts `CrossProxyDeployer.deploy` is compromised, or retired.
@@ -210,8 +234,10 @@ Chains already `Live` keep their addresses: the deployer is write-once per (prov
 2. Schedule `setCurrentDeployer(new)` on every registry. Schedule every later call with this
    operation as its `predecessor`, so it executes first on every chain.
 3. For each (provider, chain) that is `Pending`, schedule `rekeyPending(chainKey, provider, new)`.
-   Until then the compromised key can still deploy at the old address, but it cannot be marked
-   live, so nothing is sent there. A `Live` entry cannot be re-keyed.
+   Until then the compromised key can still deploy at the old address. It cannot be marked live,
+   so nothing is sent there, but a `Pending` entry is still authenticated inbound (previous
+   section), which is why the re-key should be scheduled with step 2 and routes to a `Pending`
+   chain should wait. A `Live` entry cannot be re-keyed.
 4. For each chain added from now on, schedule `addProviderOnChain(chainKey, provider, new)`. A
    registry that applied step 2 later than this reverts `DeployerMismatch` and can be retried
    once it has.
@@ -227,6 +253,12 @@ generated payloads in `out/governance/` cover the first generation only.
 zkSync, Tron, and `other` chains take their counterparts from the registry's deriver params, not
 from the deployer, so `rekeyPending` does not change what a transceiver derives there. Re-key
 such a chain with `setDeriveParams` as before, and gate it the same way: `addProviderOnChain`
-then `markLive`. This path is documented but has no test of its own.
+then `markLive`. Nothing tests this path.
+
+One deployer serves every provider, so one `setCurrentDeployer` and a `rekeyPending` for each
+`Pending` pair retire a compromised key for all of them before any replacement transceiver is
+deployed. A pair is exposed only until those operations execute, one timelock delay after they are
+scheduled, so schedule them together. Provider salts must differ (the scripts check; a registry
+does not).
 
 The registry stores one 32-byte slot per (provider, chain).

@@ -16,7 +16,9 @@ salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 # The account that broadcasts `CrossProxyDeployer.deploy` for every provider's transceiver on the
 # first generation of chains: the seed's deployer, recorded live for the home and as every
-# registry's initial `currentDeployer`. A later deployer is added by the timelock
+# registry's initial `currentDeployer`. The seed records the home live under it with no review,
+# so deploy this account's transceivers on the home and check them (deploy/README.md, "Marking a
+# chain live") before relying on that registry. A later deployer is added by the timelock
 # (deploy/README.md, "Rotating the deployer"), not by editing this file.
 deployed_by = "0x0000000000000000000000000000000000000000"
 
@@ -32,6 +34,8 @@ cross_proxy_init_code_hash = "0x145308a355542767bac3f73366782e0654e70cf26a84e7dc
 
 # Each provider's salt, which `deployed_by` deploys its transceiver under on every chain.
 # Write-once in every registry. `deployed_by` is the broadcasting account, not a conduit.
+# One deployer serves every provider, so each salt must differ: the deploy scripts refuse a
+# repeat, but a registry does not, and two providers with one salt would share an address.
 [providers.layerzero]
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
