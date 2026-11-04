@@ -101,8 +101,11 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev This test contract is the deployer's caller, as the deploy script's conduit is.
     function _record(bytes32 crossProxyInitCodeHash) internal {
-        vm.prank(owner);
-        registry.setProviderDeployment(provider, address(this), SALT, crossProxyInitCodeHash);
+        vm.startPrank(owner);
+        registry.setProviderDeployment(provider, SALT, crossProxyInitCodeHash);
+        registry.setCurrentDeployer(address(this));
+        registry.addProviderOnChain(chainKey, provider, address(this));
+        vm.stopPrank();
     }
 
     function _deploy(bytes memory init) internal returns (SaltedTransceiver) {
@@ -169,6 +172,7 @@ contract SaltedDeploymentTest is Test {
 
         vm.startPrank(owner);
         bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
+        registry.addProviderOnChain(arb, provider, address(this));
         vm.stopPrank();
 
         assertEq(
@@ -229,6 +233,7 @@ contract SaltedDeploymentTest is Test {
         // Each is still the same address on every parity chain.
         vm.startPrank(owner);
         bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
+        registry.addProviderOnChain(arb, provider, address(this));
         vm.stopPrank();
 
         assertEq(a, registry.predictCrossConduit(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
@@ -340,6 +345,34 @@ contract SaltedDeploymentTest is Test {
         assertEq(deployer.deploy(mined, address(new SaltedTransceiver()), _init()), predicted, "and it lands there");
     }
 
+    /// @dev A rotation moves nothing already recorded. The transceiver deployed before it and the
+    ///      one deployed after it each sit where the registry predicts for their chain, and each
+    ///      creates the receiver that `predictCrossConduit` names for that chain.
+    function test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt() public {
+        _record(_crossProxyInitCodeHash());
+        address rotated = address(0xD2);
+        vm.startPrank(owner);
+        registry.setCurrentDeployer(rotated);
+        bytes32 arb = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
+        registry.addProviderOnChain(arb, provider, rotated);
+        vm.stopPrank();
+
+        address ownerOf = address(0x7A11);
+        bytes32 homeKey = ChainKey.forEvm(1);
+
+        SaltedTransceiver first = _deploy(_init());
+        assertEq(address(first), registry.predictTransceiver(chainKey, provider), "before the rotation");
+        assertEq(first.bootstrapFor(ownerOf), registry.predictCrossConduit(chainKey, provider, ownerOf, 0, homeKey));
+
+        address implementation = address(new SaltedTransceiver());
+        bytes memory init = _init();
+        vm.prank(rotated);
+        SaltedTransceiver second = SaltedTransceiver(payable(deployer.deploy(SALT, implementation, init)));
+        assertEq(address(second), registry.predictTransceiver(arb, provider), "after the rotation");
+        assertEq(second.bootstrapFor(ownerOf), registry.predictCrossConduit(arb, provider, ownerOf, 0, homeKey));
+        assertTrue(address(first) != address(second));
+    }
+
     /* ================================== guards ================================= */
 
     function test_aProviderWithNoRecordCannotBePredicted() public {
@@ -379,11 +412,9 @@ contract SaltedDeploymentTest is Test {
 
         vm.startPrank(owner);
         vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.setProviderDeployment(provider, address(0xB0B), SALT, keccak256("initcode"));
+        registry.setProviderDeployment(provider, keccak256("other"), keccak256("initcode"));
         vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.setProviderDeployment(provider, address(this), keccak256("other"), keccak256("initcode"));
-        vm.expectRevert(ChainRegistry.AlreadySet.selector);
-        registry.setProviderDeployment(provider, address(this), SALT, keccak256("other"));
+        registry.setProviderDeployment(provider, SALT, keccak256("other"));
         vm.stopPrank();
 
         // Re-writing the identical record is a no-op, not a failure.
@@ -393,25 +424,23 @@ contract SaltedDeploymentTest is Test {
 
     function test_zeroInputsAreRefused() public {
         vm.startPrank(owner);
-        vm.expectRevert(ChainRegistry.ZeroDeployedBy.selector);
-        registry.setProviderDeployment(provider, address(0), SALT, keccak256("a"));
-
         vm.expectRevert(ChainRegistry.ZeroSalt.selector);
-        registry.setProviderDeployment(provider, address(this), bytes32(0), keccak256("a"));
+        registry.setProviderDeployment(provider, bytes32(0), keccak256("a"));
 
         vm.expectRevert(ChainRegistry.ZeroInitCodeHash.selector);
-        registry.setProviderDeployment(provider, address(this), SALT, bytes32(0));
+        registry.setProviderDeployment(provider, SALT, bytes32(0));
+
+        vm.expectRevert(ChainRegistry.ZeroDeployedBy.selector);
+        registry.setCurrentDeployer(address(0));
         vm.stopPrank();
     }
 
     /* ========================= the recorded derivation ========================= */
 
-    /// @dev A recorded deployment states its inputs rather than assuming parity. A transceiver's
-    ///      own fallback (its own address, on a chain graded `Predetermined`) reaches the same
-    ///      answer by assuming the remote deployment matches the local one. This reaches it by
-    ///      arithmetic over the deployer, the recorded caller and salt, and the initcode hash that
-    ///      sat in the signed calldata that recorded them, and it works before any transceiver
-    ///      exists. Deriving against the deployer this suite deployed through Arachnid's factory
+    /// @dev A recorded deployment states its inputs rather than assuming parity. This reaches the
+    ///      address by arithmetic over the deployer recorded for the chain, the salt, and the
+    ///      initcode hash that sat in the signed calldata that recorded them, and it works before
+    ///      any transceiver exists. Deriving against the deployer this suite deployed through Arachnid's factory
     ///      pins the registry's literal address of it. The zkSync and Tron variants derive their
     ///      default counterpart from it.
     function test_theRecordedDerivationStatesItsInputs() public {
@@ -431,7 +460,9 @@ contract SaltedDeploymentTest is Test {
         vm.startPrank(owner);
         r.addMessageProvider("layerzero");
         r.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
-        r.setProviderDeployment(provider, address(this), salt, initCodeHash);
+        r.setProviderDeployment(provider, salt, initCodeHash);
+        r.setCurrentDeployer(address(this));
+        r.addProviderOnChain(chainKey, provider, address(this));
         vm.stopPrank();
     }
 }

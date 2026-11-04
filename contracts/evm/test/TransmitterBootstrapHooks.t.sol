@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 
-import {unseeded} from "test/RegistrySeed.sol";
+import {unseeded, listLive} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -53,6 +53,7 @@ contract TransmitterBootstrapHooksTest is Test {
         bytes32 provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(t));
         destinationKey = registry.addChainKey(Erc7930.encodeEvmChain(DESTINATION), Provenance.Predetermined);
+        listLive(registry, provider, destinationKey);
         vm.stopPrank();
 
         vm.startPrank(t.owner());

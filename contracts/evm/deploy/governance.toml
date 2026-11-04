@@ -4,7 +4,7 @@
 # record, and the governor's conduits through its owner, salt, and home. Read by
 # `GovernanceConfig` in script/deploy/ChainDeploy.sol.
 #
-# A zero owner, or a zero deployed_by or salt in a provider's record, is unset: the deploy scripts
+# A zero owner or deployed_by, or a zero salt in a provider's record, is unset: the deploy scripts
 # refuse it. The governor's salt may be zero.
 
 # The governor's home, by chains.toml name. Must be a parity chain.
@@ -13,6 +13,14 @@ home = "ethereum"
 # The governor's owner on its home, which calls `createTransmitter` there, and its salt.
 owner = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# The account that broadcasts `CrossProxyDeployer.deploy` for every provider's transceiver on the
+# first generation of chains: the seed's deployer, recorded live for the home and as every
+# registry's initial `currentDeployer`. The seed records the home live under it with no review,
+# so deploy this account's transceivers on the home and check them (deploy/README.md, "Marking a
+# chain live") before relying on that registry. A later deployer is added by the timelock
+# (deploy/README.md, "Rotating the deployer"), not by editing this file.
+deployed_by = "0x0000000000000000000000000000000000000000"
 
 # Every chain's TimelockController: 48 hours, the governor's conduits under these two providers
 # as proposers and cancellers, execution open, no admin but itself.
@@ -24,28 +32,24 @@ proposers = ["layerzero", "ccip"]
 # the build to the same value.
 cross_proxy_init_code_hash = "0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c"
 
-# Each provider's deployment record: the conduit that calls `CrossProxyDeployer.deploy` for its
-# transceiver on every chain, and the salt it deploys under. Write-once in every registry.
+# Each provider's salt, which `deployed_by` deploys its transceiver under on every chain.
+# Write-once in every registry. `deployed_by` is the broadcasting account, not a conduit.
+# One deployer serves every provider, so each salt must differ: the deploy scripts refuse a
+# repeat, but a registry does not, and two providers with one salt would share an address.
 [providers.layerzero]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 [providers.ccip]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 [providers.hyperlane]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 [providers.wormhole]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 [providers.op-stack-l1-l2]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 [providers.op-stack-l2-l2]
-deployed_by = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"

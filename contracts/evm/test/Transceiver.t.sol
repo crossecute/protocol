@@ -162,13 +162,19 @@ contract TransceiverTest is Test {
             transceiverConfig(msig, transmitterImplementation, address(new Rcv()), address(treasury));
         t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
+        registry.setProviderDeployment(provider, TRANSCEIVER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setCurrentDeployer(address(this));
+
         uint256[3] memory chains = [ETH, BASE, ZK];
         vm.startPrank(t.owner());
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
         for (uint256 i; i < 3; ++i) {
             if (chains[i] == chainId) continue;
             vm.stopPrank();
-            registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Unique : Provenance.Predetermined);
+            bytes32 key =
+                registry.addChainKey(_route(chains[i]), chains[i] == ZK ? Provenance.Unique : Provenance.Predetermined);
+            registry.addProviderOnChain(key, provider, address(this));
+            registry.markLive(key, provider);
             vm.startPrank(t.owner());
             ext(address(t)).setRoute(_key(chains[i]), _route(chains[i]));
             if (chains[i] == ZK) ext(address(t)).setCounterpart(_key(ZK), Erc7930.encodeEvm(ZK, zkTransceiver));
@@ -228,10 +234,15 @@ contract TransceiverTest is Test {
         vm.revertToState(world);
         vm.chainId(BASE);
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("test", address(this), TRANSCEIVER_SALT, crossProxyInitCodeHash);
+        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, crossProxyInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
-            RegistrySeed({governorHome: _route(ETH), governorHomeGrade: Provenance.Predetermined, providers: providers})
+            RegistrySeed({
+                governorHome: _route(ETH),
+                governorHomeGrade: Provenance.Predetermined,
+                deployer: address(this),
+                providers: providers
+            })
         );
         Sym base = _deploySym(
             abi.encodeCall(
@@ -346,7 +357,7 @@ contract TransceiverTest is Test {
 
     /* ================================== parity =================================== */
 
-    /// @dev From a `Predetermined` home the receiver must sit on its transmitter's address.
+    /// @dev From a `Predetermined` home the carried transmitter must be the one the home derives.
     function test_aReceiverOffItsTransmitterIsRefusedFromAPredeterminedHome() public {
         Sym t = _chain(ETH, false);
         address wrong = address(0xBAD);
@@ -354,7 +365,7 @@ contract TransceiverTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverCore.ParityBroken.selector,
+                TransceiverCore.SourceTransmitterMismatch.selector,
                 ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
                 wrong
             )
@@ -372,7 +383,7 @@ contract TransceiverTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TransceiverCore.ParityBroken.selector,
+                TransceiverCore.SourceTransmitterMismatch.selector,
                 ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
                 realTransmitter
             )

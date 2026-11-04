@@ -9,13 +9,13 @@ import {Call} from "src/messaging/Call.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {unseeded} from "test/RegistrySeed.sol";
+import {unseeded, listLive} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {
     transceiverConfig,
     AnyGatewayReceiver,
-    AnyGatewayTransceiver,
+    SharedAddressTransceiver,
     AnyGatewayTransmitter,
     ext
 } from "test/Harness.sol";
@@ -46,7 +46,7 @@ contract Transmitter is AnyGatewayTransmitter {
 
 /// @dev One transceiver, which is both ends: it creates receivers for conduits homed on an
 ///      origin it authenticates, and receives reports for conduits homed here.
-contract Node is AnyGatewayTransceiver {
+contract Node is SharedAddressTransceiver {
     function initialize(address governor, address transmitterImpl, address receiverImpl) external initializer {
         TransceiverConfig memory c = transceiverConfig(governor, transmitterImpl, receiverImpl, address(0x7EA5));
         c.governorHome = Erc7930.encodeEvmChain(block.chainid);
@@ -154,6 +154,7 @@ contract InboundAuthTest is Test {
     function _wireReportingChain(uint256 chainId, address counterpart) internal returns (bytes32 chainKey) {
         vm.startPrank(msig);
         chainKey = registry.addChainKey(Erc7930.encodeEvmChain(chainId), Provenance.Unique);
+        listLive(registry, provider, chainKey);
         vm.stopPrank();
         vm.startPrank(owner);
         ext(address(node)).setCounterpart(chainKey, Erc7930.encodeEvm(chainId, counterpart));

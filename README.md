@@ -115,7 +115,7 @@ flowchart LR
 ```
 
 Both transceivers are the same contract: one per chain per provider, at one address on every
-standard EVM chain, creating transmitters for conduits homed on its chain and receivers for
+standard EVM chain of one deployer, creating transmitters for conduits homed on its chain and receivers for
 conduits homed elsewhere. The conduit's home is whichever chain the bootstrap authenticated
 as its origin, never a field the message states.
 
@@ -196,7 +196,10 @@ the local chainKey, so an array approved for one chain cannot be finalized on an
 
 **One owner, one address, every chain.** An owner's conduit is deployed at
 `CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), CrossProxy)`, and
-because all three inputs are the same everywhere, so is the address. The home chain is part
+because all three inputs are the same everywhere, so is the address, on every chain whose
+transceiver the same deployer deployed. If that deployer's key is lost, new chains are added under
+another one, and a conduit's receiver there sits at a different address than its transmitter; chains
+already deployed never move ([rotation](contracts/evm/deploy/README.md#rotating-the-deployer)). The home chain is part
 of the salt, so the same owner and salt homed on two chains are two conduits, and an owner
 can mine `salt` for a vanity or gas-cheap address. On the **home chain** it is armed with
 transmitter logic and driven by its owner; on every other chain it is armed with receiver

@@ -82,8 +82,9 @@ abstract contract ReceiverBase is
     address public parentTransceiver;
     /// The conduit's home as the transport names an origin: the provider's id for it, or its
     /// chainKey over an ERC-7786 gateway. Set once, at initialization.
-    /// @dev The transmitter's address on another chain is not always this conduit's: where the
-    ///      provider's transceiver is not yet deployed, its `deployedBy` can place code there.
+    /// @dev The transmitter's address on another chain is not always this conduit's, and where
+    ///      the provider's transceiver is not yet deployed its deployer can place code there; no
+    ///      message is sent to such a chain until the registry marks the transceiver live.
     bytes32 public homeOrigin;
 
     event ReceiverInitialized(address indexed sourceTransmitter, address indexed transceiver);

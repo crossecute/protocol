@@ -7,7 +7,7 @@ import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistr
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {check} from "script/deploy/CrossProxyDeploy.sol";
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, expectedDeployer} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
@@ -82,7 +82,10 @@ abstract contract DeployProvider is Script {
         check(address(c.chainRegistry).code.length != 0, "step 1's registry is deployed");
         ProviderDeployment memory r = c.chainRegistry.providerDeployment(c.messageProvider);
         check(r.salt != bytes32(0), "the registry records this provider's deployment");
-        check(r.deployedBy == deployer, "the broadcaster is the recorded deployedBy");
+        check(
+            expectedDeployer(c.chainRegistry, c.messageProvider, ChainKey.local()) == deployer,
+            "the broadcaster is the deployer recorded for this chain"
+        );
         return TransceiverDeployment({deployedBy: deployer, salt: r.salt, implementation: implementation, config: c});
     }
 

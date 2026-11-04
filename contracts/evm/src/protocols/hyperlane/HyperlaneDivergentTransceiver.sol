@@ -6,11 +6,7 @@ import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/Tran
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {Call} from "src/messaging/Call.sol";
-import {
-    DivergentTransceiver,
-    ZkSyncTransceiver,
-    TronTransceiver
-} from "src/messaging/transceiver/DivergentTransceiver.sol";
+import {ZkSyncTransceiver, TronTransceiver} from "src/messaging/transceiver/DivergentTransceiver.sol";
 
 /// @dev The overrides below only name both bases, as Solidity requires where each supplies an
 ///      implementation; `super` resolves by linearization to the one that does the work.
@@ -46,15 +42,6 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
         return super._storeCrossProxyInitCode();
     }
 
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
-    }
-
     function _conduitInitializer(
         address owner,
         bytes32 salt,
@@ -86,15 +73,6 @@ contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
         returns (address)
     {
         return super._predictCrossConduit(owner, salt, homeChainKey);
-    }
-
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _conduitInitializer(

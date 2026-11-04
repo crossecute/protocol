@@ -189,13 +189,13 @@ contract ConfiguredGradesBornConfigureTest is LzFixture {
         ChainEntry memory ethereum = ChainConfig.chainWithId(cs, 1);
 
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] =
-            ProviderSeed("layerzero", address(0xDE91), keccak256("salt"), keccak256(type(CrossProxy).creationCode));
+        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256(type(CrossProxy).creationCode));
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({
                 governorHome: Erc7930.encodeEvmChain(ethereum.chainId),
                 governorHomeGrade: ChainConfig.gradeOf(zkSync, ethereum),
+                deployer: address(0xDE91),
                 providers: providers
             })
         );

@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {unseeded} from "test/RegistrySeed.sol";
+import {unseeded, listLive} from "test/RegistrySeed.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -20,7 +20,7 @@ import {
     home,
     transceiverConfig,
     AnyGatewayReceiver,
-    AnyGatewayTransceiver,
+    SharedAddressTransceiver,
     AnyGatewayTransmitter,
     ext
 } from "test/Harness.sol";
@@ -49,7 +49,7 @@ contract Receiver is AnyGatewayReceiver {}
 /// @dev A transceiver whose divergence flag is an initializer choice, so both arms can be
 ///      exercised against otherwise identical contracts. A diverging one stands in for the
 ///      zkSync and Tron variants, whose conduit creation fails closed on Forge's EVM.
-contract ReportingTransceiver is AnyGatewayTransceiver {
+contract ReportingTransceiver is SharedAddressTransceiver {
     bytes public sentRecipient;
     bytes public sentPayload;
     uint256 public sentValue;
@@ -401,7 +401,7 @@ contract ReceiverReportTest is WiresHome {
 
 /// @dev The home side: a real transceiver, a real registry, and nothing hand-built.
 ///      Everything below feeds the reporting side's actual wire bytes into it.
-contract HomeTransceiver is AnyGatewayTransceiver {
+contract HomeTransceiver is SharedAddressTransceiver {
     function initialize(address governor, address treasury_, address transmitterImplementation_) external initializer {
         __TransceiverBase_init(transceiverConfig(governor, transmitterImplementation_, address(0xBEEF), treasury_));
     }
@@ -478,6 +478,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         provider = registry.addMessageProvider("layerzero");
         registry.setLocalTransceiver(provider, address(homeSide));
         remoteKey = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN), Provenance.Unique);
+        listLive(registry, provider, remoteKey);
         // Graded `Unique`: the home cannot recompute an address there, which is both why
         // a report is needed and why the report is worth only the bridge that carried it.
         vm.stopPrank();
@@ -746,6 +747,8 @@ contract BootstrapFeeTest is Test {
         registry.setLocalTransceiver(provider, address(t));
         divergingKey = registry.addChainKey(Erc7930.encodeEvmChain(DIVERGING), Provenance.Unique);
         parityKey = registry.addChainKey(Erc7930.encodeEvmChain(PARITY), Provenance.Predetermined);
+        listLive(registry, provider, divergingKey);
+        listLive(registry, provider, parityKey);
         vm.stopPrank();
 
         vm.startPrank(t.owner());
@@ -996,6 +999,7 @@ contract BootstrapFeeTest is Test {
         vm.startPrank(msig);
         bytes32 second = registry.addMessageProvider("second");
         registry.setLocalTransceiver(second, address(h));
+        listLive(registry, second, divergingKey);
         vm.stopPrank();
 
         vm.startPrank(h.owner());

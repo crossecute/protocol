@@ -9,7 +9,6 @@ import {Envelope} from "src/messaging/Envelope.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -33,14 +32,6 @@ contract FeeConduit is AnyGatewayTransmitter {}
 
 contract FeeReceiver is AnyGatewayReceiver {}
 
-/// @dev A diverging transceiver's default counterpart on a `Predetermined` chain is the
-///      registry's record, as `DivergentTransceiverExtension` has it.
-contract RegistryParityExtension is TransceiverExtension {
-    function _parityAddress(bytes32 chainKey) internal view override returns (address) {
-        return _registryParityAddress(chainKey);
-    }
-}
-
 /// @notice A diverging transceiver, so it both charges bootstrap fees and pays reports from its
 ///         float. It derives conduits Ethereum's way, since the zkSync and Tron formulas fail
 ///         closed on Forge's EVM; nothing here depends on the formula.
@@ -49,14 +40,6 @@ contract FloatTransceiver is AnyGatewayTransceiver {
 
     function initialize(TransceiverConfig memory c) external initializer {
         __TransceiverBase_init(c, true);
-    }
-
-    function _newExtension() internal override returns (address) {
-        return address(new RegistryParityExtension());
-    }
-
-    function _parityAddress(bytes32 chainKey) internal view override returns (address) {
-        return _registryParityAddress(chainKey);
     }
 
     function _quoteMessage(bytes memory, bytes memory payload, bytes[] memory)
@@ -291,10 +274,11 @@ contract FeesAndFloatInvariantTest is Test {
     FloatHandler handler;
     FloatTransceiver t;
     ChainRegistry registry;
+    bytes32 provider;
 
     function setUp() public {
         registry = new ChainRegistry(address(this), unseeded());
-        bytes32 provider = registry.addMessageProvider("test");
+        provider = registry.addMessageProvider("test");
         handler = new FloatHandler(registry, provider);
 
         TransceiverConfig memory c = transceiverConfig(
@@ -307,13 +291,14 @@ contract FeesAndFloatInvariantTest is Test {
         );
         registry.setLocalTransceiver(provider, address(t));
         // R8.4: the record names the initcode hash every EVM chain deploys conduits from.
-        registry.setProviderDeployment(provider, address(0xD1), keccak256("provider"), t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, keccak256("provider"), t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setCurrentDeployer(address(0xD1));
 
         for (uint256 h; h < 3; ++h) {
-            _route(handler.homeChain(h), Provenance.Predetermined);
+            _route(handler.homeChain(h), Provenance.Predetermined, false);
         }
         for (uint256 d; d < 3; ++d) {
-            _route(handler.chainId(d), handler.reporting(d) ? Provenance.Unique : Provenance.Predetermined);
+            _route(handler.chainId(d), handler.reporting(d) ? Provenance.Unique : Provenance.Predetermined, true);
         }
         vm.startPrank(t.owner());
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
@@ -347,8 +332,11 @@ contract FeesAndFloatInvariantTest is Test {
         targetSelector(FuzzSelector(address(handler), selectors));
     }
 
-    function _route(uint256 id, Provenance p) internal {
-        registry.addChainKey(Erc7930.encodeEvmChain(id), p);
+    /// @dev A destination is marked live; a home only sends here, so it is left pending.
+    function _route(uint256 id, Provenance p, bool live) internal {
+        bytes32 key = registry.addChainKey(Erc7930.encodeEvmChain(id), p);
+        registry.addProviderOnChain(key, provider, address(0xD1));
+        if (live) registry.markLive(key, provider);
     }
 
     /// forge-config: default.invariant.fail-on-revert = true

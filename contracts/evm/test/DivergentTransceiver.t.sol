@@ -9,7 +9,6 @@ import {CrossConduits} from "src/conduit/CrossConduits.sol";
 import {
     ZkSyncTransceiver,
     TronTransceiver,
-    DivergentTransceiver,
     ZkSyncTransceiverExtension,
     TronTransceiverExtension
 } from "src/messaging/transceiver/DivergentTransceiver.sol";
@@ -35,17 +34,6 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
 
     function crossProxyInitCode() external view returns (address) {
         return _crossProxyInitCode;
-    }
-
-    /// @dev The overrides below only name both bases, as Solidity requires where each supplies
-    ///      an implementation; `super` resolves by linearization to the one that does the work.
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
@@ -77,17 +65,6 @@ contract TronSym is TronTransceiver, SymHarness {
 
     function crossProxyInitCode() external view returns (address) {
         return _crossProxyInitCode;
-    }
-
-    /// @dev The overrides below only name both bases, as Solidity requires where each supplies
-    ///      an implementation; `super` resolves by linearization to the one that does the work.
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
@@ -203,7 +180,9 @@ contract DivergentTransceiverTest is Test {
         t.predictReceiver(base, alice, SALT);
 
         bytes32 solcHash = keccak256("solc CrossProxy");
-        registry.setProviderDeployment(provider, DEPLOYED_BY, PROVIDER_SALT, solcHash);
+        registry.setProviderDeployment(provider, PROVIDER_SALT, solcHash);
+        registry.setCurrentDeployer(DEPLOYED_BY);
+        registry.addProviderOnChain(base, provider, DEPLOYED_BY);
 
         address there = registry.predictTransceiver(base, provider);
         address receiver =
@@ -230,7 +209,9 @@ contract DivergentTransceiverTest is Test {
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.counterpartOn(base);
 
-        registry.setProviderDeployment(provider, DEPLOYED_BY, PROVIDER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, PROVIDER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setCurrentDeployer(DEPLOYED_BY);
+        registry.addProviderOnChain(base, provider, DEPLOYED_BY);
         address expected = registry.predictTransceiver(base, provider);
         assertEq(t.counterpartOn(base), abi.encodePacked(expected));
         assertTrue(expected != address(t), "not this contract's own address");

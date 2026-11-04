@@ -371,3 +371,10 @@ for it was not checked.
   contracts for free ([todo §3](../../../docs/todo.md#3-infrastructure)); the off-chain
   relaying needs a real send.
 - Float sizing for reporting chains, which depends on traffic.
+- Whether a deployment is the one a registry should mark live. `markLive` is the timelock's mark
+  after a manual list (README, "Marking a chain live"); no script runs it, and the generated
+  governance payloads mark every chain they add without checking the chain.
+- Messages from a chain that is `Pending`. The registry's prediction is authenticated inbound
+  before `markLive`, so an unverified deployer-placed contract at that address could originate
+  messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
+  it.

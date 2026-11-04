@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {CrossProxy} from "src/conduit/CrossProxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
-import {ChainRegistry, ProviderSeed} from "src/registry/ChainRegistry.sol";
+import {ChainRegistry, ProviderSeed, RegistrySeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -34,6 +34,7 @@ contract DeployChainTest is Test {
         g.home = read.home;
         g.owner = read.owner;
         g.salt = read.salt;
+        g.deployer = read.deployer;
         g.timelockDelay = read.timelockDelay;
         g.proposers = read.proposers;
         g.crossProxyInitCodeHash = read.crossProxyInitCodeHash;
@@ -75,7 +76,7 @@ contract DeployChainTest is Test {
         ProviderSeed memory record = GovernanceConfig.providerSeed(g, "ccip");
         address router = address(new RouterStub());
         TransceiverDeployment memory d = TransceiverDeployment({
-            deployedBy: record.deployedBy,
+            deployedBy: g.deployer,
             salt: record.salt,
             implementation: CcipDeploy.transceiverImplementation(router),
             config: TransceiverConfig({
@@ -96,7 +97,7 @@ contract DeployChainTest is Test {
                 ChainConfig.defaultDir(), ChainConfig.chains(ChainConfig.defaultDir()), "ccip", g.home
             )
         );
-        vm.startPrank(record.deployedBy);
+        vm.startPrank(g.deployer);
         address t = CcipDeploy.transceiver(d, router, homeSelector);
         vm.stopPrank();
 
@@ -131,6 +132,40 @@ contract DeployChainTest is Test {
         script.run();
     }
 
+    /// @dev A registry at step 1's address that was seeded with another deployer would predict
+    ///      every home transceiver somewhere governance.toml does not, so step 1 refuses it.
+    function test_aRegistrySeededWithAnotherDeployerIsRefused() public {
+        skipUnderCoverage();
+        ChainContracts memory c = ChainDeploy.predict(g);
+        RegistrySeed memory seed = ChainDeploy.seed(g);
+        seed.deployer = address(0xBAD);
+        deployCodeTo("ChainRegistry.sol:ChainRegistry", abi.encode(address(c.timelock), seed), address(c.registry));
+
+        vm.chainId(8453);
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployCheck.selector, "the registry's current deployer is governance.toml's")
+        );
+        script.run();
+    }
+
+    function test_aProviderSaltThatRepeatsIsRefused() public {
+        RequireSetHarness harness = new RequireSetHarness();
+        Governance memory dup = testGovernance();
+        dup.providers[1].salt = dup.providers[0].salt;
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployCheck.selector, "governance.toml: each provider's salt is its own")
+        );
+        harness.check(dup);
+    }
+
+    function test_anUnsetDeployerIsRefused() public {
+        RequireSetHarness harness = new RequireSetHarness();
+        Governance memory unset = testGovernance();
+        unset.deployer = address(0);
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "governance.toml: deployed_by is set"));
+        harness.check(unset);
+    }
+
     /// @dev Production's file is not ready to deploy until its addresses are decided.
     function test_theProductionFileRefusesItsUnsetOwner() public {
         DeployChain production = new DeployChain();
@@ -150,3 +185,10 @@ contract DeployChainTest is Test {
 
 /// @dev `CcipTransceiver`'s constructor and initializer read nothing from the router.
 contract RouterStub {}
+
+/// @dev `requireSet` is internal, so an expected revert needs an external call to attach to.
+contract RequireSetHarness {
+    function check(Governance memory g) external pure {
+        GovernanceConfig.requireSet(g);
+    }
+}

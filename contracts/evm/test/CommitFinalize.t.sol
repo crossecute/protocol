@@ -15,6 +15,7 @@ import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
+import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Executor} from "src/messaging/Executor.sol";
@@ -25,7 +26,7 @@ import {
     transceiverConfig,
     UnsendableTransceiver,
     AnyGatewayReceiver,
-    AnyGatewayTransceiver,
+    SharedAddressTransceiver,
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
@@ -96,9 +97,28 @@ contract RevertingReceiver is AnyGatewayReceiver {
 }
 
 /// @dev Exposes `_bootstrapInbound` through `inbound`, standing in for an authenticated delivery.
-contract MockTransceiver is AnyGatewayTransceiver {
+contract MockTransceiver is SharedAddressTransceiver {
     function initialize(address governor, address receiverImplementation_) external initializer {
-        __TransceiverBase_init(transceiverConfig(governor, address(0xBEEF), receiverImplementation_, address(0x7EA5)));
+        TransceiverConfig memory c =
+            transceiverConfig(governor, address(0xBEEF), receiverImplementation_, address(0x7EA5));
+        ProviderSeed[] memory providers = new ProviderSeed[](1);
+        providers[0] = ProviderSeed("mock", keccak256("salt"), keccak256("initcode"));
+        c.chainRegistry = IChainRegistryRefs(
+            address(
+                new ChainRegistry(
+                    governor,
+                    RegistrySeed({
+                        governorHome: c.governorHome,
+                        governorHomeGrade: Provenance.Predetermined,
+                        deployer: address(0xD1),
+                        providers: providers
+                    })
+                )
+            )
+        );
+        c.messageProvider = keccak256("mock");
+        c.minCounterpartProvenance = Provenance.Unique;
+        __TransceiverBase_init(c);
     }
 
     /// @dev Stands in for `_onInbound`, which decodes the envelope and reaches

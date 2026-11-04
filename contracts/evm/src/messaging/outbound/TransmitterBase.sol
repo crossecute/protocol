@@ -292,7 +292,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      refused too.
     ///
     /// @dev Checks bootstrap first so an unreached destination reverts `NotBootstrapped`
-    ///      rather than `NoRouteFor` from `_recipientOn`.
+    ///      rather than `NoRouteFor` from `_recipientOn`. A stored receiver means the bootstrap
+    ///      passed the registry's live check, which is never undone, so sends are not checked again.
     function _requireOwnRecipient(bytes calldata recipient) private view returns (bytes32 chainKey) {
         if (recipient.length == 0) revert NoDestination();
 
@@ -525,8 +526,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
     /// @notice Run a payload on this chain, with no bridge and no commitment.
     ///
-    /// @dev Runs the calls itself: a transmitter and its receivers share one address, so there
-    ///      is no receiver at home. Both ends share `Executor`'s loop, policy check, and
+    /// @dev Runs the calls itself: the conduit homed here is its transmitter, so there is no
+    ///      receiver at home. Both ends share `Executor`'s loop, policy check, and
     ///      all-or-nothing rule.
     ///
     /// @dev Payable; value passes to the calls, and anything unspent stays at this

@@ -119,21 +119,30 @@ abstract contract TransceiverBase is TransceiverCore {
     ///         this chain, where `chainKey` derives addresses with Ethereum's CREATE2.
     /// @dev Ethereum's CREATE2 over this provider's transceiver there, which is the counterpart
     ///      on that chain. It equals the conduit's own address only when this chain also uses
-    ///      that formula, which is why a transmitter records this rather than `address(this)`.
+    ///      that formula and the same deployer deployed both transceivers, which is why a
+    ///      transmitter records this rather than `address(this)`.
     ///
     /// @dev The initcode hash is the destination's, not this compiler's: on zkSync and Tron
     ///      `CROSS_PROXY_INIT_CODE_HASH` is the local compiler's and not what an EVM destination
     ///      deploys (#30), so a diverging transceiver takes it from the provider's deployment
     ///      record, which R8.4 holds equal to solc's.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
+        return abi.encodePacked(_conduitUnder(_evmCounterpartOn(chainKey), owner, salt, localChainKey));
+    }
+
+    /// @dev Where `(owner, salt)`'s conduit homed on `homeChainKey` sits under the transceiver at
+    ///      `transceiver_`, with the initcode hash that chain's compiler produces.
+    function _conduitUnder(address transceiver_, address owner, bytes32 salt, bytes32 homeChainKey)
+        private
+        view
+        returns (address)
+    {
         bytes32 initCodeHash = CROSS_PROXY_INIT_CODE_HASH;
         if (_addressesDiverge) {
             initCodeHash = _chainRegistry.providerDeployment(_messageProvider).crossProxyInitCodeHash;
             if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
         }
-        return abi.encodePacked(
-            Create2.computeAddress(_conduitSalt(owner, salt, localChainKey), initCodeHash, _evmCounterpartOn(chainKey))
-        );
+        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), initCodeHash, transceiver_);
     }
 
     /// @notice Create the caller's transmitter.
@@ -347,6 +356,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      would let anyone drain it. The fee's size is governance; zero is refused here.
     function _requireBootstrappable(bytes32 destinationChainKey) private view {
         _requireRoutable(destinationChainKey);
+        if (!isLive(destinationChainKey)) revert DestinationNotLive(destinationChainKey);
         if (_bootstrapFee[destinationChainKey] == 0 && reportsReceiver(destinationChainKey)) {
             revert NoBootstrapFee(destinationChainKey);
         }
@@ -429,8 +439,10 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      carries them, reachable only from an authenticated `_onInbound`.
     ///
     /// @dev Where this chain diverges, the home cannot derive the receiver, so it is reported.
-    ///      Otherwise, if the home is `Predetermined`, the receiver must sit at its transmitter's
-    ///      address; a home graded below that (zkSync, Tron) has its transmitter elsewhere.
+    ///      Otherwise, if the home is `Predetermined`, the carried transmitter must be the one the
+    ///      home's transceiver, as the registry records it, derives for this conduit; a home graded
+    ///      below that (zkSync, Tron) has its transmitter elsewhere. The receiver sits at the
+    ///      transmitter's address only when both chains' transceivers share a deployer.
     function _bootstrapInbound(
         address owner,
         bytes32 salt,
@@ -441,8 +453,9 @@ abstract contract TransceiverBase is TransceiverCore {
         address receiver = _createCrossConduit(owner, salt, home, sourceTransmitter, calls);
         if (_addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
-        } else if (receiver != sourceTransmitter && _chainRegistry.provenanceFor(home) == Provenance.Predetermined) {
-            revert ParityBroken(receiver, sourceTransmitter);
+        } else if (_chainRegistry.provenanceFor(home) == Provenance.Predetermined) {
+            address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home);
+            if (sourceTransmitter != expected) revert SourceTransmitterMismatch(expected, sourceTransmitter);
         }
     }
 
@@ -495,6 +508,15 @@ abstract contract TransceiverBase is TransceiverCore {
         address conduit = _localConduit(owner, salt);
         IConduitReceiverReport(conduit).onDestinationReceiverReported(chainKey, Erc7930.parseStrict(interop).addr);
         emit DestinationReceiverReported(chainKey, owner, salt, conduit);
+    }
+
+    /// @notice Whether sends may reach this provider's transceiver on `chainKey`: the registry has
+    ///         marked it live.
+    /// @dev Asked by a transmitter, which holds no registry, before every send and quote. With no
+    ///      registry it answers false.
+    function isLive(bytes32 chainKey) public view returns (bool) {
+        if (address(_chainRegistry) == address(0)) return false;
+        return _chainRegistry.isLive(chainKey, _messageProvider);
     }
 
     /// @notice Whether `chainKey` reports its receiver address back, rather than this

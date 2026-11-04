@@ -4,11 +4,7 @@ pragma solidity ^0.8.20;
 import {LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {
-    DivergentTransceiver,
-    ZkSyncTransceiver,
-    TronTransceiver
-} from "src/messaging/transceiver/DivergentTransceiver.sol";
+import {ZkSyncTransceiver, TronTransceiver} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -49,15 +45,6 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
         return super._storeCrossProxyInitCode();
     }
 
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
-    }
-
     function _conduitInitializer(
         address owner,
         bytes32 salt,
@@ -96,15 +83,6 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
         returns (address)
     {
         return super._predictCrossConduit(owner, salt, homeChainKey);
-    }
-
-    function _parityAddress(bytes32 chainKey)
-        internal
-        view
-        override(TransceiverCore, DivergentTransceiver)
-        returns (address)
-    {
-        return super._parityAddress(chainKey);
     }
 
     function _conduitInitializer(

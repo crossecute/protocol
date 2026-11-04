@@ -10,7 +10,8 @@ import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
 // `CrossProxyDeployer.t.sol` pins it to solc's build.
 address constant CROSS_PROXY_DEPLOYER = 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C;
 
-/// @notice The CREATE2 salt `CrossProxyDeployer` deploys under for `deployedBy`'s `salt`.
+/// @notice The CREATE2 salt `CrossProxyDeployer` deploys under for `deployedBy`'s `salt`, where
+///         `deployedBy` is the account that calls `deploy`.
 /// @dev The caller is hashed in so that nobody else can deploy at a caller's address first
 ///      with their own implementation. `ChainRegistry.predictTransceiver` derives with it.
 function crossProxySalt(address deployedBy, bytes32 salt) pure returns (bytes32) {

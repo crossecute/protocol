@@ -20,11 +20,12 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {
     transceiverConfig,
     AnyGatewayReceiver,
-    AnyGatewayTransceiver,
+    SharedAddressTransceiver,
     AnyGatewayTransmitter,
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 
 /// @dev Records what reached the wire, so assertions are about the payload rather than a
 ///      provider's transport code.
@@ -81,9 +82,20 @@ contract MockReceiver is AnyGatewayReceiver {
     }
 }
 
+/// @dev The two registry answers these tests reach: every destination is live, and none reports.
+contract LiveRegistry {
+    function isLive(bytes32, bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function requiresReceiverCallback(bytes32) external pure returns (bool) {
+        return false;
+    }
+}
+
 /// @dev Records the bootstrap the transmitter asked for. The routing hooks are answered
 ///      directly, so `bootstrap`'s provenance lookup succeeds without a registry.
-contract MockTransceiver is AnyGatewayTransceiver {
+contract MockTransceiver is SharedAddressTransceiver {
     bytes public sentPayload;
     uint256 public bootCount;
     address public bootRefund;
@@ -91,6 +103,7 @@ contract MockTransceiver is AnyGatewayTransceiver {
     function initialize(address, address impl) external initializer {
         TransceiverConfig memory c = transceiverConfig(address(0x5165), impl, impl, address(0x7EA5));
         c.governorHome = Erc7930.encodeEvmChain(block.chainid);
+        c.chainRegistry = IChainRegistryRefs(address(new LiveRegistry()));
         __TransceiverBase_init(c);
     }
 

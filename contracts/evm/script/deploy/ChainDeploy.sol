@@ -19,6 +19,9 @@ struct Governance {
     ChainEntry home;
     address owner;
     bytes32 salt;
+    /// The account that calls `CrossProxyDeployer.deploy` for every provider's transceiver on
+    /// the chains of the first generation: the seed's `deployer`.
+    address deployer;
     uint256 timelockDelay;
     /// The providers whose governor conduits propose and cancel on every timelock.
     string[2] proposers;
@@ -35,8 +38,8 @@ struct ChainContracts {
 }
 
 /// @title GovernanceConfig
-/// @notice Reads `deploy/governance.toml`, checking its shape. Unset values (a zero owner, or a zero
-///         caller or salt in a provider's record) parse, and are refused by `requireSet`, so the
+/// @notice Reads `deploy/governance.toml`, checking its shape. Unset values (a zero owner or
+///         deployer, or a zero salt in a provider's record) parse, and are refused by `requireSet`, so the
 ///         file can be checked before they are decided.
 library GovernanceConfig {
     function defaultFile() internal view returns (string memory) {
@@ -50,6 +53,7 @@ library GovernanceConfig {
         check(g.home.derivation == Derivation.Parity, "the governor's home is a parity chain");
         g.owner = VM.parseTomlAddress(toml, ".owner");
         g.salt = VM.parseTomlBytes32(toml, ".salt");
+        g.deployer = VM.parseTomlAddress(toml, ".deployed_by");
         g.timelockDelay = VM.parseTomlUint(toml, ".timelock_delay");
         check(g.timelockDelay != 0, "the timelock has a delay");
         g.crossProxyInitCodeHash = VM.parseTomlBytes32(toml, ".cross_proxy_init_code_hash");
@@ -61,7 +65,6 @@ library GovernanceConfig {
             string memory key = string.concat(".providers['", names[i], "']");
             g.providers[i] = ProviderSeed({
                 name: names[i],
-                deployedBy: VM.parseTomlAddress(toml, string.concat(key, ".deployed_by")),
                 salt: VM.parseTomlBytes32(toml, string.concat(key, ".salt")),
                 crossProxyInitCodeHash: g.crossProxyInitCodeHash
             });
@@ -76,19 +79,15 @@ library GovernanceConfig {
         }
     }
 
-    /// @notice The values a deployment hashes into addresses are decided. A salt may repeat across
-    ///         providers, since each record's caller is hashed in with it.
+    /// @notice The values a deployment hashes into addresses are decided. One deployer serves every
+    ///         provider, so each provider's salt must differ.
     function requireSet(Governance memory g) internal pure {
         check(g.owner != address(0), "governance.toml: owner is set");
+        check(g.deployer != address(0), "governance.toml: deployed_by is set");
         for (uint256 i; i < g.providers.length; ++i) {
-            check(g.providers[i].deployedBy != address(0), "governance.toml: every deployed_by is set");
             check(g.providers[i].salt != bytes32(0), "governance.toml: every provider salt is set");
             for (uint256 j; j < i; ++j) {
-                check(
-                    g.providers[j].deployedBy != g.providers[i].deployedBy
-                        || g.providers[j].salt != g.providers[i].salt,
-                    "governance.toml: each provider's record is its own"
-                );
+                check(g.providers[j].salt != g.providers[i].salt, "governance.toml: each provider's salt is its own");
             }
         }
     }
@@ -123,11 +122,11 @@ library ChainDeploy {
         );
     }
 
-    /// @notice `provider`'s transceiver, at its record's address on every parity chain.
+    /// @notice `provider`'s transceiver, at its record's address on every chain of the first
+    ///         generation: those deployed by `g.deployer`.
     function transceiver(Governance memory g, string memory provider) internal pure returns (address) {
         ProviderSeed memory p = GovernanceConfig.providerSeed(g, provider);
-        return
-            AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(p.deployedBy, p.salt), g.crossProxyInitCodeHash);
+        return AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(g.deployer, p.salt), g.crossProxyInitCodeHash);
     }
 
     function proposers(Governance memory g) internal pure returns (address[] memory ps) {
@@ -138,7 +137,10 @@ library ChainDeploy {
 
     function seed(Governance memory g) internal pure returns (RegistrySeed memory) {
         return RegistrySeed({
-            governorHome: homeIdentifier(g), governorHomeGrade: Provenance.Predetermined, providers: g.providers
+            governorHome: homeIdentifier(g),
+            governorHomeGrade: Provenance.Predetermined,
+            deployer: g.deployer,
+            providers: g.providers
         });
     }
 
@@ -198,12 +200,17 @@ library ChainDeploy {
         bytes32 home = ChainKey.forEvm(g.home.chainId);
         check(c.registry.hasChainKey(home), "the registry has the governor's home");
         check(c.registry.provenanceFor(home) == Provenance.Predetermined, "the governor's home is Predetermined");
+        check(c.registry.currentDeployer() == g.deployer, "the registry's current deployer is governance.toml's");
         for (uint256 i; i < g.providers.length; ++i) {
-            ProviderDeployment memory r = c.registry.providerDeployment(keccak256(bytes(g.providers[i].name)));
+            bytes32 provider = keccak256(bytes(g.providers[i].name));
+            ProviderDeployment memory r = c.registry.providerDeployment(provider);
             check(
-                r.deployedBy == g.providers[i].deployedBy && r.salt == g.providers[i].salt
-                    && r.crossProxyInitCodeHash == g.crossProxyInitCodeHash,
+                r.salt == g.providers[i].salt && r.crossProxyInitCodeHash == g.crossProxyInitCodeHash,
                 "the registry records each provider as governance.toml does"
+            );
+            check(
+                c.registry.deployedBy(home, provider) == g.deployer && c.registry.isLive(home, provider),
+                "the registry records each provider live on the home under the deployer"
             );
         }
     }

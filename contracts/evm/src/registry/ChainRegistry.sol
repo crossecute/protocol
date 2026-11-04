@@ -7,7 +7,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {IVmDeriver} from "src/derivation/IVmDeriver.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
+import {ProviderDeployment, Status} from "src/registry/IChainRegistryRefs.sol";
 import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -18,7 +18,6 @@ import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeploy
 ///         deploy from.
 struct ProviderSeed {
     string name;
-    address deployedBy;
     bytes32 salt;
     bytes32 crossProxyInitCodeHash;
 }
@@ -31,7 +30,16 @@ struct RegistrySeed {
     /// The governor's home chain, as an ERC-7930 chain identifier.
     bytes governorHome;
     Provenance governorHomeGrade;
+    /// The account that deployed every seeded provider's transceiver on the home, and the
+    /// registry's initial `currentDeployer`. Required when a home and providers are seeded.
+    address deployer;
     ProviderSeed[] providers;
+}
+
+/// @dev One slot.
+struct ChainSupport {
+    address deployedBy;
+    Status status;
 }
 
 /// @title ChainRegistry
@@ -50,7 +58,8 @@ struct RegistrySeed {
 ///      conduit's payload.
 ///
 /// @dev Fixed: no proxy and no upgrade path, and a transceiver's pointer to it is write-once.
-///      A chain's grade is write-once too; the plugins (validator,
+///      A chain's grade is write-once too, and so is the deployer a provider is added on a chain
+///      under; the plugins (validator,
 ///      deriver, derive params, commitment scheme) stay rebindable so their mistakes can be
 ///      fixed, and every change waits out the owning timelock.
 contract ChainRegistry is Ownable {
@@ -69,6 +78,12 @@ contract ChainRegistry is Ownable {
     mapping(bytes32 => string) private _messageProviderName;
     /// messageProvider => the CREATE2 inputs its transceiver and conduits deploy from.
     mapping(bytes32 => ProviderDeployment) private _deployment;
+
+    /// The deployer a provider added from now on is recorded under. See `setCurrentDeployer`.
+    address public currentDeployer;
+    /// chainKey => messageProvider => who deployed that provider's transceiver there, and whether
+    /// sends may reach it. Packs into one slot.
+    mapping(bytes32 => mapping(bytes32 => ChainSupport)) private _support;
 
     /// messageProvider => the transceiver on this chain that serves it.
     mapping(bytes32 => address) private _localTransceiver;
@@ -111,9 +126,11 @@ contract ChainRegistry is Ownable {
     event MessageProviderAdded(bytes32 indexed messageProvider, string name);
     event MessageProviderRemoved(bytes32 indexed messageProvider);
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
-    event ProviderDeploymentSet(
-        bytes32 indexed messageProvider, address deployedBy, bytes32 salt, bytes32 crossProxyInitCodeHash
-    );
+    event ProviderDeploymentSet(bytes32 indexed messageProvider, bytes32 salt, bytes32 crossProxyInitCodeHash);
+    event CurrentDeployerSet(address deployer);
+    event ProviderAddedOnChain(bytes32 indexed chainKey, bytes32 indexed messageProvider, address deployedBy);
+    event PendingRekeyed(bytes32 indexed chainKey, bytes32 indexed messageProvider, address deployedBy);
+    event MarkedLive(bytes32 indexed chainKey, bytes32 indexed messageProvider);
     event DeriverSet(bytes32 indexed chainKey, address deriver);
     event DeriveParamsSet(bytes32 indexed chainKey, uint8 scheme, bytes32 paramsHash);
     event ValidatorSet(bytes32 indexed chainKey, address validator);
@@ -124,7 +141,7 @@ contract ChainRegistry is Ownable {
     /* ================================== errors ================================= */
 
     /// @dev A write-once value, once recorded, is fixed: a provider deployment, a chain's grade,
-    ///      its CREATE2 factory, or a Move qualifier.
+    ///      the deployer a provider was added on a chain under, or a Move qualifier.
     error AlreadySet();
     /// @dev Only an `eip155` chain can be `Predetermined`: that is the grade the EVM CREATE2
     ///      prediction trusts.
@@ -134,6 +151,13 @@ contract ChainRegistry is Ownable {
     error NoProviderDeployment();
     error ZeroSalt();
     error ZeroDeployedBy();
+    /// @dev The call named a deployer other than `currentDeployer`: a registry that applied a
+    ///      rotation in another order refuses instead of recording a different one.
+    error DeployerMismatch(address expected, address current);
+    /// @dev The provider was never added on this chain.
+    error NotOnChain(bytes32 chainKey, bytes32 messageProvider);
+    /// @dev Only a `Pending` entry can be re-keyed or marked live.
+    error NotPending(bytes32 chainKey, bytes32 messageProvider);
     error ZeroInitCodeHash();
     error UnknownChainKey();
     error UnknownMessageProvider();
@@ -153,10 +177,14 @@ contract ChainRegistry is Ownable {
     /// @dev Seeding goes through the same internal setters the owner uses later, so a seeded
     ///      entry is write-once exactly like one added afterwards.
     constructor(address owner_, RegistrySeed memory seed) Ownable(owner_) {
-        if (seed.governorHome.length != 0) _addChainKey(seed.governorHome, seed.governorHomeGrade);
+        if (seed.deployer != address(0)) _setCurrentDeployer(seed.deployer);
+        bytes32 home;
+        if (seed.governorHome.length != 0) home = _addChainKey(seed.governorHome, seed.governorHomeGrade);
         for (uint256 i; i < seed.providers.length; ++i) {
             ProviderSeed memory p = seed.providers[i];
-            _setProviderDeployment(_addMessageProvider(p.name), p.deployedBy, p.salt, p.crossProxyInitCodeHash);
+            bytes32 provider = _addMessageProvider(p.name);
+            _setProviderDeployment(provider, p.salt, p.crossProxyInitCodeHash);
+            if (home != bytes32(0)) _addProviderOnChain(home, provider, seed.deployer, Status.Live);
         }
     }
 
@@ -260,62 +288,138 @@ contract ChainRegistry is Ownable {
         emit LocalTransceiverSet(messageProvider, transceiver_);
     }
 
-    /// @notice Record the CREATE2 inputs a provider's contracts deploy from.
+    /// @notice Record the CREATE2 inputs a provider's contracts share on every chain.
     ///
-    /// @dev Write-once: changing it moves the provider's transceiver on every chain and every
-    ///      conduit under it. The identical record again is a no-op.
+    /// @dev Write-once: changing the salt or initcode hash moves the provider's transceiver on
+    ///      every chain and every conduit under it. The identical record again is a no-op.
     ///
     /// @dev Deploys nothing; it lets any chain reproduce the addresses. A record that does not
     ///      match the deployment yields predictions that match nothing.
-    function setProviderDeployment(
-        bytes32 messageProvider,
-        address deployedBy,
-        bytes32 salt,
-        bytes32 crossProxyInitCodeHash
-    ) external onlyOwner {
-        _setProviderDeployment(messageProvider, deployedBy, salt, crossProxyInitCodeHash);
+    function setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 crossProxyInitCodeHash)
+        external
+        onlyOwner
+    {
+        _setProviderDeployment(messageProvider, salt, crossProxyInitCodeHash);
     }
 
-    function _setProviderDeployment(
-        bytes32 messageProvider,
-        address deployedBy,
-        bytes32 salt,
-        bytes32 crossProxyInitCodeHash
-    ) private {
+    function _setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 crossProxyInitCodeHash) private {
         if (!_messageProviders.contains(messageProvider)) {
             revert UnknownMessageProvider();
         }
-        if (deployedBy == address(0)) revert ZeroDeployedBy();
         if (salt == bytes32(0)) revert ZeroSalt();
         if (crossProxyInitCodeHash == bytes32(0)) revert ZeroInitCodeHash();
 
         ProviderDeployment storage d = _deployment[messageProvider];
         if (d.salt != bytes32(0)) {
-            if (d.deployedBy != deployedBy || d.salt != salt || d.crossProxyInitCodeHash != crossProxyInitCodeHash) {
-                revert AlreadySet();
-            }
+            if (d.salt != salt || d.crossProxyInitCodeHash != crossProxyInitCodeHash) revert AlreadySet();
             return;
         }
 
-        _deployment[messageProvider] =
-            ProviderDeployment({deployedBy: deployedBy, salt: salt, crossProxyInitCodeHash: crossProxyInitCodeHash});
-        emit ProviderDeploymentSet(messageProvider, deployedBy, salt, crossProxyInitCodeHash);
+        _deployment[messageProvider] = ProviderDeployment({salt: salt, crossProxyInitCodeHash: crossProxyInitCodeHash});
+        emit ProviderDeploymentSet(messageProvider, salt, crossProxyInitCodeHash);
     }
 
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
         return _deployment[messageProvider];
     }
 
+    /* ============================ deployer rotation ============================ */
+
+    /// @notice Change the deployer later `addProviderOnChain` calls must name.
+    /// @dev Touches no entry already recorded, so no existing address moves.
+    function setCurrentDeployer(address deployer) external onlyOwner {
+        _setCurrentDeployer(deployer);
+    }
+
+    function _setCurrentDeployer(address deployer) private {
+        if (deployer == address(0)) revert ZeroDeployedBy();
+        currentDeployer = deployer;
+        emit CurrentDeployerSet(deployer);
+    }
+
+    /// @notice Record that a provider's transceiver on `chainKey` is deployed by `expectedDeployer`,
+    ///         `Pending` until `markLive`.
+    /// @dev Write-once. `expectedDeployer` must be `currentDeployer`, so a registry that applies
+    ///      this before or after a rotation reverts instead of recording a different deployer
+    ///      than its peers. The same deployer again is a no-op.
+    function addProviderOnChain(bytes32 chainKey, bytes32 messageProvider, address expectedDeployer)
+        external
+        onlyOwner
+    {
+        _addProviderOnChain(chainKey, messageProvider, expectedDeployer, Status.Pending);
+    }
+
+    function _addProviderOnChain(bytes32 chainKey, bytes32 messageProvider, address expectedDeployer, Status status)
+        private
+    {
+        if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
+        if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
+        if (_deployment[messageProvider].salt == bytes32(0)) revert NoProviderDeployment();
+        if (expectedDeployer == address(0)) revert ZeroDeployedBy();
+
+        ChainSupport storage s = _support[chainKey][messageProvider];
+        if (s.status != Status.None) {
+            if (s.deployedBy != expectedDeployer) revert AlreadySet();
+            return;
+        }
+        if (expectedDeployer != currentDeployer) revert DeployerMismatch(expectedDeployer, currentDeployer);
+
+        s.deployedBy = expectedDeployer;
+        s.status = status;
+        emit ProviderAddedOnChain(chainKey, messageProvider, expectedDeployer);
+    }
+
+    /// @notice Change the deployer a `Pending` entry is predicted under, for a chain added before
+    ///         a rotation and not yet deployed.
+    /// @dev Never a `Live` entry: its transceiver exists and its address is fixed.
+    function rekeyPending(bytes32 chainKey, bytes32 messageProvider, address newDeployer) external onlyOwner {
+        ChainSupport storage s = _support[chainKey][messageProvider];
+        if (s.status != Status.Pending) revert NotPending(chainKey, messageProvider);
+        if (newDeployer == address(0)) revert ZeroDeployedBy();
+        s.deployedBy = newDeployer;
+        emit PendingRekeyed(chainKey, messageProvider, newDeployer);
+    }
+
+    /// @notice Allow sends to a provider's transceiver on `chainKey`.
+    /// @dev Call only after the deployment is checked without the deployer's help: code at the
+    ///      predicted address, the implementation's code hash, and `owner()`, `chainRegistry()` and
+    ///      `messageProvider()`. This contract cannot read another chain's code, so the check is
+    ///      the proposers' and the timelock delay is its review window.
+    function markLive(bytes32 chainKey, bytes32 messageProvider) external onlyOwner {
+        ChainSupport storage s = _support[chainKey][messageProvider];
+        if (s.status != Status.Pending) revert NotPending(chainKey, messageProvider);
+        s.status = Status.Live;
+        emit MarkedLive(chainKey, messageProvider);
+    }
+
+    /// @notice Whether sends to `messageProvider`'s transceiver on `chainKey` are allowed.
+    function isLive(bytes32 chainKey, bytes32 messageProvider) external view returns (bool) {
+        return _support[chainKey][messageProvider].status == Status.Live;
+    }
+
+    /// @notice The state of `messageProvider` on `chainKey`.
+    function statusOf(bytes32 chainKey, bytes32 messageProvider) external view returns (Status) {
+        return _support[chainKey][messageProvider].status;
+    }
+
+    /// @notice Who deployed, or will deploy, `messageProvider`'s transceiver on `chainKey`; zero
+    ///         where it was never added.
+    function deployedBy(bytes32 chainKey, bytes32 messageProvider) external view returns (address) {
+        return _support[chainKey][messageProvider].deployedBy;
+    }
+
     /* ========================= PATH 2: salted derivation ======================= */
 
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from
-    ///         `CROSS_PROXY_DEPLOYER` and the recorded caller, salt, and initcode hash.
+    ///         `CROSS_PROXY_DEPLOYER`, the deployer recorded for that chain, and the provider's
+    ///         salt and initcode hash.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
         _requireEvmDerivable(chainKey);
-        return
-            AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(d.deployedBy, d.salt), d.crossProxyInitCodeHash);
+        address by = _support[chainKey][messageProvider].deployedBy;
+        if (by == address(0)) revert NotOnChain(chainKey, messageProvider);
+        return AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(by, d.salt), d.crossProxyInitCodeHash);
     }
 
     /// @notice Where an owner's conduit lands on `chainKey`, before it exists: the

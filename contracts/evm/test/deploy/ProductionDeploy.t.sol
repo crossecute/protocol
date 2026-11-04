@@ -51,16 +51,14 @@ abstract contract ProductionDeploySpecBase is Test {
     }
 
     /// @notice A registry at step 1's address that disagrees with the governance file: homed on
-    ///         `homeChainId` with `homeGrade`, recording every provider as deployed by `deployedBy`.
+    ///         `homeChainId` with `homeGrade`, recording `deployedBy` as the deployer.
     function _seedRegistry(address deployedBy, Provenance homeGrade, uint256 homeChainId) internal {
         Governance memory g = testGovernance();
         ChainContracts memory c = ChainDeploy.predict(g);
         RegistrySeed memory s = ChainDeploy.seed(g);
         s.governorHome = Erc7930.encodeEvmChain(homeChainId);
         s.governorHomeGrade = homeGrade;
-        for (uint256 i; i < s.providers.length; ++i) {
-            s.providers[i].deployedBy = deployedBy;
-        }
+        s.deployer = deployedBy;
         deployCodeTo("ChainRegistry.sol:ChainRegistry", abi.encode(address(c.timelock), s), address(c.registry));
     }
 }
@@ -104,7 +102,9 @@ abstract contract ProductionDeploySpec is ProductionDeploySpecBase {
     function test_aBroadcasterOtherThanTheRecordedOneIsRefused() public {
         _seedRegistry(address(0xBAD), Provenance.Predetermined, 1);
         DeployProvider script = _script();
-        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the broadcaster is the recorded deployedBy"));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployCheck.selector, "the broadcaster is the deployer recorded for this chain")
+        );
         script.run();
     }
 }
