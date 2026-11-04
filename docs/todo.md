@@ -133,9 +133,11 @@ the seventh; what they mean for an operator is in the README.
   (`contracts/evm/deploy/README.md`). It is a manual list; `GovernancePlan` marks live without
   reading the chain. A script that performs it and refuses the batch otherwise would close that.
 - **Governance payloads for later deployer generations.** `out/governance/` adds every provider
-  under the first deployer. A chain added after a rotation needs `addProviderOnChain` under the
-  current one, a `rekeyPending` for each pending pair, and `predecessor` set on the timelock
-  operations.
+  under the first deployer, and `script/RotateDeployer.s.sol` rotates away from it, for the
+  chains it deployed, with the pending pairs named by the operator. A second rotation, and a
+  chain added after the first, need the generation that deployed each chain (the governor's
+  receivers sit at other addresses there), and reading the pending pairs from the registries
+  would replace naming them.
 - **Gating inbound on `Live`, or binding `markLive` to a deployer.** Inbound authentication uses
   the registry's prediction for a `Pending` entry, and `markLive` marks whatever the entry holds
   when it executes. Both are handled by procedure now (README, "Marking a chain live"); a

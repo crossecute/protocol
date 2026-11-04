@@ -830,7 +830,8 @@ lane to them, are not scripted ([todo §3](todo.md#3-infrastructure)).
 
 **Rotating the deployer.** If the deployer's key is compromised, the protocol keeps running
 and adds chains under a new one; the procedure is in
-[`deploy/README.md`](../contracts/evm/deploy/README.md#rotating-the-deployer). The registry holds
+[`deploy/README.md`](../contracts/evm/deploy/README.md#rotating-the-deployer), with
+`script/RotateDeployer.s.sol` writing the payloads for the parity chains. The registry holds
 one slot per (provider, chain), a 20-byte deployer and a status, written once when the
 provider is added on the chain: about 22,100 gas at the timelock, and 32 bytes of state per
 pair. `markLive` writes the same slot again. Reads add no storage to a conduit.

@@ -232,7 +232,8 @@ Chains already `Live` keep their addresses: the deployer is write-once per (prov
 1. Pick the new deployer: any address that can call `CrossProxyDeployer.deploy` on every chain
    to be added, a plain key or a contract at one address everywhere. It needs no role.
 2. Schedule `setCurrentDeployer(new)` on every registry. Schedule every later call with this
-   operation as its `predecessor`, so it executes first on every chain.
+   operation as its `predecessor`, so it executes first on every chain. For the parity chains
+   this is scripted, with step 3 in the same timelock batch (see below).
 3. For each (provider, chain) that is `Pending`, schedule `rekeyPending(chainKey, provider, new)`.
    Until then the compromised key can still deploy at the old address. It cannot be marked live,
    so nothing is sent there, but a `Pending` entry is still authenticated inbound (previous
@@ -243,6 +244,22 @@ Chains already `Live` keep their addresses: the deployer is write-once per (prov
    once it has.
 5. Deploy each new chain's contracts with `--sender <new>`, verify them (previous section), then
    `markLive`.
+
+```
+NEW_DEPLOYER=<address> PENDING_CHAINS=<chain,...> PENDING_PROVIDERS=<provider,...> \
+  forge script script/RotateDeployer.s.sol
+```
+
+It reads nothing on chain and writes Safe Transaction Builder batches to `out/rotation/`: 1.
+`1-schedule-home.json` and 2. `2-schedule-remote.json`, both by the governor's owner (the second
+is one message per other chain, from the first proposer's transmitter to its receiver there, a
+proposer of that chain's timelock), then 3. `3-execute-<chain>.json` on each chain, by anyone once
+its delay has passed. Each registry gets one batch: `setCurrentDeployer(new)`, then `rekeyPending`
+for every pair named by `PENDING_CHAINS` and `PENDING_PROVIDERS` (equal-length lists of the names
+used in `deploy/`). Name only pairs that are `Pending` in the registries: a `Live` pair makes the
+whole batch revert, and the script cannot tell, because it reads nothing on chain. It refuses a
+zero `NEW_DEPLOYER` and `governance.toml`'s `deployed_by`, and covers chains the first deployer
+deployed.
 
 A chain deployed under another deployer has a different transceiver address, so every conduit
 homed elsewhere has a different receiver address there than its transmitter's, and
