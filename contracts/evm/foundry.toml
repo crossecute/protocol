@@ -9,6 +9,7 @@ fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
     { access = "read-write", path = "./out/governance" },
+    { access = "read-write", path = "./out/rotation" },
 ]
 solc_version = "0.8.28"
 # Pinned to paris, not shanghai: PUSH0 is absent on zkSync, Tron, and several L2s.

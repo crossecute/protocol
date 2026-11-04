@@ -31,6 +31,12 @@ struct Tx {
     bytes data;
 }
 
+/// @notice A (provider, chain) pair that is `Pending` in every registry, for `rotateDeployer`.
+struct PendingPair {
+    uint256 chainId;
+    string provider;
+}
+
 /// @notice What the plan is computed from.
 struct Plan {
     string dir;
@@ -284,6 +290,104 @@ library GovernancePlan {
             0,
             abi.encodeCall(TimelockController.executeBatch, (targets, values, payloads, bytes32(0), bytes32(0)))
         );
+    }
+
+    /* ============================= deployer rotation ========================== */
+
+    /// @notice One registry's rotation: `setCurrentDeployer(newDeployer)`, then `rekeyPending` to it
+    ///         for each pair in `pending`, in one timelock batch, so no later call can run first.
+    /// @dev The same batch goes to every registry. A pair is `Pending` in all of them or in none.
+    function rotationBatch(Plan memory p, address newDeployer, PendingPair[] memory pending)
+        internal
+        view
+        returns (address[] memory targets, uint256[] memory values, bytes[] memory payloads)
+    {
+        address registry = address(ChainDeploy.predict(p.g).registry);
+        uint256 n = 1 + pending.length;
+        targets = new address[](n);
+        values = new uint256[](n);
+        payloads = new bytes[](n);
+        payloads[0] = abi.encodeCall(ChainRegistry.setCurrentDeployer, (newDeployer));
+        for (uint256 i; i < pending.length; ++i) {
+            payloads[1 + i] = abi.encodeCall(
+                ChainRegistry.rekeyPending,
+                (ChainKey.forEvm(pending[i].chainId), keccak256(bytes(pending[i].provider)), newDeployer)
+            );
+        }
+        for (uint256 i; i < n; ++i) {
+            targets[i] = registry;
+        }
+    }
+
+    function scheduleRotation(Plan memory p, address newDeployer, PendingPair[] memory pending)
+        internal
+        view
+        returns (Call memory)
+    {
+        (address[] memory targets, uint256[] memory values, bytes[] memory payloads) =
+            rotationBatch(p, newDeployer, pending);
+        return Call(
+            address(ChainDeploy.predict(p.g).timelock),
+            0,
+            abi.encodeCall(
+                TimelockController.scheduleBatch, (targets, values, payloads, bytes32(0), bytes32(0), p.g.timelockDelay)
+            )
+        );
+    }
+
+    /// @notice The transaction anyone submits on any chain once its timelock's delay has passed.
+    function executeRotation(Plan memory p, address newDeployer, PendingPair[] memory pending)
+        internal
+        view
+        returns (Tx memory)
+    {
+        (address[] memory targets, uint256[] memory values, bytes[] memory payloads) =
+            rotationBatch(p, newDeployer, pending);
+        return Tx(
+            address(ChainDeploy.predict(p.g).timelock),
+            0,
+            abi.encodeCall(TimelockController.executeBatch, (targets, values, payloads, bytes32(0), bytes32(0)))
+        );
+    }
+
+    /// @notice By the governor's owner on the home: schedule the rotation on the home's registry
+    ///         through the first proposer's transmitter.
+    function rotateHome(Plan memory p, address newDeployer, PendingPair[] memory pending)
+        internal
+        view
+        returns (Tx[] memory txs)
+    {
+        Call[] memory schedule = new Call[](1);
+        schedule[0] = scheduleRotation(p, newDeployer, pending);
+        txs = new Tx[](1);
+        txs[0] = _execute(p, p.g.proposers[0], schedule);
+    }
+
+    /// @notice By the governor's owner: schedule the rotation on every other chain, one message
+    ///         each from the first proposer's transmitter to its receiver there, which is a
+    ///         proposer of that chain's timelock.
+    function rotateRemote(Plan memory p, address newDeployer, PendingPair[] memory pending)
+        internal
+        view
+        returns (Tx[] memory txs)
+    {
+        string memory name = p.g.proposers[0];
+        address conduit = governor(p, name);
+        Call[] memory schedule = new Call[](1);
+        schedule[0] = scheduleRotation(p, newDeployer, pending);
+        uint256 gas = DeliveryGas.PAYLOAD + CALL_GAS + (1 + pending.length) * SCHEDULE_ENTRY_GAS;
+        for (uint256 i; i < p.chains.length; ++i) {
+            if (p.chains[i].chainId == p.g.home.chainId) continue;
+            bytes memory data = abi.encodeCall(
+                TransmitterBase.sendMessage,
+                (
+                    Erc7930.encodeEvm(p.chains[i].chainId, conduit),
+                    Payload.encodeCalls(schedule),
+                    GasAttribute.forMultisig(name, gas)
+                )
+            );
+            txs = _push(txs, Tx(conduit, 0, data));
+        }
     }
 
     /* ================================== phases ================================ */

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script} from "forge-std/Script.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
-import {GovernanceConfig} from "script/deploy/ChainDeploy.sol";
-import {Plan, Tx, GovernancePlan} from "script/deploy/GovernancePlan.sol";
+import {PayloadWriter} from "script/deploy/PayloadWriter.sol";
+import {Plan, GovernancePlan} from "script/deploy/GovernancePlan.sol";
 
 /// @title GovernancePayloads
 /// @notice Writes steps 3 to 6 of `docs/provider-spec.md` §6 to `out/governance/` as Safe
@@ -18,7 +17,7 @@ import {Plan, Tx, GovernancePlan} from "script/deploy/GovernancePlan.sol";
 ///
 /// @dev Reads `deploy/` and nothing on chain, so a commit always yields the same files, which
 ///      `forge-attest` can pin. `createdAt` is zero for the same reason.
-contract GovernancePayloads is Script {
+contract GovernancePayloads is PayloadWriter {
     function run() external {
         Plan memory p = GovernancePlan.load(ChainConfig.defaultDir(), _governanceFile());
         string memory dir = _outDir();
@@ -49,50 +48,7 @@ contract GovernancePayloads is Script {
         _write(dir, "5-connect", home, owner, GovernancePlan.connect(p));
     }
 
-    /// @dev Overridden by tests, whose file has every value set.
-    function _governanceFile() internal view virtual returns (string memory) {
-        return GovernanceConfig.defaultFile();
-    }
-
-    function _outDir() internal view virtual returns (string memory) {
+    function _outDir() internal view virtual override returns (string memory) {
         return string.concat(vm.projectRoot(), "/out/governance");
-    }
-
-    function _write(string memory dir, string memory name, uint256 chainId, address safe, Tx[] memory txs) internal {
-        // forge-lint: disable-next-line(unsafe-cheatcode) writes the batches under out/governance
-        vm.writeFile(string.concat(dir, "/", name, ".json"), batchJson(name, chainId, safe, txs));
-    }
-
-    /// @notice The Transaction Builder format: `meta.createdFromSafeAddress` binds a batch to the
-    ///         governor's owner, and is left out of one anyone may submit.
-    function batchJson(string memory name, uint256 chainId, address safe, Tx[] memory txs)
-        public
-        pure
-        returns (string memory json)
-    {
-        string memory meta = string.concat('{"name":"', name, '","description":""');
-        if (safe != address(0)) meta = string.concat(meta, ',"createdFromSafeAddress":"', vm.toString(safe), '"');
-        json = string.concat(
-            '{"version":"1.0","chainId":"', vm.toString(chainId), '","createdAt":0,"meta":', meta, '},"transactions":['
-        );
-        for (uint256 i; i < txs.length; ++i) {
-            json = string.concat(
-                json,
-                i == 0 ? "" : ",",
-                '{"to":"',
-                vm.toString(txs[i].to),
-                '","value":"',
-                vm.toString(txs[i].value),
-                '","data":"',
-                vm.toString(txs[i].data),
-                '","operation":"0"}'
-            );
-        }
-        json = string.concat(json, "]}");
-    }
-
-    function _one(Tx memory t) private pure returns (Tx[] memory txs) {
-        txs = new Tx[](1);
-        txs[0] = t;
     }
 }

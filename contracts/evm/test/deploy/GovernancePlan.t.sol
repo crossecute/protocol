@@ -11,7 +11,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 import {GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
-import {Plan, Tx, GovernancePlan} from "script/deploy/GovernancePlan.sol";
+import {Plan, Tx, PendingPair, GovernancePlan} from "script/deploy/GovernancePlan.sol";
 import {GovernancePayloads} from "script/GovernancePayloads.s.sol";
 import {DeployProvider} from "script/DeployProvider.s.sol";
 import {testGovernanceFile, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
@@ -144,6 +144,13 @@ contract GovernancePlanTest is Test {
                 assertTrue(TransmitterBase(payable(conduit)).isBootstrappedOn(p.chains[i].chainId), "bootstrapped");
             }
         }
+
+        PendingPair[] memory none = new PendingPair[](0);
+        _submit(p.g.owner, GovernancePlan.rotateHome(p, address(0x4E77), none));
+        Tx memory rotate = GovernancePlan.executeRotation(p, address(0x4E77), none);
+        vm.warp(block.timestamp + p.g.timelockDelay);
+        _call(address(0xA11CE), rotate.to, 0, rotate.data);
+        assertEq(c.registry.currentDeployer(), address(0x4E77), "the home rotated");
     }
 
     /* ============================== every other chain =========================== */
@@ -153,6 +160,7 @@ contract GovernancePlanTest is Test {
         Plan memory p = _plan();
         Tx[] memory bootstraps = GovernancePlan.bootstrap(p);
         Tx[] memory connects = GovernancePlan.connect(p);
+        Tx[] memory rotations = GovernancePlan.rotateRemote(p, address(0x4E77), new PendingPair[](0));
         uint256 clean = vm.snapshotState();
         for (uint256 i; i < p.chains.length; ++i) {
             ChainEntry memory x = p.chains[i];
@@ -177,7 +185,27 @@ contract GovernancePlanTest is Test {
                 }
             }
             _assertConfigured(p, c, x, true);
+            _assertRotates(p, x, c, rotations);
         }
+    }
+
+    /// @dev The rotation, delivered as the first proposer's receiver on `x` gets it from the home,
+    ///      then executed by anyone after the delay.
+    function _assertRotates(Plan memory p, ChainEntry memory x, ChainContracts memory c, Tx[] memory rotations)
+        internal
+    {
+        PendingPair[] memory none = new PendingPair[](0);
+        for (uint256 j; j < rotations.length; ++j) {
+            (bytes memory recipient, bytes memory payload,) =
+                abi.decode(_args(rotations[j].data), (bytes, bytes, bytes[]));
+            if (ChainKey.fromIdentifier(recipient) == ChainKey.forEvm(x.chainId)) {
+                _arrive(p, x, rotations[j].to, abi.decode(payload, (Call[])));
+            }
+        }
+        Tx memory execute = GovernancePlan.executeRotation(p, address(0x4E77), none);
+        vm.warp(block.timestamp + p.g.timelockDelay);
+        _call(address(0xA11CE), execute.to, 0, execute.data);
+        assertEq(c.registry.currentDeployer(), address(0x4E77), "rotated");
     }
 
     /// @notice `local`'s registry grades every parity chain as `deploy/` does and names each
