@@ -9,7 +9,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev Implements `IMessageRecipient.handle` directly, gated `onlyRole(GATEWAY_ROLE)`,
 ///      rather than inheriting `MailboxClient` (OZ 4.9.3) or `Router`, whose
 ///      enrolled-router-per-domain check would bypass the registry's provenance dial. See
-///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`.
+///      `https://github.com/crossecute/research/blob/main/protocol/provider-research.md#5-hyperlane-as-a-native-binding`.
 ///
 /// @dev Implements no `interchainSecurityModule()`, so `Mailbox.recipientIsm` falls back to
 ///      the Mailbox's `defaultIsm`, which the Mailbox owner can change.

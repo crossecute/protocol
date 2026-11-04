@@ -10,7 +10,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev Sender-only: no `handle` implemented, so R3.1 is answered by absence rather than a
 ///      guard. Plain `OwnableUpgradeable`, not Hyperlane's `MailboxClient`, which pins OZ
 ///      4.9.3's zero-arg `__Ownable_init()` (see
-///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`).
+///      `https://github.com/crossecute/research/blob/main/protocol/provider-research.md#5-hyperlane-as-a-native-binding`).
 contract HyperlaneTransmitter is OwnableTransmitter {
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
 

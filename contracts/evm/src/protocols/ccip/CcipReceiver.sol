@@ -28,7 +28,7 @@ contract CcipReceiver is ProviderReceiver, IAny2EVMMessageReceiver {
     }
 
     /// @dev CCIP's off-ramp asserts nothing about the source-chain sender
-    ///      (`docs/provider-research.md#4-ccip-as-a-native-binding`), so `_onMessageFrom` is the
+    ///      (`https://github.com/crossecute/research/blob/main/protocol/provider-research.md#4-ccip-as-a-native-binding`), so `_onMessageFrom` is the
     ///      only origin and sender check: no R3.3 exception.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
         _onMessageFrom(bytes32(uint256(message.sourceChainSelector)), CcipMessage.sender(message), message.data);

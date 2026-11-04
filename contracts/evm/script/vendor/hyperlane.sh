@@ -4,7 +4,7 @@
 # Usage: contracts/evm/script/vendor/hyperlane.sh
 #
 # Bumping the pinned commit: edit COMMIT below, re-run, and diff the result before
-# committing. Update the citation in docs/provider-research.md to
+# committing. Update the citation in crossecute/research protocol/provider-research.md to
 # match, since it names this exact commit.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
@@ -12,7 +12,7 @@ source contracts/evm/script/vendor/lib.sh
 
 REPO="hyperlane-xyz/hyperlane-monorepo"
 COMMIT="983831f6"
-NOTE=$'MIT OR Apache-2.0, like the rest of its source repo. No OpenZeppelin imports, unlike\n// MailboxClient/Router. See docs/provider-research.md#5-hyperlane-as-a-native-binding.'
+NOTE=$'MIT OR Apache-2.0, like the rest of its source repo. No OpenZeppelin imports, unlike\n// MailboxClient/Router. See https://github.com/crossecute/research/blob/main/protocol/provider-research.md#5-hyperlane-as-a-native-binding.'
 SRC="solidity/contracts"
 DEST="contracts/evm/lib/hyperlane/solidity/contracts"
 

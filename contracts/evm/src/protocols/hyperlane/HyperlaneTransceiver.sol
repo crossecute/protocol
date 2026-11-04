@@ -14,7 +14,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      so `GATEWAY_ROLE` names one address, granted at initialization rather than relying on
 ///      the deployment to list it. A Hyperlane domain is conventionally the EVM chain id but
 ///      not guaranteed to be, hence the domain table. See
-///      `docs/provider-research.md#5-hyperlane-as-a-native-binding`.
+///      `https://github.com/crossecute/research/blob/main/protocol/provider-research.md#5-hyperlane-as-a-native-binding`.
 abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecipient {
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
 

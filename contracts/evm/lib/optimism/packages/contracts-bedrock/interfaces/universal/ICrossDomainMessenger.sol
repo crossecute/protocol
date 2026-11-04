@@ -3,7 +3,7 @@
 // Vendored, unmodified, from ethereum-optimism/optimism @ 0abfb166
 // (packages/contracts-bedrock/interfaces/universal/ICrossDomainMessenger.sol).
 // MIT, like the rest of contracts-bedrock. No imports. See
-// docs/provider-research.md#7-op-stack-as-a-native-binding.
+// https://github.com/crossecute/research/blob/main/protocol/provider-research.md#7-op-stack-as-a-native-binding.
 
 pragma solidity ^0.8.0;
 

@@ -4,7 +4,7 @@
 // (contracts/src/v0.8/ccip/interfaces/IRouterClient.sol).
 // MIT-tagged in its own SPDX header, distinct from the BUSL-1.1 router/off-ramp
 // infrastructure this repo only ever calls. See
-// docs/provider-research.md#4-ccip-as-a-native-binding.
+// https://github.com/crossecute/research/blob/main/protocol/provider-research.md#4-ccip-as-a-native-binding.
 
 pragma solidity ^0.8.4;
 

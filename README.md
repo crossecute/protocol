@@ -492,7 +492,7 @@ What an operator or integrator has to know:
   implement to be compliant, and what the provider itself must be capable of. Normative
 - [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
   binding is held to, and what an OFT must be before a conduit uses it. Normative
-- [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
+- [`protocol/provider-research.md`](https://github.com/crossecute/research/blob/main/protocol/provider-research.md), in the [`crossecute/research`](https://github.com/crossecute/research) repository: what each transport actually
   guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
   it goes stale on their schedule rather than ours
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what

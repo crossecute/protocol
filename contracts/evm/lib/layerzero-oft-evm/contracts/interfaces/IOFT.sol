@@ -3,7 +3,7 @@
 // Vendored, unmodified, from LayerZero-Labs/devtools @ 4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8
 // (packages/oft-evm/contracts/interfaces/IOFT.sol).
 // @layerzerolabs/oft-evm has no dedicated repo of its own; this is its
-// actual home. See docs/provider-research.md §8.
+// actual home. See https://github.com/crossecute/research/blob/main/protocol/provider-research.md §8.
 
 pragma solidity ^0.8.20;
 
