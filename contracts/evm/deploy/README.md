@@ -224,4 +224,9 @@ homed elsewhere has a different receiver address there than its transmitter's, a
 registry, so a chain's peers (LayerZero's `setPeer`, Wormhole's emitters) are that prediction. The
 generated payloads in `out/governance/` cover the first generation only.
 
+zkSync, Tron, and `other` chains take their counterparts from the registry's deriver params, not
+from the deployer, so `rekeyPending` does not change what a transceiver derives there. Re-key
+such a chain with `setDeriveParams` as before, and gate it the same way: `addProviderOnChain`
+then `markLive`. This path is documented but has no test of its own.
+
 The registry stores one 32-byte slot per (provider, chain).
