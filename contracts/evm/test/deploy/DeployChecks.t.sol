@@ -9,7 +9,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {DeployCheck, deployCrossProxy} from "script/deploy/CrossProxyDeploy.sol";
-import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
+import {TransceiverDeployment, expectedDeployer} from "script/deploy/TransceiverDeploy.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 
@@ -53,6 +53,29 @@ contract DeployChecksTest is LzFixture {
 
     function _expect(string memory what) internal {
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, what));
+    }
+
+    /// @dev The deployer a chain's transceiver must come from is the registry's entry for that
+    ///      chain, and a chain the registry has no entry for yet takes `currentDeployer`, so a new
+    ///      chain is deployed under whoever governance has made current.
+    function test_theExpectedDeployerIsTheChainsEntryElseTheCurrentOne() public {
+        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(CrossProxy).creationCode));
+        bytes32 provider = keccak256("layerzero");
+        bytes32 home = ChainKey.forEvm(1);
+        bytes32 elsewhere = ChainKey.forEvm(8453);
+
+        assertEq(expectedDeployer(IChainRegistryRefs(address(registry)), provider, home), address(this));
+        assertEq(expectedDeployer(IChainRegistryRefs(address(registry)), provider, elsewhere), address(this));
+
+        registry.setCurrentDeployer(address(0xD2));
+        assertEq(
+            expectedDeployer(IChainRegistryRefs(address(registry)), provider, home), address(this), "the entry stays"
+        );
+        assertEq(
+            expectedDeployer(IChainRegistryRefs(address(registry)), provider, elsewhere),
+            address(0xD2),
+            "a chain with no entry follows the rotation"
+        );
     }
 
     /// @dev C21, script side: deployed from the record, the transceiver is where the registry

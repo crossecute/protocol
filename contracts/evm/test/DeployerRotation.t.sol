@@ -17,6 +17,10 @@ import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
+import {MockTransmitter} from "test/Transport.t.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Treasury} from "src/treasury/Treasury.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
@@ -83,19 +87,27 @@ contract DeployerRotationTest is Test {
 
     /// @dev The chain's transceiver, deployed by `deployer`, with the other chains routed.
     function _chain(uint256 chainId, address deployer, bool live) internal returns (Sym t, ChainRegistry r) {
+        return _chainWith(chainId, deployer, live, address(new RecordingTransmitter()), false);
+    }
+
+    function _chainWith(uint256 chainId, address deployer, bool live, address transmitterImplementation, bool diverges)
+        internal
+        returns (Sym t, ChainRegistry r)
+    {
         vm.chainId(chainId);
         bytes32 provider;
         (r, provider) = _registry(chainId, live);
 
         TransceiverConfig memory c = transceiverConfig(
-            msig, address(new RecordingTransmitter()), address(new Rcv()), address(new Treasury(address(this)))
+            msig, transmitterImplementation, address(new Rcv()), address(new Treasury(address(this)))
         );
         c.chainRegistry = IChainRegistryRefs(address(r));
         c.messageProvider = provider;
         c.minCounterpartProvenance = Provenance.Unique;
 
         address implementation = address(new Sym());
-        bytes memory init = abi.encodeCall(Sym.initialize, (c));
+        bytes memory init =
+            diverges ? abi.encodeCall(Sym.initializeDiverging, (c, true)) : abi.encodeCall(Sym.initialize, (c));
         vm.prank(deployer);
         t = Sym(payable(factory.deploy(TRANSCEIVER_SALT, implementation, init)));
 
@@ -265,5 +277,94 @@ contract DeployerRotationTest is Test {
         _bootstrap(eth, BASE);
         assertEq(eth.sentRecipient(), Erc7930.encodeEvm(BASE, _at(D2)));
         assertTrue(keccak256(eth.sentRecipient()) != keccak256(Erc7930.encodeEvm(BASE, _at(D1))));
+    }
+
+    /// @dev Through a real transmitter: while the destination is pending a bootstrap reverts and
+    ///      leaves nothing recorded, so a send and its quote revert `NotBootstrapped`. Once the
+    ///      chain is marked live the same bootstrap succeeds and a send follows. Path A needs no
+    ///      live check of its own because a stored receiver exists only after a gated bootstrap.
+    function test_aTransmitterCannotBootstrapOrSendToAPendingChain() public {
+        (Sym eth, ChainRegistry registry) = _chainWith(ETH, D1, false, address(new MockTransmitter()), false);
+        MockTransmitter conduit = _transmitterOf(eth);
+        bytes memory recipient = Erc7930.encodeEvm(OP, _at(D2));
+        bytes memory payload = Payload.encodeCalls(_calls());
+        bytes memory notBootstrapped = abi.encodeWithSelector(TransmitterBase.NotBootstrapped.selector, _key(OP));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.DestinationNotLive.selector, _key(OP)));
+        conduit.bootstrap(OP, _calls(), new bytes[](0));
+        assertFalse(conduit.isBootstrappedOn(OP), "nothing recorded");
+
+        vm.expectRevert(notBootstrapped);
+        conduit.quoteMessage(recipient, payload, new bytes[](0));
+        vm.prank(alice);
+        vm.expectRevert(notBootstrapped);
+        conduit.sendMessage(recipient, payload, new bytes[](0));
+
+        registry.markLive(_key(OP), ext(address(eth)).messageProvider());
+        vm.prank(alice);
+        conduit.bootstrap(OP, _calls(), new bytes[](0));
+        assertTrue(conduit.isBootstrappedOn(OP));
+        bytes memory receiver = conduit.recipientOn(OP);
+        vm.prank(alice);
+        conduit.sendMessage(receiver, payload, new bytes[](0));
+        assertEq(eth.sentCount(), 1, "only the bootstrap reached the transceiver");
+    }
+
+    function _transmitterOf(Sym t) internal returns (MockTransmitter conduit) {
+        vm.prank(alice);
+        conduit = MockTransmitter(payable(t.createTransmitter(SALT)));
+        vm.deal(address(conduit), 1 ether);
+    }
+
+    /// @dev A receiver report answers a delivery already authenticated from that chain, so it is
+    ///      sent whether or not the registry has marked the home live there.
+    function test_aReceiverReportIsSentToAHomeThatIsNotLive() public {
+        (Sym op,) = _chainWith(OP, D2, false, address(new RecordingTransmitter()), true);
+        assertFalse(op.isLive(_key(ETH)), "the home is pending in this registry");
+        vm.deal(address(op), 1 ether);
+
+        bytes32 transmitterWord = bytes32(uint256(uint160(alice)));
+        bytes memory bootstrap = Envelope.encodeBootstrap(alice, SALT, transmitterWord, _calls());
+        bytes memory sender = abi.encodePacked(_at(D1));
+        op.arrive(_route(ETH), sender, bootstrap);
+
+        assertEq(op.sentCount(), 1, "the report went out");
+        assertEq(op.sentRecipient(), Erc7930.encodeEvm(ETH, _at(D1)));
+    }
+
+    /// @dev Not a guarantee, a record of what holds: inbound authentication reads the registry's
+    ///      prediction, which exists as soon as a provider is added on a chain, not when it is
+    ///      marked live. So a pending chain's predicted address is authenticated if its route is
+    ///      configured, and an address nobody has verified can then originate messages. Routes
+    ///      and provider peers to a chain therefore wait for `markLive` (`deploy/README.md`). A
+    ///      chain the provider was never added on is refused (`NotOnChain`).
+    function test_todayAPendingChainsPredictedAddressIsAuthenticatedInbound() public {
+        (Sym eth,) = _chain(ETH, D1, false);
+        assertFalse(eth.isLive(_key(OP)), "pending");
+
+        address carried = Create2.computeAddress(
+            ext(address(eth)).conduitSalt(alice, SALT, _key(OP)), eth.CROSS_PROXY_INIT_CODE_HASH(), _at(D2)
+        );
+        bytes memory bootstrap = Envelope.encodeBootstrap(alice, SALT, bytes32(uint256(uint160(carried))), _calls());
+        bytes memory sender = abi.encodePacked(_at(D2));
+        eth.arrive(_route(OP), sender, bootstrap);
+
+        address receiver = ext(address(eth)).predictCrossConduit(alice, SALT, _key(OP));
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), carried);
+    }
+
+    function test_aChainTheProviderWasNeverAddedOnIsRefusedInbound() public {
+        (Sym eth, ChainRegistry registry) = _chain(ETH, D1, true);
+        bytes32 unknown = registry.addChainKey(_route(42161), Provenance.Predetermined);
+        vm.prank(eth.owner());
+        ext(address(eth)).setRoute(unknown, _route(42161));
+
+        bytes memory sender = abi.encodePacked(_at(D2));
+        bytes memory bootstrap = Envelope.encodeBootstrap(alice, SALT, bytes32(uint256(uint160(alice))), _calls());
+        vm.expectRevert(
+            abi.encodeWithSelector(ChainRegistry.NotOnChain.selector, unknown, ext(address(eth)).messageProvider())
+        );
+        eth.arrive(_route(42161), sender, bootstrap);
     }
 }
