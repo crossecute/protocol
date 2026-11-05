@@ -69,7 +69,7 @@ Depends on: review of the existing draft and issue scope.
   `BaseTransactionGuard`, Safe 1.3.0 singleton/proxy fixture, one implementation,
   no version branches, and tested runtime support limited to the 1.3.0 fixture.
 - [ ] Remaining proposed starting assumptions: one guard
-  per Safe, immutable Safe and consumer, one direct plain-CALL selector, no module
+  per Safe, immutable Safe and transmitter, one direct plain-CALL selector, no module
   or MultiSend staging, and rejection of same-Safe nesting through the post-hook.
 - [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
   subset. Raw-byte transport must be labeled as such, with no portability claim.
@@ -92,14 +92,14 @@ Depends on: T01.
 - [ ] Add the chosen interfaces under `contracts/safe-guard/src/`, with a short
   ABI/layout specification in that project's README before implementation.
 - [ ] Specify constructor configuration, guard interface support, hook signatures,
-  consumer/read access, return fields, errors, and phase transitions.
+  transmitter access, read access, return fields, errors, and phase transitions.
 - [ ] Define the versioned slot namespace, Safe key, phase, target, selector,
   operation, value, calldata hash, signed nonce, digest, length, and word slots.
   State which fields are fixed configuration versus staged data.
 - [ ] Define the context ID's exact ABI encoding and domain. Identify every
-  producer and reader: pre-hook, consumer, consume API, post-hook and test oracle.
+  producer and reader: pre-hook, transmitter, consume API, post-hook and test oracle.
   Derive runtime context in one shared helper where both operations need it.
-- [ ] Specify how the consumer checks returned nonce/digest/context ID without
+- [ ] Specify how the transmitter checks returned nonce/digest/context ID without
   requiring a digest inside the calldata that the same digest signs. Derive
   call hash/value from actual `msg.data`/`msg.value`, not dispatch arguments.
 - [ ] Specify zero padding, exact-length returns, clearing of all occupied slots,
@@ -141,7 +141,7 @@ Depends on: T03.
 
 - [ ] Implement authenticated hooks, nonce/digest capture, call-shape checks,
   bounded word copying, context publication and selected read behavior.
-- [ ] Implement consumer-only consumption and the phase marker retained until
+- [ ] Implement transmitter-only consumption and the phase marker retained until
   the matching post-hook. Reject repeated consumption and wrong-hash cleanup.
 - [ ] Clear metadata, length and occupied words for consumed and unconsumed
   executions. Do not depend only on transaction-end reset.
@@ -151,24 +151,24 @@ Depends on: T03.
 Done when: R2-R7 have positive and negative evidence, and a completed execution
 leaves no readable record. Cover E01-E03, E05-E10. No policy or bridge logic.
 
-### T05. Implement the minimal consumer and signed execution path
+### T05. Implement the minimal transmitter and signed execution path
 
 Depends on: T04.
 
-- [ ] Add a minimal test consumer that requires the configured Safe caller,
+- [ ] Add a minimal test transmitter that requires the configured Safe caller,
   derives actual call context, consumes once, validates the result, then records
   a hash or other test evidence. Any external effect follows consumption.
-- [ ] Add consumer modes for no consumption, attempted duplicate consumption,
+- [ ] Add transmitter modes for no consumption, attempted duplicate consumption,
   reentrancy, and consume-then-revert, sharing the context checks across modes.
 - [ ] Prove exact byte roundtrip and value-bearing plain CALL through the real
   Safe, alongside normal unrelated transactions that stage no signature blob.
-- [ ] Reject wrong consumer/Safe/target/selector/operation/value/calldata, short
+- [ ] Reject wrong transmitter/Safe/target/selector/operation/value/calldata, short
   calldata and added trailing bytes. Mutate nonce, digest and all signed gas/refund
   fields in the appropriate oracle or hook tests, using valid Safe signatures
   whenever the case is presented as reachable through Safe.
 
 Done when: R1-R6 pass end to end, including accepted dispatch and non-dispatch
-behavior. Cover E01-E04, E08, E21. This consumer sends no bridge messages.
+behavior. Cover E01-E04, E08, E21. This transmitter sends no bridge messages.
 
 ### T06. Prove rollback, nesting and transaction boundaries
 
@@ -244,7 +244,7 @@ R9 remains a production design obligation with future implementation tests.
 Depends on: T01; incorporates findings from T02-T08 before acceptance.
 
 - [ ] Resolve Q2 and remaining production portions of Q1/Q3/Q4: exact policy
-  revision, supported deployments/consumers, configuration authority and shared
+  revision, supported deployments/transmitters, configuration authority and shared
   internal policy composition. Choose an upstream refactor or maintained fork;
   specify licensing/provenance and the separate compiler decision. Forwarding
   to an existing deployed guard changes its Safe caller identity.
@@ -270,7 +270,7 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   transaction/module guard slots and synchronization. Specify authorized
   migration, failed migration and recovery without an unguarded interval.
 - [ ] Specify module behavior without owner-signature staging, including a module
-  calling the consumer while an owner transaction is active.
+  calling the transmitter while an owner transaction is active.
 - [ ] Resolve Q10's availability policy. Require verified chain evidence before
   production installation; record remaining support-list work explicitly.
 - [ ] State destination verifier prerequisites: domain, replay key, authoritative

@@ -19,13 +19,17 @@ The issue has two deliverables:
    before the signed inner call dispatches through a transmitter.
 2. A standalone MVP installed through a normal owner-authorized Safe `setGuard` transaction.
    It only stages, reads or consumes, and clears transient data. A real Safe fixture and
-   minimal consumer exercise it. It performs no policy checks, bridge sends, or destination
+   minimal test transmitter exercise it. It performs no policy checks, bridge sends, or destination
    execution and must not be presented as a production policy guard.
 
 The MVP proves source-side transport and lifecycle, not cross-chain signature validity.
 Production portability needs a separate verifier agreement on signature kinds, Safe domain,
 owner-set authority, threshold, nonce, and replay protection. Staging alone proves none of
 those destination-side properties.
+
+A conduit is a transmitter on its source chain and a receiver on a destination chain.
+Here, the transmitter retrieves staged signatures from the guard before dispatch.
+The standalone MVP uses a minimal test transmitter with no bridge sends.
 
 ## Verified baseline
 
@@ -78,7 +82,7 @@ those destination-side properties.
 
 ### Trust and configuration
 
-Recommendation: a guard instance bound to one Safe and one consumer for the first MVP.
+Recommendation: a guard instance bound to one Safe and one transmitter for the first MVP.
 Record these addresses explicitly at deployment; do not accept an arbitrary caller merely
 because it reports a Safe version or answers a storage query. The fixture deploys a real
 Safe proxy, deploys the guard for that address, then installs it through the Safe. Production
@@ -100,21 +104,21 @@ shared internal policy path in the combined guard, with a pinned upstream revisi
 explicit compatibility tests. The referenced external hooks are not virtual, so simple
 subclass overrides are not an implementation plan without an upstream refactor or fork.
 
-### Slot ownership and consumer interface
+### Slot ownership and transmitter interface
 
-Recommendation: the guard owns all transient slots. A trusted consumer calls its guard
+Recommendation: the guard owns all transient slots. A trusted transmitter calls its guard
 through an external interface; it never attempts to load another contract's slots.
 Proposed conceptual operations, with final ABI left open:
 
 - `readContext(safe)`: return metadata and bounded signature bytes without mutation.
-- `consume(safe, callValue, callDataHash)`: require the configured consumer as caller,
+- `consume(safe, callValue, callDataHash)`: require the configured transmitter as caller,
   compare the active context, return its metadata and signatures, and mark it consumed.
 
-The consumer requires its caller to be the configured Safe (production: also preserve the
-transmitter's owner check). It derives the value and data hash from its own `msg.value` and
+The transmitter requires its caller to be the configured Safe and preserves its existing
+owner check in production. It derives the value and data hash from its own `msg.value` and
 `msg.data`, never from caller-supplied assertions. It verifies returned Safe, target,
 selector and context identifier before using the signatures. Nonce and digest originate
-from the authenticated pre-hook, not untrusted dispatch parameters. The consumer is trusted
+from the authenticated pre-hook, not untrusted dispatch parameters. The transmitter is trusted
 to report its own call accurately; an arbitrary registered target is not a generic proof of
 execution. Keep this interface out of provider-specific duplicates.
 
@@ -138,7 +142,7 @@ permit a nested execution to overwrite the outer transaction's cleanup context.
    runs the policy for all transactions. Any rejection reverts reservation and policy writes.
 2. A matching dispatch validates bounds and format, writes metadata and padded words, then
    publishes `Staged`. Non-dispatch executions retain only the matching cleanup record.
-3. Consumer checks its actual Safe call and calls `consume` before any external effects.
+3. Transmitter checks its actual Safe call and calls `consume` before any external effects.
    Guard checks all context fields, copies the bounded bytes, and marks `Consumed` before
    returning. It may zero blob words here, but retains metadata needed for cleanup.
 4. Post-hook authenticates Safe and matches the digest. It clears all recorded words,
@@ -194,7 +198,7 @@ Proposed structure, with names illustrative until Q4/Q5 define the production AP
 | Component | Responsibility and state | Reuse boundary |
 | --- | --- | --- |
 | Safe guard | Inherit the pinned `BaseTransactionGuard`; own transient context and signature words | Standalone installed contract, not a transmitter/receiver parent |
-| Signature interfaces and codec | Declare consumer/verifier APIs and versioned encoding; no storage | One shared declaration/codec per format, outside provider bindings |
+| Signature interfaces and codec | Declare transmitter/verifier APIs and versioned encoding; no storage | One shared declaration/codec per format, outside provider bindings |
 | Source signature add-on | Authenticate Safe owner, consume exact guarded context, construct signed envelope before transport; own source configuration | One shared abstract component used by optional signature transmitter variants |
 | Destination signature add-on | Verify authority, domain, calls and replay before execution; own verifier configuration and replay records | One shared abstract component used by optional signature receiver variants |
 | Optional concrete variants | Compose the shared signature component with provider transport behavior | Thin provider declarations resolve inheritance; no copied parsers or verification logic |
@@ -273,7 +277,7 @@ open decisions, not inferred from whether a chain is EVM-compatible.
 Use a real Safe proxy/singleton and valid owner signatures, not a hook-only mock. Assert
 installation and normal non-dispatch behavior as well as rejection cases. The shared lifecycle
 suite should cover read-without-consume, exact byte roundtrip, duplicate consumption,
-wrong Safe/consumer/value/calldata/selector, wrong cleanup digest, oversized blobs, partial
+wrong Safe/transmitter/value/calldata/selector, wrong cleanup digest, oversized blobs, partial
 words, same-Safe nesting before and after consumption, and sequential calls in one outer
 transaction. Include two-Safe isolation if shared instances are chosen.
 
@@ -281,7 +285,7 @@ Failure fixtures must distinguish a returned inner failure followed by cleanup f
 Safe revert. After each outcome, perform another call in the same outer transaction where
 possible to detect stale context. Also verify a fresh transaction cannot read old state.
 Fuzz blob sizes and context mismatches; test maximum-size cleanup with realistic gas limits.
-A minimal consumer records a hash or emits test evidence only, and makes no bridge calls.
+A minimal test transmitter records a hash or emits test evidence only, and makes no bridge calls.
 
 Production tests additionally compare policy allow/deny behavior with the pinned upstream
 for owner and module paths, extension parsing, policy configuration, refund restrictions,
@@ -313,13 +317,13 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | The interface observer binds the fixture Safe and rejects direct pre/post-hook calls in `testRejectsDirectHookCalls`. Remaining: staging isolation, other-Safe/impostor cases and supported production deployment validation | Q1, Q3; R2 |
 | E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Q1 pins the newer interface and 1.3.0 fixture. `testSignedCallPreservesHookArgumentsAndDigest` compares nonce and pre/post digest through the real Safe, including gas/refund fields. Remaining: staging implementation, independent field mutations, reentrancy and deployment validation | Q1; R4 |
 | E03 / Both / Open | A selector matches but target, operation, value, or trailing calldata differs; an unrelated call consumes staged signatures | Match exact call bytes and value with the authenticated target. Test each mismatch, short calldata, trailing bytes, delegatecall, and unsupported batch shapes; retain valid non-dispatch behavior | Q4; R3, R4 |
-| E04 / Production / Open | A registered consumer reports invented call context, or its implementation changes after registration | Treat consumer code and any upgrade authority as part of the trust model. Decide permitted deployment types and configuration changes; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
+| E04 / Production / Open | A registered transmitter reports invented call context, or its implementation changes after registration | Treat transmitter code and any upgrade authority as part of the trust model. Decide permitted deployment types and configuration changes; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
 
 ### Lifecycle, nesting, and resource bounds
 
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
-| E05 / Both / Open | A policy callback reenters before staging, or a consumer reenters after consumption and overwrites outer cleanup metadata | Reserve before policy calls and retain a live marker through post-hook. Test nesting in Checking, Staged and Consumed, including non-dispatch nesting; confirm sequential completed calls still succeed | Q7; R6, R8 |
+| E05 / Both / Open | A policy callback reenters before staging, or a transmitter reenters after consumption and overwrites outer cleanup metadata | Reserve before policy calls and retain a live marker through post-hook. Test nesting in Checking, Staged and Consumed, including non-dispatch nesting; confirm sequential completed calls still succeed | Q7; R6, R8 |
 | E06 / Both / Open | Consumption succeeds but the inner frame later reverts, restoring a usable staged blob | Exercise returned inner failure followed by cleanup in MVP and whole-Safe revert under production policy. Verify a subsequent execution cannot consume the old blob in either case | Q2; R7 |
 | E07 / Both / Open | Cleanup is skipped, uses the wrong digest, or clears only the marker, leaving stale words available to later calls | Match the post-hook record and clear metadata, length and words. Test wrong-hash cleanup, no consumption, repeated calls in one transaction, and a shorter blob after a longer one | Q8; R5, R7, R8 |
 | E08 / Both / Open | A second consume or a read after consumption exposes bytes that downstream code treats as fresh authorization | Define read behavior for every phase and make consumption single-use. Test duplicate consume, read-before-consume, read-after-consume, and read-after-cleanup; reads must never authorize external effects | Q8, Q11; R6 |
@@ -335,7 +339,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E13 / Production / Open | Approved-hash or contract signatures are copied as though they were portable ECDSA authorization | Decide supported signing modes and verifier semantics. Test each supported mode and rejection of unsupported modes, dynamic offsets, duplicate signers and threshold boundaries using valid Safe fixtures | Q5, Q11; R9 |
 | E14 / Production / Open | Executor-supplied policy context is mistaken for owner-signed content, allowing altered context to authorize a different effect | Keep context separate from owner bytes and require the selected policy to establish its own binding. Mutate extension payload while retaining owner signatures and verify the policy rejects unauthorized effects | Q2, Q5, Q6; R9 |
 | E15 / Production / Open | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Differentially test the combined guard against the pinned policy for allowed and denied owner/module operations, configuration and failure cases. Document intentional differences as decisions before accepting them | Q2, Q9; R9 |
-| E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged consumer while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the consumer. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
+| E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged transmitter while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the transmitter. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
 | E17 / Production / Open | Migration omits policies or pending roots, resets a delay, or leaves transaction and module policy configurations inconsistent | Review a concrete migration inventory and authorized sequence. Test before/after policy parity, pending-root treatment, timing boundaries, failed migration, and removal without an unguarded interval | Q2, Q9; R9 |
 
 ### Portability, deployment, and assurance
@@ -361,8 +365,8 @@ This register is not an exhaustive security review.
 | --- | --- | --- |
 | Q1. Which Safe versions and deployments are supported? | Agreed for MVP: pinned 1.5.0 ITransactionGuard/BaseTransactionGuard, pinned 1.3.0 singleton/proxy fixture, one implementation without version branches. Runtime support claim is limited to that fixture; production deployment allowlist remains open | Production deployment authentication; MVP interface choice is resolved |
 | Q2. Which exact Safenet policy revision and policies must be preserved? Is an upstream refactor or maintained fork acceptable? | Use the reviewed revision as a baseline, then pin the agreed production dependency | Policy composition and compiler choice |
-| Q3. One guard per Safe or a shared registered guard? Who may change consumer configuration? | Immutable Safe and consumer for MVP; Safe-authorized changes need a production design | Deployment and configuration model |
-| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | One direct consumer selector, plain CALL; no batching/modules initially | Context matching and integration API |
+| Q3. One guard per Safe or a shared registered guard? Who may change transmitter configuration? | Immutable Safe and transmitter for MVP; Safe-authorized changes need a production design | Deployment and configuration model |
+| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | One direct transmitter selector, plain CALL; no batching/modules initially | Context matching and integration API |
 | Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |
 | Q7. Is rejecting all same-Safe nested guarded execution acceptable? | Yes for MVP; keep the live marker until post-hook | Reentrancy semantics |
