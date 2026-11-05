@@ -2,12 +2,12 @@
 # Re-vendors the 17 files behind the LayerZero bindings: OApp's upgradeable core/sender/
 # receiver + their interface closure, and for the `layerzero-oft` binding `IOFT`,
 # `OFTComposeMsgCodec` and `ILayerZeroComposer`, hand-copied because no package has a
-# dedicated repo of its own that isolates just these files (see docs/provider-research.md §8).
+# dedicated repo of its own that isolates just these files.
 #
 # Usage: contracts/evm/script/vendor/layerzero.sh
 #
 # Bumping a pinned commit: edit the relevant COMMIT below, re-run, and diff the result
-# before committing. Update the citation in docs/provider-research.md §8 to match.
+# before committing.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 source contracts/evm/script/vendor/lib.sh
@@ -17,7 +17,7 @@ source contracts/evm/script/vendor/lib.sh
 # tooling this repo has no use for), so one commit pin covers both packages.
 DEVTOOLS_REPO="LayerZero-Labs/devtools"
 DEVTOOLS_COMMIT="4973ba8bef7b0fdf7268469abea3ea50dbd4bbd8"
-DEVTOOLS_NOTE=$'@layerzerolabs/oapp-evm-upgradeable and @layerzerolabs/oapp-evm have no\n// dedicated repo of their own; this is their actual home. See docs/provider-research.md §8.'
+DEVTOOLS_NOTE=$'@layerzerolabs/oapp-evm-upgradeable and @layerzerolabs/oapp-evm have no\n// dedicated repo of their own; this is their actual home.'
 
 UPGRADEABLE_SRC="packages/oapp-evm-upgradeable/contracts/oapp"
 UPGRADEABLE_DEST="contracts/evm/lib/layerzero-oapp-evm-upgradeable/contracts/oapp"
@@ -44,7 +44,7 @@ done
 # --- @layerzerolabs/oft-evm ---
 # Same monorepo and pin. That binding calls an operator's OFT and decodes its compose
 # message, and never inherits OFTCore.
-OFT_NOTE=$'@layerzerolabs/oft-evm has no dedicated repo of its own; this is its\n// actual home. See docs/provider-research.md §8.'
+OFT_NOTE=$'@layerzerolabs/oft-evm has no dedicated repo of its own; this is its\n// actual home.'
 OFT_SRC="packages/oft-evm/contracts"
 OFT_DEST="contracts/evm/lib/layerzero-oft-evm/contracts"
 for f in interfaces/IOFT libs/OFTComposeMsgCodec; do
@@ -56,7 +56,7 @@ done
 # reasoning, different repo.
 V2_REPO="LayerZero-Labs/LayerZero-v2"
 V2_COMMIT="9c741e7f9790639537b1710a203bcdfd73b0b9ac"
-V2_NOTE=$'@layerzerolabs/lz-evm-protocol-v2 has no standalone package repo of its own;\n// this is its actual home. See docs/provider-research.md §8.'
+V2_NOTE=$'@layerzerolabs/lz-evm-protocol-v2 has no standalone package repo of its own;\n// this is its actual home.'
 
 V2_SRC="packages/layerzero-v2/evm/protocol/contracts/interfaces"
 V2_DEST="contracts/evm/lib/layerzero-protocol-v2/contracts/interfaces"

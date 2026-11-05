@@ -13,7 +13,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev The Wormhole chain id is its own `uint16` enumeration, not an EVM chain id, hence the
 ///      table. Transceivers of one deployer share one address across parity chains, so the published payload's
 ///      destination prefix (`WormholeMessage`) is what keeps a VAA for one chain from running
-///      on another. See `docs/provider-research.md#6-wormhole-core-vs-the-relayer-are-two-different-bindings`.
+///      on another.
 contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     bytes4 public constant WORMHOLE_EXECUTION_ATTRIBUTE = WormholeMessage.EXECUTION_ATTRIBUTE;
     bytes4 public constant WORMHOLE_PUBLISH_ONLY_ATTRIBUTE = WormholeMessage.PUBLISH_ONLY_ATTRIBUTE;
