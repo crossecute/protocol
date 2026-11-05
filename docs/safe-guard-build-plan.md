@@ -11,8 +11,8 @@ The reviewed starting commit is `5356c2d` on protocol baseline `1a223df`.
 [Issue #107](https://github.com/crossecute/protocol/issues/107) requires an agreed
 production guard design and a tested standalone transient-storage MVP. The
 [design draft](safe-guard-design.md) remains the source for requirements R1-R10,
-questions Q1-Q11, and risks E01-E24. This plan orders the work and defines evidence
-for completion. Q1's interface/fixture choice is agreed; other recommendations
+questions Q1-Q11, and risks E01-E25. This plan orders the work and defines evidence
+for completion. Q1's interface/fixture choice and owner-Safe guard discovery are agreed; other recommendations
 remain proposals unless explicitly marked agreed.
 
 Assumption: PR #112 remains the design and execution-plan review, followed by
@@ -68,6 +68,9 @@ Depends on: review of the existing draft and issue scope.
 - [x] Record Q1's agreed dependency boundary: newer `ITransactionGuard` and
   `BaseTransactionGuard`, Safe 1.3.0 singleton/proxy fixture, one implementation,
   no version branches, and tested runtime support limited to the 1.3.0 fixture.
+- [x] Record guard discovery: the signature-enabled transmitter reads its owner
+  Safe's transaction guard slot on dispatch and consumes the context from that
+  guard. No guard address is pinned at creation or pushed transiently by a hook.
 - [ ] Remaining proposed starting assumptions: one guard
   per Safe, immutable Safe and transmitter, one direct plain-CALL selector, no module
   or MultiSend staging, and rejection of same-Safe nesting through the post-hook.
@@ -93,6 +96,11 @@ Depends on: T01.
   ABI/layout specification in that project's README before implementation.
 - [ ] Specify constructor configuration, guard interface support, hook signatures,
   transmitter access, read access, return fields, errors, and phase transitions.
+  Do not add a transmitter guard-address constructor/initializer argument or a
+  post-creation guard-address setter; creation already initializes and locks atomically.
+- [ ] Implement shared owner-Safe guard discovery using the fixed guard slot and
+  `getStorageAt(slot, 1)`. Specify strict storage-response/address decoding and
+  consume-response checks, preserving owner authentication and no unsigned fallback.
 - [ ] Define the versioned slot namespace, Safe key, phase, target, selector,
   operation, value, calldata hash, signed nonce, digest, length, and word slots.
   State which fields are fixed configuration versus staged data.
@@ -166,6 +174,10 @@ Depends on: T04.
   calldata and added trailing bytes. Mutate nonce, digest and all signed gas/refund
   fields in the appropriate oracle or hook tests, using valid Safe signatures
   whenever the case is presented as reachable through Safe.
+- [ ] Test dynamic guard discovery: missing/malformed storage response, zero or
+  code-less guard, incompatible consume API, no staged context, replacement,
+  removal and guard changes between staging and consumption. Verify guard-address
+  selection comes only from the owner Safe, not dispatch parameters. Track E25.
 
 Done when: R1-R6 pass end to end, including accepted dispatch and non-dispatch
 behavior. Cover E01-E04, E08, E21. This transmitter sends no bridge messages.
@@ -289,7 +301,7 @@ Depends on: T08 and T09.
 
 - [ ] Map every issue deliverable to accepted design text or passing MVP evidence.
   Update R8 wording if T01 chose isolated per-Safe instances.
-- [ ] Update all 24 risk entries in place with decisions, evidence and remaining
+- [ ] Update all 25 risk entries in place with decisions, evidence and remaining
   exposure. Preserve stable IDs and the Open/Decided/Verified/Accepted meanings.
 - [ ] Update README, `docs/todo.md`, both guard documents and PR descriptions so
   each distinguishes agreed design, tested MVP and future production work.

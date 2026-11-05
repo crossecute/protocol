@@ -106,8 +106,51 @@ subclass overrides are not an implementation plan without an upstream refactor o
 
 ### Slot ownership and transmitter interface
 
-Recommendation: the guard owns all transient slots. A trusted transmitter calls its guard
-through an external interface; it never attempts to load another contract's slots.
+Agreed: the guard owns the staged signatures in its transient storage. The
+signature-enabled transmitter discovers the guard from its owner Safe and calls
+it to consume the matching signatures. Returned bytes live in transmitter memory;
+the transmitter does not need its own transient signature copy.
+
+### Guard discovery from the owner Safe
+
+Agreed: on each protected dispatch, first enforce the existing owner check. Then
+read one word from that owner Safe using `getStorageAt(GUARD_STORAGE_SLOT, 1)`:
+
+```text
+GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8
+```
+
+The external storage-reading ABI and transaction guard slot agree in reviewed Safe
+1.3.0, 1.4.1 and 1.5.0 sources. Storage-reading sources:
+[1.3.0](https://github.com/safe-fndn/safe-smart-account/blob/v1.3.0/contracts/common/StorageAccessible.sol),
+[1.4.1](https://github.com/safe-fndn/safe-smart-account/blob/v1.4.1/contracts/common/StorageAccessible.sol),
+[1.5.0](https://github.com/safe-fndn/safe-smart-account/blob/v1.5.0/contracts/common/StorageAccessible.sol).
+The existing runtime fixture remains 1.3.0 only.
+Call the discovered guard's consume API before bridge effects, passing actual
+call value and calldata hash, and validate its returned context. The guard must
+authenticate the Safe on staging and the staged target transmitter on consumption.
+Reading the slot does not give direct access to the guard's transient storage.
+
+The Safe's installed transaction guard is the selected trust authority. The
+transmitter does not pin a guard address at deployment, accept a guard address
+from dispatch arguments, or accept a hook that pushes a transient guard pointer.
+Reject missing/malformed storage responses, a zero or code-less guard, incompatible
+consume responses and absent or mismatched context. Interface support alone does
+not prove correct staging or portable owner authorization. Do not fall back to
+unsigned dispatch when discovery or consumption fails.
+
+Transmitter creation remains atomic: deploy, initialize and lock within the
+creation call. No later guard-address initialization is needed. Deploy/configure
+and install a compatible guard before the first protected dispatch; this discovery
+choice does not require a fixed guard/transmitter deployment order. Guard replacement
+follows Safe/Safenet authorization and migration rules. Test a replacement before
+a later dispatch, removal, and a guard change between pre-hook and consumption;
+the new guard must not be assumed to possess the old guard's staged context.
+Guard-side transmitter registration and the number of Safes per guard remain Q3
+decisions. Dynamic discovery does not resolve those choices.
+
+### Signature retrieval
+
 Proposed conceptual operations, with final ABI left open:
 
 - `readContext(safe)`: return metadata and bounded signature bytes without mutation.
@@ -199,7 +242,7 @@ Proposed structure, with names illustrative until Q4/Q5 define the production AP
 | --- | --- | --- |
 | Safe guard | Inherit the pinned `BaseTransactionGuard`; own transient context and signature words | Standalone installed contract, not a transmitter/receiver parent |
 | Signature interfaces and codec | Declare transmitter/verifier APIs and versioned encoding; no storage | One shared declaration/codec per format, outside provider bindings |
-| Source signature add-on | Authenticate Safe owner, consume exact guarded context, construct signed envelope before transport; own source configuration | One shared abstract component used by optional signature transmitter variants |
+| Source signature add-on | Authenticate Safe owner, discover its installed guard, consume exact guarded context, construct signed envelope before transport; no stored guard address | One shared abstract component used by optional signature transmitter variants |
 | Destination signature add-on | Verify authority, domain, calls and replay before execution; own verifier configuration and replay records | One shared abstract component used by optional signature receiver variants |
 | Optional concrete variants | Compose the shared signature component with provider transport behavior | Thin provider declarations resolve inheritance; no copied parsers or verification logic |
 | Existing plain variants | Preserve current owner/transport authorization and wire behavior | Deploy independently without the signature components |
@@ -298,7 +341,8 @@ covers installation and hook compatibility only; staging, policy and resource-bo
 ## Running edge-case and risk register
 
 Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
-implementation bugs. All entries remain open. The interface/fixture tests provide partial
+implementation bugs. No entry is verified or accepted; E25 records an agreed approach
+with implementation evidence pending. The interface/fixture tests provide partial
 evidence, not a tested staging mitigation. Scope names the delivery that needs evidence,
 not where the risk first appears.
 
@@ -353,6 +397,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E22 / Production / Open | A successful dispatch does not consume, but the system reports that portable authorization was used | Decide whether production must require Consumed at post-hook. Test successful no-consume calls under the chosen rule, while retaining the MVP's explicit unconsumed-cleanup test | Q8; R7, R9 |
 | E23 / Production / Open | An optional signature variant inherits a plain send, bootstrap, execution or finalize path that bypasses verification | Enumerate all entry paths and test signed-mode bypass rejection as a shared property across providers; retain independent plain-mode tests | Q4, Q5; R9 |
 | E24 / Production / Open | Optional variants collide with plain conduit identities, misconfigure one side, or run bootstrap before signature configuration exists | Specify factory/initializer selection and all identity inputs; test plain/signed coexistence, matched deployments, per-proxy state isolation and atomic configuration before bootstrap | Q3, Q4; R9, R10 |
+| E25 / Both / Decided | Guard discovery reads the wrong Safe/slot, accepts a missing or incompatible guard, or uses stale context across guard replacement | Agreed: preserve owner authentication, read its Safe's fixed transaction guard slot on each protected dispatch, then consume exact context without unsigned fallback. Remaining: implementation and tests for malformed reads, missing/incompatible guards, replacement/removal and changed guard during an active call. The Safe selects its trusted guard; interface support is not verification of owner authorization | Q1, Q3, Q4, Q9; R2, R4, R6, R9 |
 
 No entry is closed in this revision. Partial interface evidence above refers to the
 [compatibility suite](../contracts/safe-guard/test/TransactionGuard.t.sol). Further updates
@@ -365,7 +410,7 @@ This register is not an exhaustive security review.
 | --- | --- | --- |
 | Q1. Which Safe versions and deployments are supported? | Agreed for MVP: pinned 1.5.0 ITransactionGuard/BaseTransactionGuard, pinned 1.3.0 singleton/proxy fixture, one implementation without version branches. Runtime support claim is limited to that fixture; production deployment allowlist remains open | Production deployment authentication; MVP interface choice is resolved |
 | Q2. Which exact Safenet policy revision and policies must be preserved? Is an upstream refactor or maintained fork acceptable? | Use the reviewed revision as a baseline, then pin the agreed production dependency | Policy composition and compiler choice |
-| Q3. One guard per Safe or a shared registered guard? Who may change transmitter configuration? | Immutable Safe and transmitter for MVP; Safe-authorized changes need a production design | Deployment and configuration model |
+| Q3. One guard per Safe or a shared registered guard? Who may change transmitter configuration? | Agreed discovery: transmitter reads its owner Safe's installed guard and consumes there; no pinned/pushed guard address or later guard-address initialization. Guard-side registration, single/shared guard model and configuration authority remain open | Guard discovery is resolved; guard-side deployment and configuration model remains open |
 | Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | One direct transmitter selector, plain CALL; no batching/modules initially | Context matching and integration API |
 | Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |

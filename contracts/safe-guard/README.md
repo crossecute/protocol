@@ -3,6 +3,14 @@
 Status: interface compatibility foundation for [issue #107](https://github.com/crossecute/protocol/issues/107).
 The staging MVP and production policy integration are not implemented.
 
+Agreed retrieval design: the signature-enabled transmitter checks its owner,
+reads that Safe's installed transaction guard through `getStorageAt(slot, 1)`,
+and calls the guard to consume signatures held in the guard's transient storage.
+It does not store a guard address during creation or accept a transient guard
+pointer from the hook. Discovery and transient consumption are not implemented
+by the current interface observer. See the
+[guard discovery decision](../../docs/safe-guard-design.md#guard-discovery-from-the-owner-safe).
+
 ## Agreed dependency boundary
 
 Use `ITransactionGuard` and its `BaseTransactionGuard` implementation from Safe
