@@ -484,6 +484,11 @@ What an operator or integrator has to know:
 
 ## Docs
 
+- [`docs/safe-guard-design.md`](docs/safe-guard-design.md): proposed Safe signature
+  staging guard design, open decisions, and risk register for #107
+- [`docs/safe-guard-build-plan.md`](docs/safe-guard-build-plan.md): ordered execution
+  tasks and acceptance evidence for the production design and standalone MVP;
+  implementation remains outstanding
 - [`docs/message-flow.md`](docs/message-flow.md): the two paths, the wire formats, and how
   the contracts fit together
 - [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and

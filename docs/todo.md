@@ -79,6 +79,15 @@ the seventh; what they mean for an operator is in the README.
 
 ## 3. Infrastructure
 
+- **Safe signature staging design and standalone MVP (#107).**
+  [PR #112](https://github.com/crossecute/protocol/pull/112) contains the
+  [design draft and risk register](safe-guard-design.md). The
+  [execution plan](safe-guard-build-plan.md) orders decision review, an isolated
+  Cancun project, real Safe fixtures, staging/consumption/cleanup, lifecycle and
+  gas tests, chain preflight, CI, and production design acceptance. Neither the
+  MVP nor production integration is implemented. Close #107 only after the
+  agreed production design and tested standalone MVP are delivered.
+
 - **Deploy scripts cover parity chains only**
   ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Steps 1 to 6
   are scripted for them, the N × N tables as payloads from `contracts/evm/deploy/`. Not

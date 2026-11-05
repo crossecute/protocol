@@ -5,6 +5,10 @@ This document proposes implementation choices for review. The standalone MVP and
 production integration are not implemented by this change. Open decisions are listed
 below; recommendations are not accepted decisions.
 
+The [execution plan](safe-guard-build-plan.md) builds on this draft with ordered
+tasks, decision gates, proposed artifacts, and completion evidence for issue #107.
+It does not resolve the open questions or close risks by itself.
+
 ## Scope and acceptance boundaries
 
 The issue has two deliverables:
