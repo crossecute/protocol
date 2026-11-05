@@ -69,7 +69,7 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
 | --- | --- | --- |
 | R1 | Install through Safe `setGuard`, with the required interface support | Real proxy and singleton fixture; signed installation transaction |
 | R2 | Authenticate the configured Safe on both hooks | Other Safe, EOA, and Safe-shaped impostor cannot stage or clear its context |
-| R3 | Stage only an approved target and selector under plain `CALL` | Wrong target, short calldata, selector, and `DELEGATECALL` cases |
+| R3 | Stage when the first four calldata bytes match `sendMessage(bytes,bytes,bytes[])`, without a target or operation filter | Matching selector stages for different targets and both operations; short/nonmatching calldata stages no signatures |
 | R4 | Bind exact calldata, value, Safe, target, signed nonce, and Safe digest | Mutate each bound field independently and reject consumption |
 | R5 | Bound the staged blob; use length plus 32-byte words | Empty, limit, limit-plus-one, and partial final-word cases |
 | R6 | Consume once, before external effects; never overwrite a live context | Duplicate consume and reentrancy attempts |
@@ -82,18 +82,27 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
 
 ### Trust and configuration
 
-Recommendation: a guard instance bound to one Safe and one transmitter for the first MVP.
-Record these addresses explicitly at deployment; do not accept an arbitrary caller merely
-because it reports a Safe version or answers a storage query. The fixture deploys a real
+Recommendation: a guard instance bound to one Safe for the first MVP. Transmitter addresses
+are not a staging allowlist: the signed target identifies who may consume each record.
+Do not accept an arbitrary Safe caller merely because it reports a Safe version or answers
+a storage query. The fixture deploys a real
 Safe proxy, deploys the guard for that address, then installs it through the Safe. Production
 registration must verify the supported singleton/proxy deployment and installed guard;
 version-string checks alone are not authentication.
 
-Bind dispatch configuration to the Safe: target address, selector, allowed operation,
-signature format/version, and size limits. The runtime binds the full signed calldata and
-value, not merely the configured selector. A valid non-dispatch transaction follows normal
-policy evaluation and stages nothing. A configured dispatch selector with an unsupported
-operation or malformed data fails closed. No MultiSend or module dispatch in the first MVP.
+Agreed staging trigger: calldata has at least four bytes and its selector equals the
+transmitter's `sendMessage(bytes,bytes,bytes[])` selector. Do not validate target identity
+or filter CALL versus DELEGATECALL to decide whether to stage. This supersedes the issue's
+original target/plain-CALL staging filter. Independent signature bounds/format rules and
+Safenet policy checks still apply. A selector collision on another contract also stages;
+selector matching is not proof that a transmitter will execute or consume the context.
+Do not decode the send arguments as an additional staging eligibility check.
+
+Record the actual signed target and operation as transaction context. Consumption requires
+`msg.sender` to equal that recorded target, plus the agreed exact calldata/value and Safe
+binding. Nonmatching or short calldata stages no signature blob, while production still
+runs Safenet policy. No inspection of nested MultiSend calldata or module-signature staging
+is added by this decision.
 
 For production, use one combined transaction guard with direct access to the Safe hook.
 Run the selected policy first, then extract and stage signatures, then return to Safe.
@@ -146,15 +155,15 @@ choice does not require a fixed guard/transmitter deployment order. Guard replac
 follows Safe/Safenet authorization and migration rules. Test a replacement before
 a later dispatch, removal, and a guard change between pre-hook and consumption;
 the new guard must not be assumed to possess the old guard's staged context.
-Guard-side transmitter registration and the number of Safes per guard remain Q3
-decisions. Dynamic discovery does not resolve those choices.
+No transmitter registration is needed for staging eligibility or target-bound consumption.
+The number of Safes per guard and Safe authentication/configuration remain Q3 decisions.
 
 ### Signature retrieval
 
 Proposed conceptual operations, with final ABI left open:
 
 - `readContext(safe)`: return metadata and bounded signature bytes without mutation.
-- `consume(safe, callValue, callDataHash)`: require the configured transmitter as caller,
+- `consume(safe, callValue, callDataHash)`: require the staged transaction target as caller,
   compare the active context, return its metadata and signatures, and mark it consumed.
 
 The transmitter requires its caller to be the configured Safe and preserves its existing
@@ -162,7 +171,7 @@ owner check in production. It derives the value and data hash from its own `msg.
 `msg.data`, never from caller-supplied assertions. It verifies returned Safe, target,
 selector and context identifier before using the signatures. Nonce and digest originate
 from the authenticated pre-hook, not untrusted dispatch parameters. The transmitter is trusted
-to report its own call accurately; an arbitrary registered target is not a generic proof of
+to report its own call accurately; an arbitrary signed target is not a generic proof of
 execution. Keep this interface out of provider-specific duplicates.
 
 Use a versioned namespace and a Safe-keyed record containing phase, target, selector,
@@ -341,7 +350,7 @@ covers installation and hook compatibility only; staging, policy and resource-bo
 ## Running edge-case and risk register
 
 Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
-implementation bugs. No entry is verified or accepted; E25 records an agreed approach
+implementation bugs. No entry is verified or accepted; E03 and E25 record agreed approaches
 with implementation evidence pending. The interface/fixture tests provide partial
 evidence, not a tested staging mitigation. Scope names the delivery that needs evidence,
 not where the risk first appears.
@@ -360,8 +369,8 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | --- | --- | --- | --- |
 | E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | The interface observer binds the fixture Safe and rejects direct pre/post-hook calls in `testRejectsDirectHookCalls`. Remaining: staging isolation, other-Safe/impostor cases and supported production deployment validation | Q1, Q3; R2 |
 | E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Q1 pins the newer interface and 1.3.0 fixture. `testSignedCallPreservesHookArgumentsAndDigest` compares nonce and pre/post digest through the real Safe, including gas/refund fields. Remaining: staging implementation, independent field mutations, reentrancy and deployment validation | Q1; R4 |
-| E03 / Both / Open | A selector matches but target, operation, value, or trailing calldata differs; an unrelated call consumes staged signatures | Match exact call bytes and value with the authenticated target. Test each mismatch, short calldata, trailing bytes, delegatecall, and unsupported batch shapes; retain valid non-dispatch behavior | Q4; R3, R4 |
-| E04 / Production / Open | A registered transmitter reports invented call context, or its implementation changes after registration | Treat transmitter code and any upgrade authority as part of the trust model. Decide permitted deployment types and configuration changes; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
+| E03 / Both / Decided | A matching selector on another target or under DELEGATECALL stages a record; an unrelated caller attempts to consume it | Agreed: selector-only staging, no target/operation filter; retain actual signed target and require it as consume caller with exact context binding. Remaining: tests for matching selectors across targets/operations, wrong-caller rejection, malformed/short calldata, cleanup without consumption and signed-field mutations | Q4; R3, R4 |
+| E04 / Production / Open | A signed target reports invented call context, or its implementation changes | Target-bound consumption authenticates the address, not its code or claims. Treat transmitter code and any upgrade authority as part of the trust model; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
 
 ### Lifecycle, nesting, and resource bounds
 
@@ -394,7 +403,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E19 / Both / Open | A guard is installed on a source without the required opcodes and guarded transactions become unusable | Verify source support before installation and fail closed in tooling. Exercise an unsupported execution environment and the installation preflight; document availability behavior and recovery assumptions | Q10; R10 |
 | E20 / Both / Open | Cancun/compiler changes leak into Paris artifacts and alter deterministic addresses, or an upstream update changes hook/parser behavior | Interface and fixture submodules are pinned independently in the isolated Cancun project. No protocol source or compiler settings change. Remaining: reproducible before/after artifact manifest and upstream review for later pin changes | Q1, Q2, Q10; R10 |
 | E21 / Both / Open | Mock hooks or impossible signature fixtures pass tests while real Safe execution, rollback or transaction boundaries fail | The interface suite uses a real 1.3.0 proxy/singleton and ECDSA owner signatures for installation, execution and both failure modes. Remaining: actual transient transport, consumption rollback and transaction-end reset; the observer uses persistent storage only | Q1, Q11; R1, R7 |
-| E22 / Production / Open | A successful dispatch does not consume, but the system reports that portable authorization was used | Decide whether production must require Consumed at post-hook. Test successful no-consume calls under the chosen rule, while retaining the MVP's explicit unconsumed-cleanup test | Q8; R7, R9 |
+| E22 / Production / Open | A successful call does not consume, but is reported as using portable authorization; a selector collision is incorrectly treated as a mandatory transmitter dispatch | Resolve Q8 with selector-only staging: applying mandatory consumption to every matching selector also affects unrelated targets and DELEGATECALL. Test the chosen rule and preserve the MVP's unconsumed-cleanup case | Q4, Q8; R7, R9 |
 | E23 / Production / Open | An optional signature variant inherits a plain send, bootstrap, execution or finalize path that bypasses verification | Enumerate all entry paths and test signed-mode bypass rejection as a shared property across providers; retain independent plain-mode tests | Q4, Q5; R9 |
 | E24 / Production / Open | Optional variants collide with plain conduit identities, misconfigure one side, or run bootstrap before signature configuration exists | Specify factory/initializer selection and all identity inputs; test plain/signed coexistence, matched deployments, per-proxy state isolation and atomic configuration before bootstrap | Q3, Q4; R9, R10 |
 | E25 / Both / Decided | Guard discovery reads the wrong Safe/slot, accepts a missing or incompatible guard, or uses stale context across guard replacement | Agreed: preserve owner authentication, read its Safe's fixed transaction guard slot on each protected dispatch, then consume exact context without unsigned fallback. Remaining: implementation and tests for malformed reads, missing/incompatible guards, replacement/removal and changed guard during an active call. The Safe selects its trusted guard; interface support is not verification of owner authorization | Q1, Q3, Q4, Q9; R2, R4, R6, R9 |
@@ -410,8 +419,8 @@ This register is not an exhaustive security review.
 | --- | --- | --- |
 | Q1. Which Safe versions and deployments are supported? | Agreed for MVP: pinned 1.5.0 ITransactionGuard/BaseTransactionGuard, pinned 1.3.0 singleton/proxy fixture, one implementation without version branches. Runtime support claim is limited to that fixture; production deployment allowlist remains open | Production deployment authentication; MVP interface choice is resolved |
 | Q2. Which exact Safenet policy revision and policies must be preserved? Is an upstream refactor or maintained fork acceptable? | Use the reviewed revision as a baseline, then pin the agreed production dependency | Policy composition and compiler choice |
-| Q3. One guard per Safe or a shared registered guard? Who may change transmitter configuration? | Agreed discovery: transmitter reads its owner Safe's installed guard and consumes there; no pinned/pushed guard address or later guard-address initialization. Guard-side registration, single/shared guard model and configuration authority remain open | Guard discovery is resolved; guard-side deployment and configuration model remains open |
-| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | One direct transmitter selector, plain CALL; no batching/modules initially | Context matching and integration API |
+| Q3. One guard per Safe or a shared registered guard? Who controls Safe registration/configuration? | Agreed discovery: transmitter reads its owner Safe's installed guard; no pinned/pushed guard address or later setter. Selector-only staging and target-bound consumption need no transmitter allowlist. Single/shared Safe model and Safe configuration authority remain open | Guard discovery and target selection resolved; Safe registration/configuration remains open |
+| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering. Only the actual signed target may consume. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI remains open |
 | Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |
 | Q7. Is rejecting all same-Safe nested guarded execution acceptable? | Yes for MVP; keep the live marker until post-hook | Reentrancy semantics |

@@ -71,9 +71,12 @@ Depends on: review of the existing draft and issue scope.
 - [x] Record guard discovery: the signature-enabled transmitter reads its owner
   Safe's transaction guard slot on dispatch and consumes the context from that
   guard. No guard address is pinned at creation or pushed transiently by a hook.
-- [ ] Remaining proposed starting assumptions: one guard
-  per Safe, immutable Safe and transmitter, one direct plain-CALL selector, no module
-  or MultiSend staging, and rejection of same-Safe nesting through the post-hook.
+- [x] Record Q4's staging rule: match only the `sendMessage(bytes,bytes,bytes[])`
+  selector, with no target or operation filter; only the actual signed target
+  may consume the staged record. No transmitter allowlist is required.
+- [ ] Remaining proposed starting assumptions: one guard per Safe, immutable Safe,
+  no module or nested MultiSend staging, and rejection of same-Safe nesting through
+  the post-hook.
 - [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
   subset. Raw-byte transport must be labeled as such, with no portability claim.
   Distinguish valid signed Safe inputs from hook-only byte-storage unit inputs.
@@ -148,7 +151,8 @@ R1, R2, R4, R10; E01-E02, E11, E20-E21.
 Depends on: T03.
 
 - [ ] Implement authenticated hooks, nonce/digest capture, call-shape checks,
-  bounded word copying, context publication and selected read behavior.
+  bounded word copying, context publication and selected read behavior. Eligibility
+  checks only the top-level sendMessage selector, not target, operation or send-argument decoding.
 - [ ] Implement transmitter-only consumption and the phase marker retained until
   the matching post-hook. Reject repeated consumption and wrong-hash cleanup.
 - [ ] Clear metadata, length and occupied words for consumed and unconsumed
@@ -170,8 +174,12 @@ Depends on: T04.
   reentrancy, and consume-then-revert, sharing the context checks across modes.
 - [ ] Prove exact byte roundtrip and value-bearing plain CALL through the real
   Safe, alongside normal unrelated transactions that stage no signature blob.
-- [ ] Reject wrong transmitter/Safe/target/selector/operation/value/calldata, short
-  calldata and added trailing bytes. Mutate nonce, digest and all signed gas/refund
+- [ ] Prove a matching selector stages across different targets and both CALL and
+  DELEGATECALL. Short and nonmatching calldata stages no signatures. Include a
+  different contract with the same selector and cleanup without consumption.
+- [ ] Reject consumption by a caller other than the signed target or with mismatched
+  Safe/value/calldata. Bind the full calldata, including trailing bytes. Mutate
+  signed target, operation, nonce, digest and all signed gas/refund
   fields in the appropriate oracle or hook tests, using valid Safe signatures
   whenever the case is presented as reachable through Safe.
 - [ ] Test dynamic guard discovery: missing/malformed storage response, zero or
@@ -276,7 +284,9 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   parity, signed envelope costs, factory selection and deterministic identities.
   Track optional-path bypasses and deployment/state coupling as E23 and E24.
 - [ ] Resolve Q7/Q8: nested-call restrictions and whether successful production
-  dispatch requires consumption. Preserve the MVP no-consume cleanup case.
+  dispatch requires consumption. Selector-only staging also matches other targets
+  and operations, so define the effect of mandatory consumption on those calls.
+  Preserve the MVP no-consume cleanup case.
 - [ ] Resolve Q9 against a concrete configuration inventory: policies, fallback
   operations, data, timing, pending roots, installation/removal permissions,
   transaction/module guard slots and synchronization. Specify authorized

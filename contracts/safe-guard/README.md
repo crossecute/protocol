@@ -11,6 +11,10 @@ pointer from the hook. Discovery and transient consumption are not implemented
 by the current interface observer. See the
 [guard discovery decision](../../docs/safe-guard-design.md#guard-discovery-from-the-owner-safe).
 
+Agreed staging trigger: match only the `sendMessage(bytes,bytes,bytes[])` selector,
+without filtering the target or operation. Retain the actual signed target in the
+context and allow only that address to consume it. Staging is not implemented yet.
+
 ## Agreed dependency boundary
 
 Use `ITransactionGuard` and its `BaseTransactionGuard` implementation from Safe
@@ -39,7 +43,8 @@ through an owner-signed `setGuard` transaction on an actual singleton and proxy.
 Execution tests cover original signature bytes, nonce and pre/post digest
 agreement, executor identity, value, gas/refund fields, CALL and DELEGATECALL
 encoding, both failure paths, replacement, removal and direct-hook rejection.
-DELEGATECALL is exercised to verify the interface, not to approve staging it.
+DELEGATECALL is exercised to verify the interface; selector-only staging for both
+operations still needs lifecycle tests.
 
 Tested runtime compatibility is limited to the Safe 1.3.0 source fixture compiled
 with the compiler below. These tests do not attest deployed singleton bytecode,
