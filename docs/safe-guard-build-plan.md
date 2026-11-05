@@ -1,6 +1,7 @@
 # Safe guard execution plan for issue #107
 
-Status: proposed build plan, 2026-11-05. No implementation task is complete.
+Status: build plan, 2026-11-05. Interface compatibility and a real Safe fixture
+are implemented. No complete staging implementation task is claimed.
 Build on [PR #112](https://github.com/crossecute/protocol/pull/112), branch
 `docs/safe-guard-design-107`, rather than replacing its design and risk register.
 The reviewed starting commit is `5356c2d` on protocol baseline `1a223df`.
@@ -10,8 +11,9 @@ The reviewed starting commit is `5356c2d` on protocol baseline `1a223df`.
 [Issue #107](https://github.com/crossecute/protocol/issues/107) requires an agreed
 production guard design and a tested standalone transient-storage MVP. The
 [design draft](safe-guard-design.md) remains the source for requirements R1-R10,
-questions Q1-Q11, and risks E01-E22. This plan orders the work and defines evidence
-for completion. It does not turn recommendations into accepted decisions.
+questions Q1-Q11, and risks E01-E24. This plan orders the work and defines evidence
+for completion. Q1's interface/fixture choice is agreed; other recommendations
+remain proposals unless explicitly marked agreed.
 
 Assumption: PR #112 remains the design and execution-plan review, followed by
 focused implementation PRs on the same issue. Renaming the PR does not rename its
@@ -39,9 +41,11 @@ The existing code and configuration constrain implementation:
   Paris, optimizer and metadata settings. Deterministic protocol artifacts must
   remain unchanged when the separate project is added.
 - [Current CI](../.github/workflows/test.yml) runs the protocol formatter, builds,
-  size check, selector check, lint, tests, and coverage. It has no guard project job.
-- The draft's pinned Safe 1.5.0 source increments the nonce before the pre-hook
-  and caches the guard for the post-hook. The pinned policy requires zero
+  size check, selector check, lint, tests, and coverage. A separate guard project
+  job runs its formatter, build, lint and interface compatibility suite.
+- The agreed Safe 1.3.0 fixture increments the nonce before the pre-hook
+  and caches the guard for the post-hook. The implementation inherits the pinned
+  Safe 1.5.0 `BaseTransactionGuard`. The pinned policy requires zero
   `safeTxGas` and `gasPrice`, and uses Solidity 0.8.30. Preserve these distinctions
   when specifying fixtures, failure tests, migration, and production composition.
 
@@ -52,7 +56,8 @@ The existing code and configuration constrain implementation:
 T09, the production design review, can proceed after T01 alongside the isolated
 MVP work. T10, issue closure, requires both T08 and T09. Each task below names
 proposed artifacts, dependencies, and the evidence needed to mark it complete.
-Paths under `contracts/safe-guard/` are proposed, not existing files.
+The [guard project](../contracts/safe-guard/README.md) now contains the pinned
+interface dependency and test fixture. Staging artifacts remain proposed.
 
 ### T01. Record the decisions needed before coding
 
@@ -60,7 +65,10 @@ Depends on: review of the existing draft and issue scope.
 
 - [ ] Resolve fixture decisions Q1, Q3, Q4, Q6, Q7 and Q11 in the design, with
   rationale, reviewer agreement, and affected risk IDs. Keep unanswered items open.
-- [ ] Proposed starting assumptions: pinned Safe 1.5.0 proxy/singleton, one guard
+- [x] Record Q1's agreed dependency boundary: newer `ITransactionGuard` and
+  `BaseTransactionGuard`, Safe 1.3.0 singleton/proxy fixture, one implementation,
+  no version branches, and tested runtime support limited to the 1.3.0 fixture.
+- [ ] Remaining proposed starting assumptions: one guard
   per Safe, immutable Safe and consumer, one direct plain-CALL selector, no module
   or MultiSend staging, and rejection of same-Safe nesting through the post-hook.
 - [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
@@ -115,6 +123,8 @@ Depends on: T02.
 - [ ] Add `test/SafeGuardFixture.sol`: deploy the pinned singleton and real proxy,
   configure owners/threshold, sign actual Safe transactions, and install with
   owner-authorized `setGuard`. Do not replace signature validation with mocks.
+  Partial evidence: that fixture and signed installation now exist in the
+  interface suite; actual staging/consumption remains unimplemented.
 - [ ] Use one shared signing/execution fixture for lifecycle suites. Compare the
   guard's captured nonce/digest with independently prepared signed transactions.
 - [ ] Capture a reproducible baseline manifest of protocol creation/runtime
@@ -245,7 +255,14 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
 - [ ] Specify how policy validates executor context separately from owner bytes.
   Define differential test cases for policy fallback selection, configuration,
   refunds, failure atomicity and unchanged owner authorization. Put shared
-  transmitter integration at the narrowest common scope, not in each provider.
+  transmitter integration in optional shared add-ons, not in each provider.
+- [ ] Preserve the agreed plain/signature deployment split from the
+  [add-on architecture](safe-guard-design.md#optional-signature-add-ons-production-integration-boundary).
+  Choose reusable extension points and thin concrete composition, enumerate all
+  inherited bypass paths, specify per-proxy state and atomic initialization, and
+  keep plain contracts free of mandatory signature state/checks. Trace quote/send
+  parity, signed envelope costs, factory selection and deterministic identities.
+  Track optional-path bypasses and deployment/state coupling as E23 and E24.
 - [ ] Resolve Q7/Q8: nested-call restrictions and whether successful production
   dispatch requires consumption. Preserve the MVP no-consume cleanup case.
 - [ ] Resolve Q9 against a concrete configuration inventory: policies, fallback
@@ -272,7 +289,7 @@ Depends on: T08 and T09.
 
 - [ ] Map every issue deliverable to accepted design text or passing MVP evidence.
   Update R8 wording if T01 chose isolated per-Safe instances.
-- [ ] Update all 22 risk entries in place with decisions, evidence and remaining
+- [ ] Update all 24 risk entries in place with decisions, evidence and remaining
   exposure. Preserve stable IDs and the Open/Decided/Verified/Accepted meanings.
 - [ ] Update README, `docs/todo.md`, both guard documents and PR descriptions so
   each distinguishes agreed design, tested MVP and future production work.

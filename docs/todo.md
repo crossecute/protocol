@@ -84,8 +84,10 @@ the seventh; what they mean for an operator is in the README.
   [design draft and risk register](safe-guard-design.md). The
   [execution plan](safe-guard-build-plan.md) orders decision review, an isolated
   Cancun project, real Safe fixtures, staging/consumption/cleanup, lifecycle and
-  gas tests, chain preflight, CI, and production design acceptance. Neither the
-  MVP nor production integration is implemented. Close #107 only after the
+  gas tests, chain preflight, CI, and production design acceptance. The newer
+  guard interface is exercised through a real Safe 1.3.0 fixture in
+  [the isolated project](../contracts/safe-guard/README.md). Staging and optional
+  production add-ons remain unimplemented. Close #107 only after the
   agreed production design and tested standalone MVP are delivered.
 
 - **Deploy scripts cover parity chains only**

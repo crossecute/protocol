@@ -1,13 +1,14 @@
 # Safe signature staging guard: requirements and proposed design
 
 Status: design draft for [issue #107](https://github.com/crossecute/protocol/issues/107).
-This document proposes implementation choices for review. The standalone MVP and
-production integration are not implemented by this change. Open decisions are listed
-below; recommendations are not accepted decisions.
+This document proposes implementation choices for review. The interface and real Safe
+fixture foundation are implemented; the standalone staging MVP and production integration
+are not. Q1's MVP interface/fixture choice is agreed below. Other recommendations are
+not accepted decisions.
 
 The [execution plan](safe-guard-build-plan.md) builds on this draft with ordered
 tasks, decision gates, proposed artifacts, and completion evidence for issue #107.
-It does not resolve the open questions or close risks by itself.
+Decision evidence is linked below; the plan alone does not close risks.
 
 ## Scope and acceptance boundaries
 
@@ -33,11 +34,18 @@ those destination-side properties.
   [OwnableTransmitter](../contracts/evm/src/messaging/outbound/OwnableTransmitter.sol)
   authenticates the owner through the existing shared ownership check. There is no signature
   staging integration in that contract. Existing owner authorization must remain required.
-- [Safe v1.5.0](https://github.com/safe-fndn/safe-smart-account/blob/v1.5.0/contracts/Safe.sol)
-  computes the transaction hash using `nonce++`, checks signatures, then invokes the
-  transaction guard with the original signatures. At that pre-hook, the signed nonce is
-  `Safe.nonce() - 1`. The post-hook receives the transaction hash and execution success.
-  Treat 1.5.0 as the proposed first supported version, not a claim about other versions.
+- [Safe v1.3.0 at 186a21a](https://github.com/safe-fndn/safe-smart-account/blob/186a21a74b327f17fc41217a927dea7064f74604/contracts/GnosisSafe.sol)
+  is the agreed MVP singleton/proxy source fixture. It increments nonce, checks signatures,
+  then invokes the pre-hook with original signatures. The ECDSA fixture observes signed
+  nonce `Safe.nonce() - 1`; the post-hook receives the digest and execution success.
+- Use [ITransactionGuard and BaseTransactionGuard at dc437e8](https://github.com/safe-fndn/safe-smart-account/blob/dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be/contracts/base/GuardManager.sol)
+  from Safe 1.5.0. The 1.3.0, 1.4.1 and 1.5.0 transaction hooks have identical canonical
+  ABIs and call arguments; no version branches or duplicate interfaces are required.
+  The newer base supplies ERC-165 support, which 1.3 does not check at installation.
+  [Compatibility tests](../contracts/safe-guard/test/TransactionGuard.t.sol) exercise
+  installation and signed owner calls with the newer base on the 1.3.0 source fixture.
+  Tested runtime support is limited to that fixture, not 1.4/1.5 or deployed bytecode.
+  Module policy compatibility remains a separate production decision: 1.3 has no module guard.
 - [SafePolicyGuard at 8ee68a8](https://github.com/safe-research/policy-engine/blob/8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3/contracts/SafePolicyGuard.sol)
   implements transaction and module hooks. The transaction hook decodes an extension into
   policy context; that context is not the original owner-signature blob. It requires zero
@@ -174,6 +182,54 @@ the payload occupies `ceil(L / 32)` transient words plus one length word and fix
 zero-pad the final word and return exactly L bytes. No protocol wire format changes in the
 MVP. Future bridge encoding and fee impact require separate design and measurements.
 
+## Optional signature add-ons: production integration boundary
+
+Agreed constraint: the protocol must remain usable with or without signature handling.
+Keep existing plain transmitter and receiver contracts, storage and entry behavior as-is
+where possible. Do not add mandatory signature fields, opcode requirements, runtime mode
+branches or verification calls to those contracts. The standalone MVP changes neither.
+
+Proposed structure, with names illustrative until Q4/Q5 define the production API:
+
+| Component | Responsibility and state | Reuse boundary |
+| --- | --- | --- |
+| Safe guard | Inherit the pinned `BaseTransactionGuard`; own transient context and signature words | Standalone installed contract, not a transmitter/receiver parent |
+| Signature interfaces and codec | Declare consumer/verifier APIs and versioned encoding; no storage | One shared declaration/codec per format, outside provider bindings |
+| Source signature add-on | Authenticate Safe owner, consume exact guarded context, construct signed envelope before transport; own source configuration | One shared abstract component used by optional signature transmitter variants |
+| Destination signature add-on | Verify authority, domain, calls and replay before execution; own verifier configuration and replay records | One shared abstract component used by optional signature receiver variants |
+| Optional concrete variants | Compose the shared signature component with provider transport behavior | Thin provider declarations resolve inheritance; no copied parsers or verification logic |
+| Existing plain variants | Preserve current owner/transport authorization and wire behavior | Deploy independently without the signature components |
+
+Only the Safe guard inherits `ITransactionGuard` through its upstream base. The source
+add-on calls a minimal consume interface; receivers do not import Safe hook interfaces.
+Signature state exists only in opt-in variants. Configuration and replay state belong to
+each conduit proxy and are initialized before bootstrap execution; do not put per-conduit
+state into implementation immutables. Keep transient opcodes in the source guard so they
+do not impose source-chain opcode requirements on plain conduits or destination receivers.
+
+This is a composition plan, not proof that all current concrete bindings can be subclassed
+without edits. `TransmitterBase.sendMessage` and several concrete transport overrides are
+not virtual. A normal external wrapper also changes the caller and fails the existing owner
+gate if the Safe remains owner. Do not transfer ownership, bypass that gate, or duplicate the
+send implementation merely to make a wrapper work. Before implementation, choose the
+smallest extension points or transport refactor that allow optional variants to reuse the
+current logic. Any necessary core edit gets its own review and must preserve plain behavior,
+storage, ABI and deterministic artifacts, or explicitly document a required migration.
+
+For signature-enabled variants, every effectful entry path must enforce the chosen signature
+rule. Adding only `sendSigned` or `executeSigned` while inherited plain paths remain usable
+would leave a bypass. Review send, bootstrap, local execution, direct delivery, commitment
+approval/finalization, cancellation and initialization paths. Define allowed management
+operations separately. Share signed-envelope construction between send and quote, account
+for signature byte length and bridge fees, and test both with the same inputs.
+
+Optional variants must not be represented as runtime upgrades of locked conduits. Review
+factory/initializer selection, parity of transmitter and receiver addresses, and the
+identity inputs that distinguish plain and signature-enabled deployments. Q5 still blocks
+destination owner-set authority and replay semantics. Q4 still blocks the exact extension
+API. A separate architecture change must resolve those details and test plain and signed
+variants through shared suites before any production add-on is implemented.
+
 ## Installation, migration, and module guard coexistence
 
 For a fresh production installation, prepare the combined guard configuration, verify
@@ -232,13 +288,15 @@ for owner and module paths, extension parsing, policy configuration, refund rest
 installation, removal and migration. Confirm the original owner gate remains necessary.
 Measure staging/consumption/cleanup gas and enforce agreed limits. Run each project's
 formatter, build, lint and tests; compare existing protocol artifacts before and after
-adding the isolated build. None of these runtime tests is claimed by this design-only PR.
+adding the isolated build. The [interface suite](../contracts/safe-guard/README.md#evidence-and-limits)
+covers installation and hook compatibility only; staging, policy and resource-bound tests remain.
 
 ## Running edge-case and risk register
 
 Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
-implementation bugs. All entries are open: proposed mitigations have not been implemented
-or tested. Scope names the delivery that needs evidence, not where the risk first appears.
+implementation bugs. All entries remain open. The interface/fixture tests provide partial
+evidence, not a tested staging mitigation. Scope names the delivery that needs evidence,
+not where the risk first appears.
 
 Keep stable `E` identifiers as the design develops. When answering a question below, update
 every affected entry in the same change with the decision, remaining exposure, and test or
@@ -252,8 +310,8 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
-| E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | Bind the actual Safe address; verify the supported deployment for production. Test impostors and wrong-Safe pre/post-hooks without changing the legitimate record | Q1, Q3; R2 |
-| E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Pin the Safe fixture and capture before external policy calls. Compare against independently signed Safe transactions; test unsupported deployments and mutate every signed gas/refund field as well as nonce | Q1; R4 |
+| E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | The interface observer binds the fixture Safe and rejects direct pre/post-hook calls in `testRejectsDirectHookCalls`. Remaining: staging isolation, other-Safe/impostor cases and supported production deployment validation | Q1, Q3; R2 |
+| E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Q1 pins the newer interface and 1.3.0 fixture. `testSignedCallPreservesHookArgumentsAndDigest` compares nonce and pre/post digest through the real Safe, including gas/refund fields. Remaining: staging implementation, independent field mutations, reentrancy and deployment validation | Q1; R4 |
 | E03 / Both / Open | A selector matches but target, operation, value, or trailing calldata differs; an unrelated call consumes staged signatures | Match exact call bytes and value with the authenticated target. Test each mismatch, short calldata, trailing bytes, delegatecall, and unsupported batch shapes; retain valid non-dispatch behavior | Q4; R3, R4 |
 | E04 / Production / Open | A registered consumer reports invented call context, or its implementation changes after registration | Treat consumer code and any upgrade authority as part of the trust model. Decide permitted deployment types and configuration changes; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
 
@@ -267,7 +325,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E08 / Both / Open | A second consume or a read after consumption exposes bytes that downstream code treats as fresh authorization | Define read behavior for every phase and make consumption single-use. Test duplicate consume, read-before-consume, read-after-consume, and read-after-cleanup; reads must never authorize external effects | Q8, Q11; R6 |
 | E09 / Both / Open | Unbounded input, excessive extension bytes, or maximum-size cleanup exhausts gas and prevents execution or recovery | Agree owner and total-input caps and apply them before avoidable copying. Benchmark staging and cleanup at limits; test limit-plus-one, zero length, and realistic post-hook gas budgets | Q6; R5 |
 | E10 / Both / Open | Partial-word copying, slot namespace overlap, or shared-instance keying mixes signature bytes between records | Specify slot derivation and exact-length return rules. Fuzz boundary lengths and long-to-short reuse; test independent guard instances and, if selected, two Safes sharing one guard | Q3, Q6; R5, R8 |
-| E11 / Both / Open | Installation or removal routes a post-hook to a guard whose state differs from the newly installed guard; an idle cleanup assumption locks the Safe | Test fresh installation, replacement, removal, and failed replacement through real Safe transactions. Preserve cleanup for the guard that handled the pre-hook; establish a policy-compliant recovery procedure | Q1, Q9; R1, R7 |
+| E11 / Both / Open | Installation or removal routes a post-hook to a guard whose state differs from the newly installed guard; an idle cleanup assumption locks the Safe | Interface suite tests signed installation, replacement and removal on 1.3.0 and confirms the original guard receives the post-hook. Remaining: staging cleanup, failed replacement and policy-compliant recovery | Q1, Q9; R1, R7 |
 
 ### Signatures and policy compatibility
 
@@ -286,19 +344,22 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | --- | --- | --- | --- |
 | E18 / Production / Open | A staged source signature is replayed on another destination, or verified against the wrong owner set after rotation | Define destination domain, replay key, owner-set authority and timing before bridge integration. Test duplicate delivery, different destinations and owner/threshold changes; source nonce and transient consumption alone are insufficient acceptance evidence | Q5; R9 |
 | E19 / Both / Open | A guard is installed on a source without the required opcodes and guarded transactions become unusable | Verify source support before installation and fail closed in tooling. Exercise an unsupported execution environment and the installation preflight; document availability behavior and recovery assumptions | Q10; R10 |
-| E20 / Both / Open | Cancun/compiler changes leak into Paris artifacts and alter deterministic addresses, or an upstream update changes hook/parser behavior | Isolate builds and pin dependencies. Compare existing protocol artifacts, run both suites, and review upstream changes against this register before changing pins | Q1, Q2, Q10; R10 |
-| E21 / Both / Open | Mock hooks or impossible signature fixtures pass tests while real Safe execution, rollback or transaction boundaries fail | Use real Safe installation and signed execution. Keep hook-only negative tests distinct from production-reachable cases; demonstrate actual transaction-end reset and both failure modes rather than inferring them from a mock | Q1, Q11; R1, R7 |
+| E20 / Both / Open | Cancun/compiler changes leak into Paris artifacts and alter deterministic addresses, or an upstream update changes hook/parser behavior | Interface and fixture submodules are pinned independently in the isolated Cancun project. No protocol source or compiler settings change. Remaining: reproducible before/after artifact manifest and upstream review for later pin changes | Q1, Q2, Q10; R10 |
+| E21 / Both / Open | Mock hooks or impossible signature fixtures pass tests while real Safe execution, rollback or transaction boundaries fail | The interface suite uses a real 1.3.0 proxy/singleton and ECDSA owner signatures for installation, execution and both failure modes. Remaining: actual transient transport, consumption rollback and transaction-end reset; the observer uses persistent storage only | Q1, Q11; R1, R7 |
 | E22 / Production / Open | A successful dispatch does not consume, but the system reports that portable authorization was used | Decide whether production must require Consumed at post-hook. Test successful no-consume calls under the chosen rule, while retaining the MVP's explicit unconsumed-cleanup test | Q8; R7, R9 |
+| E23 / Production / Open | An optional signature variant inherits a plain send, bootstrap, execution or finalize path that bypasses verification | Enumerate all entry paths and test signed-mode bypass rejection as a shared property across providers; retain independent plain-mode tests | Q4, Q5; R9 |
+| E24 / Production / Open | Optional variants collide with plain conduit identities, misconfigure one side, or run bootstrap before signature configuration exists | Specify factory/initializer selection and all identity inputs; test plain/signed coexistence, matched deployments, per-proxy state isolation and atomic configuration before bootstrap | Q3, Q4; R9, R10 |
 
-No entry is closed in this revision. The next update should record agreed decisions against
-these IDs; implementation updates should add concrete test names or review links and state
-what remains unverified. This register is not an exhaustive security review.
+No entry is closed in this revision. Partial interface evidence above refers to the
+[compatibility suite](../contracts/safe-guard/test/TransactionGuard.t.sol). Further updates
+must record affected decisions and evidence while retaining what remains unverified.
+This register is not an exhaustive security review.
 
 ## Open questions for joint decisions
 
 | Question | Recommendation to discuss | What it blocks |
 | --- | --- | --- |
-| Q1. Which Safe versions and deployments are supported? | Start with a pinned 1.5.0 proxy/singleton; enumerate supported factories/singletons | Authentication and nonce compatibility |
+| Q1. Which Safe versions and deployments are supported? | Agreed for MVP: pinned 1.5.0 ITransactionGuard/BaseTransactionGuard, pinned 1.3.0 singleton/proxy fixture, one implementation without version branches. Runtime support claim is limited to that fixture; production deployment allowlist remains open | Production deployment authentication; MVP interface choice is resolved |
 | Q2. Which exact Safenet policy revision and policies must be preserved? Is an upstream refactor or maintained fork acceptable? | Use the reviewed revision as a baseline, then pin the agreed production dependency | Policy composition and compiler choice |
 | Q3. One guard per Safe or a shared registered guard? Who may change consumer configuration? | Immutable Safe and consumer for MVP; Safe-authorized changes need a production design | Deployment and configuration model |
 | Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | One direct consumer selector, plain CALL; no batching/modules initially | Context matching and integration API |
