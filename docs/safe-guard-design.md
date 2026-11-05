@@ -230,6 +230,66 @@ Measure staging/consumption/cleanup gas and enforce agreed limits. Run each proj
 formatter, build, lint and tests; compare existing protocol artifacts before and after
 adding the isolated build. None of these runtime tests is claimed by this design-only PR.
 
+## Running edge-case and risk register
+
+Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
+implementation bugs. All entries are open: proposed mitigations have not been implemented
+or tested. Scope names the delivery that needs evidence, not where the risk first appears.
+
+Keep stable `E` identifiers as the design develops. When answering a question below, update
+every affected entry in the same change with the decision, remaining exposure, and test or
+review evidence. Add newly discovered cases rather than replacing old ones. Use `Open`,
+`Decided` (approach agreed, evidence pending), `Verified` (linked evidence satisfies the
+closure condition), or `Accepted` (explicit decision records the remaining risk and why).
+Do not mark a risk verified merely because a question was answered. Retain closed entries
+and reopen them if assumptions, dependencies, configuration, or supported versions change.
+
+### Authentication and call binding
+
+| ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
+| --- | --- | --- | --- |
+| E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | Bind the actual Safe address; verify the supported deployment for production. Test impostors and wrong-Safe pre/post-hooks without changing the legitimate record | Q1, Q3; R2 |
+| E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Pin the Safe fixture and capture before external policy calls. Compare against independently signed Safe transactions; test unsupported deployments and mutate every signed gas/refund field as well as nonce | Q1; R4 |
+| E03 / Both / Open | A selector matches but target, operation, value, or trailing calldata differs; an unrelated call consumes staged signatures | Match exact call bytes and value with the authenticated target. Test each mismatch, short calldata, trailing bytes, delegatecall, and unsupported batch shapes; retain valid non-dispatch behavior | Q4; R3, R4 |
+| E04 / Production / Open | A registered consumer reports invented call context, or its implementation changes after registration | Treat consumer code and any upgrade authority as part of the trust model. Decide permitted deployment types and configuration changes; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
+
+### Lifecycle, nesting, and resource bounds
+
+| ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
+| --- | --- | --- | --- |
+| E05 / Both / Open | A policy callback reenters before staging, or a consumer reenters after consumption and overwrites outer cleanup metadata | Reserve before policy calls and retain a live marker through post-hook. Test nesting in Checking, Staged and Consumed, including non-dispatch nesting; confirm sequential completed calls still succeed | Q7; R6, R8 |
+| E06 / Both / Open | Consumption succeeds but the inner frame later reverts, restoring a usable staged blob | Exercise returned inner failure followed by cleanup in MVP and whole-Safe revert under production policy. Verify a subsequent execution cannot consume the old blob in either case | Q2; R7 |
+| E07 / Both / Open | Cleanup is skipped, uses the wrong digest, or clears only the marker, leaving stale words available to later calls | Match the post-hook record and clear metadata, length and words. Test wrong-hash cleanup, no consumption, repeated calls in one transaction, and a shorter blob after a longer one | Q8; R5, R7, R8 |
+| E08 / Both / Open | A second consume or a read after consumption exposes bytes that downstream code treats as fresh authorization | Define read behavior for every phase and make consumption single-use. Test duplicate consume, read-before-consume, read-after-consume, and read-after-cleanup; reads must never authorize external effects | Q8, Q11; R6 |
+| E09 / Both / Open | Unbounded input, excessive extension bytes, or maximum-size cleanup exhausts gas and prevents execution or recovery | Agree owner and total-input caps and apply them before avoidable copying. Benchmark staging and cleanup at limits; test limit-plus-one, zero length, and realistic post-hook gas budgets | Q6; R5 |
+| E10 / Both / Open | Partial-word copying, slot namespace overlap, or shared-instance keying mixes signature bytes between records | Specify slot derivation and exact-length return rules. Fuzz boundary lengths and long-to-short reuse; test independent guard instances and, if selected, two Safes sharing one guard | Q3, Q6; R5, R8 |
+| E11 / Both / Open | Installation or removal routes a post-hook to a guard whose state differs from the newly installed guard; an idle cleanup assumption locks the Safe | Test fresh installation, replacement, removal, and failed replacement through real Safe transactions. Preserve cleanup for the guard that handled the pre-hook; establish a policy-compliant recovery procedure | Q1, Q9; R1, R7 |
+
+### Signatures and policy compatibility
+
+| ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
+| --- | --- | --- | --- |
+| E12 / Production / Open | Extension bounds overlap owner signatures, or unknown/extra tails are interpreted differently by Safe, policy and staging parsers | Define one accepted encoding and reject ambiguous dispatch inputs. Test malformed lengths, recognized/unknown types, multiple trailers, extra signatures and overlap; ordinary policy transactions must retain their agreed behavior | Q5, Q6, Q11; R9 |
+| E13 / Production / Open | Approved-hash or contract signatures are copied as though they were portable ECDSA authorization | Decide supported signing modes and verifier semantics. Test each supported mode and rejection of unsupported modes, dynamic offsets, duplicate signers and threshold boundaries using valid Safe fixtures | Q5, Q11; R9 |
+| E14 / Production / Open | Executor-supplied policy context is mistaken for owner-signed content, allowing altered context to authorize a different effect | Keep context separate from owner bytes and require the selected policy to establish its own binding. Mutate extension payload while retaining owner signatures and verify the policy rejects unauthorized effects | Q2, Q5, Q6; R9 |
+| E15 / Production / Open | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Differentially test the combined guard against the pinned policy for allowed and denied owner/module operations, configuration and failure cases. Document intentional differences as decisions before accepting them | Q2, Q9; R9 |
+| E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged consumer while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the consumer. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
+| E17 / Production / Open | Migration omits policies or pending roots, resets a delay, or leaves transaction and module policy configurations inconsistent | Review a concrete migration inventory and authorized sequence. Test before/after policy parity, pending-root treatment, timing boundaries, failed migration, and removal without an unguarded interval | Q2, Q9; R9 |
+
+### Portability, deployment, and assurance
+
+| ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
+| --- | --- | --- | --- |
+| E18 / Production / Open | A staged source signature is replayed on another destination, or verified against the wrong owner set after rotation | Define destination domain, replay key, owner-set authority and timing before bridge integration. Test duplicate delivery, different destinations and owner/threshold changes; source nonce and transient consumption alone are insufficient acceptance evidence | Q5; R9 |
+| E19 / Both / Open | A guard is installed on a source without the required opcodes and guarded transactions become unusable | Verify source support before installation and fail closed in tooling. Exercise an unsupported execution environment and the installation preflight; document availability behavior and recovery assumptions | Q10; R10 |
+| E20 / Both / Open | Cancun/compiler changes leak into Paris artifacts and alter deterministic addresses, or an upstream update changes hook/parser behavior | Isolate builds and pin dependencies. Compare existing protocol artifacts, run both suites, and review upstream changes against this register before changing pins | Q1, Q2, Q10; R10 |
+| E21 / Both / Open | Mock hooks or impossible signature fixtures pass tests while real Safe execution, rollback or transaction boundaries fail | Use real Safe installation and signed execution. Keep hook-only negative tests distinct from production-reachable cases; demonstrate actual transaction-end reset and both failure modes rather than inferring them from a mock | Q1, Q11; R1, R7 |
+| E22 / Production / Open | A successful dispatch does not consume, but the system reports that portable authorization was used | Decide whether production must require Consumed at post-hook. Test successful no-consume calls under the chosen rule, while retaining the MVP's explicit unconsumed-cleanup test | Q8; R7, R9 |
+
+No entry is closed in this revision. The next update should record agreed decisions against
+these IDs; implementation updates should add concrete test names or review links and state
+what remains unverified. This register is not an exhaustive security review.
+
 ## Open questions for joint decisions
 
 | Question | Recommendation to discuss | What it blocks |
