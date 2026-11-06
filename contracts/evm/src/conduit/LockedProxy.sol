@@ -12,7 +12,8 @@ interface ILockedProxy {
 
 /// @title LockedProxy
 /// @notice The proxy every crossecute conduit is deployed as, transmitter and receiver alike,
-///         and every transceiver, through `LockedProxyDeployer`.
+///         and every transceiver, through `LockedProxyDeployer`. Its implementation is locked
+///         once armed; its owner's authority is unchanged.
 ///
 /// @dev No constructor arguments, so its initcode is one constant and a transmitter (from its
 ///      home's transceiver) and a receiver (from another chain's) at the same deployer address
