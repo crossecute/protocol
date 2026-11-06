@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {TransceiverConfig, TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {CrossConduits} from "src/conduit/CrossConduits.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
 import {
     ZkSyncTransceiver,
     TronTransceiver,
@@ -32,25 +32,25 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
         return address(new ZkSyncTransceiverExtension());
     }
 
-    function crossProxyInitCode() external view returns (address) {
-        return _crossProxyInitCode;
+    function proxyInitCode() external view returns (address) {
+        return _proxyInitCode;
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployConduit(salt);
     }
 
-    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._storeCrossProxyInitCode();
+    function _storeProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeProxyInitCode();
     }
 }
 
@@ -63,17 +63,17 @@ contract TronSym is TronTransceiver, SymHarness {
         return address(new TronTransceiverExtension());
     }
 
-    function crossProxyInitCode() external view returns (address) {
-        return _crossProxyInitCode;
+    function proxyInitCode() external view returns (address) {
+        return _proxyInitCode;
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 }
 
@@ -81,7 +81,7 @@ contract TronSym is TronTransceiver, SymHarness {
 ///      derives with its chain's formula, that the formula reaches the owner and the default
 ///      counterpart, and that conduit creation fails closed here rather than misdeploying.
 contract DivergentTransceiverTest is Test {
-    bytes32 constant HASH = keccak256("zksolc CrossProxy");
+    bytes32 constant HASH = keccak256("zksolc Proxy");
     bytes32 constant SALT = keccak256("account");
     bytes32 constant PROVIDER_SALT = keccak256("provider");
     /// @dev Whoever deployed the provider's transceivers on parity chains.
@@ -103,7 +103,7 @@ contract DivergentTransceiverTest is Test {
     function testFuzz_zkSyncDerivesTheEraWay(address o, bytes32 salt, bytes32 home) public {
         ZkSym t = _zk();
         assertEq(
-            ext(address(t)).predictCrossConduit(o, salt, home),
+            ext(address(t)).predictConduit(o, salt, home),
             AddressDerive.zksyncCreate2(address(t), ext(address(t)).conduitSalt(o, salt, home), HASH, keccak256(""))
         );
     }
@@ -112,7 +112,7 @@ contract DivergentTransceiverTest is Test {
         TronSym t = new TronSym();
         t.initialize(_config(), HASH);
         assertEq(
-            ext(address(t)).predictCrossConduit(o, salt, home),
+            ext(address(t)).predictConduit(o, salt, home),
             AddressDerive.tronCreate2(address(t), ext(address(t)).conduitSalt(o, salt, home), HASH)
         );
     }
@@ -121,11 +121,9 @@ contract DivergentTransceiverTest is Test {
     ///      set before the base initializer runs.
     function test_theOwnerIsDerivedTheEraWay() public {
         ZkSym t = _zk();
-        address viaEra = ext(address(t)).predictCrossConduit(msig, bytes32(0), ChainKey.forEvm(1));
+        address viaEra = ext(address(t)).predictConduit(msig, bytes32(0), ChainKey.forEvm(1));
         address viaEthereum = Create2.computeAddress(
-            ext(address(t)).conduitSalt(msig, bytes32(0), ChainKey.forEvm(1)),
-            t.CROSS_PROXY_INIT_CODE_HASH(),
-            address(t)
+            ext(address(t)).conduitSalt(msig, bytes32(0), ChainKey.forEvm(1)), t.PROXY_INIT_CODE_HASH(), address(t)
         );
 
         assertEq(t.owner(), viaEra);
@@ -140,8 +138,8 @@ contract DivergentTransceiverTest is Test {
     /// @dev EraVM cannot deploy raw initcode, so the zkSync implementation's constructor must
     ///      not try; Tron deploys from the stored copy as a parity chain does.
     function test_onlyZkSyncStoresNoInitCode() public {
-        assertEq(new ZkSym().crossProxyInitCode(), address(0));
-        assertTrue(new TronSym().crossProxyInitCode().code.length != 0);
+        assertEq(new ZkSym().proxyInitCode(), address(0));
+        assertTrue(new TronSym().proxyInitCode().code.length != 0);
     }
 
     function test_aZeroBytecodeHashIsRefused() public {
@@ -154,10 +152,10 @@ contract DivergentTransceiverTest is Test {
     /// @dev On Forge's EVM the deployment lands at Ethereum's address and the guard refuses.
     function test_conduitCreationFailsClosedOnAnEthereumEvm() public {
         ZkSym t = _zk();
-        address predicted = ext(address(t)).predictCrossConduit(alice, SALT, t.localChainKey());
+        address predicted = ext(address(t)).predictConduit(alice, SALT, t.localChainKey());
 
         vm.prank(alice);
-        vm.expectPartialRevert(CrossConduits.ConduitAddressMismatch.selector);
+        vm.expectPartialRevert(Conduits.ConduitAddressMismatch.selector);
         t.createTransmitter(SALT);
         assertEq(predicted.code.length, 0);
     }
@@ -179,7 +177,7 @@ contract DivergentTransceiverTest is Test {
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.predictReceiver(base, alice, SALT);
 
-        bytes32 solcHash = keccak256("solc CrossProxy");
+        bytes32 solcHash = keccak256("solc Proxy");
         registry.setProviderDeployment(provider, PROVIDER_SALT, solcHash);
         registry.setCurrentDeployer(DEPLOYED_BY);
         registry.addProviderOnChain(base, provider, DEPLOYED_BY);
@@ -189,9 +187,7 @@ contract DivergentTransceiverTest is Test {
             Create2.computeAddress(ext(address(t)).conduitSalt(alice, SALT, t.localChainKey()), solcHash, there);
 
         assertEq(t.predictReceiver(base, alice, SALT), abi.encodePacked(receiver));
-        assertTrue(
-            receiver != ext(address(t)).predictCrossConduit(alice, SALT, t.localChainKey()), "not the Era address"
-        );
+        assertTrue(receiver != ext(address(t)).predictConduit(alice, SALT, t.localChainKey()), "not the Era address");
     }
 
     /// @dev This transceiver is not at its provider's address on parity chains, so the
@@ -209,7 +205,7 @@ contract DivergentTransceiverTest is Test {
         vm.expectRevert(ChainRegistry.NoProviderDeployment.selector);
         t.counterpartOn(base);
 
-        registry.setProviderDeployment(provider, PROVIDER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, PROVIDER_SALT, t.PROXY_INIT_CODE_HASH());
         registry.setCurrentDeployer(DEPLOYED_BY);
         registry.addProviderOnChain(base, provider, DEPLOYED_BY);
         address expected = registry.predictTransceiver(base, provider);

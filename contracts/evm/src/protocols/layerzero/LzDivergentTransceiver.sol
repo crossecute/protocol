@@ -15,8 +15,8 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
     constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
-    /// @param conduitBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
-    ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
+    /// @param conduitBytecodeHash_ Zksolc artifact hash for `Proxy`, not
+    ///        `PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(
         TransceiverConfig memory c,
         uint32 governorHomeEid,
@@ -28,21 +28,21 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
         _initGovernorHomePeer(c, governorHomeEid);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployConduit(salt);
     }
 
-    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._storeCrossProxyInitCode();
+    function _storeProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeProxyInitCode();
     }
 
     function _conduitInitializer(
@@ -64,7 +64,7 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
 contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
     constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
-    /// @param conduitBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
+    /// @param conduitBytecodeHash_ Tron-solc's `Proxy` initcode hash, not solc's.
     function initialize(
         TransceiverConfig memory c,
         uint32 governorHomeEid,
@@ -76,13 +76,13 @@ contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
         _initGovernorHomePeer(c, governorHomeEid);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _conduitInitializer(

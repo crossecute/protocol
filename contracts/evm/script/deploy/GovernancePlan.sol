@@ -17,7 +17,7 @@ import {CcipTransceiverBase} from "src/protocols/ccip/CcipTransceiver.sol";
 import {HyperlaneTransceiverBase} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
-import {DeployCheck, check} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck, check} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {OpStackConfig} from "script/deploy/OpStackDeploy.sol";
 import {OpStackInteropConfig} from "script/deploy/OpStackInteropDeploy.sol";

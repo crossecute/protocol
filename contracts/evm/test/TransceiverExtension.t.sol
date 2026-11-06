@@ -42,16 +42,16 @@ contract PairedTron is TronTransceiver, Unsent {
     constructor(address extension_) TransceiverBase(extension_) {}
 
     function initialize(TransceiverConfig memory c) external initializer {
-        __DivergentTransceiver_init(c, keccak256("tron-solc CrossProxy"));
+        __DivergentTransceiver_init(c, keccak256("tron-solc Proxy"));
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 }
 
@@ -87,8 +87,8 @@ contract TransceiverExtensionTest is Test {
         tron.initialize(_config());
 
         bytes32 governorHome = keccak256(_config().governorHome);
-        assertEq(plain.owner(), ext(address(plain)).predictCrossConduit(governor, bytes32(0), governorHome));
-        assertEq(tron.owner(), ext(address(tron)).predictCrossConduit(governor, bytes32(0), governorHome));
+        assertEq(plain.owner(), ext(address(plain)).predictConduit(governor, bytes32(0), governorHome));
+        assertEq(tron.owner(), ext(address(tron)).predictConduit(governor, bytes32(0), governorHome));
         assertTrue(plain.owner() != tron.owner(), "the two formulas differ, so a mismatch is visible");
     }
 

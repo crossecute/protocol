@@ -12,8 +12,8 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
-import {CrossConduits} from "src/conduit/CrossConduits.sol";
-import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
+import {ProxyInitCode} from "src/conduit/ProxyInitCode.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -48,9 +48,9 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @notice The `TransceiverExtension` every selector not declared here runs in.
     address public immutable extension;
 
-    /// The contract `_deployConduit` reads `CrossProxy`'s initcode from (`CrossProxyInitCode`),
+    /// The contract `_deployConduit` reads `Proxy`'s initcode from (`ProxyInitCode`),
     /// written by this implementation's constructor. Zero on zkSync, which deploys by hash.
-    address internal immutable _crossProxyInitCode;
+    address internal immutable _proxyInitCode;
 
     error NoExtension();
     /// @dev The extension derives conduits, or names this chain, differently from this contract.
@@ -59,13 +59,13 @@ abstract contract TransceiverBase is TransceiverCore {
     constructor(address extension_) {
         if (extension_.code.length == 0) revert NoExtension();
         extension = extension_;
-        _crossProxyInitCode = _storeCrossProxyInitCode();
+        _proxyInitCode = _storeProxyInitCode();
     }
 
-    /// @notice Write `CrossProxy`'s initcode for `_deployConduit` to read.
+    /// @notice Write `Proxy`'s initcode for `_deployConduit` to read.
     /// @dev A variant whose `_deployConduit` does not read it overrides this to store nothing.
-    function _storeCrossProxyInitCode() internal virtual returns (address) {
-        return CrossProxyInitCode.store();
+    function _storeProxyInitCode() internal virtual returns (address) {
+        return ProxyInitCode.store();
     }
 
     /// @notice Run any other selector in the extension, against this contract's storage.
@@ -102,13 +102,13 @@ abstract contract TransceiverBase is TransceiverCore {
     ///
     /// @dev A transceiver decides which payloads are authentic, so a live upgrade key would be
     ///      a standing ability to forge any message. There is none: a transceiver is a
-    ///      `CrossProxy` that `CrossProxyDeployer` arms with this initializer and locks in one
+    ///      `Proxy` that `ProxyDeployer` arms with this initializer and locks in one
     ///      call, and neither this contract nor its extension has an upgrade function. A bug
     ///      in either is fixed only by redeploying, which re-derives every conduit.
     function __TransceiverBase_init(TransceiverConfig memory c, bool addressesDiverge_) internal onlyInitializing {
         if (TransceiverCore(extension).localChainKey() != localChainKey) revert ExtensionMismatch();
         TransceiverExtension(address(this)).initializeBase(c, addressesDiverge_);
-        if (owner() != _predictCrossConduit(c.governorOwner, c.governorSalt, keccak256(c.governorHome))) {
+        if (owner() != _predictConduit(c.governorOwner, c.governorSalt, keccak256(c.governorHome))) {
             revert ExtensionMismatch();
         }
     }
@@ -123,7 +123,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      transmitter records this rather than `address(this)`.
     ///
     /// @dev The initcode hash is the destination's, not this compiler's: on zkSync and Tron
-    ///      `CROSS_PROXY_INIT_CODE_HASH` is the local compiler's and not what an EVM destination
+    ///      `PROXY_INIT_CODE_HASH` is the local compiler's and not what an EVM destination
     ///      deploys (#30), so a diverging transceiver takes it from the provider's deployment
     ///      record, which R8.4 holds equal to solc's.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
@@ -137,9 +137,9 @@ abstract contract TransceiverBase is TransceiverCore {
         view
         returns (address)
     {
-        bytes32 initCodeHash = CROSS_PROXY_INIT_CODE_HASH;
+        bytes32 initCodeHash = PROXY_INIT_CODE_HASH;
         if (_addressesDiverge) {
-            initCodeHash = _chainRegistry.providerDeployment(_messageProvider).crossProxyInitCodeHash;
+            initCodeHash = _chainRegistry.providerDeployment(_messageProvider).proxyInitCodeHash;
             if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
         }
         return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), initCodeHash, transceiver_);
@@ -151,27 +151,27 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one conduit.
     /// @return conduit The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address conduit) {
-        conduit = _createCrossConduit(msg.sender, salt, localChainKey, address(0), new Call[](0));
+        conduit = _createConduit(msg.sender, salt, localChainKey, address(0), new Call[](0));
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
     /// @dev Separate from the prediction because zkSync diverges in both: a different formula,
     ///      and deployment through a system contract against a pre-published bytecode hash, so
-    ///      a variant there emits `new CrossProxy{salt: s}()`. Tron diverges only in the formula.
+    ///      a variant there emits `new Proxy{salt: s}()`. Tron diverges only in the formula.
     function _deployConduit(bytes32 salt) internal virtual returns (address deployed) {
-        return CrossConduits.deploy(salt, _crossProxyInitCode);
+        return Conduits.deploy(salt, _proxyInitCode);
     }
 
     /// @notice Deploy an owner's conduit and arm it: a transmitter if it is homed here, a
     ///         receiver otherwise, through the same argument-free proxy.
     ///
-    /// @dev The checks around the deployment are `CrossConduits`', shared with every other
+    /// @dev The checks around the deployment are `Conduits`', shared with every other
     ///      conduit creator. The prediction it holds the deployment to is the one every published
     ///      address comes from: a transmitter's recorded counterpart, a receiver's
     ///      `sourceTransmitter`, the conduit a report is forwarded to.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
-    function _createCrossConduit(
+    function _createConduit(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
@@ -183,17 +183,15 @@ abstract contract TransceiverBase is TransceiverCore {
         address implementation = _conduitImplementation(homeChainKey);
         if (implementation == address(0)) revert NoConduitImplementation();
 
-        conduit = _predictCrossConduit(owner, salt, homeChainKey);
-        CrossConduits.requireVacant(conduit, owner, salt);
+        conduit = _predictConduit(owner, salt, homeChainKey);
+        Conduits.requireVacant(conduit, owner, salt);
 
         address deployed = _deployConduit(_conduitSalt(owner, salt, homeChainKey));
-        CrossConduits.requireLanded(conduit, deployed);
+        Conduits.requireLanded(conduit, deployed);
 
-        CrossConduits.arm(
-            conduit, implementation, _conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)
-        );
+        Conduits.arm(conduit, implementation, _conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls));
 
-        emit CrossConduitCreated(owner, conduit, salt, homeChainKey);
+        emit ConduitCreated(owner, conduit, salt, homeChainKey);
     }
 
     /// @notice The logic a conduit homed on `homeChainKey` is armed with.
@@ -450,7 +448,7 @@ abstract contract TransceiverBase is TransceiverCore {
         address sourceTransmitter,
         Call[] memory calls
     ) internal {
-        address receiver = _createCrossConduit(owner, salt, home, sourceTransmitter, calls);
+        address receiver = _createConduit(owner, salt, home, sourceTransmitter, calls);
         if (_addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
         } else if (_chainRegistry.provenanceFor(home) == Provenance.Predetermined) {

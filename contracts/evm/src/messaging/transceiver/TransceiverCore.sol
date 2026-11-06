@@ -10,7 +10,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
-import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
+import {ProxyInitCode} from "src/conduit/ProxyInitCode.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -70,14 +70,14 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     bytes32 public immutable localChainKey;
 
     /// @notice The initcode hash every crossecute conduit deploys from, for transmitters and
-    ///         receivers alike. See `CrossProxy` for why it has no constructor arguments.
+    ///         receivers alike. See `Proxy` for why it has no constructor arguments.
     /// @dev An input to Ethereum's CREATE2 formula only. zkSync deploys from a zksolc artifact
-    ///      hash instead; see `_predictCrossConduit`.
+    ///      hash instead; see `_predictConduit`.
     /// @dev Immutable, not constant: a constant is evaluated at runtime, which would put the
     ///      initcode in every runtime that reads this (#70); an immutable puts it in initcode only.
     ///      Computed rather than written out so a build with other compiler settings, such as
     ///      `forge coverage`'s unoptimized one, derives the conduits it deploys.
-    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = CrossProxyInitCode.hash();
+    bytes32 public immutable PROXY_INIT_CODE_HASH = ProxyInitCode.hash();
 
     /// The transmitter logic every conduit homed here is armed with. Write-once: conduits
     /// lock when armed, so a change would split them into two logic versions by creation time.
@@ -89,7 +89,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
 
     /// Whether conduit addresses here differ from Ethereum's CREATE2. When true, every receiver
     /// created here is reported to its home, which cannot derive it. Write-once, and set by the
-    /// contract rather than its caller, so it cannot disagree with `_predictCrossConduit`.
+    /// contract rather than its caller, so it cannot disagree with `_predictConduit`.
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     bool internal _addressesDiverge;
 
@@ -129,7 +129,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     // forge-lint: disable-next-line(unused-state-variables) read only by `TransceiverBase` and `TransceiverExtension`
     IBootstrapAllowlist internal _bootstrapAllowlist;
 
-    event CrossConduitCreated(address indexed owner, address indexed conduit, bytes32 salt, bytes32 homeChainKey);
+    event ConduitCreated(address indexed owner, address indexed conduit, bytes32 salt, bytes32 homeChainKey);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the conduit.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
@@ -220,23 +220,21 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      are: this address (one per provider on every chain), the salt, and a constant
     ///      initcode. zkSync and Tron derive differently, so a variant there overrides this,
     ///      in both its `TransceiverBase` and its extension, and `_deployConduit` with it;
-    ///      `_createCrossConduit` checks the two agree.
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    ///      `_createConduit` checks the two agree.
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual
         returns (address)
     {
-        return Create2.computeAddress(
-            _conduitSalt(owner, salt, homeChainKey), CROSS_PROXY_INIT_CODE_HASH, address(this)
-        );
+        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice `(owner, salt)`'s conduit homed on this chain: its transmitter here.
     /// @dev One expression for the bootstrap caller check, the transmitter a bootstrap and its
     ///      quote carry, and every lookup of a conduit a report is for, so they cannot drift.
     function _localConduit(address owner, bytes32 salt) internal view returns (address) {
-        return _predictCrossConduit(owner, salt, localChainKey);
+        return _predictConduit(owner, salt, localChainKey);
     }
 
     /// @notice The exact report bytes for `(owner, salt)` and `receiver`.
@@ -253,7 +251,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      authenticated, goes through here, so a suspended chain is cut off both ways.
     ///
     /// @dev An unset counterpart on a `Predetermined` chain is `_parityAddress(chainKey)`: every
-    ///      transceiver of a provider is a `CrossProxy` deployed through `CrossProxyDeployer` at
+    ///      transceiver of a provider is a `Proxy` deployed through `ProxyDeployer` at
     ///      one salt by the deployer the registry records for that chain, which is what
     ///      `Predetermined` means (#33).
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {

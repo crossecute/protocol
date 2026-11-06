@@ -89,12 +89,12 @@ Commands assume `RPC` is the chain's RPC and Foundry's `cast` is on the path.
 
 ### 1. Contracts land where the protocol expects
 
-A parity chain needs Arachnid's factory with Ethereum's code, and `CrossProxyDeployer`'s address
+A parity chain needs Arachnid's factory with Ethereum's code, and `ProxyDeployer`'s address
 free until the deploy:
 
 ```sh
 cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C --rpc-url $RPC | cast keccak   # equals Ethereum's
-cast code 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C --rpc-url $RPC                 # 0x until deployed
+cast code 0x415DaAF39EB13593a0Fe5E140bc97C4C9a63e116 --rpc-url $RPC                 # 0x until deployed
 ```
 
 Code at Arachnid's address does not make a chain parity: zkSync Era has it too (README §1).

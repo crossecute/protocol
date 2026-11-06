@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {DeployLzOft} from "script/DeployLzOft.s.sol";
 import {LzOftLeaves} from "script/LzOftLeaves.s.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";

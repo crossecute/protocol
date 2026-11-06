@@ -7,7 +7,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
-import {deployConduit} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 

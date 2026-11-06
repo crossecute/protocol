@@ -56,7 +56,7 @@ them for a candidate.
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
 - **L1.2** A conduit's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
-  the factory with `CrossProxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
+  the factory with `Proxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
   `homeEid` is the eid of the home OFT's endpoint. One conduit has one address on every chain
   in its root.
 - **L1.3** The home factory MUST compute `destRoot` itself from the leaves it is given, and

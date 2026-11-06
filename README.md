@@ -89,13 +89,13 @@ on every parity chain before anything exists on any of them.
 ```mermaid
 flowchart LR
     Owner([owner]) -->|"createTransmitter(salt)"| T[Transceiver at home]
-    T -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
+    T -->|"CREATE2(owner, salt, home)"| Proxy[Proxy]
     Proxy -->|"arm and lock"| Tx[Transmitter]
 ```
 
 The owner is `msg.sender` by construction, so nobody can squat an address another party
-intends to use. Arming installs the logic, runs the initializer, and zeroes the upgrade key in
-one call, so it is never live afterwards. The same three CREATE2 inputs are used on every
+intends to use. Arming installs the logic, runs the initializer, and closes the proxy to further
+arming in one call, so the upgrade key is never live afterwards. The same three CREATE2 inputs are used on every
 chain, so this address is also where the owner's receivers will land.
 
 ### 2 · Creating a receiver: bootstrap
@@ -108,7 +108,7 @@ flowchart LR
     Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Home[Transceiver at home]
     Home -->|"bridge"| Dest[Transceiver at the destination]
-    Dest -->|"CREATE2(owner, salt, home)"| Proxy[CrossProxy]
+    Dest -->|"CREATE2(owner, salt, home)"| Proxy[Proxy]
     Proxy -->|"arm, run the payload, lock"| Rx[Receiver]
     Dest -.->|"bridge: where it landed"| Home
     Home -.->|"onDestinationReceiverReported"| Tx
@@ -195,7 +195,7 @@ the local chainKey, so an array approved for one chain cannot be finalized on an
 ## The idea
 
 **One owner, one address, every chain.** An owner's conduit is deployed at
-`CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), CrossProxy)`, and
+`CREATE2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), Proxy)`, and
 because all three inputs are the same everywhere, so is the address, on every chain whose
 transceiver the same deployer deployed. If that deployer's key is lost, new chains are added under
 another one, and a conduit's receiver there sits at a different address than its transmitter; chains
@@ -245,8 +245,8 @@ src/
     transceiver/  TransceiverBase -> zkSync / Tron          one per chain per provider
                   TransceiverExtension -> zkSync / Tron     init, owner config, views; one per chain
                   DivergentConduits                         zkSync and Tron derivation
-  conduit/        CrossProxy                                what both halves, and transceivers, are
-                  CrossProxyDeployer                        arms a transceiver's proxy in one call
+  conduit/        Proxy                                what both halves, and transceivers, are
+                  ProxyDeployer                        arms a transceiver's proxy in one call
   treasury/       Treasury                     one per chain: fees and the report float
   protocols/      per message provider; the only files naming an SDK
 script/
@@ -278,8 +278,8 @@ summary: the file is always the newer statement.
 
 | Question                                                                 | Answered in                           |
 | ------------------------------------------------------------------------ | ------------------------------------- |
-| Why one address, and why a proxy rather than a clone                     | `conduit/CrossProxy.sol`              |
-| How a conduit is created, and why its upgrade key dies in the same call | `TransceiverBase._createCrossConduit`, with the shared steps in `CrossConduits` |
+| Why one address, and why a proxy rather than a clone                     | `conduit/Proxy.sol`              |
+| How a conduit is created, and why its upgrade key dies in the same call | `TransceiverBase._createConduit`, with the shared steps in `Conduits` |
 | Why one transceiver makes both transmitters and receivers               | `TransceiverBase`                     |
 | Why approvals are an unordered map of hash to count                      | `inbound/ReceiverBase.sol`            |
 | Why a transceiver receives, and why it runs no payload                   | `TransceiverBase`                     |
@@ -327,7 +327,7 @@ Then, per destination, add what the chain needs:
 - an `IRefValidator`, if the envelope cannot express its value ranges
 - a grade below `Predetermined` when it is registered, if its addresses cannot be recomputed
   here at all; the grade is write-once. An EVM chain is `Predetermined` only if its transceivers
-  are deployed through `CrossProxyDeployer`, which needs Arachnid's factory. One without that
+  are deployed through `ProxyDeployer`, which needs Arachnid's factory. One without that
   factory is `Unique` in every registry, and grades every other chain `Unique` in its own
 
 ## Message providers
@@ -356,7 +356,7 @@ What an operator or integrator has to know:
   `onlyInitializing`, so a provider that migrates its endpoint means redeploying the
   transceiver unless its initializer's `gateways` named both endpoints up front. On a conduit,
   `revokeGateway` only subtracts. A receiver that drops its transport has no way to
-  reconnect, and because `CrossProxy` arms once it cannot be redeployed at that address, so
+  reconnect, and because `Proxy` arms once it cannot be redeployed at that address, so
   that owner's conduit on that chain stops receiving for good. This is deliberate: a
   re-grant path would be a fallback-override surface.
 - **Provider ids named at deploy cannot be corrected.** Each entry in a transceiver's id
@@ -410,7 +410,7 @@ What an operator or integrator has to know:
   inspector can stop the channel but not forge it; the OFT's delegate, who can weaken its DVNs
   or libraries, which nothing here detects; for a proxied OFT, its upgrade admin, who can
   change how `composeFrom` is encoded; LayerZero's endpoint; and the factory, logic and
-  `CrossProxy`, all immutable at one address everywhere. It is meant for an OFT the conduit's
+  `Proxy`, all immutable at one address everywhere. It is meant for an OFT the conduit's
   own team operates. A paused or broken OFT blocks the very payload that would repair it, and
   since the OFT is fixed, the only way out is migrating the conduit, which needs a working
   channel to hand its roles off.
@@ -432,9 +432,9 @@ script's pinned commit changes, re-check the matching section there.
 
 ## Assumptions
 
-- `CrossProxyDeployer` is created through Arachnid's CREATE2 factory (`0x4e59..`), which puts
+- `ProxyDeployer` is created through Arachnid's CREATE2 factory (`0x4e59..`), which puts
   it at one address on every standard EVM chain; transceivers are created through
-  `CrossProxyDeployer`, and conduits by their transceiver's own CREATE2. A chain is
+  `ProxyDeployer`, and conduits by their transceiver's own CREATE2. A chain is
   `Predetermined` only if its transceivers were deployed that way; zkSync and Tron, whose
   CREATE2 formulas differ, and any chain without Arachnid's factory are `Unique`.
 - Compiled against `evm_version = "paris"`, pinned in `contracts/evm/foundry.toml`. PUSH0
@@ -444,9 +444,9 @@ script's pinned commit changes, re-check the matching section there.
   `cbor_metadata = false`: solc's default trailer carries an IPFS hash of the source,
   comments included, which would otherwise put every derived address one comment edit
   away from moving.
-- Transceivers and conduits are all `CrossProxy`, and each locks in the same call that arms
-  it. `CrossProxyDeployer` deploys a transceiver, installs its implementation, runs its
-  initializer, and zeroes the admin in one call, under a salt bound to its caller so nobody
+- Transceivers and conduits are all `Proxy`, and each locks in the same call that arms
+  it. `ProxyDeployer` deploys a transceiver, installs its implementation, runs its
+  initializer, and locks the proxy in one call, under a salt bound to its caller so nobody
   else can take the address first. The implementation has no upgrade function. A
   transceiver decides which cross-chain payloads are authentic, so a live upgrade key would
   be a standing ability to forge one, and there is no reachable state in which one exists.
@@ -457,9 +457,10 @@ script's pinned commit changes, re-check the matching section there.
   from forks in the crossecute org, each holding its commit under its own tag, so a deleted
   or force-pushed upstream tag cannot break the build. The same commits are in
   `contracts/evm/foundry.lock`; a bump made with `git` alone has to update it by hand. The
-  OZ version is an address-determining input like the compiler pin: `CrossProxy`'s initcode
-  compiles OZ's `Proxy`, `ERC1967Utils`, and (through them) `Address`, so a bump that changes
-  any of their bytes moves every conduit on every chain. These are the versions to ship on.
+  OZ version is an address-determining input like the compiler pin: `ProxyDeployer` compiles
+  OZ's `Create2` and `Errors`, so a bump that changes any of their bytes moves the deployer,
+  and with it every transceiver and every conduit on every chain. `Proxy` imports nothing
+  from OZ. These are the versions to ship on.
   OZ 5.5's `Arrays` uses `mcopy`, which breaks `AccessControlEnumerableUpgradeable` at
   `paris` (`Roles.sol`), and v6's `ReentrancyGuardTransient` needs Cancun. ERC-7786's two
   interfaces are vendored at `src/messaging/IErc7786.sol` instead of imported, because they
@@ -526,7 +527,7 @@ profile, which also enforces the detector heuristics the default profile leaves 
 selector its extension also declares under another signature. A separate job runs
 `forge coverage` over `src/` and posts the summary on the run; it sets no minimum, and its
 build is unoptimized, so the tests that need solc's optimized bytecode skip there: those pinning
-`CrossProxy`'s initcode hash and the deployer's address, the delivery gas measurements, and
+`Proxy`'s initcode hash and the deployer's address, the delivery gas measurements, and
 the deploy tests that deploy from `deploy/governance.toml`.
 
 Each chain's timelock, registry, and treasury deploy with `forge script

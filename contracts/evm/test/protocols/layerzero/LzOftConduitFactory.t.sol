@@ -7,7 +7,7 @@ import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.s
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {CrossConduits} from "src/conduit/CrossConduits.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
@@ -173,9 +173,7 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
 
     function test_theSameConduitCannotBeCreatedTwice() public {
         LzOftTransmitter conduit = _create(_leaves(DST_OFT));
-        vm.expectRevert(
-            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, owner, SALT, address(conduit))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, owner, SALT, address(conduit)));
         _create(_leaves(DST_OFT));
     }
 
@@ -325,7 +323,7 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
             HOME_EID, keccak256("again"), address(factory), conduit, _bootstrap(root, new bytes32[](0))
         );
         vm.prank(EXECUTOR);
-        vm.expectRevert(abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, owner, SALT, conduit));
+        vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, owner, SALT, conduit));
         endpoint.lzCompose(address(oft), address(factory), keccak256("again"), 0, m, "");
     }
 }

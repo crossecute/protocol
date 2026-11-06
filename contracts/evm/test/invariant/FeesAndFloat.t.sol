@@ -22,7 +22,7 @@ import {
     AnyGatewayTransceiver,
     AnyGatewayTransmitter
 } from "test/Harness.sol";
-import {deployTransceiver} from "test/DeployCrossProxy.sol";
+import {deployTransceiver} from "test/DeployProxy.sol";
 
 uint256 constant PER_BYTE = 1 gwei;
 uint256 constant BOOTSTRAP_FEE = 0.01 ether;
@@ -152,7 +152,7 @@ contract FloatHandler is Test {
     {
         address owner = address(uint160(0xA0000 + n));
         bytes32 homeKey = ChainKey.forEvm(homeChain(h));
-        address transmitter = registry.predictCrossConduit(homeKey, provider, owner, bytes32(n), homeKey);
+        address transmitter = registry.predictConduit(homeKey, provider, owner, bytes32(n), homeKey);
         route = Erc7930.encodeEvmChain(homeChain(h));
         counterpart = abi.encodePacked(registry.predictTransceiver(homeKey, provider));
         message = Envelope.encodeBootstrap(owner, bytes32(n), toBytes32(transmitter), new Call[](0));
@@ -291,7 +291,7 @@ contract FeesAndFloatInvariantTest is Test {
         );
         registry.setLocalTransceiver(provider, address(t));
         // R8.4: the record names the initcode hash every EVM chain deploys conduits from.
-        registry.setProviderDeployment(provider, keccak256("provider"), t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, keccak256("provider"), t.PROXY_INIT_CODE_HASH());
         registry.setCurrentDeployer(address(0xD1));
 
         for (uint256 h; h < 3; ++h) {

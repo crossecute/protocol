@@ -198,7 +198,7 @@ contract TransportTest is Test {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(transceiver)).predictCrossConduit(owner, SALT, transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictConduit(owner, SALT, transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), SALT);
@@ -578,7 +578,7 @@ contract TransportTest is Test {
         t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictConduit(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -598,7 +598,7 @@ contract TransportTest is Test {
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         address receiver = Create2.computeAddress(
-            ext(address(t)).conduitSalt(owner, SALT, t.localChainKey()), t.CROSS_PROXY_INIT_CODE_HASH(), there
+            ext(address(t)).conduitSalt(owner, SALT, t.localChainKey()), t.PROXY_INIT_CODE_HASH(), there
         );
         assertEq(acct.destinationReceiverOn(ChainKey.forEvm(DEST)), abi.encodePacked(receiver));
         assertTrue(receiver != address(acct), "not its own address");
@@ -847,7 +847,7 @@ contract TransportTest is Test {
             Envelope.encodeBootstrap(
                 owner,
                 SALT,
-                bytes32(uint256(uint160(ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey())))),
+                bytes32(uint256(uint160(ext(address(t)).predictConduit(owner, SALT, t.localChainKey())))),
                 calls
             )
             .length * t.WEI_PER_BYTE(),
@@ -957,7 +957,7 @@ contract TransportTest is Test {
         assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
     }
 
-    /// @dev A second bootstrap cannot deliver its payload anyway. `CrossProxy` arms exactly
+    /// @dev A second bootstrap cannot deliver its payload anyway. `Proxy` arms exactly
     ///      once and the receiver's `initialize` is single-shot, so it would burn a fee to
     ///      revert on arrival.
     function test_rebootstrappingIsRefused() public {
@@ -1025,7 +1025,7 @@ contract TransportTest is Test {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
 
-        address at = ext(address(t)).predictCrossConduit(owner, SALT, t.localChainKey());
+        address at = ext(address(t)).predictConduit(owner, SALT, t.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         MockTransmitter acct = MockTransmitter(payable(at));
         acct.initialize(owner, address(t), SALT);
@@ -1103,7 +1103,7 @@ contract DivergingDestinationTest is Test {
     function setUp() public {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
-        address at = ext(address(transceiver)).predictCrossConduit(owner, bytes32(0), transceiver.localChainKey());
+        address at = ext(address(transceiver)).predictConduit(owner, bytes32(0), transceiver.localChainKey());
         vm.etch(at, address(new MockTransmitter()).code);
         transmitter = MockTransmitter(payable(at));
         transmitter.initialize(owner, address(transceiver), bytes32(0));

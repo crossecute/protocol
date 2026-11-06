@@ -80,6 +80,6 @@ echo "bootstrap, one call:  $(min_gas "$T" "$HOME_TRANSCEIVER" "$(after messages
 TX="$(cast send --private-key "$KEY" "$MAILBOX" 'deliver(address,uint32,bytes32,bytes,uint256)' \
   "$T" 8453 "$("$CAST_ZKSYNC" to-uint256 "$HOME_TRANSCEIVER")" "$(after messages 1)" 3000000 --gas-limit 20000000 --json)"
 echo "bootstrap tx, no calls: status $(jq -r .status <<< "$TX"), gasUsed $("$CAST_ZKSYNC" to-dec "$(jq -r .gasUsed <<< "$TX")")"
-RECEIVER="$(cast call "$T" 'predictCrossConduit(address,bytes32,bytes32)(address)' 0x000000000000000000000000000000000000A110 \
+RECEIVER="$(cast call "$T" 'predictConduit(address,bytes32,bytes32)(address)' 0x000000000000000000000000000000000000A110 \
   0x0000000000000000000000000000000000000000000000000000000000000000 "$HOME_KEY")"
 echo "payload, no calls:    $(min_gas "$RECEIVER" "$TRANSMITTER" "$(after messages 3)")"

@@ -8,7 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {AnyGatewayTransmitter} from "test/Harness.sol";
-import {deployConduit} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 
 uint256 constant BOOTSTRAP_FEE = 3;
 uint256 constant SEND_FEE = 5;

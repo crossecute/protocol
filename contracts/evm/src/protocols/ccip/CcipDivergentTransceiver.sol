@@ -16,8 +16,8 @@ import {ZkSyncTransceiver, TronTransceiver} from "src/messaging/transceiver/Dive
 contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
     constructor(address router_, address extension_) CcipTransceiverBase(router_, extension_) {}
 
-    /// @param conduitBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
-    ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
+    /// @param conduitBytecodeHash_ Zksolc artifact hash for `Proxy`, not
+    ///        `PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 conduitBytecodeHash_)
         external
         initializer
@@ -26,21 +26,21 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployConduit(salt);
     }
 
-    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._storeCrossProxyInitCode();
+    function _storeProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeProxyInitCode();
     }
 
     function _conduitInitializer(
@@ -67,7 +67,7 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
 contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
     constructor(address router_, address extension_) CcipTransceiverBase(router_, extension_) {}
 
-    /// @param conduitBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
+    /// @param conduitBytecodeHash_ Tron-solc's `Proxy` initcode hash, not solc's.
     function initialize(TransceiverConfig memory c, uint64 governorHomeSelector, bytes32 conduitBytecodeHash_)
         external
         initializer
@@ -76,13 +76,13 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _conduitInitializer(

@@ -5,9 +5,10 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/conduit/CrossProxyDeployer.sol";
-import {ARACHNID} from "script/deploy/CrossProxyDeploy.sol";
-import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
+import {PROXY_DEPLOYER, ProxyDeployer} from "src/conduit/ProxyDeployer.sol";
+import {ARACHNID} from "script/deploy/ProxyDeploy.sol";
+import {proxyDeployer} from "test/DeployProxy.sol";
 
 contract Logic {
     uint256 public value;
@@ -21,31 +22,37 @@ contract Logic {
     }
 }
 
-contract CrossProxyDeployerTest is Test {
-    CrossProxyDeployer deployer;
+contract ProxyDeployerTest is Test {
+    ProxyDeployer deployer;
     bytes32 constant SALT = keccak256("transceiver");
 
     function setUp() public {
-        deployer = crossProxyDeployer();
+        deployer = proxyDeployer();
     }
 
-    /// @dev A change to the deployer's bytecode moves it off `CROSS_PROXY_DEPLOYER` and fails here
+    /// @dev A change to the deployer's bytecode moves it off `PROXY_DEPLOYER` and fails here
     ///      first. Coverage builds unoptimized and is exempt.
     function test_itSitsWhereTheRegistryDerivesAgainst() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
-            Create2.computeAddress(bytes32(0), keccak256(type(CrossProxyDeployer).creationCode), ARACHNID),
-            CROSS_PROXY_DEPLOYER
+            Create2.computeAddress(bytes32(0), keccak256(type(ProxyDeployer).creationCode), ARACHNID), PROXY_DEPLOYER
         );
-        assertEq(address(deployer), CROSS_PROXY_DEPLOYER);
+        assertEq(address(deployer), PROXY_DEPLOYER);
     }
 
     function test_itArmsAndLocksInTheDeployingCall() public {
-        address proxy = deployer.deploy(SALT, address(new Logic()), abi.encodeCall(Logic.initialize, (7)));
+        address impl = address(new Logic());
+        address other = address(new Logic());
+        address proxy = deployer.deploy(SALT, impl, abi.encodeCall(Logic.initialize, (7)));
 
         assertEq(proxy, deployer.predict(address(this), SALT), "where it said");
         assertEq(Logic(proxy).value(), 7, "initialized");
-        assertEq(vm.load(proxy, ERC1967Utils.ADMIN_SLOT), bytes32(0), "no admin left");
+        assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "armed");
+
+        vm.prank(address(deployer));
+        (bool rearmed,) = proxy.call(abi.encodeCall(IProxy.upgradeInitializeAndLock, (other, "")));
+        assertFalse(rearmed, "the deployer cannot arm it again");
+        assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "still locked");
     }
 
     /// @dev The salt is bound to its caller, so another caller cannot take this address first

@@ -10,7 +10,7 @@ import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {deployConduit} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.

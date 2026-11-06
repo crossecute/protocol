@@ -7,7 +7,7 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 import {ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 import {Plan, Tx, PendingPair, GovernancePlan} from "script/deploy/GovernancePlan.sol";

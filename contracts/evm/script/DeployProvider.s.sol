@@ -6,7 +6,7 @@ import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {check} from "script/deploy/CrossProxyDeploy.sol";
+import {check} from "script/deploy/ProxyDeploy.sol";
 import {TransceiverDeployment, expectedDeployer} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -15,7 +15,7 @@ import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/
 /// @title DeployProvider
 /// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
 ///         its conduit implementations, its transceiver implementation, and the transceiver,
-///         deployed through `CrossProxyDeployer` from the registry's record.
+///         deployed through `ProxyDeployer` from the registry's record.
 ///
 /// @dev The governor's owner, salt, and home come from `deploy/governance.toml`, and the
 ///      registry and treasury are step 1's, at the addresses that file predicts. From the

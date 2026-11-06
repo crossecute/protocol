@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
+import {proxyDeployer} from "test/DeployProxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";
@@ -162,7 +162,7 @@ contract TransceiverTest is Test {
             transceiverConfig(msig, transmitterImplementation, address(new Rcv()), address(treasury));
         t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
-        registry.setProviderDeployment(provider, TRANSCEIVER_SALT, t.CROSS_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, TRANSCEIVER_SALT, t.PROXY_INIT_CODE_HASH());
         registry.setCurrentDeployer(address(this));
 
         uint256[3] memory chains = [ETH, BASE, ZK];
@@ -183,9 +183,9 @@ contract TransceiverTest is Test {
     }
 
     /// @dev As production deploys a transceiver, so the seeded deployment record predicts where
-    ///      it lands: a `CrossProxy` through `CrossProxyDeployer`, armed in the same call.
+    ///      it lands: a `Proxy` through `ProxyDeployer`, armed in the same call.
     function _deploySym(bytes memory init) internal returns (Sym) {
-        return Sym(payable(crossProxyDeployer().deploy(TRANSCEIVER_SALT, address(new Sym()), init)));
+        return Sym(payable(proxyDeployer().deploy(TRANSCEIVER_SALT, address(new Sym()), init)));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {
@@ -213,7 +213,7 @@ contract TransceiverTest is Test {
         vm.prank(alice);
         address conduit = t.createTransmitter(SALT);
 
-        assertEq(conduit, ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)));
+        assertEq(conduit, ext(address(t)).predictConduit(alice, SALT, _key(BASE)));
         assertEq(RecordingTransmitter(conduit).owner(), alice, "transmitter logic, owned by its caller");
     }
 
@@ -229,12 +229,12 @@ contract TransceiverTest is Test {
         vm.prank(governor);
         eth.bootstrap(_key(BASE), msig, bytes32(0), _calls(), new bytes[](0));
         bytes memory sent = eth.sentPayload();
-        bytes32 crossProxyInitCodeHash = eth.CROSS_PROXY_INIT_CODE_HASH();
+        bytes32 proxyInitCodeHash = eth.PROXY_INIT_CODE_HASH();
 
         vm.revertToState(world);
         vm.chainId(BASE);
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, crossProxyInitCodeHash);
+        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, proxyInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({
@@ -299,7 +299,7 @@ contract TransceiverTest is Test {
         assertEq(address(eth), address(base), "one address on both chains");
         eth.arrive(_route(BASE), abi.encodePacked(address(eth)), sent);
 
-        address receiver = ext(address(eth)).predictCrossConduit(alice, SALT, _key(BASE));
+        address receiver = ext(address(eth)).predictConduit(alice, SALT, _key(BASE));
         assertEq(receiver, transmitter, "the receiver sits on its transmitter's address");
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
@@ -366,7 +366,7 @@ contract TransceiverTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverCore.SourceTransmitterMismatch.selector,
-                ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
+                ext(address(t)).predictConduit(alice, SALT, _key(BASE)),
                 wrong
             )
         );
@@ -378,13 +378,13 @@ contract TransceiverTest is Test {
     ///      under the mapped one, so every conduit from there would be unreachable.
     function test_anOriginMappedToTheWrongChainRefusesItsFirstBootstrap() public {
         Sym t = _chain(ETH, false);
-        address realTransmitter = ext(address(t)).predictCrossConduit(alice, SALT, _key(10));
+        address realTransmitter = ext(address(t)).predictConduit(alice, SALT, _key(10));
         bytes memory m = Envelope.encodeBootstrap(alice, SALT, toBytes32(realTransmitter), _calls());
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 TransceiverCore.SourceTransmitterMismatch.selector,
-                ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE)),
+                ext(address(t)).predictConduit(alice, SALT, _key(BASE)),
                 realTransmitter
             )
         );
@@ -400,7 +400,7 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(ZK), abi.encodePacked(zkTransceiver), m);
 
-        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(ZK));
+        address receiver = ext(address(t)).predictConduit(alice, SALT, _key(ZK));
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), zkTransmitter);
     }
 
@@ -415,7 +415,7 @@ contract TransceiverTest is Test {
 
         t.arrive(_route(BASE), abi.encodePacked(address(t)), m);
 
-        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictConduit(alice, SALT, _key(BASE));
         assertEq(t.sentCount(), 1, "one report");
         assertEq(t.sentRecipient(), Erc7930.encodeEvm(BASE, address(t)), "to the home");
         assertEq(t.sentPayload(), ext(address(t)).reportPayload(alice, SALT, receiver));
@@ -447,7 +447,7 @@ contract TransceiverTest is Test {
         vm.prank(t.owner());
         ext(address(t)).setBootstrapFee(_key(BASE), fee);
 
-        address receiver = ext(address(t)).predictCrossConduit(alice, SALT, _key(BASE));
+        address receiver = ext(address(t)).predictConduit(alice, SALT, _key(BASE));
         bytes32 nestedSalt = keccak256("nested");
         address nested = ext(address(t)).predictTransmitter(receiver, nestedSalt);
         uint256 paid = 0.05 ether;

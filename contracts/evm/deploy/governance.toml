@@ -14,7 +14,7 @@ home = "ethereum"
 owner = "0x0000000000000000000000000000000000000000"
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
-# The account that broadcasts `CrossProxyDeployer.deploy` for every provider's transceiver on the
+# The account that broadcasts `ProxyDeployer.deploy` for every provider's transceiver on the
 # first generation of chains: the seed's deployer, recorded live for the home and as every
 # registry's initial `currentDeployer`. The seed records the home live under it with no review,
 # so deploy this account's transceivers on the home and check them (deploy/README.md, "Marking a
@@ -27,10 +27,10 @@ deployed_by = "0x0000000000000000000000000000000000000000"
 timelock_delay = 172800
 proposers = ["layerzero", "ccip"]
 
-# keccak256 of solc's `CrossProxy` initcode, which every registry records for every provider
+# keccak256 of solc's `Proxy` initcode, which every registry records for every provider
 # (R8.4). Taken from here, not from the deploying build; `test_theInitCodeHashIsPinned` holds
 # the build to the same value.
-cross_proxy_init_code_hash = "0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c"
+proxy_init_code_hash = "0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6"
 
 # Each provider's salt, which `deployed_by` deploys its transceiver under on every chain.
 # Write-once in every registry. `deployed_by` is the broadcasting account, not a conduit.

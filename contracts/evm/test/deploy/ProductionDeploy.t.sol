@@ -7,7 +7,7 @@ import {RegistrySeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {DeployProvider} from "script/DeployProvider.s.sol";
 import {DeployLz} from "script/DeployLz.s.sol";
 import {DeployCcip} from "script/DeployCcip.s.sol";

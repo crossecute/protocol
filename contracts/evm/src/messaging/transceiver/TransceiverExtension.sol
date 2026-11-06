@@ -56,7 +56,7 @@ contract TransceiverExtension is TransceiverCore {
         emit AddressesDivergeSet(addressesDiverge_);
         _treasury = c.treasury;
 
-        __Ownable_init(_predictCrossConduit(c.governorOwner, c.governorSalt, governorHome));
+        __Ownable_init(_predictConduit(c.governorOwner, c.governorSalt, governorHome));
 
         // Born accepting the governor's home as an origin: the owner is the governor's
         // conduit here, which only a bootstrap from that home can create.
@@ -206,8 +206,8 @@ contract TransceiverExtension is TransceiverCore {
     }
 
     /// @notice Where an owner's conduit lives on this chain, before it exists.
-    function predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
-        return _predictCrossConduit(owner, salt, homeChainKey);
+    function predictConduit(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
+        return _predictConduit(owner, salt, homeChainKey);
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.

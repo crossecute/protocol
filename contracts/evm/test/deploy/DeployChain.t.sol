@@ -3,14 +3,14 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {Proxy} from "src/conduit/Proxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, ProviderSeed, RegistrySeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig} from "script/deploy/ChainConfig.sol";
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
@@ -37,7 +37,7 @@ contract DeployChainTest is Test {
         g.deployer = read.deployer;
         g.timelockDelay = read.timelockDelay;
         g.proposers = read.proposers;
-        g.crossProxyInitCodeHash = read.crossProxyInitCodeHash;
+        g.proxyInitCodeHash = read.proxyInitCodeHash;
         for (uint256 i; i < read.providers.length; ++i) {
             g.providers.push(read.providers[i]);
         }
@@ -179,7 +179,7 @@ contract DeployChainTest is Test {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         Governance memory p =
             GovernanceConfig.read(GovernanceConfig.defaultFile(), ChainConfig.chains(ChainConfig.defaultDir()));
-        assertEq(p.crossProxyInitCodeHash, keccak256(type(CrossProxy).creationCode));
+        assertEq(p.proxyInitCodeHash, keccak256(type(Proxy).creationCode));
     }
 }
 

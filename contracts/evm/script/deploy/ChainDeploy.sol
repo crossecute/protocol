@@ -10,8 +10,8 @@ import {Treasury} from "src/treasury/Treasury.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
-import {VM, ARACHNID, DeployCheck, check, arachnidDeploy} from "script/deploy/CrossProxyDeploy.sol";
+import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
+import {VM, ARACHNID, DeployCheck, check, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 
 /// @notice `deploy/governance.toml`.
@@ -19,13 +19,13 @@ struct Governance {
     ChainEntry home;
     address owner;
     bytes32 salt;
-    /// The account that calls `CrossProxyDeployer.deploy` for every provider's transceiver on
+    /// The account that calls `ProxyDeployer.deploy` for every provider's transceiver on
     /// the chains of the first generation: the seed's `deployer`.
     address deployer;
     uint256 timelockDelay;
     /// The providers whose governor conduits propose and cancel on every timelock.
     string[2] proposers;
-    bytes32 crossProxyInitCodeHash;
+    bytes32 proxyInitCodeHash;
     /// In the file's key order, which every chain reads identically.
     ProviderSeed[] providers;
 }
@@ -56,8 +56,8 @@ library GovernanceConfig {
         g.deployer = VM.parseTomlAddress(toml, ".deployed_by");
         g.timelockDelay = VM.parseTomlUint(toml, ".timelock_delay");
         check(g.timelockDelay != 0, "the timelock has a delay");
-        g.crossProxyInitCodeHash = VM.parseTomlBytes32(toml, ".cross_proxy_init_code_hash");
-        check(g.crossProxyInitCodeHash != bytes32(0), "cross_proxy_init_code_hash is set");
+        g.proxyInitCodeHash = VM.parseTomlBytes32(toml, ".proxy_init_code_hash");
+        check(g.proxyInitCodeHash != bytes32(0), "proxy_init_code_hash is set");
 
         string[] memory names = VM.parseTomlKeys(toml, ".providers");
         g.providers = new ProviderSeed[](names.length);
@@ -66,7 +66,7 @@ library GovernanceConfig {
             g.providers[i] = ProviderSeed({
                 name: names[i],
                 salt: VM.parseTomlBytes32(toml, string.concat(key, ".salt")),
-                crossProxyInitCodeHash: g.crossProxyInitCodeHash
+                proxyInitCodeHash: g.proxyInitCodeHash
             });
         }
 
@@ -111,14 +111,14 @@ library ChainDeploy {
 
     /// @notice Where the governor's conduit under `provider` sits on a parity chain: the
     ///         transceiver from its record, then the conduit from the transceiver, as
-    ///         `ChainRegistry.predictCrossConduit` derives them.
+    ///         `ChainRegistry.predictConduit` derives them.
     /// @dev On the home this is the governor's transmitter, elsewhere the receiver its bootstrap
     ///      creates, which is each of that provider's transceivers' owner.
     function governorConduit(Governance memory g, string memory provider) internal pure returns (address) {
         return AddressDerive.create2(
             transceiver(g, provider),
             keccak256(abi.encode(g.owner, g.salt, ChainKey.forEvm(g.home.chainId))),
-            g.crossProxyInitCodeHash
+            g.proxyInitCodeHash
         );
     }
 
@@ -126,7 +126,7 @@ library ChainDeploy {
     ///         generation: those deployed by `g.deployer`.
     function transceiver(Governance memory g, string memory provider) internal pure returns (address) {
         ProviderSeed memory p = GovernanceConfig.providerSeed(g, provider);
-        return AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(g.deployer, p.salt), g.crossProxyInitCodeHash);
+        return AddressDerive.create2(PROXY_DEPLOYER, proxySalt(g.deployer, p.salt), g.proxyInitCodeHash);
     }
 
     function proposers(Governance memory g) internal pure returns (address[] memory ps) {
@@ -205,7 +205,7 @@ library ChainDeploy {
             bytes32 provider = keccak256(bytes(g.providers[i].name));
             ProviderDeployment memory r = c.registry.providerDeployment(provider);
             check(
-                r.salt == g.providers[i].salt && r.crossProxyInitCodeHash == g.crossProxyInitCodeHash,
+                r.salt == g.providers[i].salt && r.proxyInitCodeHash == g.proxyInitCodeHash,
                 "the registry records each provider as governance.toml does"
             );
             check(

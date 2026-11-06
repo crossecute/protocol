@@ -7,8 +7,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {ICrossProxy} from "src/conduit/CrossProxy.sol";
-import {deployTransceiver, crossProxyDeployer} from "test/DeployCrossProxy.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
+import {deployTransceiver, proxyDeployer} from "test/DeployProxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -30,7 +30,7 @@ import {
     ext
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
-import {CrossConduits} from "src/conduit/CrossConduits.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
 
 /// @dev Minimal concrete receiver: records what `_execute` was handed.
 contract MockReceiver is AnyGatewayReceiver {
@@ -125,7 +125,7 @@ contract MockTransceiver is SharedAddressTransceiver {
     ///      `_bootstrapInbound` directly. The carried transmitter sits at the receiver's own
     ///      address, as it does for a conduit homed on a parity chain.
     function inbound(address transmitter, Call[] calldata calls) external {
-        _bootstrapInbound(transmitter, bytes32(0), home(), _predictCrossConduit(transmitter, bytes32(0), home()), calls);
+        _bootstrapInbound(transmitter, bytes32(0), home(), _predictConduit(transmitter, bytes32(0), home()), calls);
     }
 }
 
@@ -213,7 +213,7 @@ contract CommitFinalizeTest is Test {
     /// @dev Stand the receiver up if it does not exist. Bootstrap is once per transmitter
     ///      and refuses a second, so this is what repeat arrivals go through.
     function _bootstrapped(MockTransceiver t_, address tx_) internal returns (MockReceiver r) {
-        address predicted = ext(address(t_)).predictCrossConduit(tx_, bytes32(0), home());
+        address predicted = ext(address(t_)).predictConduit(tx_, bytes32(0), home());
         if (predicted.code.length == 0) t_.inbound(tx_, new Call[](0));
         r = MockReceiver(payable(predicted));
     }
@@ -376,7 +376,7 @@ contract CommitFinalizeTest is Test {
     /// @dev There is no public creation path for a receiver. One exists because a bootstrap
     ///      message arrived, and nothing else. An open one would let anyone deploy an owner's
     ///      conduit empty, one transaction ahead of their bootstrap, and permanently deny it:
-    ///      `CrossProxy` arms exactly once. `createTransmitter` creates only the caller's own
+    ///      `Proxy` arms exactly once. `createTransmitter` creates only the caller's own
     ///      conduit homed here.
     function test_thereIsNoPublicReceiverCreationPath() public {
         (bool a,) = address(t).call(abi.encodeWithSignature("createReceiver(address)", transmitter));
@@ -386,14 +386,12 @@ contract CommitFinalizeTest is Test {
     /// @dev A conduit is created once. A second bootstrap for the same owner reverts
     ///      rather than redeploying or silently doing nothing.
     function test_anOwnerGetsExactlyOneConduit() public {
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, keccak256("p")));
 
         assertTrue(MockReceiver(payable(predicted)).isCommitted(keccak256("p")), "the bootstrap payload landed");
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), predicted)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, transmitter, bytes32(0), predicted));
         t.inbound(transmitter, _deferred(predicted, keccak256("second")));
     }
 
@@ -411,9 +409,7 @@ contract CommitFinalizeTest is Test {
             );
         assertFalse(ok, "no bootstrapInbound on the ABI");
         assertEq(
-            ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home()).code.length,
-            0,
-            "and nothing was created"
+            ext(address(t)).predictConduit(transmitter, bytes32(0), home()).code.length, 0, "and nothing was created"
         );
     }
 
@@ -424,9 +420,7 @@ contract CommitFinalizeTest is Test {
         Call[] memory calls = _calls();
         MockReceiver r = _arrive(transmitter, calls);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), address(r))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, transmitter, bytes32(0), address(r)));
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
     }
 
@@ -436,7 +430,7 @@ contract CommitFinalizeTest is Test {
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
         assertEq(predicted.code.length, 0, "not deployed before the first commitment");
 
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
@@ -453,7 +447,7 @@ contract CommitFinalizeTest is Test {
     ///      so the address does not move between payloads: it is knowable before the first
     ///      message is ever sent.
     function test_receiverAddressIsStableAcrossPayloads() public {
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
 
         Call[] memory first = _calls();
         MockReceiver a = _arrive(transmitter, first);
@@ -470,8 +464,8 @@ contract CommitFinalizeTest is Test {
     /// @dev One receiver per transmitter: different transmitters must not share one.
     function test_saltSeparatesTransmitters() public view {
         assertTrue(
-            ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())
-                != ext(address(t)).predictCrossConduit(address(0xBEEF), bytes32(0), home()),
+            ext(address(t)).predictConduit(transmitter, bytes32(0), home())
+                != ext(address(t)).predictConduit(address(0xBEEF), bytes32(0), home()),
             "transmitter must vary the address"
         );
     }
@@ -528,7 +522,7 @@ contract CommitFinalizeTest is Test {
         MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
         vm.prank(address(_r_transmitter));
         _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())));
+        MockReceiver r = MockReceiver(payable(ext(address(t)).predictConduit(transmitter, bytes32(0), home())));
 
         assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -550,7 +544,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
-        address addr = ext(address(rt)).predictCrossConduit(transmitter, bytes32(0), home());
+        address addr = ext(address(rt)).predictConduit(transmitter, bytes32(0), home());
         sw.set(addr, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -581,7 +575,7 @@ contract CommitFinalizeTest is Test {
     ///      the receiver is created in the same call and an indexer should not have to
     ///      recompute a CREATE2 address to follow the payload.
     function test_bootstrapEventNamesTheReceiver() public {
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
 
         vm.recordLogs();
         t.inbound(transmitter, _deferred(predicted, hashOf(_calls())));
@@ -589,7 +583,7 @@ contract CommitFinalizeTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] != TransceiverCore.CrossConduitCreated.selector) continue;
+            if (logs[i].topics[0] != TransceiverCore.ConduitCreated.selector) continue;
             found = true;
             assertEq(address(uint160(uint256(logs[i].topics[1]))), transmitter);
             assertEq(address(uint160(uint256(logs[i].topics[2]))), predicted);
@@ -601,16 +595,14 @@ contract CommitFinalizeTest is Test {
     ///      confuse it with: a later one reverts rather than redeploying.
     function test_receiverDeployedFiresOnceAndCannotRecur() public {
         Call[] memory first = _calls();
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
 
         vm.expectEmit(true, true, false, true, address(t));
-        emit TransceiverCore.CrossConduitCreated(transmitter, predicted, bytes32(0), home());
+        emit TransceiverCore.ConduitCreated(transmitter, predicted, bytes32(0), home());
         t.inbound(transmitter, _deferred(predicted, hashOf(first)));
         MockReceiver(payable(predicted)).finalize(first);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CrossConduits.CrossConduitExists.selector, transmitter, bytes32(0), predicted)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, transmitter, bytes32(0), predicted));
         t.inbound(transmitter, _deferred(predicted, hashOf(_otherCalls())));
     }
 
@@ -656,24 +648,28 @@ contract CommitFinalizeTest is Test {
         assertEq(ext(address(t)).receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev `CrossProxyDeployer` installs the transceiver and locks it in one call, and from
-    ///      then on nothing can replace it: the proxy has no admin and the transceiver has no
-    ///      upgrade function, so no authority holds a key to forge messages with.
+    /// @dev `ProxyDeployer` installs the transceiver and locks it in one call, and from
+    ///      then on nothing can replace it: the proxy accepts no further arming and the
+    ///      transceiver has no upgrade function, so no authority holds a key to forge messages
+    ///      with.
     function test_theDeployerInstallsTheTransceiverAndNothingReplacesIt() public {
+        address implementation = address(new MockTransceiver());
         address proxy = deployTransceiver(
-            address(new MockTransceiver()), abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
+            implementation, abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
         );
         MockTransceiver t_ = MockTransceiver(payable(proxy));
         assertEq(ext(address(t_)).receiverImplementation(), address(receiverImpl), "installed and initialized");
-        assertEq(vm.load(proxy, ERC1967Utils.ADMIN_SLOT), bytes32(0), "and locked");
+        assertEq(
+            vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(implementation))), "and locked"
+        );
 
         address blockedImpl = address(new MockTransceiver());
         address owner = t_.owner();
         vm.prank(owner);
         (bool upgraded,) = proxy.call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", blockedImpl, ""));
         assertFalse(upgraded, "not even the owner can upgrade");
-        vm.prank(address(crossProxyDeployer()));
-        (upgraded,) = proxy.call(abi.encodeCall(ICrossProxy.upgradeInitializeAndLock, (blockedImpl, "")));
+        vm.prank(address(proxyDeployer()));
+        (upgraded,) = proxy.call(abi.encodeCall(IProxy.upgradeInitializeAndLock, (blockedImpl, "")));
         assertFalse(upgraded, "nor its deployer");
     }
 
@@ -781,8 +777,7 @@ contract CommitFinalizeTest is Test {
     ///      wrong. The transceiver holds no approvals at all.
     function test_aConduitsApprovalsLiveInTheConduit() public {
         t.inbound(
-            transmitter,
-            _deferred(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home()), hashOf(_calls()))
+            transmitter, _deferred(ext(address(t)).predictConduit(transmitter, bytes32(0), home()), hashOf(_calls()))
         );
 
         (bool a,) = address(t).staticcall(abi.encodeWithSignature("pendingOf(address)", transmitter));
@@ -791,7 +786,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(b, "and no approval map of its own");
 
         assertTrue(
-            MockReceiver(payable(ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home())))
+            MockReceiver(payable(ext(address(t)).predictConduit(transmitter, bytes32(0), home())))
                 .isCommitted(hashOf(_calls())),
             "the approval lives with the sender it belongs to"
         );
@@ -818,7 +813,7 @@ contract CommitFinalizeTest is Test {
 
         Call[] memory stuck = _calls();
         Call[] memory fine = _otherCalls();
-        address poisoned = ext(address(rt)).predictCrossConduit(transmitter, bytes32(0), home());
+        address poisoned = ext(address(rt)).predictConduit(transmitter, bytes32(0), home());
         sw.set(poisoned, true);
 
         MockReceiver _r_transmitter = _bootstrapped(rt, transmitter);
@@ -833,7 +828,7 @@ contract CommitFinalizeTest is Test {
 
         // The other sender is entirely unaffected, now and repeatedly.
         RevertingReceiver r2 =
-            RevertingReceiver(payable(ext(address(rt)).predictCrossConduit(transmitter2, bytes32(0), home())));
+            RevertingReceiver(payable(ext(address(rt)).predictConduit(transmitter2, bytes32(0), home())));
         r2.finalize(fine);
         assertEq(r2.executedCount(), 1);
 
@@ -912,7 +907,7 @@ contract CommitFinalizeTest is Test {
     ///      receiver and runs a payload that approves a hash on the receiver itself, and
     ///      anyone finalizes it there later.
     function test_aDeferredFirstPayloadIsCommittedOnTheReceiver() public {
-        address predicted = ext(address(t)).predictCrossConduit(transmitter, bytes32(0), home());
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
         Call[] memory later = _calls();
 
         t.inbound(transmitter, _deferred(predicted, hashOf(later)));

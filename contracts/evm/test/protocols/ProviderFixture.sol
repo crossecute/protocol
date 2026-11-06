@@ -11,7 +11,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {transceiverConfig} from "test/Harness.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {Proxy} from "src/conduit/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 function defaultReceiverInit(address sourceTransmitter, uint256 homeProviderId, Call[] memory calls)
@@ -130,7 +130,7 @@ abstract contract ProviderFixture is ProviderConduitFixture {
     {
         ProviderSeed[] memory providers = new ProviderSeed[](1);
         providers[0] =
-            ProviderSeed(name, bytes32(uint256(uint160(implementation))), keccak256(type(CrossProxy).creationCode));
+            ProviderSeed(name, bytes32(uint256(uint160(implementation))), keccak256(type(Proxy).creationCode));
         return RegistrySeed({
             governorHome: governorHome, governorHomeGrade: grade, deployer: address(this), providers: providers
         });
@@ -142,7 +142,7 @@ abstract contract ProviderFixture is ProviderConduitFixture {
         address implementation = address(uint160(uint256(vm.load(t, ERC1967Utils.IMPLEMENTATION_SLOT))));
         if (registry.providerDeployment(provider).salt == bytes32(0)) {
             registry.setProviderDeployment(
-                provider, bytes32(uint256(uint160(implementation))), keccak256(type(CrossProxy).creationCode)
+                provider, bytes32(uint256(uint160(implementation))), keccak256(type(Proxy).creationCode)
             );
         }
         if (registry.currentDeployer() == address(0)) registry.setCurrentDeployer(address(this));

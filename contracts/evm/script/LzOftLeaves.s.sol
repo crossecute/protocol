@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
-import {check, DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {check, DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";

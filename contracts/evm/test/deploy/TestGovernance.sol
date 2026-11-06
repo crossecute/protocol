@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {VmSafe} from "forge-std/Vm.sol";
-import {VM} from "script/deploy/CrossProxyDeploy.sol";
+import {VM} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig} from "script/deploy/ChainConfig.sol";
 import {Governance, GovernanceConfig} from "script/deploy/ChainDeploy.sol";
 
@@ -16,7 +16,7 @@ function testGovernance() view returns (Governance memory) {
     return GovernanceConfig.read(testGovernanceFile(), ChainConfig.chains(ChainConfig.defaultDir()));
 }
 
-/// @notice `forge coverage` builds unoptimized, so `CrossProxy`'s initcode hash is not the one
+/// @notice `forge coverage` builds unoptimized, so `Proxy`'s initcode hash is not the one
 ///         the governance file records, and a deployment from that file fails R8.4 there.
 function skipUnderCoverage() {
     if (VM.isContext(VmSafe.ForgeContext.Coverage)) VM.skip(true);

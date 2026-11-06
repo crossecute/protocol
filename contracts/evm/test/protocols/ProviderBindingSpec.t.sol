@@ -12,7 +12,7 @@ import {
 } from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {deployConduit} from "test/DeployCrossProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -717,7 +717,7 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         emit InboundHandled(chainKey);
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
-        address receiver = ext(address(t)).predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        address receiver = ext(address(t)).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
         _assertReceiverConfigured(receiver, ORIGIN_TRANSMITTER);
     }
@@ -727,8 +727,8 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
     ///      creates it. 200,000 is under every measured bootstrap (deploy/CHECKS.md §4).
     function test_aBootstrapCutShortByGasSucceedsOnRetryWithMore() public {
         bytes32 chainKey = _wire();
-        address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        address receiver =
+            ext(address(TransceiverBase(payable(transceiver)))).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
 
         assertFalse(
             _deliverWith(200_000, transceiver, ORIGIN_TRANSCEIVER, _bootstrap()), "the delivery runs out of gas"
@@ -747,8 +747,8 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
     function test_aCreatedReceiverAcceptsItsTransmitterOnlyFromItsHome() public {
         bytes32 chainKey = _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
-        address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        address receiver =
+            ext(address(TransceiverBase(payable(transceiver)))).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         bytes memory payload = Payload.encodeCalls(new Call[](0));
 
         vm.expectRevert();
@@ -863,7 +863,7 @@ abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture, DeliveryGas
     function test_aPayloadWithNoCallsFitsTheDefault() public {
         bytes32 chainKey = _wire();
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
-        address receiver = ext(transceiver).predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        address receiver = ext(transceiver).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         bytes memory payload = Payload.encodeCalls(new Call[](0));
         _assertFits("payload, no calls", _measure(receiver, ORIGIN_TRANSMITTER, payload), DeliveryGas.PAYLOAD);
     }
