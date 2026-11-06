@@ -55,73 +55,81 @@ contract Proxy {
     fallback() external payable {
         address current;
         assembly {
-            current := sload(IMPLEMENTATION_SLOT)
+            current := sload(IMPLEMENTATION_SLOT) // implementation; zero while the proxy is blank
         }
 
-        // Armed, or not the deployer: an ordinary call. `ADMIN` is read only while blank.
+        // Armed, or not the deployer: an ordinary call. A blank proxy delegates to no code and
+        // succeeds. `ADMIN` is read only while blank.
         if (current != address(0) || msg.sender != ADMIN) {
             assembly {
-                calldatacopy(0, 0, calldatasize())
-                let ok := delegatecall(gas(), current, 0, calldatasize(), 0, 0)
-                returndatacopy(0, 0, returndatasize())
-                if iszero(ok) { revert(0, returndatasize()) }
-                return(0, returndatasize())
+                calldatacopy(0, 0, calldatasize()) // copy the whole call to memory at 0
+                let ok := delegatecall(gas(), current, 0, calldatasize(), 0, 0) // run it as this proxy
+                returndatacopy(0, 0, returndatasize()) // copy its output, or its revert data, to memory at 0
+                if iszero(ok) { revert(0, returndatasize()) } // pass a revert through unchanged
+                return(0, returndatasize()) // return its output
             }
         }
 
         assembly {
-            let size := calldatasize()
-            let sig := and(calldataload(0), shl(224, 0xffffffff))
+            let size := calldatasize() // total bytes of calldata
+            let sig := and(calldataload(0), shl(224, 0xffffffff)) // selector, left-aligned; zero-padded if short
             if iszero(eq(sig, shl(224, ARM))) {
-                mstore(0, shl(224, UNKNOWN_ADMIN_CALL))
-                mstore(4, sig)
-                revert(0, 36)
+                // anything but the arming selector is refused
+                mstore(0, shl(224, UNKNOWN_ADMIN_CALL)) // error selector, left-aligned at 0
+                mstore(4, sig) // its argument, the selector received, at 4
+                revert(0, 36) // 4 bytes of selector and one word of argument
             }
 
             // abi.decode(msg.data[4:], (address, bytes)), refusing what it refuses. A length over
             // 2^64 reverts with no data here and with Panic(0x41) there.
-            if lt(size, 68) { revert(0, 0) }
-            let implementation := calldataload(4)
-            if shr(160, implementation) { revert(0, 0) }
-            let offset := calldataload(36)
-            if gt(offset, 0xffffffffffffffff) { revert(0, 0) }
-            let start := add(offset, 4)
-            let length := calldataload(start)
-            if gt(length, 0xffffffffffffffff) { revert(0, 0) }
-            let data := add(start, 32)
-            if gt(add(data, length), size) { revert(0, 0) }
+            if lt(size, 68) { revert(0, 0) } // needs the selector and both head words: 4 + 64
+            let implementation := calldataload(4) // first argument
+            if shr(160, implementation) { revert(0, 0) } // an address with high bits set is malformed
+            let offset := calldataload(36) // second argument: where the bytes sit, counted after the selector
+            if gt(offset, 0xffffffffffffffff) { revert(0, 0) } // keeps the additions below from wrapping
+            let start := add(offset, 4) // position of the length word in calldata
+            let length := calldataload(start) // number of initializer bytes; zero if read past the end
+            if gt(length, 0xffffffffffffffff) { revert(0, 0) } // keeps `data + length` from wrapping
+            let data := add(start, 32) // where the initializer bytes begin
+            if gt(add(data, length), size) { revert(0, 0) } // must end in the calldata; refuses a far start
 
             if iszero(extcodesize(implementation)) {
-                mstore(0, shl(224, INVALID_IMPLEMENTATION))
-                mstore(4, implementation)
-                revert(0, 36)
+                // an implementation with no code, or the zero address, is refused
+                mstore(0, shl(224, INVALID_IMPLEMENTATION)) // error selector, left-aligned at 0
+                mstore(4, implementation) // its argument at 4
+                revert(0, 36) // 4 bytes of selector and one word of argument
             }
-            sstore(IMPLEMENTATION_SLOT, implementation)
-            log2(0, 0, UPGRADED, implementation)
+            sstore(IMPLEMENTATION_SLOT, implementation) // install it; the slot is now non-zero, which closes arming
+            log2(0, 0, UPGRADED, implementation) // Upgraded(address indexed implementation), as ERC-1967
 
-            switch length
+            switch length // with or without an initializer
             case 0 {
+                // no initializer
                 if callvalue() {
-                    mstore(0, shl(224, NON_PAYABLE))
-                    revert(0, 4)
+                    // ether would have nowhere to go: refused, as ERC1967Utils does
+                    mstore(0, shl(224, NON_PAYABLE)) // error selector, left-aligned at 0
+                    revert(0, 4) // selector only
                 }
             }
             default {
-                let ptr := mload(0x40)
-                calldatacopy(ptr, data, length)
+                // run the initializer
+                let ptr := mload(0x40) // free memory, so the copy touches nothing in use
+                calldatacopy(ptr, data, length) // copy the initializer bytes
                 if iszero(delegatecall(gas(), implementation, ptr, length, 0, 0)) {
+                    // run it as this proxy; a failure reverts the whole arming
                     if iszero(returndatasize()) {
-                        mstore(0, shl(224, FAILED_CALL))
-                        revert(0, 4)
+                        // it reverted with no data
+                        mstore(0, shl(224, FAILED_CALL)) // so report FailedCall instead of reverting silently
+                        revert(0, 4) // selector only
                     }
-                    returndatacopy(ptr, 0, returndatasize())
-                    revert(ptr, returndatasize())
+                    returndatacopy(ptr, 0, returndatasize()) // copy its revert data
+                    revert(ptr, returndatasize()) // pass it through unchanged
                 }
             }
 
-            mstore(0, implementation)
-            log1(0, 32, LOCKED)
-            return(0, 0)
+            mstore(0, implementation) // the one data word of Locked
+            log1(0, 32, LOCKED) // Locked(address implementation)
+            return(0, 0) // the arming call returns nothing
         }
     }
 }
