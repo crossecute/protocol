@@ -17,6 +17,12 @@ discovery, selector-only staging with target-bound retrieval, extending SafePoli
 for production, and a shared guard with per-Safe state. Other recommendations remain
 proposals unless explicitly marked agreed.
 
+Required production security: a bridge cannot forge execution or authority updates,
+including genesis. Nested Safe ownership is required in the first signature-enabled
+release. [Issue #109](https://github.com/crossecute/protocol/issues/109) designs the
+nested-Safe update guard and receiver authority protocol. Source-side staging alone
+does not establish this guarantee; conduit address derivation is still undecided.
+
 Assumption: PR #112 remains the design and execution-plan review, followed by
 focused implementation PRs on the same issue. Renaming the PR does not rename its
 branch. No production deployment, policy implementation, bridge send, destination
@@ -89,6 +95,8 @@ Depends on: review of the existing draft and issue scope.
 - [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
   subset. Raw-byte transport must be labeled as such, with no portability claim.
   Distinguish valid signed Safe inputs from hook-only byte-storage unit inputs.
+  Preserve complete nested Safe signature data; do not turn this choice into an
+  EOA-only production scope or truncate at threshold times 65 bytes.
 - [ ] Choose numerical staged-byte and total-input caps, zero-length behavior,
   supported read API, read behavior in each phase, and gas acceptance budgets.
   Record the supported owner count/signing modes for the real fixture.
@@ -147,6 +155,8 @@ Depends on: T02.
   interface suite; actual staging/consumption remains unimplemented.
   Extend this fixture with a second real Safe installing the same shared guard;
   do not treat two isolated observer instances as shared-guard acceptance evidence.
+  Add a real nested Safe owner with its signature-validation handler and valid
+  nested signatures; demonstrate byte/offset preservation through staging.
 - [ ] Use one shared signing/execution fixture for lifecycle suites. Compare the
   guard's captured nonce/digest with independently prepared signed transactions.
 - [ ] Capture a reproducible baseline manifest of protocol creation/runtime
@@ -292,7 +302,9 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
 - [ ] Resolve Q5/Q6/Q11: accepted signing modes, threshold/signer ordering,
   total-input/owner caps, recognized extension bounds and exclusion, unknown or
   duplicate tails, extra signatures, dynamic contract-signature offsets and
-  approved-hash rejection. Keep ordinary policy transactions' agreed behavior.
+  approved-hash treatment. Nested Safe support is required initially, including
+  complete dynamic signatures and recursive thresholds/domains. Decide other
+  contract-owner support separately. Keep ordinary policy behavior.
 - [ ] Specify how policy validates executor context separately from owner bytes.
   Define differential test cases for policy fallback selection, configuration,
   refunds, failure atomicity and unchanged owner authorization. Put shared
@@ -317,8 +329,14 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
 - [ ] Resolve Q10's availability policy. Require verified chain evidence before
   production installation; record remaining support-list work explicitly.
 - [ ] State destination verifier prerequisites: domain, replay key, authoritative
-  owner set, threshold/rotation timing and signing-mode semantics. Link follow-up
-  work before any bridge integration; source staging is not that verification.
+  owner graph, threshold/rotation timing and signing-mode semantics. Coordinate
+  with #109's nested-Safe update guard: capture prior signed authority, derive the
+  update from the authorized successful change, and specify receiver verification
+  independent of the bridge. Cover nested-only changes, module bypasses, batches,
+  genesis authentication, shared descendants and update publication/retries.
+  Compare current-policy-derived addresses, genesis-committed stable addresses and
+  separately anchored genesis under source-Safe-derived addresses before deciding.
+  Source staging or source-execution attestations do not replace this requirement.
 
 Done when: reviewers agree the production design, each Q has an answer or an
 explicitly accepted deferral with scope/owner, and E04/E12-E18/E22 plus production

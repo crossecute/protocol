@@ -3,6 +3,13 @@
 Status: interface compatibility foundation for [issue #107](https://github.com/crossecute/protocol/issues/107).
 The staging MVP and production policy integration are not implemented.
 
+Production must prevent a compromised bridge from forging execution or authority
+updates and must support nested Safe owners from the first signature-enabled
+release. Preserve full nested signature data. Authority synchronization and the
+nested-Safe update guard are being designed in
+[issue #109](https://github.com/crossecute/protocol/issues/109); the observer tests
+do not establish destination verification or authenticated signer updates.
+
 Agreed deployment model: share one guard across multiple Safes, following
 `SafePolicyGuard`. Policy configuration and pending changes remain per Safe;
 transient lifecycle and signature records must also be keyed by Safe. Each Safe

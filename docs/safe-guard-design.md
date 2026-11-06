@@ -28,6 +28,21 @@ Production portability needs a separate verifier agreement on signature kinds, S
 owner-set authority, threshold, nonce, and replay protection. Staging alone proves none of
 those destination-side properties.
 
+Explicit production requirement: neither an executable message nor an authority update
+may be forged by a bridge or relayer. This includes the initial trusted authority, not
+only rotations after bootstrap. Destination acceptance must independently authenticate
+the applicable authority and exact signed content; a bridge's claim of source execution
+does not provide this guarantee.
+
+Nested Safe ownership is required in the first signature-enabled release. Do not narrow
+that release to EOA-only owners. Preserve nested thresholds, signing domains and dynamic
+signature data. A change inside a nested Safe need not invoke the parent's guard.
+[Issue #109](https://github.com/crossecute/protocol/issues/109) therefore also designs a
+nested-Safe transaction guard whose hooks construct authenticated receiver authority-update
+messages. Its publication path and independent receiver verification remain to be designed;
+an emitted event alone does not authorize a rotation. The standalone MVP remains limited
+to source-side transport and does not claim this production guarantee.
+
 A conduit is a transmitter on its source chain and a receiver on a destination chain.
 Here, the transmitter retrieves staged signatures from the guard before dispatch.
 The standalone MVP uses a minimal test transmitter with no bridge sends.
@@ -265,11 +280,14 @@ Keep raw hook signatures, decoded policy context, and staged owner signatures as
 values. Executor-supplied context is not owner authorization simply because it was appended
 to signatures that Safe accepted. Run the policy's own validation on that context.
 
-Recommendation for initial portability: only the threshold-required, sorted ECDSA owner
-signatures, with explicitly selected signing modes. Do not treat `threshold * 65` as a
-universal parser: contract signatures use dynamic offsets and data, and approved-hash
-signatures depend on source state or executor identity. Reject unsupported signature modes
-on matching dispatches; ordinary transactions still retain the policy's existing behavior.
+Required initial portability scope: EOA signatures and nested Safe owners. Preserve the
+contract-signature headers, dynamic lengths, payloads and offset semantics needed by nested
+Safe verification. Do not truncate at `threshold * 65` or flatten recursive owner thresholds.
+Exact signing modes, nested Safe versions/handlers, resource bounds, approved-hash treatment
+and handling of other contract owners remain Q5/Q6 decisions. An approved hash or arbitrary
+contract signature is not portable merely because the source accepted it. Reject genuinely
+unsupported formats on matching dispatches without treating required nested Safe support
+as a later feature; ordinary transactions retain the policy's agreed behavior.
 
 For the recognized extension, validate envelope bounds, derive its start, and ensure the
 owner region does not overlap it. Never copy policy payload or trailer into the portable
@@ -282,6 +300,14 @@ A bound is required because staging and clearing are linear in blob length. For 
 the payload occupies `ceil(L / 32)` transient words plus one length word and fixed metadata;
 zero-pad the final word and return exactly L bytes. No protocol wire format changes in the
 MVP. Future bridge encoding and fee impact require separate design and measurements.
+
+Address derivation remains a design question in #109. Compare committing addresses to the
+current recursive signer policy, committing only the initial policy and rotating authority
+at a stable address, and retaining source Safe identity with separately authenticated
+genesis authority. The existing protocol derives conduit identity from the creating owner
+address, salt and home chain, not its current EOA signer list. No new address formula is
+selected here. Every option must protect genesis authority and subsequent updates from a
+malicious bridge, including owner changes inside nested Safes.
 
 ## Optional signature add-ons: production integration boundary
 
@@ -435,7 +461,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
 | E12 / Production / Open | Extension bounds overlap owner signatures, or unknown/extra tails are interpreted differently by Safe, policy and staging parsers | Define one accepted encoding and reject ambiguous dispatch inputs. Test malformed lengths, recognized/unknown types, multiple trailers, extra signatures and overlap; ordinary policy transactions must retain their agreed behavior | Q5, Q6, Q11; R9 |
-| E13 / Production / Open | Approved-hash or contract signatures are copied as though they were portable ECDSA authorization | Decide supported signing modes and verifier semantics. Test each supported mode and rejection of unsupported modes, dynamic offsets, duplicate signers and threshold boundaries using valid Safe fixtures | Q5, Q11; R9 |
+| E13 / Production / Open | Contract signature data is truncated or nested thresholds/domains are flattened; source-state-dependent approval is treated as portable authorization | Nested Safes are required initially: preserve their dynamic encoding and define recursive verification/authority state. Test real nested Safe fixtures, offset preservation, duplicate keys, thresholds and chosen signing modes; separately resolve approved hashes and other contract owners | Q5, Q6, Q11; R9 |
 | E14 / Production / Open | Executor-supplied policy context is mistaken for owner-signed content, allowing altered context to authorize a different effect | Keep context separate from owner bytes and require the selected policy to establish its own binding. Mutate extension payload while retaining owner signatures and verify the policy rejects unauthorized effects | Q2, Q5, Q6; R9 |
 | E15 / Production / Decided | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Agreed: extend refactored SafePolicyGuard, reuse inherited internal policy paths, preserve one hook ABI and Safe caller identity. Remaining: upstream refactor/fork pin, compiler/type integration and differential owner/module/configuration/failure tests; migration remains Q9. No production parity is verified | Q2, Q9; R9 |
 | E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged transmitter while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the transmitter. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
@@ -445,7 +471,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
-| E18 / Production / Open | A staged source signature is replayed on another destination, or verified against the wrong owner set after rotation | Define destination domain, replay key, owner-set authority and timing before bridge integration. Test duplicate delivery, different destinations and owner/threshold changes; source nonce and transient consumption alone are insufficient acceptance evidence | Q5; R9 |
+| E18 / Production / Open | A bridge forges execution/genesis/rotation authority, replays a signature, or exploits a stale nested owner set whose change never invoked the parent guard | Independent authentication of executions and authority updates is required, with nested Safe support initially. Issue #109 designs nested update guards, recursive policy commitments, genesis anchoring, epochs and ordering. Test forged messages/updates, nested-only rotations and stale/reordered delivery. Guard events or bridge assertions alone are insufficient; algorithms/evidence remain open | Q5, Q9; R9 |
 | E19 / Both / Open | A guard is installed on a source without the required opcodes and guarded transactions become unusable | Verify source support before installation and fail closed in tooling. Exercise an unsupported execution environment and the installation preflight; document availability behavior and recovery assumptions | Q10; R10 |
 | E20 / Both / Open | Cancun/compiler changes leak into Paris artifacts and alter deterministic addresses, or an upstream update changes hook/parser behavior | Interface and fixture submodules are pinned independently in the isolated Cancun project. No protocol source or compiler settings change. Remaining: reproducible before/after artifact manifest and upstream review for later pin changes | Q1, Q2, Q10; R10 |
 | E21 / Both / Open | Mock hooks or impossible signature fixtures pass tests while real Safe execution, rollback or transaction boundaries fail | The interface suite uses a real 1.3.0 proxy/singleton and ECDSA owner signatures for installation, execution and both failure modes. Remaining: actual transient transport, consumption rollback and transaction-end reset; the observer uses persistent storage only | Q1, Q11; R1, R7 |
@@ -467,7 +493,7 @@ This register is not an exhaustive security review.
 | Q2. Which policy base and exact revision should production preserve? | Agreed: extend SafePolicyGuard and reuse its PolicyEngine/configuration/enforcement; SafenetPolicy remains a separately selectable policy. Reviewed base is 8ee68a8. Refactored upstream/fork pin, exact required policies, compiler and hook-type reconciliation remain open | Inheritance choice resolved; dependency preparation and policy-parity evidence pending |
 | Q3. One guard per Safe or a shared guard? Who controls configuration? | Agreed: shared guard following SafePolicyGuard; policy configuration/pending changes and transient records are per Safe. Hooks key by msg.sender; each Safe controls its own configuration and installation. No new central registry or transmitter allowlist. Transmitter discovers its owner Safe's installed guard | Deployment/configuration model resolved; isolation implementation and tests pending |
 | Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering. Only the actual signed target may consume. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI remains open |
-| Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
+| Q5. Which signatures are portable, and who verifies them where? | Required: EOA and nested Safe support in the first signature-enabled release; a bridge cannot forge execution or authority updates. Issue #109 adds nested-Safe update-guard design. Exact encoding/modes, recursive verification, genesis anchoring and address derivation remain open | Nested support/security requirement fixed; parser and authority protocol pending |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |
 | Q7. Is rejecting all same-Safe nested guarded execution acceptable? | Yes for MVP; keep the live marker until post-hook | Reentrancy semantics |
 | Q8. Should a successful dispatch that never consumes revert in production? | Permit cleanup in MVP; require consumption for production dispatch | Post-hook success criteria |
