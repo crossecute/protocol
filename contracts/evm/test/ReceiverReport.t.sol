@@ -111,7 +111,7 @@ contract ReportingTransceiver is SharedAddressTransceiver {
     ///      authenticating the origin. The carried transmitter sits at the receiver's own
     ///      address, as it does on a parity home.
     function inbound(address owner, bytes32 salt, Call[] calldata calls) external {
-        _bootstrapInbound(owner, salt, home(), _predictCrossConduit(owner, salt, home()), calls);
+        _bootstrapInbound(owner, salt, home(), _predictConduit(owner, salt, home()), calls);
     }
 }
 
@@ -159,14 +159,14 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 0, "no message left");
-        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0, "but the conduit exists");
+        assertTrue(ext(address(s)).predictConduit(owner, SALT, home()).code.length != 0, "but the conduit exists");
     }
 
     /// @dev And it would be a downgrade, not merely waste. A derivation is `Predetermined`;
     ///      anything arriving over a bridge is graded `Unique`, which is strictly less.
     function test_theParityChainStillCreatesTheConduitAtThePredictedAddress() public {
         ReportingTransceiver s = _remote(false);
-        address predicted = ext(address(s)).predictCrossConduit(owner, SALT, home());
+        address predicted = ext(address(s)).predictConduit(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -179,7 +179,7 @@ contract ReceiverReportTest is WiresHome {
     ///      created, addressed home.
     function test_aDivergingChainReportsTheReceiver() public {
         ReportingTransceiver s = _remote(true);
-        address created = ext(address(s)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(s)).predictConduit(owner, SALT, home());
 
         s.inbound(owner, SALT, new Call[](0));
 
@@ -203,7 +203,7 @@ contract ReceiverReportTest is WiresHome {
         ReportingTransceiver s = _remote(true);
         s.setReportFee(0.01 ether);
         vm.deal(address(s), 1 ether);
-        address created = ext(address(s)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(s)).predictConduit(owner, SALT, home());
         gas = bound(gas, 30_000, 1_500_000);
 
         // forge-lint: disable-next-line(return-bomb) the harness returns nothing
@@ -231,7 +231,7 @@ contract ReceiverReportTest is WiresHome {
             keccak256(s.sentPayload()),
             keccak256(
                 Envelope.encodeReceiverReport(
-                    a, b, Erc7930.encodeEvm(block.chainid, ext(address(s)).predictCrossConduit(a, b, home()))
+                    a, b, Erc7930.encodeEvm(block.chainid, ext(address(s)).predictConduit(a, b, home()))
                 )
             )
         );
@@ -254,7 +254,7 @@ contract ReceiverReportTest is WiresHome {
     /// @dev A dry float takes the whole bootstrap down, and that is the correct shape.
     ///      The send is nested inside a delivery callback where `msg.value` is zero, so it
     ///      is paid from this contract's balance. Swallowing the failure would create a
-    ///      conduit here that the home chain could never address: `CrossProxy` arms
+    ///      conduit here that the home chain could never address: `LockedProxy` arms
     ///      exactly once and `initialize` is single-shot, so there is no second bootstrap
     ///      to carry a second report. All or nothing is the only recoverable outcome.
     function test_aFailedReportRevertsTheConduitCreation() public {
@@ -265,7 +265,7 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(
-            ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length,
+            ext(address(s)).predictConduit(owner, SALT, home()).code.length,
             0,
             "no conduit, so the bootstrap can be retried once funded"
         );
@@ -291,7 +291,7 @@ contract ReceiverReportTest is WiresHome {
             )
         );
         s.inbound(owner, SALT, new Call[](0));
-        assertEq(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length, 0, "no conduit");
+        assertEq(ext(address(s)).predictConduit(owner, SALT, home()).code.length, 0, "no conduit");
     }
 
     /// @notice The report is priced, not handed the balance.
@@ -319,7 +319,7 @@ contract ReceiverReportTest is WiresHome {
         ReportingTransceiver s = _remote(true);
         vm.deal(address(s), 1 ether);
 
-        address receiver = ext(address(s)).predictCrossConduit(owner, SALT, home());
+        address receiver = ext(address(s)).predictConduit(owner, SALT, home());
         bytes memory expected = ext(address(s)).reportPayload(owner, SALT, receiver);
 
         // Priced through the surface `OutboundBase` now exposes, before anything is sent.
@@ -347,7 +347,7 @@ contract ReceiverReportTest is WiresHome {
         s.inbound(owner, SALT, new Call[](0));
 
         assertEq(s.sentCount(), 1);
-        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictConduit(owner, SALT, home()).code.length != 0);
     }
 
     /// @dev A transceiver with no treasury could never release its float, so it is refused.
@@ -366,7 +366,7 @@ contract ReceiverReportTest is WiresHome {
 
         s.inbound(owner, SALT, new Call[](0));
 
-        assertTrue(ext(address(s)).predictCrossConduit(owner, SALT, home()).code.length != 0);
+        assertTrue(ext(address(s)).predictConduit(owner, SALT, home()).code.length != 0);
     }
 
     /* ================================ the flag ================================= */
@@ -533,7 +533,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         // The report lands, and only then does the destination become sendable, at the
         // address the remote actually created, not at the guess.
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(remote)).predictConduit(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         assertTrue(conduit.isReachable(remoteKey), "now it is");
@@ -598,7 +598,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      address the reporting side actually created. No `Envelope.encode*` in the assertion.
     function test_theReportingSidesBytesDecodeAtHome() public {
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(remote)).predictConduit(owner, SALT, home());
 
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
@@ -616,7 +616,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     ///      not before.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
-        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(remote)).predictConduit(owner, SALT, home());
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
         bytes memory recipient = Erc7930.encodeEvm(REMOTE_CHAIN, created);
@@ -643,7 +643,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         bytes memory produced = _report();
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
 
-        address created = ext(address(remote)).predictCrossConduit(owner, SALT, home());
+        address created = ext(address(remote)).predictConduit(owner, SALT, home());
         assertTrue(conduit.isReceiverPinned(remoteKey));
 
         (bool ok,) = address(conduit)

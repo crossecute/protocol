@@ -327,7 +327,7 @@ EVM, so Solidity does not run on it; Aurora is an EVM implemented as a NEAR cont
 presents as `eip155` chain 1313161554. The question that decides whether it needs anything
 of its own is whether its CREATE2 is EIP-1014, and it is. Arachnid's factory is deployed
 there at the usual address, and `eth_call`ing it executes on Aurora's own engine rather than
-on a local simulation, so it answers directly. Three salts over `CrossProxy`'s initcode
+on a local simulation, so it answers directly. Three salts over `LockedProxy`'s initcode
 returned exactly the addresses EIP-1014 predicts:
 
 ```
@@ -337,7 +337,7 @@ salt deadbeef…   0x70e2fc1339425ad82497b92828ac23248b804297
 ```
 
 So Aurora is plain `LzTransceiver` and nothing else: stock solc, so
-`CROSS_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR itself is a
+`LOCKED_PROXY_INIT_CODE_HASH` is right, and `addressesDiverge` false. NEAR itself is a
 different question and not this one: `ChainType.NEAR` is for a Rust receiver addressed by a
 named or implicit conduit, and unlike Move it is not blocked on dispatch, since
 `Promise::function_call` takes the method name as a runtime string.
@@ -840,7 +840,7 @@ abstract contract OAppUpgradeable is OAppSenderUpgradeable, OAppReceiverUpgradea
 
 **One constructor argument, and it does not matter.** It is on the *implementation*, and an
 implementation's address lives in the proxy's ERC-1967 storage slot rather than in its
-initcode, so `CrossProxy` stays argument-free and no derived address moves. The endpoint
+initcode, so `LockedProxy` stays argument-free and no derived address moves. The endpoint
 being an `immutable` is correct rather than merely tolerable: every conduit on a chain uses
 the same endpoint, which is exactly what an implementation-level immutable expresses.
 

@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {Test} from "forge-std/Test.sol";
-import {deployTransceiver} from "test/DeployCrossProxy.sol";
+import {deployTransceiver} from "test/DeployLockedProxy.sol";
 
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -58,7 +58,7 @@ contract DestinationNamingTest is Test {
         vm.startPrank(msig);
         provider = registry.addMessageProvider("layerzero");
         registry.setProviderDeployment(
-            provider, bytes32(uint256(uint160(implementation))), t.CROSS_PROXY_INIT_CODE_HASH()
+            provider, bytes32(uint256(uint160(implementation))), t.LOCKED_PROXY_INIT_CODE_HASH()
         );
         registry.setCurrentDeployer(address(this));
         ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Predetermined);

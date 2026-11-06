@@ -7,9 +7,9 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {CROSS_PROXY_DEPLOYER, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
+import {LOCKED_PROXY_DEPLOYER, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
-import {check, deployCrossProxy, arachnidDeploy} from "script/deploy/CrossProxyDeploy.sol";
+import {check, deployLockedProxy, arachnidDeploy} from "script/deploy/LockedProxyDeploy.sol";
 
 /// @notice The extension every provider's transceiver implementation on this chain names, deployed
 ///         on first use. It takes no constructor arguments, so it has one address on every parity
@@ -33,14 +33,14 @@ struct TransceiverDeployment {
     TransceiverConfig config;
 }
 
-/// @notice Deploy a provider's transceiver through `CrossProxyDeployer` and check what its
+/// @notice Deploy a provider's transceiver through `LockedProxyDeployer` and check what its
 ///         initializer must have established.
 /// @param providerGateway The provider contract the initializer grants `GATEWAY_ROLE`, or zero
 ///        for a binding that checks its endpoint itself (LayerZero).
 function deployTransceiverProxy(TransceiverDeployment memory d, bytes memory initData, address providerGateway)
     returns (address t)
 {
-    t = deployCrossProxy(d.deployedBy, d.salt, d.implementation, initData);
+    t = deployLockedProxy(d.deployedBy, d.salt, d.implementation, initData);
     checkTransceiver(t, d, providerGateway);
 }
 
@@ -51,7 +51,7 @@ function checkTransceiver(address t, TransceiverDeployment memory d, address pro
     bytes32 home = keccak256(c.governorHome);
 
     check(
-        tb.owner() == te.predictCrossConduit(c.governorOwner, c.governorSalt, home),
+        tb.owner() == te.predictConduit(c.governorOwner, c.governorSalt, home),
         "owner is the governor's conduit on its home"
     );
     check(te.treasury() == c.treasury, "treasury");
@@ -88,9 +88,9 @@ function _checkDeploymentRecord(TransceiverBase tb, TransceiverExtension te, Tra
         "deployedBy is the deployer recorded for this chain"
     );
     check(r.salt == d.salt, "salt is the recorded one");
-    check(r.crossProxyInitCodeHash == tb.CROSS_PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
+    check(r.lockedProxyInitCodeHash == tb.LOCKED_PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
     check(
-        AddressDerive.create2(CROSS_PROXY_DEPLOYER, crossProxySalt(d.deployedBy, r.salt), r.crossProxyInitCodeHash)
+        AddressDerive.create2(LOCKED_PROXY_DEPLOYER, lockedProxySalt(d.deployedBy, r.salt), r.lockedProxyInitCodeHash)
             == address(tb),
         "transceiver is where its record and deployer predict"
     );

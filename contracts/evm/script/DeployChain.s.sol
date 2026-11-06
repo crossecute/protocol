@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Script} from "forge-std/Script.sol";
-import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
-import {check} from "script/deploy/CrossProxyDeploy.sol";
+import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
+import {check} from "script/deploy/LockedProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 
@@ -22,8 +22,8 @@ contract DeployChain is Script {
         // A build with other settings would deploy transceivers off the record's address (R8.3);
         // refusing here keeps it from reaching step 2 on any chain.
         check(
-            CrossProxyInitCode.hash() == g.crossProxyInitCodeHash,
-            "this build's CrossProxy initcode hash is governance.toml's"
+            LockedProxyInitCode.hash() == g.lockedProxyInitCodeHash,
+            "this build's LockedProxy initcode hash is governance.toml's"
         );
 
         vm.startBroadcast();

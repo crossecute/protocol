@@ -8,7 +8,7 @@ pragma solidity ^0.8.20;
 ///
 /// @dev Ordered by strength. `Predetermined`: this chain can recompute the address from inputs in a
 ///      signed transaction, because that chain's transceivers were deployed through
-///      `CrossProxyDeployer`, which Arachnid's factory puts at one address, and this chain's
+///      `LockedProxyDeployer`, which Arachnid's factory puts at one address, and this chain's
 ///      transceiver knows where: from the registry's prediction, the provider's salt under the
 ///      deployer recorded for that chain. `Unique`: it cannot, so
 ///      the value came over a bridge and is worth that bridge's security. A chain without

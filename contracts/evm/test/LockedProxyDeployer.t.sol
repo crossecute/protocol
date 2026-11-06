@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/conduit/CrossProxyDeployer.sol";
-import {ARACHNID} from "script/deploy/CrossProxyDeploy.sol";
-import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
+import {LOCKED_PROXY_DEPLOYER, LockedProxyDeployer} from "src/conduit/LockedProxyDeployer.sol";
+import {ARACHNID} from "script/deploy/LockedProxyDeploy.sol";
+import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
 
 contract Logic {
     uint256 public value;
@@ -21,23 +21,23 @@ contract Logic {
     }
 }
 
-contract CrossProxyDeployerTest is Test {
-    CrossProxyDeployer deployer;
+contract LockedProxyDeployerTest is Test {
+    LockedProxyDeployer deployer;
     bytes32 constant SALT = keccak256("transceiver");
 
     function setUp() public {
-        deployer = crossProxyDeployer();
+        deployer = lockedProxyDeployer();
     }
 
-    /// @dev A change to the deployer's bytecode moves it off `CROSS_PROXY_DEPLOYER` and fails here
+    /// @dev A change to the deployer's bytecode moves it off `LOCKED_PROXY_DEPLOYER` and fails here
     ///      first. Coverage builds unoptimized and is exempt.
     function test_itSitsWhereTheRegistryDerivesAgainst() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
-            Create2.computeAddress(bytes32(0), keccak256(type(CrossProxyDeployer).creationCode), ARACHNID),
-            CROSS_PROXY_DEPLOYER
+            Create2.computeAddress(bytes32(0), keccak256(type(LockedProxyDeployer).creationCode), ARACHNID),
+            LOCKED_PROXY_DEPLOYER
         );
-        assertEq(address(deployer), CROSS_PROXY_DEPLOYER);
+        assertEq(address(deployer), LOCKED_PROXY_DEPLOYER);
     }
 
     function test_itArmsAndLocksInTheDeployingCall() public {

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
+import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
 
 import {Call} from "src/messaging/Call.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
@@ -149,9 +149,9 @@ contract LzInitValidationTest is Test {
 
     function test_receiverRejectsZeroHomeEid() public {
         address impl = address(new LzReceiver(ENDPOINT));
-        address proxy = address(new CrossProxy());
+        address proxy = address(new LockedProxy());
         vm.expectRevert(LzHomePeer.ZeroHomeEid.selector);
-        ICrossProxy(proxy)
+        ILockedProxy(proxy)
             .upgradeInitializeAndLock(
                 impl, abi.encodeCall(ILzReceiverInit.initialize, (address(0xABCD), new Call[](0), 0, address(0)))
             );

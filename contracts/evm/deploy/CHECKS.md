@@ -89,7 +89,7 @@ Commands assume `RPC` is the chain's RPC and Foundry's `cast` is on the path.
 
 ### 1. Contracts land where the protocol expects
 
-A parity chain needs Arachnid's factory with Ethereum's code, and `CrossProxyDeployer`'s address
+A parity chain needs Arachnid's factory with Ethereum's code, and `LockedProxyDeployer`'s address
 free until the deploy:
 
 ```sh

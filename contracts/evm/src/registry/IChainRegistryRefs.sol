@@ -10,12 +10,12 @@ import {Provenance} from "src/registry/Provenance.sol";
 ///      chains added after it. The salt can be mined for leading zero bytes, which are cheaper in
 ///      the calldata that names the address.
 struct ProviderDeployment {
-    /// The mined salt every deployer passes to `CrossProxyDeployer.deploy`.
+    /// The mined salt every deployer passes to `LockedProxyDeployer.deploy`.
     bytes32 salt;
-    /// keccak256 of `CrossProxy`'s initcode as solc builds it: transceivers and conduits are
-    /// both `CrossProxy`. Recorded rather than computed, since a zkSync or Tron registry's
+    /// keccak256 of `LockedProxy`'s initcode as solc builds it: transceivers and conduits are
+    /// both `LockedProxy`. Recorded rather than computed, since a zkSync or Tron registry's
     /// own compiler builds a different one.
-    bytes32 crossProxyInitCodeHash;
+    bytes32 lockedProxyInitCodeHash;
 }
 
 /// @notice Whether sends may reach a provider's transceiver on a chain.

@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/LockedProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {OpStackConfig} from "script/deploy/OpStackDeploy.sol";
 import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {LockedProxy} from "src/conduit/LockedProxy.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -189,7 +189,7 @@ contract ConfiguredGradesBornConfigureTest is LzFixture {
         ChainEntry memory ethereum = ChainConfig.chainWithId(cs, 1);
 
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256(type(CrossProxy).creationCode));
+        providers[0] = ProviderSeed("layerzero", keccak256("salt"), keccak256(type(LockedProxy).creationCode));
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({

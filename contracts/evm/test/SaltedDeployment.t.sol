@@ -12,9 +12,9 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
-import {CrossProxyDeployer, crossProxySalt} from "src/conduit/CrossProxyDeployer.sol";
-import {crossProxyDeployer} from "test/DeployCrossProxy.sol";
+import {LockedProxy} from "src/conduit/LockedProxy.sol";
+import {LockedProxyDeployer, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
+import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -54,8 +54,8 @@ contract SaltedTransceiver is AnyGatewayTransceiver {
     ///      about where conduits land. The carried transmitter is where Ethereum's CREATE2
     ///      puts it at home, over this same address.
     function bootstrapFor(address owner_) external returns (address) {
-        address carried = Create2.computeAddress(_conduitSalt(owner_, bytes32(0), home()), CROSS_PROXY_INIT_CODE_HASH);
-        return _createCrossConduit(owner_, bytes32(0), home(), carried, new Call[](0));
+        address carried = Create2.computeAddress(_conduitSalt(owner_, bytes32(0), home()), LOCKED_PROXY_INIT_CODE_HASH);
+        return _createConduit(owner_, bytes32(0), home(), carried, new Call[](0));
     }
 }
 
@@ -72,7 +72,7 @@ contract OwnedTransmitter {
 ///         on any chain before either exists.
 contract SaltedDeploymentTest is Test {
     ChainRegistry registry;
-    CrossProxyDeployer deployer;
+    LockedProxyDeployer deployer;
 
     address owner = address(0xA11CE);
     bytes32 provider;
@@ -82,7 +82,7 @@ contract SaltedDeploymentTest is Test {
 
     function setUp() public {
         registry = new ChainRegistry(owner, unseeded());
-        deployer = crossProxyDeployer();
+        deployer = lockedProxyDeployer();
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
@@ -90,19 +90,19 @@ contract SaltedDeploymentTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev One constant, independent of the implementation. `CrossProxy` takes no
+    /// @dev One constant, independent of the implementation. `LockedProxy` takes no
     ///      constructor arguments, so every conduit (transmitter or receiver, on any
     ///      chain) deploys from this exact byte string. That independence is what lets
     ///      two conduits with different logic share an address; an EIP-1167 clone bakes
     ///      the implementation into its initcode and could never manage it.
-    function _crossProxyInitCodeHash() internal pure returns (bytes32) {
-        return keccak256(type(CrossProxy).creationCode);
+    function _lockedProxyInitCodeHash() internal pure returns (bytes32) {
+        return keccak256(type(LockedProxy).creationCode);
     }
 
     /// @dev This test contract is the deployer's caller, as the deploy script's conduit is.
-    function _record(bytes32 crossProxyInitCodeHash) internal {
+    function _record(bytes32 lockedProxyInitCodeHash) internal {
         vm.startPrank(owner);
-        registry.setProviderDeployment(provider, SALT, crossProxyInitCodeHash);
+        registry.setProviderDeployment(provider, SALT, lockedProxyInitCodeHash);
         registry.setCurrentDeployer(address(this));
         registry.addProviderOnChain(chainKey, provider, address(this));
         vm.stopPrank();
@@ -125,12 +125,11 @@ contract SaltedDeploymentTest is Test {
     ///      receiver, and the receiver lands where Ethereum said it would: all without
     ///      either contract existing when the prediction was made.
     function test_bothAddressesArePredictedBeforeEitherExists() public {
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
 
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
-        address predictedReceiver =
-            registry.predictCrossConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
+        address predictedReceiver = registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
 
         // Nothing is deployed yet.
         assertEq(predictedTransceiver.code.length, 0);
@@ -150,7 +149,7 @@ contract SaltedDeploymentTest is Test {
     ///      and the transceiver runs on the destination; if those drift, every predicted
     ///      receiver address is wrong and nothing says so until a payload is pinned to one.
     function test_theReceiverSaltMatchesTheTransceiversOwn() public {
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
         SaltedTransceiver t = _deploy(_init());
 
         address ownerOf = address(0x7A11);
@@ -158,8 +157,8 @@ contract SaltedDeploymentTest is Test {
             ext(address(t)).conduitSalt(ownerOf, bytes32(0), home()), keccak256(abi.encode(ownerOf, bytes32(0), home()))
         );
         assertEq(
-            registry.predictCrossConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)),
-            ext(address(t)).predictCrossConduit(ownerOf, bytes32(0), home()),
+            registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)),
+            ext(address(t)).predictConduit(ownerOf, bytes32(0), home()),
             "one salt convention, two chains"
         );
     }
@@ -182,16 +181,16 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev The goal, end to end. The transceiver itself is a `CrossProxy`, deployed from
+    /// @dev The goal, end to end. The transceiver itself is a `LockedProxy`, deployed from
     ///      one initcode at one salt, so it is the same address on Ethereum and on Base. An
     ///      owner's conduit then derives from that shared address, so their transmitter at
     ///      home and their receiver elsewhere land on one address too.
     function test_anOwnerHasOneAddressOnBothSides() public {
         address ownerOf = address(0x7A11);
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
 
         address transceiverAt = registry.predictTransceiver(chainKey, provider);
-        address predicted = registry.predictCrossConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
+        address predicted = registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
 
         uint256 world = vm.snapshotState();
 
@@ -222,11 +221,11 @@ contract SaltedDeploymentTest is Test {
     ///      counterparty, per mandate), and each keeps the one-address-everywhere property
     ///      independently.
     function test_oneOwnerCanHoldSeveralConduits() public {
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
         address ownerOf = address(0x7A11);
 
-        address a = registry.predictCrossConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
-        address b = registry.predictCrossConduit(chainKey, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1));
+        address a = registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
+        address b = registry.predictConduit(chainKey, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1));
 
         assertTrue(a != b, "a different salt is a different conduit");
 
@@ -236,8 +235,8 @@ contract SaltedDeploymentTest is Test {
         registry.addProviderOnChain(arb, provider, address(this));
         vm.stopPrank();
 
-        assertEq(a, registry.predictCrossConduit(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
-        assertEq(b, registry.predictCrossConduit(arb, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1)));
+        assertEq(a, registry.predictConduit(arb, provider, ownerOf, bytes32(0), ChainKey.forEvm(1)));
+        assertEq(b, registry.predictConduit(arb, provider, ownerOf, keccak256("ops"), ChainKey.forEvm(1)));
     }
 
     /// @dev One owner's salt cannot reach another owner's conduit. The owner is hashed in,
@@ -247,11 +246,11 @@ contract SaltedDeploymentTest is Test {
     {
         vm.assume(ownerA != address(0) && ownerB != address(0));
         vm.assume(ownerA != ownerB);
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
 
         assertTrue(
-            registry.predictCrossConduit(chainKey, provider, ownerA, saltA, ChainKey.forEvm(1))
-                != registry.predictCrossConduit(chainKey, provider, ownerB, saltB, ChainKey.forEvm(1)),
+            registry.predictConduit(chainKey, provider, ownerA, saltA, ChainKey.forEvm(1))
+                != registry.predictConduit(chainKey, provider, ownerB, saltB, ChainKey.forEvm(1)),
             "different owners, different conduits, whatever salt either picks"
         );
     }
@@ -268,11 +267,11 @@ contract SaltedDeploymentTest is Test {
     ) public {
         vm.assume(ownerOf != address(0));
         vm.assume(homeA != 0 && homeB != 0 && homeA != homeB);
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
 
         assertTrue(
-            registry.predictCrossConduit(chainKey, provider, ownerOf, saltA, ChainKey.forEvm(homeA))
-                != registry.predictCrossConduit(chainKey, provider, ownerOf, saltB, ChainKey.forEvm(homeB)),
+            registry.predictConduit(chainKey, provider, ownerOf, saltA, ChainKey.forEvm(homeA))
+                != registry.predictConduit(chainKey, provider, ownerOf, saltB, ChainKey.forEvm(homeB)),
             "two homes, two conduits, whatever salts the owner picks"
         );
     }
@@ -325,12 +324,13 @@ contract SaltedDeploymentTest is Test {
     ///      against 16, so a salt ground for leading zeros is a permanent discount.
     ///      Recording the salt is what makes the mined address reproducible here.
     function test_aSaltCanBeMinedForLeadingZeroBytes() public {
-        bytes32 initCodeHash = _crossProxyInitCodeHash();
+        bytes32 initCodeHash = _lockedProxyInitCodeHash();
 
         bytes32 mined;
         for (uint256 i = 1; i < 4096; ++i) {
             bytes32 candidate = bytes32(i);
-            address a = AddressDerive.create2(address(deployer), crossProxySalt(address(this), candidate), initCodeHash);
+            address a =
+                AddressDerive.create2(address(deployer), lockedProxySalt(address(this), candidate), initCodeHash);
             if (uint160(a) >> 152 == 0) {
                 mined = candidate;
                 break;
@@ -347,9 +347,9 @@ contract SaltedDeploymentTest is Test {
 
     /// @dev A rotation moves nothing already recorded. The transceiver deployed before it and the
     ///      one deployed after it each sit where the registry predicts for their chain, and each
-    ///      creates the receiver that `predictCrossConduit` names for that chain.
+    ///      creates the receiver that `predictConduit` names for that chain.
     function test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt() public {
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
         address rotated = address(0xD2);
         vm.startPrank(owner);
         registry.setCurrentDeployer(rotated);
@@ -362,14 +362,14 @@ contract SaltedDeploymentTest is Test {
 
         SaltedTransceiver first = _deploy(_init());
         assertEq(address(first), registry.predictTransceiver(chainKey, provider), "before the rotation");
-        assertEq(first.bootstrapFor(ownerOf), registry.predictCrossConduit(chainKey, provider, ownerOf, 0, homeKey));
+        assertEq(first.bootstrapFor(ownerOf), registry.predictConduit(chainKey, provider, ownerOf, 0, homeKey));
 
         address implementation = address(new SaltedTransceiver());
         bytes memory init = _init();
         vm.prank(rotated);
         SaltedTransceiver second = SaltedTransceiver(payable(deployer.deploy(SALT, implementation, init)));
         assertEq(address(second), registry.predictTransceiver(arb, provider), "after the rotation");
-        assertEq(second.bootstrapFor(ownerOf), registry.predictCrossConduit(arb, provider, ownerOf, 0, homeKey));
+        assertEq(second.bootstrapFor(ownerOf), registry.predictConduit(arb, provider, ownerOf, 0, homeKey));
         assertTrue(address(first) != address(second));
     }
 
@@ -444,11 +444,11 @@ contract SaltedDeploymentTest is Test {
     ///      pins the registry's literal address of it. The zkSync and Tron variants derive their
     ///      default counterpart from it.
     function test_theRecordedDerivationStatesItsInputs() public {
-        _record(_crossProxyInitCodeHash());
+        _record(_lockedProxyInitCodeHash());
 
         assertEq(
             registry.predictTransceiver(chainKey, provider),
-            AddressDerive.create2(address(deployer), crossProxySalt(address(this), SALT), _crossProxyInitCodeHash()),
+            AddressDerive.create2(address(deployer), lockedProxySalt(address(this), SALT), _lockedProxyInitCodeHash()),
             "arithmetic over the recorded inputs, not a local address"
         );
     }
@@ -484,32 +484,32 @@ contract DivergingSaltedTransceiver is SaltedTransceiver {
         return address(new DivergingSaltedExtension());
     }
 
-    function _predictCrossConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override
         returns (address)
     {
         return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), CROSS_PROXY_INIT_CODE_HASH, address(this)
+            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), LOCKED_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
     function _deployConduit(bytes32 salt) internal override returns (address) {
-        return Create2.deploy(0, divergedSalt(salt), type(CrossProxy).creationCode);
+        return Create2.deploy(0, divergedSalt(salt), type(LockedProxy).creationCode);
     }
 }
 
 /// @dev `DivergingSaltedTransceiver`'s extension, deriving as it does.
 contract DivergingSaltedExtension is TransceiverExtension {
-    function _predictCrossConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override
         returns (address)
     {
         return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), CROSS_PROXY_INIT_CODE_HASH, address(this)
+            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), LOCKED_PROXY_INIT_CODE_HASH, address(this)
         );
     }
 }
@@ -528,7 +528,7 @@ contract DivergentReceiverAuthTest is Test {
         receiver = ReceiverBase(payable(t.bootstrapFor(ownerOf)));
         // The home transceiver deploys with Ethereum's CREATE2, at this fixture's own address.
         homeTransmitter = Create2.computeAddress(
-            ext(address(t)).conduitSalt(ownerOf, bytes32(0), home()), t.CROSS_PROXY_INIT_CODE_HASH(), address(t)
+            ext(address(t)).conduitSalt(ownerOf, bytes32(0), home()), t.LOCKED_PROXY_INIT_CODE_HASH(), address(t)
         );
     }
 

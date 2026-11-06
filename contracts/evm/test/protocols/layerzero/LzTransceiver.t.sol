@@ -90,8 +90,8 @@ contract LzTransceiverInboundTest is ProviderInboundSpec, LzFixture {
 
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, _bootstrap());
 
-        address receiver = ext(address(TransceiverBase(payable(transceiver))))
-            .predictCrossConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        address receiver =
+            ext(address(TransceiverBase(payable(transceiver)))).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
         assertEq(endpoint.receiveLibraryOf(receiver, BASE_EID), endpoint.RECEIVE_LIBRARY());
         assertEq(
             endpoint.configOf(receiver, endpoint.RECEIVE_LIBRARY(), BASE_EID, LzMessage.ULN_CONFIG_TYPE), onlyDvn(DVN)

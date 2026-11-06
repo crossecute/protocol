@@ -8,7 +8,7 @@ import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DeployCheck} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/LockedProxyDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 import {GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 import {Plan, Tx, PendingPair, GovernancePlan} from "script/deploy/GovernancePlan.sol";

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {CROSS_PROXY_DEPLOYER, CrossProxyDeployer} from "src/conduit/CrossProxyDeployer.sol";
+import {LOCKED_PROXY_DEPLOYER, LockedProxyDeployer} from "src/conduit/LockedProxyDeployer.sol";
 
 /// @dev Shared by every deploy, in tests and on chain, so a check written here holds in both.
 ///      Forge runs both, so the cheatcode address is present to read proxy slots.
@@ -30,29 +30,29 @@ function arachnidDeploy(bytes memory initCode) returns (address at) {
     }
 }
 
-/// @notice `CrossProxyDeployer` where production puts it: through Arachnid's factory at salt
-///         zero, deployed on first use, which is `CROSS_PROXY_DEPLOYER`.
+/// @notice `LockedProxyDeployer` where production puts it: through Arachnid's factory at salt
+///         zero, deployed on first use, which is `LOCKED_PROXY_DEPLOYER`.
 /// @dev `forge coverage` builds unoptimized, so its deployer lands elsewhere; it is copied to
-///      `CROSS_PROXY_DEPLOYER`, which is sound because the deployer holds no storage. Never true
+///      `LOCKED_PROXY_DEPLOYER`, which is sound because the deployer holds no storage. Never true
 ///      in a broadcast.
-function crossProxyDeployer() returns (CrossProxyDeployer) {
-    address at = arachnidDeploy(type(CrossProxyDeployer).creationCode);
-    if (at != CROSS_PROXY_DEPLOYER && VM.isContext(VmSafe.ForgeContext.Coverage)) {
-        if (CROSS_PROXY_DEPLOYER.code.length == 0) VM.etch(CROSS_PROXY_DEPLOYER, at.code);
-        at = CROSS_PROXY_DEPLOYER;
+function lockedProxyDeployer() returns (LockedProxyDeployer) {
+    address at = arachnidDeploy(type(LockedProxyDeployer).creationCode);
+    if (at != LOCKED_PROXY_DEPLOYER && VM.isContext(VmSafe.ForgeContext.Coverage)) {
+        if (LOCKED_PROXY_DEPLOYER.code.length == 0) VM.etch(LOCKED_PROXY_DEPLOYER, at.code);
+        at = LOCKED_PROXY_DEPLOYER;
     }
-    return CrossProxyDeployer(at);
+    return LockedProxyDeployer(at);
 }
 
-/// @notice Deploy a `CrossProxy` for `deployedBy` at `salt`, armed with `implementation` and
+/// @notice Deploy a `LockedProxy` for `deployedBy` at `salt`, armed with `implementation` and
 ///         `data` and locked in the same call.
 /// @param deployedBy The conduit making the `deploy` call: the test contract, or the
 ///        broadcaster. It is hashed into the address, so naming the wrong one fails here.
-function deployCrossProxy(address deployedBy, bytes32 salt, address implementation, bytes memory data)
+function deployLockedProxy(address deployedBy, bytes32 salt, address implementation, bytes memory data)
     returns (address proxy)
 {
     check(implementation.code.length != 0, "implementation has code");
-    CrossProxyDeployer deployer = crossProxyDeployer();
+    LockedProxyDeployer deployer = lockedProxyDeployer();
     address predicted = deployer.predict(deployedBy, salt);
     proxy = deployer.deploy(salt, implementation, data);
     check(proxy == predicted, "proxy is where deployedBy and salt predict");

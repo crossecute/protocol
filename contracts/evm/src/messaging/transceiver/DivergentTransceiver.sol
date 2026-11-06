@@ -33,7 +33,7 @@ abstract contract DivergentTransceiver is TransceiverBase, DivergentConduits {
 /// @title ZkSyncTransceiver
 /// @notice The combined transceiver on zkSync Era. See `ZkSyncConduits`.
 abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual
@@ -48,7 +48,7 @@ abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
     }
 
     /// @dev EraVM cannot deploy raw initcode, and `_deployConduit` here reads none.
-    function _storeCrossProxyInitCode() internal virtual override returns (address) {
+    function _storeLockedProxyInitCode() internal virtual override returns (address) {
         return address(0);
     }
 }
@@ -56,7 +56,7 @@ abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
 /// @title TronTransceiver
 /// @notice The combined transceiver on Tron. See `TronConduits`.
 abstract contract TronTransceiver is DivergentTransceiver, TronConduits {
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual
@@ -72,7 +72,7 @@ abstract contract DivergentTransceiverExtension is TransceiverExtension, Diverge
 
 /// @notice The extension every `ZkSyncTransceiver` on a chain names.
 contract ZkSyncTransceiverExtension is DivergentTransceiverExtension, ZkSyncConduits {
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual
@@ -85,7 +85,7 @@ contract ZkSyncTransceiverExtension is DivergentTransceiverExtension, ZkSyncCond
 
 /// @notice The extension every `TronTransceiver` on a chain names.
 contract TronTransceiverExtension is DivergentTransceiverExtension, TronConduits {
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         virtual

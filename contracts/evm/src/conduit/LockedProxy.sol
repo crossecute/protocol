@@ -5,15 +5,15 @@ import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-/// @notice The one call a `CrossProxy` accepts from its deployer. Declared separately so
+/// @notice The one call a `LockedProxy` accepts from its deployer. Declared separately so
 ///         callers have a selector without the proxy shadowing the implementation's ABI.
-interface ICrossProxy {
+interface ILockedProxy {
     function upgradeInitializeAndLock(address implementation, bytes calldata data) external;
 }
 
-/// @title CrossProxy
+/// @title LockedProxy
 /// @notice The proxy every crossecute conduit is deployed as, transmitter and receiver alike,
-///         and every transceiver, through `CrossProxyDeployer`.
+///         and every transceiver, through `LockedProxyDeployer`.
 ///
 /// @dev No constructor arguments, so its initcode is one constant and a transmitter (from its
 ///      home's transceiver) and a receiver (from another chain's) at the same deployer address
@@ -24,7 +24,7 @@ interface ICrossProxy {
 ///
 /// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
 ///      Once the admin is zeroed every call delegates, as in a plain ERC-1967 proxy.
-contract CrossProxy is Proxy {
+contract LockedProxy is Proxy {
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
@@ -47,7 +47,7 @@ contract CrossProxy is Proxy {
             return;
         }
 
-        if (msg.sig != ICrossProxy.upgradeInitializeAndLock.selector) {
+        if (msg.sig != ILockedProxy.upgradeInitializeAndLock.selector) {
             revert UnknownAdminCall(msg.sig);
         }
 

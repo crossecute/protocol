@@ -113,7 +113,7 @@ contract InboundAuthTest is Test {
     function test_aBootstrapFromTheCounterpartStandsTheReceiverUp() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
 
-        MockReceiver r = MockReceiver(payable(ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey)));
+        MockReceiver r = MockReceiver(payable(ext(address(node)).predictConduit(transmitter, bytes32(0), homeKey)));
         assertEq(r.sourceTransmitter(), address(uint160(uint256(_homeTransmitter()))), "its peer is the carried one");
         assertEq(r.executedCount(), 1, "and its payload ran on arrival");
     }
@@ -137,7 +137,7 @@ contract InboundAuthTest is Test {
     ///      bootstrap from it, and a receiver here is homed elsewhere.
     function test_aReceiverCannotBootstrapFromHere() public {
         node.arrive(HOME_ROUTE, HOME_SENDER, _bootstrapMsg());
-        address receiver = ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey);
+        address receiver = ext(address(node)).predictConduit(transmitter, bytes32(0), homeKey);
 
         vm.deal(receiver, 1 ether);
         vm.prank(receiver);
@@ -336,7 +336,7 @@ contract InboundAuthTest is Test {
 
     /// @dev The transmitter chain 1 would carry for `transmitter`'s conduit.
     function _homeTransmitter() internal view returns (bytes32) {
-        return bytes32(uint256(uint160(ext(address(node)).predictCrossConduit(transmitter, bytes32(0), homeKey))));
+        return bytes32(uint256(uint160(ext(address(node)).predictConduit(transmitter, bytes32(0), homeKey))));
     }
 
     function _bootstrapMsg() internal view returns (bytes memory) {

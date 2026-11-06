@@ -15,8 +15,8 @@ import {ZkSyncTransceiver, TronTransceiver} from "src/messaging/transceiver/Dive
 contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBase {
     constructor(address mailbox_, address extension_) HyperlaneTransceiverBase(mailbox_, extension_) {}
 
-    /// @param conduitBytecodeHash_ Zksolc artifact hash for `CrossProxy`, not
-    ///        `CROSS_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
+    /// @param conduitBytecodeHash_ Zksolc artifact hash for `LockedProxy`, not
+    ///        `LOCKED_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(TransceiverConfig memory c, uint32 governorHomeDomain, bytes32 conduitBytecodeHash_)
         external
         initializer
@@ -25,21 +25,21 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
         return super._deployConduit(salt);
     }
 
-    function _storeCrossProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._storeCrossProxyInitCode();
+    function _storeLockedProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeLockedProxyInitCode();
     }
 
     function _conduitInitializer(
@@ -57,7 +57,7 @@ contract HyperlaneZkSyncTransceiver is ZkSyncTransceiver, HyperlaneTransceiverBa
 contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
     constructor(address mailbox_, address extension_) HyperlaneTransceiverBase(mailbox_, extension_) {}
 
-    /// @param conduitBytecodeHash_ Tron-solc's `CrossProxy` initcode hash, not solc's.
+    /// @param conduitBytecodeHash_ Tron-solc's `LockedProxy` initcode hash, not solc's.
     function initialize(TransceiverConfig memory c, uint32 governorHomeDomain, bytes32 conduitBytecodeHash_)
         external
         initializer
@@ -66,13 +66,13 @@ contract HyperlaneTronTransceiver is TronTransceiver, HyperlaneTransceiverBase {
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictCrossConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictCrossConduit(owner, salt, homeChainKey);
+        return super._predictConduit(owner, salt, homeChainKey);
     }
 
     function _conduitInitializer(

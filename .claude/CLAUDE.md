@@ -79,7 +79,7 @@ Tests follow the same rule. A property every binding must satisfy goes in
 
 It is reasonably possible unless one of these holds:
 
-- it would change `CrossProxy`'s initcode or add storage to a base's sequential layout
+- it would change `LockedProxy`'s initcode or add storage to a base's sequential layout
   (R8.1, R8.2 in `docs/provider-spec.md`);
 - the "shared" code would need a flag or branch per caller to preserve each caller's
   behavior, which is two functions pretending to be one;

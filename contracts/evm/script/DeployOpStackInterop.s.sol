@@ -5,7 +5,7 @@ import {DeployProvider} from "script/DeployProvider.s.sol";
 import {OpStackInteropDeploy, OpStackInteropConfig} from "script/deploy/OpStackInteropDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
-import {check} from "script/deploy/CrossProxyDeploy.sol";
+import {check} from "script/deploy/LockedProxyDeploy.sol";
 
 /// @notice `op-stack-l2-l2`, between OP Stack chains running Superchain interop. No environment
 ///         inputs of its own. Refuses a chain not in `deploy/providers/op-stack-l2-l2.toml`, and

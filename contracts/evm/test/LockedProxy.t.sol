@@ -7,8 +7,8 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import {CrossProxy, ICrossProxy} from "src/conduit/CrossProxy.sol";
-import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
+import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
+import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -38,16 +38,16 @@ contract LogicB {
 /// @dev Stands in for the transceiver: deploys a conduit and hands it its logic.
 contract Deployer {
     function deploy(bytes32 salt) external returns (address) {
-        return Create2.deploy(0, salt, type(CrossProxy).creationCode);
+        return Create2.deploy(0, salt, type(LockedProxy).creationCode);
     }
 
     function arm(address proxy, address impl, bytes calldata data) external {
-        ICrossProxy(proxy).upgradeInitializeAndLock(impl, data);
+        ILockedProxy(proxy).upgradeInitializeAndLock(impl, data);
     }
 }
 
 /// @notice The proxy that lets a transmitter and its receivers share one address.
-contract CrossProxyTest is Test {
+contract LockedProxyTest is Test {
     Deployer deployer;
     bytes32 constant SALT = keccak256("account.1");
 
@@ -87,12 +87,12 @@ contract CrossProxyTest is Test {
     /// @dev The initcode hash is a constant with no implementation in it, which is the
     ///      mechanical reason the above holds.
     function test_theInitCodeHashIsIndependentOfTheImplementation() public view {
-        bytes32 hash = keccak256(type(CrossProxy).creationCode);
+        bytes32 hash = keccak256(type(LockedProxy).creationCode);
         assertEq(
             Create2.computeAddress(SALT, hash, address(deployer)), Create2.computeAddress(SALT, hash, address(deployer))
         );
         // No constructor arguments at all: the creation code is the initcode.
-        assertEq(keccak256(type(CrossProxy).creationCode), keccak256(abi.encodePacked(type(CrossProxy).creationCode)));
+        assertEq(keccak256(type(LockedProxy).creationCode), keccak256(abi.encodePacked(type(LockedProxy).creationCode)));
     }
 
     /// @dev R8.3: every chain's build must derive the same conduits, and the transceiver now
@@ -101,7 +101,8 @@ contract CrossProxyTest is Test {
     function test_theInitCodeHashIsPinned() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
-            keccak256(type(CrossProxy).creationCode), 0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c
+            keccak256(type(LockedProxy).creationCode),
+            0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c
         );
     }
 
@@ -109,12 +110,12 @@ contract CrossProxyTest is Test {
     ///      for byte, whatever the call.
     function test_theStoredInitCodeIsTheInitCode() public {
         InitCodeStore store = new InitCodeStore();
-        assertEq(store.load(), type(CrossProxy).creationCode);
+        assertEq(store.load(), type(LockedProxy).creationCode);
 
         (bool ok, bytes memory data) =
             store.at().call(abi.encodeWithSignature("upgradeInitializeAndLock(address,bytes)", address(1), ""));
         assertTrue(ok);
-        assertEq(data, type(CrossProxy).creationCode);
+        assertEq(data, type(LockedProxy).creationCode);
     }
 
     /* ================================== the lock =============================== */
@@ -160,7 +161,7 @@ contract CrossProxyTest is Test {
         address logic = address(new LogicA());
 
         vm.prank(address(0xBAD));
-        ICrossProxy(p).upgradeInitializeAndLock(logic, "");
+        ILockedProxy(p).upgradeInitializeAndLock(logic, "");
 
         assertEq(_adminOf(p), address(deployer), "the admin is unchanged");
         assertEq(
@@ -189,7 +190,7 @@ contract CrossProxyTest is Test {
         vm.prank(address(deployer));
         (bool ok, bytes memory ret) = p.call(abi.encodeWithSignature("nonsense()"));
         assertFalse(ok);
-        assertEq(bytes4(ret), CrossProxy.UnknownAdminCall.selector, "named, not a bare delegate failure");
+        assertEq(bytes4(ret), LockedProxy.UnknownAdminCall.selector, "named, not a bare delegate failure");
     }
 }
 
@@ -201,15 +202,15 @@ contract Shadower {
     }
 }
 
-/// @dev `CrossProxyInitCode` as a transceiver implementation uses it.
+/// @dev `LockedProxyInitCode` as a transceiver implementation uses it.
 contract InitCodeStore {
     address public immutable at;
 
     constructor() {
-        at = CrossProxyInitCode.store();
+        at = LockedProxyInitCode.store();
     }
 
     function load() external view returns (bytes memory) {
-        return CrossProxyInitCode.load(at);
+        return LockedProxyInitCode.load(at);
     }
 }

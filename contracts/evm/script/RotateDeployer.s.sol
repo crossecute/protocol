@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
-import {DeployCheck, check} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck, check} from "script/deploy/LockedProxyDeploy.sol";
 import {PayloadWriter} from "script/deploy/PayloadWriter.sol";
 import {Tx, Plan, PendingPair, GovernancePlan} from "script/deploy/GovernancePlan.sol";
 import {GovernanceConfig} from "script/deploy/ChainDeploy.sol";

@@ -135,7 +135,7 @@ contract SharedAddressExtension is TransceiverExtension {
 /// @dev A transceiver for suites that are not about the deployer: every chain's transceiver of
 ///      its provider sits at its own address, as it does while one deployer serves all chains.
 ///      Suites about the per-chain deployer use `SaltedTransceiver` or a fixture that deploys
-///      through `CrossProxyDeployer`.
+///      through `LockedProxyDeployer`.
 abstract contract SharedAddressTransceiver is AnyGatewayTransceiver {
     function _newExtension() internal virtual override returns (address) {
         return address(new SharedAddressExtension());

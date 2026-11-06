@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {LockedProxy} from "src/conduit/LockedProxy.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {DeployCheck, deployCrossProxy} from "script/deploy/CrossProxyDeploy.sol";
+import {DeployCheck, deployLockedProxy} from "script/deploy/LockedProxyDeploy.sol";
 import {TransceiverDeployment, expectedDeployer} from "script/deploy/TransceiverDeploy.sol";
 import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
@@ -59,7 +59,7 @@ contract DeployChecksTest is LzFixture {
     ///      chain, and a chain the registry has no entry for yet takes `currentDeployer`, so a new
     ///      chain is deployed under whoever governance has made current.
     function test_theExpectedDeployerIsTheChainsEntryElseTheCurrentOne() public {
-        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(CrossProxy).creationCode));
+        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(LockedProxy).creationCode));
         bytes32 provider = keccak256("layerzero");
         bytes32 home = ChainKey.forEvm(1);
         bytes32 elsewhere = ChainKey.forEvm(8453);
@@ -81,7 +81,7 @@ contract DeployChecksTest is LzFixture {
     /// @dev C21, script side: deployed from the record, the transceiver is where the registry
     ///      predicts on every `Predetermined` chain.
     function test_aDeploymentFromTheRecordLandsWhereTheRegistryPredicts() public {
-        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(CrossProxy).creationCode));
+        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(LockedProxy).creationCode));
         address t = this.deploy(_from(registry, address(this), SALT));
         assertEq(t, registry.predictTransceiver(ChainKey.forEvm(1), keccak256("layerzero")));
     }
@@ -96,14 +96,14 @@ contract DeployChecksTest is LzFixture {
     }
 
     function test_aSaltOtherThanTheRecordedOneIsRefused() public {
-        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(CrossProxy).creationCode));
+        ChainRegistry registry = _seeded(address(this), SALT, keccak256(type(LockedProxy).creationCode));
         TransceiverDeployment memory d = _from(registry, address(this), keccak256("another"));
         _expect("salt is the recorded one");
         this.deploy(d);
     }
 
     function test_aCallerOtherThanTheRecordedOneIsRefused() public {
-        ChainRegistry registry = _seeded(address(0xD3), SALT, keccak256(type(CrossProxy).creationCode));
+        ChainRegistry registry = _seeded(address(0xD3), SALT, keccak256(type(LockedProxy).creationCode));
         TransceiverDeployment memory d = _from(registry, address(this), SALT);
         _expect("deployedBy is the deployer recorded for this chain");
         this.deploy(d);
@@ -122,6 +122,6 @@ contract DeployChecksTest is LzFixture {
     }
 
     function deployProxy(address implementation) external returns (address) {
-        return deployCrossProxy(address(this), SALT, implementation, "");
+        return deployLockedProxy(address(this), SALT, implementation, "");
     }
 }

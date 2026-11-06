@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {CrossProxy} from "src/conduit/CrossProxy.sol";
+import {LockedProxy} from "src/conduit/LockedProxy.sol";
 
-/// @notice `CrossProxy`'s initcode held by another contract, which returns it to any call, so a
+/// @notice `LockedProxy`'s initcode held by another contract, which returns it to any call, so a
 ///         contract that deploys conduits reads it rather than carrying 1.5 KB of it in its own
 ///         runtime (#70).
 ///
 /// @dev CREATE2 hashes the initcode bytes, not where they were read from, so a conduit deployed
-///      from the loaded copy lands where `CROSS_PROXY_INIT_CODE_HASH` predicts.
+///      from the loaded copy lands where `LOCKED_PROXY_INIT_CODE_HASH` predicts.
 ///
 /// @dev Read by `STATICCALL` rather than `EXTCODECOPY`, which zksolc refuses to compile: every
 ///      contract a zkSync variant's imports reach is compiled for EraVM, the plain transceivers
 ///      among them.
-library CrossProxyInitCode {
+library LockedProxyInitCode {
     error StoreFailed();
 
     /// @notice What every CREATE2 prediction of a conduit hashes.
     function hash() internal pure returns (bytes32) {
-        return keccak256(type(CrossProxy).creationCode);
+        return keccak256(type(LockedProxy).creationCode);
     }
 
-    /// @notice Deploy the code-only contract. `CrossProxy`'s initcode appears only in the caller's
+    /// @notice Deploy the code-only contract. `LockedProxy`'s initcode appears only in the caller's
     ///         initcode when this runs from a constructor.
     function store() internal returns (address at) {
-        bytes memory initCode = type(CrossProxy).creationCode;
+        bytes memory initCode = type(LockedProxy).creationCode;
         // PUSH2 len, DUP1, PUSH1 12, PUSH1 0, CODECOPY, PUSH1 0, RETURN: on any call, returns what
         // follows this 12-byte prefix, the initcode.
         // forge-lint: disable-next-line(unsafe-typecast) a constant 1.5 KB

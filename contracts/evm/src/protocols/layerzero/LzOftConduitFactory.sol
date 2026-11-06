@@ -7,8 +7,8 @@ import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
-import {CrossConduits} from "src/conduit/CrossConduits.sol";
-import {CrossProxyInitCode} from "src/conduit/CrossProxyInitCode.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
+import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
@@ -53,8 +53,8 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
     address public immutable receiverImplementation;
     /// @notice This chain's key, read at deployment, so each chain's copy knows its own chain.
     bytes32 public immutable localChainKey;
-    bytes32 public immutable CROSS_PROXY_INIT_CODE_HASH = CrossProxyInitCode.hash();
-    address internal immutable _crossProxyInitCode;
+    bytes32 public immutable LOCKED_PROXY_INIT_CODE_HASH = LockedProxyInitCode.hash();
+    address internal immutable _lockedProxyInitCode;
 
     mapping(address conduit => Conduit) internal _conduits;
     /// @dev Leaf hashes in the order the operator listed them, for rebuilding a proof.
@@ -87,7 +87,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         transmitterImplementation = transmitterImplementation_;
         receiverImplementation = receiverImplementation_;
         localChainKey = ChainKey.local();
-        _crossProxyInitCode = CrossProxyInitCode.store();
+        _lockedProxyInitCode = LockedProxyInitCode.store();
     }
 
     /* ================================= addresses =============================== */
@@ -112,7 +112,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         bytes32 destRoot
     ) public view returns (address) {
         return Create2.computeAddress(
-            conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot), CROSS_PROXY_INIT_CODE_HASH
+            conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot), LOCKED_PROXY_INIT_CODE_HASH
         );
     }
 
@@ -134,10 +134,10 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         bytes32 destRoot = LzOftMessage.root(hashes);
 
         bytes32 s = conduitSalt(msg.sender, salt, localChainKey, homeEid, homeOft, destRoot);
-        conduit = Create2.computeAddress(s, CROSS_PROXY_INIT_CODE_HASH);
-        CrossConduits.requireVacant(conduit, msg.sender, salt);
-        CrossConduits.requireLanded(conduit, CrossConduits.deploy(s, _crossProxyInitCode));
-        CrossConduits.arm(
+        conduit = Create2.computeAddress(s, LOCKED_PROXY_INIT_CODE_HASH);
+        Conduits.requireVacant(conduit, msg.sender, salt);
+        Conduits.requireLanded(conduit, Conduits.deploy(s, _lockedProxyInitCode));
+        Conduits.arm(
             conduit,
             transmitterImplementation,
             abi.encodeCall(ILzOftTransmitterInit.initialize, (msg.sender, address(this), salt, homeOft))
@@ -210,9 +210,9 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         (LzOftMessage.Bootstrap memory b, bytes32 s, address conduit, uint32 srcEid) = _authenticate(from, message);
         _forwardValue(conduit);
 
-        CrossConduits.requireLanded(conduit, CrossConduits.deploy(s, _crossProxyInitCode));
+        Conduits.requireLanded(conduit, Conduits.deploy(s, _lockedProxyInitCode));
         bytes memory init = abi.encodeCall(ILzOftReceiverInit.initialize, (conduit, srcEid, b.homeOft, from, b.calls));
-        CrossConduits.arm(conduit, receiverImplementation, init);
+        Conduits.arm(conduit, receiverImplementation, init);
         emit ReceiverCreated(conduit, srcEid, from);
     }
 
@@ -235,10 +235,10 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         LzOftMessage.requirePeer(from, srcEid, b.homeOft);
 
         s = conduitSalt(b.owner, b.salt, b.homeChainKey, b.homeEid, b.homeOft, b.destRoot);
-        conduit = Create2.computeAddress(s, CROSS_PROXY_INIT_CODE_HASH);
+        conduit = Create2.computeAddress(s, LOCKED_PROXY_INIT_CODE_HASH);
         address composeFrom = ProviderAddress.evmSender(OFTComposeMsgCodec.composeFrom(message));
         if (composeFrom != conduit) revert NotTheConduit(composeFrom, conduit);
-        CrossConduits.requireVacant(conduit, b.owner, b.salt);
+        Conduits.requireVacant(conduit, b.owner, b.salt);
     }
 
     /// @dev Before the conduit has code: an address with none accepts value without running

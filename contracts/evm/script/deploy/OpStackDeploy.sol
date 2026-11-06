@@ -10,7 +10,7 @@ import {
     checkGovernorHomeId,
     transceiverExtension
 } from "script/deploy/TransceiverDeploy.sol";
-import {VM, check} from "script/deploy/CrossProxyDeploy.sol";
+import {VM, check} from "script/deploy/LockedProxyDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 
 /// @notice `op-stack-l1-l2`'s contracts. Each chain's messenger is its provider id, so nothing

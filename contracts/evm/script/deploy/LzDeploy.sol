@@ -7,7 +7,7 @@ import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
-import {check} from "script/deploy/CrossProxyDeploy.sol";
+import {check} from "script/deploy/LockedProxyDeploy.sol";
 import {
     TransceiverDeployment,
     deployTransceiverProxy,
