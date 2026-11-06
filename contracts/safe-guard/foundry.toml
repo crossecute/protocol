@@ -1,0 +1,32 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+allow_paths = ["../evm/lib/forge-std"]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+cbor_metadata = false
+remappings = [
+    "forge-std/=../evm/lib/forge-std/src/",
+    "safe-interface/=lib/safe-smart-account/contracts/",
+    "safe-fixture/=lib/safe-smart-account-1.3.0/contracts/",
+]
+
+[fmt]
+ignore = ["lib/**"]
+
+[lint]
+ignore = ["lib/**", "../evm/lib/**"]
+# This project currently contains test observers and fixtures only.
+exclude_lints = [
+    "screaming-snake-case-immutable",
+    "multi-contract-file",
+    "locked-ether",
+    "missing-zero-check",
+    "unsafe-typecast",
+]

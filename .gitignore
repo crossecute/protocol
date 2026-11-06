@@ -4,6 +4,9 @@ contracts/evm/cache/
 contracts/evm/broadcast/
 contracts/evm/lcov.info
 contracts/evm/coverage.txt
+contracts/safe-guard/out/
+contracts/safe-guard/cache/
+contracts/safe-guard/broadcast/
 # foundry-zksync output from test/eravm/era-delivery-gas.sh.
 contracts/evm/zkout/
 
