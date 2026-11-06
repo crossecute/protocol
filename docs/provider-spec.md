@@ -12,7 +12,7 @@ the fixed set of tests that decide whether it did.
 **This file is normative, and only that.** Everything in it is a requirement on a binding
 or on the provider behind one, checkable against this repository. What we know about
 transports we do not control, and about standards that are still drafts, lives in
-[`provider-research.md`](provider-research.md). That file goes stale when somebody else
+[`provider-research.md`](https://github.com/crossecute/research/blob/main/protocol/provider-research.md). That file goes stale when somebody else
 ships a release, not when this protocol changes. Keeping the two apart is what stops the
 staleness sitting inside a document people read as a specification. Findings
 there that produced obligations are cited from the rules here.
@@ -21,12 +21,12 @@ there that produced obligations are cited from the rules here.
 `IERC7786GatewaySource` and `ReceiverBase` an `IERC7786Recipient`, so a binding attaches a
 GATEWAY rather than translating a bespoke send. That narrows what a binding is, and several
 rules below narrowed with it;
-[the research half](provider-research.md#3-erc-7786-as-a-transport) records what the
+[the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#3-erc-7786-as-a-transport) records what the
 standard gives up in exchange.
 
 Nothing here is LayerZero-specific. LayerZero is used for worked examples because it is the
 first binding, and its findings are recorded in
-[`provider-research.md`](provider-research.md#8-layerzero-as-a-native-binding).
+[`provider-research.md`](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#8-layerzero-as-a-native-binding).
 
 Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
@@ -89,7 +89,7 @@ conduit up on however good the transport is.
 | **P4** | Report the source chain and source address to the receiving contract | `_onInbound(route, sender, message)` cannot authenticate without both. A provider that reports only "some peer" is not authenticable at our layer. |
 | **P5** | Unordered delivery | Ordered lanes turn one permanently-failing message into a halt on that lane. See [Failure handling](message-flow.md#failure-handling). |
 | **P6** | Permissionless retry of a failed message | Execution runs inside the delivery callback, so a revert must be a retry and not a loss. |
-| **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay). |
+| **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay). |
 | **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
 | **P9** | **Quote that fee at source, as a `view`, on-chain** | The fee is not knowable off-chain from first principles: it depends on payload length, destination gas, and the provider's own price feed. The transmitter prices every send and bootstrap in the same call and pays exactly the answer, so a provider without an on-chain quote cannot be sent through at all. See [R2](#r2-quote). |
 | **P10** | No deployment-time registration that changes an address | Anything requiring the conduit to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `LockedProxy`'s initcode. |
@@ -97,12 +97,12 @@ conduit up on however good the transport is.
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
 | **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Conduits are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
-| **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. A conduit is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the relayer's signing key, not for any contract. |
+| **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. A conduit is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the relayer's signing key, not for any contract. |
 
 **Prefer a provider's native SDK over its ERC-7786 gateway, where it offers both.** A
 gateway satisfies P1 through P4 cleanly and would be less code. But ERC-7786 defines no
 quote at all, so P9 fails outright and the whole quote surface goes dead for that binding.
-See [the research half](provider-research.md#3-erc-7786-as-a-transport) for how a 7786 binding would map and what
+See [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#3-erc-7786-as-a-transport) for how a 7786 binding would map and what
 else it gives up.
 
 **P2 and P3 together are the real filter.** They are what "a conduit is its own endpoint"
@@ -291,7 +291,7 @@ binding MUST send `_defaultGas(payload)`: `DeliveryGas.BOOTSTRAP` for a bootstra
 gateway's own default, which is not sized for a conduit creation (#52). A gas attribute
 replaces the default with no floor, and sizing it is the sender's job: a delivery short of
 gas reverts whole, and every provider in scope lets anyone retry it at a higher limit
-([provider-research §1](provider-research.md#1-what-each-transport-guarantees-about-replay)).
+([provider-research §1](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay)).
 Wormhole
 requires one of its two attributes: the signed quote, whose gas limit of zero means the
 default, or publish-only, which pays no relay provider and so names no gas. A binding MUST answer `supportsAttribute`
@@ -550,7 +550,7 @@ documented.** LayerZero's `lzReceive` checks `msg.sender == endpoint` and then
 nothing extra to verify, so this is defensible, but it contradicts the rule stated in
 `TransceiverBase._onInbound` and MUST appear as a written exception in the binding's NatSpec
 rather than as an omission. LayerZero is the only binding that takes it (see
-[the research half](provider-research.md#8-layerzero-as-a-native-binding)).
+[the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#8-layerzero-as-a-native-binding)).
 
 **R3.4** The receiver's funnel is `_onMessage`, which is `nonReentrant` and executes on
 arrival. The binding MUST NOT decode the payload itself: `Payload.decodeCalls` happens
@@ -571,7 +571,7 @@ Most candidate transports guarantee it, and there the binding does nothing. The 
 are the raw signature primitives, Wormhole's core layer and Avalanche's Warp precompile,
 which prove a message was authorised and stop there. On either, a binding MUST dedupe inside
 `<P>Message` before reaching `_onMessage`, keyed on whatever that transport makes unique
-per message: Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`. See [the research half](provider-research.md#1-what-each-transport-guarantees-about-replay)
+per message: Wormhole's VAA digest, or `(emitterChain, emitterAddress, sequence)`. See [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay)
 for what each provider actually does.
 
 **R3.6 The dedupe MUST be per receiving conduit, not global to the binding.** Conduits are
@@ -933,7 +933,7 @@ below. The column says where each line is held.
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |
 | C31 | `replay_theDedupeIsPerConduit` | Two conduits, the same source and nonce shape. One consuming a message MUST NOT stop the other receiving its own. [R3.6](#r3-receive). | Wormhole: `test_theDedupeIsPerConduit`. Others: fork test not built |
 | C32 | `gas_noAttributeMeansThePayloadsDefault` | Without a gas attribute a bootstrap carries `DeliveryGas.BOOTSTRAP` and a report `REPORT`; an attribute replaces it; a conduit's payload carries `PAYLOAD`. [R1.5](#r1-send). The float side of [R7.6](#r7-fees-and-value) is core `ReceiverReport.t.sol` (`test_aReportingDestinationWithNoFeeIsRefused`, `testFuzz_aDeliveryOutOfGasPaysNothing`) and the stateful `invariant/FeesAndFloat.t.sol`. | `ProviderDefaultGasSpec`; the payload, `ProviderTransmitterSendSpec` |
-| C33 | `gas_aDeliveryShortOfGasIsRetriedWithMore` | Deliver a bootstrap with too little gas, then the same bootstrap with enough: the first MUST revert and create nothing, the second MUST create the conduit. Our half of [R1.5](#r1-send)'s no-floor rule; the provider's half, that a retry may raise the gas, is read from source in [provider-research §1](provider-research.md#1-what-each-transport-guarantees-about-replay). | `ProviderInboundSpec` `test_aBootstrapCutShortByGasSucceedsOnRetryWithMore` |
+| C33 | `gas_aDeliveryShortOfGasIsRetriedWithMore` | Deliver a bootstrap with too little gas, then the same bootstrap with enough: the first MUST revert and create nothing, the second MUST create the conduit. Our half of [R1.5](#r1-send)'s no-floor rule; the provider's half, that a retry may raise the gas, is read from source in [provider-research §1](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay). | `ProviderInboundSpec` `test_aBootstrapCutShortByGasSucceedsOnRetryWithMore` |
 | C34 | `live_aBootstrapToAnUnlistedDestinationReverts` | A bootstrap and its quote revert `DestinationNotLive` until the registry marks the provider live on that chain, and succeed after; a send to a chain still pending reverts `NotBootstrapped`. [R1.8](#r1-send). | core `DeployerRotation.t.sol` `test_aBootstrapAndItsQuoteAreRefusedUntilTheChainIsLive`, `test_aTransmitterCannotBootstrapOrSendToAPendingChain` |
 | C35 | `rotation_chainsOfTwoDeployersAuthenticateEachOther` | A chain deployed before a rotation and one deployed after it bootstrap each other and are authenticated at their own generation's address; the wrong generation's address is refused. [R8.5](#r8-storage-and-address-parity). | core `DeployerRotation.t.sol` `test_aFirstGenerationChainBootstrapsASecondGenerationOne`, `test_aSecondGenerationChainBootstrapsAFirstGenerationOne`, `test_aSenderAtTheWrongGenerationsAddressIsRefused`, `test_aCarriedTransmitterFromTheWrongGenerationIsRefused` |
 | C36 | `rotation_registryPredictionsMatchDeployments` | The registry's transceiver and conduit predictions equal what each generation deploys; a `Live` entry is never re-keyed and a `Pending` one is. | core `SaltedDeployment.t.sol` `test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt`, `RegistryDeployer.t.sol` |

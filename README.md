@@ -422,6 +422,14 @@ What an operator or integrator has to know:
   security fix has to be noticed, re-vendored, and diffed by hand. It then reaches no
   deployed contract, since transceivers and conduits lock on initialization.
 
+**Provider-specific information** is in [provider research](https://github.com/crossecute/research/blob/main/protocol/provider-research.md), kept in the
+[`crossecute/research`](https://github.com/crossecute/research) repository because it is
+pinned to other teams' releases and goes stale on their schedule, not this protocol's. It
+covers what each provider guarantees about replay, how its SDK fits the proxy layout, the
+license of the files vendored from it, and the designs the research suggests adopting or
+adding. It names the upstream commit each vendored file was read at, so when a vendor
+script's pinned commit changes, re-check the matching section there.
+
 ## Assumptions
 
 - `LockedProxyDeployer` is created through Arachnid's CREATE2 factory (`0x4e59..`), which puts
@@ -492,9 +500,10 @@ What an operator or integrator has to know:
   implement to be compliant, and what the provider itself must be capable of. Normative
 - [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
   binding is held to, and what an OFT must be before a conduit uses it. Normative
-- [`docs/provider-research.md`](docs/provider-research.md): what each transport actually
-  guarantees about replay, and how ERC-7786 attaches. Pinned to other people's releases, so
-  it goes stale on their schedule rather than ours
+- [Provider research](https://github.com/crossecute/research/blob/main/protocol/provider-research.md), in the `crossecute/research` repository: what each transport
+  guarantees about replay, how ERC-7786 attaches, and the design influences and candidate
+  additions each suggests. Pinned to other people's releases, so it goes stale on their
+  schedule rather than ours
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status

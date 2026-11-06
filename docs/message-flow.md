@@ -370,7 +370,7 @@ exactly-once at the transport, by the same shape that gives retry: mark the mess
 consumed, then call the receiver with a plain external call, so a revert rolls the mark
 back. It is an imported guarantee rather than an enforced one, which is why it is a stated
 provider prerequisite and a compliance test rather than a comment. See
-[`provider-research.md`](provider-research.md#1-what-each-transport-guarantees-about-replay).
+[`provider-research.md`](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay).
 
 No fallback storage, and no payload size cap: the provider enforces the latter.
 

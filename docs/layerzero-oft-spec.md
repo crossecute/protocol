@@ -3,7 +3,7 @@
 What the `layerzero-oft` binding is held to, and what an OFT must be before a conduit uses
 it. Normative, in the sense of [`provider-spec.md`](provider-spec.md): everything here is
 checkable against this repository, and the findings behind it are in
-[`provider-research.md` §9](provider-research.md#9-layerzero-oft-as-a-carrier).
+[`provider-research.md` §9](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#9-layerzero-oft-as-a-carrier).
 
 The binding carries a conduit's messages through an OFT its own team operates. Every
 message, the bootstrap included, is an `oft.send` the conduit makes itself, with no tokens
