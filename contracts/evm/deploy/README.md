@@ -201,10 +201,11 @@ rely on the deployer, whose script checks (`checkTransceiver`) are its own. Read
 from the chain, with an RPC the deployer does not control:
 
 1. Code at `registry.predictTransceiver(chainKey, provider)`, and the implementation in its
-   EIP-1967 slot has the code hash the build produces.
+   EIP-1967 slot has the code hash the build produces. That slot being set is what locks the
+   proxy.
 2. `owner()` is the governor's conduit on that chain (`predictConduit` of the governor's
-   owner, salt, and home), `chainRegistry()` is that chain's registry, `messageProvider()` is the
-   provider's id, and the proxy admin slot is zero.
+   owner, salt, and home), `chainRegistry()` is that chain's registry, and `messageProvider()` is the
+   provider's id.
 3. The treasury, gateways, and conduit implementations are the configured ones.
 
 Any other result leaves the entry `Pending`.

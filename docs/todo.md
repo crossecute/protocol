@@ -129,7 +129,7 @@ the seventh; what they mean for an operator is in the README.
 
 - **A check that a deployment is the one to mark live.** Before `markLive`, the proposers read
   code at the predicted address, the implementation's code hash, `owner()`, `chainRegistry()`,
-  `messageProvider()`, and the proxy admin slot, with an RPC the deployer does not control
+  `messageProvider()`, and the proxy's implementation slot, with an RPC the deployer does not control
   (`contracts/evm/deploy/README.md`). It is a manual list; `GovernancePlan` marks live without
   reading the chain. A script that performs it and refuses the batch otherwise would close that.
 - **Governance payloads for later deployer generations.** `out/governance/` adds every provider

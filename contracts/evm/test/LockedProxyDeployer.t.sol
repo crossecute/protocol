@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import {ILockedProxy} from "src/conduit/LockedProxy.sol";
 import {LOCKED_PROXY_DEPLOYER, LockedProxyDeployer} from "src/conduit/LockedProxyDeployer.sol";
 import {ARACHNID} from "script/deploy/LockedProxyDeploy.sol";
 import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
@@ -41,11 +42,18 @@ contract LockedProxyDeployerTest is Test {
     }
 
     function test_itArmsAndLocksInTheDeployingCall() public {
-        address proxy = deployer.deploy(SALT, address(new Logic()), abi.encodeCall(Logic.initialize, (7)));
+        address impl = address(new Logic());
+        address other = address(new Logic());
+        address proxy = deployer.deploy(SALT, impl, abi.encodeCall(Logic.initialize, (7)));
 
         assertEq(proxy, deployer.predict(address(this), SALT), "where it said");
         assertEq(Logic(proxy).value(), 7, "initialized");
-        assertEq(vm.load(proxy, ERC1967Utils.ADMIN_SLOT), bytes32(0), "no admin left");
+        assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "armed");
+
+        vm.prank(address(deployer));
+        (bool rearmed,) = proxy.call(abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (other, "")));
+        assertFalse(rearmed, "the deployer cannot arm it again");
+        assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "still locked");
     }
 
     /// @dev The salt is bound to its caller, so another caller cannot take this address first

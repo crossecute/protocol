@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 /// @notice The one call a `LockedProxy` accepts from its deployer. Declared separately so
 ///         callers have a selector without the proxy shadowing the implementation's ABI.
@@ -19,19 +18,27 @@ interface ILockedProxy {
 ///      home's transceiver) and a receiver (from another chain's) at the same deployer address
 ///      and salt land on one address. An EIP-1167 clone embeds its implementation in the initcode and could not.
 ///
-/// @dev The single admin operation upgrades, initializes, and zeroes the admin in one call, so
-///      no conduit or transceiver ever has a live upgrade key and real logic at once.
+/// @dev The deployer can arm the proxy only while no implementation is set. The single admin
+///      operation installs the implementation, runs its initializer, and by installing it ends
+///      the deployer's ability to arm, so no conduit or transceiver ever has a live upgrade key
+///      and real logic at once. An implementation must not write the ERC-1967 implementation
+///      slot: clearing it would let the deployer arm again.
+///
+/// @dev The deployer is an immutable, so it sits in the runtime code and not the initcode: the
+///      address is unchanged, but the code hash differs per deployer, and a proxy is verified by
+///      its CREATE2 address. A call on an armed proxy reads the implementation slot and nothing else.
 ///
 /// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
-///      Once the admin is zeroed every call delegates, as in a plain ERC-1967 proxy.
+///      Once armed every call delegates, as in a plain ERC-1967 proxy.
 contract LockedProxy is Proxy {
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
 
-    /// @dev The deployer is the admin, set in storage so it never reaches the initcode.
+    address private immutable ADMIN;
+
     constructor() {
-        ERC1967Utils.changeAdmin(msg.sender);
+        ADMIN = msg.sender;
     }
 
     function _implementation() internal view override returns (address) {
@@ -39,13 +46,11 @@ contract LockedProxy is Proxy {
     }
 
     fallback() external payable override {
-        address admin = ERC1967Utils.getAdmin();
+        address current = _implementation();
 
-        // Not the admin (or there is no longer one), so this is an ordinary call.
-        if (admin == address(0) || msg.sender != admin) {
-            _fallback();
-            return;
-        }
+        // Armed, or not the deployer: an ordinary call, and `_delegate` does not return.
+        // `ADMIN` is read only while blank.
+        if (current != address(0) || msg.sender != ADMIN) _delegate(current);
 
         if (msg.sig != ILockedProxy.upgradeInitializeAndLock.selector) {
             revert UnknownAdminCall(msg.sig);
@@ -54,9 +59,6 @@ contract LockedProxy is Proxy {
         (address implementation, bytes memory data) = abi.decode(msg.data[4:], (address, bytes));
 
         ERC1967Utils.upgradeToAndCall(implementation, data);
-
-        // Written directly: `ERC1967Utils.changeAdmin` refuses the zero address.
-        StorageSlot.getAddressSlot(ERC1967Utils.ADMIN_SLOT).value = address(0);
         emit Locked(implementation);
     }
 }

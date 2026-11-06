@@ -45,7 +45,7 @@ function lockedProxyDeployer() returns (LockedProxyDeployer) {
 }
 
 /// @notice Deploy a `LockedProxy` for `deployedBy` at `salt`, armed with `implementation` and
-///         `data` and locked in the same call.
+///         `data` and locked in the same call. A set implementation slot is the lock.
 /// @param deployedBy The conduit making the `deploy` call: the test contract, or the
 ///        broadcaster. It is hashed into the address, so naming the wrong one fails here.
 function deployLockedProxy(address deployedBy, bytes32 salt, address implementation, bytes memory data)
@@ -57,7 +57,6 @@ function deployLockedProxy(address deployedBy, bytes32 salt, address implementat
     proxy = deployer.deploy(salt, implementation, data);
     check(proxy == predicted, "proxy is where deployedBy and salt predict");
     check(_slot(proxy, ERC1967Utils.IMPLEMENTATION_SLOT) == implementation, "proxy runs the implementation");
-    check(_slot(proxy, ERC1967Utils.ADMIN_SLOT) == address(0), "proxy is locked");
 }
 
 function _slot(address proxy, bytes32 slot) view returns (address) {

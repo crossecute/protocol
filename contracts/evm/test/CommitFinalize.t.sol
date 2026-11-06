@@ -649,15 +649,19 @@ contract CommitFinalizeTest is Test {
     }
 
     /// @dev `LockedProxyDeployer` installs the transceiver and locks it in one call, and from
-    ///      then on nothing can replace it: the proxy has no admin and the transceiver has no
-    ///      upgrade function, so no authority holds a key to forge messages with.
+    ///      then on nothing can replace it: the proxy accepts no further arming and the
+    ///      transceiver has no upgrade function, so no authority holds a key to forge messages
+    ///      with.
     function test_theDeployerInstallsTheTransceiverAndNothingReplacesIt() public {
+        address implementation = address(new MockTransceiver());
         address proxy = deployTransceiver(
-            address(new MockTransceiver()), abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
+            implementation, abi.encodeCall(MockTransceiver.initialize, (msig, address(receiverImpl)))
         );
         MockTransceiver t_ = MockTransceiver(payable(proxy));
         assertEq(ext(address(t_)).receiverImplementation(), address(receiverImpl), "installed and initialized");
-        assertEq(vm.load(proxy, ERC1967Utils.ADMIN_SLOT), bytes32(0), "and locked");
+        assertEq(
+            vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(implementation))), "and locked"
+        );
 
         address blockedImpl = address(new MockTransceiver());
         address owner = t_.owner();

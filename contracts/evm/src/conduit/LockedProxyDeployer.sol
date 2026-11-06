@@ -8,7 +8,7 @@ import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
 // standard EVM chain. A `Predetermined` chain is one whose transceivers were deployed through it
 // (#33). A literal, since a zkSync or Tron registry's compiler would derive another;
 // `LockedProxyDeployer.t.sol` pins it to solc's build.
-address constant LOCKED_PROXY_DEPLOYER = 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C;
+address constant LOCKED_PROXY_DEPLOYER = 0x45819698495847BFF3Cb3E3d78E71CFcF0C30c7B;
 
 /// @notice The CREATE2 salt `LockedProxyDeployer` deploys under for `deployedBy`'s `salt`, where
 ///         `deployedBy` is the account that calls `deploy`.

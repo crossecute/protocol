@@ -638,7 +638,7 @@ narrow it to the provider's type themselves.
 
 **R6.1** Everything the provider needs configured on a conduit MUST be folded into
 `_conduitInitializer`. A transceiver has no authority over a conduit after creating it:
-`LockedProxy` upgrades, initializes, and zeroes its own admin in one call, and the conduit's
+`LockedProxy` upgrades, initializes, and stops accepting arming in one call, and the conduit's
 own configuration is gated on its owner, which the transceiver is not.
 
 **R6.2** The initializer MUST configure the provider before the bootstrap payload runs. A
@@ -784,7 +784,7 @@ move: the deployer is write-once per (provider, chain), changed only for a chain
 correct shape and inherits the write-once behavior. It MUST NOT add its own storage.
 
 **R9.3** The binding MUST NOT expose an upgrade path that survives installation.
-Neither `TransceiverBase` nor the `TransceiverExtension` it names in an immutable has an upgrade function, and the `LockedProxy` it runs in has no admin once
+Neither `TransceiverBase` nor the `TransceiverExtension` it names in an immutable has an upgrade function, and the `LockedProxy` it runs in accepts no further arming once
 `LockedProxyDeployer` has armed it, so a binding has nothing to lock. If the SDK carries its own upgrade mechanism, the
 binding MUST disable it: the base cannot close an upgrade path it does not know about.
 
@@ -806,7 +806,7 @@ bootstrap needs is fixed at deployment and everything else comes after it.
 | 5 | every chain | Through payloads from the home: `<P>Transceiver.setRoute`, the typed id setter, `setCounterpart` or `resolveCounterpart` where the registry cannot default it, and LayerZero's `setPeer`, which must name that counterpart (#62), for every chain this one talks to; `setBootstrapFee` where the destination reports | Write-once. Most EVM chains need no counterpart: the default is the provider's address there, and a counterpart recorded on a `Predetermined` chain must equal it (#60). Every chain's tables have to agree about every other chain, an N × N check whose source is `contracts/evm/deploy/`, which `script/GovernancePayloads.s.sol` turns into payloads for the parity chains. |
 | 6 | every chain | Through the timelock: `addChainKey(identifier, provenance)` for every chain, `addProviderOnChain(chainKey, provider, deployer)` for every provider deployed there, then `markLive` once that deployment is verified without the deployer (R1.8), `setLocalTransceiver`, plugins (`setValidator`, `setDeriver`, `setDeriveParams`, `setCommitmentScheme`), and `setQualifier` per provider on a Move chain | The grade and a qualifier are write-once. Only an `eip155` chain whose transceivers are deployed through `LockedProxyDeployer` can be `Predetermined`; zkSync, Tron, and any chain without Arachnid's factory are `Unique`, which is also what turns `requiresReceiverCallback` on. A chain without it grades every other chain `Unique` in its own registry, since none shares its addresses. |
 | 7 | every chain | Fund each transceiver's float for its return reports | Sized from [R7.5](#r7-fees-and-value)'s quote, on the chains whose destinations report. |
-| n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `LockedProxy` and zeroes its admin in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
+| n/a | | no lock step | There is nothing to call. Step 2's `deploy` arms each transceiver's `LockedProxy`, which locks in the same call, and the transceiver has no upgrade function, so it is fixed before it is ever configured. Later steps are storage writes. |
 
 Step 1 is scripted for a standard EVM chain: `script/DeployChain.s.sol` takes every argument
 from `deploy/governance.toml`, so the three contracts sit at one address on every such chain,
@@ -923,11 +923,11 @@ below. The column says where each line is held.
 | C20 | `bootstrap_forSomebodyElsesConduitReverts` | `NotTheConduit`. | core `Transport.t.sol` `test_bootstrapRefusesACallerThatIsNotTheConduit` |
 | C21 | `parity_lockedProxyInitCodeHashMatchesTheRegistryRecord` | [R8.4](#r8-storage-and-address-parity). | core `SaltedDeployment.t.sol` `test_theRecordedDerivationStatesItsInputs`; script side, `script/deploy/TransceiverDeploy.sol`, tested by `test/deploy/DeployChecks.t.sol` |
 | C22 | `parity_everyTransceiverSharesInitcode` | The claim that puts a provider's transceivers at one address on every chain of one deployer. | core `SaltedDeployment.t.sol` `test_anOwnerHasOneAddressOnBothSides`, `LockedProxy.t.sol` `test_twoImplementationsShareOneAddress` |
-| C23 | `parity_theBindingAddsNoConstructorArguments` | `type(LockedProxy).creationCode` unchanged. | core `LockedProxy.t.sol` `test_theInitCodeHashIsIndependentOfTheImplementation`, `test_theInitCodeHashIsPinned` |
+| C23 | `parity_theBindingAddsNoConstructorArguments` | `type(LockedProxy).creationCode` unchanged. | core `LockedProxy.t.sol` `test_theAddressIsPredictedFromTheInitCodeForEveryAdmin`, `test_theInitCodeHashIsPinned` |
 | C24 | `storage_noSlotCollisionAcrossTheInheritanceGraph` | Configure and deliver under state-diff recording: no call changes a storage byte that was already nonzero before it, so a second field written into a first one's slot fails. Blind to a collision inside one call, such as an initializer. | `ProviderInboundSpec`, `ProviderReceiveSpec`, through `SlotReuse` |
 | C25 | `fees_excessRefundsToTheConduitNotTheTransceiver` | [R7.2](#r7-fees-and-value). | `ProviderRefundSpec` (transceiver), core `Transport.t.sol` `test_pathARefundsToTheConduit` (transmitter). CCIP keeps an overpayment; OP Stack takes no value |
 | C26 | `fees_nestedSendIsFundedFromBalance` | [R7.3](#r7-fees-and-value), or an explicit documented skip. | `ProviderFeeSpec` |
-| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `LockedProxy.t.sol` `test_theDeployerCannotUpgradeAgain` (conduits), `LockedProxyDeployer.t.sol` `test_itArmsAndLocksInTheDeployingCall` (transceivers) |
+| C27 | `lock_upgradesAreRefusedAfterLock` | The SDK brought no second upgrade path. | core `LockedProxy.t.sol` `test_theDeployerCannotUpgradeAgain`, `test_theInitializerCannotArmTheProxyAgain`, `testFuzz_afterTheLockNoCallerChangesTheImplementation` (conduits), `LockedProxyDeployer.t.sol` `test_itArmsAndLocksInTheDeployingCall` (transceivers) |
 | C28 | `writeOnce_everySetterRefusesASecondDistinctValue` | Enumerated over all of [R9.1](#r9-write-once-discipline). | core setters (`DestinationNaming.t.sol`, `SaltedDeployment.t.sol`, `ProviderChainId.t.sol`); the binding's typed setter `ProviderIdTableSpec` |
 | C29 | `replay_aSecondDeliveryOfTheSameMessageIsRefused` | Deliver one payload twice through the binding's own callback. The second MUST NOT execute. The only test of [R3.5](#r3-receive), and the only thing standing between a duplicated delivery and a payload that runs twice. | Wormhole, which owns replay: `test_aReplayedVaaIsRejected`. Others: the transport's, fork test not built |
 | C30 | `replay_aFailedDeliveryIsStillRetryable` | Deliver a payload that reverts, fix the cause, deliver again: it MUST succeed. Asserts the transport marked and rolled back rather than marked and kept, which is what makes C29 safe to rely on. | Wormhole: `test_aFailedDeliveryIsStillRetryable`. Others: fork test not built |

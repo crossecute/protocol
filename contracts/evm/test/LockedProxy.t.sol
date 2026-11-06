@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+import {IERC1967} from "@openzeppelin/contracts/interfaces/IERC1967.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
@@ -35,6 +36,42 @@ contract LogicB {
     }
 }
 
+/// @dev Counts every call it receives, so a test can tell a delegated call from one the proxy
+///      handled itself.
+contract Echo {
+    uint256 public hits;
+
+    fallback() external payable {
+        ++hits;
+    }
+
+    receive() external payable {
+        ++hits;
+    }
+}
+
+contract Failing {
+    function initialize() external pure {
+        revert("init failed");
+    }
+}
+
+/// @dev Calls back into the proxy, as its admin, from inside its own initializer.
+contract Reenter {
+    bool public reentrySucceeded;
+
+    function initialize(address admin, address other) external {
+        (reentrySucceeded,) = admin.call(abi.encodeCall(Deployer.arm, (address(this), other, "")));
+    }
+}
+
+/// @dev Writes the slot an implementation must never write.
+contract Clobber {
+    function clobber() external {
+        StorageSlot.getAddressSlot(ERC1967Utils.IMPLEMENTATION_SLOT).value = address(0);
+    }
+}
+
 /// @dev Stands in for the transceiver: deploys a conduit and hands it its logic.
 contract Deployer {
     function deploy(bytes32 salt) external returns (address) {
@@ -55,18 +92,28 @@ contract LockedProxyTest is Test {
         deployer = new Deployer();
     }
 
-    function _adminOf(address proxy) internal view returns (address) {
-        return address(uint160(uint256(vm.load(proxy, ERC1967Utils.ADMIN_SLOT))));
+    function _implOf(address proxy) internal view returns (address) {
+        return address(uint160(uint256(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT))));
+    }
+
+    function _armCall(address impl, bytes memory data) internal pure returns (bytes memory) {
+        return abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (impl, data));
+    }
+
+    /// @dev The proxy is still blank and its deployer can still arm it.
+    function _assertStillArmable(address p) internal {
+        assertEq(_implOf(p), address(0), "blank");
+        address impl = address(new LogicA());
+        deployer.arm(p, impl, abi.encodeCall(LogicA.initialize, (3)));
+        assertEq(_implOf(p), impl, "armed afterwards");
+        assertEq(LogicA(p).value(), 3);
     }
 
     /* ============================== the whole point ============================= */
 
-    /// @dev The property the proxy exists for. Same deployer, same salt, different logic:
-    ///      one address. A minimal clone cannot do this: EIP-1167 embeds the
-    ///      implementation in its initcode, so the two would land apart no matter what.
+    /// @dev Same deployer, same salt, different logic: one address. An EIP-1167 clone embeds
+    ///      the implementation in its initcode and could not do this.
     function test_twoImplementationsShareOneAddress() public {
-        // Two chains, modelled as two histories from the same state: one deployer address,
-        // one salt, different logic installed in each.
         uint256 world = vm.snapshotState();
 
         address a = deployer.deploy(SALT);
@@ -84,15 +131,20 @@ contract LockedProxyTest is Test {
         assertEq(a, b, "one address, whatever it was upgraded to");
     }
 
-    /// @dev The initcode hash is a constant with no implementation in it, which is the
-    ///      mechanical reason the above holds.
-    function test_theInitCodeHashIsIndependentOfTheImplementation() public view {
+    /// @dev The admin is in the runtime code and not the initcode, so who deploys moves the
+    ///      address only through the CREATE2 sender, as before. A proxy is therefore verified
+    ///      by its address, not by a constant code hash.
+    function test_theAddressIsPredictedFromTheInitCodeForEveryAdmin() public {
         bytes32 hash = keccak256(type(LockedProxy).creationCode);
-        assertEq(
-            Create2.computeAddress(SALT, hash, address(deployer)), Create2.computeAddress(SALT, hash, address(deployer))
-        );
-        // No constructor arguments at all: the creation code is the initcode.
-        assertEq(keccak256(type(LockedProxy).creationCode), keccak256(abi.encodePacked(type(LockedProxy).creationCode)));
+        Deployer other = new Deployer();
+
+        address p1 = deployer.deploy(SALT);
+        address p2 = other.deploy(SALT);
+
+        assertEq(p1, Create2.computeAddress(SALT, hash, address(deployer)));
+        assertEq(p2, Create2.computeAddress(SALT, hash, address(other)));
+        assertEq(p1.code.length, p2.code.length);
+        assertTrue(p1.codehash != p2.codehash, "the admin is embedded in the runtime code");
     }
 
     /// @dev R8.3: every chain's build must derive the same conduits, and the transceiver now
@@ -102,7 +154,7 @@ contract LockedProxyTest is Test {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
             keccak256(type(LockedProxy).creationCode),
-            0x145308a355542767bac3f73366782e0654e70cf26a84e7dc349a721a84c4e39c
+            0x6d3833c585f8809561b488327140414769cdda10be277d5be13e08201693daa7
         );
     }
 
@@ -118,20 +170,34 @@ contract LockedProxyTest is Test {
         assertEq(data, type(LockedProxy).creationCode);
     }
 
+    /// @dev A proxy owns no admin storage, so creating one costs no SSTORE and emits nothing.
+    function test_theConstructorWritesNoStorageAndEmitsNothing() public {
+        vm.recordLogs();
+        address p = deployer.deploy(SALT);
+
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertEq(vm.load(p, ERC1967Utils.ADMIN_SLOT), bytes32(0));
+        assertEq(vm.load(p, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(0));
+    }
+
     /* ================================== the lock =============================== */
 
-    /// @dev There is no state with a live key and a real implementation. The single admin
-    ///      operation upgrades, initializes, and retires the admin in that order. Not "the
-    ///      deployer is expected to lock afterwards": it cannot do the first without the
-    ///      last.
-    function test_theKeyIsGoneBeforeTheTransactionEnds() public {
+    /// @dev No state has a live key and real logic: installing the implementation is what ends
+    ///      the deployer's ability to arm, so it cannot do the first without the last.
+    function test_theArmPathClosesInTheArmingCall() public {
         address p = deployer.deploy(SALT);
-        assertEq(_adminOf(p), address(deployer), "the deployer holds it while blank");
+        address impl = address(new LogicA());
+        assertEq(_implOf(p), address(0), "blank while the deployer holds the key");
 
-        deployer.arm(p, address(new LogicA()), abi.encodeCall(LogicA.initialize, (7)));
+        deployer.arm(p, impl, abi.encodeCall(LogicA.initialize, (7)));
 
-        assertEq(_adminOf(p), address(0), "and has given it up by the time logic exists");
+        assertEq(_implOf(p), impl);
         assertEq(LogicA(p).value(), 7);
+
+        address logicB = address(new LogicB());
+        vm.expectRevert();
+        deployer.arm(p, logicB, "");
+        assertEq(_implOf(p), impl, "unchanged");
     }
 
     function test_theDeployerCannotUpgradeAgain() public {
@@ -148,14 +214,10 @@ contract LockedProxyTest is Test {
         assertEq(LogicA(p).which(), "A", "still the original logic");
     }
 
-    /// @dev Nobody else ever had it, including while the proxy is blank.
-    ///
-    /// @dev A blank proxy delegates to the zero address, which succeeds silently: a call
-    ///      to a conduit with no code returns empty rather than reverting. So a stranger's
-    ///      attempt is not refused, it is simply ignored: it changes nothing and installs
-    ///      nothing. That is only tolerable because a blank proxy never survives the
-    ///      transaction that created it; `TransceiverBase` deploys, arms, and locks in
-    ///      one function, so there is no block in which one is observable.
+    /// @dev A stranger's call on a blank proxy delegates to the zero address and succeeds
+    ///      silently. It changes nothing, which is tolerable because a blank proxy never
+    ///      survives the transaction that created it: `TransceiverBase` deploys and arms in
+    ///      one function.
     function test_aStrangerIsNeverTheAdmin() public {
         address p = deployer.deploy(SALT);
         address logic = address(new LogicA());
@@ -163,34 +225,197 @@ contract LockedProxyTest is Test {
         vm.prank(address(0xBAD));
         ILockedProxy(p).upgradeInitializeAndLock(logic, "");
 
-        assertEq(_adminOf(p), address(deployer), "the admin is unchanged");
-        assertEq(
-            StorageSlot.getAddressSlot(ERC1967Utils.IMPLEMENTATION_SLOT).value, address(0), "and nothing was installed"
-        );
+        _assertStillArmable(p);
     }
 
-    /// @dev After the lock the admin selector stops existing, rather than reverting
-    ///      forever. That is why the operation is routed inside `fallback` instead of
-    ///      declared: a declared function would shadow that selector on the implementation
-    ///      for the life of the conduit.
+    /// @dev The admin is whoever created the proxy, not whoever started the transaction.
+    function test_theTransactionOriginIsNotTheAdmin() public {
+        address p = deployer.deploy(SALT);
+        address logicA = address(new LogicA());
+        address logicB = address(new LogicB());
+
+        vm.prank(address(0xA11CE), address(0xA11CE));
+        ILockedProxy(p).upgradeInitializeAndLock(logicA, "");
+        assertEq(_implOf(p), address(0), "its origin armed nothing");
+
+        vm.prank(address(deployer), address(0xA11CE));
+        (bool ok,) = p.call(_armCall(logicB, ""));
+
+        assertTrue(ok, "the creator arms it whoever the origin is");
+        assertEq(LogicB(p).which(), "B");
+    }
+
+    function testFuzz_aStrangerCannotArmABlankProxy(address caller, address impl, bytes calldata init) public {
+        vm.assume(caller != address(deployer) && caller != address(vm));
+        address p = deployer.deploy(SALT);
+        vm.assume(caller != p);
+
+        vm.prank(caller, caller);
+        (bool ok,) = p.call(_armCall(impl, init));
+
+        assertTrue(ok, "ignored, not refused");
+        _assertStillArmable(p);
+    }
+
+    /// @dev After the lock the admin selector stops existing, rather than reverting forever,
+    ///      for the deployer as for anyone. The operation is routed inside `fallback` instead
+    ///      of declared so that it never shadows that selector on an implementation.
     function test_theAdminSelectorDelegatesAfterTheLock() public {
         address p = deployer.deploy(SALT);
         deployer.arm(p, address(new Shadower()), "");
 
-        // The implementation's own function of the same name is reachable, which it could
-        // not be if the proxy had declared one.
         assertEq(Shadower(p).upgradeInitializeAndLock(address(0), ""), "reached the implementation");
+
+        vm.prank(address(deployer));
+        assertEq(Shadower(p).upgradeInitializeAndLock(address(0), ""), "reached the implementation", "as the admin");
     }
 
-    /// @dev An unrecognised call from the admin reverts rather than delegating, so a
-    ///      mistyped deployment step cannot silently become a call on a blank proxy.
+    /// @dev An unrecognised call from the admin reverts rather than delegating, so a mistyped
+    ///      deployment step cannot silently become a call on a blank proxy.
     function test_anUnknownAdminCallIsRefused() public {
         address p = deployer.deploy(SALT);
 
         vm.prank(address(deployer));
         (bool ok, bytes memory ret) = p.call(abi.encodeWithSignature("nonsense()"));
+
         assertFalse(ok);
-        assertEq(bytes4(ret), LockedProxy.UnknownAdminCall.selector, "named, not a bare delegate failure");
+        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(keccak256("nonsense()"))));
+        _assertStillArmable(p);
+    }
+
+    /// @dev Calldata shorter than a selector, and none at all, are unknown calls too: an
+    ///      ether transfer from the admin to a blank proxy reverts.
+    function test_anAdminCallWithNoSelectorIsRefused() public {
+        address p = deployer.deploy(SALT);
+
+        vm.prank(address(deployer));
+        (bool ok, bytes memory ret) = p.call(hex"abcd");
+        assertFalse(ok);
+        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(0xabcd0000)));
+
+        vm.deal(address(deployer), 1 wei);
+        vm.prank(address(deployer));
+        (ok, ret) = p.call{value: 1 wei}("");
+        assertFalse(ok);
+        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(0)));
+
+        _assertStillArmable(p);
+        assertEq(p.balance, 0);
+    }
+
+    /// @dev Every way the arming call can fail leaves a blank proxy that the deployer can arm.
+    function test_anImplementationWithNoCodeIsRefused() public {
+        address p = deployer.deploy(SALT);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC1967Utils.ERC1967InvalidImplementation.selector, address(0)));
+        deployer.arm(p, address(0), "");
+
+        address eoa = address(0xE0A);
+        vm.expectRevert(abi.encodeWithSelector(ERC1967Utils.ERC1967InvalidImplementation.selector, eoa));
+        deployer.arm(p, eoa, "");
+
+        _assertStillArmable(p);
+    }
+
+    function test_aMalformedArmCallIsRefused() public {
+        address p = deployer.deploy(SALT);
+
+        vm.prank(address(deployer));
+        (bool ok,) = p.call(abi.encodePacked(ILockedProxy.upgradeInitializeAndLock.selector, uint256(1)));
+
+        assertFalse(ok);
+        _assertStillArmable(p);
+    }
+
+    function test_aFailingInitializerLeavesTheProxyBlank() public {
+        address p = deployer.deploy(SALT);
+        address failing = address(new Failing());
+
+        vm.expectRevert("init failed");
+        deployer.arm(p, failing, abi.encodeCall(Failing.initialize, ()));
+
+        _assertStillArmable(p);
+    }
+
+    /// @dev Value sent with an arming call reaches the initializer, as in a plain upgrade, and
+    ///      is refused when there is no initializer to receive it.
+    function test_armingValueNeedsAnInitializer() public {
+        address p = deployer.deploy(SALT);
+        address echo = address(new Echo());
+        vm.deal(address(deployer), 2 wei);
+
+        vm.prank(address(deployer));
+        (bool ok, bytes memory ret) = p.call{value: 1 wei}(_armCall(echo, ""));
+        assertFalse(ok);
+        assertEq(bytes4(ret), ERC1967Utils.ERC1967NonPayable.selector);
+        assertEq(_implOf(p), address(0));
+
+        vm.prank(address(deployer));
+        (ok,) = p.call{value: 1 wei}(_armCall(echo, hex"01"));
+        assertTrue(ok);
+        assertEq(p.balance, 1 wei);
+        assertEq(Echo(payable(p)).hits(), 1, "the initializer ran as the proxy");
+    }
+
+    function test_armingEmitsUpgradedThenLocked() public {
+        address p = deployer.deploy(SALT);
+        address impl = address(new LogicA());
+
+        vm.expectEmit(true, false, false, false, p);
+        emit IERC1967.Upgraded(impl);
+        vm.expectEmit(false, false, false, true, p);
+        emit LockedProxy.Locked(impl);
+        deployer.arm(p, impl, "");
+    }
+
+    /// @dev The implementation is installed before its initializer runs, so a callback into
+    ///      the proxy from inside the initializer is an ordinary call and cannot arm it again.
+    function test_theInitializerCannotArmTheProxyAgain() public {
+        address p = deployer.deploy(SALT);
+        address impl = address(new Reenter());
+        address other = address(new LogicB());
+
+        deployer.arm(p, impl, abi.encodeCall(Reenter.initialize, (address(deployer), other)));
+
+        assertEq(_implOf(p), impl, "still the first implementation");
+        assertFalse(Reenter(p).reentrySucceeded(), "the callback was refused");
+    }
+
+    function testFuzz_afterTheLockNoCallerChangesTheImplementation(
+        bool asAdmin,
+        address caller,
+        bytes calldata data,
+        uint96 value
+    ) public {
+        vm.assume(bytes4(data) != bytes4(keccak256("hits()")));
+        address impl = address(new Echo());
+        address p = deployer.deploy(SALT);
+        deployer.arm(p, impl, "");
+        if (asAdmin) caller = address(deployer);
+        vm.assume(caller != address(vm) && caller != p);
+
+        vm.deal(caller, value);
+        vm.prank(caller);
+        (bool ok,) = p.call{value: value}(data);
+
+        assertTrue(ok);
+        assertEq(Echo(payable(p)).hits(), 1, "every call reached the implementation");
+        assertEq(_implOf(p), impl);
+    }
+
+    /// @dev The lock is the implementation slot, so an implementation that clears it hands
+    ///      arming back to the deployer. An implementation must not write ERC-1967 slots; a
+    ///      lock held in any slot rests on that, and the deployer's code never arms a proxy
+    ///      that has code (`Conduits.requireVacant`, `Create2.deploy`).
+    function test_anImplementationThatClearsTheSlotReopensArmingToTheDeployer() public {
+        address p = deployer.deploy(SALT);
+        deployer.arm(p, address(new Clobber()), "");
+
+        Clobber(p).clobber();
+        assertEq(_implOf(p), address(0));
+
+        deployer.arm(p, address(new LogicA()), "");
+        assertEq(LogicA(p).which(), "A");
     }
 }
 

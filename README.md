@@ -94,8 +94,8 @@ flowchart LR
 ```
 
 The owner is `msg.sender` by construction, so nobody can squat an address another party
-intends to use. Arming installs the logic, runs the initializer, and zeroes the upgrade key in
-one call, so it is never live afterwards. The same three CREATE2 inputs are used on every
+intends to use. Arming installs the logic, runs the initializer, and closes the proxy to further
+arming in one call, so the upgrade key is never live afterwards. The same three CREATE2 inputs are used on every
 chain, so this address is also where the owner's receivers will land.
 
 ### 2 · Creating a receiver: bootstrap
@@ -438,7 +438,7 @@ What an operator or integrator has to know:
   away from moving.
 - Transceivers and conduits are all `LockedProxy`, and each locks in the same call that arms
   it. `LockedProxyDeployer` deploys a transceiver, installs its implementation, runs its
-  initializer, and zeroes the admin in one call, under a salt bound to its caller so nobody
+  initializer, and locks the proxy in one call, under a salt bound to its caller so nobody
   else can take the address first. The implementation has no upgrade function. A
   transceiver decides which cross-chain payloads are authentic, so a live upgrade key would
   be a standing ability to forge one, and there is no reachable state in which one exists.

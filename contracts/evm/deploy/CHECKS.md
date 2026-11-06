@@ -94,7 +94,7 @@ free until the deploy:
 
 ```sh
 cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C --rpc-url $RPC | cast keccak   # equals Ethereum's
-cast code 0x49731f3c3b6Fbdb54f6c2d7614cAdd7957A8249C --rpc-url $RPC                 # 0x until deployed
+cast code 0x45819698495847BFF3Cb3E3d78E71CFcF0C30c7B --rpc-url $RPC                 # 0x until deployed
 ```
 
 Code at Arachnid's address does not make a chain parity: zkSync Era has it too (README §1).
