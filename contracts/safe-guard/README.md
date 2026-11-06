@@ -17,7 +17,7 @@ context and allow only that address to consume it. Staging is not implemented ye
 
 ## Agreed dependency boundary
 
-Use `ITransactionGuard` and its `BaseTransactionGuard` implementation from Safe
+The existing test observer uses `ITransactionGuard` and `BaseTransactionGuard` from Safe
 1.5.0, pinned to `dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be`. Use Safe 1.3.0,
 pinned to `186a21a74b327f17fc41217a927dea7064f74604`, for the real singleton/proxy
 fixture. Git submodules and `foundry.lock` record both commits. The test library
@@ -29,6 +29,15 @@ one concrete hook implementation, `test/TransactionGuardHarness.sol`, with no
 version branches or copied interface declarations. Its conversion between the
 two dependencies' Solidity enum types preserves the common ABI's `uint8` encoding.
 The upstream base provides ERC-165 and transaction-guard interface support.
+
+Agreed production inheritance: extend a minimally refactored `SafePolicyGuard`,
+reusing its policy engine and configuration, then add signature staging and cleanup.
+Its reviewed hooks are not virtual, so an upstream refactor or pinned maintained
+fork is required before implementation. Preserve the newer hook ABI and ERC-165
+support without requiring a second independent production hook base. `SafenetPolicy`
+remains a selectable policy called by the guard. This production inheritance is
+documented, not implemented. See the
+[integration decision](../../docs/safe-guard-design.md#production-inheritance-and-policy-integration).
 
 The harness observes calls and rejects callers other than its configured Safe.
 It is test-only: it records hook data in persistent storage, performs no policy

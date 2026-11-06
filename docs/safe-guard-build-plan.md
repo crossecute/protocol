@@ -12,8 +12,9 @@ The reviewed starting commit is `5356c2d` on protocol baseline `1a223df`.
 production guard design and a tested standalone transient-storage MVP. The
 [design draft](safe-guard-design.md) remains the source for requirements R1-R10,
 questions Q1-Q11, and risks E01-E25. This plan orders the work and defines evidence
-for completion. Q1's interface/fixture choice and owner-Safe guard discovery are agreed; other recommendations
-remain proposals unless explicitly marked agreed.
+for completion. Agreed choices include the interface/fixture boundary, owner-Safe guard
+discovery, selector-only staging with target-bound retrieval, and extending SafePolicyGuard
+for production. Other recommendations remain proposals unless explicitly marked agreed.
 
 Assumption: PR #112 remains the design and execution-plan review, followed by
 focused implementation PRs on the same issue. Renaming the PR does not rename its
@@ -44,8 +45,9 @@ The existing code and configuration constrain implementation:
   size check, selector check, lint, tests, and coverage. A separate guard project
   job runs its formatter, build, lint and interface compatibility suite.
 - The agreed Safe 1.3.0 fixture increments the nonce before the pre-hook
-  and caches the guard for the post-hook. The implementation inherits the pinned
-  Safe 1.5.0 `BaseTransactionGuard`. The pinned policy requires zero
+  and caches the guard for the post-hook. The test observer inherits pinned
+  Safe 1.5.0 `BaseTransactionGuard`; production will extend refactored
+  `SafePolicyGuard` while preserving the compatible hook ABI. The pinned policy requires zero
   `safeTxGas` and `gasPrice`, and uses Solidity 0.8.30. Preserve these distinctions
   when specifying fixtures, failure tests, migration, and production composition.
 
@@ -68,6 +70,9 @@ Depends on: review of the existing draft and issue scope.
 - [x] Record Q1's agreed dependency boundary: newer `ITransactionGuard` and
   `BaseTransactionGuard`, Safe 1.3.0 singleton/proxy fixture, one implementation,
   no version branches, and tested runtime support limited to the 1.3.0 fixture.
+- [x] Record production inheritance: extend `SafePolicyGuard`, reuse its policy
+  engine, and add staging/cleanup. Preserve newer interface compatibility without
+  requiring a second independent `BaseTransactionGuard` production parent.
 - [x] Record guard discovery: the signature-enabled transmitter reads its owner
   Safe's transaction guard slot on dispatch and consumes the context from that
   guard. No guard address is pinned at creation or pushed transiently by a hook.
@@ -263,11 +268,15 @@ R9 remains a production design obligation with future implementation tests.
 
 Depends on: T01; incorporates findings from T02-T08 before acceptance.
 
-- [ ] Resolve Q2 and remaining production portions of Q1/Q3/Q4: exact policy
-  revision, supported deployments/transmitters, configuration authority and shared
-  internal policy composition. Choose an upstream refactor or maintained fork;
-  specify licensing/provenance and the separate compiler decision. Forwarding
-  to an existing deployed guard changes its Safe caller identity.
+- [ ] Prepare Q2's agreed `SafePolicyGuard` inheritance: pin an upstream refactor
+  or minimal maintained fork from reviewed baseline 8ee68a8, expose virtual hooks
+  with reusable internal policy paths, and preserve Safe caller identity. Reconcile
+  Solidity operation/interface types into one hook ABI; verify ERC-165 support.
+  Specify licensing/provenance and isolated compiler compatibility with 0.8.30.
+- [ ] Resolve remaining Q1/Q2/Q3/Q4 details: supported deployments, exact required
+  policies including where `SafenetPolicy` is selected, and configuration authority.
+  Differentially test the refactored base before adding staging, then test the
+  derived guard against it. Do not forward hooks to another deployed guard.
 - [ ] Resolve Q5/Q6/Q11: accepted signing modes, threshold/signer ordering,
   total-input/owner caps, recognized extension bounds and exclusion, unknown or
   duplicate tails, extra signatures, dynamic contract-signature offsets and

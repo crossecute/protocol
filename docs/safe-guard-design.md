@@ -3,8 +3,9 @@
 Status: design draft for [issue #107](https://github.com/crossecute/protocol/issues/107).
 This document proposes implementation choices for review. The interface and real Safe
 fixture foundation are implemented; the standalone staging MVP and production integration
-are not. Q1's MVP interface/fixture choice is agreed below. Other recommendations are
-not accepted decisions.
+are not. Decisions explicitly marked agreed below include the interface/fixture boundary,
+guard discovery, staging eligibility and production inheritance. Other recommendations
+are not accepted decisions.
 
 The [execution plan](safe-guard-build-plan.md) builds on this draft with ordered
 tasks, decision gates, proposed artifacts, and completion evidence for issue #107.
@@ -42,7 +43,7 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
   is the agreed MVP singleton/proxy source fixture. It increments nonce, checks signatures,
   then invokes the pre-hook with original signatures. The ECDSA fixture observes signed
   nonce `Safe.nonce() - 1`; the post-hook receives the digest and execution success.
-- Use [ITransactionGuard and BaseTransactionGuard at dc437e8](https://github.com/safe-fndn/safe-smart-account/blob/dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be/contracts/base/GuardManager.sol)
+- The compatibility observer uses [ITransactionGuard and BaseTransactionGuard at dc437e8](https://github.com/safe-fndn/safe-smart-account/blob/dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be/contracts/base/GuardManager.sol)
   from Safe 1.5.0. The 1.3.0, 1.4.1 and 1.5.0 transaction hooks have identical canonical
   ABIs and call arguments; no version branches or duplicate interfaces are required.
   The newer base supplies ERC-165 support, which 1.3 does not check at installation.
@@ -104,14 +105,44 @@ binding. Nonmatching or short calldata stages no signature blob, while productio
 runs Safenet policy. No inspection of nested MultiSend calldata or module-signature staging
 is added by this decision.
 
-For production, use one combined transaction guard with direct access to the Safe hook.
-Run the selected policy first, then extract and stage signatures, then return to Safe.
-Safe executes the originally signed inner call; the guard must never send on its behalf.
-Do not forward the transaction hook to an existing deployed guard: doing so changes
-`msg.sender`, which the referenced guard uses as the Safe configuration key. Prefer a
-shared internal policy path in the combined guard, with a pinned upstream revision and
-explicit compatibility tests. The referenced external hooks are not virtual, so simple
-subclass overrides are not an implementation plan without an upstream refactor or fork.
+### Production inheritance and policy integration
+
+Agreed: our installed production guard extends `SafePolicyGuard`, reusing its inherited
+`PolicyEngine`, policy configuration and enforcement. It adds crossecute's transient
+signature staging, target-bound consumption and cleanup. It is separate from transmitters
+and receivers. `SafePolicyGuard` is the general policy guard; `SafenetPolicy` is a separate
+configurable policy contract that verifies Safenet attestations. Selecting the base guard
+does not make Safenet attestation mandatory for every action.
+
+```text
+PolicyEngine
+  -> SafePolicyGuard (refactored pinned dependency)
+       -> our combined policy and signature-staging guard
+```
+
+The reviewed base revision is `8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3`. Its external hooks
+are not virtual. Before deriving the combined implementation, obtain an upstream refactor
+or maintain a minimal fork that exposes virtual hook wrappers and reusable internal policy
+paths. Preserve the Safe caller identity and existing policy semantics. Do not forward
+hooks to a separately deployed guard, and do not attempt an external self-call to reuse a
+hook: both change `msg.sender`. An external hook is not an internal `super` entry point.
+
+Use one canonical transaction-hook implementation and reconcile Solidity operation/interface
+types between the policy dependency and Safe's newer interface. The agreed
+`ITransactionGuard` ABI/ERC-165 compatibility requirement remains. Directly inheriting
+`BaseTransactionGuard` as a second independent production hook base is not required;
+the existing test observer may continue using it to establish compatibility.
+
+Pre-hook order: authenticate and reserve the staging lifecycle, capture signed context,
+execute the inherited policy checks, then stage on the agreed selector. Safe executes its
+originally signed inner call; the guard never sends on its behalf. The post-hook preserves
+inherited policy postconditions and clears the matching staging record. Preserve module
+policy hooks without adding owner-signature staging to them.
+
+Still required: pin the refactored dependency and provenance, resolve the upstream Solidity
+0.8.30 requirement in the isolated build, reconcile hook types, and run differential policy
+tests before claiming production parity. No policy-engine integration is implemented by
+the existing interface observer, and the standalone MVP remains policy-free.
 
 ### Slot ownership and transmitter interface
 
@@ -249,14 +280,14 @@ Proposed structure, with names illustrative until Q4/Q5 define the production AP
 
 | Component | Responsibility and state | Reuse boundary |
 | --- | --- | --- |
-| Safe guard | Inherit the pinned `BaseTransactionGuard`; own transient context and signature words | Standalone installed contract, not a transmitter/receiver parent |
+| Safe guard | Extend refactored `SafePolicyGuard`; reuse policy enforcement and own transient context/signature words | Standalone installed contract, not a transmitter/receiver parent |
 | Signature interfaces and codec | Declare transmitter/verifier APIs and versioned encoding; no storage | One shared declaration/codec per format, outside provider bindings |
 | Source signature add-on | Authenticate Safe owner, discover its installed guard, consume exact guarded context, construct signed envelope before transport; no stored guard address | One shared abstract component used by optional signature transmitter variants |
 | Destination signature add-on | Verify authority, domain, calls and replay before execution; own verifier configuration and replay records | One shared abstract component used by optional signature receiver variants |
 | Optional concrete variants | Compose the shared signature component with provider transport behavior | Thin provider declarations resolve inheritance; no copied parsers or verification logic |
 | Existing plain variants | Preserve current owner/transport authorization and wire behavior | Deploy independently without the signature components |
 
-Only the Safe guard inherits `ITransactionGuard` through its upstream base. The source
+Only the Safe guard implements the transaction-guard ABI through its policy base. The source
 add-on calls a minimal consume interface; receivers do not import Safe hook interfaces.
 Signature state exists only in opt-in variants. Configuration and replay state belong to
 each conduit proxy and are initialized before bootstrap execution; do not put per-conduit
@@ -350,7 +381,7 @@ covers installation and hook compatibility only; staging, policy and resource-bo
 ## Running edge-case and risk register
 
 Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
-implementation bugs. No entry is verified or accepted; E03 and E25 record agreed approaches
+implementation bugs. No entry is verified or accepted; E03, E15 and E25 record agreed approaches
 with implementation evidence pending. The interface/fixture tests provide partial
 evidence, not a tested staging mitigation. Scope names the delivery that needs evidence,
 not where the risk first appears.
@@ -391,7 +422,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | E12 / Production / Open | Extension bounds overlap owner signatures, or unknown/extra tails are interpreted differently by Safe, policy and staging parsers | Define one accepted encoding and reject ambiguous dispatch inputs. Test malformed lengths, recognized/unknown types, multiple trailers, extra signatures and overlap; ordinary policy transactions must retain their agreed behavior | Q5, Q6, Q11; R9 |
 | E13 / Production / Open | Approved-hash or contract signatures are copied as though they were portable ECDSA authorization | Decide supported signing modes and verifier semantics. Test each supported mode and rejection of unsupported modes, dynamic offsets, duplicate signers and threshold boundaries using valid Safe fixtures | Q5, Q11; R9 |
 | E14 / Production / Open | Executor-supplied policy context is mistaken for owner-signed content, allowing altered context to authorize a different effect | Keep context separate from owner bytes and require the selected policy to establish its own binding. Mutate extension payload while retaining owner signatures and verify the policy rejects unauthorized effects | Q2, Q5, Q6; R9 |
-| E15 / Production / Open | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Differentially test the combined guard against the pinned policy for allowed and denied owner/module operations, configuration and failure cases. Document intentional differences as decisions before accepting them | Q2, Q9; R9 |
+| E15 / Production / Decided | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Agreed: extend refactored SafePolicyGuard, reuse inherited internal policy paths, preserve one hook ABI and Safe caller identity. Remaining: upstream refactor/fork pin, compiler/type integration and differential owner/module/configuration/failure tests; migration remains Q9. No production parity is verified | Q2, Q9; R9 |
 | E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged transmitter while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the transmitter. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
 | E17 / Production / Open | Migration omits policies or pending roots, resets a delay, or leaves transaction and module policy configurations inconsistent | Review a concrete migration inventory and authorized sequence. Test before/after policy parity, pending-root treatment, timing boundaries, failed migration, and removal without an unguarded interval | Q2, Q9; R9 |
 
@@ -417,8 +448,8 @@ This register is not an exhaustive security review.
 
 | Question | Recommendation to discuss | What it blocks |
 | --- | --- | --- |
-| Q1. Which Safe versions and deployments are supported? | Agreed for MVP: pinned 1.5.0 ITransactionGuard/BaseTransactionGuard, pinned 1.3.0 singleton/proxy fixture, one implementation without version branches. Runtime support claim is limited to that fixture; production deployment allowlist remains open | Production deployment authentication; MVP interface choice is resolved |
-| Q2. Which exact Safenet policy revision and policies must be preserved? Is an upstream refactor or maintained fork acceptable? | Use the reviewed revision as a baseline, then pin the agreed production dependency | Policy composition and compiler choice |
+| Q1. Which Safe versions and deployments are supported? | Agreed: newer transaction-hook ABI/ERC-165 compatibility and pinned 1.3.0 singleton/proxy fixture. The current observer inherits pinned 1.5.0 BaseTransactionGuard; production extends SafePolicyGuard with one reconciled hook implementation. Runtime claim remains limited to the fixture | Production deployment authentication; MVP compatibility boundary resolved |
+| Q2. Which policy base and exact revision should production preserve? | Agreed: extend SafePolicyGuard and reuse its PolicyEngine/configuration/enforcement; SafenetPolicy remains a separately selectable policy. Reviewed base is 8ee68a8. Refactored upstream/fork pin, exact required policies, compiler and hook-type reconciliation remain open | Inheritance choice resolved; dependency preparation and policy-parity evidence pending |
 | Q3. One guard per Safe or a shared registered guard? Who controls Safe registration/configuration? | Agreed discovery: transmitter reads its owner Safe's installed guard; no pinned/pushed guard address or later setter. Selector-only staging and target-bound consumption need no transmitter allowlist. Single/shared Safe model and Safe configuration authority remain open | Guard discovery and target selection resolved; Safe registration/configuration remains open |
 | Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering. Only the actual signed target may consume. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI remains open |
 | Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
