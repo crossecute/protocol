@@ -154,7 +154,7 @@ contract LockedProxyTest is Test {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
             keccak256(type(LockedProxy).creationCode),
-            0x6d3833c585f8809561b488327140414769cdda10be277d5be13e08201693daa7
+            0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6
         );
     }
 

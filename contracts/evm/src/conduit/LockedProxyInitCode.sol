@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {LockedProxy} from "src/conduit/LockedProxy.sol";
 
 /// @notice `LockedProxy`'s initcode held by another contract, which returns it to any call, so a
-///         contract that deploys conduits reads it rather than carrying 1.5 KB of it in its own
+///         contract that deploys conduits reads it rather than carrying 0.6 KB of it in its own
 ///         runtime (#70).
 ///
 /// @dev CREATE2 hashes the initcode bytes, not where they were read from, so a conduit deployed
@@ -27,10 +27,10 @@ library LockedProxyInitCode {
         bytes memory initCode = type(LockedProxy).creationCode;
         // PUSH2 len, DUP1, PUSH1 12, PUSH1 0, CODECOPY, PUSH1 0, RETURN: on any call, returns what
         // follows this 12-byte prefix, the initcode.
-        // forge-lint: disable-next-line(unsafe-typecast) a constant 1.5 KB
+        // forge-lint: disable-next-line(unsafe-typecast) a constant 0.6 KB
         bytes memory runtime = abi.encodePacked(hex"61", uint16(initCode.length), hex"80600c6000396000f3", initCode);
         // The same prefix shape, 14 bytes with PUSH4: returns `runtime` as the new contract's code.
-        // forge-lint: disable-next-line(unsafe-typecast) a constant 1.5 KB
+        // forge-lint: disable-next-line(unsafe-typecast) a constant 0.6 KB
         bytes memory creation = abi.encodePacked(hex"63", uint32(runtime.length), hex"80600e6000396000f3", runtime);
         assembly {
             at := create(0, add(creation, 0x20), mload(creation))

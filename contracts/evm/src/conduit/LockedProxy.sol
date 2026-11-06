@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
-import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-
 /// @notice The one call a `LockedProxy` accepts from its deployer. Declared separately so
 ///         callers have a selector without the proxy shadowing the implementation's ABI.
 interface ILockedProxy {
@@ -31,10 +28,23 @@ interface ILockedProxy {
 ///
 /// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
 ///      Once armed every call delegates, as in a plain ERC-1967 proxy.
-contract LockedProxy is Proxy {
+contract LockedProxy {
+    // forge-lint: disable-next-line(unused-error) reverted in assembly; declared for the ABI
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
+
+    // ERC1967Utils.IMPLEMENTATION_SLOT and the errors and events the arming call reports, as
+    // literals so assembly can read them; `LockedProxyDifferential` compares every one against
+    // the library-built reference.
+    bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 private constant UPGRADED = 0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b;
+    bytes32 private constant LOCKED = 0x44427e3003a08f22cf803894075ac0297524e09e521fc1c15bc91741ce3dc159;
+    uint256 private constant ARM = 0x885088b2;
+    uint256 private constant UNKNOWN_ADMIN_CALL = 0xf3e81dfa;
+    uint256 private constant INVALID_IMPLEMENTATION = 0x4c9c8ce3;
+    uint256 private constant NON_PAYABLE = 0xb398979f;
+    uint256 private constant FAILED_CALL = 0xd6bda275;
 
     address private immutable ADMIN;
 
@@ -42,24 +52,76 @@ contract LockedProxy is Proxy {
         ADMIN = msg.sender;
     }
 
-    function _implementation() internal view override returns (address) {
-        return ERC1967Utils.getImplementation();
-    }
-
-    fallback() external payable override {
-        address current = _implementation();
-
-        // Armed, or not the deployer: an ordinary call, and `_delegate` does not return.
-        // `ADMIN` is read only while blank.
-        if (current != address(0) || msg.sender != ADMIN) _delegate(current);
-
-        if (msg.sig != ILockedProxy.upgradeInitializeAndLock.selector) {
-            revert UnknownAdminCall(msg.sig);
+    fallback() external payable {
+        address current;
+        assembly {
+            current := sload(IMPLEMENTATION_SLOT)
         }
 
-        (address implementation, bytes memory data) = abi.decode(msg.data[4:], (address, bytes));
+        // Armed, or not the deployer: an ordinary call. `ADMIN` is read only while blank.
+        if (current != address(0) || msg.sender != ADMIN) {
+            assembly {
+                calldatacopy(0, 0, calldatasize())
+                let ok := delegatecall(gas(), current, 0, calldatasize(), 0, 0)
+                returndatacopy(0, 0, returndatasize())
+                if iszero(ok) { revert(0, returndatasize()) }
+                return(0, returndatasize())
+            }
+        }
 
-        ERC1967Utils.upgradeToAndCall(implementation, data);
-        emit Locked(implementation);
+        assembly {
+            let size := calldatasize()
+            let sig := and(calldataload(0), shl(224, 0xffffffff))
+            if iszero(eq(sig, shl(224, ARM))) {
+                mstore(0, shl(224, UNKNOWN_ADMIN_CALL))
+                mstore(4, sig)
+                revert(0, 36)
+            }
+
+            // abi.decode(msg.data[4:], (address, bytes)), refusing what it refuses. A length over
+            // 2^64 reverts with no data here and with Panic(0x41) there.
+            if lt(size, 68) { revert(0, 0) }
+            let implementation := calldataload(4)
+            if shr(160, implementation) { revert(0, 0) }
+            let offset := calldataload(36)
+            if gt(offset, 0xffffffffffffffff) { revert(0, 0) }
+            let start := add(offset, 4)
+            let length := calldataload(start)
+            if gt(length, 0xffffffffffffffff) { revert(0, 0) }
+            let data := add(start, 32)
+            if gt(add(data, length), size) { revert(0, 0) }
+
+            if iszero(extcodesize(implementation)) {
+                mstore(0, shl(224, INVALID_IMPLEMENTATION))
+                mstore(4, implementation)
+                revert(0, 36)
+            }
+            sstore(IMPLEMENTATION_SLOT, implementation)
+            log2(0, 0, UPGRADED, implementation)
+
+            switch length
+            case 0 {
+                if callvalue() {
+                    mstore(0, shl(224, NON_PAYABLE))
+                    revert(0, 4)
+                }
+            }
+            default {
+                let ptr := mload(0x40)
+                calldatacopy(ptr, data, length)
+                if iszero(delegatecall(gas(), implementation, ptr, length, 0, 0)) {
+                    if iszero(returndatasize()) {
+                        mstore(0, shl(224, FAILED_CALL))
+                        revert(0, 4)
+                    }
+                    returndatacopy(ptr, 0, returndatasize())
+                    revert(ptr, returndatasize())
+                }
+            }
+
+            mstore(0, implementation)
+            log1(0, 32, LOCKED)
+            return(0, 0)
+        }
     }
 }
