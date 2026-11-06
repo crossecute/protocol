@@ -5,7 +5,7 @@ import {DeployProvider} from "script/DeployProvider.s.sol";
 import {OpStackDeploy, OpStackConfig} from "script/deploy/OpStackDeploy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
-import {check} from "script/deploy/LockedProxyDeploy.sol";
+import {check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice `op-stack-l1-l2`, between Ethereum and each OP Stack chain. No environment inputs of
 ///         its own: the messenger that reaches the governor's home is read from

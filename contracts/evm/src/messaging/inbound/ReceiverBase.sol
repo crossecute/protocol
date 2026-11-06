@@ -180,7 +180,7 @@ abstract contract ReceiverBase is
     /// @notice Stop trusting a transport this receiver was armed with.
     ///
     /// @dev The only membership change after initialization anywhere, and it only subtracts:
-    ///      `grantRole` is `onlyInitializing`, and `LockedProxy` arms once, so a dropped
+    ///      `grantRole` is `onlyInitializing`, and `Proxy` arms once, so a dropped
     ///      transport is never replaced. A gateway that can deliver can forge, so going deaf is
     ///      the recoverable failure.
     ///

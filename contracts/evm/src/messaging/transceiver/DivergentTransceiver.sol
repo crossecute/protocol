@@ -48,7 +48,7 @@ abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
     }
 
     /// @dev EraVM cannot deploy raw initcode, and `_deployConduit` here reads none.
-    function _storeLockedProxyInitCode() internal virtual override returns (address) {
+    function _storeProxyInitCode() internal virtual override returns (address) {
         return address(0);
     }
 }

@@ -6,7 +6,7 @@ import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
-import {DeployCheck} from "script/deploy/LockedProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 
 /// @title GasAttribute
 /// @notice The one attribute each binding takes to set a message's destination gas.

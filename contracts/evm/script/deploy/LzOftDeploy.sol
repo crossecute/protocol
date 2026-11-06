@@ -6,7 +6,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
-import {arachnidDeploy, check} from "script/deploy/LockedProxyDeploy.sol";
+import {arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice A destination as an operator names it: its EVM chain id and LayerZero eid.
 struct LzOftDestination {

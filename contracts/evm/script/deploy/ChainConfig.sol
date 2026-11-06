@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {VM, DeployCheck, check} from "script/deploy/LockedProxyDeploy.sol";
+import {VM, DeployCheck, check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice How a chain places contracts. See `deploy/chains.toml`.
 enum Derivation {

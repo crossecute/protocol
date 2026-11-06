@@ -42,7 +42,7 @@ contract PairedTron is TronTransceiver, Unsent {
     constructor(address extension_) TransceiverBase(extension_) {}
 
     function initialize(TransceiverConfig memory c) external initializer {
-        __DivergentTransceiver_init(c, keccak256("tron-solc LockedProxy"));
+        __DivergentTransceiver_init(c, keccak256("tron-solc Proxy"));
     }
 
     function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)

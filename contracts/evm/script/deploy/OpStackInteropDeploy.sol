@@ -5,7 +5,7 @@ import {OpStackInteropTransceiver} from "src/protocols/op-stack/OpStackInteropTr
 import {OpStackInteropReceiver} from "src/protocols/op-stack/OpStackInteropReceiver.sol";
 import {OpStackInteropTransmitter} from "src/protocols/op-stack/OpStackInteropTransmitter.sol";
 import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
-import {VM, check} from "script/deploy/LockedProxyDeploy.sol";
+import {VM, check} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {TransceiverDeployment, deployTransceiverProxy, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 

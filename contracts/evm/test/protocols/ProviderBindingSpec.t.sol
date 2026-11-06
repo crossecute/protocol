@@ -12,7 +12,7 @@ import {
 } from "test/protocols/ProviderFixture.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
-import {deployConduit} from "test/DeployLockedProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";

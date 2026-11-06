@@ -61,7 +61,7 @@ the seventh; what they mean for an operator is in the README.
   matches `ContractDeployer.getNewAddressCreate2` on mainnet, and Tron's `0x41` preimage is
   java-tron's own (`WalletUtil.generateContractAddress2`), which settles the docs
   contradiction. On a local EraVM node, a zkSync transceiver born with the hash read from a
-  deployed `LockedProxy` created its conduit where it predicted (2026-10-20, CHECKS §4). Still
+  deployed `Proxy` created its conduit where it predicted (2026-10-20, CHECKS §4). Still
   unverified is the `conduitBytecodeHash` of the production zksolc and TRON-solc builds,
   which needs a funded deployment. It fails closed if wrong (`ConduitAddressMismatch` on
   every conduit creation), so the cost is a redeploy.

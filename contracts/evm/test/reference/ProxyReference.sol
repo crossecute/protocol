@@ -4,12 +4,12 @@ pragma solidity ^0.8.20;
 import {Proxy} from "@openzeppelin/contracts/proxy/Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
-import {ILockedProxy} from "src/conduit/LockedProxy.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
 
-/// @notice `LockedProxy` written against OpenZeppelin's `ERC1967Utils` and `Proxy`, kept as the
-///         behavior `LockedProxy` must match call for call. `LockedProxyDifferential.t.sol`
+/// @notice The previous `Proxy`, written against OpenZeppelin's `ERC1967Utils` and `Proxy`, kept
+///         as the behavior the current `Proxy` must match call for call. `ProxyDifferential.t.sol`
 ///         holds the two together.
-contract LockedProxyReference is Proxy {
+contract ProxyReference is Proxy {
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
@@ -29,7 +29,7 @@ contract LockedProxyReference is Proxy {
 
         if (current != address(0) || msg.sender != ADMIN) _delegate(current);
 
-        if (msg.sig != ILockedProxy.upgradeInitializeAndLock.selector) {
+        if (msg.sig != IProxy.upgradeInitializeAndLock.selector) {
             revert UnknownAdminCall(msg.sig);
         }
 

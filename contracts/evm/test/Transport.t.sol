@@ -598,7 +598,7 @@ contract TransportTest is Test {
         acct.bootstrap(DEST, _calls(), new bytes[](0));
 
         address receiver = Create2.computeAddress(
-            ext(address(t)).conduitSalt(owner, SALT, t.localChainKey()), t.LOCKED_PROXY_INIT_CODE_HASH(), there
+            ext(address(t)).conduitSalt(owner, SALT, t.localChainKey()), t.PROXY_INIT_CODE_HASH(), there
         );
         assertEq(acct.destinationReceiverOn(ChainKey.forEvm(DEST)), abi.encodePacked(receiver));
         assertTrue(receiver != address(acct), "not its own address");
@@ -957,7 +957,7 @@ contract TransportTest is Test {
         assertEq(ChainKey.fromIdentifier(transmitter.sentRecipient()), ChainKey.forEvm(DEST));
     }
 
-    /// @dev A second bootstrap cannot deliver its payload anyway. `LockedProxy` arms exactly
+    /// @dev A second bootstrap cannot deliver its payload anyway. `Proxy` arms exactly
     ///      once and the receiver's `initialize` is single-shot, so it would burn a fee to
     ///      revert on arrival.
     function test_rebootstrappingIsRefused() public {

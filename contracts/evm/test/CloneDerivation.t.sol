@@ -189,7 +189,7 @@ contract DivergingFormulaTest is Test {
         t.setOverridePrediction(true);
         address predicted = t.predicted(owner, bytes32(0), t.localChainKey());
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.LOCKED_PROXY_INIT_CODE_HASH(), address(t)
+            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.PROXY_INIT_CODE_HASH(), address(t)
         );
         assertTrue(predicted != wouldDeployTo, "the two formulas disagree, by construction");
 
@@ -202,7 +202,7 @@ contract DivergingFormulaTest is Test {
     function test_aMismatchLeavesNothingBehind() public {
         t.setOverridePrediction(true);
         address wouldDeployTo = Create2.computeAddress(
-            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.LOCKED_PROXY_INIT_CODE_HASH(), address(t)
+            keccak256(abi.encode(owner, bytes32(0), t.localChainKey())), t.PROXY_INIT_CODE_HASH(), address(t)
         );
 
         vm.expectRevert();
@@ -279,10 +279,10 @@ contract DivergentTransceiverTest is Test {
         ZkHarness z = _zk();
         TronHarness t = _tron();
         address ethZ = Create2.computeAddress(
-            ext(address(z)).conduitSalt(owner, SALT, home()), z.LOCKED_PROXY_INIT_CODE_HASH(), address(z)
+            ext(address(z)).conduitSalt(owner, SALT, home()), z.PROXY_INIT_CODE_HASH(), address(z)
         );
         address ethT = Create2.computeAddress(
-            ext(address(t)).conduitSalt(owner, SALT, home()), t.LOCKED_PROXY_INIT_CODE_HASH(), address(t)
+            ext(address(t)).conduitSalt(owner, SALT, home()), t.PROXY_INIT_CODE_HASH(), address(t)
         );
         assertTrue(ext(address(z)).predictConduit(owner, SALT, home()) != ethZ, "zkSync diverges");
         assertTrue(ext(address(t)).predictConduit(owner, SALT, home()) != ethT, "Tron diverges");
@@ -302,7 +302,7 @@ contract DivergentTransceiverTest is Test {
                 Conduits.ConduitAddressMismatch.selector,
                 ext(address(z)).predictConduit(owner, SALT, home()),
                 Create2.computeAddress(
-                    ext(address(z)).conduitSalt(owner, SALT, home()), z.LOCKED_PROXY_INIT_CODE_HASH(), address(z)
+                    ext(address(z)).conduitSalt(owner, SALT, home()), z.PROXY_INIT_CODE_HASH(), address(z)
                 )
             )
         );
@@ -442,7 +442,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         assertEq(
             ext(address(s)).predictConduit(owner, bytes32(0), home()),
             Create2.computeAddress(
-                ext(address(s)).conduitSalt(owner, bytes32(0), home()), s.LOCKED_PROXY_INIT_CODE_HASH(), address(s)
+                ext(address(s)).conduitSalt(owner, bytes32(0), home()), s.PROXY_INIT_CODE_HASH(), address(s)
             ),
             "and it derives the way the home recomputes"
         );
@@ -462,7 +462,7 @@ contract DivergenceIsNotConfigurableTest is Test {
 
         // And each derives its own way, not Ethereum's.
         address ethWay = Create2.computeAddress(
-            ext(address(zk)).conduitSalt(owner, bytes32(0), home()), zk.LOCKED_PROXY_INIT_CODE_HASH(), address(zk)
+            ext(address(zk)).conduitSalt(owner, bytes32(0), home()), zk.PROXY_INIT_CODE_HASH(), address(zk)
         );
         assertTrue(ext(address(zk)).predictConduit(owner, bytes32(0), home()) != ethWay);
     }

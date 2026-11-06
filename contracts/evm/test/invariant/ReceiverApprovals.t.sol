@@ -7,7 +7,7 @@ import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AnyGatewayReceiver} from "test/Harness.sol";
-import {deployConduit} from "test/DeployLockedProxy.sol";
+import {deployConduit} from "test/DeployProxy.sol";
 
 contract ApprovalReceiver is AnyGatewayReceiver {}
 

@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
-import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
-import {LockedProxyReference} from "test/reference/LockedProxyReference.sol";
-import {LogicA, LogicB, Echo, Failing} from "test/LockedProxy.t.sol";
+import {Proxy, IProxy} from "src/conduit/Proxy.sol";
+import {ProxyReference} from "test/reference/ProxyReference.sol";
+import {LogicA, LogicB, Echo, Failing} from "test/Proxy.t.sol";
 
 contract EmptyRevert {
     fallback() external payable {
@@ -20,11 +20,11 @@ contract EmptyRevert {
 /// @dev The admin of both proxies, so the same call can be made as the admin to each.
 contract DifferentialFactory {
     function makeProxy() external returns (address) {
-        return address(new LockedProxy());
+        return address(new Proxy());
     }
 
     function makeReference() external returns (address) {
-        return address(new LockedProxyReference());
+        return address(new ProxyReference());
     }
 
     function send(address proxy, bytes calldata data) external payable returns (bool ok, bytes memory ret) {
@@ -32,10 +32,10 @@ contract DifferentialFactory {
     }
 }
 
-/// @notice `LockedProxy` and `LockedProxyReference` answer every call alike: the same success,
+/// @notice `Proxy` and `ProxyReference` answer every call alike: the same success,
 ///         return data, logs, implementation slot, balance, and proxy storage, on a blank proxy
 ///         and after it is armed.
-contract LockedProxyDifferentialTest is Test {
+contract ProxyDifferentialTest is Test {
     DifferentialFactory factory;
     address proxy;
     address ref;
@@ -116,7 +116,7 @@ contract LockedProxyDifferentialTest is Test {
     }
 
     function _armCall(address impl, bytes memory data) internal pure returns (bytes memory) {
-        return abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (impl, data));
+        return abi.encodeCall(IProxy.upgradeInitializeAndLock, (impl, data));
     }
 
     function _word(bytes memory cd, uint256 offset) internal pure returns (uint256 w) {
@@ -208,7 +208,7 @@ contract LockedProxyDifferentialTest is Test {
 
     /// @dev Calldata that starts with the arming selector but is otherwise random.
     function testFuzz_selectorThenRandomBytesMatches(bool asAdmin, bytes calldata rest, uint96 value) public {
-        _step(asAdmin, bytes.concat(ILockedProxy.upgradeInitializeAndLock.selector, rest), value);
+        _step(asAdmin, bytes.concat(IProxy.upgradeInitializeAndLock.selector, rest), value);
         _followUp(_armCall(targets[0], ""));
     }
 }

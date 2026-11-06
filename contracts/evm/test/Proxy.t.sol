@@ -8,8 +8,8 @@ import {IERC1967} from "@openzeppelin/contracts/interfaces/IERC1967.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
-import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
+import {Proxy, IProxy} from "src/conduit/Proxy.sol";
+import {ProxyInitCode} from "src/conduit/ProxyInitCode.sol";
 
 /// @dev Two different implementations, to prove the address does not depend on which.
 contract LogicA {
@@ -75,16 +75,16 @@ contract Clobber {
 /// @dev Stands in for the transceiver: deploys a conduit and hands it its logic.
 contract Deployer {
     function deploy(bytes32 salt) external returns (address) {
-        return Create2.deploy(0, salt, type(LockedProxy).creationCode);
+        return Create2.deploy(0, salt, type(Proxy).creationCode);
     }
 
     function arm(address proxy, address impl, bytes calldata data) external {
-        ILockedProxy(proxy).upgradeInitializeAndLock(impl, data);
+        IProxy(proxy).upgradeInitializeAndLock(impl, data);
     }
 }
 
 /// @notice The proxy that lets a transmitter and its receivers share one address.
-contract LockedProxyTest is Test {
+contract ProxyTest is Test {
     Deployer deployer;
     bytes32 constant SALT = keccak256("account.1");
 
@@ -97,7 +97,7 @@ contract LockedProxyTest is Test {
     }
 
     function _armCall(address impl, bytes memory data) internal pure returns (bytes memory) {
-        return abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (impl, data));
+        return abi.encodeCall(IProxy.upgradeInitializeAndLock, (impl, data));
     }
 
     /// @dev The proxy is still blank and its deployer can still arm it.
@@ -135,7 +135,7 @@ contract LockedProxyTest is Test {
     ///      address only through the CREATE2 sender, as before. A proxy is therefore verified
     ///      by its address, not by a constant code hash.
     function test_theAddressIsPredictedFromTheInitCodeForEveryAdmin() public {
-        bytes32 hash = keccak256(type(LockedProxy).creationCode);
+        bytes32 hash = keccak256(type(Proxy).creationCode);
         Deployer other = new Deployer();
 
         address p1 = deployer.deploy(SALT);
@@ -153,8 +153,7 @@ contract LockedProxyTest is Test {
     function test_theInitCodeHashIsPinned() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
-            keccak256(type(LockedProxy).creationCode),
-            0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6
+            keccak256(type(Proxy).creationCode), 0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6
         );
     }
 
@@ -162,12 +161,12 @@ contract LockedProxyTest is Test {
     ///      for byte, whatever the call.
     function test_theStoredInitCodeIsTheInitCode() public {
         InitCodeStore store = new InitCodeStore();
-        assertEq(store.load(), type(LockedProxy).creationCode);
+        assertEq(store.load(), type(Proxy).creationCode);
 
         (bool ok, bytes memory data) =
             store.at().call(abi.encodeWithSignature("upgradeInitializeAndLock(address,bytes)", address(1), ""));
         assertTrue(ok);
-        assertEq(data, type(LockedProxy).creationCode);
+        assertEq(data, type(Proxy).creationCode);
     }
 
     /// @dev A proxy owns no admin storage, so creating one costs no SSTORE and emits nothing.
@@ -223,7 +222,7 @@ contract LockedProxyTest is Test {
         address logic = address(new LogicA());
 
         vm.prank(address(0xBAD));
-        ILockedProxy(p).upgradeInitializeAndLock(logic, "");
+        IProxy(p).upgradeInitializeAndLock(logic, "");
 
         _assertStillArmable(p);
     }
@@ -235,7 +234,7 @@ contract LockedProxyTest is Test {
         address logicB = address(new LogicB());
 
         vm.prank(address(0xA11CE), address(0xA11CE));
-        ILockedProxy(p).upgradeInitializeAndLock(logicA, "");
+        IProxy(p).upgradeInitializeAndLock(logicA, "");
         assertEq(_implOf(p), address(0), "its origin armed nothing");
 
         vm.prank(address(deployer), address(0xA11CE));
@@ -279,7 +278,7 @@ contract LockedProxyTest is Test {
         (bool ok, bytes memory ret) = p.call(abi.encodeWithSignature("nonsense()"));
 
         assertFalse(ok);
-        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(keccak256("nonsense()"))));
+        assertEq(ret, abi.encodeWithSelector(Proxy.UnknownAdminCall.selector, bytes4(keccak256("nonsense()"))));
         _assertStillArmable(p);
     }
 
@@ -291,13 +290,13 @@ contract LockedProxyTest is Test {
         vm.prank(address(deployer));
         (bool ok, bytes memory ret) = p.call(hex"abcd");
         assertFalse(ok);
-        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(0xabcd0000)));
+        assertEq(ret, abi.encodeWithSelector(Proxy.UnknownAdminCall.selector, bytes4(0xabcd0000)));
 
         vm.deal(address(deployer), 1 wei);
         vm.prank(address(deployer));
         (ok, ret) = p.call{value: 1 wei}("");
         assertFalse(ok);
-        assertEq(ret, abi.encodeWithSelector(LockedProxy.UnknownAdminCall.selector, bytes4(0)));
+        assertEq(ret, abi.encodeWithSelector(Proxy.UnknownAdminCall.selector, bytes4(0)));
 
         _assertStillArmable(p);
         assertEq(p.balance, 0);
@@ -321,7 +320,7 @@ contract LockedProxyTest is Test {
         address p = deployer.deploy(SALT);
 
         vm.prank(address(deployer));
-        (bool ok,) = p.call(abi.encodePacked(ILockedProxy.upgradeInitializeAndLock.selector, uint256(1)));
+        (bool ok,) = p.call(abi.encodePacked(IProxy.upgradeInitializeAndLock.selector, uint256(1)));
 
         assertFalse(ok);
         _assertStillArmable(p);
@@ -364,7 +363,7 @@ contract LockedProxyTest is Test {
         vm.expectEmit(true, false, false, false, p);
         emit IERC1967.Upgraded(impl);
         vm.expectEmit(false, false, false, true, p);
-        emit LockedProxy.Locked(impl);
+        emit Proxy.Locked(impl);
         deployer.arm(p, impl, "");
     }
 
@@ -427,15 +426,15 @@ contract Shadower {
     }
 }
 
-/// @dev `LockedProxyInitCode` as a transceiver implementation uses it.
+/// @dev `ProxyInitCode` as a transceiver implementation uses it.
 contract InitCodeStore {
     address public immutable at;
 
     constructor() {
-        at = LockedProxyInitCode.store();
+        at = ProxyInitCode.store();
     }
 
     function load() external view returns (bytes memory) {
-        return LockedProxyInitCode.load(at);
+        return ProxyInitCode.load(at);
     }
 }

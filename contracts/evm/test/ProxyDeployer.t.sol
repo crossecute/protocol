@@ -5,10 +5,10 @@ import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {ILockedProxy} from "src/conduit/LockedProxy.sol";
-import {LOCKED_PROXY_DEPLOYER, LockedProxyDeployer} from "src/conduit/LockedProxyDeployer.sol";
-import {ARACHNID} from "script/deploy/LockedProxyDeploy.sol";
-import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
+import {PROXY_DEPLOYER, ProxyDeployer} from "src/conduit/ProxyDeployer.sol";
+import {ARACHNID} from "script/deploy/ProxyDeploy.sol";
+import {proxyDeployer} from "test/DeployProxy.sol";
 
 contract Logic {
     uint256 public value;
@@ -22,23 +22,22 @@ contract Logic {
     }
 }
 
-contract LockedProxyDeployerTest is Test {
-    LockedProxyDeployer deployer;
+contract ProxyDeployerTest is Test {
+    ProxyDeployer deployer;
     bytes32 constant SALT = keccak256("transceiver");
 
     function setUp() public {
-        deployer = lockedProxyDeployer();
+        deployer = proxyDeployer();
     }
 
-    /// @dev A change to the deployer's bytecode moves it off `LOCKED_PROXY_DEPLOYER` and fails here
+    /// @dev A change to the deployer's bytecode moves it off `PROXY_DEPLOYER` and fails here
     ///      first. Coverage builds unoptimized and is exempt.
     function test_itSitsWhereTheRegistryDerivesAgainst() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);
         assertEq(
-            Create2.computeAddress(bytes32(0), keccak256(type(LockedProxyDeployer).creationCode), ARACHNID),
-            LOCKED_PROXY_DEPLOYER
+            Create2.computeAddress(bytes32(0), keccak256(type(ProxyDeployer).creationCode), ARACHNID), PROXY_DEPLOYER
         );
-        assertEq(address(deployer), LOCKED_PROXY_DEPLOYER);
+        assertEq(address(deployer), PROXY_DEPLOYER);
     }
 
     function test_itArmsAndLocksInTheDeployingCall() public {
@@ -51,7 +50,7 @@ contract LockedProxyDeployerTest is Test {
         assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "armed");
 
         vm.prank(address(deployer));
-        (bool rearmed,) = proxy.call(abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (other, "")));
+        (bool rearmed,) = proxy.call(abi.encodeCall(IProxy.upgradeInitializeAndLock, (other, "")));
         assertFalse(rearmed, "the deployer cannot arm it again");
         assertEq(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT), bytes32(uint256(uint160(impl))), "still locked");
     }

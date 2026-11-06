@@ -12,14 +12,14 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 import {ICommitmentScheme, SchemeFold} from "src/registry/ICommitmentScheme.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Move} from "src/addressing/Move.sol";
-import {LOCKED_PROXY_DEPLOYER, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
+import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
 
 /// @notice A provider a registry is born knowing, with the CREATE2 inputs its contracts
 ///         deploy from.
 struct ProviderSeed {
     string name;
     bytes32 salt;
-    bytes32 lockedProxyInitCodeHash;
+    bytes32 proxyInitCodeHash;
 }
 
 /// @notice What a registry is born knowing: enough for a transceiver on this chain to accept,
@@ -126,7 +126,7 @@ contract ChainRegistry is Ownable {
     event MessageProviderAdded(bytes32 indexed messageProvider, string name);
     event MessageProviderRemoved(bytes32 indexed messageProvider);
     event LocalTransceiverSet(bytes32 indexed messageProvider, address transceiver);
-    event ProviderDeploymentSet(bytes32 indexed messageProvider, bytes32 salt, bytes32 lockedProxyInitCodeHash);
+    event ProviderDeploymentSet(bytes32 indexed messageProvider, bytes32 salt, bytes32 proxyInitCodeHash);
     event CurrentDeployerSet(address deployer);
     event ProviderAddedOnChain(bytes32 indexed chainKey, bytes32 indexed messageProvider, address deployedBy);
     event PendingRekeyed(bytes32 indexed chainKey, bytes32 indexed messageProvider, address deployedBy);
@@ -183,7 +183,7 @@ contract ChainRegistry is Ownable {
         for (uint256 i; i < seed.providers.length; ++i) {
             ProviderSeed memory p = seed.providers[i];
             bytes32 provider = _addMessageProvider(p.name);
-            _setProviderDeployment(provider, p.salt, p.lockedProxyInitCodeHash);
+            _setProviderDeployment(provider, p.salt, p.proxyInitCodeHash);
             if (home != bytes32(0)) _addProviderOnChain(home, provider, seed.deployer, Status.Live);
         }
     }
@@ -295,29 +295,28 @@ contract ChainRegistry is Ownable {
     ///
     /// @dev Deploys nothing; it lets any chain reproduce the addresses. A record that does not
     ///      match the deployment yields predictions that match nothing.
-    function setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 lockedProxyInitCodeHash)
+    function setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 proxyInitCodeHash)
         external
         onlyOwner
     {
-        _setProviderDeployment(messageProvider, salt, lockedProxyInitCodeHash);
+        _setProviderDeployment(messageProvider, salt, proxyInitCodeHash);
     }
 
-    function _setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 lockedProxyInitCodeHash) private {
+    function _setProviderDeployment(bytes32 messageProvider, bytes32 salt, bytes32 proxyInitCodeHash) private {
         if (!_messageProviders.contains(messageProvider)) {
             revert UnknownMessageProvider();
         }
         if (salt == bytes32(0)) revert ZeroSalt();
-        if (lockedProxyInitCodeHash == bytes32(0)) revert ZeroInitCodeHash();
+        if (proxyInitCodeHash == bytes32(0)) revert ZeroInitCodeHash();
 
         ProviderDeployment storage d = _deployment[messageProvider];
         if (d.salt != bytes32(0)) {
-            if (d.salt != salt || d.lockedProxyInitCodeHash != lockedProxyInitCodeHash) revert AlreadySet();
+            if (d.salt != salt || d.proxyInitCodeHash != proxyInitCodeHash) revert AlreadySet();
             return;
         }
 
-        _deployment[messageProvider] =
-            ProviderDeployment({salt: salt, lockedProxyInitCodeHash: lockedProxyInitCodeHash});
-        emit ProviderDeploymentSet(messageProvider, salt, lockedProxyInitCodeHash);
+        _deployment[messageProvider] = ProviderDeployment({salt: salt, proxyInitCodeHash: proxyInitCodeHash});
+        emit ProviderDeploymentSet(messageProvider, salt, proxyInitCodeHash);
     }
 
     function providerDeployment(bytes32 messageProvider) external view returns (ProviderDeployment memory) {
@@ -412,7 +411,7 @@ contract ChainRegistry is Ownable {
     /* ========================= PATH 2: salted derivation ======================= */
 
     /// @notice Where a provider's transceiver lands on `chainKey`, recomputed from
-    ///         `LOCKED_PROXY_DEPLOYER`, the deployer recorded for that chain, and the provider's
+    ///         `PROXY_DEPLOYER`, the deployer recorded for that chain, and the provider's
     ///         salt and initcode hash.
     function predictTransceiver(bytes32 chainKey, bytes32 messageProvider) public view returns (address) {
         ProviderDeployment memory d = _deployment[messageProvider];
@@ -420,7 +419,7 @@ contract ChainRegistry is Ownable {
         _requireEvmDerivable(chainKey);
         address by = _support[chainKey][messageProvider].deployedBy;
         if (by == address(0)) revert NotOnChain(chainKey, messageProvider);
-        return AddressDerive.create2(LOCKED_PROXY_DEPLOYER, lockedProxySalt(by, d.salt), d.lockedProxyInitCodeHash);
+        return AddressDerive.create2(PROXY_DEPLOYER, proxySalt(by, d.salt), d.proxyInitCodeHash);
     }
 
     /// @notice Where an owner's conduit lands on `chainKey`, before it exists: the
@@ -439,10 +438,7 @@ contract ChainRegistry is Ownable {
         if (d.salt == bytes32(0)) revert NoProviderDeployment();
 
         address transceiver = predictTransceiver(chainKey, messageProvider);
-        return
-            AddressDerive.create2(
-                transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), d.lockedProxyInitCodeHash
-            );
+        return AddressDerive.create2(transceiver, keccak256(abi.encode(owner, salt, homeChainKey)), d.proxyInitCodeHash);
     }
 
     /// @dev Plain CREATE2 derivation holds only on a chain graded `Predetermined`.

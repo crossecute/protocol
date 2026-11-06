@@ -10,7 +10,7 @@ import {Status} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {LOCKED_PROXY_DEPLOYER, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
+import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
 
 /// @notice The registry's per-chain deployer: who may add a provider on a chain and under whom,
 ///         how a chain not yet deployed is re-keyed, and what it takes to become live.
@@ -39,7 +39,7 @@ contract RegistryDeployerTest is Test {
     }
 
     function _predicted(address deployer) internal pure returns (address) {
-        return AddressDerive.create2(LOCKED_PROXY_DEPLOYER, lockedProxySalt(deployer, SALT), INIT_CODE_HASH);
+        return AddressDerive.create2(PROXY_DEPLOYER, proxySalt(deployer, SALT), INIT_CODE_HASH);
     }
 
     /* ================================== access =================================== */

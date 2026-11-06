@@ -105,7 +105,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @dev No receiver known on that chain, so a payload would fail on delivery after the fee
     ///      is spent.
     error NotBootstrapped(bytes32 destinationChainKey);
-    /// @dev `LockedProxy` arms once, so a second bootstrap would pay a fee to revert on arrival.
+    /// @dev `Proxy` arms once, so a second bootstrap would pay a fee to revert on arrival.
     error AlreadyBootstrapped(bytes32 destinationChainKey);
     /// @dev Something that is not this conduit's transceiver tried to report a receiver.
     error NotTransceiver(address caller);

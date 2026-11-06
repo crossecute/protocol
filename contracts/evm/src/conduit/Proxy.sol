@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @notice The one call a `LockedProxy` accepts from its deployer. Declared separately so
+/// @notice The one call a `Proxy` accepts from its deployer. Declared separately so
 ///         callers have a selector without the proxy shadowing the implementation's ABI.
-interface ILockedProxy {
+interface IProxy {
     function upgradeInitializeAndLock(address implementation, bytes calldata data) external;
 }
 
-/// @title LockedProxy
+/// @title Proxy
 /// @notice The proxy every crossecute conduit is deployed as, transmitter and receiver alike,
-///         and every transceiver, through `LockedProxyDeployer`. Its implementation is locked
+///         and every transceiver, through `ProxyDeployer`. Its implementation is locked
 ///         once armed; its owner's authority is unchanged.
 ///
 /// @dev No constructor arguments, so its initcode is one constant and a transmitter (from its
@@ -28,14 +28,14 @@ interface ILockedProxy {
 ///
 /// @dev The admin operation is routed in `fallback`, not declared, so it shadows no selector.
 ///      Once armed every call delegates, as in a plain ERC-1967 proxy.
-contract LockedProxy {
+contract Proxy {
     // forge-lint: disable-next-line(unused-error) reverted in assembly; declared for the ABI
     error UnknownAdminCall(bytes4 selector);
 
     event Locked(address implementation);
 
     // ERC1967Utils.IMPLEMENTATION_SLOT and the errors and events the arming call reports, as
-    // literals so assembly can read them; `LockedProxyDifferential` compares every one against
+    // literals so assembly can read them; `ProxyDifferential` compares every one against
     // the library-built reference.
     bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
     bytes32 private constant UPGRADED = 0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b;

@@ -12,9 +12,9 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainType} from "src/addressing/ChainType.sol";
-import {LockedProxy} from "src/conduit/LockedProxy.sol";
-import {LockedProxyDeployer, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
-import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
+import {Proxy} from "src/conduit/Proxy.sol";
+import {ProxyDeployer, proxySalt} from "src/conduit/ProxyDeployer.sol";
+import {proxyDeployer} from "test/DeployProxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
@@ -54,7 +54,7 @@ contract SaltedTransceiver is AnyGatewayTransceiver {
     ///      about where conduits land. The carried transmitter is where Ethereum's CREATE2
     ///      puts it at home, over this same address.
     function bootstrapFor(address owner_) external returns (address) {
-        address carried = Create2.computeAddress(_conduitSalt(owner_, bytes32(0), home()), LOCKED_PROXY_INIT_CODE_HASH);
+        address carried = Create2.computeAddress(_conduitSalt(owner_, bytes32(0), home()), PROXY_INIT_CODE_HASH);
         return _createConduit(owner_, bytes32(0), home(), carried, new Call[](0));
     }
 }
@@ -72,7 +72,7 @@ contract OwnedTransmitter {
 ///         on any chain before either exists.
 contract SaltedDeploymentTest is Test {
     ChainRegistry registry;
-    LockedProxyDeployer deployer;
+    ProxyDeployer deployer;
 
     address owner = address(0xA11CE);
     bytes32 provider;
@@ -82,7 +82,7 @@ contract SaltedDeploymentTest is Test {
 
     function setUp() public {
         registry = new ChainRegistry(owner, unseeded());
-        deployer = lockedProxyDeployer();
+        deployer = proxyDeployer();
 
         vm.startPrank(owner);
         provider = registry.addMessageProvider("layerzero");
@@ -90,19 +90,19 @@ contract SaltedDeploymentTest is Test {
         vm.stopPrank();
     }
 
-    /// @dev One constant, independent of the implementation. `LockedProxy` takes no
+    /// @dev One constant, independent of the implementation. `Proxy` takes no
     ///      constructor arguments, so every conduit (transmitter or receiver, on any
     ///      chain) deploys from this exact byte string. That independence is what lets
     ///      two conduits with different logic share an address; an EIP-1167 clone bakes
     ///      the implementation into its initcode and could never manage it.
-    function _lockedProxyInitCodeHash() internal pure returns (bytes32) {
-        return keccak256(type(LockedProxy).creationCode);
+    function _proxyInitCodeHash() internal pure returns (bytes32) {
+        return keccak256(type(Proxy).creationCode);
     }
 
     /// @dev This test contract is the deployer's caller, as the deploy script's conduit is.
-    function _record(bytes32 lockedProxyInitCodeHash) internal {
+    function _record(bytes32 proxyInitCodeHash) internal {
         vm.startPrank(owner);
-        registry.setProviderDeployment(provider, SALT, lockedProxyInitCodeHash);
+        registry.setProviderDeployment(provider, SALT, proxyInitCodeHash);
         registry.setCurrentDeployer(address(this));
         registry.addProviderOnChain(chainKey, provider, address(this));
         vm.stopPrank();
@@ -125,7 +125,7 @@ contract SaltedDeploymentTest is Test {
     ///      receiver, and the receiver lands where Ethereum said it would: all without
     ///      either contract existing when the prediction was made.
     function test_bothAddressesArePredictedBeforeEitherExists() public {
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
 
         address predictedTransceiver = registry.predictTransceiver(chainKey, provider);
         address ownerOf = address(0x7A11);
@@ -149,7 +149,7 @@ contract SaltedDeploymentTest is Test {
     ///      and the transceiver runs on the destination; if those drift, every predicted
     ///      receiver address is wrong and nothing says so until a payload is pinned to one.
     function test_theReceiverSaltMatchesTheTransceiversOwn() public {
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
         SaltedTransceiver t = _deploy(_init());
 
         address ownerOf = address(0x7A11);
@@ -181,13 +181,13 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev The goal, end to end. The transceiver itself is a `LockedProxy`, deployed from
+    /// @dev The goal, end to end. The transceiver itself is a `Proxy`, deployed from
     ///      one initcode at one salt, so it is the same address on Ethereum and on Base. An
     ///      owner's conduit then derives from that shared address, so their transmitter at
     ///      home and their receiver elsewhere land on one address too.
     function test_anOwnerHasOneAddressOnBothSides() public {
         address ownerOf = address(0x7A11);
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
 
         address transceiverAt = registry.predictTransceiver(chainKey, provider);
         address predicted = registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
@@ -221,7 +221,7 @@ contract SaltedDeploymentTest is Test {
     ///      counterparty, per mandate), and each keeps the one-address-everywhere property
     ///      independently.
     function test_oneOwnerCanHoldSeveralConduits() public {
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
         address ownerOf = address(0x7A11);
 
         address a = registry.predictConduit(chainKey, provider, ownerOf, bytes32(0), ChainKey.forEvm(1));
@@ -246,7 +246,7 @@ contract SaltedDeploymentTest is Test {
     {
         vm.assume(ownerA != address(0) && ownerB != address(0));
         vm.assume(ownerA != ownerB);
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
 
         assertTrue(
             registry.predictConduit(chainKey, provider, ownerA, saltA, ChainKey.forEvm(1))
@@ -267,7 +267,7 @@ contract SaltedDeploymentTest is Test {
     ) public {
         vm.assume(ownerOf != address(0));
         vm.assume(homeA != 0 && homeB != 0 && homeA != homeB);
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
 
         assertTrue(
             registry.predictConduit(chainKey, provider, ownerOf, saltA, ChainKey.forEvm(homeA))
@@ -324,13 +324,12 @@ contract SaltedDeploymentTest is Test {
     ///      against 16, so a salt ground for leading zeros is a permanent discount.
     ///      Recording the salt is what makes the mined address reproducible here.
     function test_aSaltCanBeMinedForLeadingZeroBytes() public {
-        bytes32 initCodeHash = _lockedProxyInitCodeHash();
+        bytes32 initCodeHash = _proxyInitCodeHash();
 
         bytes32 mined;
         for (uint256 i = 1; i < 4096; ++i) {
             bytes32 candidate = bytes32(i);
-            address a =
-                AddressDerive.create2(address(deployer), lockedProxySalt(address(this), candidate), initCodeHash);
+            address a = AddressDerive.create2(address(deployer), proxySalt(address(this), candidate), initCodeHash);
             if (uint160(a) >> 152 == 0) {
                 mined = candidate;
                 break;
@@ -349,7 +348,7 @@ contract SaltedDeploymentTest is Test {
     ///      one deployed after it each sit where the registry predicts for their chain, and each
     ///      creates the receiver that `predictConduit` names for that chain.
     function test_aRotatedDeployerMovesOnlyTheChainsAddedAfterIt() public {
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
         address rotated = address(0xD2);
         vm.startPrank(owner);
         registry.setCurrentDeployer(rotated);
@@ -444,11 +443,11 @@ contract SaltedDeploymentTest is Test {
     ///      pins the registry's literal address of it. The zkSync and Tron variants derive their
     ///      default counterpart from it.
     function test_theRecordedDerivationStatesItsInputs() public {
-        _record(_lockedProxyInitCodeHash());
+        _record(_proxyInitCodeHash());
 
         assertEq(
             registry.predictTransceiver(chainKey, provider),
-            AddressDerive.create2(address(deployer), lockedProxySalt(address(this), SALT), _lockedProxyInitCodeHash()),
+            AddressDerive.create2(address(deployer), proxySalt(address(this), SALT), _proxyInitCodeHash()),
             "arithmetic over the recorded inputs, not a local address"
         );
     }
@@ -491,12 +490,12 @@ contract DivergingSaltedTransceiver is SaltedTransceiver {
         returns (address)
     {
         return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), LOCKED_PROXY_INIT_CODE_HASH, address(this)
+            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), PROXY_INIT_CODE_HASH, address(this)
         );
     }
 
     function _deployConduit(bytes32 salt) internal override returns (address) {
-        return Create2.deploy(0, divergedSalt(salt), type(LockedProxy).creationCode);
+        return Create2.deploy(0, divergedSalt(salt), type(Proxy).creationCode);
     }
 }
 
@@ -509,7 +508,7 @@ contract DivergingSaltedExtension is TransceiverExtension {
         returns (address)
     {
         return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), LOCKED_PROXY_INIT_CODE_HASH, address(this)
+            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), PROXY_INIT_CODE_HASH, address(this)
         );
     }
 }
@@ -528,7 +527,7 @@ contract DivergentReceiverAuthTest is Test {
         receiver = ReceiverBase(payable(t.bootstrapFor(ownerOf)));
         // The home transceiver deploys with Ethereum's CREATE2, at this fixture's own address.
         homeTransmitter = Create2.computeAddress(
-            ext(address(t)).conduitSalt(ownerOf, bytes32(0), home()), t.LOCKED_PROXY_INIT_CODE_HASH(), address(t)
+            ext(address(t)).conduitSalt(ownerOf, bytes32(0), home()), t.PROXY_INIT_CODE_HASH(), address(t)
         );
     }
 

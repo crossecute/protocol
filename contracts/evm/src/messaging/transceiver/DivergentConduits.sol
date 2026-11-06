@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {LockedProxy} from "src/conduit/LockedProxy.sol";
+import {Proxy} from "src/conduit/Proxy.sol";
 
 /// @title DivergentConduits
 /// @notice Conduit derivation for the chains whose CREATE2 differs from Ethereum's: zkSync Era
@@ -16,7 +16,7 @@ import {LockedProxy} from "src/conduit/LockedProxy.sol";
 ///      is refused by `_createConduit`. Deploying one conduit on Era and on Shasta is
 ///      still open: see [todo](../../../../../docs/todo.md#2-chain-checks-before-mainnet).
 ///
-/// @dev zksolc 1.5.17 over era-solc 0.8.28-1.0.2 builds `LockedProxy` and every contract a
+/// @dev zksolc 1.5.17 over era-solc 0.8.28-1.0.2 builds `Proxy` and every contract a
 ///      transceiver needs. `BitcoinDerive` is split from `AddressDerive` for this: EraVM has no
 ///      `ripemd160`, and zksolc rejects a compilation unit that contains it at all.
 ///
@@ -26,7 +26,7 @@ import {LockedProxy} from "src/conduit/LockedProxy.sol";
 ///      helpers below.
 abstract contract DivergentConduits is Initializable {
     /// The hash this chain's deployer keys a conduit address by, in that chain's own form.
-    /// @dev Write-once. Not `LOCKED_PROXY_INIT_CODE_HASH`, which hashes the local compiler's
+    /// @dev Write-once. Not `PROXY_INIT_CODE_HASH`, which hashes the local compiler's
     ///      `creationCode` and is not what either deployer keys by: zkSync hashes a zksolc
     ///      artifact into an EraVM versioned hash, and Tron uses TRON-solc's initcode.
     bytes32 public conduitBytecodeHash;
@@ -36,8 +36,8 @@ abstract contract DivergentConduits is Initializable {
     error ZeroConduitBytecodeHash();
 
     /// @param conduitBytecodeHash_ For zkSync, `AddressDerive.hashL2Bytecode` over the
-    ///        zksolc artifact for `LockedProxy`. For Tron, `keccak256` of Tron-solc's
-    ///        `LockedProxy` initcode. Getting it wrong does not misdeliver: every conduit
+    ///        zksolc artifact for `Proxy`. For Tron, `keccak256` of Tron-solc's
+    ///        `Proxy` initcode. Getting it wrong does not misdeliver: every conduit
     ///        creation reverts `ConduitAddressMismatch` until it is right.
     function __DivergentConduits_init(bytes32 conduitBytecodeHash_) internal onlyInitializing {
         if (conduitBytecodeHash_ == bytes32(0)) revert ZeroConduitBytecodeHash();
@@ -51,9 +51,9 @@ abstract contract DivergentConduits is Initializable {
 ///
 /// @dev The address: `zksyncCreate2` folds `keccak256("zksyncCreate2")`, the padded sender,
 ///      the salt, the EraVM versioned bytecode hash, and the constructor-input hash, which is
-///      the constant `keccak256("")` for the argument-free `LockedProxy`.
+///      the constant `keccak256("")` for the argument-free `Proxy`.
 ///
-/// @dev The deployment: EraVM cannot deploy raw initcode; `new LockedProxy{salt: s}()` is what
+/// @dev The deployment: EraVM cannot deploy raw initcode; `new Proxy{salt: s}()` is what
 ///      zksolc lowers into the `ContractDeployer` system call. zksolc only warns on the base's
 ///      `Create2.deploy`, so a transceiver missing this override would build and fail on its
 ///      first conduit.
@@ -61,7 +61,7 @@ abstract contract DivergentConduits is Initializable {
 /// @dev Under solc, `new ... {salt:}` is ordinary CREATE2, so in this repo's build the
 ///      deployment lands at Ethereum's address and the guard refuses: it fails closed.
 abstract contract ZkSyncConduits is DivergentConduits {
-    /// @dev `LockedProxy` takes no constructor arguments, so the input is empty.
+    /// @dev `Proxy` takes no constructor arguments, so the input is empty.
     bytes32 internal constant EMPTY_CONSTRUCTOR_INPUT_HASH = keccak256("");
 
     /// @notice Where this contract deploys a conduit at `conduitSalt` on Era.
@@ -72,7 +72,7 @@ abstract contract ZkSyncConduits is DivergentConduits {
 
     /// @notice Deploy a conduit the way Era can: through the `ContractDeployer` system call.
     function _zkSyncDeploy(bytes32 conduitSalt) internal returns (address) {
-        return address(new LockedProxy{salt: conduitSalt}());
+        return address(new Proxy{salt: conduitSalt}());
     }
 }
 

@@ -13,7 +13,7 @@ import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {OpStackReceiver, IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
-import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
+import {Proxy, IProxy} from "src/conduit/Proxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransceiver} from "src/protocols/wormhole/WormholeTransceiver.sol";
@@ -79,9 +79,9 @@ contract ZeroEndpointTest is Test {
     ///      constructor, so it refuses zero there.
     function test_opStackReceiverRefusesAZeroMessenger() public {
         address impl = address(new OpStackReceiver());
-        address proxy = address(new LockedProxy());
+        address proxy = address(new Proxy());
         vm.expectRevert(ProviderAddress.ZeroEndpoint.selector);
-        ILockedProxy(proxy)
+        IProxy(proxy)
             .upgradeInitializeAndLock(
                 impl, abi.encodeCall(IOpStackReceiverInit.initialize, (address(0xABCD), new Call[](0), address(0)))
             );

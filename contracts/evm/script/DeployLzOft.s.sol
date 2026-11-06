@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Script} from "forge-std/Script.sol";
-import {check} from "script/deploy/LockedProxyDeploy.sol";
+import {check} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";

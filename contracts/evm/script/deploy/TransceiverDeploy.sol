@@ -7,9 +7,9 @@ import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtensi
 import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
-import {LOCKED_PROXY_DEPLOYER, lockedProxySalt} from "src/conduit/LockedProxyDeployer.sol";
+import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
-import {check, deployLockedProxy, arachnidDeploy} from "script/deploy/LockedProxyDeploy.sol";
+import {check, deployProxy, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice The extension every provider's transceiver implementation on this chain names, deployed
 ///         on first use. It takes no constructor arguments, so it has one address on every parity
@@ -33,14 +33,14 @@ struct TransceiverDeployment {
     TransceiverConfig config;
 }
 
-/// @notice Deploy a provider's transceiver through `LockedProxyDeployer` and check what its
+/// @notice Deploy a provider's transceiver through `ProxyDeployer` and check what its
 ///         initializer must have established.
 /// @param providerGateway The provider contract the initializer grants `GATEWAY_ROLE`, or zero
 ///        for a binding that checks its endpoint itself (LayerZero).
 function deployTransceiverProxy(TransceiverDeployment memory d, bytes memory initData, address providerGateway)
     returns (address t)
 {
-    t = deployLockedProxy(d.deployedBy, d.salt, d.implementation, initData);
+    t = deployProxy(d.deployedBy, d.salt, d.implementation, initData);
     checkTransceiver(t, d, providerGateway);
 }
 
@@ -88,10 +88,9 @@ function _checkDeploymentRecord(TransceiverBase tb, TransceiverExtension te, Tra
         "deployedBy is the deployer recorded for this chain"
     );
     check(r.salt == d.salt, "salt is the recorded one");
-    check(r.lockedProxyInitCodeHash == tb.LOCKED_PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
+    check(r.proxyInitCodeHash == tb.PROXY_INIT_CODE_HASH(), "recorded initcode hash is solc's (R8.4)");
     check(
-        AddressDerive.create2(LOCKED_PROXY_DEPLOYER, lockedProxySalt(d.deployedBy, r.salt), r.lockedProxyInitCodeHash)
-            == address(tb),
+        AddressDerive.create2(PROXY_DEPLOYER, proxySalt(d.deployedBy, r.salt), r.proxyInitCodeHash) == address(tb),
         "transceiver is where its record and deployer predict"
     );
 }

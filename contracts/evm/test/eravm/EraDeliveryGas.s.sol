@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {Script, console} from "forge-std/Script.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
-import {LockedProxy, ILockedProxy} from "src/conduit/LockedProxy.sol";
+import {Proxy, IProxy} from "src/conduit/Proxy.sol";
 import {ZkSyncTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
@@ -37,7 +37,7 @@ interface IAccountCodeStorage {
 /// @notice Deploys a Hyperlane zkSync transceiver, with the mock mailbox as its gateway, for
 ///         `era-delivery-gas.sh` to measure deliveries on an EraVM node. Run with
 ///         `forge script --zk-compile`; under solc the conduit guard refuses every bootstrap.
-/// @dev Deployed with `new LockedProxy()` and the admin call rather than `LockedProxyDeployer`,
+/// @dev Deployed with `new Proxy()` and the admin call rather than `ProxyDeployer`,
 ///      whose raw-initcode CREATE2 EraVM cannot run. Neither changes what a delivery costs.
 contract EraDeliveryGas is Script {
     uint32 internal constant HOME_DOMAIN = 8453;
@@ -52,16 +52,15 @@ contract EraDeliveryGas is Script {
         address receiverImplementation = HyperlaneDeploy.receiverImplementation(address(mailbox));
 
         // The versioned hash EraVM's deployer keys conduits by, read from a deployed copy.
-        bytes32 conduitBytecodeHash =
-            IAccountCodeStorage(ACCOUNT_CODE_STORAGE).getRawCodeHash(address(new LockedProxy()));
+        bytes32 conduitBytecodeHash = IAccountCodeStorage(ACCOUNT_CODE_STORAGE).getRawCodeHash(address(new Proxy()));
 
         (, address deployer,) = vm.readCallers();
         ChainRegistry registry = new ChainRegistry(deployer, unseeded());
         bytes32 provider = registry.addMessageProvider("hyperlane");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(HOME_DOMAIN), Provenance.Unique);
 
-        address t = address(new LockedProxy());
-        ILockedProxy(t)
+        address t = address(new Proxy());
+        IProxy(t)
             .upgradeInitializeAndLock(
                 implementation,
                 abi.encodeCall(

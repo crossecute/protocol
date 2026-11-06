@@ -2,12 +2,12 @@
 pragma solidity ^0.8.20;
 
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {ILockedProxy} from "src/conduit/LockedProxy.sol";
-import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
+import {ProxyInitCode} from "src/conduit/ProxyInitCode.sol";
 
 /// @title Conduits
 /// @notice The steps every contract that creates conduits takes, in this order: refuse an
-///         occupied address, deploy `LockedProxy` by CREATE2, check it landed at the predicted
+///         occupied address, deploy `Proxy` by CREATE2, check it landed at the predicted
 ///         address, then arm and lock it.
 ///
 /// @dev Separate functions rather than one, so a creator on a chain that deploys differently
@@ -23,10 +23,10 @@ library Conduits {
         if (conduit.code.length != 0) revert ConduitExists(owner, salt, conduit);
     }
 
-    /// @notice CREATE2 of `LockedProxy`'s initcode, read from the contract `LockedProxyInitCode`
+    /// @notice CREATE2 of `Proxy`'s initcode, read from the contract `ProxyInitCode`
     ///         stored it in.
     function deploy(bytes32 salt, address initCodeStore) internal returns (address) {
-        return Create2.deploy(0, salt, LockedProxyInitCode.load(initCodeStore));
+        return Create2.deploy(0, salt, ProxyInitCode.load(initCodeStore));
     }
 
     /// @dev Every address the protocol publishes comes from the prediction, so a deployment
@@ -38,6 +38,6 @@ library Conduits {
     /// @notice Arm and lock the proxy in one call, so it never has logic and a live upgrade key
     ///         at once.
     function arm(address conduit, address implementation, bytes memory initializer) internal {
-        ILockedProxy(conduit).upgradeInitializeAndLock(implementation, initializer);
+        IProxy(conduit).upgradeInitializeAndLock(implementation, initializer);
     }
 }

@@ -15,8 +15,8 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
     constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
-    /// @param conduitBytecodeHash_ Zksolc artifact hash for `LockedProxy`, not
-    ///        `LOCKED_PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
+    /// @param conduitBytecodeHash_ Zksolc artifact hash for `Proxy`, not
+    ///        `PROXY_INIT_CODE_HASH`, which Era's deployer does not key by.
     function initialize(
         TransceiverConfig memory c,
         uint32 governorHomeEid,
@@ -41,8 +41,8 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
         return super._deployConduit(salt);
     }
 
-    function _storeLockedProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
-        return super._storeLockedProxyInitCode();
+    function _storeProxyInitCode() internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
+        return super._storeProxyInitCode();
     }
 
     function _conduitInitializer(
@@ -64,7 +64,7 @@ contract LzZkSyncTransceiver is ZkSyncTransceiver, LzTransceiverBase {
 contract LzTronTransceiver is TronTransceiver, LzTransceiverBase {
     constructor(address _endpoint, address extension_) LzTransceiverBase(_endpoint, extension_) {}
 
-    /// @param conduitBytecodeHash_ Tron-solc's `LockedProxy` initcode hash, not solc's.
+    /// @param conduitBytecodeHash_ Tron-solc's `Proxy` initcode hash, not solc's.
     function initialize(
         TransceiverConfig memory c,
         uint32 governorHomeEid,

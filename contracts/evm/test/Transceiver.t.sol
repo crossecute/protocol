@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {lockedProxyDeployer} from "test/DeployLockedProxy.sol";
+import {proxyDeployer} from "test/DeployProxy.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {unseeded} from "test/RegistrySeed.sol";
@@ -162,7 +162,7 @@ contract TransceiverTest is Test {
             transceiverConfig(msig, transmitterImplementation, address(new Rcv()), address(treasury));
         t = _deploySym(abi.encodeCall(Sym.initializeDiverging, (c, diverges)));
 
-        registry.setProviderDeployment(provider, TRANSCEIVER_SALT, t.LOCKED_PROXY_INIT_CODE_HASH());
+        registry.setProviderDeployment(provider, TRANSCEIVER_SALT, t.PROXY_INIT_CODE_HASH());
         registry.setCurrentDeployer(address(this));
 
         uint256[3] memory chains = [ETH, BASE, ZK];
@@ -183,9 +183,9 @@ contract TransceiverTest is Test {
     }
 
     /// @dev As production deploys a transceiver, so the seeded deployment record predicts where
-    ///      it lands: a `LockedProxy` through `LockedProxyDeployer`, armed in the same call.
+    ///      it lands: a `Proxy` through `ProxyDeployer`, armed in the same call.
     function _deploySym(bytes memory init) internal returns (Sym) {
-        return Sym(payable(lockedProxyDeployer().deploy(TRANSCEIVER_SALT, address(new Sym()), init)));
+        return Sym(payable(proxyDeployer().deploy(TRANSCEIVER_SALT, address(new Sym()), init)));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {
@@ -229,12 +229,12 @@ contract TransceiverTest is Test {
         vm.prank(governor);
         eth.bootstrap(_key(BASE), msig, bytes32(0), _calls(), new bytes[](0));
         bytes memory sent = eth.sentPayload();
-        bytes32 lockedProxyInitCodeHash = eth.LOCKED_PROXY_INIT_CODE_HASH();
+        bytes32 proxyInitCodeHash = eth.PROXY_INIT_CODE_HASH();
 
         vm.revertToState(world);
         vm.chainId(BASE);
         ProviderSeed[] memory providers = new ProviderSeed[](1);
-        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, lockedProxyInitCodeHash);
+        providers[0] = ProviderSeed("test", TRANSCEIVER_SALT, proxyInitCodeHash);
         ChainRegistry registry = new ChainRegistry(
             address(this),
             RegistrySeed({

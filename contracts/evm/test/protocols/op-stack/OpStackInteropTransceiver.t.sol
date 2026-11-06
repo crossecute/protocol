@@ -6,7 +6,7 @@ import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 
 import {ProviderGatewayRoleSpec} from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackInteropFixture} from "test/protocols/op-stack/OpStackInteropFixture.sol";
-import {DeployCheck} from "script/deploy/LockedProxyDeploy.sol";
+import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice The origin is the source chain the messenger reports, and the sender its
 ///         `crossDomainMessageSender()`, checked by the base against that chain's counterpart.

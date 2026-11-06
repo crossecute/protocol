@@ -7,8 +7,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {ILockedProxy} from "src/conduit/LockedProxy.sol";
-import {deployTransceiver, lockedProxyDeployer} from "test/DeployLockedProxy.sol";
+import {IProxy} from "src/conduit/Proxy.sol";
+import {deployTransceiver, proxyDeployer} from "test/DeployProxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
@@ -376,7 +376,7 @@ contract CommitFinalizeTest is Test {
     /// @dev There is no public creation path for a receiver. One exists because a bootstrap
     ///      message arrived, and nothing else. An open one would let anyone deploy an owner's
     ///      conduit empty, one transaction ahead of their bootstrap, and permanently deny it:
-    ///      `LockedProxy` arms exactly once. `createTransmitter` creates only the caller's own
+    ///      `Proxy` arms exactly once. `createTransmitter` creates only the caller's own
     ///      conduit homed here.
     function test_thereIsNoPublicReceiverCreationPath() public {
         (bool a,) = address(t).call(abi.encodeWithSignature("createReceiver(address)", transmitter));
@@ -648,7 +648,7 @@ contract CommitFinalizeTest is Test {
         assertEq(ext(address(t)).receiverImplementation(), address(receiverImpl), "unchanged");
     }
 
-    /// @dev `LockedProxyDeployer` installs the transceiver and locks it in one call, and from
+    /// @dev `ProxyDeployer` installs the transceiver and locks it in one call, and from
     ///      then on nothing can replace it: the proxy accepts no further arming and the
     ///      transceiver has no upgrade function, so no authority holds a key to forge messages
     ///      with.
@@ -668,8 +668,8 @@ contract CommitFinalizeTest is Test {
         vm.prank(owner);
         (bool upgraded,) = proxy.call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", blockedImpl, ""));
         assertFalse(upgraded, "not even the owner can upgrade");
-        vm.prank(address(lockedProxyDeployer()));
-        (upgraded,) = proxy.call(abi.encodeCall(ILockedProxy.upgradeInitializeAndLock, (blockedImpl, "")));
+        vm.prank(address(proxyDeployer()));
+        (upgraded,) = proxy.call(abi.encodeCall(IProxy.upgradeInitializeAndLock, (blockedImpl, "")));
         assertFalse(upgraded, "nor its deployer");
     }
 

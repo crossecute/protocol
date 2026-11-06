@@ -10,7 +10,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
-import {LockedProxyInitCode} from "src/conduit/LockedProxyInitCode.sol";
+import {ProxyInitCode} from "src/conduit/ProxyInitCode.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -70,14 +70,14 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     bytes32 public immutable localChainKey;
 
     /// @notice The initcode hash every crossecute conduit deploys from, for transmitters and
-    ///         receivers alike. See `LockedProxy` for why it has no constructor arguments.
+    ///         receivers alike. See `Proxy` for why it has no constructor arguments.
     /// @dev An input to Ethereum's CREATE2 formula only. zkSync deploys from a zksolc artifact
     ///      hash instead; see `_predictConduit`.
     /// @dev Immutable, not constant: a constant is evaluated at runtime, which would put the
     ///      initcode in every runtime that reads this (#70); an immutable puts it in initcode only.
     ///      Computed rather than written out so a build with other compiler settings, such as
     ///      `forge coverage`'s unoptimized one, derives the conduits it deploys.
-    bytes32 public immutable LOCKED_PROXY_INIT_CODE_HASH = LockedProxyInitCode.hash();
+    bytes32 public immutable PROXY_INIT_CODE_HASH = ProxyInitCode.hash();
 
     /// The transmitter logic every conduit homed here is armed with. Write-once: conduits
     /// lock when armed, so a change would split them into two logic versions by creation time.
@@ -227,9 +227,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
         virtual
         returns (address)
     {
-        return Create2.computeAddress(
-            _conduitSalt(owner, salt, homeChainKey), LOCKED_PROXY_INIT_CODE_HASH, address(this)
-        );
+        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice `(owner, salt)`'s conduit homed on this chain: its transmitter here.
@@ -253,7 +251,7 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      authenticated, goes through here, so a suspended chain is cut off both ways.
     ///
     /// @dev An unset counterpart on a `Predetermined` chain is `_parityAddress(chainKey)`: every
-    ///      transceiver of a provider is a `LockedProxy` deployed through `LockedProxyDeployer` at
+    ///      transceiver of a provider is a `Proxy` deployed through `ProxyDeployer` at
     ///      one salt by the deployer the registry records for that chain, which is what
     ///      `Predetermined` means (#33).
     function _counterpartOn(bytes32 chainKey) internal view virtual override returns (bytes memory) {

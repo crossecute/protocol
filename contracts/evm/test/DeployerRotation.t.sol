@@ -4,9 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 
 import {unseeded} from "test/RegistrySeed.sol";
-import {lockedProxyDeployer} from "script/deploy/LockedProxyDeploy.sol";
-import {LockedProxyDeployer} from "src/conduit/LockedProxyDeployer.sol";
-import {LockedProxy} from "src/conduit/LockedProxy.sol";
+import {proxyDeployer} from "script/deploy/ProxyDeploy.sol";
+import {ProxyDeployer} from "src/conduit/ProxyDeployer.sol";
+import {Proxy} from "src/conduit/Proxy.sol";
 import {Sym, Rcv, RecordingTransmitter} from "test/Transceiver.t.sol";
 import {transceiverConfig, ext} from "test/Harness.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -40,10 +40,10 @@ contract DeployerRotationTest is Test {
     address msig = address(0x5165);
     address alice = address(0xA11CE);
 
-    LockedProxyDeployer factory;
+    ProxyDeployer factory;
 
     function setUp() public {
-        factory = lockedProxyDeployer();
+        factory = proxyDeployer();
     }
 
     function _key(uint256 chainId) internal pure returns (bytes32) {
@@ -69,7 +69,7 @@ contract DeployerRotationTest is Test {
     function _registry(uint256 chainId, bool opLive) internal returns (ChainRegistry r, bytes32 provider) {
         r = new ChainRegistry(address(this), unseeded());
         provider = r.addMessageProvider("test");
-        r.setProviderDeployment(provider, TRANSCEIVER_SALT, keccak256(type(LockedProxy).creationCode));
+        r.setProviderDeployment(provider, TRANSCEIVER_SALT, keccak256(type(Proxy).creationCode));
         r.setCurrentDeployer(D1);
         r.addChainKey(_route(ETH), Provenance.Predetermined);
         r.addChainKey(_route(BASE), Provenance.Predetermined);
@@ -344,7 +344,7 @@ contract DeployerRotationTest is Test {
         assertFalse(eth.isLive(_key(OP)), "pending");
 
         address carried = Create2.computeAddress(
-            ext(address(eth)).conduitSalt(alice, SALT, _key(OP)), eth.LOCKED_PROXY_INIT_CODE_HASH(), _at(D2)
+            ext(address(eth)).conduitSalt(alice, SALT, _key(OP)), eth.PROXY_INIT_CODE_HASH(), _at(D2)
         );
         bytes memory bootstrap = Envelope.encodeBootstrap(alice, SALT, bytes32(uint256(uint160(carried))), _calls());
         bytes memory sender = abi.encodePacked(_at(D2));
