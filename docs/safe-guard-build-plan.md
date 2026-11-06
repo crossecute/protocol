@@ -13,8 +13,9 @@ production guard design and a tested standalone transient-storage MVP. The
 [design draft](safe-guard-design.md) remains the source for requirements R1-R10,
 questions Q1-Q11, and risks E01-E25. This plan orders the work and defines evidence
 for completion. Agreed choices include the interface/fixture boundary, owner-Safe guard
-discovery, selector-only staging with target-bound retrieval, and extending SafePolicyGuard
-for production. Other recommendations remain proposals unless explicitly marked agreed.
+discovery, selector-only staging with target-bound retrieval, extending SafePolicyGuard
+for production, and a shared guard with per-Safe state. Other recommendations remain
+proposals unless explicitly marked agreed.
 
 Assumption: PR #112 remains the design and execution-plan review, followed by
 focused implementation PRs on the same issue. Renaming the PR does not rename its
@@ -79,18 +80,19 @@ Depends on: review of the existing draft and issue scope.
 - [x] Record Q4's staging rule: match only the `sendMessage(bytes,bytes,bytes[])`
   selector, with no target or operation filter; only the actual signed target
   may consume the staged record. No transmitter allowlist is required.
-- [ ] Remaining proposed starting assumptions: one guard per Safe, immutable Safe,
-  no module or nested MultiSend staging, and rejection of same-Safe nesting through
-  the post-hook.
+- [x] Record Q3's shared deployment: one guard serves multiple Safes; policy and
+  transient state are separated by Safe. Hooks scope records by actual caller;
+  each Safe independently installs/configures the guard. No immutable Safe or
+  new central registry. Preserve the inherited policy engine's reentrancy gate.
+- [ ] Remaining proposed starting assumptions: no module or nested MultiSend
+  staging, and rejection of same-Safe nesting through the post-hook.
 - [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
   subset. Raw-byte transport must be labeled as such, with no portability claim.
   Distinguish valid signed Safe inputs from hook-only byte-storage unit inputs.
 - [ ] Choose numerical staged-byte and total-input caps, zero-length behavior,
   supported read API, read behavior in each phase, and gas acceptance budgets.
   Record the supported owner count/signing modes for the real fixture.
-- [ ] Resolve the R8 wording: one immutable guard per Safe can prove isolation
-  between two Safe/guard pairs. A shared registered guard is a separate choice
-  requiring same-instance two-Safe tests and registration rules.
+- [x] Update R2/R8 to require caller-scoped hooks and same-guard two-Safe isolation.
 
 Done when: a decision record replaces ambiguity with testable values and rules;
 no implementation starts by silently selecting an unanswered option. Cover
@@ -112,6 +114,8 @@ Depends on: T01.
 - [ ] Define the versioned slot namespace, Safe key, phase, target, selector,
   operation, value, calldata hash, signed nonce, digest, length, and word slots.
   State which fields are fixed configuration versus staged data.
+  Every live marker, metadata field, length and signature word must be isolated
+  by Safe; post-hook cleanup must not touch another Safe's record.
 - [ ] Define the context ID's exact ABI encoding and domain. Identify every
   producer and reader: pre-hook, transmitter, consume API, post-hook and test oracle.
   Derive runtime context in one shared helper where both operations need it.
@@ -141,6 +145,8 @@ Depends on: T02.
   owner-authorized `setGuard`. Do not replace signature validation with mocks.
   Partial evidence: that fixture and signed installation now exist in the
   interface suite; actual staging/consumption remains unimplemented.
+  Extend this fixture with a second real Safe installing the same shared guard;
+  do not treat two isolated observer instances as shared-guard acceptance evidence.
 - [ ] Use one shared signing/execution fixture for lifecycle suites. Compare the
   guard's captured nonce/digest with independently prepared signed transactions.
 - [ ] Capture a reproducible baseline manifest of protocol creation/runtime
@@ -214,8 +220,10 @@ Depends on: T05.
   wrong post-hook hash, guard replacement/removal and failed replacement.
   Assert which guard receives the post-hook and fresh installation has no
   assumed matching pre-hook on the newly installed guard.
-- [ ] Test two configured Safe/guard pairs in the same outer transaction. If T01
-  selects a shared guard instead, add two-Safe shared-record tests as well.
+- [ ] Test two real Safes sharing one guard in the same outer transaction:
+  independent records, consumption and cleanup; attempted victim-record access;
+  failure in one Safe without corruption of the other's context. Separately
+  preserve the base policy engine's rejection of cross-Safe policy-check reentry.
 - [ ] Add an Anvil integration check using separate submitted transactions.
   A test probe observes deliberately uncleared transient state within the first
   transaction and its absence in the next, independently of post-hook cleanup.
@@ -273,10 +281,14 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   with reusable internal policy paths, and preserve Safe caller identity. Reconcile
   Solidity operation/interface types into one hook ABI; verify ERC-165 support.
   Specify licensing/provenance and isolated compiler compatibility with 0.8.30.
-- [ ] Resolve remaining Q1/Q2/Q3/Q4 details: supported deployments, exact required
+- [ ] Resolve remaining Q1/Q2/Q4 details: supported deployments, exact required
   policies including where `SafenetPolicy` is selected, and configuration authority.
   Differentially test the refactored base before adding staging, then test the
   derived guard against it. Do not forward hooks to another deployed guard.
+- [ ] Prove shared policy/configuration isolation: distinct policy assignments
+  and pending changes for two Safes on one guard, including shared policy
+  contracts with per-guard/per-Safe state. A change made by one Safe must not
+  affect the other Safe's rules. Keep deployment-wide delay/expiry semantics.
 - [ ] Resolve Q5/Q6/Q11: accepted signing modes, threshold/signer ordering,
   total-input/owner caps, recognized extension bounds and exclusion, unknown or
   duplicate tails, extra signatures, dynamic contract-signature offsets and
@@ -319,7 +331,7 @@ linked follow-up issues. Do not label their risks Verified without evidence.
 Depends on: T08 and T09.
 
 - [ ] Map every issue deliverable to accepted design text or passing MVP evidence.
-  Update R8 wording if T01 chose isolated per-Safe instances.
+  Include required same-guard two-Safe evidence for R2/R8.
 - [ ] Update all 25 risk entries in place with decisions, evidence and remaining
   exposure. Preserve stable IDs and the Open/Decided/Verified/Accepted meanings.
 - [ ] Update README, `docs/todo.md`, both guard documents and PR descriptions so

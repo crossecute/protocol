@@ -69,13 +69,13 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
 | ID | Required behavior | Evidence required before MVP completion |
 | --- | --- | --- |
 | R1 | Install through Safe `setGuard`, with the required interface support | Real proxy and singleton fixture; signed installation transaction |
-| R2 | Authenticate the configured Safe on both hooks | Other Safe, EOA, and Safe-shaped impostor cannot stage or clear its context |
+| R2 | Scope both hooks to the actual calling Safe and prevent cross-Safe mutation | Another Safe, EOA or impostor cannot stage or clear a victim Safe's record; no hook argument selects another Safe |
 | R3 | Stage when the first four calldata bytes match `sendMessage(bytes,bytes,bytes[])`, without a target or operation filter | Matching selector stages for different targets and both operations; short/nonmatching calldata stages no signatures |
 | R4 | Bind exact calldata, value, Safe, target, signed nonce, and Safe digest | Mutate each bound field independently and reject consumption |
 | R5 | Bound the staged blob; use length plus 32-byte words | Empty, limit, limit-plus-one, and partial final-word cases |
 | R6 | Consume once, before external effects; never overwrite a live context | Duplicate consume and reentrancy attempts |
 | R7 | Clear an unconsumed context only for its matching transaction | Matching and wrong-hash post-hooks; skipped consume; failure rollback |
-| R8 | Isolate Safes and permit sequential completed calls in one transaction | Two registered Safes and repeated calls in an outer harness |
+| R8 | Isolate Safes sharing one guard and permit sequential completed calls in one transaction | Two real Safes install the same guard; test independent policy/staging state and repeated calls in an outer harness |
 | R9 | Keep production policy semantics and owner authorization | Production differential policy tests and owner-gate tests, beyond MVP |
 | R10 | Isolate Cancun artifacts from the Paris protocol build | Separate build/test configuration and unchanged protocol artifact hashes |
 
@@ -83,13 +83,25 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
 
 ### Trust and configuration
 
-Recommendation: a guard instance bound to one Safe for the first MVP. Transmitter addresses
-are not a staging allowlist: the signed target identifies who may consume each record.
-Do not accept an arbitrary Safe caller merely because it reports a Safe version or answers
-a storage query. The fixture deploys a real
-Safe proxy, deploys the guard for that address, then installs it through the Safe. Production
-registration must verify the supported singleton/proxy deployment and installed guard;
-version-string checks alone are not authentication.
+Agreed: one guard deployment serves multiple Safes, following `SafePolicyGuard`'s existing
+model. Policy assignments, pending configuration changes and staged execution records are
+separated by Safe. Each Safe installs or replaces the guard independently. Deployment-wide
+policy parameters such as delay and expiry remain shared, as in the base implementation.
+There is no immutable Safe address in the shared guard and no new central registration
+requirement introduced by this decision.
+
+Both hooks identify the Safe by actual `msg.sender`, never by a caller-supplied Safe
+argument. Pre-hook writes and post-hook cleanup operate only on that caller's record.
+Consumption selects a Safe's active record but must authenticate `msg.sender` against its
+signed target and bind the full context. Calls made by another address must not alter the
+victim Safe's record merely by claiming its address or reporting a Safe version. Supported
+production deployment assumptions remain Q1; address partitioning alone does not prove
+that an arbitrary caller is a genuine Safe.
+
+The fixture must deploy at least two real Safe proxies and install the same guard through
+each Safe's signed transaction. Transmitter addresses are not a staging allowlist: the
+signed target identifies who may consume each record. The existing single-Safe observer
+remains interface evidence only; it is not the agreed staging guard deployment model.
 
 Agreed staging trigger: calldata has at least four bytes and its selector equals the
 transmitter's `sendMessage(bytes,bytes,bytes[])` selector. Do not validate target identity
@@ -187,7 +199,7 @@ follows Safe/Safenet authorization and migration rules. Test a replacement befor
 a later dispatch, removal, and a guard change between pre-hook and consumption;
 the new guard must not be assumed to possess the old guard's staged context.
 No transmitter registration is needed for staging eligibility or target-bound consumption.
-The number of Safes per guard and Safe authentication/configuration remain Q3 decisions.
+The agreed shared guard isolates each Safe's state using the calling Safe's address.
 
 ### Signature retrieval
 
@@ -220,7 +232,7 @@ Proposed phases: `Idle -> Checking -> Staged -> Consumed -> Idle`. Keep a live m
 the matching post-hook even after consumption. Clearing the marker at consumption would
 permit a nested execution to overwrite the outer transaction's cleanup context.
 
-1. Pre-hook authenticates Safe, rejects an already-live execution, and reserves `Checking`
+1. Pre-hook identifies the calling Safe, rejects its already-live execution, and reserves `Checking`
    before any external policy call. Capture nonce/digest before reentrant work. Production
    runs the policy for all transactions. Any rejection reverts reservation and policy writes.
 2. A matching dispatch validates bounds and format, writes metadata and padded words, then
@@ -233,9 +245,11 @@ permit a nested execution to overwrite the outer transaction's cleanup context.
    reverts. Production also preserves policy postconditions; a failure reverts everything.
 
 Recommendation: reject all same-Safe nested guarded executions until the outer post-hook,
-including nested non-dispatch transactions. Different Safes need separate records if a
-shared guard is later supported. This conservative restriction needs explicit agreement.
-Sequential executions after cleanup remain allowed within one outer transaction.
+including nested non-dispatch transactions. Different Safes have separate records in the
+agreed shared deployment. Preserve the base policy engine's existing cross-Safe reentrancy
+restriction while a policy check is active; per-Safe staging does not weaken that gate.
+The proposed same-Safe restriction still needs Q7 agreement. Sequential executions after
+cleanup remain allowed within one outer transaction.
 
 If the inner call consumes and then reverts, its consumption writes roll back. When Safe
 returns failure without reverting, the post-hook sees the restored staged context and clears
@@ -362,7 +376,8 @@ installation and normal non-dispatch behavior as well as rejection cases. The sh
 suite should cover read-without-consume, exact byte roundtrip, duplicate consumption,
 wrong Safe/transmitter/value/calldata/selector, wrong cleanup digest, oversized blobs, partial
 words, same-Safe nesting before and after consumption, and sequential calls in one outer
-transaction. Include two-Safe isolation if shared instances are chosen.
+transaction. Two-Safe isolation on the same guard is required, including independent
+policy configuration and pending changes as well as staging, consumption and cleanup.
 
 Failure fixtures must distinguish a returned inner failure followed by cleanup from a whole
 Safe revert. After each outcome, perform another call in the same outer transaction where
@@ -381,7 +396,7 @@ covers installation and hook compatibility only; staging, policy and resource-bo
 ## Running edge-case and risk register
 
 Seeded 2026-11-05. These are potential failure modes and review obligations, not confirmed
-implementation bugs. No entry is verified or accepted; E03, E15 and E25 record agreed approaches
+implementation bugs. No entry is verified or accepted; E03, E10, E15 and E25 record agreed approaches
 with implementation evidence pending. The interface/fixture tests provide partial
 evidence, not a tested staging mitigation. Scope names the delivery that needs evidence,
 not where the risk first appears.
@@ -398,7 +413,7 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
-| E01 / Both / Open | Another Safe, an EOA, or a Safe-shaped contract invokes a hook or cleanup and impersonates the configured Safe | The interface observer binds the fixture Safe and rejects direct pre/post-hook calls in `testRejectsDirectHookCalls`. Remaining: staging isolation, other-Safe/impostor cases and supported production deployment validation | Q1, Q3; R2 |
+| E01 / Both / Open | Another Safe, an EOA, or an impostor attempts to stage or clear a victim Safe's shared-guard record | Agreed shared model keys hook state by actual msg.sender and authenticates consumption against the selected record's signed target. Existing direct-hook rejection is single-Safe observer evidence only. Remaining: shared implementation, cross-Safe/impostor negatives and production deployment assumptions | Q1, Q3; R2 |
 | E02 / Both / Open | A supported-version assumption is wrong, or nonce capture occurs after reentrant work, producing the wrong signed digest | Q1 pins the newer interface and 1.3.0 fixture. `testSignedCallPreservesHookArgumentsAndDigest` compares nonce and pre/post digest through the real Safe, including gas/refund fields. Remaining: staging implementation, independent field mutations, reentrancy and deployment validation | Q1; R4 |
 | E03 / Both / Decided | A matching selector on another target or under DELEGATECALL stages a record; an unrelated caller attempts to consume it | Agreed: selector-only staging, no target/operation filter; retain actual signed target and require it as consume caller with exact context binding. Remaining: tests for matching selectors across targets/operations, wrong-caller rejection, malformed/short calldata, cleanup without consumption and signed-field mutations | Q4; R3, R4 |
 | E04 / Production / Open | A signed target reports invented call context, or its implementation changes | Target-bound consumption authenticates the address, not its code or claims. Treat transmitter code and any upgrade authority as part of the trust model; test direct calls and loss of Safe ownership cannot bypass the existing owner gate | Q3, Q4; R9 |
@@ -407,12 +422,12 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
-| E05 / Both / Open | A policy callback reenters before staging, or a transmitter reenters after consumption and overwrites outer cleanup metadata | Reserve before policy calls and retain a live marker through post-hook. Test nesting in Checking, Staged and Consumed, including non-dispatch nesting; confirm sequential completed calls still succeed | Q7; R6, R8 |
+| E05 / Both / Open | A policy callback reenters before staging, or a transmitter reenters after consumption and overwrites outer cleanup metadata | Reserve per Safe before policy calls and retain its live marker through post-hook. Preserve the inherited cross-Safe policy-check gate. Test Checking/Staged/Consumed nesting, non-dispatch nesting and sequential execution without cross-Safe record damage | Q3, Q7; R6, R8 |
 | E06 / Both / Open | Consumption succeeds but the inner frame later reverts, restoring a usable staged blob | Exercise returned inner failure followed by cleanup in MVP and whole-Safe revert under production policy. Verify a subsequent execution cannot consume the old blob in either case | Q2; R7 |
 | E07 / Both / Open | Cleanup is skipped, uses the wrong digest, or clears only the marker, leaving stale words available to later calls | Match the post-hook record and clear metadata, length and words. Test wrong-hash cleanup, no consumption, repeated calls in one transaction, and a shorter blob after a longer one | Q8; R5, R7, R8 |
 | E08 / Both / Open | A second consume or a read after consumption exposes bytes that downstream code treats as fresh authorization | Define read behavior for every phase and make consumption single-use. Test duplicate consume, read-before-consume, read-after-consume, and read-after-cleanup; reads must never authorize external effects | Q8, Q11; R6 |
 | E09 / Both / Open | Unbounded input, excessive extension bytes, or maximum-size cleanup exhausts gas and prevents execution or recovery | Agree owner and total-input caps and apply them before avoidable copying. Benchmark staging and cleanup at limits; test limit-plus-one, zero length, and realistic post-hook gas budgets | Q6; R5 |
-| E10 / Both / Open | Partial-word copying, slot namespace overlap, or shared-instance keying mixes signature bytes between records | Specify slot derivation and exact-length return rules. Fuzz boundary lengths and long-to-short reuse; test independent guard instances and, if selected, two Safes sharing one guard | Q3, Q6; R5, R8 |
+| E10 / Both / Decided | Partial-word copying, slot namespace overlap, or shared-instance keying mixes signature bytes between records | Agreed: shared guard with Safe-keyed transient records and caller-scoped hooks; policy configuration remains per Safe. Remaining: exact slot layout, fuzzed lengths/long-to-short reuse, two-Safe same-guard consumption/cleanup and independent policy/configuration tests | Q3, Q6; R5, R8 |
 | E11 / Both / Open | Installation or removal routes a post-hook to a guard whose state differs from the newly installed guard; an idle cleanup assumption locks the Safe | Interface suite tests signed installation, replacement and removal on 1.3.0 and confirms the original guard receives the post-hook. Remaining: staging cleanup, failed replacement and policy-compliant recovery | Q1, Q9; R1, R7 |
 
 ### Signatures and policy compatibility
@@ -450,7 +465,7 @@ This register is not an exhaustive security review.
 | --- | --- | --- |
 | Q1. Which Safe versions and deployments are supported? | Agreed: newer transaction-hook ABI/ERC-165 compatibility and pinned 1.3.0 singleton/proxy fixture. The current observer inherits pinned 1.5.0 BaseTransactionGuard; production extends SafePolicyGuard with one reconciled hook implementation. Runtime claim remains limited to the fixture | Production deployment authentication; MVP compatibility boundary resolved |
 | Q2. Which policy base and exact revision should production preserve? | Agreed: extend SafePolicyGuard and reuse its PolicyEngine/configuration/enforcement; SafenetPolicy remains a separately selectable policy. Reviewed base is 8ee68a8. Refactored upstream/fork pin, exact required policies, compiler and hook-type reconciliation remain open | Inheritance choice resolved; dependency preparation and policy-parity evidence pending |
-| Q3. One guard per Safe or a shared registered guard? Who controls Safe registration/configuration? | Agreed discovery: transmitter reads its owner Safe's installed guard; no pinned/pushed guard address or later setter. Selector-only staging and target-bound consumption need no transmitter allowlist. Single/shared Safe model and Safe configuration authority remain open | Guard discovery and target selection resolved; Safe registration/configuration remains open |
+| Q3. One guard per Safe or a shared guard? Who controls configuration? | Agreed: shared guard following SafePolicyGuard; policy configuration/pending changes and transient records are per Safe. Hooks key by msg.sender; each Safe controls its own configuration and installation. No new central registry or transmitter allowlist. Transmitter discovers its owner Safe's installed guard | Deployment/configuration model resolved; isolation implementation and tests pending |
 | Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering. Only the actual signed target may consume. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI remains open |
 | Q5. Which signatures are portable, and who verifies them where? | Begin with threshold ECDSA signatures; decide typed-data versus eth_sign explicitly | Parser, destination authority and replay design |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |

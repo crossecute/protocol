@@ -3,6 +3,12 @@
 Status: interface compatibility foundation for [issue #107](https://github.com/crossecute/protocol/issues/107).
 The staging MVP and production policy integration are not implemented.
 
+Agreed deployment model: share one guard across multiple Safes, following
+`SafePolicyGuard`. Policy configuration and pending changes remain per Safe;
+transient lifecycle and signature records must also be keyed by Safe. Each Safe
+independently installs the guard. The current single-Safe observer is compatibility
+evidence only; shared staging and two-Safe isolation tests remain unimplemented.
+
 Agreed retrieval design: the signature-enabled transmitter checks its owner,
 reads that Safe's installed transaction guard through `getStorageAt(slot, 1)`,
 and calls the guard to consume signatures held in the guard's transient storage.
