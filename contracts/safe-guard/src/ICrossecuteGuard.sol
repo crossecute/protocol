@@ -51,6 +51,7 @@ interface ICrossecuteGuard {
     error DispatchHashMismatch(bytes32 live, bytes32 txHash);
     error ModuleDispatchDenied();
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
+    error SignatureExtensionOverlap();
 
     /// @notice Marks `safe`'s live dispatch consumed and returns it. Only the signed target may call,
     ///         once per dispatch.

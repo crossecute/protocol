@@ -204,8 +204,10 @@ domain separator. A reader can compare it with `signedMessages` on the child.
 signatures. `safeTxGas` and `gasPrice` are always zero and are not written. The signatures keep
 nested data and offsets and drop the child's policy extension. There is no size cap. The
 extension is recognized by its trailing type hash, the same rule the policy engine uses to read
-it, so a contract signature whose data happens to end in that envelope shape loses its tail
-from the record.
+it. Before stripping it, the guard requires the retained prefix to contain every threshold
+signature entry and every referenced contract signature's length word and complete payload.
+An overlapping extension reverts the approval, preserving the nonce and any earlier evidence.
+This also rejects contract signatures whose own suffix resembles an overlapping extension.
 
 **Lifetime.** One record per child and message hash. A later approval for the same pair
 replaces it unconditionally, as #107 requires, even when the earlier record was easier to

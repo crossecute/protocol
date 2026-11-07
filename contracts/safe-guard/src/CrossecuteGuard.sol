@@ -130,9 +130,26 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             evidence.gasToken = gasToken;
             evidence.refundReceiver = refundReceiver;
             evidence.nonce = nonce;
-            evidence.signatures = _ownerSignatures(signatures);
+            evidence.signatures = _approvalSignatures(signatures);
             // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
             emit ApprovalCached(msg.sender, messageHash);
+        }
+    }
+
+    /// @dev Safe verified the original blob. Stripping may not remove any threshold entry or
+    ///      any length-prefixed contract signature it references, including an empty payload.
+    function _approvalSignatures(bytes calldata signatures) private view returns (bytes calldata owners) {
+        owners = _ownerSignatures(signatures);
+        if (owners.length == signatures.length) return owners;
+
+        uint256 staticLength = ISafe(payable(msg.sender)).getThreshold() * 65;
+        require(owners.length >= staticLength, SignatureExtensionOverlap());
+        for (uint256 i = 0; i < staticLength; i += 65) {
+            if (owners[i + 64] != 0) continue;
+            uint256 offset = uint256(bytes32(owners[i + 32:i + 64]));
+            require(offset <= owners.length - 32, SignatureExtensionOverlap());
+            uint256 length = uint256(bytes32(owners[offset:offset + 32]));
+            require(length <= owners.length - offset - 32, SignatureExtensionOverlap());
         }
     }
 

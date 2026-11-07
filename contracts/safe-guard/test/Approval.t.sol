@@ -139,6 +139,81 @@ contract ApprovalTest is GuardTestBase {
         );
     }
 
+    function testFuzz_approval_extensionCannotTruncateEoaSignatures(uint256 retained) public {
+        _checkExtensionBoundary(child, _signers(), retained);
+    }
+
+    function testFuzz_approval_extensionCannotTruncateNestedSignatures(uint256 retained) public {
+        Signer[] memory signers = new Signer[](2);
+        signers[0] = _eoa(KEY_A);
+        uint256[] memory keys = new uint256[](2);
+        keys[0] = KEY_B;
+        keys[1] = KEY_C;
+        signers[1] = _child(child, keys);
+        _checkExtensionBoundary(parent, signers, retained);
+    }
+
+    function testFuzz_approval_extensionCannotTruncateEmptyContractSignature(uint256 retained) public {
+        bytes memory data = _signMessageCall(bytes32(uint256(7)));
+        bytes32 approvalHash = _txHash(parent, address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
+        _approve(child, _signers(), approvalHash);
+        Signer[] memory signers = new Signer[](2);
+        signers[0] = _eoa(KEY_A);
+        signers[1] = _approvedChild(child);
+        _checkExtensionBoundary(parent, signers, retained);
+    }
+
+    function _checkExtensionBoundary(Safe approving, Signer[] memory signers, uint256 retained) internal {
+        bytes32 message = bytes32(uint256(7));
+        bytes memory data = _signMessageCall(message);
+        bytes memory sigs = _signFor(approving, signers, address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
+        retained = bound(retained, 0, sigs.length - 1);
+        bytes memory poisoned = abi.encodePacked(sigs, uint256(sigs.length - retained), POLICY_CONTEXT_TYPE);
+        uint256 nonce = approving.nonce();
+        bytes32 messageHash = _childMessageHash(approving, message);
+        vm.expectRevert(ICrossecuteGuard.SignatureExtensionOverlap.selector);
+        _execWith(approving, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, poisoned);
+        assertEq(approving.nonce(), nonce);
+        assertEq(approving.signedMessages(messageHash), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(approving), messageHash)
+        );
+        guard.getApproval(address(approving), messageHash);
+
+        assertTrue(
+            _execWith(
+                approving,
+                address(signMessageLib),
+                0,
+                data,
+                Enum.Operation.DelegateCall,
+                _withPolicyContext(sigs, hex"0102")
+            )
+        );
+        assertEq(guard.getApproval(address(approving), messageHash).signatures, sigs);
+        assertEq(approving.signedMessages(messageHash), 1);
+    }
+
+    function test_approval_overlappingReplacementPreservesEvidence() public {
+        bytes32 message = bytes32(uint256(7));
+        bytes32 messageHash = _approve(child, _signers(), message);
+        bytes memory previous = abi.encode(guard.getApproval(address(child), messageHash));
+        bytes memory data = _signMessageCall(message);
+        bytes memory sigs = _signFor(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
+        uint256 nonce = child.nonce();
+        vm.expectRevert(ICrossecuteGuard.SignatureExtensionOverlap.selector);
+        _execWith(
+            child,
+            address(signMessageLib),
+            0,
+            data,
+            Enum.Operation.DelegateCall,
+            abi.encodePacked(sigs, uint256(sigs.length), POLICY_CONTEXT_TYPE)
+        );
+        assertEq(child.nonce(), nonce);
+        assertEq(abi.encode(guard.getApproval(address(child), messageHash)), previous);
+    }
+
     function test_approval_attachedToParentDispatch() public {
         bytes32 parentTxHash = _parentDispatchHash();
         uint256 approvalNonce = child.nonce();

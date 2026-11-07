@@ -44,14 +44,16 @@ inherited policy check requires both to be zero, so they always read as zero.
 | Owner signatures | 650 bytes | 325 bytes | 975 bytes |
 | Slots written | 33 | 23 | 56 |
 | `getApproval` return, ABI-encoded | 1,248 bytes | 928 bytes | 2,176 bytes |
-| Measured cache cost | 660,316 gas | 438,553 gas | 1,098,869 gas |
+| Measured cache cost | 660,394 gas | 438,631 gas | 1,099,025 gas |
 | At 1 gwei and $2,000/ETH | $1.32 | $0.88 | $2.20 |
 
 The measured cost covers the storage writes, computing the message hash, and the extra calls back
 to the Safe for its nonce and domain separator. It is close to the slot arithmetic: under the
 EIP-2929 schedule a fresh nonzero slot costs 22,100 gas and a zero written over zero costs 2,200,
 and in this shape `value` and the three payment fields are zero. A replacement for the same child
-and message writes over existing slots and costs less.
+and message writes over existing slots and costs less. These measurements use no policy
+extension. Approvals with an extension additionally read the Safe's threshold and check each
+required signature's bounds before stripping it. The stored and returned formats are unchanged.
 
 Reading a record back with `getApproval` loads every slot of the struct, the two unwritten ones
 included: 60 slots for both records, about 126,000 gas onchain at 2,100 per cold slot. An offchain
