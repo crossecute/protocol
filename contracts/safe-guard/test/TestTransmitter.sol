@@ -50,6 +50,8 @@ contract TestTransmitter {
     bytes32 public lastSafeTxHash;
     bytes public lastSignatures;
     uint256 public lastValue;
+    /// @dev `abi.encode` of the last consumed DispatchContext.
+    bytes public lastContext;
     uint256[] public lastApprovalNonces;
 
     constructor(address owner, Sink sink) {
@@ -78,6 +80,7 @@ contract TestTransmitter {
         lastSafeTxHash = context.safeTxHash;
         lastSignatures = context.signatures;
         lastValue = msg.value;
+        lastContext = abi.encode(context);
 
         if (mode == Mode.ConsumeTwice) guard.consume(msg.sender);
         if (mode == Mode.ConsumeThenRevert) revert Reverted();

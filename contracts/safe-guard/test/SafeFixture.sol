@@ -125,6 +125,32 @@ abstract contract SafeFixture is Test {
         return _execWith(safe, to, value, data, op, _signFor(safe, signers, to, value, data, op));
     }
 
+    /// @dev Payment fields the inherited policy allows to be nonzero while `gasPrice` is zero. With
+    ///      `gasPrice` zero the Safe makes no payment, but the fields are still signed.
+    struct Payment {
+        uint256 baseGas;
+        address gasToken;
+        address payable refundReceiver;
+    }
+
+    function _execPaid(
+        Safe safe,
+        Signer[] memory signers,
+        address to,
+        uint256 value,
+        bytes memory data,
+        Enum.Operation op,
+        Payment memory payment
+    ) internal returns (bytes32 txHash, bytes memory signatures) {
+        txHash = safe.getTransactionHash(
+            to, value, data, op, 0, payment.baseGas, 0, payment.gasToken, payment.refundReceiver, safe.nonce()
+        );
+        signatures = _sign(signers, txHash);
+        safe.execTransaction(
+            to, value, data, op, 0, payment.baseGas, 0, payment.gasToken, payment.refundReceiver, signatures
+        );
+    }
+
     /// @dev Signs before the call, so `vm.expectRevert` can target `execTransaction` itself.
     function _signFor(
         Safe safe,

@@ -101,6 +101,44 @@ contract ApprovalTest is GuardTestBase {
         );
     }
 
+    /// @dev Every payment field is distinct and nonzero, so a swapped or dropped field fails.
+    function test_approval_recordsEverySignedField() public {
+        bytes memory data = _signMessageCall(bytes32(uint256(7)));
+        uint256 nonce = child.nonce();
+        Payment memory payment = Payment(4242, address(0xCAFE), payable(address(0xF00D)));
+        (bytes32 txHash, bytes memory signatures) =
+            _execPaid(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall, payment);
+
+        ICrossecuteGuard.ApprovalEvidence memory evidence =
+            guard.getApproval(address(child), _childMessageHash(child, bytes32(uint256(7))));
+        assertEq(evidence.to, address(signMessageLib));
+        assertEq(evidence.operation, uint8(Enum.Operation.DelegateCall));
+        assertEq(evidence.value, 0);
+        assertEq(evidence.data, data);
+        assertEq(evidence.safeTxGas, 0);
+        assertEq(evidence.baseGas, 4242);
+        assertEq(evidence.gasPrice, 0);
+        assertEq(evidence.gasToken, address(0xCAFE));
+        assertEq(evidence.refundReceiver, address(0xF00D));
+        assertEq(evidence.nonce, nonce);
+        assertEq(evidence.signatures, signatures);
+        assertEq(
+            child.getTransactionHash(
+                evidence.to,
+                evidence.value,
+                evidence.data,
+                Enum.Operation(evidence.operation),
+                evidence.safeTxGas,
+                evidence.baseGas,
+                evidence.gasPrice,
+                evidence.gasToken,
+                payable(evidence.refundReceiver),
+                evidence.nonce
+            ),
+            txHash
+        );
+    }
+
     function test_approval_attachedToParentDispatch() public {
         bytes32 parentTxHash = _parentDispatchHash();
         uint256 approvalNonce = child.nonce();

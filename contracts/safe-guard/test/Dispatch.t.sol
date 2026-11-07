@@ -40,12 +40,41 @@ contract DispatchTest is GuardTestBase {
         assertEq(address(sink).balance, 1 ether);
     }
 
-    function test_dispatch_returnsSignedContext() public {
+    /// @dev Every payment field is distinct and nonzero, so a swapped or dropped field fails.
+    function test_dispatch_returnsEverySignedField() public {
         bytes memory data = _dispatchData();
         uint256 nonce = safe.nonce();
-        _exec(safe, _signers(), address(transmitter), 0, data, Enum.Operation.Call);
+        Payment memory payment = Payment(7777, address(0xCAFE), payable(address(0xF00D)));
+        (bytes32 txHash, bytes memory signatures) =
+            _execPaid(safe, _signers(), address(transmitter), 2, data, Enum.Operation.Call, payment);
+
+        ICrossecuteGuard.DispatchContext memory context =
+            abi.decode(transmitter.lastContext(), (ICrossecuteGuard.DispatchContext));
+        assertEq(context.safeTxHash, txHash);
+        assertEq(context.operation, uint8(Enum.Operation.Call));
+        assertEq(context.value, 2);
+        assertEq(context.dataHash, keccak256(data));
+        assertEq(context.safeTxGas, 0);
+        assertEq(context.baseGas, 7777);
+        assertEq(context.gasPrice, 0);
+        assertEq(context.gasToken, address(0xCAFE));
+        assertEq(context.refundReceiver, address(0xF00D));
+        assertEq(context.nonce, nonce);
+        assertEq(context.signatures, signatures);
         assertEq(
-            transmitter.lastSafeTxHash(), _txHashAt(safe, address(transmitter), 0, data, Enum.Operation.Call, nonce)
+            safe.getTransactionHash(
+                address(transmitter),
+                context.value,
+                data,
+                Enum.Operation(context.operation),
+                context.safeTxGas,
+                context.baseGas,
+                context.gasPrice,
+                context.gasToken,
+                payable(context.refundReceiver),
+                context.nonce
+            ),
+            txHash
         );
     }
 
