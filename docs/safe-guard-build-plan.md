@@ -374,8 +374,8 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   Override distinct owner and module policy callbacks. Test that an owner call with
   the dispatch selector enters signed staging and that a module call with the same
   top-level selector rejects across targets, including policy-permitted targets.
-  Verify the module guard permits
-  configured external calls and rejects self-calls and delegatecalls. Test attempted
+  Use inherited policy configuration for module permissions. Verify eligible configurations
+  permit configured external calls and reject self-calls and delegatecalls. Test attempted
   owner, threshold, handler and guard changes through modules, and protect the guard
   configuration. Test that a module cannot send a protected dispatch or consume an
   active owner transaction's staged context.

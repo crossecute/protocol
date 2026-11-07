@@ -447,10 +447,11 @@ The exact migration transaction sequence and handling of pending roots remain op
 
 Production signed dispatch requires Safe 1.5.0 with both a compatible transaction guard
 and module guard installed. Safe 1.3 and 1.4 are out of production support scope. The
-module guard permits explicitly configured external calls and rejects Safe self-calls
-and module delegatecalls. Module execution cannot stage or consume owner signatures.
-Protect both guard slots and module policy permissions against changes that would bypass
-authority checks. Transaction guard replacement does not itself migrate the module guard.
+inherited policy engine governs module permissions. The extension adds transmitter-specific
+checks and leaves permission configuration to that engine. Eligible Safe configurations
+must still prevent module self-calls, delegatecalls and guard or policy changes that
+could bypass authority checks. Module execution cannot stage or consume owner signatures.
+Transaction guard replacement does not itself migrate the module guard.
 Both Safe guard slots point to the same shared derived `SafePolicyGuard` contract.
 The contract overrides distinct internal callbacks for owner and module transactions
 and preserves the inherited policy checks on both paths. The owner callback applies

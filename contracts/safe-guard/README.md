@@ -67,8 +67,8 @@ context and allow only that address to consume it. Staging is not implemented ye
 Production targets Safe 1.5.0. Both guard slots point to one shared derived contract
 with distinct owner and module callbacks. The owner callback handles signed dispatch
 on a matching `sendMessage(bytes,bytes,bytes[])` selector. The module callback rejects
-that selector regardless of target. It permits configured external calls and blocks
-Safe self-calls and delegatecalls.
+that selector regardless of target. Other module permissions use the inherited policy
+engine. Eligible configurations block Safe self-calls and delegatecalls.
 
 ## Agreed dependency boundary
 
