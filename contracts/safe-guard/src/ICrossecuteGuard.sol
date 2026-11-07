@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 /// @notice What a transmitter consumes from the guard, and what a relayer reads from it.
 /// @dev Free of policy-engine imports so the protocol's 0.8.28 transmitters can import it. Each
 ///      `operation` is Safe's `Enum.Operation` as a `uint8`: 0 for CALL, 1 for DELEGATECALL.
+///      `safeTxGas` and `gasPrice` are always zero, which the inherited policy check requires.
 interface ICrossecuteGuard {
     /// @notice A Safe's staged dispatch: the signed transaction and its complete signature blob.
     /// @custom:member safeTxHash The Safe transaction hash the owners signed.

@@ -28,14 +28,12 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     uint256 internal constant _OPERATION = 2;
     uint256 internal constant _VALUE = 3;
     uint256 internal constant _DATA_HASH = 4;
-    uint256 internal constant _SAFE_TX_GAS = 5;
-    uint256 internal constant _BASE_GAS = 6;
-    uint256 internal constant _GAS_PRICE = 7;
-    uint256 internal constant _GAS_TOKEN = 8;
-    uint256 internal constant _REFUND_RECEIVER = 9;
-    uint256 internal constant _NONCE = 10;
-    uint256 internal constant _SIG_LENGTH = 11;
-    uint256 internal constant _SIG_WORDS = 12;
+    uint256 internal constant _BASE_GAS = 5;
+    uint256 internal constant _GAS_TOKEN = 6;
+    uint256 internal constant _REFUND_RECEIVER = 7;
+    uint256 internal constant _NONCE = 8;
+    uint256 internal constant _SIG_LENGTH = 9;
+    uint256 internal constant _SIG_WORDS = 10;
 
     /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
     uint256 private constant _CONSUMED = 1 << 160;
@@ -70,7 +68,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
-    ///      this Safe belongs to the execution that staged it.
+    ///      this Safe belongs to the execution that staged it. `safeTxGas` and `gasPrice` are not
+    ///      recorded: the inherited check has already required both to be zero.
     function _afterOwnerPolicyCheck(
         address to,
         uint256 value,
@@ -113,9 +112,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             _tstore(base, _OPERATION, uint8(operation));
             _tstore(base, _VALUE, value);
             _tstore(base, _DATA_HASH, uint256(keccak256(data)));
-            _tstore(base, _SAFE_TX_GAS, safeTxGas);
             _tstore(base, _BASE_GAS, baseGas);
-            _tstore(base, _GAS_PRICE, gasPrice);
             _tstore(base, _GAS_TOKEN, uint160(gasToken));
             _tstore(base, _REFUND_RECEIVER, uint160(address(refundReceiver)));
             _tstore(base, _NONCE, nonce);
@@ -129,9 +126,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             evidence.operation = uint8(operation);
             evidence.value = value;
             evidence.data = data;
-            evidence.safeTxGas = safeTxGas;
             evidence.baseGas = baseGas;
-            evidence.gasPrice = gasPrice;
             evidence.gasToken = gasToken;
             evidence.refundReceiver = refundReceiver;
             evidence.nonce = nonce;
@@ -164,9 +159,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         context.operation = uint8(_tload(base, _OPERATION));
         context.value = _tload(base, _VALUE);
         context.dataHash = bytes32(_tload(base, _DATA_HASH));
-        context.safeTxGas = _tload(base, _SAFE_TX_GAS);
         context.baseGas = _tload(base, _BASE_GAS);
-        context.gasPrice = _tload(base, _GAS_PRICE);
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
         context.gasToken = address(uint160(_tload(base, _GAS_TOKEN)));
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
