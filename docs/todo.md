@@ -103,9 +103,9 @@ the seventh; what they mean for an operator is in the README.
   supports `TLOAD`/`TSTORE` first; there is no such tooling yet.
 - **The policy-engine fork's own tests have not run on its second commit.** The guard builds on
   `crossecute/policy-engine` at `f6805df`, two commits on upstream `8ee68a8`.
-  [PR #112](https://github.com/crossecute/protocol/pull/112) reports the upstream Hardhat suite
-  passing (182 tests) with the first commit's change. The second, which adds
-  `_ownerSignatures`, has only been compiled; the guard's own tests cover it.
+  The upstream Hardhat suite was reported passing (182 tests) with the first commit's change,
+  but has not been rerun here. The second, which adds `_ownerSignatures`, has only been
+  compiled; the guard's own tests cover it.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes

@@ -255,7 +255,7 @@ has the pins and commands.
 
 ## Earlier work
 
-[PR #112](https://github.com/crossecute/protocol/pull/112) explored this design first. Its risk
-register (E01-E25) and open questions (Q1-Q11) are kept for reference
+An earlier draft of this design kept a risk register (E01-E25) and open questions (Q1-Q11).
+They are kept for reference
 [at commit `1cec3e0`](https://github.com/crossecute/protocol/blob/1cec3e051426c7f9a3336fc39775e07cb8ac1b8e/docs/safe-guard-design.md#running-edge-case-and-risk-register).
 Where they disagree with issue #107 or this file, #107 and this file are right.
