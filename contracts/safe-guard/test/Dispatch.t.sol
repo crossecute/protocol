@@ -2,9 +2,12 @@
 pragma solidity =0.8.30;
 
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
+import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {IPolicy} from "policy-engine/interfaces/IPolicy.sol";
 import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
+import {AccessSelector} from "policy-engine/libraries/AccessSelector.sol";
 import {AllowPolicy} from "policy-engine/policies/AllowPolicy.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
@@ -231,6 +234,61 @@ contract DispatchTest is GuardTestBase {
         transmitter.setMode(TestTransmitter.Mode.ConsumeThenCall, address(safe), _presignedTransfer(safe.nonce() + 1));
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
+        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+    }
+
+    /// @dev Before staging, while the policy check runs, the inherited gate rejects any nested check.
+    function test_nestedDuringPolicyCheck_rejected() public {
+        ReenteringPolicy policy = new ReenteringPolicy();
+        Safe checked = _newEoaSafe();
+        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](2);
+        configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(policy));
+        configs[1] =
+            _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
+        _install(checked, _signers(), guard, configs, false);
+        vm.deal(address(checked), 1 ether);
+
+        uint256 nonce = checked.nonce();
+        bytes32 nestedHash = _txHashAt(checked, address(0xBEEF), 1, "", Enum.Operation.Call, nonce + 1);
+        policy.arm(
+            address(checked), _execData(address(0xBEEF), 1, "", Enum.Operation.Call, _sign(_signers(), nestedHash))
+        );
+        bytes memory sigs = _signFor(checked, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PolicyEngine.PolicyReverted.selector,
+                address(policy),
+                abi.encodeWithSelector(PolicyEngine.Reentrancy.selector)
+            )
+        );
+        _execWith(checked, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+    }
+
+    function test_shortCalldata_rejectedBeforeStaging() public {
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, hex"cdfe", Enum.Operation.Call);
+        vm.expectRevert(PolicyEngine.InvalidSelector.selector);
+        _execWith(safe, address(transmitter), 0, hex"cdfe", Enum.Operation.Call, sigs);
+    }
+
+    /// @dev After consumption, a module making the Safe call the transmitter again finds the record
+    ///      already consumed. The Safe has no module guard here.
+    function test_moduleDuringLiveDispatch_cannotConsumeAgain() public {
+        Module module = new Module();
+        _exec(
+            safe,
+            _signers(),
+            address(safe),
+            0,
+            abi.encodeCall(safe.enableModule, (address(module))),
+            Enum.Operation.Call
+        );
+        transmitter.setMode(
+            TestTransmitter.Mode.ConsumeThenCall,
+            address(module),
+            abi.encodeCall(Module.execStrict, (safe, address(transmitter), _dispatchData(), Enum.Operation.Call))
+        );
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.AlreadyConsumed.selector, address(safe)));
         _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
     }
 
@@ -553,5 +611,41 @@ contract HookCaller {
             mstore(0, 1)
             return(0, 32)
         }
+    }
+}
+
+/// @dev During a check, makes the Safe being checked execute a second, separately signed transaction.
+contract ReenteringPolicy is IPolicy {
+    address internal safe;
+    bytes internal nested;
+
+    function arm(address safe_, bytes calldata nested_) external {
+        safe = safe_;
+        nested = nested_;
+    }
+
+    function checkTransaction(
+        address,
+        address,
+        uint256,
+        bytes calldata,
+        Operation,
+        address,
+        bytes calldata,
+        AccessSelector.T
+    ) external returns (bytes4) {
+        if (nested.length != 0) {
+            (bool success, bytes memory result) = safe.call(nested);
+            if (!success) {
+                assembly ("memory-safe") {
+                    revert(add(result, 0x20), mload(result))
+                }
+            }
+        }
+        return IPolicy.checkTransaction.selector;
+    }
+
+    function configure(address, AccessSelector.T, bytes memory) external pure returns (bool) {
+        return true;
     }
 }

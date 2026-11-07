@@ -68,6 +68,16 @@ contract Module {
     function exec(Safe safe, address to, bytes calldata data, Enum.Operation op) external returns (bool) {
         return safe.execTransactionFromModule(to, 0, data, op);
     }
+
+    /// @dev Bubbles the inner revert instead of reporting `false`.
+    function execStrict(Safe safe, address to, bytes calldata data, Enum.Operation op) external {
+        (bool success, bytes memory result) = safe.execTransactionFromModuleReturnData(to, 0, data, op);
+        if (!success) {
+            assembly ("memory-safe") {
+                revert(add(result, 0x20), mload(result))
+            }
+        }
+    }
 }
 
 /// @dev The guard in both slots, with a policy that has no fallback: owner self-calls go through

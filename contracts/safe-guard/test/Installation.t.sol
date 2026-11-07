@@ -3,10 +3,12 @@ pragma solidity =0.8.30;
 
 import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {IERC165} from "policy-engine/interfaces/IERC165.sol";
 import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {TestTransmitter} from "./TestTransmitter.sol";
 
@@ -67,6 +69,25 @@ contract InstallationTest is GuardTestBase {
         _install(guarded, _signers(), guard, _defaultConfig(), false);
     }
 
+    /// @dev Removal is an owner self-call the policy must permit. The post-hook still reaches the
+    ///      removed guard, which holds no record, and later dispatches find no guard.
+    function test_ownerRemoval_thenDispatchFindsNoGuard() public {
+        _exec(safe, _signers(), address(safe), 0, abi.encodeCall(safe.setGuard, (address(0))), Enum.Operation.Call);
+        assertEq(_slot(safe, GUARD_SLOT), address(0));
+
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        vm.expectRevert(abi.encodeWithSelector(GuardDiscovery.NoGuard.selector, address(safe)));
+        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+    }
+
+    function test_failedReplacement_keepsGuard() public {
+        bytes memory data = abi.encodeCall(safe.setGuard, (address(new NotAGuard())));
+        bytes memory sigs = _signFor(safe, _signers(), address(safe), 0, data, Enum.Operation.Call);
+        vm.expectRevert(bytes("GS300"));
+        _execWith(safe, address(safe), 0, data, Enum.Operation.Call, sigs);
+        assertEq(_slot(safe, GUARD_SLOT), address(guard));
+    }
+
     function test_configureImmediately_rejectedOnceInstalled() public {
         bytes memory data = abi.encodeCall(SafePolicyGuard.configureImmediately, (_defaultConfig()));
         bytes memory sigs = _signFor(safe, _signers(), address(guard), 0, data, Enum.Operation.Call);
@@ -114,5 +135,12 @@ contract InstallationTest is GuardTestBase {
 
     function _slot(Safe safe_, uint256 slot) internal view returns (address) {
         return abi.decode(safe_.getStorageAt(slot, 1), (address));
+    }
+}
+
+/// @dev Answers ERC-165 without supporting the transaction guard interface.
+contract NotAGuard is IERC165 {
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return false;
     }
 }
