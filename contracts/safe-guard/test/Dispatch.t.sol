@@ -360,7 +360,9 @@ contract DispatchTest is GuardTestBase {
         TestTransmitter plainTransmitter = new TestTransmitter(address(plain), sink);
         bytes memory sigs =
             _signFor(plain, _signers(), address(plainTransmitter), 0, _dispatchData(), Enum.Operation.Call);
-        vm.expectRevert();
+        // SafePolicyGuard has neither `consume` nor a fallback, so the call reverts with no data.
+        vm.expectCall(address(plainGuard), abi.encodeCall(ICrossecuteGuard.consume, (address(plain))));
+        vm.expectRevert(bytes(""));
         _execWith(plain, address(plainTransmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
     }
 
@@ -413,7 +415,7 @@ contract DispatchTest is GuardTestBase {
 
     /// @dev Only reachable through a path that lets the Safe call the guard mid-execution, here a
     ///      module on a Safe without a module guard. The sink then sees the record still live.
-    function test_postHookWithOtherHash_reverts() public {
+    function test_postHookWithOtherHash_leavesRecordLive() public {
         Module module = new Module();
         _exec(
             safe,

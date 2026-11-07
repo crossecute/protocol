@@ -224,7 +224,9 @@ contract ApprovalTest is GuardTestBase {
     function test_approval_malformedCalldataReverts() public {
         bytes memory data = abi.encodePacked(SignMessageLib.signMessage.selector, uint8(1));
         bytes memory sigs = _signFor(child, _signers(), address(fake), 0, data, Enum.Operation.DelegateCall);
-        vm.expectRevert();
+        // `abi.decode` fails with no revert data; the Safe and policy paths all revert with data,
+        // and the same target with well-formed calldata succeeds in test_approval_targetNotChecked.
+        vm.expectRevert(bytes(""));
         _execWith(child, address(fake), 0, data, Enum.Operation.DelegateCall, sigs);
     }
 
