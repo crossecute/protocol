@@ -5,16 +5,20 @@ import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
 
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
 ///         Safes. On top of the inherited policy engine it stages each owner-signed
-///         `sendMessage` for the signed target to consume.
+///         `sendMessage` for the signed target to consume, and caches child Safe approvals.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
+    /// @dev Safe's `SAFE_MSG_TYPEHASH`, `keccak256("SafeMessage(bytes message)")`.
+    bytes32 private constant _SAFE_MSG_TYPEHASH = 0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca;
+
     /// @dev A Safe's transient dispatch record starts at `keccak256(abi.encode(safe, namespace))`.
     bytes32 internal constant _DISPATCH_NAMESPACE = keccak256("crossecute.guard.dispatch.v1");
 
@@ -36,6 +40,9 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
     uint256 private constant _CONSUMED = 1 << 160;
 
+    // solhint-disable-next-line private-vars-leading-underscore
+    mapping(address childSafe => mapping(bytes32 messageHash => ApprovalEvidence)) private $approvals;
+
     constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
 
     /// @inheritdoc ICrossecuteGuard
@@ -49,6 +56,17 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(target & _CONSUMED == 0, AlreadyConsumed(safe));
         _tstore(base, _TARGET, target | _CONSUMED);
         context = _readDispatch(base, txHash);
+    }
+
+    /// @inheritdoc ICrossecuteGuard
+    function getApproval(address childSafe, bytes32 messageHash)
+        external
+        view
+        returns (ApprovalEvidence memory evidence)
+    {
+        evidence = $approvals[childSafe][messageHash];
+        // A Safe threshold is at least one, so stored evidence always carries a signature.
+        require(evidence.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
     }
 
     /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
@@ -69,35 +87,58 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         bytes32 base = _dispatchBase(msg.sender);
         require(_tload(base, _TX_HASH) == 0, NestedExecution(msg.sender));
 
-        if (_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector) return;
+        bytes4 selector = _decodeSelector(data);
+        bool dispatch = selector == IERC7786GatewaySource.sendMessage.selector;
+        bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
+        if (!dispatch && !approval) return;
 
         // The Safe increments its nonce before calling the guard.
         uint256 nonce = ISafe(payable(msg.sender)).nonce() - 1;
-        bytes32 txHash = ISafe(payable(msg.sender))
-            .getTransactionHash(
-                to,
-                value,
-                data,
-                Enum.Operation(uint8(operation)),
-                safeTxGas,
-                baseGas,
-                gasPrice,
-                gasToken,
-                refundReceiver,
-                nonce
-            );
-        _tstore(base, _TX_HASH, uint256(txHash));
-        _tstore(base, _TARGET, uint160(to));
-        _tstore(base, _OPERATION, uint8(operation));
-        _tstore(base, _VALUE, value);
-        _tstore(base, _DATA_HASH, uint256(keccak256(data)));
-        _tstore(base, _SAFE_TX_GAS, safeTxGas);
-        _tstore(base, _BASE_GAS, baseGas);
-        _tstore(base, _GAS_PRICE, gasPrice);
-        _tstore(base, _GAS_TOKEN, uint160(gasToken));
-        _tstore(base, _REFUND_RECEIVER, uint160(address(refundReceiver)));
-        _tstore(base, _NONCE, nonce);
-        _stageSignatures(base, signatures);
+        if (dispatch) {
+            bytes32 txHash = ISafe(payable(msg.sender))
+                .getTransactionHash(
+                    to,
+                    value,
+                    data,
+                    Enum.Operation(uint8(operation)),
+                    safeTxGas,
+                    baseGas,
+                    gasPrice,
+                    gasToken,
+                    refundReceiver,
+                    nonce
+                );
+            _tstore(base, _TX_HASH, uint256(txHash));
+            _tstore(base, _TARGET, uint160(to));
+            _tstore(base, _OPERATION, uint8(operation));
+            _tstore(base, _VALUE, value);
+            _tstore(base, _DATA_HASH, uint256(keccak256(data)));
+            _tstore(base, _SAFE_TX_GAS, safeTxGas);
+            _tstore(base, _BASE_GAS, baseGas);
+            _tstore(base, _GAS_PRICE, gasPrice);
+            _tstore(base, _GAS_TOKEN, uint160(gasToken));
+            _tstore(base, _REFUND_RECEIVER, uint160(address(refundReceiver)));
+            _tstore(base, _NONCE, nonce);
+            _stageSignatures(base, signatures);
+        } else {
+            // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
+            // the record shows what the owners signed, not what the delegatecall wrote.
+            bytes32 messageHash = _safeMessageHash(abi.decode(data[4:], (bytes)));
+            ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
+            evidence.to = to;
+            evidence.operation = operation;
+            evidence.value = value;
+            evidence.data = data;
+            evidence.safeTxGas = safeTxGas;
+            evidence.baseGas = baseGas;
+            evidence.gasPrice = gasPrice;
+            evidence.gasToken = gasToken;
+            evidence.refundReceiver = refundReceiver;
+            evidence.nonce = nonce;
+            evidence.signatures = _ownerSignatures(signatures);
+            // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
+            emit ApprovalCached(msg.sender, messageHash);
+        }
     }
 
     function _afterOwnerExecution(bytes32 txHash) internal override {
@@ -157,6 +198,14 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             }
             _tstore(base, _SIG_WORDS + (i >> 5), word);
         }
+    }
+
+    /// @dev The hash `SignMessageLib.signMessage(message)` writes when delegatecalled by the caller.
+    function _safeMessageHash(bytes memory message) private view returns (bytes32) {
+        bytes32 safeMessageHash = keccak256(abi.encode(_SAFE_MSG_TYPEHASH, keccak256(message)));
+        return keccak256(
+            abi.encodePacked(bytes1(0x19), bytes1(0x01), ISafe(payable(msg.sender)).domainSeparator(), safeMessageHash)
+        );
     }
 
     function _dispatchBase(address safe) internal pure returns (bytes32) {

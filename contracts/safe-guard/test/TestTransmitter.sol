@@ -30,6 +30,11 @@ contract TestTransmitter {
         ConsumeThenCall
     }
 
+    struct ApprovalRef {
+        address childSafe;
+        bytes32 messageHash;
+    }
+
     error NotOwner();
     error Reverted();
 
@@ -39,11 +44,13 @@ contract TestTransmitter {
     Mode public mode;
     address public callTarget;
     bytes public callData;
+    ApprovalRef[] public approvals;
 
     uint256 public sends;
     bytes32 public lastSafeTxHash;
     bytes public lastSignatures;
     uint256 public lastValue;
+    uint256[] public lastApprovalNonces;
 
     constructor(address owner, Sink sink) {
         OWNER = owner;
@@ -54,6 +61,10 @@ contract TestTransmitter {
         mode = mode_;
         callTarget = callTarget_;
         callData = callData_;
+    }
+
+    function attachApproval(address childSafe, bytes32 messageHash) external {
+        approvals.push(ApprovalRef(childSafe, messageHash));
     }
 
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
@@ -71,6 +82,11 @@ contract TestTransmitter {
         if (mode == Mode.ConsumeTwice) guard.consume(msg.sender);
         if (mode == Mode.ConsumeThenRevert) revert Reverted();
         if (mode == Mode.ConsumeThenCall) _call();
+
+        delete lastApprovalNonces;
+        for (uint256 i = 0; i < approvals.length; ++i) {
+            lastApprovalNonces.push(guard.getApproval(approvals[i].childSafe, approvals[i].messageHash).nonce);
+        }
 
         SINK.hit{value: msg.value}(CrossecuteGuardHarness(address(guard)), msg.sender);
         return context.safeTxHash;
