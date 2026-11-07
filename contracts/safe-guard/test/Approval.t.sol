@@ -78,7 +78,7 @@ contract ApprovalTest is GuardTestBase {
         assertEq(child.signedMessages(messageHash), 1);
         ICrossecuteGuard.ApprovalEvidence memory evidence = guard.getApproval(address(child), messageHash);
         assertEq(evidence.to, address(signMessageLib));
-        assertEq(uint8(evidence.operation), uint8(Operation.DELEGATECALL));
+        assertEq(evidence.operation, uint8(Operation.DELEGATECALL));
         assertEq(evidence.value, 0);
         assertEq(evidence.data, data);
         assertEq(evidence.nonce, nonce);
@@ -89,7 +89,7 @@ contract ApprovalTest is GuardTestBase {
                 evidence.to,
                 evidence.value,
                 evidence.data,
-                Enum.Operation(uint8(evidence.operation)),
+                Enum.Operation(evidence.operation),
                 evidence.safeTxGas,
                 evidence.baseGas,
                 evidence.gasPrice,

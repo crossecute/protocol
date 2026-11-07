@@ -126,7 +126,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             bytes32 messageHash = _safeMessageHash(abi.decode(data[4:], (bytes)));
             ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
             evidence.to = to;
-            evidence.operation = operation;
+            evidence.operation = uint8(operation);
             evidence.value = value;
             evidence.data = data;
             evidence.safeTxGas = safeTxGas;
@@ -160,7 +160,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     function _readDispatch(bytes32 base, bytes32 txHash) private view returns (DispatchContext memory context) {
         context.safeTxHash = txHash;
-        context.operation = Operation(_tload(base, _OPERATION));
+        // forge-lint: disable-next-line(unsafe-typecast) written from an Operation
+        context.operation = uint8(_tload(base, _OPERATION));
         context.value = _tload(base, _VALUE);
         context.dataHash = bytes32(_tload(base, _DATA_HASH));
         context.safeTxGas = _tload(base, _SAFE_TX_GAS);
