@@ -1,0 +1,90 @@
+diff --git a/contracts/SafePolicyGuard.sol b/contracts/SafePolicyGuard.sol
+index 3a59b80..397e4d8 100644
+--- a/contracts/SafePolicyGuard.sol
++++ b/contracts/SafePolicyGuard.sol
+@@ -204,12 +204,12 @@ contract SafePolicyGuard is PolicyEngine, ISafeModuleGuard, ISafeTransactionGuar
+         bytes calldata data,
+         Operation operation,
+         uint256 safeTxGas,
+-        uint256,
++        uint256 baseGas,
+         uint256 gasPrice,
+-        address,
+-        address payable,
++        address gasToken,
++        address payable refundReceiver,
+         bytes calldata signatures,
+-        address
++        address executor
+     ) external override {
+         // Gas refunds are deliberately unsupported: they are another way to move funds out of a
+         // Safe, are rarely used, and are not worth covering in the policy interface. With
+@@ -226,6 +226,19 @@ contract SafePolicyGuard is PolicyEngine, ISafeModuleGuard, ISafeTransactionGuar
+         // An owner transaction has no authorizing module.
+         _enterCheck(msg.sender, address(0));
+         checkTransaction(msg.sender, to, value, data, operation, _decodeContext(signatures));
++        _afterOwnerPolicyCheck(
++            to,
++            value,
++            data,
++            operation,
++            safeTxGas,
++            baseGas,
++            gasPrice,
++            gasToken,
++            refundReceiver,
++            signatures,
++            executor
++        );
+         _exitCheck();
+     }
+ 
+@@ -236,8 +249,9 @@ contract SafePolicyGuard is PolicyEngine, ISafeModuleGuard, ISafeTransactionGuar
+      *      reverts before calling it. Kept so atomicity is enforced locally rather than assumed of
+      *      the Safe version in use.
+      */
+-    function checkAfterExecution(bytes32, bool success) external pure override {
++    function checkAfterExecution(bytes32 txHash, bool success) external override {
+         require(success, ExecutionFailed());
++        _afterOwnerExecution(txHash);
+     }
+ 
+     /**
+@@ -254,6 +268,7 @@ contract SafePolicyGuard is PolicyEngine, ISafeModuleGuard, ISafeTransactionGuar
+         // `context` let any executor forge a module identity from the Safe `signatures`.
+         _enterCheck(msg.sender, module);
+         checkTransaction(msg.sender, to, value, data, operation, _emptyContext());
++        _afterModulePolicyCheck(to, value, data, operation, module);
+         _exitCheck();
+         return bytes32(0);
+     }
+@@ -269,6 +284,29 @@ contract SafePolicyGuard is PolicyEngine, ISafeModuleGuard, ISafeTransactionGuar
+         require(success, ModuleExecutionFailed());
+     }
+ 
++    /* solhint-disable no-empty-blocks */
++    /// @dev Runs with the policy reentrancy gate held and the original caller.
++    function _afterOwnerPolicyCheck(
++        address,
++        uint256,
++        bytes calldata,
++        Operation,
++        uint256,
++        uint256,
++        uint256,
++        address,
++        address payable,
++        bytes calldata,
++        address
++    ) internal virtual {}
++
++    /// @dev Extensions that write state must bind cleanup to a live record for the caller and hash.
++    function _afterOwnerExecution(bytes32) internal virtual {}
++
++    /// @dev Runs with the policy reentrancy gate held and the original caller.
++    function _afterModulePolicyCheck(address, uint256, bytes calldata, Operation, address) internal virtual {}
++    /* solhint-enable no-empty-blocks */
++
+     /**
+      * @dev Decodes additional context to pass to the policy from the signatures bytes.
+      *      Absence is not an error, so signatures carrying no context (plain ECDSA owner signatures)

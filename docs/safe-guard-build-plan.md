@@ -286,11 +286,10 @@ R9 remains a production design obligation with future implementation tests.
 
 Depends on: T01; incorporates findings from T02-T08 before acceptance.
 
-- [ ] Prepare Q2's agreed `SafePolicyGuard` inheritance: pin an upstream refactor
-  or minimal maintained fork from reviewed baseline 8ee68a8, expose virtual hooks
-  with reusable internal policy paths, and preserve Safe caller identity. Reconcile
-  Solidity operation/interface types into one hook ABI; verify ERC-165 support.
-  Specify licensing/provenance and isolated compiler compatibility with 0.8.30.
+- [x] Prepare the minimal fork patch from pinned baseline 8ee68a8. Keep external
+  checks and add internal callbacks that preserve the Safe caller identity.
+- [ ] Integrate the patched base into the isolated Solidity 0.8.30 project. Reconcile
+  operation/interface types and verify ERC-165 support for the derived guard.
 - [ ] Resolve remaining Q1/Q2/Q4 details: supported deployments, exact required
   policies including where `SafenetPolicy` is selected, and configuration authority.
   Differentially test the refactored base before adding staging, then test the

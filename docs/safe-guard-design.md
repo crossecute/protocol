@@ -147,12 +147,12 @@ PolicyEngine
        -> our combined policy and signature-staging guard
 ```
 
-The reviewed base revision is `8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3`. Its external hooks
-are not virtual. Before deriving the combined implementation, obtain an upstream refactor
-or maintain a minimal fork that exposes virtual hook wrappers and reusable internal policy
-paths. Preserve the Safe caller identity and existing policy semantics. Do not forward
-hooks to a separately deployed guard, and do not attempt an external self-call to reuse a
-hook: both change `msg.sender`. An external hook is not an internal `super` entry point.
+The selected base is `8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3` plus the local
+[extension patch](../contracts/safe-guard/patches/safe-policy-guard-extension-hooks.patch).
+The external hooks retain their checks and call internal extension points with the
+original Safe caller. Owner and module policy callbacks run before the reentrancy
+gate is released. The owner post-hook callback runs after the inherited success check.
+A stateful override must bind cleanup to the calling Safe and live transaction hash.
 
 Use one canonical transaction-hook implementation and reconcile Solidity operation/interface
 types between the policy dependency and Safe's newer interface. The agreed

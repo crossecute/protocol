@@ -45,12 +45,18 @@ The upstream base provides ERC-165 and transaction-guard interface support.
 
 Agreed production inheritance: extend a minimally refactored `SafePolicyGuard`,
 reusing its policy engine and configuration, then add signature staging and cleanup.
-Its reviewed hooks are not virtual, so an upstream refactor or pinned maintained
-fork is required before implementation. Preserve the newer hook ABI and ERC-165
+The [local fork patch](patches/safe-policy-guard-extension-hooks.patch) applies to
+Safe Research `policy-engine` at `8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3`
+(LGPL-3.0-only). It adds three internal callbacks and keeps the external hook
+selectors fixed. Preserve the newer hook ABI and ERC-165
 support without requiring a second independent production hook base. `SafenetPolicy`
 remains a selectable policy called by the guard. This production inheritance is
 documented, not implemented. See the
 [integration decision](../../docs/safe-guard-design.md#production-inheritance-and-policy-integration).
+
+To prepare a fork checkout, clone `safe-research/policy-engine`, check out the
+revision above and run `git apply /absolute/path/to/safe-policy-guard-extension-hooks.patch`
+from the fork root. Use its lockfile and Solidity 0.8.30 Cancun build settings.
 
 The harness observes calls and rejects callers other than its configured Safe.
 It is test-only: it records hook data in persistent storage, performs no policy
