@@ -15,6 +15,47 @@ nothing in `contracts/evm/` depends on it yet. Receiver verification of what the
 argued in the NatSpec of the contract that implements it. This file says what the pieces are
 and how they connect. Where the two disagree, the contract is right.
 
+## Decisions
+
+These are settled. The sections below describe each in full.
+
+- **Safe version.** Safe 1.5.0 only. Earlier versions have no module guard.
+- **One guard.** A single shared `CrossecuteGuard` extends `SafePolicyGuard` and reuses its
+  `PolicyEngine`, with all state keyed by Safe. `SafenetPolicy` is a policy a Safe may select,
+  not part of the guard. The guard registers, forwards to, and delegatecalls no other guard.
+- **Guard slots.** The transaction guard slot is required. The module guard slot is the
+  multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
+- **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
+  is staged, whatever its target or operation. The complete signature blob is staged, with no
+  size cap.
+- **Consumption.** `consume(address safe)` is callable only by the signed target, once. The
+  transmitter does not compare calldata or value with the record; the direct call from the Safe
+  delivers what the owners signed.
+- **Guard discovery.** The transmitter reads its owner Safe's transaction guard slot on every
+  dispatch. It pins no guard address and never falls back to an unsigned send.
+- **Unconsumed dispatches.** A staged call that nobody consumes succeeds and is cleared in the
+  post-hook, including a call to an unrelated contract that shares the selector.
+- **Nesting.** While a Safe has a live dispatch record, every nested owner execution by that
+  Safe is rejected, before and after consumption, until the post-hook clears it.
+- **No other staging paths.** A single signed MultiSend dispatch and any module transaction
+  stage nothing. With the module guard installed, a module transaction with the dispatch
+  selector is rejected for every target.
+- **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
+  cached, recognized by operation and selector alone, with no target or code-hash check. One
+  record per child and message hash; a later approval replaces it; no size cap; `getApproval`
+  reads without consuming.
+- **Installation.** Fresh and already-guarded Safes install through the standard entry points
+  in one owner-approved batch, with no migration-specific API.
+- **Chains and build.** Cancun is required for EIP-1153 and is documented, with no installation
+  preflight. The guard is a separate Foundry project; the Paris build of `contracts/evm/` is
+  unchanged.
+- **Dependencies and license.** The patched policy engine is vendored from the
+  `crossecute/policy-engine` fork, not applied as a patch at build time. Crossecute's guard
+  sources are MIT; vendored policy-engine files keep their `LGPL-3.0-only` headers.
+- **Out of scope here.** Receiver checks on what the guard hands out, including approved-hash
+  (`v = 1`) entries and signing modes, are [#108](https://github.com/crossecute/protocol/issues/108).
+  The split between plain and signature-enabled protocol transmitters is not part of this guard.
+
 ## Shape
 
 There is one guard contract, `CrossecuteGuard`. It extends `SafePolicyGuard` from
