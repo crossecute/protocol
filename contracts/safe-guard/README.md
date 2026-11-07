@@ -16,6 +16,42 @@ transient lifecycle and signature records must also be keyed by Safe. Each Safe
 independently installs the guard. The current single-Safe observer is compatibility
 evidence only; shared staging and two-Safe isolation tests remain unimplemented.
 
+Agreed dispatch rules: reject approved-hash (`v = 1`) entries recursively on the
+`sendMessage(bytes,bytes,bytes[])` selector path, without target filtering. No light
+clients are permitted. Sequential separately signed Safe executions in one parent
+transaction must work, with post-hook cleanup between them. Dispatch inside one signed
+MultiSend batch is not supported. These requirements are not yet runtime-verified.
+
+Agreed byte format: stage and forward the complete original `signatures` argument
+unchanged, including the policy extension payload and trailer and all nested owner data.
+Receiver policy verification remains to be specified; forwarding evidence does not
+authenticate it. Byte preservation is not yet runtime-verified.
+
+Agreed EOA signing modes: direct Safe digest signatures (`v = 27/28`) and
+Ethereum-prefixed signatures (`v = 31/32`), including mixed sets and EOA entries
+inside supported nested Safe signatures. Receiver verification is not implemented;
+nested handler/domain support remains to be specified.
+
+Agreed additional route: support empty nested Safe signature payloads backed by
+independently verified cached approval transaction evidence. Keep the parent blob and
+its policy extension unchanged; child evidence contains signed transaction context and
+complete owner signatures, excluding the child's policy extension. Quorum-signed approval
+authorization suffices without source execution or bridge delivery. Accept only direct
+approval delegatecalls; separately signed approvals at consecutive nonces can share one
+parent transaction. Approvals inside one signed MultiSend batch are unsupported. Persist
+the full approval evidence blob on the shared guard, scoped by approving Safe, for
+onchain retrieval rather than only a commitment. Transmitters retrieve the evidence.
+The pre-hook stores approval evidence after policy checks; the post-hook clears transient
+execution state while retaining persistent approval evidence. Reverts roll back writes.
+Retain published evidence indefinitely, without pruning or deletion on use. Anyone can
+submit complete valid evidence to the signed receiver without bridge delivery, subject
+to the remaining authorization/execution checks and replay protection.
+Receiver authorization and replay rules are tracked in
+[#108](https://github.com/crossecute/protocol/issues/108). Authority changes and
+per-Safe counters are tracked in [#109](https://github.com/crossecute/protocol/issues/109).
+Storage layout, retrieval and replay details remain to be designed. No implementation
+or runtime verification exists. See the [worked sizing note](../../docs/safe-approval-evidence-sizing.md).
+
 Agreed retrieval design: the signature-enabled transmitter checks its owner,
 reads that Safe's installed transaction guard through `getStorageAt(slot, 1)`,
 and calls the guard to consume signatures held in the guard's transient storage.
@@ -27,6 +63,9 @@ by the current interface observer. See the
 Agreed staging trigger: match only the `sendMessage(bytes,bytes,bytes[])` selector,
 without filtering the target or operation. Retain the actual signed target in the
 context and allow only that address to consume it. Staging is not implemented yet.
+
+Production targets Safe 1.5.0 and requires both guard slots. The module guard
+permits configured external calls and blocks Safe self-calls and delegatecalls.
 
 ## Agreed dependency boundary
 

@@ -92,11 +92,16 @@ Depends on: review of the existing draft and issue scope.
   new central registry. Preserve the inherited policy engine's reentrancy gate.
 - [ ] Remaining proposed starting assumptions: no module or nested MultiSend
   staging, and rejection of same-Safe nesting through the post-hook.
-- [ ] Decide the MVP byte format: bounded raw hook bytes or a specified owner
-  subset. Raw-byte transport must be labeled as such, with no portability claim.
+- [x] Decide the staged byte format: complete original hook `signatures` bytes,
+  including the policy extension payload and trailer, forwarded unchanged.
+  Raw-byte transport must be labeled as such, with no portability claim.
   Distinguish valid signed Safe inputs from hook-only byte-storage unit inputs.
   Preserve complete nested Safe signature data; do not turn this choice into an
   EOA-only production scope or truncate at threshold times 65 bytes.
+- [ ] Prove byte-for-byte staging, consumption and forwarding of owner data plus
+  the policy extension, including nested dynamic offsets and final partial words.
+  Specify receiver policy evidence verification and configuration binding separately;
+  extension transport alone does not establish policy authorization.
 - [ ] Choose numerical staged-byte and total-input caps, zero-length behavior,
   supported read API, read behavior in each phase, and gas acceptance budgets.
   Record the supported owner count/signing modes for the real fixture.
@@ -195,6 +200,13 @@ Depends on: T04.
   reentrancy, and consume-then-revert, sharing the context checks across modes.
 - [ ] Prove exact byte roundtrip and value-bearing plain CALL through the real
   Safe, alongside normal unrelated transactions that stage no signature blob.
+- [ ] Execute multiple separately signed, consecutive-nonce Safe dispatches in one
+  parent transaction. Prove independent signature/context records and post-hook cleanup
+  before each next execution, without relying on transaction-end transient reset.
+- [ ] Reject selector-matched dispatches using `v = 1`, including nested Safe entries,
+  stored approvals and executor-owner shortcuts, across different targets. Verify ordinary
+  policy-permitted nonmatching transactions can still use approved hashes. Test that an
+  inner protected dispatch in a single signed MultiSend batch rejects without context.
 - [ ] Prove a matching selector stages across different targets and both CALL and
   DELEGATECALL. Short and nonmatching calldata stages no signatures. Include a
   different contract with the same selector and cleanup without consumption.
@@ -298,16 +310,51 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   and pending changes for two Safes on one guard, including shared policy
   contracts with per-guard/per-Safe state. A change made by one Safe must not
   affect the other Safe's rules. Keep deployment-wide delay/expiry semantics.
-- [ ] Resolve Q5/Q6/Q11: accepted signing modes, threshold/signer ordering,
-  total-input/owner caps, recognized extension bounds and exclusion, unknown or
-  duplicate tails, extra signatures, dynamic contract-signature offsets and
-  approved-hash treatment. Nested Safe support is required initially, including
+- [ ] Verify both agreed EOA modes: direct digest (`v = 27/28`) and Ethereum-prefixed
+  (`v = 31/32`, recover with `v - 4`). Use shared verification tests for each mode,
+  mixed-mode thresholds and EOA entries inside supported nested Safe signatures.
+  Reject wrong-prefix/wrong-mode signatures, unsupported recovery values and changed
+  signed context; verify ordinary supported direct and prefixed signatures still pass.
+- [ ] Resolve Q5/Q6/Q11: nested handler/domain rules, threshold/signer ordering,
+  total-input/owner caps, recognized extension bounds and separation within the
+  forwarded full blob, unknown or
+  duplicate tails, extra signatures and dynamic contract-signature offsets. Enforce
+  the agreed recursive `v = 1` rejection on selector-matched dispatches without light
+  clients. Nested Safe support is required initially, including
   complete dynamic signatures and recursive thresholds/domains. Decide other
   contract-owner support separately. Keep ordinary policy behavior.
 - [ ] Specify how policy validates executor context separately from owner bytes.
   Define differential test cases for policy fallback selection, configuration,
   refunds, failure atomicity and unchanged owner authorization. Put shared
   transmitter integration in optional shared add-ons, not in each provider.
+- [ ] Design the agreed cached approval route for empty nested Safe payloads.
+  Preserve the parent blob unchanged; attach each child's signed approval transaction
+  context and complete owner encoding without its policy extension. Specify capture,
+  full-blob persistent storage on the shared guard and retrieval, exact supported library identities,
+  message binding, current-composition verification, replay and recursion bounds. Accept only direct
+  approval delegatecalls, not approvals inside one signed MultiSend batch. Quorum-signed
+  authorization is sufficient without source execution or bridge delivery; support direct
+  evidence submission as well as source capture. Keep approval capture separate from
+  selector-only dispatch staging.
+  Namespace records by approving Safe and test isolation across Safes sharing the guard.
+  Do not duplicate the persistent approval cache on transmitters. Specify compatible
+  child-guard discovery and retrieval when parent and child install different guards.
+  Store approval evidence in the pre-hook after inherited policy checks, without
+  post-hook confirmation. Clear per-execution transient state in the post-hook while
+  retaining persistent evidence. Test availability before the approval action runs,
+  persistence after post-hook, rollback on containing revert, and independent signed
+  evidence submission without a surviving source hook record.
+- [ ] Retain approval evidence indefinitely on the shared guard. Provide no pruning
+  or deletion-on-consumption path. Verify evidence remains retrievable after use and
+  later transactions. Test permissionless direct receiver execution with complete
+  quorum evidence and no bridge delivery; reject incomplete authorization and repeated
+  execution of the same dispatch through either direct or provider delivery.
+  Test successful direct signatures and cached approvals, absent/wrong-message evidence,
+  changed signed fields, authorization without source execution, sequential direct approvals
+  at consecutive nonces in one parent transaction, batch-approval rejection, stale authority, recursive `v = 1`
+  rejection and nested dynamic offset preservation. Share verifier tests across providers.
+  Use the [sizing note](safe-approval-evidence-sizing.md) as an illustrative cost baseline,
+  not a finalized encoding or runtime result.
 - [ ] Preserve the agreed plain/signature deployment split from the
   [add-on architecture](safe-guard-design.md#optional-signature-add-ons-production-integration-boundary).
   Choose reusable extension points and thin concrete composition, enumerate all
@@ -323,19 +370,19 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   operations, data, timing, pending roots, installation/removal permissions,
   transaction/module guard slots and synchronization. Specify authorized
   migration, failed migration and recovery without an unguarded interval.
-- [ ] Specify module behavior without owner-signature staging, including a module
-  calling the transmitter while an owner transaction is active.
+- [ ] Require both guard slots for production Safe 1.5.0. Verify the module guard permits
+  configured external calls and rejects self-calls and delegatecalls. Test attempted
+  owner, threshold, handler and guard changes through modules, and protect the guard
+  configuration. Test that a module cannot send a protected dispatch or consume an
+  active owner transaction's staged context.
 - [ ] Resolve Q10's availability policy. Require verified chain evidence before
   production installation; record remaining support-list work explicitly.
-- [ ] State destination verifier prerequisites: domain, replay key, authoritative
-  owner graph, threshold/rotation timing and signing-mode semantics. Coordinate
-  with #109's nested-Safe update guard: capture prior signed authority, derive the
-  update from the authorized successful change, and specify receiver verification
-  independent of the bridge. Cover nested-only changes, module bypasses, batches,
-  genesis authentication, shared descendants and update publication/retries.
-  Compare current-policy-derived addresses, genesis-committed stable addresses and
-  separately anchored genesis under source-Safe-derived addresses before deciding.
-  Source staging or source-execution attestations do not replace this requirement.
+- [ ] Coordinate the guard's consume API and cached approval evidence with the
+  [signed dispatch design (#108)](https://github.com/crossecute/protocol/issues/108).
+- [ ] Coordinate pending source mutations and shared-guard per-Safe counters with
+  the [authority update design (#109)](https://github.com/crossecute/protocol/issues/109).
+  Specify how direct Safe self-calls match pending updates and how guard
+  configuration blocks authority changes through modules, MultiSend or delegatecalls.
 
 Done when: reviewers agree the production design, each Q has an answer or an
 explicitly accepted deferral with scope/owner, and E04/E12-E18/E22 plus production

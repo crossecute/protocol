@@ -65,7 +65,8 @@ The standalone MVP uses a minimal test transmitter with no bridge sends.
   [Compatibility tests](../contracts/safe-guard/test/TransactionGuard.t.sol) exercise
   installation and signed owner calls with the newer base on the 1.3.0 source fixture.
   Tested runtime support is limited to that fixture, not 1.4/1.5 or deployed bytecode.
-  Module policy compatibility remains a separate production decision: 1.3 has no module guard.
+  Production targets Safe 1.5.0 with both guard hooks. The 1.3.0 fixture is historical
+  transaction-hook evidence.
 - [SafePolicyGuard at 8ee68a8](https://github.com/safe-research/policy-engine/blob/8ee68a8cdac65b4aba5d9a10e9f9018c2efb10b3/contracts/SafePolicyGuard.sol)
   implements transaction and module hooks. The transaction hook decodes an extension into
   policy context; that context is not the original owner-signature blob. It requires zero
@@ -276,38 +277,111 @@ cleanup between sequential Safe executions.
 
 ## Owner signatures and extension bytes
 
-Keep raw hook signatures, decoded policy context, and staged owner signatures as distinct
-values. Executor-supplied context is not owner authorization simply because it was appended
+Agreed: stage and forward the complete original hook `signatures` argument unchanged,
+including the policy extension payload, length and type trailer when present. Preserve
+owner-signature offsets and all nested dynamic data. Keep decoded policy context and
+owner authorization logically distinct within that full blob.
+Executor-supplied context is not owner authorization simply because it was appended
 to signatures that Safe accepted. Run the policy's own validation on that context.
 
 Required initial portability scope: EOA signatures and nested Safe owners. Preserve the
 contract-signature headers, dynamic lengths, payloads and offset semantics needed by nested
 Safe verification. Do not truncate at `threshold * 65` or flatten recursive owner thresholds.
-Exact signing modes, nested Safe versions/handlers, resource bounds, approved-hash treatment
-and handling of other contract owners remain Q5/Q6 decisions. An approved hash or arbitrary
-contract signature is not portable merely because the source accepted it. Reject genuinely
+Agreed: on the selector-matched dispatch path, reject approved-hash (`v = 1`) entries,
+including inside nested Safe signatures, regardless of the target address. This includes
+both stored approvals and the executor-owner shortcut. Ordinary transactions retain their
+agreed policy behavior. No light clients are permitted; source acceptance or bridge
+attestations cannot substitute for independently verifiable owner authorization.
+Agreed EOA modes: support direct Safe transaction digest signatures (`v = 27/28`)
+and Safe's Ethereum-prefixed mode (`v = 31/32`). For digest H, the latter recovers
+against `keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", H))`
+with recovery value `v - 4`. Allow mixed modes within one owner-signature set,
+including EOA entries inside supported nested Safe signatures. Each nested digest must
+follow its supported handler/domain rules; this decision does not settle those rules.
+Reject other EOA recovery values. Receiver verification and compatibility tests remain
+unimplemented. Nested Safe versions/handlers, resource bounds and handling of other
+contract owners remain Q5/Q6 decisions. An arbitrary contract signature is not portable
+merely because the source accepted it. Reject genuinely
 unsupported formats on matching dispatches without treating required nested Safe support
 as a later feature; ordinary transactions retain the policy's agreed behavior.
 
-For the recognized extension, validate envelope bounds, derive its start, and ensure the
-owner region does not overlap it. Never copy policy payload or trailer into the portable
-blob. Unknown tails, extra owner signatures, multiple envelopes, contract-signature offsets,
-and malformed recognized trailers need explicit rules and negative tests. Do not silently
-label the full original signature blob portable. The MVP can prove byte transport without
-claiming to implement production parsing, but its selected byte format must be documented.
+Agreed: support nested Safe `signedMessages` approvals represented by an empty
+contract-signature payload, provided supplemental cached approval evidence is supplied
+and independently verified. Preserve the parent's original full signature blob, including
+its policy extension. Supply the child's complete signed approval transaction context and
+owner-signature encoding separately, excluding the child's policy extension while
+preserving nested dynamic data and offsets. An empty payload or source approval flag alone
+is insufficient. Verify the exact approved message and the applicable authenticated child
+authority recursively; cached signatures sign the approval transaction, not the normal
+nonempty handler payload digest. The recursive `v = 1` restriction remains in force for
+authorization evidence used by this route.
 
-A bound is required because staging and clearing are linear in blob length. For L bytes,
+Agreed acceptance semantics: independently verifiable owner quorum authorization is
+sufficient for destination execution, without source execution or bridge delivery. For
+child approval evidence, accept only a direct delegatecall to a supported
+`SignMessageLib.signMessage(message)` action; do not extract approvals from one signed
+MultiSend batch. Multiple separately signed direct approvals at consecutive Safe nonces
+may execute within one parent blockchain transaction, each with its own guard lifecycle.
+Source guard capture cannot be the sole evidence acquisition route: allow callers to
+supply complete quorum-signed evidence directly, subject to independent verification.
+
+Agreed storage choice: the shared guard persistently stores the full approval evidence
+blob, including the signed
+approval transaction context and complete owner encoding without the child policy
+extension. Retrieval must not require an external supplier to reconstruct a blob from
+a stored commitment. This persistent cache is separate from transient dispatch staging;
+direct submission of independently verified quorum-signed evidence remains supported.
+Scope persistent records by the approving Safe, preserving shared-guard isolation.
+Automatic hook capture requires that Safe to install a compatible guard; the transmitter
+retrieves evidence rather than owning a duplicate persistent approval cache.
+
+Agreed hook lifecycle: after inherited policy checks, the pre-hook stores the approval
+evidence and makes it available without awaiting post-hook success confirmation. The
+post-hook clears per-execution transient context and live markers; it does not delete
+the persistent approval evidence needed by later parent transactions. Retain published
+approval evidence indefinitely, with no pruning or deletion on use. A containing call or transaction revert rolls back
+the pre-hook's persistent writes as normal. Independently submitted signed evidence must
+remain usable without requiring that a source hook write survived.
+
+Receiver nonce, execution windows and recursive signature verification are specified
+with [signed dispatch (#108)](https://github.com/crossecute/protocol/issues/108).
+Pending authority records and counters are specified with
+[authority updates (#109)](https://github.com/crossecute/protocol/issues/109).
+
+Support for this route is decided, but its implementation is not. Capture/retrieval
+API, canonical record layout, exact supported
+library identities, replay details and recursion limits
+remain open. This additional approval capture path must remain separate from selector-only
+dispatch staging. See the [worked evidence sizing example](safe-approval-evidence-sizing.md).
+
+Agreed: multiple separately signed Safe transactions, each with its own nonce and
+`execTransaction` call, must work sequentially within one parent blockchain transaction.
+Each has its own pre-hook, consumption and post-hook lifecycle. Explicit post-hook cleanup
+must permit the next execution without relying on transaction-end transient reset. This
+does not add dispatch support inside a single signed MultiSend batch: the outer selector
+does not match, no signatures stage, and an inner protected dispatch must reject without
+matching context. These lifecycle and rejection properties remain unverified at runtime.
+
+For the recognized extension, validate envelope bounds, derive its start, and ensure the
+owner region does not overlap it. Forwarding the extension does not authenticate it or
+establish destination policy enforcement. Receiver policy selection, configuration binding,
+supported evidence and verification rules remain to be specified; source acceptance or
+bridge assertions alone are insufficient. Unknown tails, extra owner signatures, multiple
+envelopes, contract-signature offsets and malformed recognized trailers need explicit rules
+and negative tests. The MVP must demonstrate full-byte transport without claiming production
+signature or policy verification.
+
+A bound is required because staging and clearing are linear in blob length. Including a
+policy payload of N bytes adds N + 64 bytes over the owner region; forwarding it preserves
+evidence for destination verification. For L total bytes,
 the payload occupies `ceil(L / 32)` transient words plus one length word and fixed metadata;
 zero-pad the final word and return exactly L bytes. No protocol wire format changes in the
 MVP. Future bridge encoding and fee impact require separate design and measurements.
 
-Address derivation remains a design question in #109. Compare committing addresses to the
-current recursive signer policy, committing only the initial policy and rotating authority
-at a stable address, and retaining source Safe identity with separately authenticated
-genesis authority. The existing protocol derives conduit identity from the creating owner
-address, salt and home chain, not its current EOA signer list. No new address formula is
-selected here. Every option must protect genesis authority and subsequent updates from a
-malicious bridge, including owner changes inside nested Safes.
+Signed conduit identity commits to the initial signer policy. The exact salt
+formula and bootstrap validation are tracked in
+[#108](https://github.com/crossecute/protocol/issues/108). Authority updates in
+[#109](https://github.com/crossecute/protocol/issues/109) preserve that identity.
 
 ## Optional signature add-ons: production integration boundary
 
@@ -371,12 +445,15 @@ replace the transaction guard only through the old guard's allowed policy and ti
 Do not introduce a temporarily unguarded transaction or bypass the old removal restrictions.
 The exact migration transaction sequence and handling of pending roots remain open.
 
-Transaction guard replacement does not itself migrate the module guard. Recommendation:
-retain the existing module guard initially; module calls cannot stage or consume owner
-signatures. If both guard slots later point to the combined contract, preserve independent
-module authentication and policy checks, and keep module paths outside owner-signature
-staging. Separate guard instances also have separate policy configuration, so configuration
-drift must be addressed before production use. Test guard replacement/removal itself,
+Production signed dispatch requires Safe 1.5.0 with both a compatible transaction guard
+and module guard installed. Safe 1.3 and 1.4 are out of production support scope. The
+module guard permits explicitly configured external calls and rejects Safe self-calls
+and module delegatecalls. Module execution cannot stage or consume owner signatures.
+Protect both guard slots and module policy permissions against changes that would bypass
+authority checks. Transaction guard replacement does not itself migrate the module guard.
+If both slots point to one contract, authenticate each hook independently. If they point
+to separate contracts, specify how their policy configurations stay consistent.
+Test guard replacement/removal itself,
 including that the old transaction guard may still receive the current transaction's
 post-hook. Never assume the newly installed guard received a pre-hook for installation.
 
@@ -461,9 +538,9 @@ and reopen them if assumptions, dependencies, configuration, or supported versio
 | ID / scope / status | Trigger and potential consequence | Proposed mitigation and closure evidence | Related decisions |
 | --- | --- | --- | --- |
 | E12 / Production / Open | Extension bounds overlap owner signatures, or unknown/extra tails are interpreted differently by Safe, policy and staging parsers | Define one accepted encoding and reject ambiguous dispatch inputs. Test malformed lengths, recognized/unknown types, multiple trailers, extra signatures and overlap; ordinary policy transactions must retain their agreed behavior | Q5, Q6, Q11; R9 |
-| E13 / Production / Open | Contract signature data is truncated or nested thresholds/domains are flattened; source-state-dependent approval is treated as portable authorization | Nested Safes are required initially: preserve their dynamic encoding and define recursive verification/authority state. Test real nested Safe fixtures, offset preservation, duplicate keys, thresholds and chosen signing modes; separately resolve approved hashes and other contract owners | Q5, Q6, Q11; R9 |
+| E13 / Production / Open | Contract signature data is truncated or nested thresholds/domains are flattened; source-state-dependent approval is treated as portable authorization | Nested Safes are required initially: preserve their dynamic encoding and define recursive verification/authority state. Reject `v = 1` recursively on selector-matched dispatches; no light clients. Test real nested Safe fixtures, offset preservation, duplicate keys, thresholds and chosen signing modes; other contract owners remain open | Q5, Q6, Q11; R9 |
 | E14 / Production / Open | Executor-supplied policy context is mistaken for owner-signed content, allowing altered context to authorize a different effect | Keep context separate from owner bytes and require the selected policy to establish its own binding. Mutate extension payload while retaining owner signatures and verify the policy rejects unauthorized effects | Q2, Q5, Q6; R9 |
-| E15 / Production / Decided | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Agreed: extend refactored SafePolicyGuard, reuse inherited internal policy paths, preserve one hook ABI and Safe caller identity. Remaining: upstream refactor/fork pin, compiler/type integration and differential owner/module/configuration/failure tests; migration remains Q9. No production parity is verified | Q2, Q9; R9 |
+| E15 / Production / Decided | Composition changes the Safe identity, fallback selection, allowed configuration calls, refund checks, or failure atomicity | Agreed: extend refactored SafePolicyGuard, reuse inherited internal policy paths, preserve one hook ABI and Safe caller identity. Remaining: compiler/type integration and differential owner/module/configuration/failure tests; migration remains Q9. No production parity is verified | Q2, Q9; R9 |
 | E16 / Production / Open | A module call bypasses owner-signature staging rules or reaches a staged transmitter while an owner transaction is active | Keep module authorization independent and require matching owner-call context at the transmitter. Test module dispatch both with no active context and during an active owner execution, including module-triggered reentrancy | Q4, Q7, Q9; R6, R9 |
 | E17 / Production / Open | Migration omits policies or pending roots, resets a delay, or leaves transaction and module policy configurations inconsistent | Review a concrete migration inventory and authorized sequence. Test before/after policy parity, pending-root treatment, timing boundaries, failed migration, and removal without an unguarded interval | Q2, Q9; R9 |
 
@@ -489,11 +566,11 @@ This register is not an exhaustive security review.
 
 | Question | Recommendation to discuss | What it blocks |
 | --- | --- | --- |
-| Q1. Which Safe versions and deployments are supported? | Agreed: newer transaction-hook ABI/ERC-165 compatibility and pinned 1.3.0 singleton/proxy fixture. The current observer inherits pinned 1.5.0 BaseTransactionGuard; production extends SafePolicyGuard with one reconciled hook implementation. Runtime claim remains limited to the fixture | Production deployment authentication; MVP compatibility boundary resolved |
-| Q2. Which policy base and exact revision should production preserve? | Agreed: extend SafePolicyGuard and reuse its PolicyEngine/configuration/enforcement; SafenetPolicy remains a separately selectable policy. Reviewed base is 8ee68a8. Refactored upstream/fork pin, exact required policies, compiler and hook-type reconciliation remain open | Inheritance choice resolved; dependency preparation and policy-parity evidence pending |
+| Q1. Which Safe versions and deployments are supported? | Production targets Safe 1.5.0 with compatible transaction and module guards. The pinned 1.3.0 observer records historical transaction-hook behavior | Production deployment authentication and dual-guard runtime verification pending |
+| Q2. Which policy base and exact revision should production preserve? | Agreed: extend SafePolicyGuard and reuse its PolicyEngine/configuration/enforcement; SafenetPolicy remains a separately selectable policy. The local fork patch pins 8ee68a8. Exact required policies, compiler integration and hook-type reconciliation remain open | Inheritance choice resolved; dependency preparation and policy-parity evidence pending |
 | Q3. One guard per Safe or a shared guard? Who controls configuration? | Agreed: shared guard following SafePolicyGuard; policy configuration/pending changes and transient records are per Safe. Hooks key by msg.sender; each Safe controls its own configuration and installation. No new central registry or transmitter allowlist. Transmitter discovers its owner Safe's installed guard | Deployment/configuration model resolved; isolation implementation and tests pending |
-| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering. Only the actual signed target may consume. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI remains open |
-| Q5. Which signatures are portable, and who verifies them where? | Required: EOA and nested Safe support in the first signature-enabled release; a bridge cannot forge execution or authority updates. Issue #109 adds nested-Safe update-guard design. Exact encoding/modes, recursive verification, genesis anchoring and address derivation remain open | Nested support/security requirement fixed; parser and authority protocol pending |
+| Q4. Which dispatch selectors and call shapes are supported? Are batches or modules required? | Agreed: stage on `sendMessage(bytes,bytes,bytes[])` selector only, without target/operation filtering; reject `v = 1` recursively on that path. Only the actual signed target may consume. Sequential separately signed Safe executions within one parent transaction are required. No nested batch parsing or module staging; final retrieval ABI remains open | Staging eligibility resolved; integration ABI and runtime verification remain open |
+| Q5. Which signatures are portable, and who verifies them where? | Required: EOA direct and prefixed modes, nested Safe signatures, and empty nested payloads backed by independently verified cached approval evidence. Reject `v = 1` recursively. No light clients or bridge-forgeable authorization. Child approval evidence excludes its policy extension; parent blob retains its extension. Issue #109 covers authority updates. Handler combinations, evidence acceptance semantics, exact encoding and recursive verification remain open | Supported routes decided; verification and authority protocol pending |
 | Q6. What are the size bounds and tail rules? | Agree separate owner-blob and total-input caps; reject unsupported tails on dispatch | Bounded cost, extension parser and fixtures |
 | Q7. Is rejecting all same-Safe nested guarded execution acceptable? | Yes for MVP; keep the live marker until post-hook | Reentrancy semantics |
 | Q8. Should a successful dispatch that never consumes revert in production? | Permit cleanup in MVP; require consumption for production dispatch | Post-hook success criteria |
