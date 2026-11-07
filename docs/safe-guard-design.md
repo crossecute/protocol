@@ -67,12 +67,23 @@ arguments. The record holds, for the calling Safe:
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
 | Operation, value, calldata hash | hook arguments |
-| `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
+| `baseGas`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
 | Signature blob | the hook's `signatures`, byte for byte |
 
-The signature blob is the complete original `signatures` argument: owner signatures, any
-nested contract-signature data with its offsets, and the policy extension if present. There
-is no byte cap. The record lives in EIP-1153 transient storage under a per-Safe base slot.
+`safeTxGas` and `gasPrice` are not stored: the inherited check requires both to be zero, and
+`consume` returns them as zero. The signature blob is the complete original `signatures`
+argument: owner signatures, any nested contract-signature data with its offsets, and the policy
+extension if present. There is no byte cap. Staging and cleanup together cost about 13,000 gas
+for a blob of two EOA signatures and about 14 gas per further byte
+([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The record lives in
+EIP-1153 transient storage under a per-Safe base slot.
+
+**Not all of the blob is signed.** Safe checks the first threshold-many signatures and ignores
+the rest. Whoever submits the transaction can append or change the policy extension, add
+further signatures, or add other trailing bytes without invalidating it. The guard stages
+those bytes as submitted. A consumer must treat only what it verifies against the owners and
+threshold as authorized; the policy extension in particular is executor-supplied context, not
+owner-signed content ([#108](https://github.com/crossecute/protocol/issues/108)).
 
 **Consumption.** `consume(address safe)` returns the record for `safe` when the record is
 live, not yet consumed, and `msg.sender` is the signed target. It marks the record consumed
@@ -102,7 +113,9 @@ It never pins a guard address and never falls back to an unsigned send. It does 
 calldata or value with the record: the direct call from the Safe already delivers what the
 owners signed, and the guard only lets the signed target consume. The minimal transmitter in
 `contracts/safe-guard/test/` exercises this flow; the protocol's own transmitters are
-unchanged.
+unchanged. `ICrossecuteGuard` and `GuardDiscovery` import nothing from the policy engine and
+compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol transmitter can
+import them.
 
 ## Nesting
 
@@ -147,12 +160,17 @@ domain separator. A reader can compare it with `signedMessages` on the child.
 
 **Record.** The approval transaction's signed fields (`to`, `value`, `data`, `operation`,
 `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`, nonce) and the child owners'
-signatures. The signatures keep nested data and offsets and drop the child's policy
-extension. There is no size cap.
+signatures. `safeTxGas` and `gasPrice` are always zero and are not written. The signatures keep
+nested data and offsets and drop the child's policy extension. There is no size cap. The
+extension is recognized by its trailing type hash, the same rule the policy engine uses to read
+it, so a contract signature whose data happens to end in that envelope shape loses its tail
+from the record.
 
 **Lifetime.** One record per child and message hash. A later approval for the same pair
-replaces it. Reads and post-hook cleanup leave it in place. A containing revert rolls back
-the write, including a replacement, and running out of gas while writing reverts the
+replaces it unconditionally, as #107 requires, even when the earlier record was easier to
+verify: a re-approval signed partly through approved hashes (`v = 1`) replaces one signed
+entirely by EOAs. Reads and post-hook cleanup leave it in place. A containing revert rolls
+back the write, including a replacement, and running out of gas while writing reverts the
 approval with it.
 
 **Read.** `getApproval(address childSafe, bytes32 messageHash)` returns the record without

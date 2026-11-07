@@ -97,6 +97,10 @@ the seventh; what they mean for an operator is in the README.
   only the test transmitter in `contracts/safe-guard/test/` consumes them. A signature-enabled
   transmitter and receiver verification are [#108](https://github.com/crossecute/protocol/issues/108),
   and authority updates [#109](https://github.com/crossecute/protocol/issues/109).
+- **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
+  storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
+  transaction revert, including its own removal. Installation tooling should confirm the chain
+  supports `TLOAD`/`TSTORE` first; there is no such tooling yet.
 - **The policy-engine fork's own tests have not run on its second commit.** The guard builds on
   `crossecute/policy-engine` at `f6805df`, two commits on upstream `8ee68a8`.
   [PR #112](https://github.com/crossecute/protocol/pull/112) reports the upstream Hardhat suite

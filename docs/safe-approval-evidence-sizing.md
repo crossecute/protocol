@@ -11,7 +11,8 @@ record itself.
 [`contracts/safe-guard/`](../contracts/safe-guard/), which runs the child's `signMessage`
 transaction under `CrossecuteGuard` and again under an unmodified `SafePolicyGuard` with the same
 policy, and reports the difference. Run it with
-`forge test --match-contract ApprovalGasTest -vv`.
+`forge test --match-contract ApprovalGasTest -vv`. Repeated runs of the same code give the same
+figures.
 
 ## What a child approves
 
@@ -24,38 +25,34 @@ and two zero length words, 194 bytes. The child evidence travels next to that bl
 
 ## Stored record
 
-`CrossecuteGuard` stores each approval as an `ApprovalEvidence` struct in persistent storage:
+`CrossecuteGuard` stores each approval as an `ApprovalEvidence` struct in persistent storage. It
+writes these slots:
 
 | Slots | Field |
 | ---: | --- |
 | 1 | `to` and `operation`, packed |
 | 1 | `value` |
 | 5 | `data`: one length slot and four data slots for 100 bytes |
-| 6 | `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`, `nonce` |
+| 4 | `baseGas`, `gasToken`, `refundReceiver`, `nonce` |
 | 1 + ⌈n / 32⌉ | `signatures`, n bytes |
+
+The struct also has `safeTxGas` and `gasPrice` slots. The guard never writes them, since the
+inherited policy check requires both to be zero, so they always read as zero.
 
 | | 10-of-13 child | 5-of-7 child | Total |
 | --- | ---: | ---: | ---: |
 | Owner signatures | 650 bytes | 325 bytes | 975 bytes |
-| Storage slots | 35 | 25 | 60 |
+| Slots written | 33 | 23 | 56 |
 | `getApproval` return, ABI-encoded | 1,248 bytes | 928 bytes | 2,176 bytes |
-| Measured cache cost | about 665,000 gas | about 443,000 gas | about 1,108,000 gas |
-| At 1 gwei and $2,000/ETH | $1.33 | $0.89 | $2.22 |
+| Measured cache cost | 660,316 gas | 438,553 gas | 1,098,869 gas |
+| At 1 gwei and $2,000/ETH | $1.32 | $0.88 | $2.20 |
 
 The measured cost covers the storage writes, computing the message hash, and the extra calls back
 to the Safe for its nonce and domain separator. It is close to the slot arithmetic: under the
 EIP-2929 schedule a fresh nonzero slot costs 22,100 gas and a zero written over zero costs 2,200,
-and in this shape `value` and the five payment and gas fields are zero. Measured amounts vary by a
-few gas between runs because addresses differ. A replacement for the same child and message
-writes over existing slots and costs less.
+and in this shape `value` and the three payment fields are zero. A replacement for the same child
+and message writes over existing slots and costs less.
 
-Reading a record back with `getApproval` costs 2,100 gas per cold slot onchain, about 126,000 gas
-for both records. An offchain `eth_call` costs the caller nothing.
-
-## Relation to the figures in #107
-
-Issue #107 quotes 2,432 bytes, 78 slots, 1,723,800 gas and $3.45 for this shape. Those figures came
-from an earlier working note that assumed the older Safe contract-signature path, where the message
-is the parent's 66-byte EIP-712 preimage, and a 14-field ABI-encoded blob stored as one `bytes`
-value with every slot written nonzero. Safe 1.5.0's 32-byte message, the struct layout above and
-the zero fields account for the difference.
+Reading a record back with `getApproval` loads every slot of the struct, the two unwritten ones
+included: 60 slots for both records, about 126,000 gas onchain at 2,100 per cold slot. An offchain
+`eth_call` costs the caller nothing.
