@@ -370,7 +370,11 @@ Depends on: T01; incorporates findings from T02-T08 before acceptance.
   operations, data, timing, pending roots, installation/removal permissions,
   transaction/module guard slots and synchronization. Specify authorized
   migration, failed migration and recovery without an unguarded interval.
-- [ ] Require both guard slots for production Safe 1.5.0. Verify the module guard permits
+- [ ] Require both Safe 1.5.0 guard slots to point to the same shared derived contract.
+  Override distinct owner and module policy callbacks. Test that an owner call with
+  the dispatch selector enters signed staging and that a module call with the same
+  top-level selector rejects across targets, including policy-permitted targets.
+  Verify the module guard permits
   configured external calls and rejects self-calls and delegatecalls. Test attempted
   owner, threshold, handler and guard changes through modules, and protect the guard
   configuration. Test that a module cannot send a protected dispatch or consume an

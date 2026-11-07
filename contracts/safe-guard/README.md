@@ -64,8 +64,11 @@ Agreed staging trigger: match only the `sendMessage(bytes,bytes,bytes[])` select
 without filtering the target or operation. Retain the actual signed target in the
 context and allow only that address to consume it. Staging is not implemented yet.
 
-Production targets Safe 1.5.0 and requires both guard slots. The module guard
-permits configured external calls and blocks Safe self-calls and delegatecalls.
+Production targets Safe 1.5.0. Both guard slots point to one shared derived contract
+with distinct owner and module callbacks. The owner callback handles signed dispatch
+on a matching `sendMessage(bytes,bytes,bytes[])` selector. The module callback rejects
+that selector regardless of target. It permits configured external calls and blocks
+Safe self-calls and delegatecalls.
 
 ## Agreed dependency boundary
 

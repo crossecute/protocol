@@ -451,8 +451,13 @@ module guard permits explicitly configured external calls and rejects Safe self-
 and module delegatecalls. Module execution cannot stage or consume owner signatures.
 Protect both guard slots and module policy permissions against changes that would bypass
 authority checks. Transaction guard replacement does not itself migrate the module guard.
-If both slots point to one contract, authenticate each hook independently. If they point
-to separate contracts, specify how their policy configurations stay consistent.
+Both Safe guard slots point to the same shared derived `SafePolicyGuard` contract.
+The contract overrides distinct internal callbacks for owner and module transactions
+and preserves the inherited policy checks on both paths. The owner callback applies
+signed-dispatch checks and stages signatures on a top-level `sendMessage(bytes,bytes,bytes[])`
+selector match. The module callback rejects that selector, regardless of target, because
+the module path supplies no Safe owner signature blob. Target-bound consumption remains
+required even if an allowed external module call reaches a transmitter indirectly.
 Test guard replacement/removal itself,
 including that the old transaction guard may still receive the current transaction's
 post-hook. Never assume the newly installed guard received a pre-hook for installation.
