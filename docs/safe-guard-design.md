@@ -5,9 +5,9 @@ signatures to a dispatch, and so that a child Safe's approval of a parent transa
 evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
-**Status.** Design. The guard and its tests live in
-[`contracts/safe-guard/`](../contracts/safe-guard/), a separate Foundry project. Nothing in
-`contracts/evm/` depends on it yet. Receiver verification of what the guard hands out is
+**Status.** Implemented and tested in [`contracts/safe-guard/`](../contracts/safe-guard/), a
+separate Foundry project, against real Safe 1.5.0 proxies. Only a test transmitter consumes it;
+nothing in `contracts/evm/` depends on it yet. Receiver verification of what the guard hands out is
 [#108](https://github.com/crossecute/protocol/issues/108); authority updates are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
@@ -187,8 +187,9 @@ post-hook. After installation, configuration changes go through `requestConfigur
 
 ## Build and chain support
 
-The guard needs EIP-1153 (`TSTORE`/`TLOAD`), so it targets Cancun and installs only on chains
-that have activated it. It is compiled with Solidity 0.8.30 and via-IR, matching the
+The guard needs EIP-1153 (`TSTORE`/`TLOAD`), so it targets Cancun. The owner pre-hook reads
+transient storage on every transaction, so on a chain without EIP-1153 every owner transaction
+would revert, including one that removes the guard. Install it only where Cancun is active. It is compiled with Solidity 0.8.30 and via-IR, matching the
 policy-engine. The project keeps its own configuration, output and cache, and does not change
 the Paris build of `contracts/evm/`. [`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md)
 has the pins and commands.

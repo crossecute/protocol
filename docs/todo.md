@@ -92,6 +92,16 @@ the seventh; what they mean for an operator is in the README.
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
+- **No protocol transmitter consumes the Safe guard yet.** `CrossecuteGuard` stages owner
+  signatures and caches child approvals ([`safe-guard-design.md`](safe-guard-design.md)), but
+  only the test transmitter in `contracts/safe-guard/test/` consumes them. A signature-enabled
+  transmitter and receiver verification are [#108](https://github.com/crossecute/protocol/issues/108),
+  and authority updates [#109](https://github.com/crossecute/protocol/issues/109).
+- **The policy-engine fork's own tests have not run on its second commit.** The guard builds on
+  `crossecute/policy-engine` at `f6805df`, two commits on upstream `8ee68a8`.
+  [PR #112](https://github.com/crossecute/protocol/pull/112) reports the upstream Hardhat suite
+  passing (182 tests) with the first commit's change. The second, which adds
+  `_ownerSignatures`, has only been compiled; the guard's own tests cover it.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes

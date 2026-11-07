@@ -501,6 +501,10 @@ script's pinned commit changes, re-check the matching section there.
   implement to be compliant, and what the provider itself must be capable of. Normative
 - [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
   binding is held to, and what an OFT must be before a conduit uses it. Normative
+- [`docs/safe-guard-design.md`](docs/safe-guard-design.md): the Safe guard that stages owner
+  signatures for a transmitter and caches child Safe approvals, built under
+  [`contracts/safe-guard/`](contracts/safe-guard/); its approval storage cost is in
+  [`docs/safe-approval-evidence-sizing.md`](docs/safe-approval-evidence-sizing.md)
 - [Provider research](https://github.com/crossecute/research/blob/main/protocol/provider-research.md), in the `crossecute/research` repository: what each transport
   guarantees about replay, how ERC-7786 attaches, and the design influences and candidate
   additions each suggests. Pinned to other people's releases, so it goes stale on their
