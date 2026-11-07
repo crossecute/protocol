@@ -4,8 +4,9 @@ test = "test"
 out = "out"
 cache_path = "cache"
 libs = ["lib"]
-# forge-std is shared with the protocol project rather than pinned a second time.
-allow_paths = ["../evm/lib/forge-std"]
+# forge-std is shared with the protocol project rather than pinned a second time, and the
+# dispatch selector is read from the protocol's own ERC-7786 interface.
+allow_paths = ["../evm/lib/forge-std", "../evm/src/messaging"]
 # Pinned to the policy-engine's own settings: SafePolicyGuard declares `pragma =0.8.30` and
 # does not compile without via-IR. Cancun is required for EIP-1153 transient storage.
 solc_version = "0.8.30"
@@ -16,6 +17,7 @@ optimizer_runs = 200
 bytecode_hash = "none"
 cbor_metadata = false
 remappings = [
+    "crossecute/=../evm/src/",
     "forge-std/=../evm/lib/forge-std/src/",
     "policy-engine/=lib/policy-engine/contracts/",
     "safe-smart-account/=lib/safe-smart-account/contracts/",
@@ -25,15 +27,49 @@ remappings = [
 [fmt]
 ignore = ["lib/**"]
 
-# CI runs `forge lint -D notes`.
+# CI runs `forge lint -D notes`. The detector heuristics flag what tests and mocks do on
+# purpose, so, as in contracts/evm, they are enforced on src/ alone by the profile below.
 [lint]
 ignore = ["lib/**", "../evm/lib/**"]
 exclude_lints = [
     "mixed-case-function",
     "mixed-case-variable",
     "named-struct-fields",
+    "literal-instead-of-constant",
+    "multi-contract-file",
+    "internal-function-used-once",
+    "pragma-inconsistent",
     "asm-keccak256",
     "inline-assembly",
     "low-level-calls",
+    # A revert inside a loop is how an all-or-nothing check over an array is written.
+    "require-revert-in-loop",
+    "unsafe-typecast",
+    "missing-zero-check",
+    "calls-loop",
+    "unused-return",
+    "encode-packed-collision",
+    "boolean-cst",
+    "locked-ether",
+    "empty-block",
+    "reentrancy-no-eth",
+    "reentrancy-events",
+]
+
+# CI also runs `FOUNDRY_PROFILE=lint-src forge lint -D notes src`. A reviewed hit is suppressed
+# inline with its reason.
+[profile.lint-src.lint]
+ignore = ["lib/**", "../evm/lib/**"]
+exclude_lints = [
+    "mixed-case-function",
+    "mixed-case-variable",
+    "named-struct-fields",
+    "literal-instead-of-constant",
+    "multi-contract-file",
+    "internal-function-used-once",
     "pragma-inconsistent",
+    "asm-keccak256",
+    "inline-assembly",
+    "low-level-calls",
+    "require-revert-in-loop",
 ]
