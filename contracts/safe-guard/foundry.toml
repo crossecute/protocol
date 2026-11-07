@@ -1,0 +1,39 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+# forge-std is shared with the protocol project rather than pinned a second time.
+allow_paths = ["../evm/lib/forge-std"]
+# Pinned to the policy-engine's own settings: SafePolicyGuard declares `pragma =0.8.30` and
+# does not compile without via-IR. Cancun is required for EIP-1153 transient storage.
+solc_version = "0.8.30"
+evm_version = "cancun"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+cbor_metadata = false
+remappings = [
+    "forge-std/=../evm/lib/forge-std/src/",
+    "policy-engine/=lib/policy-engine/contracts/",
+    "safe-smart-account/=lib/safe-smart-account/contracts/",
+]
+
+# CI runs `forge fmt --check`. `lib/` is upstream source.
+[fmt]
+ignore = ["lib/**"]
+
+# CI runs `forge lint -D notes`.
+[lint]
+ignore = ["lib/**", "../evm/lib/**"]
+exclude_lints = [
+    "mixed-case-function",
+    "mixed-case-variable",
+    "named-struct-fields",
+    "asm-keccak256",
+    "inline-assembly",
+    "low-level-calls",
+    "pragma-inconsistent",
+]

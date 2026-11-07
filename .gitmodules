@@ -7,3 +7,10 @@
 [submodule "contracts/evm/lib/openzeppelin-contracts-upgradeable"]
 	path = contracts/evm/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/crossecute/openzeppelin-contracts-upgradeable
+[submodule "contracts/safe-guard/lib/safe-smart-account"]
+	path = contracts/safe-guard/lib/safe-smart-account
+	url = https://github.com/safe-fndn/safe-smart-account.git
+[submodule "contracts/safe-guard/lib/policy-engine"]
+	path = contracts/safe-guard/lib/policy-engine
+	url = https://github.com/crossecute/policy-engine.git
+	branch = crossecute/extension-hooks
