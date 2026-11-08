@@ -253,11 +253,11 @@ Cases:
 - **Q3.7** The owner hash and the threshold hash both include each node's address, so
   thresholds cannot move between nodes. *Open:* record why the commitment uses two hashes.
 - **Q3.8** The root node is the transmitter's owner Safe.
-- **Q3.9** [`SafeOwnerManager.sol`](../contracts/evm/src/messaging/SafeOwnerManager.sol)
+- **Q3.9** [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/NestedOwnerManager.sol)
   proposes one `SafeState` per Safe, with a linked owner list and threshold. Keep the
   authority counter and owner kind metadata in the surrounding record. The signed update
   carries Safe's mutation selector and arguments. After verifying the update, the receiver
-  can use `using SafeOwnerManager for SafeState` and call
+  can use `using NestedOwnerManager for SafeState` and call
   `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
   The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
   layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).

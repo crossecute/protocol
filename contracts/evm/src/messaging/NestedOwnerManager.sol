@@ -9,17 +9,9 @@ struct SafeState {
     uint256 threshold;
 }
 
-/// @notice Selectors and arguments of the supported Safe owner mutations.
-interface ISafeOwnerMutation {
-    function addOwnerWithThreshold(address owner, uint256 threshold) external;
-    function removeOwner(address prevOwner, address owner, uint256 threshold) external;
-    function swapOwner(address prevOwner, address oldOwner, address newOwner) external;
-    function changeThreshold(uint256 threshold) external;
-}
-
 /// @notice Proposed owner-list operations for the receiver's stored Safe records.
 /// @dev The caller authenticates the genesis record or the exact signed mutation before applying it.
-library SafeOwnerManager {
+library NestedOwnerManager {
     address internal constant SENTINEL = address(1);
 
     error InvalidSafe(address sourceSafe);
