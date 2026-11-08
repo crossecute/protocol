@@ -10,6 +10,9 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {Conduits} from "src/conduit/Conduits.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainType} from "src/addressing/ChainType.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {bootstrapPayload} from "test/Harness.sol";
@@ -182,6 +185,63 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
         LzOftTransmitter conduit = _create(_leaves(DST_OFT));
         vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotADestination.selector, address(conduit), homeKey));
         factory.bootstrapRoute(address(conduit), homeKey);
+    }
+
+    function test_aChainNotListedHasNoDestination() public {
+        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotADestination.selector, address(conduit), homeKey));
+        factory.destinationOf(address(conduit), homeKey);
+    }
+
+    /// @dev The compose names the fields `bootstrapRoute` reports and the conduit's own
+    ///      `(owner, salt)`, and goes to this factory's address on the destination.
+    function test_theBootstrapIsBuiltFromTheConduitsFields() public {
+        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        (,, uint32 homeEid, bytes32 root, bytes32[] memory proof) = factory.bootstrapRoute(address(conduit), destKey);
+        bytes memory body = Payload.encodeCalls(_calls(address(0x5111)));
+
+        vm.prank(address(conduit));
+        (bytes memory recipient, bytes memory message) =
+            factory.conduitBootstrap(Erc7930.encodeEvmChain(DEST), owner, SALT, body);
+
+        assertEq(recipient, Erc7930.encodeEvm(DEST, address(factory)));
+        assertEq(
+            message,
+            LzOftMessage.encodeBootstrap(
+                LzOftMessage.Bootstrap(
+                    owner, SALT, homeKey, homeEid, address(oft), root, proof, _calls(address(0x5111))
+                )
+            )
+        );
+    }
+
+    function test_aBootstrapForAnotherCallerOrIdentityIsRefused() public {
+        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        bytes memory route = Erc7930.encodeEvmChain(DEST);
+        bytes memory body = Payload.encodeCalls(new Call[](0));
+
+        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.UnknownConduit.selector, address(this)));
+        factory.conduitBootstrap(route, owner, SALT, body);
+
+        address derived = factory.predictConduit(owner, bytes32(0), homeKey, HOME_EID, address(oft), _root());
+        vm.prank(address(conduit));
+        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotTheConduit.selector, address(conduit), derived));
+        factory.conduitBootstrap(route, owner, bytes32(0), body);
+    }
+
+    /// @dev The compose carries `Call[]`, so a chain that is not `eip155` is refused before
+    ///      its leaf is looked up.
+    function test_aNonEvmChainIsRefused() public {
+        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+
+        vm.prank(address(conduit));
+        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotAnEvmChain.selector, keccak256(sol)));
+        factory.conduitBootstrap(sol, owner, SALT, Payload.encodeElements(new bytes[](0)));
+    }
+
+    function _root() internal view returns (bytes32) {
+        return LzOftMessage.leaf(destKey, DEST_EID, DST_OFT);
     }
 
     function test_onlyItsOwnConduitsArePredicted() public {

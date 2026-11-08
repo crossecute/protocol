@@ -263,6 +263,15 @@ abstract contract TransceiverBase is TransceiverCore {
         );
     }
 
+    /// @notice Empty: this transceiver sends a conduit's bootstrap itself, through `bootstrap`.
+    function conduitBootstrap(bytes calldata, address, bytes32, bytes calldata)
+        external
+        pure
+        returns (bytes memory recipient, bytes memory message)
+    {
+        return ("", "");
+    }
+
     /// @notice What `bootstrap` would cost, before anything is spent.
     /// @dev Applies `_requireRoutable`, so it fails wherever the send would, but not
     ///      `bootstrap`'s caller check: a quote is taken before the conduit exists.

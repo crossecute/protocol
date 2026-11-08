@@ -49,6 +49,14 @@ interface IConduitTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
+    /// @notice The message the calling conduit sends itself, through its own transport, to stand
+    ///         up on the chain `route` names. An empty `recipient` means this transceiver
+    ///         carries the bootstrap, through `bootstrap` or `bootstrapElements`.
+    function conduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
+        external
+        view
+        returns (bytes memory recipient, bytes memory message);
+
     /// @notice Whether a destination reports its receiver address back, rather than this
     ///         chain deriving it. False wherever Ethereum's CREATE2 holds; true on zkSync, Tron, and
     ///         every non-EVM VM. Asked here because a conduit holds no registry.
@@ -310,22 +318,20 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///
     /// @dev Path B: with no receiver yet, the message goes to the transceiver on that chain.
     ///      It passes the owner and salt, from which the destination derives this conduit's
-    ///      address; the transceiver checks they resolve to `msg.sender`.
+    ///      address; the transceiver checks they resolve to `msg.sender`. Where the transceiver
+    ///      answers `conduitBootstrap` instead, this conduit sends that message through its own
+    ///      transport, as `sendMessage` would.
     ///
     /// @dev `payload` is `bootstrapPayload(destinationChainIdentifier, body)`. The body is
     ///      decoded in the one form the destination's chain type implies (see `Payload`), so
     ///      what reaches the transceiver is always in that form.
     ///
-    /// @dev Pays `_quoteBootstrap`, the transceiver's quote by default, from this conduit's
-    ///      balance, as `sendMessage` does. `quoteBootstrap` takes the same arguments, for
+    /// @dev Pays `_quoteBootstrap` from this conduit's balance, as `sendMessage` does. `quoteBootstrap` takes the same arguments, for
     ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable onlyConduitOwner {
         (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
         _markBootstrapped(chainKey, route);
-
-        uint256 fee = _quoteBootstrap(chainKey, typed, body, attributes);
-        _requireFunded(fee);
-        _sendBootstrap(chainKey, typed, body, attributes, fee);
+        _sendBootstrap(chainKey, route, typed, body, attributes);
     }
 
     /// @notice The payload `bootstrap` takes: the destination's ERC-7930 chain identifier, and
@@ -357,7 +363,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     }
 
     /// @notice What `bootstrap` would cost, in this chain's native currency.
-    /// @dev Decoded and checked as `bootstrap` does it, and priced by the same hook. The
+    /// @dev Decoded, checked and priced as `bootstrap` does it, through `_quoteBootstrap`. The
     ///      `(owner, salt)` check is not applied: a quote spends nothing and may be taken before
     ///      the conduit exists.
     function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
@@ -365,8 +371,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         view
         returns (uint256 nativeFee)
     {
-        (bytes32 chainKey,, bool typed, bytes memory body) = _decodeBootstrap(payload);
-        return _quoteBootstrap(chainKey, typed, body, attributes);
+        (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
+        (nativeFee,,) = _quoteBootstrap(chainKey, route, typed, body, attributes);
     }
 
     /* =============================== shared code =============================== */
@@ -398,32 +404,46 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         _requireNotBootstrapped(chainKey);
     }
 
-    /// @notice What the bootstrap to `chainKey` costs, as `bootstrap` and `quoteBootstrap`
-    ///         both price it. `body` is `Call[]` when `typed`, opaque elements otherwise.
-    /// @dev The transceiver's price by default. A binding that sends its own bootstrap overrides
-    ///      this and `_sendBootstrap` together, so the quote prices what the send carries. Runs
-    ///      after `_markBootstrapped` on a send and without it on a quote, so an override must not
-    ///      read what that records.
-    function _quoteBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes)
-        internal
-        view
-        virtual
-        returns (uint256)
-    {
+    /// @notice What the bootstrap to `chainKey` costs, as `bootstrap` and `quoteBootstrap` both
+    ///         price it, and the message this conduit sends when the transceiver hands one back.
+    ///         `body` is `Call[]` when `typed`, opaque elements otherwise.
+    /// @dev Runs after `_markBootstrapped` on a send and without it on a quote, so nothing it
+    ///      reaches may read what that records.
+    function _quoteBootstrap(
+        bytes32 chainKey,
+        bytes memory route,
+        bool typed,
+        bytes memory body,
+        bytes[] calldata attributes
+    ) private view returns (uint256 fee, bytes memory recipient, bytes memory message) {
         IConduitTransceiver t = IConduitTransceiver(transceiver);
-        if (typed) {
-            return t.quoteBootstrap(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+        (recipient, message) = t.conduitBootstrap(route, deployer, conduitSalt, body);
+        if (recipient.length != 0) {
+            fee = _quoteMessage(recipient, message, attributes);
+        } else if (typed) {
+            fee = t.quoteBootstrap(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+        } else {
+            fee = t.quoteBootstrapElements(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
         }
-        return t.quoteBootstrapElements(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
     }
 
-    /// @notice Send the bootstrap to `chainKey`, paying `fee` from this balance.
-    /// @dev Through the transceiver by default. Runs after `_markBootstrapped`, so a re-entrant
-    ///      second bootstrap meets the record.
-    function _sendBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes, uint256 fee)
-        internal
-        virtual
-    {
+    /// @notice Send the bootstrap to `chainKey`, paying its quote from this balance.
+    /// @dev Runs after `_markBootstrapped`, so a re-entrant second bootstrap meets the record.
+    function _sendBootstrap(
+        bytes32 chainKey,
+        bytes memory route,
+        bool typed,
+        bytes memory body,
+        bytes[] calldata attributes
+    ) private {
+        (uint256 fee, bytes memory recipient, bytes memory message) =
+            _quoteBootstrap(chainKey, route, typed, body, attributes);
+        _requireFunded(fee);
+        if (recipient.length != 0) {
+            _sendMessage(recipient, message, attributes, fee);
+            return;
+        }
+
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         // forge-lint: disable-start(arbitrary-send-eth) the write-once transceiver
         if (typed) {

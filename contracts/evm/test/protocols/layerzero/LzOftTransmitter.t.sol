@@ -11,11 +11,13 @@ import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ChainType} from "src/addressing/ChainType.sol";
-import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {bootstrapPayload} from "test/Harness.sol";
+
+interface IHomeOft {
+    function homeOft() external view returns (address);
+}
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
 contract MockOftConduitFactory is ILzOftConduitFactory {
@@ -35,14 +37,36 @@ contract MockOftConduitFactory is ILzOftConduitFactory {
         _routes[chainKey] = Route(eid, dstOft, proof);
     }
 
-    function bootstrapRoute(address, bytes32 chainKey)
+    function destinationOf(address, bytes32 chainKey) external view returns (uint32, address) {
+        Route memory r = _route(chainKey);
+        return (r.eid, r.dstOft);
+    }
+
+    function conduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
         external
         view
-        returns (uint32, address, uint32, bytes32, bytes32[] memory)
+        returns (bytes memory recipient, bytes memory message)
     {
-        Route memory r = _routes[chainKey];
+        Route memory r = _route(keccak256(route));
+        message = LzOftMessage.encodeBootstrap(
+            LzOftMessage.Bootstrap(
+                owner,
+                salt,
+                ChainKey.local(),
+                HOME_EID,
+                IHomeOft(msg.sender).homeOft(),
+                destRoot,
+                r.proof,
+                Payload.decodeCalls(body)
+            )
+        );
+        Erc7930.Interop memory io = Erc7930.parseStrict(route);
+        recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
+    }
+
+    function _route(bytes32 chainKey) internal view returns (Route memory r) {
+        r = _routes[chainKey];
         if (r.eid == 0) revert NotInRoot(chainKey);
-        return (r.eid, r.dstOft, HOME_EID, destRoot, r.proof);
     }
 
     function reportsReceiver(bytes32) external pure returns (bool) {
@@ -169,20 +193,6 @@ contract LzOftTransmitterTest is Test {
         bytes32 other = ChainKey.forEvm(10);
         vm.expectRevert(abi.encodeWithSelector(MockOftConduitFactory.NotInRoot.selector, other));
         conduit.quoteBootstrap(bootstrapPayload(10, _calls()), new bytes[](0));
-    }
-
-    /// @dev The compose carries `Call[]`, so a destination that decodes opaque elements is
-    ///      refused before the factory or the OFT is asked.
-    function test_aNonEvmDestinationIsRefused() public {
-        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
-        bytes memory payload = bootstrapPayload(sol, new bytes[](0));
-
-        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
-        conduit.quoteBootstrap(payload, new bytes[](0));
-        vm.prank(owner);
-        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
-        conduit.bootstrap(payload, new bytes[](0));
-        assertEq(oft.sentLength(), 0);
     }
 
     /* ================================== Path A ================================= */
