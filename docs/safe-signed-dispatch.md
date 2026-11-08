@@ -7,8 +7,8 @@ verifies it through provider delivery or permissionless direct submission. Track
 [PR #117](https://github.com/crossecute/protocol/pull/117)); authority changes are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
-**Status.** Working document. Nothing here is built. It records what is decided, the
-conflicts that block a decision, and the open questions with proposed answers and the cases
+**Status.** Working design with a proposed Solidity interface. It records what is decided,
+the conflicts that block a decision, and the open questions with proposed answers and the cases
 each answer must handle. The design part of #108 is resolved when every item under
 [Conflicts](#conflicts-to-resolve-first) and [Open questions](#open-questions) is either
 decided (moved to [Decisions](#decisions)) or explicitly deferred with a reason.
@@ -52,7 +52,7 @@ Verification and replay:
   Every dispatch, including a commit-only leaf, verifies before changing state. Provider
   sender metadata and local self-calls never substitute for it, including where the
   transmitter and receiver share an address on different chains.
-- **D10.** Each receiver starts at `nextNonce = 0` and requires `leaf.nonce == nextNonce` for a
+- **D10.** Each receiver starts at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the leaf hash and advances before external calls, rejects
   overflow, and rolls both back if execution reverts.
 - **D11.** An authenticated replay of an executed leaf returns successfully with
@@ -140,10 +140,14 @@ leaf? For a direct submission on Arbitrum, how does the caller supply the Arbitr
 proof alongside the original signed Base calldata? Which Safe context, signatures and evidence
 travel with each path, and which fields come from receiver configuration?
 
-*Proposed.* `payload = abi.encode(root, leaf, proof)` with the selected leaf in full. The
-provider path carries the signed calldata and Base verifies the embedded leaf. The direct path
-takes the Safe context, the original signed calldata, signatures, evidence, and an optional
-override leaf and proof; the root always comes from the signed calldata.
+*Proposed.* [`ISignedDispatch.sol`](../contracts/evm/src/messaging/ISignedDispatch.sol) shows
+`DispatchPayload` with the parent authority counter, root, selected leaf and proof. Encode it
+as a single struct with `abi.encode(dispatch)` and read it with
+`abi.decode(payload, (DispatchPayload))`. The provider path carries the original signed
+calldata and verifies its embedded leaf. `submitDirect` takes the Safe context containing that
+same calldata, signatures, evidence, and the requested leaf and proof. The verifier reads the
+counter and root from the signed calldata. Field widths and the context and evidence encodings
+are provisional.
 
 | Field | Provider path | Direct path | From receiver configuration |
 | --- | --- | --- | --- |
@@ -154,7 +158,7 @@ override leaf and proof; the root always comes from the signed calldata.
 | `data` (full signed calldata) | yes | yes | |
 | `signatures` | yes, possibly trimmed (O3) | yes | |
 | nested evidence | yes, attached by the transmitter | yes | |
-| override leaf and proof | no | optional | |
+| requested leaf and proof | embedded | explicit in the proposed interface | |
 
 Cases:
 
@@ -165,10 +169,10 @@ Cases:
   force them to zero, so they travel. *Open:* require zero anyway.
 - **Q1.3** Check the `sendMessage` selector before decoding.
 - **Q1.4** *Open:* require canonical ABI encoding of the signed calldata (re-encode and
-  compare). Calls inside a leaf need no such rule, since `Commitment.hashCalls` hashes decoded
-  fields; the root and leaf location do, or two parsers can disagree on them.
-- **Q1.5** With no override leaf the embedded leaf executes. An override equal to the embedded
-  leaf gives the same result and the same duplicate record.
+  compare). The leaf hash commits to the exact call payload bytes, and the receiver decodes
+  those same bytes to execute the calls.
+- **Q1.5** The provider path executes the embedded leaf. A direct submission of that same leaf
+  gives the same result and the same duplicate record.
 - **Q1.6** *Proposed:* a receiver executing an override leaf does not check the embedded leaf's
   proof, so a mistake in Base's proof does not block Arbitrum.
 - **Q1.7** The provider path never carries an override. *Open:* one struct for the wire format
@@ -185,10 +189,11 @@ What fields and byte encoding define an execution leaf? How does it commit to th
 calls with the existing EVM `Call[]` codec, where does the parent authority counter belong,
 and how are leaves and internal nodes hashed? Specify proof ordering and the single-leaf tree.
 
-*Proposed.* `leaf = (EXECUTION_TAG, destination, uint64 nonce, uint48 validAfter,
-uint48 deadline, Call[] calls)`. The leaf hash is a tagged hash of the fixed fields and
-`Commitment.hashCalls(destinationChainKey, calls)`. Leaf nodes are double-hashed; internal
-nodes hash sorted pairs, as in OpenZeppelin's `MerkleProof`.
+*Proposed.* Frame the leaf fields with `abi.encode` and double-hash the result. Include the
+full destination and `callPayload` bytes in the inner hash. EVM call payloads use the existing
+`abi.encode(Call[])` format. Internal nodes hash sorted pairs, as in OpenZeppelin's
+`MerkleProof`. Carry an unpaired hash to the next level unchanged. The execution tag, field
+order and integer widths remain open.
 
 Cases:
 
@@ -197,12 +202,11 @@ Cases:
   hash is stable across rotations and every leaf in a tree shares the parent counter.
   *Proposed:* beside the root. #109's management leaves carry their own prior and next
   counters either way.
-- **Q2.2** `hashCalls` seeds with the chain key, so an empty batch hashes to a per-chain value.
-  Empty replacement leaves need nothing else.
-- **Q2.3** A leaf's calls hash equals the commitment hash of the same array. The tag keeps a
-  leaf hash from ever equalling a commitment.
+- **Q2.2** An empty replacement leaf carries the normal encoding of an empty `Call[]`.
+- **Q2.3** The leaf hash includes the exact encoded call payload bytes. A call to `commit`
+  still takes the existing commitment hash for the batch to be finalized later.
 - **Q2.4** The destination is ERC-7930 bytes: `Erc7930.parseStrict`, eip155 only, a 20-byte
-  address, hashed as `keccak256(destination)` inside the leaf hash.
+  address. The full destination bytes are included in the leaf encoding.
 - **Q2.5** The tag is the first field, so #109's management tag cannot collide with it. With no
   version field, a new format needs a new receiver implementation, and tooling identifies a
   receiver's format from its implementation or transceiver.
