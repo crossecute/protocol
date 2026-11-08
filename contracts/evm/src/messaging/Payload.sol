@@ -27,7 +27,14 @@ library Payload {
 
     /// @notice Decode a payload that arrived on an EVM chain. Reverts on anything that is not
     ///         `Call[]`.
-    function decodeCalls(bytes memory wire) internal pure returns (Call[] memory) {
+    function decodeCalls(bytes calldata wire) internal pure returns (Call[] memory) {
+        return abi.decode(wire, (Call[]));
+    }
+
+    /// @notice `decodeCalls`, for a wire already in memory.
+    /// @dev Separate because Solidity will not overload on data location, and a receiver's
+    ///      payload stays in calldata rather than paying a copy on every delivery.
+    function decodeCallsFromMemory(bytes memory wire) internal pure returns (Call[] memory) {
         return abi.decode(wire, (Call[]));
     }
 
@@ -41,7 +48,12 @@ library Payload {
         return abi.encode(elements);
     }
 
-    function decodeElements(bytes memory wire) internal pure returns (bytes[] memory) {
+    function decodeElements(bytes calldata wire) internal pure returns (bytes[] memory) {
+        return abi.decode(wire, (bytes[]));
+    }
+
+    /// @notice `decodeElements`, for a wire already in memory.
+    function decodeElementsFromMemory(bytes memory wire) internal pure returns (bytes[] memory) {
         return abi.decode(wire, (bytes[]));
     }
 

@@ -422,9 +422,11 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (recipient.length != 0) {
             fee = _quoteMessage(recipient, message, attributes);
         } else if (typed) {
-            fee = t.quoteBootstrap(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+            fee = t.quoteBootstrap(chainKey, deployer, conduitSalt, Payload.decodeCallsFromMemory(body), attributes);
         } else {
-            fee = t.quoteBootstrapElements(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
+            fee = t.quoteBootstrapElements(
+                chainKey, deployer, conduitSalt, Payload.decodeElementsFromMemory(body), attributes
+            );
         }
     }
 
@@ -448,9 +450,11 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         // forge-lint: disable-start(arbitrary-send-eth) the write-once transceiver
         if (typed) {
-            t.bootstrap{value: fee}(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+            t.bootstrap{value: fee}(chainKey, deployer, conduitSalt, Payload.decodeCallsFromMemory(body), attributes);
         } else {
-            t.bootstrapElements{value: fee}(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
+            t.bootstrapElements{value: fee}(
+                chainKey, deployer, conduitSalt, Payload.decodeElementsFromMemory(body), attributes
+            );
         }
         // forge-lint: disable-end(arbitrary-send-eth)
     }

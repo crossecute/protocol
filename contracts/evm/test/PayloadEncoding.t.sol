@@ -169,6 +169,21 @@ contract PayloadEncodingTest is Test {
         }
     }
 
+    /// The transmitter decodes a body it holds in memory, and a receiver its payload in
+    /// calldata; both must read one wire the same way.
+    function test_theMemoryDecodersAgreeWithTheCalldataOnes() public view {
+        bytes memory typedWire = Payload.encodeCalls(_calls());
+        Call[] memory fromCalldata = harness.decodeCalls(typedWire);
+        Call[] memory fromMemory = Payload.decodeCallsFromMemory(typedWire);
+        assertEq(keccak256(abi.encode(fromMemory)), keccak256(abi.encode(fromCalldata)));
+
+        bytes memory opaqueWire = Payload.encodeElements(Calls.encodeAll(_calls()));
+        assertEq(
+            keccak256(abi.encode(Payload.decodeElementsFromMemory(opaqueWire))),
+            keccak256(abi.encode(harness.decodeElements(opaqueWire)))
+        );
+    }
+
     /// The plain bootstrap payload carries its destination and a body in that destination's
     /// wire form, which decodes as `sendMessage`'s payload would.
     function test_theBootstrapPayloadRoundTrips() public view {
