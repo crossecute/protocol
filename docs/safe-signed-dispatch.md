@@ -7,7 +7,7 @@ verifies it through provider delivery or permissionless direct submission. Track
 [PR #117](https://github.com/crossecute/protocol/pull/117)); authority changes are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
-**Status.** Working design with a proposed Solidity interface. It records what is decided,
+**Status.** Working design with proposed Solidity interfaces. It records what is decided,
 the conflicts that block a decision, and the open questions with proposed answers and the cases
 each answer must handle. The design part of #108 is resolved when every item under
 [Conflicts](#conflicts-to-resolve-first) and [Open questions](#open-questions) is either
@@ -227,16 +227,16 @@ Cases:
 How are EOA owners, nested Safes, thresholds and shared child references canonically encoded?
 Are owner kinds explicit, how are owners and nodes ordered, and what does the receiver store?
 
-*Proposed.* A node array with the root at index 0, explicit owner kinds, owners sorted
-ascending, children referenced by index, and one record per Safe address.
+*Proposed.* A node array with the root at index 0 and children referenced by index. Each
+Safe address has one record with explicit owner kinds and the owner order returned by Safe.
 
 Cases:
 
 - **Q3.1** Owner kind is a tag: EOA, or Safe with a node index. Inferring kind from whether a
   node exists lets a missing record turn a Safe into an EOA. A Safe owner whose index points to
   a node with a different address rejects.
-- **Q3.2** Owners strictly ascending by address, matching Safe's signature order, so
-  verification walks a group once and duplicates cannot occur.
+- **Q3.2** The commitment preserves each Safe's `getOwners()` order. Signature verification
+  checks ascending signer addresses independently of the stored owner list order.
 - **Q3.3** Node order must be canonical and make cycles cheap to reject. Breadth-first by first
   reference does not guarantee forward edges: a shared child first reached at depth 1 and
   referenced again from depth 2 points backward. *Proposed:* every edge points to a higher
@@ -253,11 +253,14 @@ Cases:
 - **Q3.7** The owner hash and the threshold hash both include each node's address, so
   thresholds cannot move between nodes. *Open:* record why the commitment uses two hashes.
 - **Q3.8** The root node is the transmitter's owner Safe.
-- **Q3.9** Receiver storage: per node its address, threshold and counter; per node a map from
-  owner to kind and child index; an owner array for readback; a map from address to node
-  index. Verification needs only membership and kind, since signature order enforces
-  ordering. The signed state is ERC-7201 namespaced so it does not freeze the base's
-  sequential layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
+- **Q3.9** [`SafeOwnerManager.sol`](../contracts/evm/src/messaging/SafeOwnerManager.sol)
+  proposes one `SafeState` per Safe, with a linked owner list and threshold. Keep the
+  authority counter and owner kind metadata in the surrounding record. The signed update
+  carries Safe's mutation selector and arguments. After verifying the update, the receiver
+  can use `using SafeOwnerManager for SafeState` and call
+  `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
+  The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
+  layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
 - **Q3.10** *Open:* whether `createTransmitter` checks the graph against live Safe state
   (owners and threshold per node, `VERSION`, fallback handler). Checking the handler by address
   needs a list of accepted deployments per chain.
