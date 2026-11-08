@@ -178,12 +178,13 @@ the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 624,484 | 623,943 | 678,164 | 629,844 | 668,001 |
-| The same with one call to an address with no code | 631,141 | 630,606 | 684,818 | 636,605 | 675,771 |
-| Report arriving at the home transceiver | 127,263 | 126,730 | 127,381 | 124,485 | n/a (170,877) |
-| Payload to an existing receiver, no calls | 24,891 | 24,382 | 27,612 | 23,171 | 67,651 |
+| Bootstrap to a plain transceiver, no calls | 443,017 | 442,478 | 496,641 | 445,520 | 486,538 |
+| The same with one call to an address with no code | 449,273 | 448,740 | 502,895 | 451,875 | 493,908 |
+| Report arriving at the home transceiver | 122,539 | 122,007 | 122,680 | 119,734 | n/a (166,165) |
+| Payload to an existing receiver, no calls | 22,563 | 22,054 | 25,284 | 20,806 | 65,323 |
 
-Measured 2026-10-25 against mock gateways. Wormhole's numbers include verifying the VAA
+Measured 2026-11-08 at `994a586`, with Forge 1.8.1 and the repository's compiler settings,
+against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
 row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
