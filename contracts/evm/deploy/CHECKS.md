@@ -195,11 +195,11 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 651,291 |
-| Bootstrap to the factory, 8 destinations, one call | 659,121 |
-| Payload to an existing receiver, no calls | 34,246 |
+| Bootstrap to the factory, 1 destination, no calls | 469,125 |
+| Bootstrap to the factory, 8 destinations, one call | 476,545 |
+| Payload to an existing receiver, no calls | 31,844 |
 
-Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+Measured 2026-11-08 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
 (`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
 of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
 and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
@@ -212,8 +212,10 @@ a send with a compose message (250,000 to both):
 | Payload, lzCompose into the receiver | 42,138 | 42,081 |
 | Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
 
-Measured 2026-10-25. A payload costs about 7,900 more than against the mocks and a bootstrap
-about 2,100 less; each stays well under its default. The `lzReceive` figure leaves out the
+Measured 2026-10-25, before the mock rows above. Between the two dates #113 shrank `Proxy`'s
+runtime code, which took about 182,000 off a bootstrap and 2,400 off a payload against the
+mocks; the lzCompose rows here have not been measured since, so they are not comparable with
+the mock rows. Each stays well under its default. The `lzReceive` figure leaves out the
 endpoint's clearing of the verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
