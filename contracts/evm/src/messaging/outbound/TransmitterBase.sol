@@ -114,8 +114,6 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     error ReceiverAlreadyReported(bytes32 destinationChainKey);
     /// @dev `Call[]` is what an EVM receiver executes and nothing else decodes it.
     error TypedPayloadToNonEvmDestination();
-    /// @dev An EVM receiver decodes only `Call[]`, so opaque elements would be undeliverable.
-    error OpaquePayloadToEvmDestination();
     /// @dev This conduit's balance, including the call's `msg.value`, cannot cover the fee.
     error InsufficientBalance(uint256 fee, uint256 balance);
 
@@ -219,7 +217,8 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///
     /// @dev A built `bytes` payload cannot be asked whether it holds `Call[]` or opaque
     ///      elements, so pairing it with the right destination type is the caller's job;
-    ///      `payloadForCalls` and `payloadForElements` build it. Path B enforces the pairing.
+    ///      `payloadForCalls` and `payloadForElements` build it. `bootstrap` decodes its body
+    ///      in the destination's form instead.
     ///
     /// @dev The recipient must be this conduit's recorded receiver on that chain; see
     ///      `_requireOwnRecipient`.
@@ -265,7 +264,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return _recipientOn(chainKey);
     }
 
-    /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapTo`'s first
+    /// @notice The ERC-7930 chain identifier for an EVM chain: `bootstrapPayload`'s first
     ///         argument, and the value a route is configured under.
     /// @dev `Erc7930` is internal-only, so off-chain callers need this builder to reach the
     ///      `bytes` entry points. It names a chain, where `recipientOn` names a conduit on one.
@@ -313,39 +312,31 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      It passes the owner and salt, from which the destination derives this conduit's
     ///      address; the transceiver checks they resolve to `msg.sender`.
     ///
-    /// @dev The typed/opaque pairing is enforced here, the last point that holds the ERC-7930
-    ///      envelope: `_evmIdentifier` is `eip155` by construction, `_typedIdentifier` refuses
-    ///      a non-EVM destination, and `_opaqueIdentifier` refuses an EVM one.
+    /// @dev `payload` is `bootstrapPayload(destinationChainIdentifier, body)`. The body is
+    ///      decoded in the one form the destination's chain type implies (see `Payload`), so
+    ///      what reaches the transceiver is always in that form.
     ///
     /// @dev Pays `_quoteBootstrap`, the transceiver's quote by default, from this conduit's
-    ///      balance, as `sendMessage` does. Each bootstrap has a public quote with the same
-    ///      arguments, for funding the balance ahead of time. Pass empty `attributes` for the
-    ///      gateway's default.
-    function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
-        external
-        payable
-        onlyConduitOwner
-    {
-        _bootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
+    ///      balance, as `sendMessage` does. `quoteBootstrap` takes the same arguments, for
+    ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
+    function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable onlyConduitOwner {
+        (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
+        _markBootstrapped(chainKey, route);
+
+        uint256 fee = _quoteBootstrap(chainKey, typed, body, attributes);
+        _requireFunded(fee);
+        _sendBootstrap(chainKey, typed, body, attributes, fee);
     }
 
-    /// @notice `bootstrap`, for a destination named by its ERC-7930 identifier.
-    function bootstrapTo(bytes calldata destinationChainIdentifier, Call[] calldata calls, bytes[] calldata attributes)
-        external
-        payable
-        onlyConduitOwner
+    /// @notice The payload `bootstrap` takes: the destination's ERC-7930 chain identifier, and
+    ///         the body its receiver runs on creation, built by `payloadForCalls` for an EVM
+    ///         chain and `payloadForElements` for any other.
+    function bootstrapPayload(bytes calldata destinationChainIdentifier, bytes calldata body)
+        public
+        pure
+        returns (bytes memory)
     {
-        _bootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
-    }
-
-    /// @notice `bootstrap`, in the portable form: for standing this conduit up on Solana,
-    ///         Sui, Starknet, or anything else with no `Call`.
-    function bootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes[] calldata attributes
-    ) external payable onlyConduitOwner {
-        _bootstrapElements(_opaqueIdentifier(destinationChainIdentifier), elements, attributes);
+        return Payload.encodeBootstrap(destinationChainIdentifier, body);
     }
 
     /* ================================== quote ================================== */
@@ -365,57 +356,20 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return _quoteMessage(recipient, payload, attributes);
     }
 
-    /// @notice What standing this conduit up on a chain that has none would cost.
-    /// @dev Priced by `_quoteBootstrap`, as `bootstrap` pays. The `(owner, salt)` check is not
-    ///      applied: a quote spends nothing and may be taken before the conduit exists.
-    function quoteBootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes)
+    /// @notice What `bootstrap` would cost, in this chain's native currency.
+    /// @dev Decoded and checked as `bootstrap` does it, and priced by the same hook. The
+    ///      `(owner, salt)` check is not applied: a quote spends nothing and may be taken before
+    ///      the conduit exists.
+    function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
         external
         view
         returns (uint256 nativeFee)
     {
-        return _quoteBootstrapCalls(_evmIdentifier(destinationChainId), calls, attributes);
+        (bytes32 chainKey,, bool typed, bytes memory body) = _decodeBootstrap(payload);
+        return _quoteBootstrap(chainKey, typed, body, attributes);
     }
 
-    /// @notice `quoteBootstrap`, for a destination named by its ERC-7930 identifier.
-    function quoteBootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        Call[] calldata calls,
-        bytes[] calldata attributes
-    ) external view returns (uint256 nativeFee) {
-        return _quoteBootstrapCalls(_typedIdentifier(destinationChainIdentifier), calls, attributes);
-    }
-
-    /// @notice `quoteBootstrap`, in the portable form.
-    function quoteBootstrapTo(
-        bytes calldata destinationChainIdentifier,
-        bytes[] calldata elements,
-        bytes[] calldata attributes
-    ) external view returns (uint256 nativeFee) {
-        if (transceiver == address(0)) revert NoTransceiver();
-        bytes32 chainKey = ChainKey.fromIdentifier(_opaqueIdentifier(destinationChainIdentifier));
-        _requireNotBootstrapped(chainKey);
-
-        return
-            IConduitTransceiver(transceiver)
-                .quoteBootstrapElements(chainKey, deployer, conduitSalt, elements, attributes);
-    }
-
-    function _quoteBootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes)
-        private
-        view
-        returns (uint256)
-    {
-        if (transceiver == address(0)) revert NoTransceiver();
-        bytes32 chainKey = ChainKey.fromIdentifier(identifier);
-        _requireNotBootstrapped(chainKey);
-
-        return _quoteBootstrap(chainKey, calls, attributes);
-    }
-
-    /* =========================== destination identifiers ======================= */
-
-    /// @dev These return the identifier, not the chainKey, because bootstrap records the route
-    ///      and a chainKey cannot be reversed into one.
+    /* =============================== shared code =============================== */
 
     /// @dev A `uint256` chain id is an `eip155` reference by construction.
     function _evmIdentifier(uint256 chainId) private pure returns (bytes memory) {
@@ -423,70 +377,61 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         return Erc7930.encodeEvmChain(chainId);
     }
 
-    /// @dev The typed form only reaches a chain that executes `Call[]`.
-    function _typedIdentifier(bytes calldata identifier) private pure returns (bytes calldata) {
+    /// @dev Everything `bootstrap` and `quoteBootstrap` read from a payload and check before
+    ///      pricing it. The identifier is reduced to the bare chain identifier the route table
+    ///      holds, so a conduit envelope names the same chain. `typed` is whether the
+    ///      destination decodes `Call[]`.
+    function _decodeBootstrap(bytes calldata payload)
+        private
+        view
+        returns (bytes32 chainKey, bytes memory route, bool typed, bytes memory body)
+    {
+        if (transceiver == address(0)) revert NoTransceiver();
+        bytes memory identifier;
+        (identifier, body) = Payload.decodeBootstrap(payload);
         if (identifier.length == 0) revert NoDestination();
-        if (!Payload.isTypedDestination(identifier)) {
-            revert TypedPayloadToNonEvmDestination();
-        }
-        return identifier;
+        if (body.length == 0) revert EmptyPayload();
+
+        route = Erc7930.toChainIdentifier(identifier);
+        typed = Payload.isTypedDestination(route);
+        chainKey = keccak256(route);
+        _requireNotBootstrapped(chainKey);
     }
 
-    /// @dev And the portable form only reaches one that does not.
-    function _opaqueIdentifier(bytes calldata identifier) private pure returns (bytes calldata) {
-        if (identifier.length == 0) revert NoDestination();
-        if (Payload.isTypedDestination(identifier)) {
-            revert OpaquePayloadToEvmDestination();
-        }
-        return identifier;
-    }
-
-    /* =============================== shared code =============================== */
-
-    function _bootstrapCalls(bytes memory identifier, Call[] calldata calls, bytes[] calldata attributes) private {
-        bytes32 chainKey = _markBootstrapped(identifier);
-
-        uint256 fee = _quoteBootstrap(chainKey, calls, attributes);
-        _requireFunded(fee);
-        _sendBootstrap(chainKey, calls, attributes, fee);
-    }
-
-    /// @notice What the typed bootstrap to `chainKey` costs, as `bootstrap` and `quoteBootstrap`
-    ///         both price it.
+    /// @notice What the bootstrap to `chainKey` costs, as `bootstrap` and `quoteBootstrap`
+    ///         both price it. `body` is `Call[]` when `typed`, opaque elements otherwise.
     /// @dev The transceiver's price by default. A binding that sends its own bootstrap overrides
     ///      this and `_sendBootstrap` together, so the quote prices what the send carries. Runs
     ///      after `_markBootstrapped` on a send and without it on a quote, so an override must not
     ///      read what that records.
-    function _quoteBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
+    function _quoteBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes)
         internal
         view
         virtual
         returns (uint256)
     {
-        return IConduitTransceiver(transceiver).quoteBootstrap(chainKey, deployer, conduitSalt, calls, attributes);
+        IConduitTransceiver t = IConduitTransceiver(transceiver);
+        if (typed) {
+            return t.quoteBootstrap(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+        }
+        return t.quoteBootstrapElements(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
     }
 
-    /// @notice Send the typed bootstrap to `chainKey`, paying `fee` from this balance.
+    /// @notice Send the bootstrap to `chainKey`, paying `fee` from this balance.
     /// @dev Through the transceiver by default. Runs after `_markBootstrapped`, so a re-entrant
     ///      second bootstrap meets the record.
-    function _sendBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes, uint256 fee)
+    function _sendBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes, uint256 fee)
         internal
         virtual
     {
-        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        IConduitTransceiver(transceiver).bootstrap{value: fee}(chainKey, deployer, conduitSalt, calls, attributes);
-    }
-
-    function _bootstrapElements(bytes memory identifier, bytes[] calldata elements, bytes[] calldata attributes)
-        private
-    {
-        bytes32 chainKey = _markBootstrapped(identifier);
         IConduitTransceiver t = IConduitTransceiver(transceiver);
-
-        uint256 fee = t.quoteBootstrapElements(chainKey, deployer, conduitSalt, elements, attributes);
-        _requireFunded(fee);
-        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapElements{value: fee}(chainKey, deployer, conduitSalt, elements, attributes);
+        // forge-lint: disable-start(arbitrary-send-eth) the write-once transceiver
+        if (typed) {
+            t.bootstrap{value: fee}(chainKey, deployer, conduitSalt, Payload.decodeCalls(body), attributes);
+        } else {
+            t.bootstrapElements{value: fee}(chainKey, deployer, conduitSalt, Payload.decodeElements(body), attributes);
+        }
+        // forge-lint: disable-end(arbitrary-send-eth)
     }
 
     /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
@@ -495,7 +440,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
     }
 
-    /// @dev Records the destination before the transceiver is called: that call reaches a
+    /// @dev Records the destination before the transport is called: that call reaches a
     ///      provider endpoint and arbitrary code, so a re-entrant second bootstrap meets the
     ///      record. A revert unwinds it with everything else.
     ///
@@ -503,14 +448,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      report), as the transceiver predicts it there: this conduit's own address only when
     ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
     ///      unreachable until the report arrives, rather than addressed at a guess.
-    function _markBootstrapped(bytes memory identifier) private returns (bytes32 chainKey) {
-        if (transceiver == address(0)) revert NoTransceiver();
-        // Reduced to the bare chain identifier the route table holds, so the send accepts
-        // exactly what the quote does: a conduit envelope names the same chain.
-        bytes memory route = Erc7930.toChainIdentifier(identifier);
-        chainKey = keccak256(route);
-        _requireNotBootstrapped(chainKey);
-
+    function _markBootstrapped(bytes32 chainKey, bytes memory route) private {
         _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, route);
 

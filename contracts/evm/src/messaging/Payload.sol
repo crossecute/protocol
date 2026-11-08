@@ -27,7 +27,7 @@ library Payload {
 
     /// @notice Decode a payload that arrived on an EVM chain. Reverts on anything that is not
     ///         `Call[]`.
-    function decodeCalls(bytes calldata wire) internal pure returns (Call[] memory) {
+    function decodeCalls(bytes memory wire) internal pure returns (Call[] memory) {
         return abi.decode(wire, (Call[]));
     }
 
@@ -41,8 +41,30 @@ library Payload {
         return abi.encode(elements);
     }
 
-    function decodeElements(bytes calldata wire) internal pure returns (bytes[] memory) {
+    function decodeElements(bytes memory wire) internal pure returns (bytes[] memory) {
         return abi.decode(wire, (bytes[]));
+    }
+
+    /* ================================ bootstrap ================================= */
+
+    /// @notice The plain bootstrap payload: the destination's ERC-7930 chain identifier, and
+    ///         the body the receiver runs on creation, in that destination's one form.
+    /// @dev The destination travels inside the payload because `bootstrap` takes no other
+    ///      argument naming it.
+    function encodeBootstrap(bytes memory destinationChainIdentifier, bytes memory body)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(destinationChainIdentifier, body);
+    }
+
+    function decodeBootstrap(bytes calldata payload)
+        internal
+        pure
+        returns (bytes memory destinationChainIdentifier, bytes memory body)
+    {
+        return abi.decode(payload, (bytes, bytes));
     }
 
     /* ================================ selection ================================= */

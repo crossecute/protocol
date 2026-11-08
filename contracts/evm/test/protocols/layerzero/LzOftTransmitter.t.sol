@@ -12,6 +12,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
+import {bootstrapPayload} from "test/Harness.sol";
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
 contract MockOftConduitFactory is ILzOftConduitFactory {
@@ -89,14 +90,14 @@ contract LzOftTransmitterTest is Test {
 
     function _bootstrap() internal {
         vm.prank(owner);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
     }
 
     /* ================================= bootstrap =============================== */
 
     /// @dev The conduit is the `send` caller, so the destination reads it as `composeFrom`.
     function test_theBootstrapGoesThroughTheHomeOftFromTheConduit() public {
-        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         _bootstrap();
 
         assertEq(oft.sentLength(), 1);
@@ -131,9 +132,9 @@ contract LzOftTransmitterTest is Test {
         vm.prank(owner);
         conduit.transferOwnership(newOwner);
 
-        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         vm.prank(newOwner);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
 
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
@@ -155,16 +156,16 @@ contract LzOftTransmitterTest is Test {
             bytes32(uint256(uint160(address(0xBAD))))
         );
         vm.expectRevert(err);
-        conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         vm.prank(owner);
         vm.expectRevert(err);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
     }
 
     function test_aChainTheFactoryDoesNotHoldIsRefused() public {
         bytes32 other = ChainKey.forEvm(10);
         vm.expectRevert(abi.encodeWithSelector(MockOftConduitFactory.NotInRoot.selector, other));
-        conduit.quoteBootstrap(10, _calls(), new bytes[](0));
+        conduit.quoteBootstrap(bootstrapPayload(10, _calls()), new bytes[](0));
     }
 
     /* ================================== Path A ================================= */

@@ -12,6 +12,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {bootstrapPayload} from "test/Harness.sol";
 
 contract Sink {
     uint256 public hits;
@@ -346,7 +347,7 @@ contract LzOftConduitFactoryRoundTripTest is LzOftConduitFactoryBase {
         vm.deal(address(conduit), 1 ether);
         Sink sink = new Sink{salt: bytes32(0)}();
         vm.prank(owner);
-        conduit.bootstrap(DEST, _calls(address(sink)), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls(address(sink))), new bytes[](0));
         MockOft.Sent memory boot = oft.sent(0);
         vm.prank(owner);
         bytes memory recipient = conduit.recipientOn(DEST);

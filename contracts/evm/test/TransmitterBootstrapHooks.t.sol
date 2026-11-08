@@ -9,11 +9,12 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {ext} from "test/Harness.sol";
+import {ext, bootstrapPayload} from "test/Harness.sol";
 import {Transmitter, HomeTransceiver} from "test/ReceiverReport.t.sol";
 
-/// @dev Sends its own bootstrap, as the `layerzero-oft` conduit will.
+/// @dev Sends its own bootstrap, as the `layerzero-oft` conduit does.
 contract HookedTransmitter is Transmitter {
     uint256 constant PRICE = 7;
 
@@ -21,14 +22,17 @@ contract HookedTransmitter is Transmitter {
     uint256 public sentFee;
     uint256 public sentCalls;
 
-    function _quoteBootstrap(bytes32, Call[] calldata, bytes[] calldata) internal pure override returns (uint256) {
+    function _quoteBootstrap(bytes32, bool, bytes memory, bytes[] calldata) internal pure override returns (uint256) {
         return PRICE;
     }
 
-    function _sendBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata, uint256 fee) internal override {
+    function _sendBootstrap(bytes32 chainKey, bool, bytes memory body, bytes[] calldata, uint256 fee)
+        internal
+        override
+    {
         sentTo = chainKey;
         sentFee = fee;
-        sentCalls = calls.length;
+        sentCalls = Payload.decodeCalls(body).length;
     }
 }
 
@@ -67,13 +71,13 @@ contract TransmitterBootstrapHooksTest is Test {
     }
 
     function test_theQuoteIsTheHooks() public view {
-        assertEq(conduit.quoteBootstrap(DESTINATION, _calls(), new bytes[](0)), 7);
+        assertEq(conduit.quoteBootstrap(bootstrapPayload(DESTINATION, _calls()), new bytes[](0)), 7);
         assertNotEq(t.quoteBootstrap(destinationKey, owner, SALT, _calls(), new bytes[](0)), 7, "not the transceiver's");
     }
 
     function test_theSendIsTheHooksAndPaysTheQuote() public {
         vm.prank(owner);
-        conduit.bootstrap(DESTINATION, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DESTINATION, _calls()), new bytes[](0));
 
         assertEq(conduit.sentTo(), destinationKey);
         assertEq(conduit.sentFee(), 7, "the hook's quote");
@@ -87,7 +91,7 @@ contract TransmitterBootstrapHooksTest is Test {
         vm.deal(address(conduit), 6);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, 7, 6));
-        conduit.bootstrap(DESTINATION, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DESTINATION, _calls()), new bytes[](0));
     }
 
     function _calls() internal pure returns (Call[] memory calls) {

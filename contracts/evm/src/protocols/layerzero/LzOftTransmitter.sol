@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -107,40 +107,44 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
 
     /* ================================= bootstrap =============================== */
 
-    function _quoteBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
+    function _quoteBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes)
         internal
         view
         override
         returns (uint256)
     {
-        (SendParam memory param,) = _bootstrapParam(chainKey, calls, attributes);
+        (SendParam memory param,) = _bootstrapParam(chainKey, typed, body, attributes);
         return LzOftMessage.quote(homeOft, param);
     }
 
     /// @dev Records the destination before the OFT is called, as `_markBootstrapped` records
     ///      the route: the call reaches arbitrary code.
-    function _sendBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes, uint256 fee)
+    function _sendBootstrap(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes, uint256 fee)
         internal
         override
     {
-        (SendParam memory param, Destination memory d) = _bootstrapParam(chainKey, calls, attributes);
+        (SendParam memory param, Destination memory d) = _bootstrapParam(chainKey, typed, body, attributes);
         _destinations[chainKey] = d;
         LzOftMessage.send(homeOft, param, fee, _refundTo());
     }
 
     /// @dev Sent to the factory on the destination, which derives this conduit from the message
-    ///      and proves the delivering OFT into `destRoot`.
-    function _bootstrapParam(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
+    ///      and proves the delivering OFT into `destRoot`. The compose carries `Call[]`, which
+    ///      only an EVM factory decodes.
+    function _bootstrapParam(bytes32 chainKey, bool typed, bytes memory body, bytes[] calldata attributes)
         private
         view
         returns (SendParam memory param, Destination memory d)
     {
+        if (!typed) revert TypedPayloadToNonEvmDestination();
         (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof) =
             ILzOftConduitFactory(transceiver).bootstrapRoute(address(this), chainKey);
         LzOftMessage.requirePeer(homeOft, eid, dstOft);
 
         bytes memory compose = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(deployer, conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
+            LzOftMessage.Bootstrap(
+                deployer, conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, Payload.decodeCalls(body)
+            )
         );
         param = LzOftMessage.sendParam(eid, transceiver, compose, attributes, DeliveryGas.BOOTSTRAP);
         d = Destination(eid, dstOft);

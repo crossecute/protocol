@@ -15,7 +15,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Call} from "src/messaging/Call.sol";
 import {MockTransmitter} from "test/Transport.t.sol";
-import {transceiverConfig, toBytes32, TestTransceiver, ext} from "test/Harness.sol";
+import {transceiverConfig, toBytes32, TestTransceiver, ext, bootstrapPayload} from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
 /// @dev The transport every test transceiver here shares: it records what it was asked to send.
@@ -340,7 +340,7 @@ contract TransceiverTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.IsLocalChain.selector, _key(BASE)));
-        conduit.bootstrap(BASE, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(BASE, _calls()), new bytes[](0));
     }
 
     function test_theElementsFormIsRefusedOnAnEvmChain() public {

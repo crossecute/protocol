@@ -10,7 +10,7 @@ import {
     ProviderIdFixture,
     ProviderGasFixture
 } from "test/protocols/ProviderFixture.sol";
-import {toBytes32, ext} from "test/Harness.sol";
+import {toBytes32, ext, bootstrapPayload} from "test/Harness.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
@@ -315,7 +315,7 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         vm.deal(conduit, 1 ether);
         _prepareConduit(conduit, CONDUIT_OWNER);
         vm.prank(CONDUIT_OWNER);
-        TransmitterBase(conduit).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+        TransmitterBase(conduit).bootstrap(bootstrapPayload(REMOTE_CHAIN_ID, new Call[](0)), _attributes());
     }
 
     function test_aFundedConduitSendsWithNoValueAttached() public {
@@ -851,7 +851,7 @@ abstract contract ProviderDeliveryGasSpec is ProviderInboundFixture, DeliveryGas
         vm.deal(conduit, 1 ether);
         _prepareConduit(conduit, CONDUIT_OWNER);
         vm.prank(CONDUIT_OWNER);
-        TransmitterBase(conduit).bootstrap(REMOTE_CHAIN_ID, new Call[](0), _attributes());
+        TransmitterBase(conduit).bootstrap(bootstrapPayload(REMOTE_CHAIN_ID, new Call[](0)), _attributes());
 
         bytes memory report = Envelope.encodeReceiverReport(
             CONDUIT_OWNER, bytes32(0), Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBEEF))
