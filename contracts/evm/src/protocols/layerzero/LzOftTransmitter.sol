@@ -96,22 +96,23 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         return LzOftMessage.quote(homeOft, param);
     }
 
-    /// @dev Only a bootstrap is addressed to the factory: `sendMessage` accepts only this
-    ///      conduit's recorded receiver, which is its own address. A bootstrap takes its
-    ///      destination from the factory, and a message the one its bootstrap recorded. The peer
-    ///      is checked on every send because the OFT's owner can change it.
+    /// @dev The send to a chain with no recorded destination is its bootstrap: `sendMessage`
+    ///      reaches only a bootstrapped chain, and the bootstrap records the destination before
+    ///      the OFT is called. A bootstrap takes the destination from the factory, which holds
+    ///      the same eid and OFT the record would. The peer is checked on every send because
+    ///      the OFT's owner can change it.
     function _messageParam(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         private
         view
         returns (SendParam memory param, bytes32 chainKey, Destination memory d, bool bootstrap)
     {
-        chainKey = ChainKey.fromIdentifier(recipient);
-        address to = Erc7930.toAddress(Erc7930.parseStrict(recipient));
-        bootstrap = to == transceiver;
+        Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
+        chainKey = ChainKey.fromParsed(io);
+        address to = Erc7930.toAddress(io);
+        d = _destinations[chainKey];
+        bootstrap = d.oft == address(0);
         if (bootstrap) {
             (d.eid, d.oft) = ILzOftConduitFactory(transceiver).destinationOf(address(this), chainKey);
-        } else {
-            d = _destinations[chainKey];
         }
         LzOftMessage.requirePeer(homeOft, d.eid, d.oft);
         uint256 gas = bootstrap ? DeliveryGas.BOOTSTRAP : _defaultGas(payload);

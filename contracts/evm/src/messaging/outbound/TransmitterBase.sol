@@ -398,8 +398,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (identifier.length == 0) revert NoDestination();
         if (body.length == 0) revert EmptyPayload();
 
-        route = Erc7930.toChainIdentifier(identifier);
-        typed = Payload.isTypedDestination(route);
+        Erc7930.Interop memory io = Erc7930.parseStrict(identifier);
+        route = Erc7930.encodeChainId(io.chainType, io.chainRef);
+        typed = io.chainType == Erc7930.CT_EIP155;
         chainKey = keccak256(route);
         _requireNotBootstrapped(chainKey);
     }

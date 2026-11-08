@@ -35,6 +35,11 @@ library ChainKey {
     ///      `parseStrict` runs inside, so a non-canonical framing reverts here rather
     ///      than becoming a key nothing else can reproduce.
     function fromIdentifier(bytes memory identifier) internal pure returns (bytes32) {
-        return keccak256(Erc7930.toChainIdentifier(identifier));
+        return fromParsed(Erc7930.parseStrict(identifier));
+    }
+
+    /// @notice `fromIdentifier`, for an envelope `parseStrict` has already read.
+    function fromParsed(Erc7930.Interop memory io) internal pure returns (bytes32) {
+        return keccak256(Erc7930.encodeChainId(io.chainType, io.chainRef));
     }
 }

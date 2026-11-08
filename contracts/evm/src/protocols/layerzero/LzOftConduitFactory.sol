@@ -191,7 +191,8 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         address derived = predictConduit(owner, salt, localChainKey, a.homeEid, a.homeOft, a.destRoot);
         if (derived != msg.sender) revert NotTheConduit(msg.sender, derived);
         bytes32 chainKey = keccak256(route);
-        if (!Payload.isTypedDestination(route)) revert NotAnEvmChain(chainKey);
+        Erc7930.Interop memory io = Erc7930.parseStrict(route);
+        if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
         Destination memory d = _destination(msg.sender, chainKey);
 
         message = LzOftMessage.encodeBootstrap(
@@ -206,7 +207,6 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
                 Payload.decodeCalls(body)
             )
         );
-        Erc7930.Interop memory io = Erc7930.parseStrict(route);
         recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
     }
 
