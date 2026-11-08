@@ -14,12 +14,13 @@ the seventh; what they mean for an operator is in the README.
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
+(2026-10-07; §4's mock EVM destination gas, 2026-11-08; its fork gas and §7's
+`layerzero-oft` checks, 2026-10-25; its EraVM gas, 2026-10-20).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where a conduit creation costs
-  about 624,000 to 678,000. On a local EraVM node a bootstrap's execution needs about 385,000
-  to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
+  about 442,000 to 497,000 with no calls. On a local EraVM node a bootstrap's execution needs
+  about 385,000 to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
   against the gas limit a provider calls the transceiver with. A report arriving at a zkSync
   home is not measured either.
