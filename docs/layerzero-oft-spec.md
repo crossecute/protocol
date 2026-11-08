@@ -112,8 +112,8 @@ them for a candidate.
 - **The OFT is fixed.** An operator replaces it by upgrading it in place, or by migrating to a
   new OFT and a new conduit.
 - **No zkSync or Tron.** Their CREATE2 formulas place the factory's conduits elsewhere.
-- **No `Call`-less destinations.** The portable bootstrap form reaches the factory's absent
-  `quoteBootstrapElements` and reverts.
+- **No `Call`-less destinations.** A bootstrap or its quote to a chain that is not `eip155`
+  reverts `TypedPayloadToNonEvmDestination` before the factory or the OFT is asked.
 
 ## 5. Compliance
 

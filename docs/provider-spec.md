@@ -269,8 +269,8 @@ the read, on the transceiver a conduit already stores.
 **R1.2.1** Every `bytes` argument on the conduit's own surface MUST have a public builder
 that produces it, and a binding MUST NOT remove one. `Erc7930` is a library of `internal`
 functions, so an integrator cannot reach it. `recipientOn` (for a destination this conduit
-has bootstrapped), `chainIdentifierFor`, `payloadForCalls`, and `payloadForElements` are the
-only way to construct these values without reimplementing the encoding. A wrong interoperable address is a message addressed
+has bootstrapped), `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, and
+`bootstrapPayload` are the only way to construct these values without reimplementing the encoding. A wrong interoperable address is a message addressed
 nowhere, not a revert.
 
 **R1.3** The destination on path A is the counterpart the conduit recorded for that chain,
@@ -454,12 +454,13 @@ destination and a recipient that is not this conduit fail here too. It is ungate
 the send, because a signer reviewing a payload, or anyone funding the conduit for it, has
 to be able to call it.
 
-`quoteBootstrap` and `quoteBootstrapTo` keep their `Call[]` and `bytes[]` forms, because
-path B's envelope is built by the transceiver rather than handed to it.
+`quoteBootstrap` takes `bootstrap`'s payload, and both decode it through one helper into the
+`Call[]` or `bytes[]` form the transceiver takes, because path B's envelope is built by the
+transceiver rather than handed to it.
 
 **R2.9 The send and quote surfaces are 1:1, and a binding MUST keep them so.**
-`sendMessage`/`quoteMessage`, and each of the three bootstraps against its own quote, all
-with identical arity. That is R2.3 made structural rather than promised: `attributes`
+`sendMessage`/`quoteMessage` and `bootstrap`/`quoteBootstrap`, each pair with identical
+arity. That is R2.3 made structural rather than promised: `attributes`
 carries destination gas, which changes the price, so there is no no-attributes send that
 would have no quote to price it. A binding MUST NOT add a convenience overload that breaks
 the pairing.
