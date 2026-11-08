@@ -7,6 +7,7 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {Vm} from "forge-std/Vm.sol";
 
 import {TransmitterBase, IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
+import {OutboundBase} from "src/messaging/outbound/OutboundBase.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
@@ -696,6 +697,51 @@ contract TransportTest is Test {
         vm.prank(owner);
         acct.bootstrap(bootstrapPayload(identifier, _calls()), new bytes[](0));
         assertEq(t.bootCount(), 1);
+    }
+
+    /// @dev The quote and the send decode one payload through one path, so in either body form
+    ///      the send spends exactly what the quote returned.
+    function test_aBootstrapPaysItsQuoteInEitherForm() public {
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes[] memory elements = new bytes[](1);
+        elements[0] = hex"0102030405";
+        bytes[2] memory payloads = [bootstrapPayload(DEST, _calls()), bootstrapPayload(sol, elements)];
+
+        (, MockTransmitter acct) = _conduit();
+        for (uint256 i; i < 2; ++i) {
+            uint256 quoted = acct.quoteBootstrap(payloads[i], NONE);
+            uint256 before = address(acct).balance;
+            vm.prank(owner);
+            acct.bootstrap(payloads[i], NONE);
+            assertEq(before - address(acct).balance, quoted);
+        }
+    }
+
+    function test_aPayloadWithNoDestinationOrNoBodyIsRefused() public {
+        (, MockTransmitter acct) = _conduit();
+        bytes memory noDestination = Payload.encodeBootstrap("", Payload.encodeCalls(_calls()));
+        bytes memory noBody = Payload.encodeBootstrap(Erc7930.encodeEvmChain(DEST), "");
+
+        vm.expectRevert(OutboundBase.NoDestination.selector);
+        acct.quoteBootstrap(noDestination, NONE);
+        vm.expectRevert(OutboundBase.EmptyPayload.selector);
+        acct.quoteBootstrap(noBody, NONE);
+
+        vm.startPrank(owner);
+        vm.expectRevert(OutboundBase.NoDestination.selector);
+        acct.bootstrap(noDestination, NONE);
+        vm.expectRevert(OutboundBase.EmptyPayload.selector);
+        acct.bootstrap(noBody, NONE);
+        vm.stopPrank();
+    }
+
+    /// @dev `bootstrapPayload` is the library's encoding, so an off-chain caller building it
+    ///      through the conduit gets the bytes `bootstrap` decodes.
+    function test_theBootstrapPayloadBuilderIsTheLibrarysEncoding() public view {
+        bytes memory identifier = transmitter.chainIdentifierFor(DEST);
+        bytes memory body = transmitter.payloadForCalls(_calls());
+        assertEq(transmitter.bootstrapPayload(identifier, body), Payload.encodeBootstrap(identifier, body));
+        assertEq(transmitter.bootstrapPayload(identifier, body), bootstrapPayload(DEST, _calls()));
     }
 
     /// @dev Both forms prove the caller is the conduit, not just the typed one.

@@ -10,6 +10,9 @@ import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
+import {ChainType} from "src/addressing/ChainType.sol";
+import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {bootstrapPayload} from "test/Harness.sol";
@@ -166,6 +169,20 @@ contract LzOftTransmitterTest is Test {
         bytes32 other = ChainKey.forEvm(10);
         vm.expectRevert(abi.encodeWithSelector(MockOftConduitFactory.NotInRoot.selector, other));
         conduit.quoteBootstrap(bootstrapPayload(10, _calls()), new bytes[](0));
+    }
+
+    /// @dev The compose carries `Call[]`, so a destination that decodes opaque elements is
+    ///      refused before the factory or the OFT is asked.
+    function test_aNonEvmDestinationIsRefused() public {
+        bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
+        bytes memory payload = bootstrapPayload(sol, new bytes[](0));
+
+        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
+        conduit.quoteBootstrap(payload, new bytes[](0));
+        vm.prank(owner);
+        vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
+        conduit.bootstrap(payload, new bytes[](0));
+        assertEq(oft.sentLength(), 0);
     }
 
     /* ================================== Path A ================================= */

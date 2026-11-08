@@ -304,6 +304,34 @@ contract TransceiverTest is Test {
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
 
+    /// @dev The same path from the transmitter's one entry point: the conduit holds no route,
+    ///      counterpart or receiver for Ethereum, and the payload alone names the destination,
+    ///      pays its quote and creates the receiver there.
+    function test_theTransmittersBootstrapCreatesAReceiverWhereNoRouteExists() public {
+        uint256 world = vm.snapshotState();
+
+        Sym base = _chainWith(BASE, false, address(new MockTransmitter()));
+        vm.prank(alice);
+        MockTransmitter conduit = MockTransmitter(payable(base.createTransmitter(SALT)));
+        assertFalse(conduit.hasRoute(_key(ETH)), "no route");
+        assertFalse(conduit.hasCounterpart(_key(ETH)), "no receiver known");
+
+        bytes memory payload = bootstrapPayload(ETH, _calls());
+        uint256 quote = conduit.quoteBootstrap(payload, new bytes[](0));
+        vm.deal(address(conduit), quote);
+        vm.prank(alice);
+        conduit.bootstrap(payload, new bytes[](0));
+        assertEq(address(conduit).balance, 0, "paid exactly the quote");
+        assertEq(conduit.routeFor(_key(ETH)), _route(ETH), "the route the payload named");
+        bytes memory sent = base.sentPayload();
+
+        vm.revertToState(world);
+        Sym eth = _chain(ETH, false);
+        assertEq(address(conduit).code.length, 0, "no receiver yet");
+        eth.arrive(_route(BASE), abi.encodePacked(address(eth)), sent);
+        assertEq(ReceiverBase(payable(address(conduit))).sourceTransmitter(), address(conduit), "created");
+    }
+
     /// @dev `bootstrap` and `quoteBootstrap` share `_bootstrapEnvelope`, so the quote prices the
     ///      exact bytes sent, which are `Envelope.encodeBootstrap`'s. The harness charges one wei
     ///      per byte and this route has no bootstrap fee.
