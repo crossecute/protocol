@@ -6,6 +6,21 @@ pragma solidity ^0.8.28;
 ///      `operation` is Safe's `Enum.Operation` as a `uint8`: 0 for CALL, 1 for DELEGATECALL.
 ///      `safeTxGas` and `gasPrice` are always zero, which the inherited policy check requires.
 interface ICrossecuteGuard {
+    /// @notice Safe 1.5.0's EIP-712 `SafeTx`, in its field order and types. Safe declares the type
+    ///         only as a type hash, so the guard, transmitter and receiver share this declaration.
+    struct SafeTx {
+        address to;
+        uint256 value;
+        bytes data;
+        uint8 operation;
+        uint256 safeTxGas;
+        uint256 baseGas;
+        uint256 gasPrice;
+        address gasToken;
+        address refundReceiver;
+        uint256 nonce;
+    }
+
     /// @notice A Safe's staged dispatch: the signed transaction and its complete signature blob.
     /// @custom:member safeTxHash The Safe transaction hash the owners signed.
     /// @custom:member dataHash keccak256 of the signed calldata.

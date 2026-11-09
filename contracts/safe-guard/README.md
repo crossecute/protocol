@@ -9,7 +9,7 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | Path | What it holds |
 | --- | --- |
 | `src/CrossecuteGuard.sol` | The guard: dispatch staging, consumption and cleanup, module dispatch rejection, child approval cache |
-| `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors |
+| `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors; the `SafeTx` struct the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 
 `ICrossecuteGuard` and `GuardDiscovery` import nothing from the policy engine and declare
@@ -68,10 +68,10 @@ signatures are two EOA signatures (130 bytes) plus a policy extension of the giv
 
 | Extension bytes | Staging and cleanup |
 | ---: | ---: |
-| 0 | 12,961 gas |
-| 1,024 | 28,307 gas |
-| 10,240 | 165,592 gas |
-| 102,400 | 1,467,533 gas |
+| 0 | 13,368 gas |
+| 1,024 | 28,650 gas |
+| 10,240 | 165,935 gas |
+| 102,400 | 1,467,876 gas |
 
 There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in

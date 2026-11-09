@@ -68,8 +68,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
-    ///      this Safe belongs to the execution that staged it. `safeTxGas` and `gasPrice` are not
-    ///      recorded: the inherited check has already required both to be zero.
+    ///      this Safe belongs to the execution that staged it.
     function _afterOwnerPolicyCheck(
         address to,
         uint256 value,
@@ -91,49 +90,69 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
         if (!dispatch && !approval) return;
 
-        // The Safe increments its nonce before calling the guard.
-        uint256 nonce = ISafe(payable(msg.sender)).nonce() - 1;
+        SafeTx memory safeTx = SafeTx({
+            to: to,
+            value: value,
+            data: data,
+            operation: uint8(operation),
+            safeTxGas: safeTxGas,
+            baseGas: baseGas,
+            gasPrice: gasPrice,
+            gasToken: gasToken,
+            refundReceiver: refundReceiver,
+            // The Safe increments its nonce before calling the guard.
+            nonce: ISafe(payable(msg.sender)).nonce() - 1
+        });
         if (dispatch) {
-            bytes32 txHash = ISafe(payable(msg.sender))
-                .getTransactionHash(
-                    to,
-                    value,
-                    data,
-                    Enum.Operation(uint8(operation)),
-                    safeTxGas,
-                    baseGas,
-                    gasPrice,
-                    gasToken,
-                    refundReceiver,
-                    nonce
-                );
-            _tstore(base, _TX_HASH, uint256(txHash));
-            _tstore(base, _TARGET, uint160(to));
-            _tstore(base, _OPERATION, uint8(operation));
-            _tstore(base, _VALUE, value);
-            _tstore(base, _DATA_HASH, uint256(keccak256(data)));
-            _tstore(base, _BASE_GAS, baseGas);
-            _tstore(base, _GAS_TOKEN, uint160(gasToken));
-            _tstore(base, _REFUND_RECEIVER, uint160(address(refundReceiver)));
-            _tstore(base, _NONCE, nonce);
-            _stageSignatures(base, signatures);
+            _stageDispatch(base, safeTx, signatures);
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
             // the record shows what the owners signed, not what the delegatecall wrote.
-            bytes32 messageHash = _safeMessageHash(abi.decode(data[4:], (bytes)));
-            ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
-            evidence.to = to;
-            evidence.operation = uint8(operation);
-            evidence.value = value;
-            evidence.data = data;
-            evidence.baseGas = baseGas;
-            evidence.gasToken = gasToken;
-            evidence.refundReceiver = refundReceiver;
-            evidence.nonce = nonce;
-            evidence.signatures = _approvalSignatures(signatures);
-            // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
-            emit ApprovalCached(msg.sender, messageHash);
+            _cacheApproval(safeTx, _safeMessageHash(abi.decode(data[4:], (bytes))), signatures);
         }
+    }
+
+    /// @dev `safeTxGas` and `gasPrice` are not recorded: the inherited check has already required
+    ///      both to be zero.
+    function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
+        bytes32 txHash = ISafe(payable(msg.sender))
+            .getTransactionHash(
+                safeTx.to,
+                safeTx.value,
+                safeTx.data,
+                Enum.Operation(safeTx.operation),
+                safeTx.safeTxGas,
+                safeTx.baseGas,
+                safeTx.gasPrice,
+                safeTx.gasToken,
+                safeTx.refundReceiver,
+                safeTx.nonce
+            );
+        _tstore(base, _TX_HASH, uint256(txHash));
+        _tstore(base, _TARGET, uint160(safeTx.to));
+        _tstore(base, _OPERATION, safeTx.operation);
+        _tstore(base, _VALUE, safeTx.value);
+        _tstore(base, _DATA_HASH, uint256(keccak256(safeTx.data)));
+        _tstore(base, _BASE_GAS, safeTx.baseGas);
+        _tstore(base, _GAS_TOKEN, uint160(safeTx.gasToken));
+        _tstore(base, _REFUND_RECEIVER, uint160(safeTx.refundReceiver));
+        _tstore(base, _NONCE, safeTx.nonce);
+        _stageSignatures(base, signatures);
+    }
+
+    function _cacheApproval(SafeTx memory safeTx, bytes32 messageHash, bytes calldata signatures) private {
+        ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
+        evidence.to = safeTx.to;
+        evidence.operation = safeTx.operation;
+        evidence.value = safeTx.value;
+        evidence.data = safeTx.data;
+        evidence.baseGas = safeTx.baseGas;
+        evidence.gasToken = safeTx.gasToken;
+        evidence.refundReceiver = safeTx.refundReceiver;
+        evidence.nonce = safeTx.nonce;
+        evidence.signatures = _approvalSignatures(signatures);
+        // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
+        emit ApprovalCached(msg.sender, messageHash);
     }
 
     /// @dev Safe verified the original blob. Stripping may not remove any threshold entry or
