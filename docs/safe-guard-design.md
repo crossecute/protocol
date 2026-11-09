@@ -1,8 +1,8 @@
 # Safe guard
 
 The Safe guard a conduit owner installs so that its transmitter can attach the owners'
-signatures to a dispatch, and so that a child Safe's approval of a parent transaction leaves
-evidence a receiver can check. Tracked in
+signatures to a `sendMessage`, and so that a child Safe's approval of a parent transaction
+leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
 **Status.** Implemented and tested in [`contracts/safe-guard/`](../contracts/safe-guard/), a
@@ -32,14 +32,14 @@ These are settled. The sections below describe each in full.
   transmitter does not compare calldata or value with the record; the direct call from the Safe
   delivers what the owners signed.
 - **Guard discovery.** The transmitter reads its owner Safe's transaction guard slot on every
-  dispatch. It pins no guard address and never falls back to an unsigned send.
-- **Unconsumed dispatches.** A staged call that nobody consumes succeeds and is cleared in the
+  `sendMessage`. It pins no guard address and never falls back to an unsigned send.
+- **Unconsumed records.** A staged call that nobody consumes succeeds and is cleared in the
   post-hook, including a call to an unrelated contract that shares the selector.
-- **Nesting.** While a Safe has a live dispatch record, every nested owner execution by that
+- **Nesting.** While a Safe has a live sendMessage record, every nested owner execution by that
   Safe is rejected, before and after consumption, until the post-hook clears it.
-- **No other staging paths.** A single signed MultiSend dispatch and any module transaction
-  stage nothing. With the module guard installed, a module transaction with the dispatch
-  selector is rejected for every target.
+- **No other staging paths.** A `sendMessage` inside a single signed MultiSend and any module
+  transaction stage nothing. With the module guard installed, a module transaction with the
+  `sendMessage` selector is rejected for every target.
 - **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
   cached, recognized by operation and selector alone, with no target or code-hash check. One
   record per child and message hash; a later approval replaces it; no size cap; `getApproval`
@@ -67,7 +67,7 @@ Crossecute adds runs in those callbacks.
 
 - **Target.** Safe 1.5.0. Earlier versions have no module guard and are not supported.
 - **Shared.** One deployment serves any number of Safes. Policy assignments, pending
-  configuration, transient dispatch records and cached approvals are all keyed by Safe.
+  configuration, transient sendMessage records and cached approvals are all keyed by Safe.
 - **Policy.** The inherited `PolicyEngine` governs every owner and module transaction.
   `SafenetPolicy` is one policy a Safe may select, not part of the guard.
 - **Slots.** Crossecute requires the guard in the Safe's transaction guard slot. Putting the
@@ -87,37 +87,40 @@ Safe 1.5.0 increments the nonce and checks signatures, then calls the transactio
 it read before execution. After the inherited policy check, `CrossecuteGuard` does three
 things in the pre-hook, in this order:
 
-1. **Nesting.** If the calling Safe has a live dispatch record, revert. See
+1. **Nesting.** If the calling Safe has a live sendMessage record, revert. See
    [Nesting](#nesting).
-2. **Dispatch staging.** If the top-level calldata selector is
-   `sendMessage(bytes,bytes,bytes[])`, write a transient dispatch record for the calling Safe.
+2. **sendMessage staging.** If the top-level calldata selector is
+   `sendMessage(bytes,bytes,bytes[])`, write a transient sendMessage record for the calling
+   Safe.
 3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
    `signMessage(bytes)`, write the persistent approval record for the calling Safe.
 
 The two selectors differ, so one transaction triggers at most one of steps 2 and 3. The
-post-hook clears the calling Safe's dispatch record if one exists.
+post-hook clears the calling Safe's sendMessage record if one exists.
 
-## Transient dispatch record
+## Transient sendMessage record
 
 Staging matches on the selector alone. It does not check the target, the operation, or the
 arguments. The record holds, for the calling Safe:
 
 | Field | Source |
 | --- | --- |
-| Safe transaction hash | recomputed from the hook arguments and `nonce() - 1` |
+| Safe transaction hash | computed with `SafeHashes` from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
-| Operation, value, calldata hash | hook arguments |
+| Value, operation | hook arguments |
 | `baseGas`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
 | Signature blob | the hook's `signatures`, byte for byte |
 
 `safeTxGas` and `gasPrice` are not stored: the inherited check requires both to be zero, and
-`consume` returns them as zero. The signature blob is the complete original `signatures`
+`consume` returns them as zero. The calldata is not stored either: `consume` returns the
+transaction as a `SafeTx` with `data` empty, and the signed target fills it from its own
+calldata, which the Safe passed it. The signature blob is the complete original `signatures`
 argument: owner signatures, any nested contract-signature data with its offsets, and the policy
-extension if present. There is no byte cap. Staging and cleanup together cost about 13,000 gas
+extension if present. There is no byte cap. Staging and cleanup together cost about 10,000 gas
 for a blob of two EOA signatures and about 14 gas per further byte
 ([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The record lives in
-EIP-1153 transient storage under a per-Safe base slot.
+EIP-1153 transient storage starting at a per-Safe id, `keccak256(abi.encode(safe, NAMESPACE))`.
 
 **Not all of the blob is signed.** Safe checks the first threshold-many signatures and ignores
 the rest. Whoever submits the transaction can append or change the policy extension, add
@@ -126,9 +129,11 @@ those bytes as submitted. A consumer must treat only what it verifies against th
 threshold as authorized; the policy extension in particular is executor-supplied context, not
 owner-signed content ([#108](https://github.com/crossecute/protocol/issues/108)).
 
-**Consumption.** `consume(address safe)` returns the record for `safe` when the record is
-live, not yet consumed, and `msg.sender` is the signed target. It marks the record consumed
-and leaves it live. A second call reverts.
+**Consumption.** `consume(address safe)` returns the signed transaction and signature blob for
+`safe` when the record is live, not yet consumed, and `msg.sender` is the signed target. It
+marks the record consumed and leaves it live. A second call reverts. The stored transaction
+hash is not returned: the receiver recomputes it, and a transmitter that needs it can ask the
+Safe's `getTransactionHash`.
 
 **Cleanup.** The post-hook clears the record only when its stored transaction hash matches
 the hook's `txHash`, then zeroes every slot it used, consumed or not. A successful
@@ -136,9 +141,9 @@ selector-matched call that nobody consumed stands, including one to an unrelated
 that shares the selector. Cleanup does not rely on the end-of-transaction reset, so a second
 Safe execution in the same parent transaction starts clean.
 
-**No staging path.** A single signed MultiSend dispatch has the `multiSend` selector at top
-level, and module transactions never enter the owner hook. Neither stages a record, so a
-protected transmitter reached that way finds nothing to consume and rejects.
+**No staging path.** A single signed MultiSend carrying a `sendMessage` has the `multiSend`
+selector at top level, and module transactions never enter the owner hook. Neither stages a
+record, so a protected transmitter reached that way finds nothing to consume and rejects.
 
 ## Transmitter side
 
@@ -148,19 +153,20 @@ A signature-enabled transmitter, called directly by its owner Safe:
 2. reads the Safe's transaction guard slot with `getStorageAt(slot, 1)`, decoding the reply
    strictly;
 3. calls `consume(msg.sender)` on that guard before any other external call;
-4. uses the returned blob in memory and rejects if discovery or consumption fails.
+4. sets the returned transaction's `data` to its own calldata, uses it and the signature blob in
+   memory, and rejects if discovery or consumption fails.
 
 It never pins a guard address and never falls back to an unsigned send. It does not compare
 calldata or value with the record: the direct call from the Safe already delivers what the
 owners signed, and the guard only lets the signed target consume. The minimal transmitter in
 `contracts/safe-guard/test/` exercises this flow; the protocol's own transmitters are
-unchanged. `ICrossecuteGuard` and `GuardDiscovery` import nothing from the policy engine and
-compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol transmitter can
-import them.
+unchanged. `ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy
+engine and compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol
+transmitter or receiver can import them.
 
 ## Nesting
 
-While a Safe has a live dispatch record, the guard rejects any nested owner execution by
+While a Safe has a live sendMessage record, the guard rejects any nested owner execution by
 that same Safe, before and after consumption, until the post-hook clears the record. A
 separately signed execution after cleanup in the same parent transaction proceeds. Verifying
 a nested Safe owner's signature calls that Safe's signature validator, not
@@ -199,7 +205,7 @@ establish what the delegatecall wrote. A candidate whose calldata does not decod
 `signedMessages`: the child's EIP-712 hash of `SafeMessage(bytes message)` under the child's
 domain separator. A reader can compare it with `signedMessages` on the child.
 
-**Record.** The approval transaction's signed fields (`to`, `value`, `data`, `operation`,
+**Record.** The approval transaction as a `SafeTx` (`to`, `value`, `data`, `operation`,
 `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`, nonce) and the child owners'
 signatures. `safeTxGas` and `gasPrice` are always zero and are not written. The signatures keep
 nested data and offsets and drop the child's policy extension. There is no size cap. The
@@ -217,9 +223,9 @@ back the write, including a replacement, and running out of gas while writing re
 approval with it.
 
 **Read.** `getApproval(address childSafe, bytes32 messageHash)` returns the record without
-consuming it, and reverts when none exists. A transmitter consumes its parent's dispatch
-record and reads children's cached evidence to attach to the dispatch. A relayer can read the
-same evidence for direct submission. The receiver verifies authorization independently
+consuming it, and reverts when none exists. A transmitter consumes its parent's sendMessage
+record and reads children's cached evidence to attach to the message it sends. A relayer can
+read the same evidence for direct submission. The receiver verifies authorization independently
 ([#108](https://github.com/crossecute/protocol/issues/108)). This ABI is not final.
 
 Approval signatures sign the approval transaction, not the handler's message digest, so they

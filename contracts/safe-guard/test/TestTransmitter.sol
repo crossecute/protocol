@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
+import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's dispatch was already
+/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
@@ -50,8 +52,8 @@ contract TestTransmitter {
     bytes32 public lastSafeTxHash;
     bytes public lastSignatures;
     uint256 public lastValue;
-    /// @dev `abi.encode` of the last consumed DispatchContext.
-    bytes public lastContext;
+    /// @dev `abi.encode` of the last consumed record, as the guard returned it.
+    bytes public lastSendMessage;
     uint256[] public lastApprovalNonces;
 
     constructor(address owner, Sink sink) {
@@ -76,11 +78,12 @@ contract TestTransmitter {
 
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.DispatchContext memory context = guard.consume(msg.sender);
-        lastSafeTxHash = context.safeTxHash;
-        lastSignatures = context.signatures;
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
+        lastSendMessage = abi.encode(signedSafeTx);
+        signedSafeTx.safeTx.data = msg.data;
+        lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
+        lastSignatures = signedSafeTx.signatures;
         lastValue = msg.value;
-        lastContext = abi.encode(context);
 
         if (mode == Mode.ConsumeTwice) guard.consume(msg.sender);
         if (mode == Mode.ConsumeThenRevert) revert Reverted();
@@ -88,11 +91,27 @@ contract TestTransmitter {
 
         delete lastApprovalNonces;
         for (uint256 i = 0; i < approvals.length; ++i) {
-            lastApprovalNonces.push(guard.getApproval(approvals[i].childSafe, approvals[i].messageHash).nonce);
+            lastApprovalNonces.push(guard.getApproval(approvals[i].childSafe, approvals[i].messageHash).safeTx.nonce);
         }
 
         SINK.hit{value: msg.value}(CrossecuteGuardHarness(address(guard)), msg.sender);
-        return context.safeTxHash;
+        return lastSafeTxHash;
+    }
+
+    function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
+        return ISafe(payable(OWNER))
+            .getTransactionHash(
+                t.to,
+                t.value,
+                t.data,
+                Enum.Operation(t.operation),
+                t.safeTxGas,
+                t.baseGas,
+                t.gasPrice,
+                t.gasToken,
+                t.refundReceiver,
+                t.nonce
+            );
     }
 
     function _call() private {
@@ -105,7 +124,7 @@ contract TestTransmitter {
     }
 }
 
-/// @dev Has the dispatch selector and no relation to the guard.
+/// @dev Has the `sendMessage` selector and no relation to the guard.
 contract Collider {
     uint256 public calls;
 

@@ -8,16 +8,17 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 
 | Path | What it holds |
 | --- | --- |
-| `src/CrossecuteGuard.sol` | The guard: dispatch staging, consumption and cleanup, module dispatch rejection, child approval cache |
-| `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors |
+| `src/CrossecuteGuard.sol` | The guard: `sendMessage` staging, consumption and cleanup, module `sendMessage` rejection, child approval cache |
+| `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors; the `SafeTx` struct the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
-
-`ICrossecuteGuard` and `GuardDiscovery` import nothing from the policy engine and declare
-`pragma ^0.8.28`, so `contracts/evm/` can import them under its own compiler settings.
+| `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
 | `test/SafeFixture.sol` | Real Safe 1.5.0 proxies, owner signing (EOA and nested Safe owners), owner-signed installation |
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
-| `test/*.t.sol` | Dispatch lifecycle, module restrictions, approval evidence, installation, gas measurements |
+| `test/*.t.sol` | `sendMessage` lifecycle, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
+
+`ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy engine and
+declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own compiler settings.
 
 ## Pins
 
@@ -33,7 +34,7 @@ commits on `SafePolicyGuard`: internal callbacks after the owner policy check, a
 policy check and after owner execution, and a helper that strips the policy context extension
 from a signature blob. Its `main` branch mirrors upstream.
 
-The dispatch selector is `IERC7786GatewaySource.sendMessage.selector`, imported from
+The staged selector is `IERC7786GatewaySource.sendMessage.selector`, imported from
 `contracts/evm/src/messaging/IErc7786.sol`, so the guard and the protocol cannot disagree on it.
 
 ## Build and chain support
@@ -62,23 +63,32 @@ are pinned by `contracts/evm/foundry.lock`; the warning does not affect the buil
 
 ## Gas
 
-`test/DispatchGas.t.sol` measures what staging and clearing one dispatch adds to an owner
+`test/SendMessageGas.t.sol` measures what staging and clearing one sendMessage record adds to an owner
 transaction, against the same Safe and policy under an unmodified `SafePolicyGuard`. The
 signatures are two EOA signatures (130 bytes) plus a policy extension of the given size:
 
 | Extension bytes | Staging and cleanup |
 | ---: | ---: |
-| 0 | 12,961 gas |
-| 1,024 | 28,307 gas |
-| 10,240 | 165,592 gas |
-| 102,400 | 1,467,533 gas |
+| 0 | 10,401 gas |
+| 1,024 | 25,703 gas |
+| 10,240 | 162,988 gas |
+| 102,400 | 1,464,929 gas |
+
+The calldata is not staged, but the guard copies it into memory to build the `SafeTx` and
+hashes it. With the same two signatures and a `sendMessage` payload of the given size:
+
+| Payload bytes | Staging and cleanup |
+| ---: | ---: |
+| 1,024 | 10,671 gas |
+| 10,240 | 13,295 gas |
+| 102,400 | 39,442 gas |
 
 There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in
 [`docs/safe-approval-evidence-sizing.md`](../../docs/safe-approval-evidence-sizing.md).
 
 ```bash
-forge test --match-contract 'DispatchGasTest|ApprovalGasTest' -vv
+forge test --match-contract 'SendMessageGasTest|ApprovalGasTest' -vv
 ```
 
 ## Licenses

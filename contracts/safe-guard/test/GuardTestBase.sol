@@ -58,7 +58,7 @@ abstract contract GuardTestBase is SafeFixture {
         );
     }
 
-    function _dispatchData() internal pure returns (bytes memory) {
+    function _sendMessageData() internal pure returns (bytes memory) {
         return abi.encodeCall(TestTransmitter.sendMessage, (hex"01", hex"02", new bytes[](0)));
     }
 

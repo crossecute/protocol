@@ -29,7 +29,7 @@ contract InstallationTest is GuardTestBase {
         assertEq(_slot(guarded, MODULE_GUARD_SLOT), address(guard));
 
         TestTransmitter guardedTransmitter = new TestTransmitter(address(guarded), sink);
-        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _dispatchData(), Enum.Operation.Call));
+        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _sendMessageData(), Enum.Operation.Call));
         assertEq(guardedTransmitter.sends(), 1);
     }
 
@@ -70,14 +70,14 @@ contract InstallationTest is GuardTestBase {
     }
 
     /// @dev Removal is an owner self-call the policy must permit. The post-hook still reaches the
-    ///      removed guard, which holds no record, and later dispatches find no guard.
-    function test_ownerRemoval_thenDispatchFindsNoGuard() public {
+    ///      removed guard, which holds no record, and later sendMessage calls find no guard.
+    function test_ownerRemoval_thenSendMessageFindsNoGuard() public {
         _exec(safe, _signers(), address(safe), 0, abi.encodeCall(safe.setGuard, (address(0))), Enum.Operation.Call);
         assertEq(_slot(safe, GUARD_SLOT), address(0));
 
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(GuardDiscovery.NoGuard.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_failedReplacement_keepsGuard() public {
@@ -104,11 +104,11 @@ contract InstallationTest is GuardTestBase {
         TestTransmitter narrowTransmitter = new TestTransmitter(address(narrow), sink);
 
         bytes memory sigs =
-            _signFor(narrow, _signers(), address(narrowTransmitter), 0, _dispatchData(), Enum.Operation.Call);
+            _signFor(narrow, _signers(), address(narrowTransmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(PolicyEngine.AccessDenied.selector, address(0)));
-        _execWith(narrow, address(narrowTransmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(narrow, address(narrowTransmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
 
-        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call));
+        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call));
     }
 
     function _removeDelegatecallPolicy(Safe guarded, SafePolicyGuard previous) internal {
