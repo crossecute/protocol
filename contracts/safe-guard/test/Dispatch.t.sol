@@ -497,9 +497,13 @@ contract DispatchTest is GuardTestBase {
         assertFalse(sink.consumedFirst());
     }
 
-    /// @dev A Safe can call address zero, so liveness cannot be read from the target bits.
+    /// @dev A Safe can call address zero, so liveness cannot be read from the target bits: the
+    ///      record must block nesting and be cleared like any other.
     function test_dispatchToAddressZero_isLiveUntilCleared() public {
-        new HookCaller(guard, allowPolicy).stageAndClear(address(0), _dispatchData());
+        HookCaller caller = new HookCaller(guard, allowPolicy);
+        caller.stageAndClear(address(0), _dispatchData());
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(caller)));
+        caller.stageTwice(address(0), _dispatchData());
     }
 
     function test_directHookCaller_onlyTouchesItsOwnRecord() public {
@@ -605,10 +609,19 @@ contract HookCaller {
     }
 
     function stageAndClear(address to, bytes calldata data) external {
-        GUARD.checkTransaction(to, 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), "", address(0));
+        _stage(to, data);
         require(GUARD.recordWords(address(this), 0)[0] == uint160(to) | (1 << 161));
         GUARD.checkAfterExecution(bytes32(0), true);
         GUARD.requireCleared(address(this), 0);
+    }
+
+    function stageTwice(address to, bytes calldata data) external {
+        _stage(to, data);
+        _stage(to, data);
+    }
+
+    function _stage(address to, bytes calldata data) internal {
+        GUARD.checkTransaction(to, 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), "", address(0));
     }
 
     function nonce() external pure returns (uint256) {
