@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {Vm} from "forge-std/Vm.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
@@ -278,6 +279,21 @@ contract ApprovalTest is GuardTestBase {
         assertEq(guard.getApproval(address(child), messageHash).safeTx.nonce, kept);
     }
 
+    /// @dev One `ApprovalCached` from the guard per write, a replacement included, and none when
+    ///      nothing is cached.
+    function test_approval_emitsApprovalCachedOncePerWrite() public {
+        bytes32 messageHash = _childMessageHash(child, bytes32(uint256(7)));
+        for (uint256 i = 0; i < 2; ++i) {
+            vm.recordLogs();
+            _approve(child, _signers(), bytes32(uint256(7)));
+            assertEq(_approvalCachedCount(address(child), messageHash), 1);
+        }
+
+        vm.recordLogs();
+        _exec(child, _signers(), address(fake), 0, _signMessageCall(bytes32(uint256(7))), Enum.Operation.Call);
+        assertEq(_approvalCachedCount(address(child), messageHash), 0);
+    }
+
     /// @dev Recognition ignores the target, so a cache entry does not show the flag was written.
     function test_approval_targetNotChecked() public {
         bytes memory data = _signMessageCall(bytes32(uint256(7)));
@@ -315,6 +331,22 @@ contract ApprovalTest is GuardTestBase {
         assertEq(guard.getApproval(address(sibling), siblingHash).safeTx.nonce, sibling.nonce() - 1);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(sibling), childHash));
         guard.getApproval(address(sibling), childHash);
+    }
+
+    /// @dev Counts the guard's recorded `ApprovalCached` logs, requiring each to name `childSafe` and
+    ///      `messageHash` in its topics and carry no data.
+    function _approvalCachedCount(address childSafe, bytes32 messageHash) internal returns (uint256 count) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; ++i) {
+            if (logs[i].emitter != address(guard) || logs[i].topics[0] != ICrossecuteGuard.ApprovalCached.selector) {
+                continue;
+            }
+            assertEq(logs[i].topics.length, 3);
+            assertEq(logs[i].topics[1], bytes32(uint256(uint160(childSafe))));
+            assertEq(logs[i].topics[2], messageHash);
+            assertEq(logs[i].data.length, 0);
+            ++count;
+        }
     }
 
     function _childConfig() internal view returns (SafePolicyGuard.Configuration[] memory configs) {
