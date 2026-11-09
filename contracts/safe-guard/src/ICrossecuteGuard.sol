@@ -41,16 +41,19 @@ interface ICrossecuteGuard {
 
     /// @notice Marks `safe`'s live dispatch consumed and returns it. Only the signed target may call,
     ///         once per dispatch.
-    /// @return dispatch The signed transaction with `data` empty: the caller is the signed target
+    /// @return signedSafeTx The signed transaction with `data` empty: the caller is the signed target
     ///         and received that calldata from the Safe, so it sets `data` to its own `msg.data`.
     ///         `signatures` is the Safe hook's argument byte for byte. Safe checks only the first
     ///         threshold-many signatures; anything after them, the policy extension included, is as
     ///         the submitter sent it.
-    function consume(address safe) external returns (SignedSafeTx memory dispatch);
+    function consume(address safe) external returns (SignedSafeTx memory signedSafeTx);
 
     /// @notice The current approval evidence `childSafe` cached for `messageHash`, the hash
     ///         `signMessage` writes into the child's `signedMessages`. Reverts if there is none.
-    /// @return evidence The child's signed `signMessage` transaction. `signatures` is the child
+    /// @return signedSafeTx The child's signed `signMessage` transaction. `signatures` is the child
     ///         owners' signatures without the child's policy extension.
-    function getApproval(address childSafe, bytes32 messageHash) external view returns (SignedSafeTx memory evidence);
+    function getApproval(address childSafe, bytes32 messageHash)
+        external
+        view
+        returns (SignedSafeTx memory signedSafeTx);
 }

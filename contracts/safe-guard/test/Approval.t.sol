@@ -77,26 +77,26 @@ contract ApprovalTest is GuardTestBase {
 
         bytes32 messageHash = _childMessageHash(child, parentTxHash);
         assertEq(child.signedMessages(messageHash), 1);
-        ICrossecuteGuard.SignedSafeTx memory evidence = guard.getApproval(address(child), messageHash);
-        assertEq(evidence.safeTx.to, address(signMessageLib));
-        assertEq(evidence.safeTx.operation, uint8(Operation.DELEGATECALL));
-        assertEq(evidence.safeTx.value, 0);
-        assertEq(evidence.safeTx.data, data);
-        assertEq(evidence.safeTx.nonce, nonce);
-        assertEq(evidence.signatures, ownerSigs);
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
+        assertEq(signedSafeTx.safeTx.operation, uint8(Operation.DELEGATECALL));
+        assertEq(signedSafeTx.safeTx.value, 0);
+        assertEq(signedSafeTx.safeTx.data, data);
+        assertEq(signedSafeTx.safeTx.nonce, nonce);
+        assertEq(signedSafeTx.signatures, ownerSigs);
         // The cached fields reproduce the hash the child owners signed.
         assertEq(
             child.getTransactionHash(
-                evidence.safeTx.to,
-                evidence.safeTx.value,
-                evidence.safeTx.data,
-                Enum.Operation(evidence.safeTx.operation),
-                evidence.safeTx.safeTxGas,
-                evidence.safeTx.baseGas,
-                evidence.safeTx.gasPrice,
-                evidence.safeTx.gasToken,
-                payable(evidence.safeTx.refundReceiver),
-                evidence.safeTx.nonce
+                signedSafeTx.safeTx.to,
+                signedSafeTx.safeTx.value,
+                signedSafeTx.safeTx.data,
+                Enum.Operation(signedSafeTx.safeTx.operation),
+                signedSafeTx.safeTx.safeTxGas,
+                signedSafeTx.safeTx.baseGas,
+                signedSafeTx.safeTx.gasPrice,
+                signedSafeTx.safeTx.gasToken,
+                payable(signedSafeTx.safeTx.refundReceiver),
+                signedSafeTx.safeTx.nonce
             ),
             _txHashAt(child, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, nonce)
         );
@@ -110,31 +110,31 @@ contract ApprovalTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall, payment);
 
-        ICrossecuteGuard.SignedSafeTx memory evidence =
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
             guard.getApproval(address(child), _childMessageHash(child, bytes32(uint256(7))));
-        assertEq(evidence.safeTx.to, address(signMessageLib));
-        assertEq(evidence.safeTx.operation, uint8(Enum.Operation.DelegateCall));
-        assertEq(evidence.safeTx.value, 0);
-        assertEq(evidence.safeTx.data, data);
-        assertEq(evidence.safeTx.safeTxGas, 0);
-        assertEq(evidence.safeTx.baseGas, 4242);
-        assertEq(evidence.safeTx.gasPrice, 0);
-        assertEq(evidence.safeTx.gasToken, address(0xCAFE));
-        assertEq(evidence.safeTx.refundReceiver, address(0xF00D));
-        assertEq(evidence.safeTx.nonce, nonce);
-        assertEq(evidence.signatures, signatures);
+        assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
+        assertEq(signedSafeTx.safeTx.operation, uint8(Enum.Operation.DelegateCall));
+        assertEq(signedSafeTx.safeTx.value, 0);
+        assertEq(signedSafeTx.safeTx.data, data);
+        assertEq(signedSafeTx.safeTx.safeTxGas, 0);
+        assertEq(signedSafeTx.safeTx.baseGas, 4242);
+        assertEq(signedSafeTx.safeTx.gasPrice, 0);
+        assertEq(signedSafeTx.safeTx.gasToken, address(0xCAFE));
+        assertEq(signedSafeTx.safeTx.refundReceiver, address(0xF00D));
+        assertEq(signedSafeTx.safeTx.nonce, nonce);
+        assertEq(signedSafeTx.signatures, signatures);
         assertEq(
             child.getTransactionHash(
-                evidence.safeTx.to,
-                evidence.safeTx.value,
-                evidence.safeTx.data,
-                Enum.Operation(evidence.safeTx.operation),
-                evidence.safeTx.safeTxGas,
-                evidence.safeTx.baseGas,
-                evidence.safeTx.gasPrice,
-                evidence.safeTx.gasToken,
-                payable(evidence.safeTx.refundReceiver),
-                evidence.safeTx.nonce
+                signedSafeTx.safeTx.to,
+                signedSafeTx.safeTx.value,
+                signedSafeTx.safeTx.data,
+                Enum.Operation(signedSafeTx.safeTx.operation),
+                signedSafeTx.safeTx.safeTxGas,
+                signedSafeTx.safeTx.baseGas,
+                signedSafeTx.safeTx.gasPrice,
+                signedSafeTx.safeTx.gasToken,
+                payable(signedSafeTx.safeTx.refundReceiver),
+                signedSafeTx.safeTx.nonce
             ),
             txHash
         );
@@ -237,11 +237,11 @@ contract ApprovalTest is GuardTestBase {
 
     function test_approval_persistsAcrossLaterTransactions() public {
         bytes32 messageHash = _approve(child, _signers(), bytes32(uint256(7)));
-        ICrossecuteGuard.SignedSafeTx memory first = guard.getApproval(address(child), messageHash);
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         _exec(child, _signers(), address(0xBEEF), 0, "", Enum.Operation.Call);
         vm.roll(block.number + 100);
         vm.warp(block.timestamp + 30 days);
-        assertEq(abi.encode(guard.getApproval(address(child), messageHash)), abi.encode(first));
+        assertEq(abi.encode(guard.getApproval(address(child), messageHash)), abi.encode(signedSafeTx));
     }
 
     function test_approval_laterApprovalReplaces() public {
@@ -257,9 +257,9 @@ contract ApprovalTest is GuardTestBase {
         bytes memory sigs = _signFor(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
         _execWith(child, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, sigs);
 
-        ICrossecuteGuard.SignedSafeTx memory evidence = guard.getApproval(address(child), messageHash);
-        assertEq(evidence.safeTx.nonce, nonce);
-        assertEq(evidence.signatures, sigs);
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        assertEq(signedSafeTx.safeTx.nonce, nonce);
+        assertEq(signedSafeTx.signatures, sigs);
     }
 
     function test_approval_containingRevertRollsBackWriteAndReplacement() public {

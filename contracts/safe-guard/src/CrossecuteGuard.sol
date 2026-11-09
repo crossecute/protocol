@@ -40,7 +40,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
 
     /// @inheritdoc ICrossecuteGuard
-    function consume(address safe) external returns (SignedSafeTx memory dispatch) {
+    function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
         bytes32 base = _dispatchBase(safe);
         require(_tload(base, _TX_HASH) != 0, NoLiveDispatch(safe));
         uint256 target = _tload(base, _TARGET);
@@ -48,14 +48,18 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));
         require(target & _CONSUMED == 0, AlreadyConsumed(safe));
         _tstore(base, _TARGET, target | _CONSUMED);
-        dispatch = _readDispatch(base);
+        signedSafeTx = _tloadSignedSafeTx(base);
     }
 
     /// @inheritdoc ICrossecuteGuard
-    function getApproval(address childSafe, bytes32 messageHash) external view returns (SignedSafeTx memory evidence) {
-        evidence = $approvals[childSafe][messageHash];
+    function getApproval(address childSafe, bytes32 messageHash)
+        external
+        view
+        returns (SignedSafeTx memory signedSafeTx)
+    {
+        signedSafeTx = $approvals[childSafe][messageHash];
         // A Safe threshold is at least one, so stored evidence always carries a signature.
-        require(evidence.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
+        require(signedSafeTx.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
     }
 
     /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
@@ -123,8 +127,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     function _cacheApproval(SafeTx memory safeTx, bytes32 messageHash, bytes calldata signatures) private {
-        SignedSafeTx storage evidence = $approvals[msg.sender][messageHash];
-        SafeTx storage stored = evidence.safeTx;
+        SignedSafeTx storage signedSafeTx = $approvals[msg.sender][messageHash];
+        SafeTx storage stored = signedSafeTx.safeTx;
         stored.to = safeTx.to;
         stored.value = safeTx.value;
         stored.data = safeTx.data;
@@ -133,7 +137,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         stored.gasToken = safeTx.gasToken;
         stored.refundReceiver = safeTx.refundReceiver;
         stored.nonce = safeTx.nonce;
-        evidence.signatures = _approvalSignatures(signatures);
+        signedSafeTx.signatures = _approvalSignatures(signatures);
         // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
         emit ApprovalCached(msg.sender, messageHash);
     }
@@ -172,8 +176,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleDispatchDenied());
     }
 
-    function _readDispatch(bytes32 base) private view returns (SignedSafeTx memory dispatch) {
-        SafeTx memory safeTx = dispatch.safeTx;
+    function _tloadSignedSafeTx(bytes32 base) private view returns (SignedSafeTx memory signedSafeTx) {
+        SafeTx memory safeTx = signedSafeTx.safeTx;
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         safeTx.to = address(uint160(_tload(base, _TARGET)));
         safeTx.value = _tload(base, _VALUE);
@@ -194,7 +198,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
                 mstore(add(add(signatures, 0x20), i), word)
             }
         }
-        dispatch.signatures = signatures;
+        signedSafeTx.signatures = signatures;
     }
 
     /// @dev The final word is masked to `signatures`' length so the record holds no calldata past it.

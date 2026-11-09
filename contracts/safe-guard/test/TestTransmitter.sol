@@ -78,11 +78,11 @@ contract TestTransmitter {
 
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.SignedSafeTx memory dispatch = guard.consume(msg.sender);
-        lastDispatch = abi.encode(dispatch);
-        dispatch.safeTx.data = msg.data;
-        lastSafeTxHash = _safeTxHash(dispatch.safeTx);
-        lastSignatures = dispatch.signatures;
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
+        lastDispatch = abi.encode(signedSafeTx);
+        signedSafeTx.safeTx.data = msg.data;
+        lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
+        lastSignatures = signedSafeTx.signatures;
         lastValue = msg.value;
 
         if (mode == Mode.ConsumeTwice) guard.consume(msg.sender);

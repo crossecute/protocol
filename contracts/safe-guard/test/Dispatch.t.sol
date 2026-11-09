@@ -52,9 +52,9 @@ contract DispatchTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(safe, _signers(), address(transmitter), 2, data, Enum.Operation.Call, payment);
 
-        ICrossecuteGuard.SignedSafeTx memory dispatch =
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
             abi.decode(transmitter.lastDispatch(), (ICrossecuteGuard.SignedSafeTx));
-        ICrossecuteGuard.SafeTx memory safeTx = dispatch.safeTx;
+        ICrossecuteGuard.SafeTx memory safeTx = signedSafeTx.safeTx;
         assertEq(safeTx.to, address(transmitter));
         assertEq(safeTx.value, 2);
         assertEq(safeTx.data.length, 0);
@@ -65,7 +65,7 @@ contract DispatchTest is GuardTestBase {
         assertEq(safeTx.gasToken, address(0xCAFE));
         assertEq(safeTx.refundReceiver, address(0xF00D));
         assertEq(safeTx.nonce, nonce);
-        assertEq(dispatch.signatures, signatures);
+        assertEq(signedSafeTx.signatures, signatures);
         // What a consumer does: the Safe called it with the signed calldata.
         safeTx.data = data;
         assertEq(
