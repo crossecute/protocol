@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.28;
 
+import {ICrossecuteGuard} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 
 /// @notice Proposed leaf for an ordered batch on one receiver.
@@ -14,10 +15,24 @@ struct ExecutionLeaf {
 
 /// @notice Proposed `sendMessage` payload, encoded as one ABI tuple with `abi.encode(dispatch)`.
 struct DispatchPayload {
-    uint256 authorityCounter;
     bytes32 merkleRoot;
+    uint256 authorityCounter;
     ExecutionLeaf selectedLeaf;
     bytes32[] selectedProof;
+}
+
+/// @notice Signed child approval keyed by the child Safe and its Safe message hash.
+struct NestedApproval {
+    address childSafe;
+    bytes32 messageHash;
+    ICrossecuteGuard.SignedSafeTx approval;
+}
+
+/// @notice Safe authorization shared by provider and direct delivery.
+struct SignedDelivery {
+    ICrossecuteGuard.SafeTx safeTx;
+    bytes signatures;
+    NestedApproval[] nestedApprovals;
 }
 
 /// @notice Proposed Safe-signed transmitter interface.
@@ -29,16 +44,9 @@ interface ISignedReceiver {
     event DuplicateMessage();
 
     /// @notice Submit one leaf and proof against the root in the original signed Safe calldata.
-    /// @param signedSafeTxContext Safe transaction context including the exact `sendMessage` calldata.
-    /// @param safeSignatures The Safe owners' signature bundle.
-    /// @param nestedApprovalEvidence Supplemental evidence for empty nested Safe signatures, if any.
+    /// @param delivery Full signed Safe transaction, original signatures and nested approval evidence.
     /// @param leaf The leaf to execute on this receiver.
     /// @param proof Sibling hashes proving membership in the signed root.
-    function submitDirect(
-        bytes calldata signedSafeTxContext,
-        bytes calldata safeSignatures,
-        bytes calldata nestedApprovalEvidence,
-        ExecutionLeaf calldata leaf,
-        bytes32[] calldata proof
-    ) external;
+    function submitDirect(SignedDelivery calldata delivery, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
+        external;
 }
