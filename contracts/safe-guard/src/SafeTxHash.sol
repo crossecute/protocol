@@ -23,23 +23,41 @@ library SafeTxHash {
     {
         bytes32 domain = domainSeparator(safe, chainId);
         assembly ("memory-safe") {
+            // Scratch space past the free memory pointer; nothing here outlives the block.
             let ptr := mload(0x40)
+            // `safeTx` is a pointer to ten words in field order; word 2 points to `data`.
             let data := mload(add(safeTx, 0x40))
+            // EIP-712 struct encoding: the type hash, then each field as one word.
             mstore(ptr, SAFE_TX_TYPEHASH)
+            // to
             mstore(add(ptr, 0x20), mload(safeTx))
+            // value
             mstore(add(ptr, 0x40), mload(add(safeTx, 0x20)))
+            // data, encoded as the keccak256 of its bytes (length word skipped)
             mstore(add(ptr, 0x60), keccak256(add(data, 0x20), mload(data)))
+            // operation
             mstore(add(ptr, 0x80), mload(add(safeTx, 0x60)))
+            // safeTxGas
             mstore(add(ptr, 0xa0), mload(add(safeTx, 0x80)))
+            // baseGas
             mstore(add(ptr, 0xc0), mload(add(safeTx, 0xa0)))
+            // gasPrice
             mstore(add(ptr, 0xe0), mload(add(safeTx, 0xc0)))
+            // gasToken
             mstore(add(ptr, 0x100), mload(add(safeTx, 0xe0)))
+            // refundReceiver
             mstore(add(ptr, 0x120), mload(add(safeTx, 0x100)))
+            // nonce
             mstore(add(ptr, 0x140), mload(add(safeTx, 0x120)))
+            // hashStruct(safeTx) over the 11 words above
             let structHash := keccak256(ptr, 0x160)
+            // 0x1901 right-aligned in the first word, so it occupies bytes 30 and 31
             mstore(ptr, 0x1901)
+            // domain separator follows the prefix at byte 32
             mstore(add(ptr, 0x20), domain)
+            // struct hash at byte 64
             mstore(add(ptr, 0x40), structHash)
+            // keccak256(0x1901 || domain || structHash): 2 + 32 + 32 = 66 bytes from byte 30
             txHash := keccak256(add(ptr, 0x1e), 0x42)
         }
     }
