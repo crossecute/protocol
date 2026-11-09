@@ -3,17 +3,25 @@ pragma solidity =0.8.30;
 
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
-import {SafeTxHash} from "../src/SafeTxHash.sol";
+import {SafeHashes} from "../src/SafeHashes.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 
 /// @dev The library must agree with a real Safe 1.5.0 proxy: the guard's post-hook rejects a
-///      dispatch whose staged hash differs from the one the Safe computes.
-contract SafeTxHashTest is GuardTestBase {
+///      dispatch whose staged hash differs from the one the Safe computes, and an approval cached
+///      under another message hash is never found.
+contract SafeHashesTest is GuardTestBase {
     function testFuzz_hash_matchesSafe(ICrossecuteGuard.SafeTx memory safeTx, uint64 chainId) public {
         safeTx.operation = uint8(bound(safeTx.operation, 0, 1));
         vm.chainId(bound(chainId, 1, type(uint64).max));
-        assertEq(SafeTxHash.hash(safeTx, address(safe), block.chainid), _safeHash(safeTx));
-        assertEq(SafeTxHash.domainSeparator(address(safe), block.chainid), safe.domainSeparator());
+        assertEq(SafeHashes.transactionHash(safeTx, address(safe), block.chainid), _safeHash(safeTx));
+        assertEq(SafeHashes.domainSeparator(address(safe), block.chainid), safe.domainSeparator());
+    }
+
+    function testFuzz_messageHash_matchesSafe(bytes memory message, uint64 chainId) public {
+        vm.chainId(bound(chainId, 1, type(uint64).max));
+        assertEq(
+            SafeHashes.messageHash(message, address(safe), block.chainid), handler.getMessageHashForSafe(safe, message)
+        );
     }
 
     /// @dev Every field is distinct and nonzero, so a swapped or dropped field fails. The policy
@@ -31,7 +39,7 @@ contract SafeTxHashTest is GuardTestBase {
             refundReceiver: address(0xF00D),
             nonce: safe.nonce()
         });
-        assertEq(SafeTxHash.hash(safeTx, address(safe), block.chainid), _safeHash(safeTx));
+        assertEq(SafeHashes.transactionHash(safeTx, address(safe), block.chainid), _safeHash(safeTx));
     }
 
     /// @dev The hash scratch space sits past the free memory pointer, so it must leave the struct
@@ -41,7 +49,7 @@ contract SafeTxHashTest is GuardTestBase {
         safeTx.to = address(transmitter);
         safeTx.data = _dispatchData();
         bytes memory before = abi.encode(safeTx);
-        SafeTxHash.hash(safeTx, address(safe), block.chainid);
+        SafeHashes.transactionHash(safeTx, address(safe), block.chainid);
         assertEq(abi.encode(safeTx), before);
     }
 

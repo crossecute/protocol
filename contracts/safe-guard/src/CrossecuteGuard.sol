@@ -7,7 +7,7 @@ import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
-import {SafeTxHash} from "./SafeTxHash.sol";
+import {SafeHashes} from "./SafeHashes.sol";
 
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
@@ -16,9 +16,6 @@ import {SafeTxHash} from "./SafeTxHash.sol";
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
-    /// @dev Safe's `SAFE_MSG_TYPEHASH`, `keccak256("SafeMessage(bytes message)")`.
-    bytes32 private constant _SAFE_MSG_TYPEHASH = 0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca;
-
     /// @dev A Safe's transient dispatch record starts at `keccak256(abi.encode(safe, namespace))`.
     bytes32 internal constant _DISPATCH_NAMESPACE = keccak256("crossecute.guard.dispatch.v1");
 
@@ -102,7 +99,9 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
             // the record shows what the owners signed, not what the delegatecall wrote.
-            _cacheApproval(safeTx, _safeMessageHash(abi.decode(data[4:], (bytes))), signatures);
+            _cacheApproval(
+                safeTx, SafeHashes.messageHash(abi.decode(data[4:], (bytes)), msg.sender, block.chainid), signatures
+            );
         }
     }
 
@@ -111,7 +110,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     ///      target receives it from the Safe's call. The post-hook requires the hash computed here to
     ///      equal the one the Safe passes it, so a disagreement reverts the dispatch.
     function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
-        bytes32 txHash = SafeTxHash.hash(safeTx, msg.sender, block.chainid);
+        bytes32 txHash = SafeHashes.transactionHash(safeTx, msg.sender, block.chainid);
         _tstore(base, _TX_HASH, uint256(txHash));
         _tstore(base, _TARGET, uint160(safeTx.to));
         _tstore(base, _VALUE, safeTx.value);
@@ -213,14 +212,6 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             }
             _tstore(base, _SIG_WORDS + (i >> 5), word);
         }
-    }
-
-    /// @dev The hash `SignMessageLib.signMessage(message)` writes when delegatecalled by the caller.
-    function _safeMessageHash(bytes memory message) private view returns (bytes32) {
-        bytes32 safeMessageHash = keccak256(abi.encode(_SAFE_MSG_TYPEHASH, keccak256(message)));
-        return keccak256(
-            abi.encodePacked(bytes1(0x19), bytes1(0x01), ISafe(payable(msg.sender)).domainSeparator(), safeMessageHash)
-        );
     }
 
     function _dispatchBase(address safe) internal pure returns (bytes32) {

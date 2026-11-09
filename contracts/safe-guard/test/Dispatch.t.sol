@@ -13,7 +13,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
-import {SafeTxHash} from "../src/SafeTxHash.sol";
+import {SafeHashes} from "../src/SafeHashes.sol";
 import {Batch} from "./Batch.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
@@ -602,7 +602,7 @@ contract HookCaller {
     function stageAndClear(address to, bytes calldata data) external {
         ICrossecuteGuard.SafeTx memory safeTx;
         (safeTx.to, safeTx.data) = (to, data);
-        bytes32 txHash = SafeTxHash.hash(safeTx, address(this), block.chainid);
+        bytes32 txHash = SafeHashes.transactionHash(safeTx, address(this), block.chainid);
         GUARD.checkTransaction(to, 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), "", address(0));
         require(bytes32(GUARD.recordWords(address(this), 0)[0]) == txHash);
         GUARD.checkAfterExecution(txHash, true);

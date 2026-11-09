@@ -104,7 +104,7 @@ arguments. The record holds, for the calling Safe:
 
 | Field | Source |
 | --- | --- |
-| Safe transaction hash | computed with `SafeTxHash` from the hook arguments and `nonce() - 1` |
+| Safe transaction hash | computed with `SafeHashes` from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
 | Value, operation | hook arguments |
@@ -159,7 +159,7 @@ It never pins a guard address and never falls back to an unsigned send. It does 
 calldata or value with the record: the direct call from the Safe already delivers what the
 owners signed, and the guard only lets the signed target consume. The minimal transmitter in
 `contracts/safe-guard/test/` exercises this flow; the protocol's own transmitters are
-unchanged. `ICrossecuteGuard`, `GuardDiscovery` and `SafeTxHash` import nothing from the policy
+unchanged. `ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy
 engine and compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol
 transmitter or receiver can import them.
 

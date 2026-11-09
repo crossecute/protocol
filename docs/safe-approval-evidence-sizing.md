@@ -45,11 +45,11 @@ inherited policy check requires both to be zero, so they always read as zero.
 | Owner signatures | 650 bytes | 325 bytes | 975 bytes |
 | Slots written | 34 | 24 | 58 |
 | `getApproval` return, ABI-encoded | 1,280 bytes | 960 bytes | 2,240 bytes |
-| Measured cache cost | 683,026 gas | 461,263 gas | 1,144,289 gas |
-| At 1 gwei and $2,000/ETH | $1.37 | $0.92 | $2.29 |
+| Measured cache cost | 681,609 gas | 459,846 gas | 1,141,455 gas |
+| At 1 gwei and $2,000/ETH | $1.36 | $0.92 | $2.28 |
 
-The measured cost covers the storage writes, computing the message hash, and the extra calls back
-to the Safe for its nonce and domain separator. It is close to the slot arithmetic: under the
+The measured cost covers the storage writes, computing the message hash, and the extra call back
+to the Safe for its nonce. It is close to the slot arithmetic: under the
 EIP-2929 schedule a fresh nonzero slot costs 22,100 gas and a zero written over zero costs 2,200,
 and in this shape `value` and the three payment fields are zero. A replacement for the same child
 and message writes over existing slots and costs less. These measurements use no policy
