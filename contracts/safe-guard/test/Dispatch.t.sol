@@ -13,6 +13,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {SafeTxHash} from "../src/SafeTxHash.sol";
 import {Batch} from "./Batch.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
@@ -587,7 +588,7 @@ contract GuardSwapModule {
 }
 
 /// @dev Not a Safe: configures itself on the guard and calls the owner hooks directly. It answers
-///      the guard's `nonce()` and, through its fallback, `getTransactionHash(...)`.
+///      the guard's `nonce()`.
 contract HookCaller {
     CrossecuteGuardHarness internal immutable GUARD;
 
@@ -599,21 +600,17 @@ contract HookCaller {
     }
 
     function stageAndClear(address to, bytes calldata data) external {
+        ICrossecuteGuard.SafeTx memory safeTx;
+        (safeTx.to, safeTx.data) = (to, data);
+        bytes32 txHash = SafeTxHash.hash(safeTx, address(this), block.chainid);
         GUARD.checkTransaction(to, 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), "", address(0));
-        require(GUARD.recordWords(address(this), 0)[0] == 1);
-        GUARD.checkAfterExecution(bytes32(uint256(1)), true);
+        require(bytes32(GUARD.recordWords(address(this), 0)[0]) == txHash);
+        GUARD.checkAfterExecution(txHash, true);
         GUARD.requireCleared(address(this), 0);
     }
 
     function nonce() external pure returns (uint256) {
         return 1;
-    }
-
-    fallback() external {
-        assembly ("memory-safe") {
-            mstore(0, 1)
-            return(0, 32)
-        }
     }
 }
 

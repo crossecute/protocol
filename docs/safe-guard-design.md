@@ -104,7 +104,7 @@ arguments. The record holds, for the calling Safe:
 
 | Field | Source |
 | --- | --- |
-| Safe transaction hash | recomputed from the hook arguments and `nonce() - 1` |
+| Safe transaction hash | computed with `SafeTxHash` from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
 | Value, operation | hook arguments |
@@ -116,7 +116,7 @@ arguments. The record holds, for the calling Safe:
 transaction as a `SafeTx` with `data` empty, and the signed target fills it from its own
 calldata, which the Safe passed it. The signature blob is the complete original `signatures`
 argument: owner signatures, any nested contract-signature data with its offsets, and the policy
-extension if present. There is no byte cap. Staging and cleanup together cost about 13,000 gas
+extension if present. There is no byte cap. Staging and cleanup together cost about 10,000 gas
 for a blob of two EOA signatures and about 14 gas per further byte
 ([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The record lives in
 EIP-1153 transient storage under a per-Safe base slot.
@@ -159,9 +159,9 @@ It never pins a guard address and never falls back to an unsigned send. It does 
 calldata or value with the record: the direct call from the Safe already delivers what the
 owners signed, and the guard only lets the signed target consume. The minimal transmitter in
 `contracts/safe-guard/test/` exercises this flow; the protocol's own transmitters are
-unchanged. `ICrossecuteGuard` and `GuardDiscovery` import nothing from the policy engine and
-compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol transmitter can
-import them.
+unchanged. `ICrossecuteGuard`, `GuardDiscovery` and `SafeTxHash` import nothing from the policy
+engine and compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol
+transmitter or receiver can import them.
 
 ## Nesting
 

@@ -4,10 +4,10 @@ pragma solidity =0.8.30;
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
-import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
+import {SafeTxHash} from "./SafeTxHash.sol";
 
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
@@ -108,21 +108,10 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
     ///      check has already required both to be zero. The calldata is not recorded: the signed
-    ///      target receives it from the Safe's call.
+    ///      target receives it from the Safe's call. The post-hook requires the hash computed here to
+    ///      equal the one the Safe passes it, so a disagreement reverts the dispatch.
     function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
-        bytes32 txHash = ISafe(payable(msg.sender))
-            .getTransactionHash(
-                safeTx.to,
-                safeTx.value,
-                safeTx.data,
-                Enum.Operation(safeTx.operation),
-                safeTx.safeTxGas,
-                safeTx.baseGas,
-                safeTx.gasPrice,
-                safeTx.gasToken,
-                safeTx.refundReceiver,
-                safeTx.nonce
-            );
+        bytes32 txHash = SafeTxHash.hash(safeTx, msg.sender, block.chainid);
         _tstore(base, _TX_HASH, uint256(txHash));
         _tstore(base, _TARGET, uint160(safeTx.to));
         _tstore(base, _VALUE, safeTx.value);
