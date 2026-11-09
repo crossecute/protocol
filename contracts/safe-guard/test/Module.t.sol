@@ -171,7 +171,7 @@ contract ModuleTest is GuardTestBase {
     }
 
     /// @dev With the module guard slot empty the module is trusted with its Safe permissions. Its
-    ///      dispatch never enters the owner hook, so the transmitter finds nothing to consume.
+    ///      `sendMessage` never enters the owner hook, so the transmitter finds nothing to consume.
     function test_withoutModuleGuard_moduleSendMessageFindsNoRecord() public {
         _exec(
             safe,

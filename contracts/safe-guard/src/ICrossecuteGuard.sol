@@ -39,8 +39,8 @@ interface ICrossecuteGuard {
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();
 
-    /// @notice Marks `safe`'s live dispatch consumed and returns it. Only the signed target may call,
-    ///         once per dispatch.
+    /// @notice Marks `safe`'s live sendMessage record consumed and returns it. Only the signed target
+    ///         may call, once per record.
     /// @return signedSafeTx The signed transaction with `data` empty: the caller is the signed target
     ///         and received that calldata from the Safe, so it sets `data` to its own `msg.data`.
     ///         `signatures` is the Safe hook's argument byte for byte. Safe checks only the first

@@ -16,7 +16,7 @@ import {SafeHashes} from "./SafeHashes.sol";
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
-    /// @dev A Safe's transient dispatch record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
+    /// @dev A Safe's transient sendMessage record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
     bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
 
     // Word offsets from a Safe's id. `_TX_HASH` is nonzero exactly while the record is live.
@@ -112,7 +112,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
     ///      check has already required both to be zero. The calldata is not recorded: the signed
     ///      target receives it from the Safe's call. The post-hook requires the hash computed here to
-    ///      equal the one the Safe passes it, so a disagreement reverts the dispatch.
+    ///      equal the one the Safe passes it, so a disagreement reverts the Safe transaction.
     function _tstoreSignedSafeTx(bytes32 safeId, SafeTx memory safeTx, bytes calldata signatures) private {
         _tstore(safeId, _TX_HASH, uint256(SafeHashes.transactionHash(safeTx, msg.sender, block.chainid)));
         _tstore(safeId, _TARGET, uint160(safeTx.to));

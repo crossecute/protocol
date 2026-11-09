@@ -233,7 +233,7 @@ contract ApprovalTest is GuardTestBase {
         assertEq(parentTransmitter.lastSafeTxHash(), parentTxHash);
         assertEq(parentTransmitter.lastSignatures(), parentSigs);
         assertEq(parentTransmitter.lastApprovalNonces(0), approvalNonce);
-        // Consuming the parent's dispatch leaves the child's evidence in place.
+        // Consuming the parent's sendMessage record leaves the child's evidence in place.
         assertEq(guard.getApproval(address(child), messageHash).safeTx.nonce, approvalNonce);
     }
 

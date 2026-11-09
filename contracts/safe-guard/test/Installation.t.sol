@@ -70,7 +70,7 @@ contract InstallationTest is GuardTestBase {
     }
 
     /// @dev Removal is an owner self-call the policy must permit. The post-hook still reaches the
-    ///      removed guard, which holds no record, and later dispatches find no guard.
+    ///      removed guard, which holds no record, and later sendMessage calls find no guard.
     function test_ownerRemoval_thenSendMessageFindsNoGuard() public {
         _exec(safe, _signers(), address(safe), 0, abi.encodeCall(safe.setGuard, (address(0))), Enum.Operation.Call);
         assertEq(_slot(safe, GUARD_SLOT), address(0));

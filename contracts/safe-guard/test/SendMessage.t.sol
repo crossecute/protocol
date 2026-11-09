@@ -457,7 +457,7 @@ contract SendMessageTest is GuardTestBase {
     }
 
     /// @dev Safe 1.5.0 sends the post-hook to the guard it read before execution, so a guard swapped
-    ///      out mid-dispatch still clears its own record.
+    ///      out during a `sendMessage` still clears its own record.
     function test_guardSwappedDuringSendMessage_oldGuardClears() public {
         CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days);
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
@@ -511,7 +511,7 @@ contract SendMessageTest is GuardTestBase {
         HookCaller caller = new HookCaller(guard, allowPolicy);
         caller.stageAndClear(address(transmitter), _sendMessageData());
 
-        // During this Safe's dispatch, the caller stages and clears under its own key only.
+        // During this Safe's `sendMessage`, the caller stages and clears under its own key only.
         transmitter.setMode(
             TestTransmitter.Mode.ConsumeThenCall,
             address(caller),
@@ -573,7 +573,7 @@ contract SendMessageTest is GuardTestBase {
 }
 
 /// @dev Calls the Safe's `setGuard` through the module path. The Safe has no module guard here.
-///      Its `sendMessage` lets a dispatch swap the guard mid-execution.
+///      Its `sendMessage` swaps the guard mid-execution.
 contract GuardSwapModule {
     Safe internal immutable SAFE;
     address internal immutable REPLACEMENT;

@@ -7,7 +7,7 @@ import {SafeHashes} from "../src/SafeHashes.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 
 /// @dev The library must agree with a real Safe 1.5.0 proxy: the guard's post-hook rejects a
-///      dispatch whose staged hash differs from the one the Safe computes, and an approval cached
+///      `sendMessage` whose staged hash differs from the one the Safe computes, and an approval cached
 ///      under another message hash is never found.
 contract SafeHashesTest is GuardTestBase {
     function testFuzz_hash_matchesSafe(ICrossecuteGuard.SafeTx memory safeTx, uint64 chainId) public {

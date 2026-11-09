@@ -7,7 +7,7 @@ import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's dispatch was already
+/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
@@ -52,7 +52,7 @@ contract TestTransmitter {
     bytes32 public lastSafeTxHash;
     bytes public lastSignatures;
     uint256 public lastValue;
-    /// @dev `abi.encode` of the last consumed dispatch, as the guard returned it.
+    /// @dev `abi.encode` of the last consumed record, as the guard returned it.
     bytes public lastSendMessage;
     uint256[] public lastApprovalNonces;
 
@@ -124,7 +124,7 @@ contract TestTransmitter {
     }
 }
 
-/// @dev Has the dispatch selector and no relation to the guard.
+/// @dev Has the `sendMessage` selector and no relation to the guard.
 contract Collider {
     uint256 public calls;
 

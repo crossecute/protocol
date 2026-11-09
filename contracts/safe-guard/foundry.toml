@@ -5,7 +5,7 @@ out = "out"
 cache_path = "cache"
 libs = ["lib"]
 # forge-std is shared with the protocol project rather than pinned a second time, and the
-# dispatch selector is read from the protocol's own ERC-7786 interface.
+# `sendMessage` selector is read from the protocol's own ERC-7786 interface.
 allow_paths = ["../evm/lib/forge-std", "../evm/src/messaging"]
 # Pinned to the policy-engine's own settings: SafePolicyGuard declares `pragma =0.8.30` and
 # does not compile without via-IR. Cancun is required for EIP-1153 transient storage.
