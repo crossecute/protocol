@@ -30,7 +30,7 @@ interface ICrossecuteGuard {
 
     event ApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
 
-    error NoLiveDispatch(address safe);
+    error NoLiveSendMessage(address safe);
     error NotSignedTarget(address caller);
     error AlreadyConsumed(address safe);
     error NestedExecution(address safe);

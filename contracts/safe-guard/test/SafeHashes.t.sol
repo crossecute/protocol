@@ -26,11 +26,11 @@ contract SafeHashesTest is GuardTestBase {
 
     /// @dev Every field is distinct and nonzero, so a swapped or dropped field fails. The policy
     ///      rejects nonzero `safeTxGas` and `gasPrice`, but the hash must match Safe on any input.
-    function test_hash_matchesSafeWithDispatchCalldata() public view {
+    function test_hash_matchesSafeWithSendMessageCalldata() public view {
         ICrossecuteGuard.SafeTx memory safeTx = ICrossecuteGuard.SafeTx({
             to: address(transmitter),
             value: 1 ether,
-            data: _dispatchData(),
+            data: _sendMessageData(),
             operation: uint8(Enum.Operation.DelegateCall),
             safeTxGas: 5,
             baseGas: 7777,
@@ -47,7 +47,7 @@ contract SafeHashesTest is GuardTestBase {
     function test_hash_leavesMemoryIntact() public view {
         ICrossecuteGuard.SafeTx memory safeTx;
         safeTx.to = address(transmitter);
-        safeTx.data = _dispatchData();
+        safeTx.data = _sendMessageData();
         bytes memory before = abi.encode(safeTx);
         SafeHashes.transactionHash(safeTx, address(safe), block.chainid);
         assertEq(abi.encode(safeTx), before);

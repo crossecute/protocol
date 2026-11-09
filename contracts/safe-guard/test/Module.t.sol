@@ -127,12 +127,12 @@ contract ModuleTest is GuardTestBase {
         assertEq(_slot(guarded, 0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947), address(guard));
     }
 
-    function test_moduleDispatch_rejectedOnPermittedTarget() public {
+    function test_moduleSendMessage_rejectedOnPermittedTarget() public {
         vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
-        module.exec(guarded, address(guardedTransmitter), _dispatchData(), Enum.Operation.Call);
+        module.exec(guarded, address(guardedTransmitter), _sendMessageData(), Enum.Operation.Call);
 
         vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
-        module.exec(guarded, address(collider), _dispatchData(), Enum.Operation.Call);
+        module.exec(guarded, address(collider), _sendMessageData(), Enum.Operation.Call);
     }
 
     function test_modulePermittedCall_succeeds() public {
@@ -165,14 +165,14 @@ contract ModuleTest is GuardTestBase {
         module.exec(guarded, address(guard), data, Enum.Operation.Call);
     }
 
-    function test_ownerDispatch_stillWorks() public {
-        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _dispatchData(), Enum.Operation.Call));
+    function test_ownerSendMessage_stillWorks() public {
+        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _sendMessageData(), Enum.Operation.Call));
         assertEq(guardedTransmitter.sends(), 1);
     }
 
     /// @dev With the module guard slot empty the module is trusted with its Safe permissions. Its
     ///      dispatch never enters the owner hook, so the transmitter finds nothing to consume.
-    function test_withoutModuleGuard_moduleDispatchFindsNoRecord() public {
+    function test_withoutModuleGuard_moduleSendMessageFindsNoRecord() public {
         _exec(
             safe,
             _signers(),
@@ -181,9 +181,9 @@ contract ModuleTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        // `execTransactionFromModule` reports the inner NoLiveDispatch revert as `false`.
+        // `execTransactionFromModule` reports the inner NoLiveSendMessage revert as `false`.
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(safe))));
-        assertFalse(module.exec(safe, address(transmitter), _dispatchData(), Enum.Operation.Call));
+        assertFalse(module.exec(safe, address(transmitter), _sendMessageData(), Enum.Operation.Call));
         assertEq(transmitter.sends(), 0);
     }
 
@@ -207,9 +207,10 @@ contract ModuleTest is GuardTestBase {
             (address(0xBEEF), 0, "", Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), sigs)
         );
         transmitter.setMode(TestTransmitter.Mode.ConsumeThenCall, address(guarded), nested);
-        bytes memory outer = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory outer =
+            _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(PolicyEngine.AccessDenied.selector, address(0)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, outer);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, outer);
     }
 
     function _slot(Safe safe_, uint256 slot) internal view returns (address) {

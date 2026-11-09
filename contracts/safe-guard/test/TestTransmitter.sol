@@ -53,7 +53,7 @@ contract TestTransmitter {
     bytes public lastSignatures;
     uint256 public lastValue;
     /// @dev `abi.encode` of the last consumed dispatch, as the guard returned it.
-    bytes public lastDispatch;
+    bytes public lastSendMessage;
     uint256[] public lastApprovalNonces;
 
     constructor(address owner, Sink sink) {
@@ -79,7 +79,7 @@ contract TestTransmitter {
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
         ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
-        lastDispatch = abi.encode(signedSafeTx);
+        lastSendMessage = abi.encode(signedSafeTx);
         signedSafeTx.safeTx.data = msg.data;
         lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
         lastSignatures = signedSafeTx.signatures;

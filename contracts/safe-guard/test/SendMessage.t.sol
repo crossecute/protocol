@@ -21,13 +21,13 @@ import {Module} from "./Module.t.sol";
 import {Collider, TestTransmitter, Thief} from "./TestTransmitter.sol";
 
 /// @dev Owner execution through a real Safe: staging, consumption, cleanup and nesting.
-contract DispatchTest is GuardTestBase {
+contract SendMessageTest is GuardTestBase {
     function test_transmitterUsesProtocolSelector() public pure {
         assertEq(TestTransmitter.sendMessage.selector, IERC7786GatewaySource.sendMessage.selector);
     }
 
-    function test_dispatch_consumedBeforeEffectsAndCleared() public {
-        bytes memory data = _dispatchData();
+    function test_sendMessage_consumedBeforeEffectsAndCleared() public {
+        bytes memory data = _sendMessageData();
         bytes32 txHash = _txHash(safe, address(transmitter), 1 ether, data, Enum.Operation.Call);
         bytes memory signatures = _sign(_signers(), txHash);
 
@@ -45,15 +45,15 @@ contract DispatchTest is GuardTestBase {
     }
 
     /// @dev Every payment field is distinct and nonzero, so a swapped or dropped field fails.
-    function test_dispatch_returnsEverySignedField() public {
-        bytes memory data = _dispatchData();
+    function test_sendMessage_returnsEverySignedField() public {
+        bytes memory data = _sendMessageData();
         uint256 nonce = safe.nonce();
         Payment memory payment = Payment(7777, address(0xCAFE), payable(address(0xF00D)));
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(safe, _signers(), address(transmitter), 2, data, Enum.Operation.Call, payment);
 
         ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
-            abi.decode(transmitter.lastDispatch(), (ICrossecuteGuard.SignedSafeTx));
+            abi.decode(transmitter.lastSendMessage(), (ICrossecuteGuard.SignedSafeTx));
         ICrossecuteGuard.SafeTx memory safeTx = signedSafeTx.safeTx;
         assertEq(safeTx.to, address(transmitter));
         assertEq(safeTx.value, 2);
@@ -85,10 +85,10 @@ contract DispatchTest is GuardTestBase {
         );
     }
 
-    function test_dispatch_preservesNestedOwnerAndPolicyContext() public {
+    function test_sendMessage_preservesNestedOwnerAndPolicyContext() public {
         (Safe parent, Safe child) = _nestedParent();
         TestTransmitter parentTransmitter = new TestTransmitter(address(parent), sink);
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         bytes32 txHash = _txHash(parent, address(parentTransmitter), 0, data, Enum.Operation.Call);
         bytes memory signatures = _withPolicyContext(_sign(_nestedSigners(child), txHash), hex"c0ffee");
 
@@ -100,13 +100,13 @@ contract DispatchTest is GuardTestBase {
     }
 
     /// forge-config: default.fuzz.runs = 64
-    function testFuzz_dispatch_roundtripsAnyLength(uint256 length, uint256 seed) public {
+    function testFuzz_sendMessage_roundtripsAnyLength(uint256 length, uint256 seed) public {
         length = bound(length, 0, 4096);
         bytes memory context = new bytes(length);
         for (uint256 i = 0; i < length; ++i) {
             context[i] = bytes1(uint8(uint256(keccak256(abi.encode(seed, i)))));
         }
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         bytes memory signatures = _withPolicyContext(
             _sign(_signers(), _txHash(safe, address(transmitter), 0, data, Enum.Operation.Call)), context
         );
@@ -118,8 +118,8 @@ contract DispatchTest is GuardTestBase {
         assertEq(transmitter.lastSignatures(), signatures);
     }
 
-    function test_dispatch_noByteCap() public {
-        bytes memory data = _dispatchData();
+    function test_sendMessage_noByteCap() public {
+        bytes memory data = _sendMessageData();
         bytes memory signatures = _withPolicyContext(
             _sign(_signers(), _txHash(safe, address(transmitter), 0, data, Enum.Operation.Call)), new bytes(20_001)
         );
@@ -129,7 +129,7 @@ contract DispatchTest is GuardTestBase {
 
     function test_longThenShortBlob_leavesNoTail() public {
         Collider collider = new Collider();
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         uint256 nonce = safe.nonce();
         bytes memory long = _withPolicyContext(
             _sign(_signers(), _txHashAt(safe, address(collider), 0, data, Enum.Operation.Call, nonce)), new bytes(1000)
@@ -150,9 +150,9 @@ contract DispatchTest is GuardTestBase {
         transmitter.setMode(
             TestTransmitter.Mode.CallThenConsume, address(thief), abi.encodeCall(Thief.steal, (guard, address(safe)))
         );
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NotSignedTarget.selector, address(thief)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_consume_wrongSafe() public {
@@ -161,31 +161,31 @@ contract DispatchTest is GuardTestBase {
         transmitter.setMode(
             TestTransmitter.Mode.CallThenConsume, address(thief), abi.encodeCall(Thief.steal, (guard, address(other)))
         );
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveDispatch.selector, address(other)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(other)));
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_consume_outsideExecution() public {
         vm.prank(address(transmitter));
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveDispatch.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
         guard.consume(address(safe));
     }
 
     function test_consume_twice() public {
         transmitter.setMode(TestTransmitter.Mode.ConsumeTwice, address(0), "");
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.AlreadyConsumed.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_selectorCollision_unconsumedSucceedsAndCleans() public {
         Collider collider = new Collider();
         uint256 nonce = safe.nonce();
         _run(
-            _execCall(safe, _signers(), address(collider), 0, _dispatchData(), Enum.Operation.Call, nonce),
+            _execCall(safe, _signers(), address(collider), 0, _sendMessageData(), Enum.Operation.Call, nonce),
             _cleared(safe, 8),
-            _execCall(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call, nonce + 1)
+            _execCall(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, nonce + 1)
         );
         assertEq(collider.calls(), 1);
         assertEq(transmitter.sends(), 1);
@@ -195,26 +195,26 @@ contract DispatchTest is GuardTestBase {
     function test_protectedTransmitterSkippingConsumption_isCleaned() public {
         transmitter.setMode(TestTransmitter.Mode.Skip, address(0), "");
         _run(
-            _execCall(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call, safe.nonce()),
+            _execCall(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, safe.nonce()),
             _cleared(safe, 8)
         );
         assertEq(transmitter.sends(), 1);
     }
 
-    function test_delegatecallWithDispatchSelector_stagesAndCleans() public {
+    function test_delegatecallWithSendMessageSelector_stagesAndCleans() public {
         Collider collider = new Collider();
         _applyConfig(
             _config(address(collider), Collider.sendMessage.selector, Operation.DELEGATECALL, address(allowPolicy))
         );
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         _run(
             _execCall(safe, _signers(), address(collider), 0, data, Enum.Operation.DelegateCall, safe.nonce()),
             _cleared(safe, 8)
         );
     }
 
-    function test_sequentialDispatches_independentRecords() public {
-        bytes memory data = _dispatchData();
+    function test_sequentialSendMessages_independentRecords() public {
+        bytes memory data = _sendMessageData();
         uint256 nonce = safe.nonce();
         _run(
             _execCall(safe, _signers(), address(transmitter), 0, data, Enum.Operation.Call, nonce),
@@ -229,16 +229,16 @@ contract DispatchTest is GuardTestBase {
 
     function test_nestedSameSafe_rejectedBeforeConsumption() public {
         transmitter.setMode(TestTransmitter.Mode.CallThenConsume, address(safe), _presignedTransfer(safe.nonce() + 1));
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_nestedSameSafe_rejectedAfterConsumption() public {
         transmitter.setMode(TestTransmitter.Mode.ConsumeThenCall, address(safe), _presignedTransfer(safe.nonce() + 1));
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     /// @dev Before staging, while the policy check runs, the inherited gate rejects any nested check.
@@ -257,7 +257,8 @@ contract DispatchTest is GuardTestBase {
         policy.arm(
             address(checked), _execData(address(0xBEEF), 1, "", Enum.Operation.Call, _sign(_signers(), nestedHash))
         );
-        bytes memory sigs = _signFor(checked, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs =
+            _signFor(checked, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(
             abi.encodeWithSelector(
                 PolicyEngine.PolicyReverted.selector,
@@ -265,7 +266,7 @@ contract DispatchTest is GuardTestBase {
                 abi.encodeWithSelector(PolicyEngine.Reentrancy.selector)
             )
         );
-        _execWith(checked, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(checked, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_shortCalldata_rejectedBeforeStaging() public {
@@ -276,7 +277,7 @@ contract DispatchTest is GuardTestBase {
 
     /// @dev After consumption, a module making the Safe call the transmitter again finds the record
     ///      already consumed. The Safe has no module guard here.
-    function test_moduleDuringLiveDispatch_cannotConsumeAgain() public {
+    function test_moduleDuringLiveSendMessage_cannotConsumeAgain() public {
         Module module = new Module();
         _exec(
             safe,
@@ -289,17 +290,17 @@ contract DispatchTest is GuardTestBase {
         transmitter.setMode(
             TestTransmitter.Mode.ConsumeThenCall,
             address(module),
-            abi.encodeCall(Module.execStrict, (safe, address(transmitter), _dispatchData(), Enum.Operation.Call))
+            abi.encodeCall(Module.execStrict, (safe, address(transmitter), _sendMessageData(), Enum.Operation.Call))
         );
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.AlreadyConsumed.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_separatelySignedExecutionAfterCleanup_proceeds() public {
         uint256 nonce = safe.nonce();
         _run(
-            _execCall(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call, nonce),
+            _execCall(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, nonce),
             Batch.Call(address(safe), _presignedTransfer(nonce + 1), false)
         );
         assertEq(transmitter.sends(), 1);
@@ -313,7 +314,7 @@ contract DispatchTest is GuardTestBase {
         TestTransmitter childTransmitter = new TestTransmitter(address(child), sink);
 
         // While the child has a live record, the parent verifies a signature from the child.
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         bytes memory parentSigs =
             _sign(_nestedSigners(child), _txHash(parent, address(parentTransmitter), 0, data, Enum.Operation.Call));
         childTransmitter.setMode(
@@ -333,7 +334,7 @@ contract DispatchTest is GuardTestBase {
         TestTransmitter otherTransmitter = new TestTransmitter(address(other), sink);
         Thief thief = new Thief();
 
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         bytes memory otherSigs =
             _sign(_signers(), _txHash(other, address(otherTransmitter), 0, data, Enum.Operation.Call));
         bytes memory nested = _execData(address(otherTransmitter), 0, data, Enum.Operation.Call, otherSigs);
@@ -363,13 +364,13 @@ contract DispatchTest is GuardTestBase {
         TestTransmitter second = new TestTransmitter(address(safe), sink);
         uint256 nonce = safe.nonce();
         Batch.Call memory failing =
-            _execCall(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call, nonce);
+            _execCall(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, nonce);
         failing.allowFailure = true;
 
         bytes[] memory results = _run(
             failing,
             _cleared(safe, 8),
-            _execCall(safe, _signers(), address(second), 0, _dispatchData(), Enum.Operation.Call, nonce)
+            _execCall(safe, _signers(), address(second), 0, _sendMessageData(), Enum.Operation.Call, nonce)
         );
         assertEq(bytes4(results[0]), TestTransmitter.Reverted.selector);
         assertEq(second.sends(), 1);
@@ -377,7 +378,7 @@ contract DispatchTest is GuardTestBase {
     }
 
     function test_nonzeroSafeTxGasOrGasPrice_rejected() public {
-        bytes memory data = _dispatchData();
+        bytes memory data = _sendMessageData();
         bytes32 txHash = safe.getTransactionHash(
             address(transmitter), 0, data, Enum.Operation.Call, 1, 0, 0, address(0), payable(address(0)), safe.nonce()
         );
@@ -397,12 +398,12 @@ contract DispatchTest is GuardTestBase {
         );
     }
 
-    function test_multiSendDispatch_hasNoStagingPath() public {
-        bytes memory data = _dispatchData();
+    function test_sendMessageViaMultiSend_hasNoStagingPath() public {
+        bytes memory data = _sendMessageData();
         bytes memory batchData = abi.encodePacked(uint8(0), address(transmitter), uint256(0), data.length, data);
         bytes memory call = abi.encodeCall(multiSend.multiSend, (batchData));
         bytes memory sigs = _signFor(safe, _signers(), address(multiSend), 0, call, Enum.Operation.DelegateCall);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveDispatch.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
         _execWith(safe, address(multiSend), 0, call, Enum.Operation.DelegateCall, sigs);
     }
 
@@ -410,9 +411,9 @@ contract DispatchTest is GuardTestBase {
         Safe bare = _newEoaSafe();
         TestTransmitter bareTransmitter = new TestTransmitter(address(bare), sink);
         bytes memory sigs =
-            _signFor(bare, _signers(), address(bareTransmitter), 0, _dispatchData(), Enum.Operation.Call);
+            _signFor(bare, _signers(), address(bareTransmitter), 0, _sendMessageData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(GuardDiscovery.NoGuard.selector, address(bare)));
-        _execWith(bare, address(bareTransmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(bare, address(bareTransmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_discovery_guardWithoutConsume() public {
@@ -421,11 +422,11 @@ contract DispatchTest is GuardTestBase {
         _install(plain, _signers(), plainGuard, _defaultConfig(), false);
         TestTransmitter plainTransmitter = new TestTransmitter(address(plain), sink);
         bytes memory sigs =
-            _signFor(plain, _signers(), address(plainTransmitter), 0, _dispatchData(), Enum.Operation.Call);
+            _signFor(plain, _signers(), address(plainTransmitter), 0, _sendMessageData(), Enum.Operation.Call);
         // SafePolicyGuard has neither `consume` nor a fallback, so the call reverts with no data.
         vm.expectCall(address(plainGuard), abi.encodeCall(ICrossecuteGuard.consume, (address(plain))));
         vm.expectRevert(bytes(""));
-        _execWith(plain, address(plainTransmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        _execWith(plain, address(plainTransmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_discovery_ownerNotASafe() public {
@@ -450,14 +451,14 @@ contract DispatchTest is GuardTestBase {
         transmitter.setMode(
             TestTransmitter.Mode.CallThenConsume, address(module), abi.encodeCall(GuardSwapModule.swap, ())
         );
-        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveDispatch.selector, address(safe)));
-        _execWith(safe, address(transmitter), 0, _dispatchData(), Enum.Operation.Call, sigs);
+        bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     /// @dev Safe 1.5.0 sends the post-hook to the guard it read before execution, so a guard swapped
     ///      out mid-dispatch still clears its own record.
-    function test_guardSwappedDuringDispatch_oldGuardClears() public {
+    function test_guardSwappedDuringSendMessage_oldGuardClears() public {
         CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days);
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
         _exec(
@@ -469,7 +470,7 @@ contract DispatchTest is GuardTestBase {
             Enum.Operation.Call
         );
         _run(
-            _execCall(safe, _signers(), address(module), 0, _dispatchData(), Enum.Operation.Call, safe.nonce()),
+            _execCall(safe, _signers(), address(module), 0, _sendMessageData(), Enum.Operation.Call, safe.nonce()),
             _cleared(safe, 8)
         );
         assertEq(abi.decode(safe.getStorageAt(GuardDiscovery.GUARD_STORAGE_SLOT, 1), (address)), address(replacement));
@@ -493,30 +494,30 @@ contract DispatchTest is GuardTestBase {
             address(module),
             abi.encodeCall(Module.exec, (safe, address(guard), forged, Enum.Operation.Call))
         );
-        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call));
+        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call));
         assertTrue(sink.consumedFirst());
     }
 
     /// @dev A Safe can call address zero, so a record's liveness must not depend on its target: the
     ///      record must block nesting and be cleared like any other.
-    function test_dispatchToAddressZero_isLiveUntilCleared() public {
+    function test_sendMessageToAddressZero_isLiveUntilCleared() public {
         HookCaller caller = new HookCaller(guard, allowPolicy);
-        caller.stageAndClear(address(0), _dispatchData());
+        caller.stageAndClear(address(0), _sendMessageData());
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(caller)));
-        caller.stageTwice(address(0), _dispatchData());
+        caller.stageTwice(address(0), _sendMessageData());
     }
 
     function test_directHookCaller_onlyTouchesItsOwnRecord() public {
         HookCaller caller = new HookCaller(guard, allowPolicy);
-        caller.stageAndClear(address(transmitter), _dispatchData());
+        caller.stageAndClear(address(transmitter), _sendMessageData());
 
         // During this Safe's dispatch, the caller stages and clears under its own key only.
         transmitter.setMode(
             TestTransmitter.Mode.ConsumeThenCall,
             address(caller),
-            abi.encodeCall(HookCaller.stageAndClear, (address(transmitter), _dispatchData()))
+            abi.encodeCall(HookCaller.stageAndClear, (address(transmitter), _sendMessageData()))
         );
-        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call));
+        assertTrue(_exec(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call));
         assertTrue(sink.consumedFirst());
     }
 

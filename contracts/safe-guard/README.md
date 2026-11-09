@@ -63,7 +63,7 @@ are pinned by `contracts/evm/foundry.lock`; the warning does not affect the buil
 
 ## Gas
 
-`test/DispatchGas.t.sol` measures what staging and clearing one dispatch adds to an owner
+`test/SendMessageGas.t.sol` measures what staging and clearing one dispatch adds to an owner
 transaction, against the same Safe and policy under an unmodified `SafePolicyGuard`. The
 signatures are two EOA signatures (130 bytes) plus a policy extension of the given size:
 
@@ -88,7 +88,7 @@ limit cannot be executed. Child approval caching is measured in
 [`docs/safe-approval-evidence-sizing.md`](../../docs/safe-approval-evidence-sizing.md).
 
 ```bash
-forge test --match-contract 'DispatchGasTest|ApprovalGasTest' -vv
+forge test --match-contract 'SendMessageGasTest|ApprovalGasTest' -vv
 ```
 
 ## Licenses

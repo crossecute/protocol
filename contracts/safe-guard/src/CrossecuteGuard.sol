@@ -42,7 +42,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     /// @inheritdoc ICrossecuteGuard
     function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
         bytes32 safeId = _safeId(safe);
-        require(_tload(safeId, _TX_HASH) != 0, NoLiveDispatch(safe));
+        require(_tload(safeId, _TX_HASH) != 0, NoLiveSendMessage(safe));
         uint256 target = _tload(safeId, _TARGET);
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));

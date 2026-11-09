@@ -60,7 +60,7 @@ contract ApprovalTest is GuardTestBase {
     }
 
     function test_approval_cachedWithoutPolicyExtension() public {
-        bytes32 parentTxHash = _parentDispatchHash();
+        bytes32 parentTxHash = _parentSendMessageHash();
         bytes memory data = _signMessageCall(parentTxHash);
         uint256 nonce = child.nonce();
         bytes memory ownerSigs =
@@ -215,8 +215,8 @@ contract ApprovalTest is GuardTestBase {
         assertEq(abi.encode(guard.getApproval(address(child), messageHash)), previous);
     }
 
-    function test_approval_attachedToParentDispatch() public {
-        bytes32 parentTxHash = _parentDispatchHash();
+    function test_approval_attachedToParentSendMessage() public {
+        bytes32 parentTxHash = _parentSendMessageHash();
         uint256 approvalNonce = child.nonce();
         _approve(child, _signers(), parentTxHash);
         bytes32 messageHash = _childMessageHash(child, parentTxHash);
@@ -226,7 +226,9 @@ contract ApprovalTest is GuardTestBase {
         signers[0] = _eoa(KEY_A);
         signers[1] = _approvedChild(child);
         bytes memory parentSigs = _sign(signers, parentTxHash);
-        assertTrue(_execWith(parent, address(parentTransmitter), 0, _dispatchData(), Enum.Operation.Call, parentSigs));
+        assertTrue(
+            _execWith(parent, address(parentTransmitter), 0, _sendMessageData(), Enum.Operation.Call, parentSigs)
+        );
 
         assertEq(parentTransmitter.lastSafeTxHash(), parentTxHash);
         assertEq(parentTransmitter.lastSignatures(), parentSigs);
@@ -359,8 +361,8 @@ contract ApprovalTest is GuardTestBase {
             _config(address(fake), FakeSignLib.signMessage.selector, Operation.DELEGATECALL, address(allowPolicy));
     }
 
-    function _parentDispatchHash() internal view returns (bytes32) {
-        return _txHash(parent, address(parentTransmitter), 0, _dispatchData(), Enum.Operation.Call);
+    function _parentSendMessageHash() internal view returns (bytes32) {
+        return _txHash(parent, address(parentTransmitter), 0, _sendMessageData(), Enum.Operation.Call);
     }
 
     /// @dev Safe 1.5.0 asks a contract owner to validate `abi.encode(parentTxHash)`.
