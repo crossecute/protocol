@@ -7,7 +7,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
-import {AnyGatewayTransmitter} from "test/Harness.sol";
+import {AnyGatewayTransmitter, bootstrapPayload} from "test/Harness.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 
 uint256 constant BOOTSTRAP_FEE = 3;
@@ -58,6 +58,15 @@ contract StubTransceiver {
         returns (uint256)
     {
         return BOOTSTRAP_FEE;
+    }
+
+    /// @dev Carries every bootstrap itself.
+    function conduitBootstrap(bytes calldata, address, bytes32, bytes calldata)
+        external
+        pure
+        returns (bytes memory, bytes memory)
+    {
+        return ("", "");
     }
 
     /// @dev A parity chain: the receiver sits at the transmitter's own address.
@@ -119,12 +128,12 @@ contract BootstrapHandler is Test {
         calls[0] = Call(address(0xCA11), 0, "");
         if (booted[i]) {
             vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, key));
-            transmitter.bootstrap(chainId(i), calls, new bytes[](0));
+            transmitter.bootstrap(bootstrapPayload(chainId(i), calls), new bytes[](0));
             return;
         }
         booted[i] = true;
         ++boots;
-        transmitter.bootstrap(chainId(i), calls, new bytes[](0));
+        transmitter.bootstrap(bootstrapPayload(chainId(i), calls), new bytes[](0));
     }
 
     /// @dev Only the transceiver reports, and only for a chain that reports.

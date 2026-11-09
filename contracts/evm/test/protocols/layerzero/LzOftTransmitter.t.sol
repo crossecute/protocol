@@ -10,8 +10,14 @@ import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {Erc7930} from "src/addressing/Erc7930.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
+import {bootstrapPayload} from "test/Harness.sol";
+
+interface IHomeOft {
+    function homeOft() external view returns (address);
+}
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
 contract MockOftConduitFactory is ILzOftConduitFactory {
@@ -31,14 +37,36 @@ contract MockOftConduitFactory is ILzOftConduitFactory {
         _routes[chainKey] = Route(eid, dstOft, proof);
     }
 
-    function bootstrapRoute(address, bytes32 chainKey)
+    function destinationOf(address, bytes32 chainKey) external view returns (uint32, address) {
+        Route memory r = _route(chainKey);
+        return (r.eid, r.dstOft);
+    }
+
+    function conduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
         external
         view
-        returns (uint32, address, uint32, bytes32, bytes32[] memory)
+        returns (bytes memory recipient, bytes memory message)
     {
-        Route memory r = _routes[chainKey];
+        Route memory r = _route(keccak256(route));
+        message = LzOftMessage.encodeBootstrap(
+            LzOftMessage.Bootstrap(
+                owner,
+                salt,
+                ChainKey.local(),
+                HOME_EID,
+                IHomeOft(msg.sender).homeOft(),
+                destRoot,
+                r.proof,
+                Payload.decodeCalls(body)
+            )
+        );
+        Erc7930.Interop memory io = Erc7930.parseStrict(route);
+        recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
+    }
+
+    function _route(bytes32 chainKey) internal view returns (Route memory r) {
+        r = _routes[chainKey];
         if (r.eid == 0) revert NotInRoot(chainKey);
-        return (r.eid, r.dstOft, HOME_EID, destRoot, r.proof);
     }
 
     function reportsReceiver(bytes32) external pure returns (bool) {
@@ -89,14 +117,14 @@ contract LzOftTransmitterTest is Test {
 
     function _bootstrap() internal {
         vm.prank(owner);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
     }
 
     /* ================================= bootstrap =============================== */
 
     /// @dev The conduit is the `send` caller, so the destination reads it as `composeFrom`.
     function test_theBootstrapGoesThroughTheHomeOftFromTheConduit() public {
-        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         _bootstrap();
 
         assertEq(oft.sentLength(), 1);
@@ -131,9 +159,9 @@ contract LzOftTransmitterTest is Test {
         vm.prank(owner);
         conduit.transferOwnership(newOwner);
 
-        uint256 quote = conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         vm.prank(newOwner);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
 
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = keccak256("sibling");
@@ -155,16 +183,16 @@ contract LzOftTransmitterTest is Test {
             bytes32(uint256(uint160(address(0xBAD))))
         );
         vm.expectRevert(err);
-        conduit.quoteBootstrap(DEST, _calls(), new bytes[](0));
+        conduit.quoteBootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
         vm.prank(owner);
         vm.expectRevert(err);
-        conduit.bootstrap(DEST, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DEST, _calls()), new bytes[](0));
     }
 
     function test_aChainTheFactoryDoesNotHoldIsRefused() public {
         bytes32 other = ChainKey.forEvm(10);
         vm.expectRevert(abi.encodeWithSelector(MockOftConduitFactory.NotInRoot.selector, other));
-        conduit.quoteBootstrap(10, _calls(), new bytes[](0));
+        conduit.quoteBootstrap(bootstrapPayload(10, _calls()), new bytes[](0));
     }
 
     /* ================================== Path A ================================= */

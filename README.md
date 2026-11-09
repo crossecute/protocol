@@ -105,7 +105,7 @@ goes to the one contract that already exists there.
 
 ```mermaid
 flowchart LR
-    Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
+    Owner([owner]) -->|"bootstrap(payload)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Home[Transceiver at home]
     Home -->|"bridge"| Dest[Transceiver at the destination]
     Dest -->|"CREATE2(owner, salt, home)"| Proxy[Proxy]

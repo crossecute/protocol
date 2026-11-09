@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
-import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -22,8 +21,8 @@ interface ILzOftTransmitterInit {
 ///         authenticates by `composeFrom`.
 ///
 /// @dev Its transceiver is the factory that created it, which answers `TransmitterBase`'s
-///      receiver views and holds each destination's leaf and proof. Nothing else is read from
-///      it, and it relays nothing.
+///      receiver views, builds each bootstrap's compose (`conduitBootstrap`) and names each
+///      destination's eid and OFT. It relays nothing.
 ///
 /// @dev Not an OApp: the OFT is the sender LayerZero sees, so this carries no OApp storage.
 contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
@@ -71,14 +70,19 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         return selector == LZ_OPTIONS_ATTRIBUTE;
     }
 
-    /* ================================== Path A ================================= */
+    /* ================================= transport =============================== */
 
+    /// @dev Records a bootstrap's destination before the OFT is called, since the call reaches
+    ///      arbitrary code.
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)
         internal
         override
         returns (bytes32)
     {
-        LzOftMessage.send(homeOft, _messageParam(recipient, payload, attributes), value, _refundTo());
+        (SendParam memory param, bytes32 chainKey, Destination memory d, bool bootstrap) =
+            _messageParam(recipient, payload, attributes);
+        if (bootstrap) _destinations[chainKey] = d;
+        LzOftMessage.send(homeOft, param, value, _refundTo());
         return bytes32(0);
     }
 
@@ -88,61 +92,30 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
         override
         returns (uint256)
     {
-        return LzOftMessage.quote(homeOft, _messageParam(recipient, payload, attributes));
-    }
-
-    /// @dev `recipient` is the receiver `sendMessage` already matched to this conduit's record,
-    ///      so its chain has a bootstrapped destination. The peer is checked again because the
-    ///      OFT's owner can change it after the bootstrap.
-    function _messageParam(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
-        private
-        view
-        returns (SendParam memory)
-    {
-        Destination memory d = _destinations[ChainKey.fromIdentifier(recipient)];
-        LzOftMessage.requirePeer(homeOft, d.eid, d.oft);
-        address receiver = Erc7930.toAddress(Erc7930.parseStrict(recipient));
-        return LzOftMessage.sendParam(d.eid, receiver, payload, attributes, _defaultGas(payload));
-    }
-
-    /* ================================= bootstrap =============================== */
-
-    function _quoteBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
-        internal
-        view
-        override
-        returns (uint256)
-    {
-        (SendParam memory param,) = _bootstrapParam(chainKey, calls, attributes);
+        (SendParam memory param,,,) = _messageParam(recipient, payload, attributes);
         return LzOftMessage.quote(homeOft, param);
     }
 
-    /// @dev Records the destination before the OFT is called, as `_markBootstrapped` records
-    ///      the route: the call reaches arbitrary code.
-    function _sendBootstrap(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes, uint256 fee)
-        internal
-        override
-    {
-        (SendParam memory param, Destination memory d) = _bootstrapParam(chainKey, calls, attributes);
-        _destinations[chainKey] = d;
-        LzOftMessage.send(homeOft, param, fee, _refundTo());
-    }
-
-    /// @dev Sent to the factory on the destination, which derives this conduit from the message
-    ///      and proves the delivering OFT into `destRoot`.
-    function _bootstrapParam(bytes32 chainKey, Call[] calldata calls, bytes[] calldata attributes)
+    /// @dev The send to a chain with no recorded destination is its bootstrap: `sendMessage`
+    ///      reaches only a bootstrapped chain, and the bootstrap records the destination before
+    ///      the OFT is called. A bootstrap takes the destination from the factory, which holds
+    ///      the same eid and OFT the record would. The peer is checked on every send because
+    ///      the OFT's owner can change it.
+    function _messageParam(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         private
         view
-        returns (SendParam memory param, Destination memory d)
+        returns (SendParam memory param, bytes32 chainKey, Destination memory d, bool bootstrap)
     {
-        (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof) =
-            ILzOftConduitFactory(transceiver).bootstrapRoute(address(this), chainKey);
-        LzOftMessage.requirePeer(homeOft, eid, dstOft);
-
-        bytes memory compose = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(deployer, conduitSalt, ChainKey.local(), homeEid, homeOft, destRoot, proof, calls)
-        );
-        param = LzOftMessage.sendParam(eid, transceiver, compose, attributes, DeliveryGas.BOOTSTRAP);
-        d = Destination(eid, dstOft);
+        Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
+        chainKey = ChainKey.fromParsed(io);
+        address to = Erc7930.toAddress(io);
+        d = _destinations[chainKey];
+        bootstrap = d.oft == address(0);
+        if (bootstrap) {
+            (d.eid, d.oft) = ILzOftConduitFactory(transceiver).destinationOf(address(this), chainKey);
+        }
+        LzOftMessage.requirePeer(homeOft, d.eid, d.oft);
+        uint256 gas = bootstrap ? DeliveryGas.BOOTSTRAP : _defaultGas(payload);
+        param = LzOftMessage.sendParam(d.eid, to, payload, attributes, gas);
     }
 }
