@@ -13,6 +13,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {SafeHashes} from "../src/SafeHashes.sol";
 import {Batch} from "./Batch.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
@@ -475,9 +476,8 @@ contract DispatchTest is GuardTestBase {
     }
 
     /// @dev Only reachable through a path that lets the Safe call the guard mid-execution, here a
-    ///      module on a Safe without a module guard. Nothing binds the post-hook to the transaction
-    ///      hash, so the trusted module ends the dispatch early and the sink finds no record.
-    function test_modulePostHookMidDispatch_clearsRecord() public {
+    ///      module on a Safe without a module guard. The sink then sees the record still live.
+    function test_postHookWithOtherHash_leavesRecordLive() public {
         Module module = new Module();
         _exec(
             safe,
@@ -487,17 +487,17 @@ contract DispatchTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        bytes memory forged = abi.encodeCall(ISafeTransactionGuard.checkAfterExecution, (bytes32(0), true));
+        bytes memory forged = abi.encodeCall(ISafeTransactionGuard.checkAfterExecution, (bytes32(uint256(1)), true));
         transmitter.setMode(
             TestTransmitter.Mode.ConsumeThenCall,
             address(module),
             abi.encodeCall(Module.exec, (safe, address(guard), forged, Enum.Operation.Call))
         );
         assertTrue(_exec(safe, _signers(), address(transmitter), 0, _dispatchData(), Enum.Operation.Call));
-        assertFalse(sink.consumedFirst());
+        assertTrue(sink.consumedFirst());
     }
 
-    /// @dev A Safe can call address zero, so liveness cannot be read from the target bits: the
+    /// @dev A Safe can call address zero, so a record's liveness must not depend on its target: the
     ///      record must block nesting and be cleared like any other.
     function test_dispatchToAddressZero_isLiveUntilCleared() public {
         HookCaller caller = new HookCaller(guard, allowPolicy);
@@ -609,9 +609,12 @@ contract HookCaller {
     }
 
     function stageAndClear(address to, bytes calldata data) external {
+        ICrossecuteGuard.SafeTx memory safeTx;
+        (safeTx.to, safeTx.data) = (to, data);
+        bytes32 txHash = SafeHashes.transactionHash(safeTx, address(this), block.chainid);
         _stage(to, data);
-        require(GUARD.recordWords(address(this), 0)[0] == uint160(to) | (1 << 161));
-        GUARD.checkAfterExecution(bytes32(0), true);
+        require(bytes32(GUARD.recordWords(address(this), 0)[0]) == txHash);
+        GUARD.checkAfterExecution(txHash, true);
         GUARD.requireCleared(address(this), 0);
     }
 

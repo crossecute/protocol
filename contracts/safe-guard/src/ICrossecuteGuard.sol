@@ -34,6 +34,7 @@ interface ICrossecuteGuard {
     error NotSignedTarget(address caller);
     error AlreadyConsumed(address safe);
     error NestedExecution(address safe);
+    error DispatchHashMismatch(bytes32 live, bytes32 txHash);
     error ModuleDispatchDenied();
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();

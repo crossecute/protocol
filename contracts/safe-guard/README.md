@@ -11,7 +11,7 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | `src/CrossecuteGuard.sol` | The guard: dispatch staging, consumption and cleanup, module dispatch rejection, child approval cache |
 | `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors; the `SafeTx` struct the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
-| `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe. The guard keys approvals with the message hash; the receiver can use all three |
+| `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
 | `test/SafeFixture.sol` | Real Safe 1.5.0 proxies, owner signing (EOA and nested Safe owners), owner-signed installation |
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
@@ -69,19 +69,19 @@ signatures are two EOA signatures (130 bytes) plus a policy extension of the giv
 
 | Extension bytes | Staging and cleanup |
 | ---: | ---: |
-| 0 | 9,301 gas |
-| 1,024 | 24,647 gas |
-| 10,240 | 161,932 gas |
-| 102,400 | 1,463,873 gas |
+| 0 | 10,401 gas |
+| 1,024 | 25,703 gas |
+| 10,240 | 162,988 gas |
+| 102,400 | 1,464,929 gas |
 
-The calldata is neither staged nor hashed, but the guard copies it into memory to build the
-`SafeTx`. With the same two signatures and a `sendMessage` payload of the given size:
+The calldata is not staged, but the guard copies it into memory to build the `SafeTx` and
+hashes it. With the same two signatures and a `sendMessage` payload of the given size:
 
 | Payload bytes | Staging and cleanup |
 | ---: | ---: |
-| 1,024 | 9,383 gas |
-| 10,240 | 10,264 gas |
-| 102,400 | 18,973 gas |
+| 1,024 | 10,671 gas |
+| 10,240 | 13,295 gas |
+| 102,400 | 39,442 gas |
 
 There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in

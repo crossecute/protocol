@@ -104,8 +104,8 @@ arguments. The record holds, for the calling Safe:
 
 | Field | Source |
 | --- | --- |
+| Safe transaction hash | computed with `SafeHashes` from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
-| Live flag | set when staged, cleared by the post-hook |
 | Consumed flag | set by `consume` |
 | Value, operation | hook arguments |
 | `baseGas`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
@@ -116,7 +116,7 @@ arguments. The record holds, for the calling Safe:
 transaction as a `SafeTx` with `data` empty, and the signed target fills it from its own
 calldata, which the Safe passed it. The signature blob is the complete original `signatures`
 argument: owner signatures, any nested contract-signature data with its offsets, and the policy
-extension if present. There is no byte cap. Staging and cleanup together cost about 9,300 gas
+extension if present. There is no byte cap. Staging and cleanup together cost about 10,000 gas
 for a blob of two EOA signatures and about 14 gas per further byte
 ([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The record lives in
 EIP-1153 transient storage starting at a per-Safe id, `keccak256(abi.encode(safe, NAMESPACE))`.
@@ -130,15 +130,12 @@ owner-signed content ([#108](https://github.com/crossecute/protocol/issues/108))
 
 **Consumption.** `consume(address safe)` returns the signed transaction and signature blob for
 `safe` when the record is live, not yet consumed, and `msg.sender` is the signed target. It
-marks the record consumed and leaves it live. A second call reverts. The record holds no
-transaction hash: the receiver computes it, and a transmitter that needs it can ask the Safe's
-`getTransactionHash`.
+marks the record consumed and leaves it live. A second call reverts. The stored transaction
+hash is not returned: the receiver recomputes it, and a transmitter that needs it can ask the
+Safe's `getTransactionHash`.
 
-**Cleanup.** The post-hook zeroes every slot of a live record, consumed or not. It does not
-compare the hook's `txHash` with the record: nesting is rejected while the record is live, so
-the next owner post-hook from that Safe belongs to the execution that staged it. The only other
-way to reach it is the Safe calling the guard directly, which needs a module on a Safe without
-a module guard (see [Module execution](#module-execution)). A successful
+**Cleanup.** The post-hook clears the record only when its stored transaction hash matches
+the hook's `txHash`, then zeroes every slot it used, consumed or not. A successful
 selector-matched call that nobody consumed stands, including one to an unrelated contract
 that shares the selector. Cleanup does not rely on the end-of-transaction reset, so a second
 Safe execution in the same parent transaction starts clean.
@@ -187,8 +184,7 @@ threshold, handler, or policy.
 
 A multisig may leave the module guard slot empty and keep modules enabled. It then trusts
 those modules with their Safe permissions, including any ability to bypass Crossecute's
-authority checks, and to end a live dispatch early by having the Safe call the guard's
-post-hook. The authority-change path is [#109](https://github.com/crossecute/protocol/issues/109).
+authority checks. The authority-change path is [#109](https://github.com/crossecute/protocol/issues/109).
 
 ## Persistent child approval evidence
 
