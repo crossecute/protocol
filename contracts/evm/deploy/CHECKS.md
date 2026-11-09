@@ -208,16 +208,15 @@ a send with a compose message (250,000 to both):
 
 | Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
 | --- | --- | --- |
-| Bootstrap, lzCompose into the factory, 2 destinations | 649,133 | 649,218 |
-| Bootstrap, the OFT's `lzReceive` | 105,826 | 85,369 |
-| Payload, lzCompose into the receiver | 42,138 | 42,081 |
+| Bootstrap, lzCompose into the factory, 2 destinations | 469,736 | 469,821 |
+| Bootstrap, the OFT's `lzReceive` | 105,814 | 85,357 |
+| Payload, lzCompose into the receiver | 39,773 | 39,716 |
 | Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
 
-Measured 2026-10-25, before the mock rows above. Between the two dates #113 shrank `Proxy`'s
-runtime code, which took about 182,000 off a bootstrap and 2,400 off a payload against the
-mocks; the lzCompose rows here have not been measured since, so they are not comparable with
-the mock rows. Each stays well under its default. The `lzReceive` figure leaves out the
-endpoint's clearing of the verified payload around it.
+Measured 2026-11-09 through public RPCs, on the code the mock rows were measured on. A payload
+costs about 7,900 more than against the mocks and a bootstrap about 600 to 700 more; each stays
+well under its default. The `lzReceive` figure leaves out the endpoint's clearing of the
+verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
