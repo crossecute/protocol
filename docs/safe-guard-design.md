@@ -107,12 +107,14 @@ arguments. The record holds, for the calling Safe:
 | Safe transaction hash | recomputed from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
-| Operation, value, calldata hash | hook arguments |
+| Operation, value | hook arguments |
 | `baseGas`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
 | Signature blob | the hook's `signatures`, byte for byte |
 
 `safeTxGas` and `gasPrice` are not stored: the inherited check requires both to be zero, and
-`consume` returns them as zero. The signature blob is the complete original `signatures`
+`consume` returns them as zero. The calldata is not stored either: `consume` returns the
+transaction as a `SafeTx` with `data` empty, and the signed target fills it from its own
+calldata, which the Safe passed it. The signature blob is the complete original `signatures`
 argument: owner signatures, any nested contract-signature data with its offsets, and the policy
 extension if present. There is no byte cap. Staging and cleanup together cost about 13,000 gas
 for a blob of two EOA signatures and about 14 gas per further byte

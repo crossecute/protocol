@@ -68,10 +68,19 @@ signatures are two EOA signatures (130 bytes) plus a policy extension of the giv
 
 | Extension bytes | Staging and cleanup |
 | ---: | ---: |
-| 0 | 13,368 gas |
-| 1,024 | 28,650 gas |
-| 10,240 | 165,935 gas |
-| 102,400 | 1,467,876 gas |
+| 0 | 13,014 gas |
+| 1,024 | 28,296 gas |
+| 10,240 | 165,581 gas |
+| 102,400 | 1,467,522 gas |
+
+The calldata is not staged, but the guard copies it into memory to build the `SafeTx` and the
+Safe hashes it. With the same two signatures and a `sendMessage` payload of the given size:
+
+| Payload bytes | Staging and cleanup |
+| ---: | ---: |
+| 1,024 | 13,856 gas |
+| 10,240 | 22,756 gas |
+| 102,400 | 200,755 gas |
 
 There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in

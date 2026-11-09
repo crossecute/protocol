@@ -53,29 +53,33 @@ contract DispatchTest is GuardTestBase {
 
         ICrossecuteGuard.DispatchContext memory context =
             abi.decode(transmitter.lastContext(), (ICrossecuteGuard.DispatchContext));
+        ICrossecuteGuard.SafeTx memory safeTx = context.safeTx;
         assertEq(context.safeTxHash, txHash);
-        assertEq(context.operation, uint8(Enum.Operation.Call));
-        assertEq(context.value, 2);
-        assertEq(context.dataHash, keccak256(data));
-        assertEq(context.safeTxGas, 0);
-        assertEq(context.baseGas, 7777);
-        assertEq(context.gasPrice, 0);
-        assertEq(context.gasToken, address(0xCAFE));
-        assertEq(context.refundReceiver, address(0xF00D));
-        assertEq(context.nonce, nonce);
+        assertEq(safeTx.to, address(transmitter));
+        assertEq(safeTx.value, 2);
+        assertEq(safeTx.data.length, 0);
+        assertEq(safeTx.operation, uint8(Enum.Operation.Call));
+        assertEq(safeTx.safeTxGas, 0);
+        assertEq(safeTx.baseGas, 7777);
+        assertEq(safeTx.gasPrice, 0);
+        assertEq(safeTx.gasToken, address(0xCAFE));
+        assertEq(safeTx.refundReceiver, address(0xF00D));
+        assertEq(safeTx.nonce, nonce);
         assertEq(context.signatures, signatures);
+        // What a consumer does: the Safe called it with the signed calldata.
+        safeTx.data = data;
         assertEq(
             safe.getTransactionHash(
-                address(transmitter),
-                context.value,
-                data,
-                Enum.Operation(context.operation),
-                context.safeTxGas,
-                context.baseGas,
-                context.gasPrice,
-                context.gasToken,
-                payable(context.refundReceiver),
-                context.nonce
+                safeTx.to,
+                safeTx.value,
+                safeTx.data,
+                Enum.Operation(safeTx.operation),
+                safeTx.safeTxGas,
+                safeTx.baseGas,
+                safeTx.gasPrice,
+                safeTx.gasToken,
+                payable(safeTx.refundReceiver),
+                safeTx.nonce
             ),
             txHash
         );

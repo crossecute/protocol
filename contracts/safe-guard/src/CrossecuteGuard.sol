@@ -27,13 +27,12 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     uint256 internal constant _TARGET = 1;
     uint256 internal constant _OPERATION = 2;
     uint256 internal constant _VALUE = 3;
-    uint256 internal constant _DATA_HASH = 4;
-    uint256 internal constant _BASE_GAS = 5;
-    uint256 internal constant _GAS_TOKEN = 6;
-    uint256 internal constant _REFUND_RECEIVER = 7;
-    uint256 internal constant _NONCE = 8;
-    uint256 internal constant _SIG_LENGTH = 9;
-    uint256 internal constant _SIG_WORDS = 10;
+    uint256 internal constant _BASE_GAS = 4;
+    uint256 internal constant _GAS_TOKEN = 5;
+    uint256 internal constant _REFUND_RECEIVER = 6;
+    uint256 internal constant _NONCE = 7;
+    uint256 internal constant _SIG_LENGTH = 8;
+    uint256 internal constant _SIG_WORDS = 9;
 
     /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
     uint256 private constant _CONSUMED = 1 << 160;
@@ -113,7 +112,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
-    ///      check has already required both to be zero.
+    ///      check has already required both to be zero. The calldata is not recorded: the signed
+    ///      target receives it from the Safe's call.
     function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
         bytes32 txHash = ISafe(payable(msg.sender))
             .getTransactionHash(
@@ -132,7 +132,6 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         _tstore(base, _TARGET, uint160(safeTx.to));
         _tstore(base, _OPERATION, safeTx.operation);
         _tstore(base, _VALUE, safeTx.value);
-        _tstore(base, _DATA_HASH, uint256(keccak256(safeTx.data)));
         _tstore(base, _BASE_GAS, safeTx.baseGas);
         _tstore(base, _GAS_TOKEN, uint160(safeTx.gasToken));
         _tstore(base, _REFUND_RECEIVER, uint160(safeTx.refundReceiver));
@@ -191,17 +190,19 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     function _readDispatch(bytes32 base, bytes32 txHash) private view returns (DispatchContext memory context) {
-        context.safeTxHash = txHash;
+        SafeTx memory safeTx = context.safeTx;
+        // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
+        safeTx.to = address(uint160(_tload(base, _TARGET)));
+        safeTx.value = _tload(base, _VALUE);
         // forge-lint: disable-next-line(unsafe-typecast) written from an Operation
-        context.operation = uint8(_tload(base, _OPERATION));
-        context.value = _tload(base, _VALUE);
-        context.dataHash = bytes32(_tload(base, _DATA_HASH));
-        context.baseGas = _tload(base, _BASE_GAS);
+        safeTx.operation = uint8(_tload(base, _OPERATION));
+        safeTx.baseGas = _tload(base, _BASE_GAS);
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
-        context.gasToken = address(uint160(_tload(base, _GAS_TOKEN)));
+        safeTx.gasToken = address(uint160(_tload(base, _GAS_TOKEN)));
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
-        context.refundReceiver = address(uint160(_tload(base, _REFUND_RECEIVER)));
-        context.nonce = _tload(base, _NONCE);
+        safeTx.refundReceiver = address(uint160(_tload(base, _REFUND_RECEIVER)));
+        safeTx.nonce = _tload(base, _NONCE);
+        context.safeTxHash = txHash;
 
         uint256 length = _tload(base, _SIG_LENGTH);
         bytes memory signatures = new bytes(length);

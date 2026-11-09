@@ -22,22 +22,16 @@ interface ICrossecuteGuard {
     }
 
     /// @notice A Safe's staged dispatch: the signed transaction and its complete signature blob.
+    /// @custom:member safeTx The signed transaction with `data` empty. The consumer is the signed
+    ///                target and received that calldata from the Safe, so it sets `data` to its own
+    ///                `msg.data`.
     /// @custom:member safeTxHash The Safe transaction hash the owners signed.
-    /// @custom:member dataHash keccak256 of the signed calldata.
     /// @custom:member signatures The hook's `signatures` argument, byte for byte. Safe checks only the
     ///                first threshold-many signatures; anything after them, the policy extension
     ///                included, is as the submitter sent it.
     struct DispatchContext {
+        SafeTx safeTx;
         bytes32 safeTxHash;
-        uint8 operation;
-        uint256 value;
-        bytes32 dataHash;
-        uint256 safeTxGas;
-        uint256 baseGas;
-        uint256 gasPrice;
-        address gasToken;
-        address refundReceiver;
-        uint256 nonce;
         bytes signatures;
     }
 
