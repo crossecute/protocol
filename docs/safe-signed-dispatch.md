@@ -35,6 +35,12 @@ Envelope and routing:
   so the receiver can reconstruct the Safe transaction hash. A Merkle root or proof never
   substitutes for signed bytes.
 
+The transmitter discovers the transaction guard from the owner Safe on every send. Only the
+signed target can consume the staged record, once. The guard clears it in the Safe post-hook.
+Each dispatch in an outer batch must be a separately signed, top-level Safe execution.
+A single Safe-signed MultiSend does not stage its inner calls. Module calls do not stage
+owner authorization either.
+
 Trees and leaves:
 
 - **D6.** One tree can cover multiple destinations and consecutive local nonces on the same
@@ -56,15 +62,13 @@ Verification and replay:
   new execution. It records the leaf hash and advances before external calls, rejects
   overflow, and rolls both back if execution reverts.
 - **D11.** An authenticated replay of an executed leaf returns successfully with
-  `DuplicateMessage()`, without calls or nonce advance, even under a different valid root or
-  after its deadline. The leaf hash comes from the leaf's fields, not the root or proof. A
-  different leaf at a consumed nonce reverts. A first delivery after the deadline reverts. See
-  [C1](#conflicts-to-resolve-first) for the case this cannot cover as written.
+  `DuplicateMessage()`, without calls or nonce advance, including under a different valid root, within the signed window. The leaf hash comes from the leaf's fields, not the root or proof. A
+  different leaf at a consumed nonce reverts. First and repeat deliveries after the deadline revert.
 - **D12.** A replacement leaf at the current nonce may carry revised calls or an empty batch.
   If the original leaf is still valid, either may consume the nonce first.
 - **D13.** A commit-only leaf consumes its nonce when the commitment is recorded. `finalize`
   consumes the commitment later without touching the nonce.
-- **D14.** Each leaf commits to `validAfter` and `deadline`. A new execution requires
+- **D14.** Each leaf commits to `validAfter` and `deadline`. First and repeat deliveries require
   `validAfter <= deadline` and `validAfter <= block.timestamp <= deadline` on destination time,
   inclusive. No zero-deadline bypass. A rejected window consumes nothing.
 
@@ -87,29 +91,11 @@ Authority:
 
 ## Conflicts to resolve first
 
-- **C1. Duplicate acknowledgment after an authority change.** D11 asks for an *authenticated*
-  replay, and authentication runs against the receiver's current authority. After an authority
-  change it can fail for a leaf that already executed: a parent counter advance fails the
-  equality check (if that check runs before the duplicate check), a raised parent threshold
-  leaves the blob short, and a removed owner or rotated child leaves the old signatures
-  short. The receiver keeps no old composition to check against. A provider retry of a leaf
-  that already executed by direct submission then fails permanently. Options:
-  - (a) Accept that acknowledgment reverts after an authority change. Nothing executes, but
-    the provider message stays failed.
-  - (b) Skip the counter check for duplicates but keep signature verification. Covers counter
-    changes, not signer changes.
-  - (c) Accept a leaf-hash match at its nonce as sufficient for `DuplicateMessage()` without
-    signatures. The leaf is public once executed, so anyone can trigger the event, but it
-    can never execute or write state. The provider path then reports success for
-    unauthenticated bytes.
-
-  *Proposed:* (a) or (c); the choice changes the order of R8 to R10 in the
-  [receiver check order](#receiver-check-order).
-- **C2. #109 fields in the frozen genesis format.** The initial commitment is part of the
-  conduit address and receivers are locked, so anything genesis may need cannot be added for
-  existing conduits later: a rotation quorum stricter than the dispatch quorum (#109's
-  acceptance criteria), a freeze authority, per-node starting counters, handler kind, version.
-  *Open:* which #109 features touch genesis, before Q3's codec is fixed.
+- **C1. Duplicate acknowledgment after an authority change.** A duplicate still requires
+  current authority. A provider retry can fail after rotation even if direct submission
+  already executed the leaf.
+- **C2. #109 fields in the bootstrap snapshot.** The snapshot carries one applied
+  authority counter per Safe. #109 owns the fields and rules for later authority changes.
 - **C3. "Verify source counter consistency."** #108 uses the phrase without defining what the
   receiver checks. *Proposed:* the transmitter compares the tree's counter with its stored
   parent counter before sending (T5); the receiver checks only equality with its own counter.
@@ -140,34 +126,22 @@ leaf? For a direct submission on Arbitrum, how does the caller supply the Arbitr
 proof alongside the original signed Base calldata? Which Safe context, signatures and evidence
 travel with each path, and which fields come from receiver configuration?
 
-*Proposed.* [`ISignedDispatch.sol`](../contracts/evm/src/messaging/ISignedDispatch.sol) shows
-`DispatchPayload` with the parent authority counter, root, selected leaf and proof. Encode it
-as a single struct with `abi.encode(dispatch)` and read it with
-`abi.decode(payload, (DispatchPayload))`. The provider path carries the original signed
-calldata and verifies its embedded leaf. `submitDirect` takes the Safe context containing that
-same calldata, signatures, evidence, and the requested leaf and proof. The verifier reads the
-counter and root from the signed calldata. Field widths and the context and evidence encodings
-are provisional.
+[`ISignedDispatch.sol`](../contracts/evm/src/messaging/ISignedDispatch.sol) encodes the
+root, parent authority counter, selected leaf and proof as one `DispatchPayload` struct.
+Both delivery paths carry a `SignedDelivery` with the shared
+[`ICrossecuteGuard.SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), the original
+parent signature blob and a flat nested approval array. Provider delivery uses the embedded
+leaf and proof. Direct submission supplies its own leaf and proof alongside the same delivery.
 
-| Field | Provider path | Direct path | From receiver configuration |
-| --- | --- | --- | --- |
-| Safe address, home chain id (domain) | | | yes |
-| `to` | | | yes, the source transmitter |
-| `operation`, `safeTxGas`, `gasPrice` | if not fixed | if not fixed | yes, if fixed (Q1.1) |
-| `value`, `baseGas`, `gasToken`, `refundReceiver`, Safe `nonce` | yes | yes | |
-| `data` (full signed calldata) | yes | yes | |
-| `signatures` | yes, possibly trimmed (O3) | yes | |
-| nested evidence | yes, attached by the transmitter | yes | |
-| requested leaf and proof | embedded | explicit in the proposed interface | |
-
-Cases:
-
-- **Q1.1** Fixing `operation = CALL` and `safeTxGas = gasPrice = 0` in configuration makes any
-  other value inexpressible on the wire, which is the intended rejection. Leaving them on the
-  wire unchecked lets a signed but unexecuted DELEGATECALL dispatch verify.
-- **Q1.2** The guard records `baseGas`, `gasToken` and `refundReceiver` and the policy does not
-  force them to zero, so they travel. *Open:* require zero anyway.
-- **Q1.3** Check the `sendMessage` selector before decoding.
+- **Q1.1** The receiver uses its configured source Safe and chain ID for the EIP-712 domain.
+  It checks the signed target against its configured source transmitter and requires
+  `operation == CALL`. Require zero `safeTxGas` and `gasPrice`, as the guard policy does.
+- **Q1.2** All SafeTx fields travel in Safe 1.5.0 EIP-712 order, including `baseGas`,
+  `gasToken` and `refundReceiver`. The transmitter restores `safeTx.data` from `msg.data`
+  after `consume(ownerSafe)` returns it empty. Carry the calldata only in that field.
+- **Q1.3** Check the signed outer selector before decoding. The receiver computes the
+  calldata hash and Safe digest locally and tests parity with Safe 1.5.0
+  `getTransactionHash`.
 - **Q1.4** *Open:* require canonical ABI encoding of the signed calldata (re-encode and
   compare). The leaf hash commits to the exact call payload bytes, and the receiver decodes
   those same bytes to execute the calls.
@@ -175,8 +149,7 @@ Cases:
   gives the same result and the same duplicate record.
 - **Q1.6** *Proposed:* a receiver executing an override leaf does not check the embedded leaf's
   proof, so a mistake in Base's proof does not block Arbitrum.
-- **Q1.7** The provider path never carries an override. *Open:* one struct for the wire format
-  and the direct input, with the override empty on the provider path, or two.
+- **Q1.7** The override is a separate argument to direct submission. The provider path never carries it.
 - **Q1.8** `recipient` and `attributes` are decoded only to reach `payload`.
 - **Q1.9** A direct submitter on Arbitrum carries Base's full batch inside the signed calldata.
   Which leaf is embedded affects every other destination's submission cost.
@@ -227,31 +200,24 @@ Cases:
 How are EOA owners, nested Safes, thresholds and shared child references canonically encoded?
 Are owner kinds explicit, how are owners and nodes ordered, and what does the receiver store?
 
-*Proposed.* A node array with the root at index 0 and children referenced by index. Each
-Safe address has one record with explicit owner kinds and the owner order returned by Safe.
+Each Safe address has one record. Nested owner entries reference that record by source
+Safe address.
 
 Cases:
 
-- **Q3.1** Owner kind is a tag: EOA, or Safe with a node index. Inferring kind from whether a
-  node exists lets a missing record turn a Safe into an EOA. A Safe owner whose index points to
-  a node with a different address rejects.
-- **Q3.2** The commitment preserves each Safe's `getOwners()` order. Signature verification
-  checks ascending signer addresses independently of the stored owner list order.
-- **Q3.3** Node order must be canonical and make cycles cheap to reject. Breadth-first by first
-  reference does not guarantee forward edges: a shared child first reached at depth 1 and
-  referenced again from depth 2 points backward. *Proposed:* every edge points to a higher
-  index, with a canonical tie-break.
-- **Q3.4** Fields left implicit (handler kind, version, starting counter) can never be added
-  for existing conduits. Depends on C2.
-- **Q3.5** Reject: threshold outside `1..owners`, `address(0)` or `address(1)` as an owner, a
-  node owning itself, duplicate node addresses, unreachable nodes, and an address that is an
-  EOA in one group and a Safe in another.
-- **Q3.6** Safe permits mutual ownership (A owns B, B owns A), and non-Safe contract owners such
-  as timelocks cannot be verified without a light client. *Open:* a "cannot sign" owner kind.
-  Without it such Safes cannot use signed conduits; with it, creation checks that the owners
-  able to sign can still reach threshold.
-- **Q3.7** The owner hash and the threshold hash both include each node's address, so
-  thresholds cannot move between nodes. *Open:* record why the commitment uses two hashes.
+- **Q3.1** Owner kind is a `uint8`: `0` for EOA and `1` for nested Safe. Reject a
+  nested owner if its record is missing.
+- **Q3.2** Preserve each Safe's `getOwners()` order. Signature verification separately
+  requires ascending signer addresses.
+- **Q3.3** Traverse depth first from the root, in owner order. Emit each Safe record on
+  first visit and reject cycles.
+- **Q3.4** Bootstrap snapshot records append each Safe's `uint256 authorityCounter`.
+- **Q3.5** Reject invalid thresholds, zero and sentinel owners, duplicate owners, duplicate
+  or unreachable records, and inconsistent owner kinds.
+- **Q3.6** Classify empty code and the EIP-7702 delegation indicator as EOA. For other
+  owner addresses, require valid Safe owner and threshold data.
+- **Q3.7** Hash the canonical record array as `keccak256(abi.encode(records))`. At
+  transmitter creation derive the salt as `keccak256(abi.encode(userSalt, graphHash))`.
 - **Q3.8** The root node is the transmitter's owner Safe.
 - **Q3.9** [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/NestedOwnerManager.sol)
   proposes one `SafeState` per Safe, with a linked owner list and threshold. Keep the
@@ -261,46 +227,36 @@ Cases:
   `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
   The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
   layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
-- **Q3.10** *Open:* whether `createTransmitter` checks the graph against live Safe state
-  (owners and threshold per node, `VERSION`, fallback handler). Checking the handler by address
-  needs a list of accepted deployments per chain.
+- **Q3.10** Derive the graph onchain from live `getOwners()` and `getThreshold()` at
+  transmitter creation. Creation does not enforce nested Safe implementation identity.
 
 ### Q4. Authenticated receiver bootstrap
 
-How do the initial owner graph, creation salt, source transmitter and intended implementation
-bind to the receiver address? What does the receiver recompute before accepting its initial
-authority or running bootstrap calls?
+First bootstrap requires the configured authenticated provider and a Safe-signed
+`bootstrap(bytes,bytes[])` transaction. The bootstrap leaf commits to the destination,
+execution window and exact setup calls. It omits the execution nonce.
 
-*Proposed.* A separate signed transceiver per provider, so the deployer address in CREATE2
-separates signed and plain conduits and binds the implementation (the address does not
-include it: `Proxy`'s initcode is fixed and the transceiver installs the implementation).
-`salt = H(TAG, initialCommitment, userSalt)`, and the receiver recomputes its own address.
-
-Cases:
-
-- **Q4.1** The transmitter cannot be part of the salt, since its address is derived from it.
-  The receiver derives the transmitter only when the home is `Predetermined`. For a `Unique`
-  home a bridge carries it, and a forged bootstrap with the correct graph but a wrong
-  transmitter permanently disables that address on that chain, because `Proxy` arms once.
-  *Open:* refuse `Unique` homes for signed conduits, or bind the home transceiver and its
-  derivation formula into the salt.
-- **Q4.2** The EIP-155 home chain id used in the Safe domain must agree with the authenticated
-  origin and the home chain key; mismatch rejects.
-- **Q4.3** Before accepting authority, in order: decode the graph, validate it (Q3.5), compute
-  the commitment, compute the salt, compute `conduitSalt(rootSafe, salt, homeChainKey)`,
-  compare the prediction with `address(this)`, check the transmitter derivation, then store
-  the graph with counters and `nextNonce` at zero.
-- **Q4.4** Bootstrap carries no calls. The guard never stages `bootstrap`, so its calls are
-  never signed, and a compromised bridge with the correct graph could run them at the real
-  address. The first action is the nonce-0 leaf.
-- **Q4.5** With Q4.1 and Q4.4 in place, a forged bootstrap can only create the state a real one
-  would. *Open:* offer bootstrap without a bridge.
-- **Q4.6** A late bootstrap starts from the genesis graph and catches up through #109's updates;
-  the current graph cannot be bootstrapped directly.
-- **Q4.7** A plain transceiver's bootstrap for the same owner and salt lands at a different
-  address. Test it.
-- **Q4.8** The new envelope kind changes `IReceiverInit.initialize`; measure bootstrap payload
-  size and gas against graph size. The receiver exposes the initial commitment and `userSalt`.
+- **Q4.1** The receiver salt is
+  `keccak256(abi.encode(sourceTransmitter, parentAuthorityCounter, snapshotHash))`,
+  where `snapshotHash = keccak256(abi.encode(snapshotRecords))`. Use the existing
+  conduit derivation with this salt.
+- **Q4.2** The EIP-155 source chain ID in the Safe domain must match the authenticated
+  origin and source chain key.
+- **Q4.3** The source checks the live parent counter and sends the current canonical
+  snapshot with `SignedDelivery`. The receiver checks the salt and destination, verifies
+  authorization, and initializes the per-Safe counters from the snapshot and `nextNonce`
+  to zero.
+- **Q4.4** PR #117 stages only the top-level `sendMessage` selector today. Before signed
+  bootstrap can use `consume`, the guard must also stage the bootstrap selector for
+  owner transactions and reject it in the installed module guard.
+- **Q4.5** An initialized receiver can accept direct ordinary dispatch before the source
+  receives a readiness report. An authenticated repeat of the same bootstrap leaf within
+  its window succeeds silently.
+- **Q4.6** Bootstrap carries no historical authority updates. Initialized receivers apply
+  later updates in sequence under #109.
+- **Q4.7** A plain transceiver deploys at a different address from a signed transceiver
+  with the same owner and salt. Test both derivations.
+- **Q4.8** Measure the encoded bootstrap envelope and initialization gas against graph size.
 
 ### Q5. Recursive signature verification
 
@@ -328,10 +284,9 @@ For each entry `i < t`, with `t` the stored threshold of the node:
 - **Q5.7** Safe lets two contract entries share or overlap payload bytes and lets pointers land
   in static entries beyond `t`. *Proposed:* match Safe; bytes outside the verified parts are
   ignored anyway.
-- **Q5.8** The receiver reads only bytes the first `t` entries and their pointers reach, so it
-  never parses the parent's policy extension. If the transmitter trims (O3), it keeps exactly
-  those bytes and rewrites pointers, which changes the blob but not the digest. Trimming to
-  the source threshold drops extra entries that a higher receiver threshold could have used.
+- **Q5.8** Carry the parent's signature blob byte for byte as returned by `consume`.
+  Verify the quorum entries and their referenced signature payloads without parsing a
+  trailing policy extension.
 - **Q5.9** A child payload is a full child blob with its own threshold and possibly trailing
   bytes; the same rule applies.
 - **Q5.10** Recursion depth is bounded by graph depth and uses memory, not call depth.
@@ -347,9 +302,11 @@ How does the transmitter find the guard holding an empty-signature child's cache
 how is the evidence packaged for recursive verification? What does a direct submitter obtain
 independently? The cache key is the child Safe and message hash.
 
-*Proposed.* Look up the child's current transaction guard with `GuardDiscovery`, then
-`getApproval(child, messageHash)`. Package evidence in the depth-first order in which
-verification meets empty entries.
+Look up the child's current transaction guard with `GuardDiscovery`, then
+`getApproval(child, messageHash)`. The current guard returns `ICrossecuteGuard.SignedSafeTx`
+with the full approval calldata and the child's signatures with its policy extension removed.
+Wrap it in a `NestedApproval` keyed by child Safe and message hash. Carry one item per key
+in an unsorted flat array and look it up by linear scan.
 
 Cases:
 
@@ -359,18 +316,17 @@ Cases:
   `NoGuard`; a non-Crossecute guard has no `getApproval`. *Open:* query the child's guard,
   then the parent's, then revert; or revert at once; or send without evidence and let the
   receiver reject.
-- **Q6.2** The transmitter computes the key over `abi.encode(parentDataHash)`. It matches the
-  guard's key only if the child passed exactly those 32 bytes to `signMessage`.
+- **Q6.2** The transmitter computes the key as the child-domain Safe message digest over
+  `abi.encode(parentDataHash)`. The guard hashes the exact bytes passed to `signMessage`.
 - **Q6.3** The recursion hash differs by path. Inline contract signatures: a grandchild signs
   over the child's message hash. Evidence: the evidence is a child Safe transaction, so a
   grandchild's empty entry inside it needs evidence over the child's approval transaction hash.
 - **Q6.4** Evidence comes from an executed child transaction and may carry the child
   executor's `v = 1`, which the receiver rejects (T6 can catch it).
 - **Q6.5** The receiver rebuilds the child transaction hash with `operation = DELEGATECALL` and
-  the child domain, verifies its signatures under the current child node, requires
-  `data == signMessage(abi.encode(parentHash))`, and leaves `to` unchecked. *Open:* omit `data`
-  from the wire and rebuild it, which saves bytes and rejects non-canonical encodings Safe
-  accepted.
+  the child domain, verifies its signatures under the current child node, checks the
+  `signMessage(bytes)` selector and exact decoded message `abi.encode(parentHash)`. The
+  signed target is part of the digest. There is no signing-library allowlist.
 - **Q6.6** Missing evidence rejects. *Open:* extra evidence rejects or is ignored.
 - **Q6.7** A shared child needing evidence for two hashes contributes two entries.
 - **Q6.8** Evidence that no longer meets the child's current stored composition rejects; the
@@ -379,9 +335,9 @@ Cases:
 - **Q6.9** A direct submitter obtains evidence from `getApproval`, from the child Safe's
   Transaction Service confirmations (an unexecuted approval is valid evidence), or from the
   provider message in the source transaction's logs.
-- **Q6.10** For two children with 10 and 5 signatures, `getApproval` returns 2,176
-  ABI-encoded bytes in total
-  ([sizing on #117](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)).
+- **Q6.10** Measure the full encoded `SignedDelivery` for provider sizing, including the
+  lookup keys and flat array framing. The [guard measurements](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)
+  cover guard return data.
 
 ### Q7. Resource limits
 
@@ -432,7 +388,7 @@ Cases:
   payload.
 - **Q8.7** Direct submitters read `nextNonce` and the counter from receiver views to pick an
   executable leaf.
-- **Q8.8** #109's update history must stay available for late receivers (Q4.6).
+- **Q8.8** #109's update history must stay available for initialized receivers that lag behind.
 - **Q8.9** Failures a submitter can retry: early, future nonce, receiver counter behind, low
   balance or gas, and possibly a reverting call. Failures that need a replacement leaf or new
   signatures: expired, conflicting leaf at a consumed nonce, invalid signatures, receiver
@@ -448,7 +404,7 @@ Cases:
   keep the gateway role and sender checks as an extra layer.
 - **O3.** Fee drain. Whoever executes a fully signed Safe transaction controls the bytes after
   the threshold entries (#117). LayerZero and CCIP price per byte from the transmitter's
-  balance. *Open:* trim (Q5.8) or cap.
+  balance. The parent blob stays byte-exact. *Open:* choose a payload cap after measurement.
 - **O4.** Quote and send parity. `quoteMessage(recipient, payload, attributes)` cannot know
   signature or evidence size; a signed quote takes them and shares one computation with the
   send. `DeliveryGas.PAYLOAD` (200,000) does not cover nested verification.
@@ -492,11 +448,10 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 | R6 | Proof against the root from the signed calldata | revert, permanent |
 | R7 | Rebuild the Safe digest from configuration and wire fields | |
 | R8 | Counter equals the receiver's counter (order per C1) | revert; retryable if the receiver lags, permanent if ahead |
-| R9 | Signatures and evidence under current authority (order per C1) | revert, permanent |
+| R9 | Signatures and evidence under current authority, then check the inclusive execution window | revert, permanent |
 | R10 | `executed[nonce] == leafHash` | emit `DuplicateMessage()`, succeed |
 | R11 | `executed[nonce] != 0` | revert, conflicting leaf, permanent |
 | R12 | `nonce > nextNonce` | revert, future nonce, retryable |
-| R13 | `validAfter <= block.timestamp <= deadline` | revert; retryable if early, permanent if expired |
 | R14 | Minimum gas, if O7 is adopted | revert, retryable |
 | R15 | Record the leaf hash; increment `nextNonce`, rejecting overflow | |
 | R16 | Execute the calls atomically; an empty batch is allowed | revert undoes R15, retryable |
@@ -509,12 +464,12 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | # | Check |
 | --- | --- |
 | T1 | `onlyConduitOwner` (the Safe) |
-| T2 | Discover and consume the guard record before any external call; no unsigned fallback |
+| T2 | Discover the current guard and consume the Safe record once before quoting or sending. Restore `safeTx.data` from `msg.data` |
 | T3 | Decode the payload; tag; canonical encoding if Q1.4 |
 | T4 | The leaf's destination is the recorded receiver on a bootstrapped chain |
 | T5 | *Proposed:* the proof verifies and the counter equals the stored counter (C3) |
 | T6 | *Proposed:* no `v = 1`, evidence found (Q6.1), within receiver caps (Q7.3) |
-| T7 | Build the wire message: calldata, Safe context, signatures (trimmed if O3), evidence |
+| T7 | Build `SignedDelivery` with the full SafeTx, original parent signatures and keyed approvals |
 | T8 | Quote from the wire message and check funding (O4) |
 | T9 | Send; emit `MessageSent` with the leaf's destination (O5) |
 
