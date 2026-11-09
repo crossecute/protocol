@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
+import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
@@ -50,8 +52,8 @@ contract TestTransmitter {
     bytes32 public lastSafeTxHash;
     bytes public lastSignatures;
     uint256 public lastValue;
-    /// @dev `abi.encode` of the last consumed DispatchContext.
-    bytes public lastContext;
+    /// @dev `abi.encode` of the last consumed dispatch, as the guard returned it.
+    bytes public lastDispatch;
     uint256[] public lastApprovalNonces;
 
     constructor(address owner, Sink sink) {
@@ -76,11 +78,12 @@ contract TestTransmitter {
 
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.DispatchContext memory context = guard.consume(msg.sender);
-        lastSafeTxHash = context.safeTxHash;
-        lastSignatures = context.signatures;
+        ICrossecuteGuard.SignedSafeTx memory dispatch = guard.consume(msg.sender);
+        lastDispatch = abi.encode(dispatch);
+        dispatch.safeTx.data = msg.data;
+        lastSafeTxHash = _safeTxHash(dispatch.safeTx);
+        lastSignatures = dispatch.signatures;
         lastValue = msg.value;
-        lastContext = abi.encode(context);
 
         if (mode == Mode.ConsumeTwice) guard.consume(msg.sender);
         if (mode == Mode.ConsumeThenRevert) revert Reverted();
@@ -92,7 +95,23 @@ contract TestTransmitter {
         }
 
         SINK.hit{value: msg.value}(CrossecuteGuardHarness(address(guard)), msg.sender);
-        return context.safeTxHash;
+        return lastSafeTxHash;
+    }
+
+    function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
+        return ISafe(payable(OWNER))
+            .getTransactionHash(
+                t.to,
+                t.value,
+                t.data,
+                Enum.Operation(t.operation),
+                t.safeTxGas,
+                t.baseGas,
+                t.gasPrice,
+                t.gasToken,
+                t.refundReceiver,
+                t.nonce
+            );
     }
 
     function _call() private {

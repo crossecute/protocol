@@ -21,23 +21,9 @@ interface ICrossecuteGuard {
         uint256 nonce;
     }
 
-    /// @notice A Safe's staged dispatch: the signed transaction and its complete signature blob.
-    /// @custom:member safeTx The signed transaction with `data` empty. The consumer is the signed
-    ///                target and received that calldata from the Safe, so it sets `data` to its own
-    ///                `msg.data`.
-    /// @custom:member safeTxHash The Safe transaction hash the owners signed.
-    /// @custom:member signatures The hook's `signatures` argument, byte for byte. Safe checks only the
-    ///                first threshold-many signatures; anything after them, the policy extension
-    ///                included, is as the submitter sent it.
-    struct DispatchContext {
-        SafeTx safeTx;
-        bytes32 safeTxHash;
-        bytes signatures;
-    }
-
-    /// @notice A child Safe's signed `signMessage` approval transaction.
-    /// @custom:member signatures The child owners' signatures without the child's policy extension.
-    struct ApprovalEvidence {
+    /// @notice A Safe transaction and signatures over it. `consume` and `getApproval` each say what
+    ///         `signatures` holds.
+    struct SignedSafeTx {
         SafeTx safeTx;
         bytes signatures;
     }
@@ -55,12 +41,16 @@ interface ICrossecuteGuard {
 
     /// @notice Marks `safe`'s live dispatch consumed and returns it. Only the signed target may call,
     ///         once per dispatch.
-    function consume(address safe) external returns (DispatchContext memory context);
+    /// @return dispatch The signed transaction with `data` empty: the caller is the signed target
+    ///         and received that calldata from the Safe, so it sets `data` to its own `msg.data`.
+    ///         `signatures` is the Safe hook's argument byte for byte. Safe checks only the first
+    ///         threshold-many signatures; anything after them, the policy extension included, is as
+    ///         the submitter sent it.
+    function consume(address safe) external returns (SignedSafeTx memory dispatch);
 
     /// @notice The current approval evidence `childSafe` cached for `messageHash`, the hash
     ///         `signMessage` writes into the child's `signedMessages`. Reverts if there is none.
-    function getApproval(address childSafe, bytes32 messageHash)
-        external
-        view
-        returns (ApprovalEvidence memory evidence);
+    /// @return evidence The child's signed `signMessage` transaction. `signatures` is the child
+    ///         owners' signatures without the child's policy extension.
+    function getApproval(address childSafe, bytes32 messageHash) external view returns (SignedSafeTx memory evidence);
 }

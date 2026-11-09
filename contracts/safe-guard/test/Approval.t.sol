@@ -76,7 +76,7 @@ contract ApprovalTest is GuardTestBase {
 
         bytes32 messageHash = _childMessageHash(child, parentTxHash);
         assertEq(child.signedMessages(messageHash), 1);
-        ICrossecuteGuard.ApprovalEvidence memory evidence = guard.getApproval(address(child), messageHash);
+        ICrossecuteGuard.SignedSafeTx memory evidence = guard.getApproval(address(child), messageHash);
         assertEq(evidence.safeTx.to, address(signMessageLib));
         assertEq(evidence.safeTx.operation, uint8(Operation.DELEGATECALL));
         assertEq(evidence.safeTx.value, 0);
@@ -109,7 +109,7 @@ contract ApprovalTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall, payment);
 
-        ICrossecuteGuard.ApprovalEvidence memory evidence =
+        ICrossecuteGuard.SignedSafeTx memory evidence =
             guard.getApproval(address(child), _childMessageHash(child, bytes32(uint256(7))));
         assertEq(evidence.safeTx.to, address(signMessageLib));
         assertEq(evidence.safeTx.operation, uint8(Enum.Operation.DelegateCall));
@@ -236,7 +236,7 @@ contract ApprovalTest is GuardTestBase {
 
     function test_approval_persistsAcrossLaterTransactions() public {
         bytes32 messageHash = _approve(child, _signers(), bytes32(uint256(7)));
-        ICrossecuteGuard.ApprovalEvidence memory first = guard.getApproval(address(child), messageHash);
+        ICrossecuteGuard.SignedSafeTx memory first = guard.getApproval(address(child), messageHash);
         _exec(child, _signers(), address(0xBEEF), 0, "", Enum.Operation.Call);
         vm.roll(block.number + 100);
         vm.warp(block.timestamp + 30 days);
@@ -256,7 +256,7 @@ contract ApprovalTest is GuardTestBase {
         bytes memory sigs = _signFor(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
         _execWith(child, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, sigs);
 
-        ICrossecuteGuard.ApprovalEvidence memory evidence = guard.getApproval(address(child), messageHash);
+        ICrossecuteGuard.SignedSafeTx memory evidence = guard.getApproval(address(child), messageHash);
         assertEq(evidence.safeTx.nonce, nonce);
         assertEq(evidence.signatures, sigs);
     }

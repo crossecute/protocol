@@ -128,9 +128,11 @@ those bytes as submitted. A consumer must treat only what it verifies against th
 threshold as authorized; the policy extension in particular is executor-supplied context, not
 owner-signed content ([#108](https://github.com/crossecute/protocol/issues/108)).
 
-**Consumption.** `consume(address safe)` returns the record for `safe` when the record is
-live, not yet consumed, and `msg.sender` is the signed target. It marks the record consumed
-and leaves it live. A second call reverts.
+**Consumption.** `consume(address safe)` returns the signed transaction and signature blob for
+`safe` when the record is live, not yet consumed, and `msg.sender` is the signed target. It
+marks the record consumed and leaves it live. A second call reverts. The stored transaction
+hash is not returned: the receiver recomputes it, and a transmitter that needs it can ask the
+Safe's `getTransactionHash`.
 
 **Cleanup.** The post-hook clears the record only when its stored transaction hash matches
 the hook's `txHash`, then zeroes every slot it used, consumed or not. A successful
@@ -150,7 +152,8 @@ A signature-enabled transmitter, called directly by its owner Safe:
 2. reads the Safe's transaction guard slot with `getStorageAt(slot, 1)`, decoding the reply
    strictly;
 3. calls `consume(msg.sender)` on that guard before any other external call;
-4. uses the returned blob in memory and rejects if discovery or consumption fails.
+4. sets the returned transaction's `data` to its own calldata, uses it and the signature blob in
+   memory, and rejects if discovery or consumption fails.
 
 It never pins a guard address and never falls back to an unsigned send. It does not compare
 calldata or value with the record: the direct call from the Safe already delivers what the

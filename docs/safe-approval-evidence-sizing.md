@@ -25,7 +25,7 @@ and two zero length words, 194 bytes. The child evidence travels next to that bl
 
 ## Stored record
 
-`CrossecuteGuard` stores each approval as an `ApprovalEvidence` struct, a `SafeTx` followed by the
+`CrossecuteGuard` stores each approval as a `SignedSafeTx` struct, a `SafeTx` followed by the
 signatures, in persistent storage. It writes these slots:
 
 | Slots | Field |

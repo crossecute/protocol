@@ -38,29 +38,24 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     uint256 private constant _CONSUMED = 1 << 160;
 
     // solhint-disable-next-line private-vars-leading-underscore
-    mapping(address childSafe => mapping(bytes32 messageHash => ApprovalEvidence)) private $approvals;
+    mapping(address childSafe => mapping(bytes32 messageHash => SignedSafeTx)) private $approvals;
 
     constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
 
     /// @inheritdoc ICrossecuteGuard
-    function consume(address safe) external returns (DispatchContext memory context) {
+    function consume(address safe) external returns (SignedSafeTx memory dispatch) {
         bytes32 base = _dispatchBase(safe);
-        bytes32 txHash = bytes32(_tload(base, _TX_HASH));
-        require(txHash != 0, NoLiveDispatch(safe));
+        require(_tload(base, _TX_HASH) != 0, NoLiveDispatch(safe));
         uint256 target = _tload(base, _TARGET);
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));
         require(target & _CONSUMED == 0, AlreadyConsumed(safe));
         _tstore(base, _TARGET, target | _CONSUMED);
-        context = _readDispatch(base, txHash);
+        dispatch = _readDispatch(base);
     }
 
     /// @inheritdoc ICrossecuteGuard
-    function getApproval(address childSafe, bytes32 messageHash)
-        external
-        view
-        returns (ApprovalEvidence memory evidence)
-    {
+    function getApproval(address childSafe, bytes32 messageHash) external view returns (SignedSafeTx memory evidence) {
         evidence = $approvals[childSafe][messageHash];
         // A Safe threshold is at least one, so stored evidence always carries a signature.
         require(evidence.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
@@ -140,7 +135,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     function _cacheApproval(SafeTx memory safeTx, bytes32 messageHash, bytes calldata signatures) private {
-        ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
+        SignedSafeTx storage evidence = $approvals[msg.sender][messageHash];
         SafeTx storage stored = evidence.safeTx;
         stored.to = safeTx.to;
         stored.value = safeTx.value;
@@ -189,8 +184,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleDispatchDenied());
     }
 
-    function _readDispatch(bytes32 base, bytes32 txHash) private view returns (DispatchContext memory context) {
-        SafeTx memory safeTx = context.safeTx;
+    function _readDispatch(bytes32 base) private view returns (SignedSafeTx memory dispatch) {
+        SafeTx memory safeTx = dispatch.safeTx;
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         safeTx.to = address(uint160(_tload(base, _TARGET)));
         safeTx.value = _tload(base, _VALUE);
@@ -202,7 +197,6 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
         safeTx.refundReceiver = address(uint160(_tload(base, _REFUND_RECEIVER)));
         safeTx.nonce = _tload(base, _NONCE);
-        context.safeTxHash = txHash;
 
         uint256 length = _tload(base, _SIG_LENGTH);
         bytes memory signatures = new bytes(length);
@@ -212,7 +206,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
                 mstore(add(add(signatures, 0x20), i), word)
             }
         }
-        context.signatures = signatures;
+        dispatch.signatures = signatures;
     }
 
     /// @dev The final word is masked to `signatures`' length so the record holds no calldata past it.
