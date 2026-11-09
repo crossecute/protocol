@@ -199,7 +199,7 @@ establish what the delegatecall wrote. A candidate whose calldata does not decod
 `signedMessages`: the child's EIP-712 hash of `SafeMessage(bytes message)` under the child's
 domain separator. A reader can compare it with `signedMessages` on the child.
 
-**Record.** The approval transaction's signed fields (`to`, `value`, `data`, `operation`,
+**Record.** The approval transaction as a `SafeTx` (`to`, `value`, `data`, `operation`,
 `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`, nonce) and the child owners'
 signatures. `safeTxGas` and `gasPrice` are always zero and are not written. The signatures keep
 nested data and offsets and drop the child's policy extension. There is no size cap. The

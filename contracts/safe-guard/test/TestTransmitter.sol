@@ -88,7 +88,7 @@ contract TestTransmitter {
 
         delete lastApprovalNonces;
         for (uint256 i = 0; i < approvals.length; ++i) {
-            lastApprovalNonces.push(guard.getApproval(approvals[i].childSafe, approvals[i].messageHash).nonce);
+            lastApprovalNonces.push(guard.getApproval(approvals[i].childSafe, approvals[i].messageHash).safeTx.nonce);
         }
 
         SINK.hit{value: msg.value}(CrossecuteGuardHarness(address(guard)), msg.sender);

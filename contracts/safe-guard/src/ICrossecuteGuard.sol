@@ -44,16 +44,7 @@ interface ICrossecuteGuard {
     /// @notice A child Safe's signed `signMessage` approval transaction.
     /// @custom:member signatures The child owners' signatures without the child's policy extension.
     struct ApprovalEvidence {
-        address to;
-        uint8 operation;
-        uint256 value;
-        bytes data;
-        uint256 safeTxGas;
-        uint256 baseGas;
-        uint256 gasPrice;
-        address gasToken;
-        address refundReceiver;
-        uint256 nonce;
+        SafeTx safeTx;
         bytes signatures;
     }
 

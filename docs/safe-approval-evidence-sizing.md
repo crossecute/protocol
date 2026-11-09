@@ -25,14 +25,15 @@ and two zero length words, 194 bytes. The child evidence travels next to that bl
 
 ## Stored record
 
-`CrossecuteGuard` stores each approval as an `ApprovalEvidence` struct in persistent storage. It
-writes these slots:
+`CrossecuteGuard` stores each approval as an `ApprovalEvidence` struct, a `SafeTx` followed by the
+signatures, in persistent storage. It writes these slots:
 
 | Slots | Field |
 | ---: | --- |
-| 1 | `to` and `operation`, packed |
+| 1 | `to` |
 | 1 | `value` |
 | 5 | `data`: one length slot and four data slots for 100 bytes |
+| 1 | `operation` |
 | 4 | `baseGas`, `gasToken`, `refundReceiver`, `nonce` |
 | 1 + ⌈n / 32⌉ | `signatures`, n bytes |
 
@@ -42,10 +43,10 @@ inherited policy check requires both to be zero, so they always read as zero.
 | | 10-of-13 child | 5-of-7 child | Total |
 | --- | ---: | ---: | ---: |
 | Owner signatures | 650 bytes | 325 bytes | 975 bytes |
-| Slots written | 33 | 23 | 56 |
-| `getApproval` return, ABI-encoded | 1,248 bytes | 928 bytes | 2,176 bytes |
-| Measured cache cost | 660,984 gas | 439,221 gas | 1,100,205 gas |
-| At 1 gwei and $2,000/ETH | $1.32 | $0.88 | $2.20 |
+| Slots written | 34 | 24 | 58 |
+| `getApproval` return, ABI-encoded | 1,280 bytes | 960 bytes | 2,240 bytes |
+| Measured cache cost | 683,120 gas | 461,357 gas | 1,144,477 gas |
+| At 1 gwei and $2,000/ETH | $1.37 | $0.92 | $2.29 |
 
 The measured cost covers the storage writes, computing the message hash, and the extra calls back
 to the Safe for its nonce and domain separator. It is close to the slot arithmetic: under the
@@ -56,5 +57,5 @@ extension. Approvals with an extension additionally read the Safe's threshold an
 required signature's bounds before stripping it. The stored and returned formats are unchanged.
 
 Reading a record back with `getApproval` loads every slot of the struct, the two unwritten ones
-included: 60 slots for both records, about 126,000 gas onchain at 2,100 per cold slot. An offchain
+included: 62 slots for both records, about 130,200 gas onchain at 2,100 per cold slot. An offchain
 `eth_call` costs the caller nothing.

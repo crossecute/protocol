@@ -112,8 +112,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         }
     }
 
-    /// @dev `safeTxGas` and `gasPrice` are not recorded: the inherited check has already required
-    ///      both to be zero.
+    /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
+    ///      check has already required both to be zero.
     function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
         bytes32 txHash = ISafe(payable(msg.sender))
             .getTransactionHash(
@@ -142,14 +142,15 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     function _cacheApproval(SafeTx memory safeTx, bytes32 messageHash, bytes calldata signatures) private {
         ApprovalEvidence storage evidence = $approvals[msg.sender][messageHash];
-        evidence.to = safeTx.to;
-        evidence.operation = safeTx.operation;
-        evidence.value = safeTx.value;
-        evidence.data = safeTx.data;
-        evidence.baseGas = safeTx.baseGas;
-        evidence.gasToken = safeTx.gasToken;
-        evidence.refundReceiver = safeTx.refundReceiver;
-        evidence.nonce = safeTx.nonce;
+        SafeTx storage stored = evidence.safeTx;
+        stored.to = safeTx.to;
+        stored.value = safeTx.value;
+        stored.data = safeTx.data;
+        stored.operation = safeTx.operation;
+        stored.baseGas = safeTx.baseGas;
+        stored.gasToken = safeTx.gasToken;
+        stored.refundReceiver = safeTx.refundReceiver;
+        stored.nonce = safeTx.nonce;
         evidence.signatures = _approvalSignatures(signatures);
         // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
         emit ApprovalCached(msg.sender, messageHash);
