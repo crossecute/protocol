@@ -128,10 +128,10 @@ contract ModuleTest is GuardTestBase {
     }
 
     function test_moduleDispatch_rejectedOnPermittedTarget() public {
-        vm.expectRevert(ICrossecuteGuard.ModuleDispatchDenied.selector);
+        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
         module.exec(guarded, address(guardedTransmitter), _dispatchData(), Enum.Operation.Call);
 
-        vm.expectRevert(ICrossecuteGuard.ModuleDispatchDenied.selector);
+        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
         module.exec(guarded, address(collider), _dispatchData(), Enum.Operation.Call);
     }
 

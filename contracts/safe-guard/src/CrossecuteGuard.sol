@@ -81,9 +81,9 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
-        bool dispatch = selector == IERC7786GatewaySource.sendMessage.selector;
+        bool sendMessage = selector == IERC7786GatewaySource.sendMessage.selector;
         bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
-        if (!dispatch && !approval) return;
+        if (!sendMessage && !approval) return;
 
         SafeTx memory safeTx = SafeTx({
             to: to,
@@ -98,7 +98,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             // The Safe increments its nonce before calling the guard.
             nonce: ISafe(payable(msg.sender)).nonce() - 1
         });
-        if (dispatch) {
+        if (sendMessage) {
             _tstoreSignedSafeTx(safeId, safeTx, signatures);
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
@@ -162,7 +162,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         bytes32 safeId = _safeId(msg.sender);
         bytes32 live = bytes32(_tload(safeId, _TX_HASH));
         if (live == 0) return;
-        require(live == txHash, DispatchHashMismatch(live, txHash));
+        require(live == txHash, HashMismatch(live, txHash));
 
         uint256 words = (_tload(safeId, _SIG_LENGTH) + 31) >> 5;
         for (uint256 i = 0; i < _SIG_WORDS + words; ++i) {
@@ -172,7 +172,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @dev Runs after the inherited policy check, so this only narrows what policy permits.
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
-        require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleDispatchDenied());
+        require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleSendMessageDenied());
     }
 
     function _tloadSignedSafeTx(bytes32 safeId) private view returns (SignedSafeTx memory signedSafeTx) {
