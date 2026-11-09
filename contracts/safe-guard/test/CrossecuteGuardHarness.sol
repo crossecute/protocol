@@ -10,10 +10,10 @@ contract CrossecuteGuardHarness is CrossecuteGuard {
     constructor(uint256 delay, uint256 expiry) CrossecuteGuard(delay, expiry) {}
 
     function recordWords(address safe, uint256 signatureWords) external view returns (uint256[] memory words) {
-        bytes32 base = _dispatchBase(safe);
+        bytes32 safeId = _safeId(safe);
         words = new uint256[](_SIG_WORDS + signatureWords);
         for (uint256 i = 0; i < words.length; ++i) {
-            words[i] = _tload(base, i);
+            words[i] = _tload(safeId, i);
         }
     }
 

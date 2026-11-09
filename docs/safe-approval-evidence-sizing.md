@@ -45,7 +45,7 @@ inherited policy check requires both to be zero, so they always read as zero.
 | Owner signatures | 650 bytes | 325 bytes | 975 bytes |
 | Slots written | 34 | 24 | 58 |
 | `getApproval` return, ABI-encoded | 1,280 bytes | 960 bytes | 2,240 bytes |
-| Measured cache cost | 681,609 gas | 459,846 gas | 1,141,455 gas |
+| Measured cache cost | 681,558 gas | 459,795 gas | 1,141,353 gas |
 | At 1 gwei and $2,000/ETH | $1.36 | $0.92 | $2.28 |
 
 The measured cost covers the storage writes, computing the message hash, and the extra call back

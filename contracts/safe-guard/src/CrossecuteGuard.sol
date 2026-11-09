@@ -16,23 +16,24 @@ import {SafeHashes} from "./SafeHashes.sol";
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
-    /// @dev A Safe's transient dispatch record starts at `keccak256(abi.encode(safe, namespace))`.
-    bytes32 internal constant _DISPATCH_NAMESPACE = keccak256("crossecute.guard.dispatch.v1");
+    /// @dev A Safe's transient dispatch record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
+    bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
 
-    // Word offsets from a record's base. `_TX_HASH` is nonzero exactly while the record is live.
-    uint256 internal constant _TX_HASH = 0;
-    uint256 internal constant _TARGET = 1;
-    uint256 internal constant _VALUE = 2;
-    uint256 internal constant _OPERATION = 3;
-    uint256 internal constant _BASE_GAS = 4;
-    uint256 internal constant _GAS_TOKEN = 5;
-    uint256 internal constant _REFUND_RECEIVER = 6;
-    uint256 internal constant _NONCE = 7;
-    uint256 internal constant _SIG_LENGTH = 8;
-    uint256 internal constant _SIG_WORDS = 9;
+    // Word offsets from a Safe's id.
+    uint256 internal constant _TARGET = 0;
+    uint256 internal constant _VALUE = 1;
+    uint256 internal constant _OPERATION = 2;
+    uint256 internal constant _BASE_GAS = 3;
+    uint256 internal constant _GAS_TOKEN = 4;
+    uint256 internal constant _REFUND_RECEIVER = 5;
+    uint256 internal constant _NONCE = 6;
+    uint256 internal constant _SIG_LENGTH = 7;
+    uint256 internal constant _SIG_WORDS = 8;
 
-    /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
+    /// @dev Flags above the address bits of the `_TARGET` word. `_LIVE` is set exactly while the
+    ///      record is live, so a staged call to address zero still reads as live.
     uint256 private constant _CONSUMED = 1 << 160;
+    uint256 private constant _LIVE = 1 << 161;
 
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address childSafe => mapping(bytes32 messageHash => SignedSafeTx)) private $approvals;
@@ -41,14 +42,14 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @inheritdoc ICrossecuteGuard
     function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
-        bytes32 base = _dispatchBase(safe);
-        require(_tload(base, _TX_HASH) != 0, NoLiveDispatch(safe));
-        uint256 target = _tload(base, _TARGET);
-        // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
+        bytes32 safeId = _safeId(safe);
+        uint256 target = _tload(safeId, _TARGET);
+        require(target & _LIVE != 0, NoLiveDispatch(safe));
+        // forge-lint: disable-next-line(unsafe-typecast) drops the flags above the address
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));
         require(target & _CONSUMED == 0, AlreadyConsumed(safe));
-        _tstore(base, _TARGET, target | _CONSUMED);
-        signedSafeTx = _tloadSignedSafeTx(base);
+        _tstore(safeId, _TARGET, target | _CONSUMED);
+        signedSafeTx = _tloadSignedSafeTx(safeId);
     }
 
     /// @inheritdoc ICrossecuteGuard
@@ -77,8 +78,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         bytes calldata signatures,
         address
     ) internal override {
-        bytes32 base = _dispatchBase(msg.sender);
-        require(_tload(base, _TX_HASH) == 0, NestedExecution(msg.sender));
+        bytes32 safeId = _safeId(msg.sender);
+        require(_tload(safeId, _TARGET) & _LIVE == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
         bool dispatch = selector == IERC7786GatewaySource.sendMessage.selector;
@@ -99,7 +100,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             nonce: ISafe(payable(msg.sender)).nonce() - 1
         });
         if (dispatch) {
-            _stageDispatch(base, safeTx, signatures);
+            _tstoreSignedSafeTx(safeId, safeTx, signatures);
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
             // the record shows what the owners signed, not what the delegatecall wrote.
@@ -111,19 +112,16 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
     ///      check has already required both to be zero. The calldata is not recorded: the signed
-    ///      target receives it from the Safe's call. The post-hook requires the hash computed here to
-    ///      equal the one the Safe passes it, so a disagreement reverts the dispatch.
-    function _stageDispatch(bytes32 base, SafeTx memory safeTx, bytes calldata signatures) private {
-        bytes32 txHash = SafeHashes.transactionHash(safeTx, msg.sender, block.chainid);
-        _tstore(base, _TX_HASH, uint256(txHash));
-        _tstore(base, _TARGET, uint160(safeTx.to));
-        _tstore(base, _VALUE, safeTx.value);
-        _tstore(base, _OPERATION, safeTx.operation);
-        _tstore(base, _BASE_GAS, safeTx.baseGas);
-        _tstore(base, _GAS_TOKEN, uint160(safeTx.gasToken));
-        _tstore(base, _REFUND_RECEIVER, uint160(safeTx.refundReceiver));
-        _tstore(base, _NONCE, safeTx.nonce);
-        _stageSignatures(base, signatures);
+    ///      target receives it from the Safe's call.
+    function _tstoreSignedSafeTx(bytes32 safeId, SafeTx memory safeTx, bytes calldata signatures) private {
+        _tstore(safeId, _TARGET, uint160(safeTx.to) | _LIVE);
+        _tstore(safeId, _VALUE, safeTx.value);
+        _tstore(safeId, _OPERATION, safeTx.operation);
+        _tstore(safeId, _BASE_GAS, safeTx.baseGas);
+        _tstore(safeId, _GAS_TOKEN, uint160(safeTx.gasToken));
+        _tstore(safeId, _REFUND_RECEIVER, uint160(safeTx.refundReceiver));
+        _tstore(safeId, _NONCE, safeTx.nonce);
+        _tstoreSignatures(safeId, signatures);
     }
 
     function _cacheApproval(SafeTx memory safeTx, bytes32 messageHash, bytes calldata signatures) private {
@@ -159,15 +157,15 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         }
     }
 
-    function _afterOwnerExecution(bytes32 txHash) internal override {
-        bytes32 base = _dispatchBase(msg.sender);
-        bytes32 live = bytes32(_tload(base, _TX_HASH));
-        if (live == 0) return;
-        require(live == txHash, DispatchHashMismatch(live, txHash));
+    /// @dev Not bound to the transaction hash: nesting is rejected while the record is live, so the
+    ///      only other route here is the Safe calling the guard itself, which a module can make it do.
+    function _afterOwnerExecution(bytes32) internal override {
+        bytes32 safeId = _safeId(msg.sender);
+        if (_tload(safeId, _TARGET) & _LIVE == 0) return;
 
-        uint256 words = (_tload(base, _SIG_LENGTH) + 31) >> 5;
+        uint256 words = (_tload(safeId, _SIG_LENGTH) + 31) >> 5;
         for (uint256 i = 0; i < _SIG_WORDS + words; ++i) {
-            _tstore(base, i, 0);
+            _tstore(safeId, i, 0);
         }
     }
 
@@ -176,24 +174,24 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleDispatchDenied());
     }
 
-    function _tloadSignedSafeTx(bytes32 base) private view returns (SignedSafeTx memory signedSafeTx) {
+    function _tloadSignedSafeTx(bytes32 safeId) private view returns (SignedSafeTx memory signedSafeTx) {
         SafeTx memory safeTx = signedSafeTx.safeTx;
-        // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
-        safeTx.to = address(uint160(_tload(base, _TARGET)));
-        safeTx.value = _tload(base, _VALUE);
+        // forge-lint: disable-next-line(unsafe-typecast) drops the flags above the address
+        safeTx.to = address(uint160(_tload(safeId, _TARGET)));
+        safeTx.value = _tload(safeId, _VALUE);
         // forge-lint: disable-next-line(unsafe-typecast) written from an Operation
-        safeTx.operation = uint8(_tload(base, _OPERATION));
-        safeTx.baseGas = _tload(base, _BASE_GAS);
+        safeTx.operation = uint8(_tload(safeId, _OPERATION));
+        safeTx.baseGas = _tload(safeId, _BASE_GAS);
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
-        safeTx.gasToken = address(uint160(_tload(base, _GAS_TOKEN)));
+        safeTx.gasToken = address(uint160(_tload(safeId, _GAS_TOKEN)));
         // forge-lint: disable-next-line(unsafe-typecast) written from an address
-        safeTx.refundReceiver = address(uint160(_tload(base, _REFUND_RECEIVER)));
-        safeTx.nonce = _tload(base, _NONCE);
+        safeTx.refundReceiver = address(uint160(_tload(safeId, _REFUND_RECEIVER)));
+        safeTx.nonce = _tload(safeId, _NONCE);
 
-        uint256 length = _tload(base, _SIG_LENGTH);
+        uint256 length = _tload(safeId, _SIG_LENGTH);
         bytes memory signatures = new bytes(length);
         for (uint256 i = 0; i < length; i += 32) {
-            uint256 word = _tload(base, _SIG_WORDS + (i >> 5));
+            uint256 word = _tload(safeId, _SIG_WORDS + (i >> 5));
             assembly ("memory-safe") {
                 mstore(add(add(signatures, 0x20), i), word)
             }
@@ -202,9 +200,9 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     /// @dev The final word is masked to `signatures`' length so the record holds no calldata past it.
-    function _stageSignatures(bytes32 base, bytes calldata signatures) private {
+    function _tstoreSignatures(bytes32 safeId, bytes calldata signatures) private {
         uint256 length = signatures.length;
-        _tstore(base, _SIG_LENGTH, length);
+        _tstore(safeId, _SIG_LENGTH, length);
         for (uint256 i = 0; i < length; i += 32) {
             uint256 word;
             assembly ("memory-safe") {
@@ -214,23 +212,23 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             if (remaining < 32) {
                 word &= ~(type(uint256).max >> (remaining << 3));
             }
-            _tstore(base, _SIG_WORDS + (i >> 5), word);
+            _tstore(safeId, _SIG_WORDS + (i >> 5), word);
         }
     }
 
-    function _dispatchBase(address safe) internal pure returns (bytes32) {
-        return keccak256(abi.encode(safe, _DISPATCH_NAMESPACE));
+    function _safeId(address safe) internal pure returns (bytes32) {
+        return keccak256(abi.encode(safe, NAMESPACE));
     }
 
-    function _tload(bytes32 base, uint256 offset) internal view returns (uint256 value) {
+    function _tload(bytes32 safeId, uint256 offset) internal view returns (uint256 value) {
         assembly ("memory-safe") {
-            value := tload(add(base, offset))
+            value := tload(add(safeId, offset))
         }
     }
 
-    function _tstore(bytes32 base, uint256 offset, uint256 value) private {
+    function _tstore(bytes32 safeId, uint256 offset, uint256 value) private {
         assembly ("memory-safe") {
-            tstore(add(base, offset), value)
+            tstore(add(safeId, offset), value)
         }
     }
 }

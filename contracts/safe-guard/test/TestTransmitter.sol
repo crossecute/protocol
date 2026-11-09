@@ -15,7 +15,7 @@ contract Sink {
 
     function hit(CrossecuteGuardHarness guard, address safe) external payable {
         ++calls;
-        consumedFirst = guard.recordWords(safe, 0)[1] >> 160 == 1;
+        consumedFirst = (guard.recordWords(safe, 0)[0] >> 160) & 1 == 1;
     }
 }
 
