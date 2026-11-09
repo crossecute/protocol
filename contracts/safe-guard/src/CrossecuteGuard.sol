@@ -25,8 +25,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     // Word offsets from a record's base. `_TX_HASH` is nonzero exactly while the record is live.
     uint256 internal constant _TX_HASH = 0;
     uint256 internal constant _TARGET = 1;
-    uint256 internal constant _OPERATION = 2;
-    uint256 internal constant _VALUE = 3;
+    uint256 internal constant _VALUE = 2;
+    uint256 internal constant _OPERATION = 3;
     uint256 internal constant _BASE_GAS = 4;
     uint256 internal constant _GAS_TOKEN = 5;
     uint256 internal constant _REFUND_RECEIVER = 6;
@@ -125,8 +125,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             );
         _tstore(base, _TX_HASH, uint256(txHash));
         _tstore(base, _TARGET, uint160(safeTx.to));
-        _tstore(base, _OPERATION, safeTx.operation);
         _tstore(base, _VALUE, safeTx.value);
+        _tstore(base, _OPERATION, safeTx.operation);
         _tstore(base, _BASE_GAS, safeTx.baseGas);
         _tstore(base, _GAS_TOKEN, uint160(safeTx.gasToken));
         _tstore(base, _REFUND_RECEIVER, uint160(safeTx.refundReceiver));

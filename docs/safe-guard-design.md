@@ -107,7 +107,7 @@ arguments. The record holds, for the calling Safe:
 | Safe transaction hash | recomputed from the hook arguments and `nonce() - 1` |
 | Signed target | `to` |
 | Consumed flag | set by `consume` |
-| Operation, value | hook arguments |
+| Value, operation | hook arguments |
 | `baseGas`, `gasToken`, `refundReceiver`, nonce | hook arguments and the Safe |
 | Signature blob | the hook's `signatures`, byte for byte |
 
