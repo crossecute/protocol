@@ -65,8 +65,12 @@ Verification and replay:
   For each format, provider delivery and direct submission share the verifier and replay
   state. Provider delivery also requires an enabled gateway and authenticated origin and
   sender matching the configured source chain and transmitter. Direct submission uses
-  the signed Safe domain and target without provider metadata. A shared transmitter
-  and receiver address across chains does not relax verification.
+  the signed Safe domain and target without provider metadata. In signed mode, a bare
+  call from the local address matching `sourceTransmitter` grants no authority to
+  `execute`, `commit`, `cancel`, or `revokeGateway`. Protected self-calls must run
+  within verified signed execution, including signed bootstrap setup, or through
+  `finalize` of a commitment established by signed authorization. Existing
+  function-specific checks still apply.
 - **D10.** Each receiver starts Merkle execution at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the execution ID, which excludes delivery attributes, and
   advances before external calls. It rejects overflow and rolls both writes back if
@@ -453,10 +457,9 @@ Cases:
 
 ## Other open items
 
-- **O1.** Gating on zkSync and Tron. `execute`, `commit`, `cancel` and `revokeGateway` accept
-  `msg.sender == sourceTransmitter`, which on those chains is whatever code sits at the home
-  transmitter's address. *Proposed:* a receiver in signed mode accepts only `address(this)` during
-  verified execution.
+- **O1.** Resolved in D9. Signed receivers derive execution authority from verified
+  Safe authorization, including previously approved commitments. Equality with the
+  source transmitter address grants no authority to a bare destination call.
 - **O2.** Resolved in D9. Signed provider delivery retains the existing gateway, origin
   and sender checks and always routes to the signed verifier.
 - **O3.** Standalone send fee drain. Whoever executes a fully signed Safe transaction
@@ -562,6 +565,9 @@ and are not in them yet:
 - a valid signed bundle delivered through an enabled gateway with the wrong origin or
   sender reverts without writing receiver state. The same bundle can execute through
   direct submission;
+- bare calls to `execute`, `commit`, `cancel`, and `revokeGateway` from the matching local
+  transmitter address revert and leave receiver state unchanged. Verified signed execution
+  and finalization of a signed commitment retain their existing effects;
 - a signed DELEGATECALL dispatch rejects (Q1.1);
 - replay through the same Safe and transmitter addresses on another chain (Q4.2);
 - non-canonical calldata and ERC-7930 encodings (Q1.4, Q2.4);
