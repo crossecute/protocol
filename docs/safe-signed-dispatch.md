@@ -234,7 +234,7 @@ Cases:
 - **Q2.6** Double hashing keeps a 64-byte internal node from decoding as a leaf.
 - **Q2.7** Sorted pairs carry no index; duplicate leaves are harmless.
 - **Q2.8** A single-leaf tree has the leaf node as its root and an empty proof.
-- **Q2.9** Proof length is capped (Q7).
+- **Q2.9** Proof verification has no separate length cap (Q7).
 - **Q2.10** D13 preserves `commit`, `cancel`, and `revokeGateway` self-calls after
   authorization. A self-call to #109's update entry point would combine update and
   execute and must be blocked. The dispatch entry points use the reentrancy lock.
@@ -424,7 +424,7 @@ Cases:
 
 ### Q7. Resource limits
 
-Which source or provider limits, if any, should apply, and what measurements inform them?
+Which limits come from the provider or chain, and what should be measured?
 
 Cases:
 
@@ -433,9 +433,9 @@ Cases:
   limits apply.
 - **Q7.2** At `createTransmitter` and receiver bootstrap, use the same authority graph
   validity rules so a signed transmitter cannot commit to an invalid graph.
-- **Q7.3** Source checks for provider payload limits apply to the full encoded payload
-  before paying the provider (Q6.10).
-- **Q7.4** Whether to cap standalone payload size on the source remains open (O3).
+- **Q7.3** The provider enforces its payload size limit. Quote and send the full encoded
+  payload under Q6.10.
+- **Q7.4** The transmitter adds no payload size cap, including for standalone sends (O3).
 - **Q7.5** Measurements needed before choosing numbers: gas per signature entry, per nested
   level and per evidence item; memory expansion for large blobs; bootstrap storage gas against
   owners and nodes; receiver code size against EIP-170; each provider's maximum message size
@@ -482,7 +482,7 @@ Cases:
   and sender checks and always routes to the signed verifier.
 - **O3.** Standalone send fee drain. Whoever executes a fully signed Safe transaction
   controls the bytes after the threshold entries (#117). LayerZero and CCIP price the
-  byte-exact parent blob. *Open:* choose a payload cap after measurement. Permissionless
+  byte-exact parent blob. The provider enforces its payload cap (Q7.3). Permissionless
   `relayLeaf` is caller-funded.
 - **O4.** Quote and send parity is resolved in Q6.10.
 - **O5.** `MessageSent` reports the signed recipient for a standalone send and the leaf
