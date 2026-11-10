@@ -17,8 +17,6 @@ struct ExecutionLeaf {
 struct DispatchPayload {
     bytes32 merkleRoot;
     uint256 authorityCounter;
-    ExecutionLeaf selectedLeaf;
-    bytes32[] selectedProof;
 }
 
 /// @notice Signed child approval keyed by the child Safe and its Safe message hash.
@@ -36,7 +34,7 @@ struct SignedDelivery {
 }
 
 /// @notice Proposed Safe-signed transmitter interface.
-/// @dev `sendMessage` takes an encoded `DispatchPayload` and routes using its selected leaf.
+/// @dev `sendMessage` takes an encoded root authorization. Leaf witnesses are supplied separately.
 interface ISignedTransmitter is IERC7786GatewaySource {}
 
 /// @notice Proposed permissionless submission interface for a Safe-signed receiver.
