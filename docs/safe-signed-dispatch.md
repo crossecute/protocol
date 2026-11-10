@@ -51,7 +51,8 @@ Trees and leaves:
   before calling the provider and let a revert roll back the mark. The receiver marks the
   same leaf hash used when execution succeeds. The source mark is keyed by leaf hash across all registered roots on that transmitter.
   Destination failure rolls back only the receiver mark, and the original delivery can be
-  retried through the provider.
+  retried through the provider. Direct execution writes only receiver state. A later
+  `relayLeaf` may still send and mark that leaf used on the transmitter.
 - **D8.** Each Merkle leaf commits to its receiver's local nonce. The Safe nonce stays in the
   signed transaction context. A standalone send has the same application payload as the
   plain path and uses the Safe digest as its replay identity.
@@ -59,22 +60,26 @@ Trees and leaves:
 Verification and replay:
 
 - **D9.** Every dispatch verifies before changing state, including a commit-only message.
-  Standalone provider delivery and direct submission share the same verifier and replay state. Provider
+  For each format, provider delivery and direct submission share the verifier and replay
+  state. Provider
   sender metadata and local self-calls never substitute for it, including where the
   transmitter and receiver share an address on different chains.
 - **D10.** Each receiver starts Merkle execution at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the leaf hash and advances before external calls, rejects
   overflow, and rolls both back if execution reverts.
-- **D11.** An authenticated replay of an executed leaf returns successfully with
-  `DuplicateMessage()`, without calls or nonce advance, including under a different valid root, within the signed window. The leaf hash comes from the leaf's fields, not the root or proof. A
-  different leaf at a consumed nonce reverts. First and repeat deliveries after the deadline revert.
+- **D11.** After authenticating a Merkle delivery, a receiver that already executed the
+  same leaf returns success silently, without an event, calls or nonce advance. This
+  includes a provider delivery after direct execution, and the same leaf under a different
+  valid root. A different leaf at a consumed nonce reverts. Standalone duplicates retain
+  `DuplicateMessage()`.
 - **D12.** A replacement leaf at the current nonce may carry revised calls or an empty batch.
   If the original leaf is still valid, either may consume the nonce first.
 - **D13.** A commit-only leaf consumes its nonce when the commitment is recorded. `finalize`
   consumes the commitment later without touching the nonce.
-- **D14.** Each leaf commits to `validAfter` and `deadline`. First and repeat deliveries require
-  `validAfter <= deadline` and `validAfter <= block.timestamp <= deadline` on destination time,
-  inclusive. No zero-deadline bypass. A rejected window consumes nothing.
+- **D14.** A new Merkle execution requires `validAfter <= deadline` and
+  `validAfter <= block.timestamp <= deadline` on destination time, inclusive. An invalid
+  window consumes nothing. An authenticated repeat of an executed leaf succeeds silently
+  even after the deadline.
 
 Authority:
 
@@ -90,9 +95,10 @@ Authority:
 - **D18.** #108 uses fixed authority. #109 specifies how standalone sends and cached
   root approvals are invalidated when authority changes. Authority updates and dispatch
   execution have separate entry points.
-- **D19.** No light clients. Standalone signed dispatches can execute directly at the
-  destination without source execution or bridge delivery. A direct path for Merkle leaves
-  would need to account for transmitter-side used state (Q1.7).
+- **D19.** Standalone sends and Merkle leaves can execute directly at the destination.
+  A direct Merkle submission supplies the signed root registration, leaf and proof. The
+  receiver authenticates it locally using the same rules as a provider delivery. Direct
+  execution requires neither a source registration receipt nor a source used record.
 
 ## Conflicts to resolve first
 
@@ -145,9 +151,9 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
 - **Q1.6** Teach the guard to stage `registerRoot(bytes32)` for owner transactions and
   reject that selector on the module path. Cache the resulting `SignedDelivery` on the
   transmitter, so relayers only supply the root and witness.
-- **Q1.7** *Open:* whether to support direct Merkle delivery and how to keep source tracking
-  accurate if it can bypass `relayLeaf`. Also specify recovery where the provider cannot
-  retry a failed destination execution.
+- **Q1.7** Direct Merkle submission can execute a leaf when the provider is unavailable.
+  It leaves the transmitter's used state unchanged. A later provider delivery of that
+  leaf follows D11.
 - **Q1.8** *Open:* relay fee funding and how permissionless relays apply provider attributes
   and gas limits.
 - **Q1.9** *Open:* measure cache writes and provider envelope costs, including nested evidence,
@@ -441,10 +447,10 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 | R5 | Destination is (`block.chainid`, `address(this)`) | revert, permanent |
 | R6 | Merkle only: verify the leaf proof against the root in signed registration calldata | revert, permanent |
 | R8 | Authority counter checks are deferred to #109 | |
-| R9 | Verify signatures and nested evidence, then check the execution window for a Merkle leaf | revert, permanent |
-| R10 | Standalone digest or Merkle leaf already executed | emit `DuplicateMessage()`, succeed |
+| R9 | Verify signatures and nested evidence | revert, permanent |
+| R10 | Standalone digest or Merkle leaf already executed | succeed silently for Merkle, emit `DuplicateMessage()` for standalone |
 | R11 | `executed[nonce] != 0` | revert, conflicting leaf, permanent |
-| R12 | `nonce > nextNonce` | revert, future nonce, retryable |
+| R12 | Merkle only: require the next nonce and check the signed execution window | revert |
 | R14 | Minimum gas, if O7 is adopted | revert, retryable |
 | R15 | Record the standalone digest or Merkle leaf hash. For a new leaf, increment `nextNonce`, rejecting overflow | revert, permanent |
 | R16 | Execute the calls atomically; an empty batch is allowed | revert undoes R15, retryable |
@@ -480,6 +486,10 @@ and are not in them yet:
 - failed provider sends roll back the source mark. Successful sends reject another relay
   of the same leaf. Destination failure leaves the receiver unmarked, and a retry succeeds
   once without another source send;
+- direct Merkle execution leaves the source unused. A later `relayLeaf` marks it used on
+  the transmitter and delivers successfully, with no destination event, calls or nonce
+  advance, including after the deadline;
+- a forged or invalid proof still rejects after the leaf has already executed;
 - a signed DELEGATECALL dispatch rejects (Q1.1);
 - replay through the same Safe and transmitter addresses on another chain (Q4.2);
 - non-canonical calldata and ERC-7930 encodings (Q1.4, Q2.4);

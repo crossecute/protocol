@@ -45,4 +45,8 @@ interface ISignedReceiver {
 
     /// @notice Submit a standalone Safe-signed send to its signed recipient.
     function submitDirect(SignedDelivery calldata delivery) external;
+
+    /// @notice Submit a leaf directly using its signed root registration and proof.
+    function submitDirect(SignedDelivery calldata delivery, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
+        external;
 }
