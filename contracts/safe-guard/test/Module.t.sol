@@ -99,7 +99,7 @@ contract ModuleTest is GuardTestBase {
         guarded = _newEoaSafe();
         guardedTransmitter = new TestTransmitter(address(guarded), sink);
 
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](6);
+        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](7);
         configs[0] = _config(address(guarded), guarded.enableModule.selector, Operation.CALL, address(ownerOnly));
         configs[1] = _config(address(guarded), guarded.setGuard.selector, Operation.CALL, address(ownerOnly));
         configs[2] = _config(
@@ -111,6 +111,9 @@ contract ModuleTest is GuardTestBase {
         );
         configs[5] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(ownerOnly));
+        configs[6] = _config(
+            address(guardedTransmitter), TestTransmitter.registerRoot.selector, Operation.CALL, address(allowPolicy)
+        );
         _install(guarded, _signers(), guard, configs, true);
         _exec(
             guarded,
@@ -128,11 +131,29 @@ contract ModuleTest is GuardTestBase {
     }
 
     function test_moduleSendMessage_rejectedOnPermittedTarget() public {
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
+        bytes memory denied =
+            abi.encodeWithSelector(ICrossecuteGuard.ModuleStagingDenied.selector, TestTransmitter.sendMessage.selector);
+        vm.expectRevert(denied);
         module.exec(guarded, address(guardedTransmitter), _sendMessageData(), Enum.Operation.Call);
 
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
+        vm.expectRevert(denied);
         module.exec(guarded, address(collider), _sendMessageData(), Enum.Operation.Call);
+    }
+
+    /// @dev The target is policy-permitted and the root is published.
+    function test_moduleRegisterRoot_rejectedForPublishedRoot() public {
+        bytes[] memory leaves = new bytes[](1);
+        leaves[0] = hex"01";
+        bytes32 root = guard.publishLeaves(leaves);
+        vm.expectRevert(
+            abi.encodeWithSelector(ICrossecuteGuard.ModuleStagingDenied.selector, TestTransmitter.registerRoot.selector)
+        );
+        module.exec(
+            guarded,
+            address(guardedTransmitter),
+            abi.encodeCall(TestTransmitter.registerRoot, (root)),
+            Enum.Operation.Call
+        );
     }
 
     function test_modulePermittedCall_succeeds() public {
@@ -181,7 +202,7 @@ contract ModuleTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        // `execTransactionFromModule` reports the inner NoLiveSendMessage revert as `false`.
+        // `execTransactionFromModule` reports the inner NoLiveRecord revert as `false`.
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(safe))));
         assertFalse(module.exec(safe, address(transmitter), _sendMessageData(), Enum.Operation.Call));
         assertEq(transmitter.sends(), 0);

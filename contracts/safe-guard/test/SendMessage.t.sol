@@ -162,13 +162,13 @@ contract SendMessageTest is GuardTestBase {
             TestTransmitter.Mode.CallThenConsume, address(thief), abi.encodeCall(Thief.steal, (guard, address(other)))
         );
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(other)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(other)));
         _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
     function test_consume_outsideExecution() public {
         vm.prank(address(transmitter));
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         guard.consume(address(safe));
     }
 
@@ -403,7 +403,7 @@ contract SendMessageTest is GuardTestBase {
         bytes memory batchData = abi.encodePacked(uint8(0), address(transmitter), uint256(0), data.length, data);
         bytes memory call = abi.encodeCall(multiSend.multiSend, (batchData));
         bytes memory sigs = _signFor(safe, _signers(), address(multiSend), 0, call, Enum.Operation.DelegateCall);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(multiSend), 0, call, Enum.Operation.DelegateCall, sigs);
     }
 
@@ -452,7 +452,7 @@ contract SendMessageTest is GuardTestBase {
             TestTransmitter.Mode.CallThenConsume, address(module), abi.encodeCall(GuardSwapModule.swap, ())
         );
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, sigs);
     }
 
@@ -519,10 +519,6 @@ contract SendMessageTest is GuardTestBase {
         );
         assertTrue(_exec(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call));
         assertTrue(sink.consumedFirst());
-    }
-
-    function _words(bytes memory signatures) internal pure returns (uint256) {
-        return (signatures.length + 31) / 32;
     }
 
     function _presignedTransfer(uint256 nonce) internal view returns (bytes memory) {

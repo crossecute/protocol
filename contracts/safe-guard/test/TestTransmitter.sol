@@ -3,11 +3,12 @@ pragma solidity =0.8.30;
 
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {IRootRegistration} from "../src/CrossecuteGuard.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
+/// @dev Stands in for an external effect. Records whether the caller's staged record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
@@ -22,7 +23,7 @@ contract Sink {
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter {
+contract TestTransmitter is IRootRegistration {
     enum Mode {
         Consume,
         Skip,
@@ -55,6 +56,8 @@ contract TestTransmitter {
     /// @dev `abi.encode` of the last consumed record, as the guard returned it.
     bytes public lastSendMessage;
     uint256[] public lastApprovalNonces;
+    uint256 public registrations;
+    bytes32 public lastRoot;
 
     constructor(address owner, Sink sink) {
         OWNER = owner;
@@ -98,6 +101,18 @@ contract TestTransmitter {
         return lastSafeTxHash;
     }
 
+    /// @dev Records the consumed authorization where #108's transmitter would cache it.
+    function registerRoot(bytes32 root) external {
+        require(msg.sender == OWNER, NotOwner());
+        ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
+        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
+        signedSafeTx.safeTx.data = msg.data;
+        lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
+        lastSignatures = signedSafeTx.signatures;
+        lastRoot = root;
+        ++registrations;
+    }
+
     function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
         return ISafe(payable(OWNER))
             .getTransactionHash(
@@ -131,6 +146,15 @@ contract Collider {
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
         ++calls;
         return 0;
+    }
+}
+
+/// @dev Has the `registerRoot` selector and no relation to the guard.
+contract RootCollider is IRootRegistration {
+    uint256 public calls;
+
+    function registerRoot(bytes32) external {
+        ++calls;
     }
 }
 
