@@ -378,12 +378,12 @@ in an unsorted flat array and look it up by linear scan.
 
 Cases:
 
-- **Q6.1** The guard keys evidence by the approving Safe on whichever guard that child had when
-  its approval executed. Discovery returns the child's current guard: a child that changed
-  guards after caching leaves its evidence on the old one; a child with no guard reverts
-  `NoGuard`; a non-Crossecute guard has no `getApproval`. *Open:* query the child's guard,
-  then the parent's, then revert; or revert at once; or send without evidence and let the
-  receiver reject.
+- **Q6.1** For an empty nested signature, the child Safe must have a Crossecute guard installed
+  with the matching cached signed approval. If its current guard cannot supply the evidence,
+  revert during source evidence collection, before paying the provider. An approval cached on
+  a previous guard stays there. The child can reapprove on its current Crossecute guard or
+  provide an inline signature. Anyone with complete signed evidence can still submit directly
+  to the receiver for independent verification.
 - **Q6.2** The transmitter computes the key as the child-domain Safe message digest over
   `abi.encode(parentDataHash)`. The guard hashes the exact bytes passed to `signMessage`.
 - **Q6.3** The recursion hash differs by path. Inline contract signatures: a grandchild signs
