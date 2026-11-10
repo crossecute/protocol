@@ -468,7 +468,9 @@ Cases:
   The Safe then signs and executes `registerRoot(bytes32)`. Its guard validates that
   the root was published before staging the authorization. Relay uses the registered
   root, one leaf and its proof. The full tree stays in the publication transaction.
-  Publication access and how records are scoped across Safes remain open.
+  Anyone can publish. Records are keyed by root on the guard and shared by Safes
+  using that guard. Each Safe authorizes registration separately. Guard work is tracked
+  in [#131](https://github.com/crossecute/protocol/issues/131) for PR #117.
 - **Q8.5** Anyone can check a bundle against the Safe hash, root and proofs, so its source
   needs no trust.
 - **Q8.6** Signers need the bundle to review other leaves, since the Safe UI shows an opaque
