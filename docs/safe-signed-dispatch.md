@@ -400,7 +400,9 @@ Cases:
   the child domain, verifies its signatures under the current child node, checks the
   `signMessage(bytes)` selector and exact decoded message `abi.encode(parentHash)`. The
   signed target is part of the digest. There is no signing-library allowlist.
-- **Q6.6** Missing evidence rejects. *Open:* extra evidence rejects or is ignored.
+- **Q6.6** Missing required evidence reverts. The receiver ignores unused approval records.
+  An approval can contribute to quorum only when an empty nested signature requires its
+  exact child Safe and message digest and the approval verifies.
 - **Q6.7** A shared child needing evidence for two hashes contributes two entries.
 - **Q6.8** Evidence that no longer meets the child's current stored composition rejects; the
   child re-approves, which replaces the cached record for that hash. A provider message
