@@ -152,12 +152,12 @@ Authority:
 - **C5. Source-side policy does not gate destination effects.** Accepted. Under D19 and
   D22, valid Safe authorization is sufficient for destination execution even if the source
   transaction has yet to execute. Source guard policy and delays apply to source execution.
-- **C6. Safe cancellation does not cancel.** Signing a rejection at the same Safe nonce
-  replaces the source transaction but leaves the original signatures valid at the destination
-  under the standalone replay rules. For registered roots, replacing a source Safe transaction
-  at the same nonce cannot undo a registration that already executed.
-  Signatures in the Safe Transaction Service are public once threshold is reached. *Open:*
-  document as accepted, and say what tooling shows signers.
+- **C6. Destination execution after signing.** Before each signer signs, proposal tooling
+  must show a notice and require acknowledgment to continue. Once the signed bundle meets
+  the destination quorum, anyone with the complete evidence can submit it directly without
+  waiting for source execution, subject to the destination's execution checks. Canceling
+  the source Safe transaction at the same nonce does not invalidate the signed bundle or
+  undo a root registration that already executed.
 - **C7. PR #115's draft of this file.** It describes a superseded design: `minimumNonce` with
   gaps, no stored execution hash, leaves committing to the parent nonce, and evidence that must
   delegatecall a supported signing library. This file replaces it.
