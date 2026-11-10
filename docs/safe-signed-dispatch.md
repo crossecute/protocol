@@ -384,8 +384,10 @@ Cases:
   a previous guard stays there. The child can reapprove on its current Crossecute guard or
   provide an inline signature. Anyone with complete signed evidence can still submit directly
   to the receiver for independent verification.
-- **Q6.2** The transmitter computes the key as the child-domain Safe message digest over
-  `abi.encode(parentDataHash)`. The guard hashes the exact bytes passed to `signMessage`.
+- **Q6.2** The child Safe approves by calling `signMessage(bytes)` with
+  `abi.encode(parentDataHash)`. Its guard computes the child-domain Safe message digest
+  from those bytes and caches the signed approval under the child Safe and that digest.
+  The transmitter derives the same digest and passes it to `getApproval(childSafe, childMessageHash)`.
 - **Q6.3** The recursion hash differs by path. Inline contract signatures: a grandchild signs
   over the child's message hash. Evidence: the evidence is a child Safe transaction, so a
   grandchild's empty entry inside it needs evidence over the child's approval transaction hash.
