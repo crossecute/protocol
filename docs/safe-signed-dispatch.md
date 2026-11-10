@@ -388,11 +388,14 @@ Cases:
   `abi.encode(parentDataHash)`. Its guard computes the child-domain Safe message digest
   from those bytes and caches the signed approval under the child Safe and that digest.
   The transmitter derives the same digest and passes it to `getApproval(childSafe, childMessageHash)`.
-- **Q6.3** The recursion hash differs by path. Inline contract signatures: a grandchild signs
-  over the child's message hash. Evidence: the evidence is a child Safe transaction, so a
-  grandchild's empty entry inside it needs evidence over the child's approval transaction hash.
-- **Q6.4** Evidence comes from an executed child transaction and may carry the child
-  executor's `v = 1`, which the receiver rejects (T6 can catch it).
+- **Q6.3** Follow Safe's digest at each nested verification step. For an inline child
+  signature, recurse with the child's Safe message digest. For a cached child approval,
+  recurse into the approval's signatures with the child Safe transaction digest. Use that
+  transaction digest as the input to Q6.2 for any empty nested signature in the approval.
+- **Q6.4** Reject `v = 1` in every signature entry used for authorization, including entries
+  in cached approvals. Validate this during source evidence collection, before registering
+  a root or paying the provider. The receiver also rejects these entries, since the original
+  caller and source Safe's approved-hash state cannot be verified from the signed bundle.
 - **Q6.5** The receiver rebuilds the child transaction hash with `operation = DELEGATECALL` and
   the child domain, verifies its signatures under the current child node, checks the
   `signMessage(bytes)` selector and exact decoded message `abi.encode(parentHash)`. The
