@@ -20,11 +20,17 @@ interface IBootstrap {
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
 }
 
+/// @dev The #108 transmitter's root registration, which has no interface in `contracts/evm` yet.
+interface IRootRegistration {
+    function registerRoot(bytes32 root) external;
+}
+
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
 ///         Safes. On top of the inherited policy engine it stages each owner-signed
-///         `sendMessage` and `bootstrap` for the signed target to consume, and caches child Safe
-///         approvals.
+///         `sendMessage` and `bootstrap` for the signed target to consume, caches child Safe
+///         approvals, records published Merkle roots, and lets an owner `registerRoot` through only
+///         for a published root.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
@@ -48,6 +54,8 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address childSafe => mapping(bytes32 messageHash => SignedSafeTx)) private $approvals;
+    // solhint-disable-next-line private-vars-leading-underscore
+    mapping(bytes32 root => bool) private $published;
 
     constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
 
@@ -82,6 +90,39 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(signedSafeTx.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
     }
 
+    /// @inheritdoc ICrossecuteGuard
+    function publishLeaves(bytes[] calldata leaves) external returns (bytes32 root) {
+        uint256 count = leaves.length;
+        require(count != 0, NoLeaves());
+        bytes32[] memory leafHashes = new bytes32[](count);
+        bytes32[] memory level = new bytes32[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            leafHashes[i] = keccak256(abi.encode(keccak256(leaves[i])));
+            level[i] = leafHashes[i];
+        }
+        // In place: node i reads entries 2i and 2i + 1, which no earlier node has overwritten.
+        for (uint256 width = count; width > 1;) {
+            uint256 pairs = width >> 1;
+            for (uint256 i = 0; i < pairs; ++i) {
+                (bytes32 a, bytes32 b) = (level[2 * i], level[2 * i + 1]);
+                level[i] = a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
+            }
+            if (width & 1 == 1) level[pairs] = level[width - 1];
+            width = pairs + (width & 1);
+        }
+        root = level[0];
+        $published[root] = true;
+        for (uint256 i = 0; i < count; ++i) {
+            // forge-lint: disable-next-line(reentrancy-events) this function makes no external call
+            emit LeafPublished(root, leafHashes[i], i);
+        }
+    }
+
+    /// @inheritdoc ICrossecuteGuard
+    function isPublished(bytes32 root) external view returns (bool) {
+        return $published[root];
+    }
+
     /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
     ///      this Safe belongs to the execution that staged it.
     function _afterOwnerPolicyCheck(
@@ -101,6 +142,13 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
+        if (selector == IRootRegistration.registerRoot.selector) {
+            // Nothing is staged: a relayer supplies the registration's signatures. The root is
+            // decoded as the transmitter's ABI decoder reads it, ignoring trailing bytes.
+            bytes32 root = abi.decode(data[4:], (bytes32));
+            require($published[root], RootNotPublished(root));
+            return;
+        }
         bool staged = _isStaged(selector);
         bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
         if (!staged && !approval) return;
@@ -190,9 +238,12 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         }
     }
 
-    /// @dev Runs after the inherited policy check, so this only narrows what policy permits.
+    /// @dev Runs after the inherited policy check, so this only narrows what policy permits. A module
+    ///      `registerRoot` would skip the owner hook's publication check.
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
-        require(!_isStaged(_decodeSelector(data)), ModuleStagedCallDenied());
+        bytes4 selector = _decodeSelector(data);
+        require(!_isStaged(selector), ModuleStagedCallDenied());
+        require(selector != IRootRegistration.registerRoot.selector, ModuleRegisterRootDenied());
     }
 
     /// @dev The selectors whose owner transactions are staged and whose module transactions are

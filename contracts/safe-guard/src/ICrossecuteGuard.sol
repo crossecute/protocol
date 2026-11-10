@@ -30,6 +30,9 @@ interface ICrossecuteGuard {
     }
 
     event ApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
+    /// @notice One per leaf of a `publishLeaves` call, in leaf order. The leaf bytes are in that
+    ///         call's calldata at `index`.
+    event LeafPublished(bytes32 indexed root, bytes32 indexed leafHash, uint256 index);
 
     error NoLiveRecord(address safe);
     error NotSignedTarget(address caller);
@@ -37,8 +40,11 @@ interface ICrossecuteGuard {
     error NestedExecution(address safe);
     error HashMismatch(bytes32 live, bytes32 txHash);
     error ModuleStagedCallDenied();
+    error ModuleRegisterRootDenied();
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();
+    error NoLeaves();
+    error RootNotPublished(bytes32 root);
 
     /// @notice Marks `safe`'s live staged record consumed and returns it. Only the signed target
     ///         may call, once per record.
@@ -57,4 +63,18 @@ interface ICrossecuteGuard {
         external
         view
         returns (SignedSafeTx memory signedSafeTx);
+
+    /// @notice Records the Merkle root of `leaves` and emits `LeafPublished` for each. Anyone may
+    ///         call, any number of times. Publication authorizes nothing: it only lets a Safe on
+    ///         this guard execute `registerRoot` for the root. A receiver checks the registration's
+    ///         signatures, not its execution or publication, so a direct submission there does
+    ///         not depend on this record.
+    /// @dev Each element is a leaf's `abi.encode`d fields, which the guard does not decode. A leaf
+    ///      hash is `keccak256(abi.encode(keccak256(leaf)))`. An internal node hashes its two children
+    ///      smaller first. A level's unpaired last hash moves up unchanged. One leaf is its own root.
+    /// @return root The tree's root.
+    function publishLeaves(bytes[] calldata leaves) external returns (bytes32 root);
+
+    /// @notice Whether `publishLeaves` has recorded `root` on this guard.
+    function isPublished(bytes32 root) external view returns (bool);
 }

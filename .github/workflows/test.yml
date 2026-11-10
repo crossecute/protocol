@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Also fetches contracts/evm/lib/forge-std, which this project shares.
+          # Also fetches contracts/evm/lib/forge-std and openzeppelin-contracts, which this project shares.
           submodules: true
 
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1

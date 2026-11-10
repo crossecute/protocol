@@ -100,7 +100,7 @@ contract ModuleTest is GuardTestBase {
         guarded = _newEoaSafe();
         guardedTransmitter = new TestTransmitter(address(guarded), sink);
 
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](7);
+        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](8);
         configs[0] = _config(address(guarded), guarded.enableModule.selector, Operation.CALL, address(ownerOnly));
         configs[1] = _config(address(guarded), guarded.setGuard.selector, Operation.CALL, address(ownerOnly));
         configs[2] = _config(address(guardedTransmitter), bytes4(_stagedData()), Operation.CALL, address(allowPolicy));
@@ -116,6 +116,9 @@ contract ModuleTest is GuardTestBase {
             Operation.CALL,
             address(modulePolicy),
             abi.encode(address(module), true)
+        );
+        configs[7] = _config(
+            address(guardedTransmitter), TestTransmitter.registerRoot.selector, Operation.CALL, address(allowPolicy)
         );
         _install(guarded, _signers(), guard, configs, true);
         _exec(
@@ -139,6 +142,20 @@ contract ModuleTest is GuardTestBase {
 
         vm.expectRevert(ICrossecuteGuard.ModuleStagedCallDenied.selector);
         module.exec(guarded, address(collider), _stagedData(), Enum.Operation.Call);
+    }
+
+    /// @dev The target is policy-permitted and the root is published.
+    function test_moduleRegisterRoot_rejectedForPublishedRoot() public {
+        bytes[] memory leaves = new bytes[](1);
+        leaves[0] = hex"01";
+        bytes32 root = guard.publishLeaves(leaves);
+        vm.expectRevert(ICrossecuteGuard.ModuleRegisterRootDenied.selector);
+        module.exec(
+            guarded,
+            address(guardedTransmitter),
+            abi.encodeCall(TestTransmitter.registerRoot, (root)),
+            Enum.Operation.Call
+        );
     }
 
     function test_modulePermittedCall_succeeds() public {

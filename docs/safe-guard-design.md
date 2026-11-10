@@ -29,6 +29,10 @@ These are settled. The sections below describe each in full.
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
   staged record. The complete signature blob is staged, with no size cap. The plain
   `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads are not staged.
+- **Leaf publication.** Anyone can publish a Merkle tree's ordered, encoded leaves to the guard,
+  which records the root and emits one event per leaf. An owner `registerRoot(bytes32)` reverts
+  unless its root is published on the Safe's guard, and stages nothing. Publication authorizes
+  nothing, and a receiver's direct submission does not require it.
 - **Consumption.** `consume(address safe)` is callable only by the signed target, once. The
   transmitter does not compare calldata or value with the record; the direct call from the Safe
   delivers what the owners signed.
@@ -40,7 +44,7 @@ These are settled. The sections below describe each in full.
   Safe is rejected, before and after consumption, until the post-hook clears it.
 - **No other staging paths.** A staged selector inside a single signed MultiSend and any module
   transaction stage nothing. With the module guard installed, a module transaction with either
-  staged selector is rejected for every target.
+  staged selector, or with `registerRoot(bytes32)`, is rejected for every target.
 - **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
   cached, recognized by operation and selector alone, with no target or code-hash check. One
   record per child and message hash; a later approval replaces it; no size cap; `getApproval`
@@ -69,6 +73,7 @@ Crossecute adds runs in those callbacks.
 - **Target.** Safe 1.5.0. Earlier versions have no module guard and are not supported.
 - **Shared.** One deployment serves any number of Safes. Policy assignments, pending
   configuration, transient staged records and cached approvals are all keyed by Safe.
+  Published roots are shared by every Safe on the guard.
 - **Policy.** The inherited `PolicyEngine` governs every owner and module transaction.
   `SafenetPolicy` is one policy a Safe may select, not part of the guard.
 - **Slots.** Crossecute requires the guard in the Safe's transaction guard slot. Putting the
@@ -85,7 +90,7 @@ except for the three configuration entry points.
 
 Safe 1.5.0 increments the nonce and checks signatures, then calls the transaction guard's
 `checkTransaction`, executes, and calls `checkAfterExecution(txHash, success)` on the guard
-it read before execution. After the inherited policy check, `CrossecuteGuard` does three
+it read before execution. After the inherited policy check, `CrossecuteGuard` does four
 things in the pre-hook, in this order:
 
 1. **Nesting.** If the calling Safe has a live staged record, revert. See
@@ -94,8 +99,10 @@ things in the pre-hook, in this order:
    `bootstrap(bytes,bytes[])`, write a transient staged record for the calling Safe.
 3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
    `signMessage(bytes)`, write the persistent approval record for the calling Safe.
+4. **Root registration.** If the selector is `registerRoot(bytes32)`, revert unless the root is
+   published. See [Merkle leaf publication](#merkle-leaf-publication).
 
-The selectors differ, so one transaction triggers at most one of steps 2 and 3. The
+The selectors differ, so one transaction triggers at most one of steps 2 to 4. The
 post-hook clears the calling Safe's staged record if one exists.
 
 ## Transient staged record
@@ -145,6 +152,45 @@ Safe execution in the same parent transaction starts clean.
 selector at top level, and module transactions never enter the owner hook. Neither stages a
 record, so a protected transmitter reached that way finds nothing to consume and rejects.
 
+## Merkle leaf publication
+
+For a Merkle dispatch ([#108](https://github.com/crossecute/protocol/issues/108)) the Safe signs
+only `registerRoot(bytes32)`. Each relay or direct submission carries one leaf and its proof,
+so the leaves must be available somewhere else. `publishLeaves(bytes[] leaves)` puts them in
+the calldata of an earlier source transaction.
+
+**Publication.** Anyone can call `publishLeaves`, any number of times. Each element is one leaf's
+`abi.encode`d fields; the guard does not decode them. The guard hashes each leaf as
+`keccak256(abi.encode(keccak256(leaf)))`, builds the tree with #108's rules (an internal node
+hashes its children smaller first, a level's unpaired last hash moves up unchanged, and one
+leaf is its own root), records the root, and emits `LeafPublished(root, leafHash, index)` for
+each leaf in order. An empty list reverts with `NoLeaves`. Records are keyed by root alone, so
+one publication serves every Safe on the guard. An indexer finds the publication transaction
+from the events, decodes the leaves from its calldata, and builds any leaf's proof.
+
+**Registration check.** In the pre-hook, an owner transaction with the `registerRoot` selector
+reverts with `RootNotPublished(root)` unless the guard has recorded the root. The root is the
+first word after the selector, as the transmitter's ABI decoder reads it. The revert undoes the
+whole Safe execution, so the nonce does not advance and the same signatures can execute after
+publication. The check does not look at the target: a Safe on this guard cannot call any
+contract's `registerRoot(bytes32)` with an unpublished root.
+
+**Nothing is staged.** The guard keeps no record of a registration's signatures. They are in the
+source `execTransaction` calldata, and whoever relays a leaf through the transmitter or submits
+it to the receiver supplies them from there.
+
+**What the check covers.** Publication is enforced only when `registerRoot` executes on the
+source chain, which is what the transmitter's relay path relies on. A receiver verifies the
+registration's signatures against its stored authority, not the source execution or the
+publication, so a direct submission there works for a root that is signed to quorum but never
+executed or published. Publication grants no authority to register or relay a root; each Safe
+still signs and executes its own `registerRoot`.
+
+**Cost.** Publication execution costs about 56,000 gas for one leaf and about 6,600 gas per
+further leaf, plus the leaves' calldata
+([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The check adds one
+storage read to `registerRoot`.
+
 ## Transmitter side
 
 A signature-enabled transmitter, called directly by its owner Safe through `sendMessage` or
@@ -178,7 +224,9 @@ subject to that Safe's own record and the inherited policy check.
 
 When the Safe puts the guard in its module guard slot, the module callback rejects any
 module transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])` or
-`bootstrap(bytes,bytes[])`, whatever the target. Every other module transaction goes through the inherited policy engine, whose
+`bootstrap(bytes,bytes[])`, whatever the target, and likewise `registerRoot(bytes32)`, which
+would otherwise skip the owner hook's publication check. Every other module transaction goes
+through the inherited policy engine, whose
 configuration must deny module self-calls and delegatecalls. The policy engine already
 refuses configuration changes from modules and any call that targets the guard. Together
 these keep a module from changing the transaction guard, the module guard, owners,
