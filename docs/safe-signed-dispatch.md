@@ -351,9 +351,9 @@ For each entry `i < t`, with `t` the stored threshold of the node:
   `v - 4`. Every other `v` rejects by name.
 - **Q5.5** A recovered zero address rejects; the owner must be EOA-kind.
 - **Q5.6** Owners strictly ascending across all entry kinds.
-- **Q5.7** Safe lets two contract entries share or overlap payload bytes and lets pointers land
-  in static entries beyond `t`. *Proposed:* match Safe; bytes outside the verified parts are
-  ignored anyway.
+- **Q5.7** Match Safe's offset rules for contract signatures. Payloads may share or overlap
+  bytes, and an offset may point into entries beyond the threshold. Each referenced
+  payload must pass the offset and length checks in Q5.2 and verify independently.
 - **Q5.8** Carry the parent's signature blob byte for byte as returned by `consume`.
   Verify the quorum entries and their referenced signature payloads without parsing a
   trailing policy extension.
