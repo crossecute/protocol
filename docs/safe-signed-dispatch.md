@@ -520,7 +520,11 @@ Cases:
   [R3.5](provider-spec.md#r3-receive)) can be relaxed for signed mode. Check each provider's retry path for
   failed deliveries; the CCIP ordering preflight is
   [#118](https://github.com/crossecute/protocol/issues/118).
-- **O15.** Direct submission: nonpayable, or treat value as a top-up.
+- **O15.** Direct standalone submission uses payable `submitMessage`. Direct Merkle
+  submission uses payable `submitLeaf`. Attached native value tops up the receiver.
+  Execution spends only the authorized call values and leaves any surplus in the
+  receiver. An authenticated Merkle duplicate keeps the top-up without executing
+  again. A revert rolls back the top-up.
 
 ## Receiver check order
 
