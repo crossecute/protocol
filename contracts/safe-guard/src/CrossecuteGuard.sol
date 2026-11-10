@@ -3,6 +3,10 @@ pragma solidity =0.8.30;
 
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {IERC165} from "policy-engine/interfaces/IERC165.sol";
+import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
+import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
+import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
@@ -38,6 +42,14 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     mapping(address childSafe => mapping(bytes32 messageHash => SignedSafeTx)) private $approvals;
 
     constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
+
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        // SafePolicyGuard's external override is not callable through super.
+        return interfaceId == type(ICrossecuteGuard).interfaceId || interfaceId == type(IPolicyEngine).interfaceId
+            || interfaceId == type(ISafeModuleGuard).interfaceId
+            || interfaceId == type(ISafeTransactionGuard).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
 
     /// @inheritdoc ICrossecuteGuard
     function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
