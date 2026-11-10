@@ -406,9 +406,11 @@ Cases:
 - **Q6.7** Use one approval record per `(childSafe, messageHash)`. If multiple
   verification paths reach the same child Safe and message hash, reuse that record.
   Different message hashes for the same child Safe require separate records.
-- **Q6.8** Evidence that no longer meets the child's current stored composition rejects; the
-  child re-approves, which replaces the cached record for that hash. A provider message
-  already sent carries the old copy.
+- **Q6.8** Reapproval replaces the guard's record for the same child Safe and message hash
+  for future lookups. A provider bundle already sent and a root registration already cached
+  retain the evidence they captured. A direct submitter can attach replacement evidence to
+  the original signed dispatch if it matches the same child Safe and digest and meets the
+  receiver's stored quorum.
 - **Q6.9** A direct submitter obtains evidence from `getApproval`, from the child Safe's
   Transaction Service confirmations (an unexecuted approval is valid evidence), or from the
   provider message in the source transaction's logs.
