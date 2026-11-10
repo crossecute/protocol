@@ -416,8 +416,10 @@ Cases:
   signatures against its stored authority. A submitter can obtain evidence from
   `getApproval`, the signed child transaction (including confirmations from the Safe
   Transaction Service), or a prior provider payload.
-- **Q6.10** Measure the full encoded `SignedDelivery` for provider sizing, including the
-  lookup keys and flat array framing. The [guard measurements](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)
+- **Q6.10** Size the full encoded provider payload, including the signed authorization,
+  any leaf and proof, and the nested evidence with its lookup keys and array framing.
+  Quote and send with the same encoded bytes, destination and provider attributes. Pay
+  the provider the fee returned by the quote for that send. The [guard measurements](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)
   cover guard return data.
 
 ### Q7. Resource limits
@@ -485,9 +487,7 @@ Cases:
   controls the bytes after the threshold entries (#117). LayerZero and CCIP price the
   byte-exact parent blob. *Open:* choose a payload cap after measurement. Permissionless
   `relayLeaf` is caller-funded.
-- **O4.** Quote and send parity. Quote and provider relay need the same signed bundle and
-  leaf witness to price the wire message. `DeliveryGas.PAYLOAD` (200,000) does not cover
-  nested verification.
+- **O4.** Quote and send parity is resolved in Q6.10.
 - **O5.** `MessageSent` reports the signed recipient for a standalone send and the leaf
   destination for `relayLeaf`. Root registration creates no provider message.
 - **O6.** One reentrancy lock covers `receiveMessage`, direct submission, `finalize`, `execute`
@@ -549,7 +549,7 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | T5 | For `relayLeaf`, require a cached registration, verify the proof, require an unused leaf hash, and validate the destination route |
 | T6 | Validate signature and evidence limits before paying for provider relay |
 | T7 | Build the Merkle wire message from the cache, root, leaf and proof |
-| T8 | Quote and send using the verified leaf attributes. Require the relay fee from this call's `msg.value` |
+| T8 | Quote using the final wire message, destination and verified leaf attributes. Use those same inputs for send and require the quoted fee from this call's `msg.value` |
 | T9 | Mark the leaf hash used, send, refund excess to the relayer, and assert the transmitter's final native balance equals its pre-call balance |
 
 ## Tests
@@ -613,5 +613,6 @@ and are not in them yet:
   used mark persists, the destination execution ID and nonce roll back, and an authorized
   retry can execute the batch once;
 - a tree spanning two providers' conduits rejects (C4);
-- quote and send agree for large blobs (O4);
+- for large blobs, quote and send use identical encoded payloads, destinations and attributes,
+  and the provider receives the quoted fee (Q6.10);
 - a duplicate submitted after a parent rotation and after a child rotation (C1).
