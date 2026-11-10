@@ -6,6 +6,7 @@ import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {IBootstrap} from "../src/CrossecuteGuard.sol";
 import {Batch} from "./Batch.sol";
 import {SafeFixture} from "./SafeFixture.sol";
 import {Sink, TestTransmitter} from "./TestTransmitter.sol";
@@ -60,6 +61,15 @@ abstract contract GuardTestBase is SafeFixture {
 
     function _sendMessageData() internal pure returns (bytes memory) {
         return abi.encodeCall(TestTransmitter.sendMessage, (hex"01", hex"02", new bytes[](0)));
+    }
+
+    function _bootstrapData() internal pure returns (bytes memory) {
+        return abi.encodeCall(IBootstrap.bootstrap, (hex"01", new bytes[](0)));
+    }
+
+    /// @dev The staged calldata the shared lifecycle tests sign. Suites rerun them by overriding it.
+    function _stagedData() internal pure virtual returns (bytes memory) {
+        return _sendMessageData();
     }
 
     /// @dev An `execTransaction` call signed for an explicit nonce, for use inside a batch.

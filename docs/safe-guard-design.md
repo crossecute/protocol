@@ -1,7 +1,7 @@
 # Safe guard
 
 The Safe guard a conduit owner installs so that its transmitter can attach the owners'
-signatures to a `sendMessage`, and so that a child Safe's approval of a parent transaction
+signatures to a `sendMessage` or a signed `bootstrap`, and so that a child Safe's approval of a parent transaction
 leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
@@ -26,20 +26,21 @@ These are settled. The sections below describe each in full.
 - **Guard slots.** The transaction guard slot is required. The module guard slot is the
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
-  is staged, whatever its target or operation. The complete signature blob is staged, with no
-  size cap.
+  or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
+  staged record. The complete signature blob is staged, with no size cap. The plain
+  `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads are not staged.
 - **Consumption.** `consume(address safe)` is callable only by the signed target, once. The
   transmitter does not compare calldata or value with the record; the direct call from the Safe
   delivers what the owners signed.
 - **Guard discovery.** The transmitter reads its owner Safe's transaction guard slot on every
-  `sendMessage`. It pins no guard address and never falls back to an unsigned send.
+  `sendMessage` and `bootstrap`. It pins no guard address and never falls back to an unsigned send.
 - **Unconsumed records.** A staged call that nobody consumes succeeds and is cleared in the
   post-hook, including a call to an unrelated contract that shares the selector.
-- **Nesting.** While a Safe has a live sendMessage record, every nested owner execution by that
+- **Nesting.** While a Safe has a live staged record, every nested owner execution by that
   Safe is rejected, before and after consumption, until the post-hook clears it.
-- **No other staging paths.** A `sendMessage` inside a single signed MultiSend and any module
-  transaction stage nothing. With the module guard installed, a module transaction with the
-  `sendMessage` selector is rejected for every target.
+- **No other staging paths.** A staged selector inside a single signed MultiSend and any module
+  transaction stage nothing. With the module guard installed, a module transaction with either
+  staged selector is rejected for every target.
 - **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
   cached, recognized by operation and selector alone, with no target or code-hash check. One
   record per child and message hash; a later approval replaces it; no size cap; `getApproval`
@@ -67,7 +68,7 @@ Crossecute adds runs in those callbacks.
 
 - **Target.** Safe 1.5.0. Earlier versions have no module guard and are not supported.
 - **Shared.** One deployment serves any number of Safes. Policy assignments, pending
-  configuration, transient sendMessage records and cached approvals are all keyed by Safe.
+  configuration, transient staged records and cached approvals are all keyed by Safe.
 - **Policy.** The inherited `PolicyEngine` governs every owner and module transaction.
   `SafenetPolicy` is one policy a Safe may select, not part of the guard.
 - **Slots.** Crossecute requires the guard in the Safe's transaction guard slot. Putting the
@@ -87,18 +88,17 @@ Safe 1.5.0 increments the nonce and checks signatures, then calls the transactio
 it read before execution. After the inherited policy check, `CrossecuteGuard` does three
 things in the pre-hook, in this order:
 
-1. **Nesting.** If the calling Safe has a live sendMessage record, revert. See
+1. **Nesting.** If the calling Safe has a live staged record, revert. See
    [Nesting](#nesting).
-2. **sendMessage staging.** If the top-level calldata selector is
-   `sendMessage(bytes,bytes,bytes[])`, write a transient sendMessage record for the calling
-   Safe.
+2. **Staging.** If the top-level calldata selector is `sendMessage(bytes,bytes,bytes[])` or
+   `bootstrap(bytes,bytes[])`, write a transient staged record for the calling Safe.
 3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
    `signMessage(bytes)`, write the persistent approval record for the calling Safe.
 
-The two selectors differ, so one transaction triggers at most one of steps 2 and 3. The
-post-hook clears the calling Safe's sendMessage record if one exists.
+The selectors differ, so one transaction triggers at most one of steps 2 and 3. The
+post-hook clears the calling Safe's staged record if one exists.
 
-## Transient sendMessage record
+## Transient staged record
 
 Staging matches on the selector alone. It does not check the target, the operation, or the
 arguments. The record holds, for the calling Safe:
@@ -141,13 +141,14 @@ selector-matched call that nobody consumed stands, including one to an unrelated
 that shares the selector. Cleanup does not rely on the end-of-transaction reset, so a second
 Safe execution in the same parent transaction starts clean.
 
-**No staging path.** A single signed MultiSend carrying a `sendMessage` has the `multiSend`
+**No staging path.** A single signed MultiSend carrying a staged call has the `multiSend`
 selector at top level, and module transactions never enter the owner hook. Neither stages a
 record, so a protected transmitter reached that way finds nothing to consume and rejects.
 
 ## Transmitter side
 
-A signature-enabled transmitter, called directly by its owner Safe:
+A signature-enabled transmitter, called directly by its owner Safe through `sendMessage` or
+`bootstrap`:
 
 1. checks that `msg.sender` is its owner Safe;
 2. reads the Safe's transaction guard slot with `getStorageAt(slot, 1)`, decoding the reply
@@ -166,7 +167,7 @@ transmitter or receiver can import them.
 
 ## Nesting
 
-While a Safe has a live sendMessage record, the guard rejects any nested owner execution by
+While a Safe has a live staged record, the guard rejects any nested owner execution by
 that same Safe, before and after consumption, until the post-hook clears the record. A
 separately signed execution after cleanup in the same parent transaction proceeds. Verifying
 a nested Safe owner's signature calls that Safe's signature validator, not
@@ -176,8 +177,8 @@ subject to that Safe's own record and the inherited policy check.
 ## Module execution
 
 When the Safe puts the guard in its module guard slot, the module callback rejects any
-module transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`, whatever
-the target. Every other module transaction goes through the inherited policy engine, whose
+module transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])` or
+`bootstrap(bytes,bytes[])`, whatever the target. Every other module transaction goes through the inherited policy engine, whose
 configuration must deny module self-calls and delegatecalls. The policy engine already
 refuses configuration changes from modules and any call that targets the guard. Together
 these keep a module from changing the transaction guard, the module guard, owners,
@@ -223,7 +224,7 @@ back the write, including a replacement, and running out of gas while writing re
 approval with it.
 
 **Read.** `getApproval(address childSafe, bytes32 messageHash)` returns the record without
-consuming it, and reverts when none exists. A transmitter consumes its parent's sendMessage
+consuming it, and reverts when none exists. A transmitter consumes its parent's staged
 record and reads children's cached evidence to attach to the message it sends. A relayer can
 read the same evidence for direct submission. The receiver verifies authorization independently
 ([#108](https://github.com/crossecute/protocol/issues/108)). This ABI is not final.

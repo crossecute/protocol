@@ -8,7 +8,7 @@ import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {Collider} from "./TestTransmitter.sol";
 
-/// @dev Measures what staging and clearing a sendMessage record adds to an owner transaction, by signature
+/// @dev Measures what staging and clearing a staged record adds to an owner transaction, by signature
 ///      blob size and by calldata size.
 ///      The target never consumes, so the figure is staging plus cleanup. The baseline is the same
 ///      Safe and policy under an unmodified SafePolicyGuard. Reported in contracts/safe-guard/README.md.
