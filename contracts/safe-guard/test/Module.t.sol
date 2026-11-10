@@ -12,7 +12,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
-import {Collider, Sink, TestTransmitter} from "./TestTransmitter.sol";
+import {Collider, IPlainBootstrap, Sink, TestTransmitter} from "./TestTransmitter.sol";
 
 /// @dev Permits owner transactions only.
 contract OwnerOnlyPolicy is IPolicy {
@@ -81,7 +81,8 @@ contract Module {
 }
 
 /// @dev The guard in both slots, with a policy that has no fallback: owner self-calls go through
-///      `OwnerOnlyPolicy`, the module may call the sink, and nothing else is configured.
+///      `OwnerOnlyPolicy`, the module may call the sink and the plain bootstrap, and nothing else is
+///      configured. `ModuleBootstrapTest` reruns these tests with `bootstrap` calldata.
 contract ModuleTest is GuardTestBase {
     Module internal module;
     Safe internal guarded;
@@ -99,19 +100,24 @@ contract ModuleTest is GuardTestBase {
         guarded = _newEoaSafe();
         guardedTransmitter = new TestTransmitter(address(guarded), sink);
 
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](7);
+        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](8);
         configs[0] = _config(address(guarded), guarded.enableModule.selector, Operation.CALL, address(ownerOnly));
         configs[1] = _config(address(guarded), guarded.setGuard.selector, Operation.CALL, address(ownerOnly));
-        configs[2] = _config(
-            address(guardedTransmitter), TestTransmitter.sendMessage.selector, Operation.CALL, address(allowPolicy)
-        );
-        configs[3] = _config(address(collider), Collider.sendMessage.selector, Operation.CALL, address(allowPolicy));
+        configs[2] = _config(address(guardedTransmitter), bytes4(_stagedData()), Operation.CALL, address(allowPolicy));
+        configs[3] = _config(address(collider), bytes4(_stagedData()), Operation.CALL, address(allowPolicy));
         configs[4] = SafePolicyGuard.Configuration(
             address(sink), Sink.hit.selector, Operation.CALL, address(modulePolicy), abi.encode(address(module), true)
         );
         configs[5] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(ownerOnly));
-        configs[6] = _config(
+        configs[6] = SafePolicyGuard.Configuration(
+            address(guardedTransmitter),
+            IPlainBootstrap.bootstrap.selector,
+            Operation.CALL,
+            address(modulePolicy),
+            abi.encode(address(module), true)
+        );
+        configs[7] = _config(
             address(guardedTransmitter), TestTransmitter.registerRoot.selector, Operation.CALL, address(allowPolicy)
         );
         _install(guarded, _signers(), guard, configs, true);
@@ -130,12 +136,12 @@ contract ModuleTest is GuardTestBase {
         assertEq(_slot(guarded, 0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947), address(guard));
     }
 
-    function test_moduleSendMessage_rejectedOnPermittedTarget() public {
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
-        module.exec(guarded, address(guardedTransmitter), _sendMessageData(), Enum.Operation.Call);
+    function test_moduleStagedCall_rejectedOnPermittedTarget() public {
+        vm.expectRevert(ICrossecuteGuard.ModuleStagedCallDenied.selector);
+        module.exec(guarded, address(guardedTransmitter), _stagedData(), Enum.Operation.Call);
 
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
-        module.exec(guarded, address(collider), _sendMessageData(), Enum.Operation.Call);
+        vm.expectRevert(ICrossecuteGuard.ModuleStagedCallDenied.selector);
+        module.exec(guarded, address(collider), _stagedData(), Enum.Operation.Call);
     }
 
     /// @dev The target is policy-permitted and the root is published.
@@ -183,13 +189,13 @@ contract ModuleTest is GuardTestBase {
     }
 
     function test_ownerSendMessage_stillWorks() public {
-        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _sendMessageData(), Enum.Operation.Call));
+        assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _stagedData(), Enum.Operation.Call));
         assertEq(guardedTransmitter.sends(), 1);
     }
 
     /// @dev With the module guard slot empty the module is trusted with its Safe permissions. Its
-    ///      `sendMessage` never enters the owner hook, so the transmitter finds nothing to consume.
-    function test_withoutModuleGuard_moduleSendMessageFindsNoRecord() public {
+    ///      staged call never enters the owner hook, so the transmitter finds nothing to consume.
+    function test_withoutModuleGuard_moduleStagedCallFindsNoRecord() public {
         _exec(
             safe,
             _signers(),
@@ -198,9 +204,9 @@ contract ModuleTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        // `execTransactionFromModule` reports the inner NoLiveSendMessage revert as `false`.
+        // `execTransactionFromModule` reports the inner NoLiveRecord revert as `false`.
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(safe))));
-        assertFalse(module.exec(safe, address(transmitter), _sendMessageData(), Enum.Operation.Call));
+        assertFalse(module.exec(safe, address(transmitter), _stagedData(), Enum.Operation.Call));
         assertEq(transmitter.sends(), 0);
     }
 
@@ -224,10 +230,9 @@ contract ModuleTest is GuardTestBase {
             (address(0xBEEF), 0, "", Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), sigs)
         );
         transmitter.setMode(TestTransmitter.Mode.ConsumeThenCall, address(guarded), nested);
-        bytes memory outer =
-            _signFor(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call);
+        bytes memory outer = _signFor(safe, _signers(), address(transmitter), 0, _stagedData(), Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(PolicyEngine.AccessDenied.selector, address(0)));
-        _execWith(safe, address(transmitter), 0, _sendMessageData(), Enum.Operation.Call, outer);
+        _execWith(safe, address(transmitter), 0, _stagedData(), Enum.Operation.Call, outer);
     }
 
     function _slot(Safe safe_, uint256 slot) internal view returns (address) {
