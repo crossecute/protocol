@@ -11,6 +11,7 @@ struct ExecutionLeaf {
     uint256 validAfter;
     uint256 deadline;
     bytes callPayload; // abi.encode(Call[]) for EVM destinations.
+    bytes[] attributes; // Provider options committed by the leaf hash.
 }
 
 /// @notice Signed child approval keyed by the child Safe and its Safe message hash.
@@ -32,8 +33,8 @@ interface ISignedTransmitter is IERC7786GatewaySource {
     /// @notice Cache the owner's Safe authorization for a Merkle root.
     function registerRoot(bytes32 root) external;
 
-    /// @notice Deliver one unused leaf proven under a registered root.
-    function relayLeaf(bytes32 root, ExecutionLeaf calldata leaf, bytes32[] calldata proof, bytes[] calldata attributes)
+    /// @notice Pay to deliver one unused leaf using its proven attributes.
+    function relayLeaf(bytes32 root, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
         external
         payable
         returns (bytes32 sendId);
