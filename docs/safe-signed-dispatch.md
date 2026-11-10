@@ -449,10 +449,12 @@ source execution and when the provider is unavailable?
 
 Cases:
 
-- **Q8.1** The bundle holds every Safe transaction field, the Safe address and home chain id,
-  signatures and recursive evidence. For Merkle relay, include the root, every leaf with its
-  full calls, attributes and proof, and each receiver's Merkle nonce at build time. It carries an
-  off-chain schema version; D4 applies only to the on-chain payload.
+- **Q8.1** Export an off-chain bundle with a schema version, all Safe transaction fields,
+  the Safe address and home chain ID, signatures, and recursive approval evidence. For Merkle
+  dispatch, include the root, each receiver's Merkle nonce at build time, and the full leaf
+  data, including calls and attributes, with proofs or the ordered tree data needed to
+  reconstruct them. A versioned package generates the Merkle leaves and root using the
+  protocol's encoding and hashing rules. D4 applies to the on-chain payload.
 - **Q8.2** Before source execution, signatures exist only with signers or in the Safe
   Transaction Service. A partial set is useless until it meets the receiver's thresholds.
 - **Q8.3** The transmitter caches the original Safe transaction, signatures and nested
