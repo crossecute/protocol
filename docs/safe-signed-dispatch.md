@@ -22,7 +22,7 @@ answers are recommendations awaiting agreement. *Open* items have no recommendat
 Envelope and routing:
 
 - **D1.** A standalone Safe transaction signs the normal `sendMessage(bytes,bytes,bytes[])`
-  calldata for one destination. The recipient, payload and attributes use the plain variant's
+  calldata for one destination. The recipient, payload and attributes use the plain mode's
   encoding. The transmitter consumes the guard-staged authorization and sends in the same
   source transaction, wrapping the exact calldata with Safe context, signatures and any
   nested approval evidence. The standalone message has no Merkle root, leaf or proof.
@@ -99,6 +99,16 @@ Authority:
   A direct Merkle submission supplies the signed root registration, leaf and proof. The
   receiver authenticates it locally using the same rules as a provider delivery. Direct
   execution requires neither a source registration receipt nor a source used record.
+- **D20.** One transmitter and one receiver implementation per provider support both modes.
+  At creation, the transceiver discovers the owner's installed transaction guard and probes
+  `supportsInterface(type(ICrossecuteGuard).interfaceId)`. An affirmative response selects
+  signed mode. An absent guard, unsupported interface or failed discovery selects plain mode.
+  The deployment records its mode. A signed transmitter still consumes a fresh staged record
+  from the current compatible guard on every signed owner operation and reverts if that record
+  is unavailable. Installing or removing a guard later does not change an existing conduit.
+- **D21.** Receiver creation must bind its mode to the source transmitter's creation mode and
+  persist it before executing setup calls. A signed receiver requires signed authorization
+  for every dispatch. How bootstrap authenticates the mode is open in Q4.7.
 
 ## Conflicts to resolve first
 
@@ -184,7 +194,7 @@ Cases:
   address. The full destination bytes are included in the leaf encoding.
 - **Q2.5** The tag is the first field, so #109's management tag cannot collide with it. With no
   version field, a new format needs a new receiver implementation, and tooling identifies a
-  receiver's format from its implementation or transceiver.
+  receiver's mode from the deployed receiver's configuration.
 - **Q2.6** Double hashing keeps a 64-byte internal node from decoding as a leaf.
 - **Q2.7** Sorted pairs carry no index; duplicate leaves are harmless.
 - **Q2.8** A single-leaf tree has the leaf node as its root and an empty proof.
@@ -238,16 +248,15 @@ First bootstrap requires the configured authenticated provider and a Safe-signed
 `bootstrap(bytes,bytes[])` transaction. The bootstrap leaf commits to the destination,
 execution window and exact setup calls. It omits the execution nonce.
 
-- **Q4.1** The receiver salt is
-  `keccak256(abi.encode(sourceTransmitter, parentAuthorityCounter, snapshotHash))`,
-  where `snapshotHash = keccak256(abi.encode(snapshotRecords))`. Use the existing
-  conduit derivation with this salt.
+- **Q4.1** For #108, use the creation authority commitment and registered source
+  deployment inputs to verify the signed source transmitter address. Q4.7 covers
+  how the receiver binds the source mode into bootstrap and address derivation.
 - **Q4.2** The EIP-155 source chain ID in the Safe domain must match the authenticated
   origin and source chain key.
-- **Q4.3** The source checks the live parent counter and sends the current canonical
-  snapshot with `SignedDelivery`. The receiver checks the salt and destination, verifies
-  authorization, and initializes the per-Safe counters from the snapshot and `nextNonce`
-  to zero.
+- **Q4.3** The source forwards the creation authority records and salt with
+  `SignedDelivery`. The receiver checks the records against the salt, verifies source
+  and destination bindings and Safe authorization, then stores the records and starts
+  the Merkle nonce at zero. #109 covers rotations.
 - **Q4.4** PR #117 stages only the top-level `sendMessage` selector today. Before signed
   bootstrap can use `consume`, the guard must also stage the bootstrap selector for
   owner transactions and reject it in the installed module guard.
@@ -256,8 +265,10 @@ execution window and exact setup calls. It omits the execution nonce.
   its window succeeds silently.
 - **Q4.6** Bootstrap carries no historical authority updates. Initialized receivers apply
   later updates in sequence under #109.
-- **Q4.7** A plain transceiver deploys at a different address from a signed transceiver
-  with the same owner and salt. Test both derivations.
+- **Q4.7** *Open:* how the destination authenticates the source mode at receiver creation
+  when both modes share an implementation and transceiver address. Bind the mode to the
+  source identity, so a plain bootstrap cannot claim a signed conduit. Test correct
+  predictions, flipped mode, and rejection of plain traffic by a signed receiver.
 - **Q4.8** Measure the encoded bootstrap envelope and initialization gas against graph size.
 
 ### Q5. Recursive signature verification
@@ -398,7 +409,7 @@ Cases:
 
 - **O1.** Gating on zkSync and Tron. `execute`, `commit`, `cancel` and `revokeGateway` accept
   `msg.sender == sourceTransmitter`, which on those chains is whatever code sits at the home
-  transmitter's address. *Proposed:* the signed variant accepts only `address(this)` during
+  transmitter's address. *Proposed:* a receiver in signed mode accepts only `address(this)` during
   verified execution.
 - **O2.** `receiveMessage` always routes to the signed verifier, never `_onMessage`. *Open:*
   keep the gateway role and sender checks as an extra layer.
@@ -428,7 +439,7 @@ Cases:
   need an extension or libraries, fixed with the receiver.
 - **O14.** The receiver deduplicates, so the exactly-once transport requirement
   ([P7](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist),
-  [R3.5](provider-spec.md#r3-receive)) can be relaxed for the signed variant. Check each provider's retry path for
+  [R3.5](provider-spec.md#r3-receive)) can be relaxed for signed mode. Check each provider's retry path for
   failed deliveries; the CCIP ordering preflight is
   [#118](https://github.com/crossecute/protocol/issues/118).
 - **O15.** Direct submission: nonpayable, or treat value as a top-up.
@@ -477,6 +488,10 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 #108's acceptance criteria list the required tests. These cases follow from the items above
 and are not in them yet:
 
+- the transceiver selects signed mode for a compatible installed guard and plain mode
+  for an absent or incompatible guard. Both modes use the same implementation.
+  Installing or removing the guard later does not flip mode or allow a signed
+  transmitter to send without fresh staged authorization;
 - standalone signed sends use the plain recipient and application payload, execute once
   across both delivery routes, and never read the root cache;
 - only the owner can register a root. Anyone can relay two leaves from the same root in two

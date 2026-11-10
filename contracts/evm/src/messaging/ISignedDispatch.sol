@@ -27,7 +27,7 @@ struct SignedDelivery {
     NestedApproval[] nestedApprovals;
 }
 
-/// @notice Proposed Safe-signed transmitter interface.
+/// @notice Proposed interface for the shared transmitter in signed mode.
 interface ISignedTransmitter is IERC7786GatewaySource {
     /// @notice Cache the owner's Safe authorization for a Merkle root.
     function registerRoot(bytes32 root) external;
@@ -39,7 +39,7 @@ interface ISignedTransmitter is IERC7786GatewaySource {
         returns (bytes32 sendId);
 }
 
-/// @notice Proposed permissionless submission interface for a Safe-signed receiver.
+/// @notice Proposed permissionless submission interface for the shared receiver in signed mode.
 interface ISignedReceiver {
     event DuplicateMessage();
 
