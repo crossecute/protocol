@@ -13,14 +13,22 @@ import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
 import {SafeHashes} from "./SafeHashes.sol";
 
+/// @dev The #108 transmitter's owner-facing bootstrap (#120), which has no interface in
+///      `contracts/evm` yet. The plain `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo`
+///      overloads have other selectors and are not staged.
+interface IBootstrap {
+    function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
+}
+
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
 ///         Safes. On top of the inherited policy engine it stages each owner-signed
-///         `sendMessage` for the signed target to consume, and caches child Safe approvals.
+///         `sendMessage` and `bootstrap` for the signed target to consume, and caches child Safe
+///         approvals.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
-    /// @dev A Safe's transient sendMessage record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
+    /// @dev A Safe's transient record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
     bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
 
     // Word offsets from a Safe's id. `_TX_HASH` is nonzero exactly while the record is live.
@@ -93,9 +101,9 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
-        bool sendMessage = selector == IERC7786GatewaySource.sendMessage.selector;
+        bool staged = _isStaged(selector);
         bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
-        if (!sendMessage && !approval) return;
+        if (!staged && !approval) return;
 
         SafeTx memory safeTx = SafeTx({
             to: to,
@@ -110,7 +118,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             // The Safe increments its nonce before calling the guard.
             nonce: ISafe(payable(msg.sender)).nonce() - 1
         });
-        if (sendMessage) {
+        if (staged) {
             _tstoreSignedSafeTx(safeId, safeTx, signatures);
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
@@ -184,7 +192,13 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @dev Runs after the inherited policy check, so this only narrows what policy permits.
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
-        require(_decodeSelector(data) != IERC7786GatewaySource.sendMessage.selector, ModuleSendMessageDenied());
+        require(!_isStaged(_decodeSelector(data)), ModuleSendMessageDenied());
+    }
+
+    /// @dev The selectors whose owner transactions are staged and whose module transactions are
+    ///      rejected. Each is matched by selector alone, whatever the target.
+    function _isStaged(bytes4 selector) private pure returns (bool) {
+        return selector == IERC7786GatewaySource.sendMessage.selector || selector == IBootstrap.bootstrap.selector;
     }
 
     function _tloadSignedSafeTx(bytes32 safeId) private view returns (SignedSafeTx memory signedSafeTx) {
