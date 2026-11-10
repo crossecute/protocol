@@ -93,10 +93,16 @@ the seventh; what they mean for an operator is in the README.
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
 - **No protocol transmitter consumes the Safe guard yet.** `CrossecuteGuard` stages owner
-  signatures and caches child approvals ([`safe-guard-design.md`](safe-guard-design.md)), but
-  only the test transmitter in `contracts/safe-guard/test/` consumes them. A signature-enabled
+  `sendMessage` and `registerRoot` signatures and caches child approvals
+  ([`safe-guard-design.md`](safe-guard-design.md)), but only the test transmitter in
+  `contracts/safe-guard/test/` consumes them. A signature-enabled
   transmitter and receiver verification are [#108](https://github.com/crossecute/protocol/issues/108),
   and authority updates [#109](https://github.com/crossecute/protocol/issues/109).
+- **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
+  tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
+  tests check its root against a vector computed with `cast` and its proofs against
+  OpenZeppelin's `MerkleProof`. Once the package exists, add a test against its output. Nothing
+  indexes `LeafPublished` events yet.
 - **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
   storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
   transaction revert, including its own removal. Installation tooling should confirm the chain
