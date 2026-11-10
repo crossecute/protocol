@@ -145,10 +145,10 @@ Authority:
   later authority changes, including per-Safe counters.
 - **C3.** Deferred to #109. Specify how standalone sends and cached approvals bind the
   source authority counter once rotations are supported.
-- **C4. One tree cannot span providers.** D3 binds the signed `to` to one transmitter. Each
-  provider has its own transceiver and so its own transmitter and conduit address. Receivers of
-  a LayerZero conduit and a CCIP conduit cannot share a signed Safe transaction. *Proposed:*
-  state the limit; accepting a set of transmitters is a larger change.
+- **C4. One transmitter per signed root registration.** The signed Safe transaction
+  binds the root to its target transmitter (D3). Leaves may target different destinations
+  served by that transmitter. Using another provider's transmitter requires a separate
+  signed registration.
 - **C5. Source-side policy does not gate destination effects.** Accepted. Under D19 and
   D22, valid Safe authorization is sufficient for destination execution even if the source
   transaction has yet to execute. Source guard policy and delays apply to source execution.
