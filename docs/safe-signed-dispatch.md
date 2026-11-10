@@ -183,9 +183,10 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   execute the same call bytes.
 - **Q1.5** The standalone quote and send use the signed `recipient`. The Merkle quote and
   relay use the leaf destination. Each pair prices the same final wire bytes.
-- **Q1.6** Teach the guard to stage `registerRoot(bytes32)` for owner transactions and
-  reject that selector on the module path. Cache the resulting `SignedDelivery` on the
-  transmitter, so relayers only supply the root and witness.
+- **Q1.6** For an owner transaction calling `registerRoot(bytes32)`, the guard checks
+  that it previously recorded the root through Q8.4 before staging the authorization.
+  Reject that selector on the module path. The transmitter caches the resulting signed
+  authorization, so relayers only supply the root and witness.
 - **Q1.7** Direct Merkle submission can execute a leaf when the provider is unavailable.
   It leaves the transmitter's used state unchanged. A later provider delivery of that
   leaf follows D11.
@@ -460,9 +461,14 @@ Cases:
 - **Q8.3** The transmitter caches the original Safe transaction, signatures and nested
   evidence by root. `relayLeaf` reads the cached authorization. The cache itself does not
   contain the tree's leaf data.
-- **Q8.4** Publish every leaf's full encoded fields, including calls and attributes, with its proof, or publish the
-  full ordered tree data needed to construct proofs. A root and hashes alone cannot recover
-  the calls. The entire tree is independently relayable only once those bytes are available.
+- **Q8.4** Publish the complete ordered, encoded leaves in calldata to a guard entry
+  point in a prior source transaction. The guard computes and records the Merkle root
+  and emits one event per leaf with its indexed leaf hash. An indexer can use the
+  events to find the publication transaction and recover the leaves and build proofs.
+  The Safe then signs and executes `registerRoot(bytes32)`. Its guard validates that
+  the root was published before staging the authorization. Relay uses the registered
+  root, one leaf and its proof. The full tree stays in the publication transaction.
+  Publication access and how records are scoped across Safes remain open.
 - **Q8.5** Anyone can check a bundle against the Safe hash, root and proofs, so its source
   needs no trust.
 - **Q8.6** Signers need the bundle to review other leaves, since the Safe UI shows an opaque
