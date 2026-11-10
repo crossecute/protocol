@@ -411,9 +411,11 @@ Cases:
   retain the evidence they captured. A direct submitter can attach replacement evidence to
   the original signed dispatch if it matches the same child Safe and digest and meets the
   receiver's stored quorum.
-- **Q6.9** A direct submitter obtains evidence from `getApproval`, from the child Safe's
-  Transaction Service confirmations (an unexecuted approval is valid evidence), or from the
-  provider message in the source transaction's logs.
+- **Q6.9** Direct submission can use a fully signed child approval before that transaction
+  executes on the source chain. The receiver verifies the exact approval calldata and
+  signatures against its stored authority. A submitter can obtain evidence from
+  `getApproval`, the signed child transaction (including confirmations from the Safe
+  Transaction Service), or a prior provider payload.
 - **Q6.10** Measure the full encoded `SignedDelivery` for provider sizing, including the
   lookup keys and flat array framing. The [guard measurements](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)
   cover guard return data.
