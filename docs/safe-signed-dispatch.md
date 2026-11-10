@@ -118,6 +118,10 @@ Authority:
   signed window. Destination verification requires the complete authorization and configured
   provider delivery. It requires no proof of source execution or of source guard approval.
   Receiver creation and setup are atomic.
+- **D23.** The Safe is responsible for choosing provider execution attributes appropriate
+  to each leaf. The transmitter verifies and uses the approved attributes and records
+  provider acceptance. Only the receiver records execution. #108 adds no separate
+  signed minimum-gas field or receiver gas-floor check (O7).
 
 ## Conflicts to resolve first
 
@@ -462,9 +466,10 @@ Cases:
   destination for `relayLeaf`. Root registration creates no provider message.
 - **O6.** One reentrancy lock covers `receiveMessage`, direct submission, `finalize`, `execute`
   and #109's update entry point. A leaf calling `finalize` reverts; document it.
-- **O7.** Gas griefing. `Executor` reverts on any failed call, but a target that catches an
-  internal out-of-gas can succeed differently and the nonce is consumed. *Open:* a signed
-  minimum gas checked under the 63/64 rule.
+- **O7.** Resolved in D23. `Executor` reverts the batch if a top-level call fails. A
+  target that handles an internal failure and returns successfully is treated as a
+  successful call. Signers account for that behavior when reviewing calls and sizing
+  provider execution gas.
 - **O8.** Deadlines must cover provider latency (OP Stack L2 to L1 waits out the challenge
   period). The window does not bound `finalize` of a commitment. Anyone chooses the execution
   moment within the window, so narrow windows limit MEV on parameter changes.
@@ -501,7 +506,6 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 | R10 | Standalone digest or Merkle execution ID at the nonce already executed | succeed silently for Merkle, emit `DuplicateMessage()` for standalone |
 | R11 | Merkle only: nonce already used by a different execution ID | revert, conflicting batch, permanent |
 | R12 | Merkle only: require the next nonce and check the signed execution window | revert |
-| R14 | Minimum gas, if O7 is adopted | revert, retryable |
 | R15 | Record the standalone digest or Merkle execution ID. For a new batch, increment `nextNonce`, rejecting overflow | revert, permanent |
 | R16 | Execute the calls atomically; an empty batch is allowed | revert undoes R15, retryable |
 
@@ -563,7 +567,9 @@ and are not in them yet:
   the Safe transaction executes on the source. Altered authority records, receiver address,
   or setup calls fail, and reverting setup rolls back receiver creation;
 - leaves calling #109's update entry point, `finalize` and `revokeGateway` (Q2.10, O6);
-- a target exploiting low gas with try/catch (O7);
+- a provider accepts a relay whose destination call later runs out of gas. The source
+  used mark persists, the destination execution ID and nonce roll back, and an authorized
+  retry can execute the batch once;
 - a tree spanning two providers' conduits rejects (C4);
 - quote and send agree for large blobs (O4);
 - a duplicate submitted after a parent rotation and after a child rotation (C1).
