@@ -222,3 +222,10 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
+## 6. Safe-signed dispatch
+
+The signature-enabled transmitter and receiver
+([#108](https://github.com/crossecute/protocol/issues/108)) are not designed to the point of
+building. [`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions, the
+conflicts that block the rest, and the open questions; they are tracked there rather than
+copied here. Authority changes are [#109](https://github.com/crossecute/protocol/issues/109).
