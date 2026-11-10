@@ -179,8 +179,9 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   `msg.data` after consuming the staged record.
 - **Q1.3** Check the signed selector before decoding. Hash exact calldata and test parity
   with Safe 1.5.0 `getTransactionHash`.
-- **Q1.4** *Open:* whether to require canonical ABI encoding for signed calldata. Hash and
-  execute the same call bytes.
+- **Q1.4** Verify the Safe signature over the exact signed calldata. Check the expected
+  selector and use the source call's decoding and validation rules. Accept calldata that
+  passes those checks without requiring it to match a canonical re-encoding.
 - **Q1.5** The standalone quote and send use the signed `recipient`. The Merkle quote and
   relay use the leaf destination. Each pair prices the same final wire bytes.
 - **Q1.6** For an owner transaction calling `registerRoot(bytes32)`, the guard checks
