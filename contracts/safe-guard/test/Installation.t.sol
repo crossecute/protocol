@@ -4,11 +4,14 @@ pragma solidity =0.8.30;
 import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {IERC165} from "policy-engine/interfaces/IERC165.sol";
+import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
+import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
 import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
+import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {TestTransmitter} from "./TestTransmitter.sol";
 
@@ -16,6 +19,18 @@ import {TestTransmitter} from "./TestTransmitter.sol";
 contract InstallationTest is GuardTestBase {
     uint256 internal constant GUARD_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
     uint256 internal constant MODULE_GUARD_SLOT = 0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947;
+
+    function test_installedGuardAdvertisesCrossecuteCapability() public {
+        IERC165 installed = IERC165(GuardDiscovery.transactionGuard(address(safe)));
+        SafePolicyGuard plain = new SafePolicyGuard(0, 1 days);
+        assertTrue(installed.supportsInterface(type(ICrossecuteGuard).interfaceId));
+        assertFalse(plain.supportsInterface(type(ICrossecuteGuard).interfaceId));
+        assertTrue(installed.supportsInterface(type(IPolicyEngine).interfaceId));
+        assertTrue(installed.supportsInterface(type(ISafeModuleGuard).interfaceId));
+        assertTrue(installed.supportsInterface(type(ISafeTransactionGuard).interfaceId));
+        assertTrue(installed.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(installed.supportsInterface(0xffffffff));
+    }
 
     function test_freshSafe_transactionGuardOnly() public view {
         assertEq(_slot(safe, GUARD_SLOT), address(guard));

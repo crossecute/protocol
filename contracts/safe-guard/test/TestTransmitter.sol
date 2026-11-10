@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {Call} from "crossecute/messaging/Call.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
+import {IBootstrap, IRootRegistration} from "../src/CrossecuteGuard.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
+/// @dev Stands in for an external effect. Records whether the caller's staged record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
@@ -19,10 +21,15 @@ contract Sink {
     }
 }
 
+/// @dev `TransmitterBase`'s plain-mode bootstrap, which the guard does not stage.
+interface IPlainBootstrap {
+    function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes) external payable;
+}
+
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter {
+contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
     enum Mode {
         Consume,
         Skip,
@@ -55,6 +62,10 @@ contract TestTransmitter {
     /// @dev `abi.encode` of the last consumed record, as the guard returned it.
     bytes public lastSendMessage;
     uint256[] public lastApprovalNonces;
+    uint256 public registrations;
+    bytes32 public lastRoot;
+    /// @dev Whether the guard held a live record for the owner during the last registration.
+    bool public stagedDuringRegistration;
 
     constructor(address owner, Sink sink) {
         OWNER = owner;
@@ -71,8 +82,30 @@ contract TestTransmitter {
         approvals.push(ApprovalRef(childSafe, messageHash));
     }
 
-    function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
+    modifier onlyOwner() {
         require(msg.sender == OWNER, NotOwner());
+        _;
+    }
+
+    function sendMessage(bytes calldata, bytes calldata, bytes[] calldata)
+        external
+        payable
+        onlyOwner
+        returns (bytes32)
+    {
+        return _send();
+    }
+
+    function bootstrap(bytes calldata, bytes[] calldata) external payable onlyOwner {
+        _send();
+    }
+
+    /// @dev Consumes like the signed entry points, so calling it shows the guard staged nothing.
+    function bootstrap(uint256, Call[] calldata, bytes[] calldata) external payable onlyOwner {
+        _send();
+    }
+
+    function _send() private returns (bytes32) {
         ++sends;
         if (mode == Mode.Skip) return 0;
 
@@ -96,6 +129,15 @@ contract TestTransmitter {
 
         SINK.hit{value: msg.value}(CrossecuteGuardHarness(address(guard)), msg.sender);
         return lastSafeTxHash;
+    }
+
+    /// @dev Records the root as #108's transmitter would. A relayer supplies the signatures later.
+    function registerRoot(bytes32 root) external {
+        require(msg.sender == OWNER, NotOwner());
+        CrossecuteGuardHarness guard = CrossecuteGuardHarness(GuardDiscovery.transactionGuard(msg.sender));
+        stagedDuringRegistration = guard.recordWords(msg.sender, 0)[0] != 0;
+        lastRoot = root;
+        ++registrations;
     }
 
     function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
@@ -124,13 +166,26 @@ contract TestTransmitter {
     }
 }
 
-/// @dev Has the `sendMessage` selector and no relation to the guard.
-contract Collider {
+/// @dev Has the staged selectors and no relation to the guard.
+contract Collider is IBootstrap {
     uint256 public calls;
 
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
         ++calls;
         return 0;
+    }
+
+    function bootstrap(bytes calldata, bytes[] calldata) external payable {
+        ++calls;
+    }
+}
+
+/// @dev Has the `registerRoot` selector and no relation to the guard.
+contract RootCollider is IRootRegistration {
+    uint256 public calls;
+
+    function registerRoot(bytes32) external {
+        ++calls;
     }
 }
 
