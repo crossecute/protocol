@@ -113,8 +113,9 @@ Every binding here quotes on-chain with a `view`: LayerZero's `endpoint.quote`, 
 `getFee`, Hyperlane's `quoteDispatch`, and for Wormhole Core's `messageFee` plus the price a
 relay provider's signed quote states, which the caller fetches off-chain and passes as an
 attribute: the Executor has no on-chain price on these chains (#53). A publish-only send, for
-a sender that cannot hold a quote until it lands, is quoted at Core's fee alone. Both OP Stack quotes are
-zero: a deposit is paid in burned gas, and an interop message by its relayer.
+a sender that cannot hold a quote until it lands, has a provider quote of Core's fee alone.
+Both OP Stack provider quotes are zero: a deposit is paid in burned gas, and an interop message by its relayer.
+The transmitter's public quote adds the Crossecute fee defined in R7.7.
 
 ---
 
@@ -389,10 +390,10 @@ vm.revertToState(snap);
 ```
 
 That is one call and an exact number, not a bound from bisection, because the refund lands
-back on `_refundTo()` and the delta is therefore the net. It is how
-[C11](#8-the-compliance-suite) checks that a quote equals what the send actually consumes,
-and how an operator sizes the float a diverging transceiver needs for its return reports under
-[R7.5](#r7-fees-and-value).
+back on `_refundTo()` and the delta is therefore the net, including the Crossecute fee on
+fee-aware transmitters. [C11](#8-the-compliance-suite) checks the provider-only quote against
+its provider send seam. Receiver reports use that provider-only quote too when an operator
+sizes the float under [R7.5](#r7-fees-and-value).
 
 It is not a substitute for a missing quote. The transmitter prices each send on-chain
 ([R2.6](#r2-quote)), so a binding whose `_quoteMessage` reverts `QuoteNotImplemented` can
@@ -453,6 +454,11 @@ It carries the same gates the send does, for the reason in R2.5: an unbootstrapp
 destination and a recipient that is not this conduit fail here too. It is ungated, unlike
 the send, because a signer reviewing a payload, or anyone funding the conduit for it, has
 to be able to call it.
+
+On fee-aware transmitters, `quoteMessage` returns the provider quote plus the Crossecute fee.
+`quoteMessageBreakdown(bytes,bytes,bytes[])` returns `(providerFee, crossecuteFee)` and applies
+these same checks. Both public quotes and `sendMessage` share that calculation. The internal
+`_quoteMessage` remains provider-only, as do transceiver quotes for receiver reports.
 
 `quoteBootstrap` takes `bootstrap`'s payload, and both decode it through one helper into the
 `Call[]` or `bytes[]` form the transceiver takes, because path B's envelope is built by the
@@ -678,7 +684,7 @@ cost the bootstrap quote must include, which is [R2.3](#r2-quote) applied to pat
 
 **R7.1 The binding is told how much it may spend, and MUST NOT read `msg.value`.**
 `_sendMessage` takes the amount as its fourth argument, and that is the number to pay the
-provider. It is never `msg.value`: on a transmitter it is the quote and `msg.value` only
+provider. It is never `msg.value`: on a transmitter it is the provider quote and `msg.value` only
 tops up the balance, the transceiver takes its bootstrap fee off the top, and on a nested send
 `msg.value` is zero. In every case the payment comes from the sending contract's balance. A
 binding reading `msg.value` overpays the provider, or refunds the fee to the sender, or
@@ -735,6 +741,28 @@ changes. A bootstrap to a destination that reports is refused, and so is its quo
 halts bootstraps to it. A delivery that runs out of gas reverts
 whole, the report's payment with it. The fee's size relative to the report's cost is
 governance's to keep.
+
+**R7.7 Routine outbound Crossecute fee.** Each successful `sendMessage` MUST charge 10% of
+its provider's native-currency quote, rounded down to the smallest native unit. The two
+OP Stack bindings MUST instead charge 0.0001 ETH per message. This exception is by binding;
+a zero provider quote elsewhere MUST yield a zero Crossecute fee. Source transaction gas
+and value encoded in the payload are outside the fee base. A multi-call payload pays once;
+separate messages, even in one transaction, each pay.
+
+The transmitter MUST debit both fees from its balance, forward exactly the provider quote
+to `_sendMessage`, and transfer the Crossecute fee to its transceiver's fixed treasury
+(the factory's fixed treasury for `layerzero-oft`). Fees accumulate there for `Treasury.withdraw`,
+outside the owner-controlled transmitter and the receiver-report float. `CrossecuteFeePaid`
+records the transfer. A failed treasury transfer or provider send MUST revert the whole send.
+Provider refunds MUST return to the transmitter without reducing the Crossecute fee. A later
+destination failure MUST NOT reverse collection. Bootstrap fees and receiver-report funding
+remain separate; bootstrap, reports, destination execution, local finalization and delivery
+retries MUST NOT collect another Crossecute fee.
+
+This applies to fee-aware deployments. Already-armed proxies remain locked to their existing
+implementations; migrating them is separate work. No message encoding, selector or storage
+layout changes are required. A nonzero fee adds a treasury lookup, a native transfer and a
+fee event to the source transaction; it adds no bytes to the cross-chain payload.
 
 ### R8. Storage and address parity
 
@@ -881,7 +909,8 @@ to those, rather than flags:
 | Spec | Applies to | Covers |
 | --- | --- | --- |
 | `ProviderSendSpec` | all six | C1, C2, C13, C14; an unknown or malformed attribute is refused |
-| `ProviderFeeSpec` | all but the two OP Stack providers (no source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
+| `ProviderFeeSpec` | all but the two OP Stack providers (no provider source fee) | C11 against mocks, C16, C26; `value` is spent even below `msg.value` |
+| `ProviderTransmitterFixture` | all six | R7.7 total quotes, fee breakdowns, treasury settlement, binding-specific zero-price behavior, and bootstrap separation |
 | `ProviderPayloadPricedSpec` | LayerZero, CCIP, Hyperlane | C12; the payload reaches the provider unchanged |
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |

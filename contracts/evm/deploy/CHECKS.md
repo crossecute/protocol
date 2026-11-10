@@ -309,15 +309,17 @@ its one address, and, per candidate OFT, the prerequisites O1 to O7 of
 [`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
-salt zero (§1), so the address follows from their bytecode alone. A dry run prints it, and it
-must be empty until the deploy:
+salt zero (§1), with the canonical treasury address from `governance.toml` as a factory
+argument. Deploy the chain treasury with `DeployChain.s.sol` first. A dry run prints the
+factory address, and it must be empty until the deploy:
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32
-cast code 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32 --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --rpc-url $RPC
+cast code <factory-address-from-dry-run> --rpc-url $RPC   # 0x until deployed
 ```
 
-Any change to the three contracts moves the address, so it is rerun after one. The script
+Changing compiled initcode or the treasury address moves the factory, so rerun the check
+after either changes and use the same treasury address on every chain. The script
 refuses a chain `chains.toml` does not list as `parity`.
 
 **Per OFT.** `<oft>` is the OFT on the chain `RPC` reaches, `<eid>` the other end's eid, and
