@@ -11,7 +11,7 @@ interface IReportFloat {
 }
 
 /// @title Treasury
-/// @notice Where a chain's bootstrap fees and report float land, and the one contract that can
+/// @notice Where a chain's outbound fees, bootstrap fees and report float land, and the one contract that can
 ///         move them out.
 ///
 /// @dev A destination, not an authority: it configures nothing and reaches no conduit. Its one
@@ -42,8 +42,7 @@ contract Treasury is Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    /// @notice Accept fees. A transceiver forwards each with a plain `call` inside the bootstrap
-    ///         that charges it, so without this every paid bootstrap would revert.
+    /// @notice Accept the fees transmitters and transceivers collect with a plain `call`.
     receive() external payable {}
 
     /// @notice Pull `amount` of a transceiver's report float into this treasury.

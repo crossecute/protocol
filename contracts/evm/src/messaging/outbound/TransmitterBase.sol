@@ -17,6 +17,8 @@ import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 /// @title IConduitTransceiver
 /// @notice Everything a conduit needs from the transceiver whose address it stores.
 interface IConduitTransceiver {
+    function treasury() external view returns (address);
+
     function bootstrap(
         bytes32 destinationChainKey,
         address owner,
@@ -106,6 +108,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     event DestinationReceiverReported(bytes32 indexed destinationChainKey, bytes receiver);
     /// @dev An execution the owner drove directly, as distinct from one a commitment discharged.
     event Executed(address indexed caller, uint256 callCount);
+    event CrossecuteFeePaid(address indexed treasury, uint256 amount);
+
+    error FeeTransferFailed(address treasury, uint256 amount);
 
     error NoTransceiver();
     /// @dev The recipient is not the receiver this conduit recorded for that chain.
@@ -243,16 +248,31 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         onlyConduitOwner
         returns (bytes32 sendId)
     {
-        _requireOwnRecipient(recipient);
-        if (payload.length == 0) revert EmptyPayload();
-
-        uint256 fee = _quoteMessage(recipient, payload, attributes);
+        (uint256 providerFee, uint256 crossecuteFee) = quoteMessageBreakdown(recipient, payload, attributes);
+        uint256 fee = providerFee + crossecuteFee;
         _requireFunded(fee);
+        _payCrossecuteFee(crossecuteFee);
 
         emit MessageSent(
             bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), recipient, payload, fee, attributes
         );
-        return _sendMessage(recipient, payload, attributes, fee);
+        return _sendMessage(recipient, payload, attributes, providerFee);
+    }
+
+    /// @dev Collected outside the owner-controlled conduit and the transceiver's report float.
+    ///      A provider revert unwinds this payment with the rest of the send.
+    function _payCrossecuteFee(uint256 fee) private {
+        if (fee == 0) return;
+        address treasury = IConduitTransceiver(transceiver).treasury();
+        if (treasury == address(0)) revert FeeTransferFailed(treasury, fee);
+        emit CrossecuteFeePaid(treasury, fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the transceiver's write-once treasury
+        (bool ok,) = treasury.call{value: fee}("");
+        if (!ok) revert FeeTransferFailed(treasury, fee);
+    }
+
+    function _crossecuteFee(uint256 providerFee) internal pure virtual returns (uint256) {
+        return providerFee / 10;
     }
 
     /// @notice Whether this conduit understands a per-send attribute. Required by ERC-7786
@@ -356,10 +376,21 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         override
         returns (uint256 nativeFee)
     {
+        (uint256 providerFee, uint256 crossecuteFee) = quoteMessageBreakdown(recipient, payload, attributes);
+        return providerFee + crossecuteFee;
+    }
+
+    /// @notice The provider quote and Crossecute fee, in source-chain native currency.
+    /// @dev Applies the same recipient and payload checks as `sendMessage`.
+    function quoteMessageBreakdown(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
+        public
+        view
+        returns (uint256 providerFee, uint256 crossecuteFee)
+    {
         _requireOwnRecipient(recipient);
         if (payload.length == 0) revert EmptyPayload();
-
-        return _quoteMessage(recipient, payload, attributes);
+        providerFee = _quoteMessage(recipient, payload, attributes);
+        crossecuteFee = _crossecuteFee(providerFee);
     }
 
     /// @notice What `bootstrap` would cost, in this chain's native currency.
@@ -459,8 +490,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         // forge-lint: disable-end(arbitrary-send-eth)
     }
 
-    /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
-    ///      nothing else.
+    /// @dev Sends and bootstraps spend this balance, including any attached top-up.
     function _requireFunded(uint256 fee) private view {
         if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
     }

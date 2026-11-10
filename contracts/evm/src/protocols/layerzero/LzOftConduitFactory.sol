@@ -23,8 +23,8 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///         operator calls `createTransmitter`, and each receiver, when the conduit's bootstrap
 ///         arrives as an OFT compose.
 ///
-/// @dev No owner, no configuration and no upgrade path. Deployed with the logic addresses as its
-///      only arguments, which are themselves the same on every chain, so this has one address
+/// @dev No owner, mutable configuration or upgrade path. Deployed with the logic and treasury
+///      addresses, which are the same on every chain, so this has one address
 ///      everywhere and a conduit has one address everywhere.
 ///
 /// @dev A conduit's CREATE2 salt binds `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
@@ -53,6 +53,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
 
     address public immutable transmitterImplementation;
     address public immutable receiverImplementation;
+    address public immutable treasury;
     /// @notice This chain's key, read at deployment, so each chain's copy knows its own chain.
     bytes32 public immutable localChainKey;
     bytes32 public immutable PROXY_INIT_CODE_HASH = ProxyInitCode.hash();
@@ -69,6 +70,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
     event ReceiverCreated(address indexed conduit, uint32 homeEid, address localOft);
 
     error NoImplementation();
+    error NoTreasury();
     error NotAnOft(address oft);
     error NoDestinations();
     /// @dev Leaves must be in strictly ascending `chainKey` order, which also refuses a repeat.
@@ -84,12 +86,14 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
     /// @dev The compose carries `Call[]`, which only an EVM chain's factory decodes.
     error NotAnEvmChain(bytes32 chainKey);
 
-    constructor(address transmitterImplementation_, address receiverImplementation_) {
+    constructor(address transmitterImplementation_, address receiverImplementation_, address treasury_) {
         if (transmitterImplementation_.code.length == 0 || receiverImplementation_.code.length == 0) {
             revert NoImplementation();
         }
         transmitterImplementation = transmitterImplementation_;
         receiverImplementation = receiverImplementation_;
+        if (treasury_ == address(0)) revert NoTreasury();
+        treasury = treasury_;
         localChainKey = ChainKey.local();
         _proxyInitCode = ProxyInitCode.store();
     }

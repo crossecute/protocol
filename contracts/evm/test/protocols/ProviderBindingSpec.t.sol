@@ -289,7 +289,7 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
 /// @title ProviderTransmitterSendSpec
 /// @notice A conduit's own send (path A) through the binding's transmitter, paid from the
 ///         conduit's balance whatever `msg.value` is (R7.1), at the payload default gas.
-abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
+abstract contract ProviderTransmitterFixture is ProviderFixture {
     address internal constant CONDUIT_OWNER = address(0xA11CE);
     address payable internal conduit;
 
@@ -314,10 +314,42 @@ abstract contract ProviderTransmitterSendSpec is ProviderGasFixture {
         conduit = payable(t.createTransmitter(bytes32(0)));
         vm.deal(conduit, 1 ether);
         _prepareConduit(conduit, CONDUIT_OWNER);
+        uint256 treasuryBalance = c.treasury.balance;
         vm.prank(CONDUIT_OWNER);
         TransmitterBase(conduit).bootstrap(bootstrapPayload(REMOTE_CHAIN_ID, new Call[](0)), _attributes());
+        assertEq(c.treasury.balance, treasuryBalance, "bootstrap has no routine outbound fee");
     }
 
+    function test_quoteBreakdownMatchesPayments() public {
+        _assertFeeSettlement(0.001 ether);
+    }
+
+    function test_zeroProviderPriceUsesTheBindingsFeeRule() public {
+        _assertFeeSettlement(0);
+    }
+
+    function _assertFeeSettlement(uint256 mockPrice) private {
+        bytes memory payload = Payload.encodeCalls(new Call[](0));
+        bytes memory recipient = TransmitterBase(conduit).recipientOn(REMOTE_CHAIN_ID);
+        _setProviderFee(mockPrice);
+        (uint256 providerFee, uint256 fee) =
+            TransmitterBase(conduit).quoteMessageBreakdown(recipient, payload, _attributes());
+        assertEq(providerFee, _expectedQuoteFor(mockPrice));
+        // Only the OP Stack fixtures quote zero regardless of the mock provider price.
+        assertEq(fee, _expectedQuoteFor(1) == 0 ? 0.0001 ether : providerFee / 10);
+        uint256 total = TransmitterBase(conduit).quoteMessage(recipient, payload, _attributes());
+        assertEq(total, providerFee + fee);
+        address treasury = ext(TransmitterBase(conduit).transceiver()).treasury();
+        uint256 beforeTreasury = treasury.balance;
+        uint256 beforeConduit = conduit.balance;
+        vm.prank(CONDUIT_OWNER);
+        TransmitterBase(conduit).sendMessage(recipient, payload, _attributes());
+        assertEq(treasury.balance - beforeTreasury, fee);
+        assertEq(beforeConduit - conduit.balance, total);
+    }
+}
+
+abstract contract ProviderTransmitterSendSpec is ProviderTransmitterFixture, ProviderGasFixture {
     function test_aFundedConduitSendsWithNoValueAttached() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call({target: address(0xBEEF), value: 0, data: ""});

@@ -120,7 +120,7 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
     }
 
     function _expectedQuoteFor(uint256 providerFee) internal pure override returns (uint256) {
-        return providerFee;
+        return providerFee == 0 ? 1 : providerFee;
     }
 
     /// @dev `StandardHookMetadata`: variant (2), msgValue (32), then the gas limit (32).
