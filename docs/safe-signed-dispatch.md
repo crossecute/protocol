@@ -29,6 +29,7 @@ Envelope and routing:
 - **D2.** The owner Safe can register any `bytes32` root. The transmitter caches its signed
   registration and nested approval evidence for later relays. Registration needs no leaf data.
   Track cache presence independently of the root value so a zero root can also be registered.
+  Registering an existing root reverts with `RootAlreadyRegistered(bytes32 root)`.
 - **D3.** The signed Safe `to` must equal the receiver's configured source transmitter.
 - **D4.** A locked receiver deployment uses fixed, distinct standalone and Merkle envelope
   formats. The receiver checks the signed selector for the path being executed.
@@ -196,8 +197,9 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
 - **Q1.9** *Open:* measure cache writes and provider envelope costs, including nested evidence,
   and define bounds. Leaf data, proofs and attributes are variable length because the
   number of calls, tree depth and provider options vary.
-- **Q1.10** A new registration of the same root cannot make an already-used leaf relayable.
-  *Open:* whether a repeated registration can replace the cached authorization.
+- **Q1.10** A repeat `registerRoot` reverts with `RootAlreadyRegistered(root)`, including
+  when the Safe signs it at a new nonce. The original approval and used-leaf records
+  stay intact. New leaf attributes require a new root.
 
 ### Q2. Leaf and tree encoding
 
@@ -526,7 +528,7 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | T1 | Only the owner Safe may call `sendMessage` or `registerRoot`. Anyone may call `relayLeaf` |
 | T2 | For either Safe call, consume the staged guard record and restore `safeTx.data` from `msg.data` |
 | T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
-| T4 | For `registerRoot`, cache the signed authorization and evidence for the supplied root |
+| T4 | For `registerRoot`, reject an existing root with `RootAlreadyRegistered(root)`; otherwise cache the signed authorization and evidence |
 | T5 | For `relayLeaf`, require a cached registration, verify the proof, require an unused leaf hash, and validate the destination route |
 | T6 | Validate signature and evidence limits before paying for provider relay |
 | T7 | Build the Merkle wire message from the cache, root, leaf and proof |
@@ -546,6 +548,8 @@ and are not in them yet:
   across both delivery routes, and never read the root cache;
 - only the owner can register a root. Anyone can relay two leaves from the same root in two
   calls using the cached authorization;
+- a second registration at a new Safe nonce reverts with `RootAlreadyRegistered(root)`
+  and preserves the approval and used marks. Cover a registered zero root as well;
 - source relay and destination execution each reject altered calls or a proof from another
   root. A standalone authorization cannot serve as root approval or vice versa;
 - altering only the attributes invalidates the proof. Quote and send use the exact verified

@@ -30,7 +30,9 @@ struct SignedDelivery {
 
 /// @notice Proposed interface for the shared transmitter in signed mode.
 interface ISignedTransmitter is IERC7786GatewaySource {
-    /// @notice Cache the owner's Safe authorization for a Merkle root.
+    error RootAlreadyRegistered(bytes32 root);
+
+    /// @notice Cache the owner's Safe authorization for an unregistered Merkle root.
     function registerRoot(bytes32 root) external;
 
     /// @notice Pay to deliver one unused leaf using its proven attributes.
