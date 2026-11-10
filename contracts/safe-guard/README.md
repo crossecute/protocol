@@ -8,14 +8,14 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 
 | Path | What it holds |
 | --- | --- |
-| `src/CrossecuteGuard.sol` | The guard: `sendMessage` staging, consumption and cleanup, module `sendMessage` rejection, child approval cache |
-| `src/ICrossecuteGuard.sol` | What a transmitter or relayer calls: `consume`, `getApproval`, their structs and errors; the `SafeTx` struct the guard, transmitter and receiver share |
+| `src/CrossecuteGuard.sol` | The guard: `sendMessage` staging, consumption and cleanup, module `sendMessage` and `registerRoot` rejection, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
+| `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their structs, events and errors; the `SafeTx` struct the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 | `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
 | `test/SafeFixture.sol` | Real Safe 1.5.0 proxies, owner signing (EOA and nested Safe owners), owner-signed installation |
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
-| `test/*.t.sol` | `sendMessage` lifecycle, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
+| `test/*.t.sol` | `sendMessage` lifecycle, leaf publication and `registerRoot`, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
 
 `ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy engine and
 declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own compiler settings.
@@ -27,6 +27,7 @@ declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own comp
 | Safe | [safe-fndn/safe-smart-account](https://github.com/safe-fndn/safe-smart-account) `v1.5.0` | `dc437e8` |
 | Policy engine | [crossecute/policy-engine](https://github.com/crossecute/policy-engine) `crossecute/extension-hooks` | `f6805df` |
 | forge-std | shared with `contracts/evm/lib/forge-std` | |
+| OpenZeppelin `MerkleProof` (tests only) | shared with `contracts/evm/lib/openzeppelin-contracts` | |
 
 The policy-engine fork is upstream
 [safe-research/policy-engine](https://github.com/safe-research/policy-engine) at `8ee68a8` plus two
@@ -36,6 +37,8 @@ from a signature blob. Its `main` branch mirrors upstream.
 
 The staged selector is `IERC7786GatewaySource.sendMessage.selector`, imported from
 `contracts/evm/src/messaging/IErc7786.sol`, so the guard and the protocol cannot disagree on it.
+`contracts/evm` has no `registerRoot` interface yet, so `CrossecuteGuard.sol` declares
+`IRootRegistration` for the checked selector.
 
 ## Build and chain support
 
@@ -87,8 +90,19 @@ There is no byte cap, so the submitter pays this cost and a blob too large for t
 limit cannot be executed. Child approval caching is measured in
 [`docs/safe-approval-evidence-sizing.md`](../../docs/safe-approval-evidence-sizing.md).
 
+`test/LeafPublicationGas.t.sol` measures `publishLeaves` execution for 448-byte execution leaves.
+The figures exclude the transaction's intrinsic and calldata cost, which grows by 512 bytes of
+calldata per leaf of this size (the leaf, its offset and its length):
+
+| Leaves | Publication |
+| ---: | ---: |
+| 1 | 56,011 gas |
+| 3 | 69,320 gas |
+| 16 | 152,876 gas |
+| 256 | 1,848,419 gas |
+
 ```bash
-forge test --match-contract 'SendMessageGasTest|ApprovalGasTest' -vv
+forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationGasTest' -vv
 ```
 
 ## Licenses
