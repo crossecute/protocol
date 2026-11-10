@@ -31,16 +31,16 @@ interface ICrossecuteGuard {
 
     event ApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
 
-    error NoLiveSendMessage(address safe);
+    error NoLiveRecord(address safe);
     error NotSignedTarget(address caller);
     error AlreadyConsumed(address safe);
     error NestedExecution(address safe);
     error HashMismatch(bytes32 live, bytes32 txHash);
-    error ModuleSendMessageDenied();
+    error ModuleStagedCallDenied();
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();
 
-    /// @notice Marks `safe`'s live sendMessage record consumed and returns it. Only the signed target
+    /// @notice Marks `safe`'s live staged record consumed and returns it. Only the signed target
     ///         may call, once per record.
     /// @return signedSafeTx The signed transaction with `data` empty: the caller is the signed target
     ///         and received that calldata from the Safe, so it sets `data` to its own `msg.data`.

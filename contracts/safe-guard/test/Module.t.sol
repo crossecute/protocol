@@ -133,11 +133,11 @@ contract ModuleTest is GuardTestBase {
         assertEq(_slot(guarded, 0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947), address(guard));
     }
 
-    function test_moduleSendMessage_rejectedOnPermittedTarget() public {
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
+    function test_moduleStagedCall_rejectedOnPermittedTarget() public {
+        vm.expectRevert(ICrossecuteGuard.ModuleStagedCallDenied.selector);
         module.exec(guarded, address(guardedTransmitter), _stagedData(), Enum.Operation.Call);
 
-        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
+        vm.expectRevert(ICrossecuteGuard.ModuleStagedCallDenied.selector);
         module.exec(guarded, address(collider), _stagedData(), Enum.Operation.Call);
     }
 
@@ -177,8 +177,8 @@ contract ModuleTest is GuardTestBase {
     }
 
     /// @dev With the module guard slot empty the module is trusted with its Safe permissions. Its
-    ///      `sendMessage` never enters the owner hook, so the transmitter finds nothing to consume.
-    function test_withoutModuleGuard_moduleSendMessageFindsNoRecord() public {
+    ///      staged call never enters the owner hook, so the transmitter finds nothing to consume.
+    function test_withoutModuleGuard_moduleStagedCallFindsNoRecord() public {
         _exec(
             safe,
             _signers(),
@@ -187,7 +187,7 @@ contract ModuleTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        // `execTransactionFromModule` reports the inner NoLiveSendMessage revert as `false`.
+        // `execTransactionFromModule` reports the inner NoLiveRecord revert as `false`.
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(safe))));
         assertFalse(module.exec(safe, address(transmitter), _stagedData(), Enum.Operation.Call));
         assertEq(transmitter.sends(), 0);

@@ -62,7 +62,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     /// @inheritdoc ICrossecuteGuard
     function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
         bytes32 safeId = _safeId(safe);
-        require(_tload(safeId, _TX_HASH) != 0, NoLiveSendMessage(safe));
+        require(_tload(safeId, _TX_HASH) != 0, NoLiveRecord(safe));
         uint256 target = _tload(safeId, _TARGET);
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));
@@ -192,7 +192,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
 
     /// @dev Runs after the inherited policy check, so this only narrows what policy permits.
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
-        require(!_isStaged(_decodeSelector(data)), ModuleSendMessageDenied());
+        require(!_isStaged(_decodeSelector(data)), ModuleStagedCallDenied());
     }
 
     /// @dev The selectors whose owner transactions are staged and whose module transactions are

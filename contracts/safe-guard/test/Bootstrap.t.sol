@@ -28,7 +28,7 @@ contract BootstrapTest is SendMessageTest {
     function test_plainBootstrap_notStaged() public {
         bytes memory data = plainBootstrapData();
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, data, Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, sigs);
     }
 

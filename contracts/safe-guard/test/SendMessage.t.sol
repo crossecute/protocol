@@ -164,13 +164,13 @@ contract SendMessageTest is GuardTestBase {
             TestTransmitter.Mode.CallThenConsume, address(thief), abi.encodeCall(Thief.steal, (guard, address(other)))
         );
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _stagedData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(other)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(other)));
         _execWith(safe, address(transmitter), 0, _stagedData(), Enum.Operation.Call, sigs);
     }
 
     function test_consume_outsideExecution() public {
         vm.prank(address(transmitter));
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         guard.consume(address(safe));
     }
 
@@ -276,7 +276,7 @@ contract SendMessageTest is GuardTestBase {
 
     /// @dev After consumption, a module making the Safe call the transmitter again finds the record
     ///      already consumed. The Safe has no module guard here.
-    function test_moduleDuringLiveSendMessage_cannotConsumeAgain() public {
+    function test_moduleDuringLiveRecord_cannotConsumeAgain() public {
         Module module = new Module();
         _exec(
             safe,
@@ -402,7 +402,7 @@ contract SendMessageTest is GuardTestBase {
         bytes memory batchData = abi.encodePacked(uint8(0), address(transmitter), uint256(0), data.length, data);
         bytes memory call = abi.encodeCall(multiSend.multiSend, (batchData));
         bytes memory sigs = _signFor(safe, _signers(), address(multiSend), 0, call, Enum.Operation.DelegateCall);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(multiSend), 0, call, Enum.Operation.DelegateCall, sigs);
     }
 
@@ -450,7 +450,7 @@ contract SendMessageTest is GuardTestBase {
             TestTransmitter.Mode.CallThenConsume, address(module), abi.encodeCall(GuardSwapModule.swap, ())
         );
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, _stagedData(), Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveSendMessage.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(transmitter), 0, _stagedData(), Enum.Operation.Call, sigs);
     }
 

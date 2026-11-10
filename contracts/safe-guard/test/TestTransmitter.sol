@@ -9,7 +9,7 @@ import {IBootstrap} from "../src/CrossecuteGuard.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
+/// @dev Stands in for an external effect. Records whether the caller's staged record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
