@@ -105,9 +105,12 @@ Authority:
 - **D17.** Empty nested payloads count only with independently verified signed direct-approval
   evidence. The receiver does not check the signing library's address or code hash. `v = 1`
   is rejected at every level. `v = 27/28` and `v = 31/32` are supported, including mixed sets.
-- **D18.** #108 uses fixed authority. #109 specifies how standalone sends and cached
-  root approvals are invalidated when authority changes. Authority updates and dispatch
-  execution have separate entry points.
+- **D18.** #108 fixes authority at the receiver. Source owner and threshold changes remain
+  possible, and the transmitter accepts sends and root registrations authorized by the
+  live Safe. A delivery that fails the receiver's stored quorum reverts without consuming
+  receiver state. The provider can retain it for retry where supported. #109 delivers
+  authority changes separately so a still-valid pending message can execute after the
+  receiver applies the update.
 - **D19.** Standalone sends and Merkle leaves can execute directly at the destination.
   A direct Merkle submission supplies the signed root registration, leaf and proof. The
   receiver authenticates it locally using the same rules as a provider delivery. Direct
@@ -136,8 +139,8 @@ Authority:
 ## Conflicts to resolve first
 
 - **C1. Duplicate acknowledgment after an authority change.** A duplicate still requires
-  current authority. A provider retry can fail after rotation even if direct submission
-  already executed the leaf.
+  the receiver's applied authority. #109 owns duplicate and retry behavior across applied
+  updates.
 - **C2. #109 fields in the bootstrap snapshot.** #109 owns the fields and rules for
   later authority changes, including per-Safe counters.
 - **C3.** Deferred to #109. Specify how standalone sends and cached approvals bind the
@@ -366,8 +369,9 @@ How does the transmitter find the guard holding an empty-signature child's cache
 how is the evidence packaged for recursive verification? What does a direct submitter obtain
 independently? The cache key is the child Safe and message hash.
 
-Look up the child's current transaction guard with `GuardDiscovery`, then
-`getApproval(child, messageHash)`. The current guard returns `ICrossecuteGuard.SignedSafeTx`
+For a source send or root registration, collect evidence using live source Safe authority.
+The receiver applies its own stored quorum on delivery. Look up the child's current
+transaction guard with `GuardDiscovery`, then `getApproval(child, messageHash)`. The current guard returns `ICrossecuteGuard.SignedSafeTx`
 with the full approval calldata and the child's signatures with its policy extension removed.
 Wrap it in a `NestedApproval` keyed by child Safe and message hash. Carry one item per key
 in an unsorted flat array and look it up by linear scan.
@@ -482,10 +486,10 @@ Cases:
 - **O8.** Deadlines must cover provider latency (OP Stack L2 to L1 waits out the challenge
   period). The window does not bound `finalize` of a commitment. Anyone chooses the execution
   moment within the window, so narrow windows limit MEV on parameter changes.
-- **O9.** With a fixed signer policy in the first release, *open:* what stops source owner
-  changes before #109 ships. Without a block, removed owners keep destination authority.
-- **O10.** #109 specifies which pending approvals and in-flight dispatches survive parent
-  and child rotations.
+- **O9.** Resolved in D18. Source owner changes remain allowed. Receivers continue using
+  their creation graph until an authority update is supported and applied under #109.
+- **O10.** #109 owns applying parent and child authority changes before retrying pending
+  messages, including the counter and validity rules for that retry.
 - **O11.** No atomicity across destinations: a two-chain upgrade can stay half applied.
 - **O12.** EVM destinations only in the first release. No leaf can target the home chain.
 - **O13.** Receiver code size: the verifier, codec and Merkle code likely exceed EIP-170 and
@@ -546,6 +550,9 @@ and are not in them yet:
   transmitter to send without fresh staged authorization;
 - standalone signed sends use the plain recipient and application payload, execute once
   across both delivery routes, and never read the root cache;
+- after a source owner change, a live-quorum standalone send or root registration succeeds
+  on the source. A delivery that fails the stored receiver quorum leaves its execution
+  record and nonce unchanged. Applying the update and retrying belong to #109;
 - only the owner can register a root. Anyone can relay two leaves from the same root in two
   calls using the cached authorization;
 - a second registration at a new Safe nonce reverts with `RootAlreadyRegistered(root)`
