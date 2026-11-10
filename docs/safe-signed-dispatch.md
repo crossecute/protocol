@@ -77,10 +77,12 @@ Verification and replay:
   `DuplicateMessage()`.
 - **D12.** A replacement leaf at the current nonce may carry revised calls or an empty batch.
   If the original leaf is still valid, either may consume the nonce first.
-- **D13.** A verified standalone signed message or Merkle leaf can call the receiver's
-  own `commit(bytes32)`, matching plain-mode self-call behavior. It records an ordinary
-  commitment. A commit-only leaf consumes its nonce when the commitment is recorded.
-  `finalize` consumes the commitment later without touching the nonce.
+- **D13.** A verified standalone signed message or Merkle leaf can self-call
+  `commit(bytes32)`, `cancel(bytes32)`, or `revokeGateway(address)` with the same
+  effects as in plain mode. Verify Safe authorization before executing any of these
+  calls. A commit-only leaf consumes its nonce when the commitment is recorded.
+  `finalize` consumes the commitment later without touching the nonce. A revoked
+  gateway cannot deliver provider messages. Direct submission remains available.
 - **D14.** A new Merkle execution requires `validAfter <= deadline` and
   `validAfter <= block.timestamp <= deadline` on destination time, inclusive. An invalid
   window consumes nothing. An authenticated repeat of an executed batch succeeds silently
@@ -223,10 +225,9 @@ Cases:
 - **Q2.7** Sorted pairs carry no index; duplicate leaves are harmless.
 - **Q2.8** A single-leaf tree has the leaf node as its root and an empty proof.
 - **Q2.9** Proof length is capped (Q7).
-- **Q2.10** D13 allows `commit` self-calls. *Open:* which other receiver methods can be
-  called from a verified batch, including `cancel` and `revokeGateway`. A self-call to
-  #109's update entry point would combine update and execute and must be blocked. The
-  dispatch entry points already use the reentrancy lock.
+- **Q2.10** D13 preserves `commit`, `cancel`, and `revokeGateway` self-calls after
+  authorization. A self-call to #109's update entry point would combine update and
+  execute and must be blocked. The dispatch entry points use the reentrancy lock.
 - **Q2.11** Two leaves for the same receiver and nonce in one tree are both signed; the first
   delivered wins. Builders refuse to produce them.
 - **Q2.12** A nonce gap inside one tree is allowed; another tree fills it.
@@ -455,8 +456,9 @@ Cases:
   `msg.sender == sourceTransmitter`, which on those chains is whatever code sits at the home
   transmitter's address. *Proposed:* a receiver in signed mode accepts only `address(this)` during
   verified execution.
-- **O2.** `receiveMessage` always routes to the signed verifier, never `_onMessage`. *Open:*
-  keep the gateway role and sender checks as an extra layer.
+- **O2.** Signed provider delivery requires an enabled gateway and always routes to
+  the signed verifier. *Open:* retain the existing provider origin and sender checks
+  in addition to signature verification.
 - **O3.** Standalone send fee drain. Whoever executes a fully signed Safe transaction
   controls the bytes after the threshold entries (#117). LayerZero and CCIP price the
   byte-exact parent blob. *Open:* choose a payload cap after measurement. Permissionless
@@ -497,7 +499,7 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 
 | # | Check | On failure |
 | --- | --- | --- |
-| R1 | Entry: provider (role and origin checks if kept, O2) or direct | revert |
+| R1 | Entry: enabled provider gateway (origin and sender checks per O2) or direct | revert |
 | R2 | Reentrancy lock | revert |
 | R3 | Rebuild the Safe digest from exact calldata and check the expected signed selector | revert, permanent |
 | R4 | Decode the signed standalone recipient and payload, or the registered root and supplied leaf | revert, permanent |
@@ -568,10 +570,12 @@ and are not in them yet:
 - a threshold-signed bootstrap initializes the intended receiver through the provider before
   the Safe transaction executes on the source. Altered authority records, receiver address,
   or setup calls fail, and reverting setup rolls back receiver creation;
-- a verified standalone message and a verified Merkle leaf each self-call `commit` through
-  provider and direct delivery. The same calls with invalid authorization leave no
-  commitment. Anyone can finalize the approved commitment under the existing rules;
-- leaves calling #109's update entry point, `finalize` and `revokeGateway` (Q2.10, O6);
+- verified standalone messages and Merkle leaves self-call `commit`, `cancel`, and
+  `revokeGateway` through provider and direct delivery. Invalid signatures leave
+  commitments and gateway roles unchanged. Anyone can finalize an outstanding commitment
+  under the existing rules. A revoked gateway fails delivery even with valid signatures,
+  and the same authorization can still be submitted directly;
+- leaves calling #109's update entry point and `finalize` (Q2.10, O6);
 - a provider accepts a relay whose destination call later runs out of gas. The source
   used mark persists, the destination execution ID and nonce roll back, and an authorized
   retry can execute the batch once;
