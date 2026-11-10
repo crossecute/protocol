@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: MIT
+pragma solidity =0.8.30;
+
+import {console2} from "forge-std/console2.sol";
+import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {Safe} from "safe-smart-account/Safe.sol";
+import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {GuardTestBase} from "./GuardTestBase.sol";
+import {Collider} from "./TestTransmitter.sol";
+
+/// @dev Measures what staging and clearing a sendMessage record adds to an owner transaction, by signature
+///      blob size and by calldata size.
+///      The target never consumes, so the figure is staging plus cleanup. The baseline is the same
+///      Safe and policy under an unmodified SafePolicyGuard. Reported in contracts/safe-guard/README.md.
+contract SendMessageGasTest is GuardTestBase {
+    function test_gas_sendMessageStaging() public {
+        uint256[4] memory sizes = [uint256(0), 1024, 10_240, 102_400];
+        for (uint256 i = 0; i < sizes.length; ++i) {
+            uint256 withGuard = _sendMessageGas(guard, sizes[i]);
+            uint256 without = _sendMessageGas(new SafePolicyGuard(0, 1 days), sizes[i]);
+            console2.log("extension bytes", sizes[i]);
+            console2.log("  staging and cleanup", withGuard - without);
+            assertGt(withGuard, without);
+        }
+    }
+
+    function test_gas_sendMessageCalldata() public {
+        uint256[3] memory sizes = [uint256(1024), 10_240, 102_400];
+        for (uint256 i = 0; i < sizes.length; ++i) {
+            bytes memory data = abi.encodeCall(Collider.sendMessage, (hex"01", new bytes(sizes[i]), new bytes[](0)));
+            uint256 withGuard = _sendMessageGas(guard, data, 0);
+            uint256 without = _sendMessageGas(new SafePolicyGuard(0, 1 days), data, 0);
+            console2.log("payload bytes", sizes[i]);
+            console2.log("  staging and cleanup", withGuard - without);
+            assertGt(withGuard, without);
+        }
+    }
+
+    function _sendMessageGas(SafePolicyGuard guard_, uint256 extension) internal returns (uint256 used) {
+        return _sendMessageGas(guard_, _sendMessageData(), extension);
+    }
+
+    function _sendMessageGas(SafePolicyGuard guard_, bytes memory data, uint256 extension)
+        internal
+        returns (uint256 used)
+    {
+        Safe target = _newEoaSafe();
+        _install(target, _signers(), guard_, _defaultConfig(), false);
+        Collider collider = new Collider();
+        bytes memory sigs = _withPolicyContext(
+            _signFor(target, _signers(), address(collider), 0, data, Enum.Operation.Call), new bytes(extension)
+        );
+        uint256 before = gasleft();
+        _execWith(target, address(collider), 0, data, Enum.Operation.Call, sigs);
+        used = before - gasleft();
+    }
+}
