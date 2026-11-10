@@ -34,20 +34,20 @@ interface ICrossecuteGuard {
     ///         call's calldata at `index`.
     event LeafPublished(bytes32 indexed root, bytes32 indexed leafHash, uint256 index);
 
-    error NoLiveRecord(address safe);
+    error NoLiveSendMessage(address safe);
     error NotSignedTarget(address caller);
     error AlreadyConsumed(address safe);
     error NestedExecution(address safe);
     error HashMismatch(bytes32 live, bytes32 txHash);
-    error ModuleStagingDenied(bytes4 selector);
+    error ModuleSendMessageDenied();
+    error ModuleRegisterRootDenied();
     error ApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();
     error NoLeaves();
     error RootNotPublished(bytes32 root);
 
-    /// @notice Marks `safe`'s live staged record, from a `sendMessage` or `registerRoot` owner
-    ///         transaction, consumed and returns it. Only the signed target may call, once per
-    ///         record.
+    /// @notice Marks `safe`'s live sendMessage record consumed and returns it. Only the signed target
+    ///         may call, once per record.
     /// @return signedSafeTx The signed transaction with `data` empty: the caller is the signed target
     ///         and received that calldata from the Safe, so it sets `data` to its own `msg.data`.
     ///         `signatures` is the Safe hook's argument byte for byte. Safe checks only the first
@@ -66,7 +66,9 @@ interface ICrossecuteGuard {
 
     /// @notice Records the Merkle root of `leaves` and emits `LeafPublished` for each. Anyone may
     ///         call, any number of times. Publication authorizes nothing: it only lets a Safe on
-    ///         this guard execute `registerRoot` for the root.
+    ///         this guard execute `registerRoot` for the root. A receiver checks the registration's
+    ///         signatures, not its execution or publication, so a direct submission there does
+    ///         not depend on this record.
     /// @dev Each element is a leaf's `abi.encode`d fields, which the guard does not decode. A leaf
     ///      hash is `keccak256(abi.encode(keccak256(leaf)))`. An internal node hashes its two children
     ///      smaller first. A level's unpaired last hash moves up unchanged. One leaf is its own root.

@@ -21,12 +21,13 @@ interface IRootRegistration {
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
 ///         Safes. On top of the inherited policy engine it stages each owner-signed
-///         `sendMessage` and `registerRoot` for the signed target to consume, caches child Safe
-///         approvals, and records published Merkle roots.
+///         `sendMessage` for the signed target to consume, caches child Safe approvals, records
+///         published Merkle roots, and lets an owner `registerRoot` through only for a published
+///         root.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
-    /// @dev A Safe's transient staged record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
+    /// @dev A Safe's transient sendMessage record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
     bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
 
     // Word offsets from a Safe's id. `_TX_HASH` is nonzero exactly while the record is live.
@@ -62,7 +63,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     /// @inheritdoc ICrossecuteGuard
     function consume(address safe) external returns (SignedSafeTx memory signedSafeTx) {
         bytes32 safeId = _safeId(safe);
-        require(_tload(safeId, _TX_HASH) != 0, NoLiveRecord(safe));
+        require(_tload(safeId, _TX_HASH) != 0, NoLiveSendMessage(safe));
         uint256 target = _tload(safeId, _TARGET);
         // forge-lint: disable-next-line(unsafe-typecast) drops the consumed flag above the address
         require(address(uint160(target)) == msg.sender, NotSignedTarget(msg.sender));
@@ -134,14 +135,16 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
-        bool staged = _isStaged(selector);
-        bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
-        if (!staged && !approval) return;
         if (selector == IRootRegistration.registerRoot.selector) {
-            // Decoded as the transmitter's ABI decoder reads it, ignoring trailing bytes.
+            // Nothing is staged: a relayer supplies the registration's signatures. The root is
+            // decoded as the transmitter's ABI decoder reads it, ignoring trailing bytes.
             bytes32 root = abi.decode(data[4:], (bytes32));
             require($published[root], RootNotPublished(root));
+            return;
         }
+        bool sendMessage = selector == IERC7786GatewaySource.sendMessage.selector;
+        bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
+        if (!sendMessage && !approval) return;
 
         SafeTx memory safeTx = SafeTx({
             to: to,
@@ -156,7 +159,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
             // The Safe increments its nonce before calling the guard.
             nonce: ISafe(payable(msg.sender)).nonce() - 1
         });
-        if (staged) {
+        if (sendMessage) {
             _tstoreSignedSafeTx(safeId, safeTx, signatures);
         } else {
             // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
@@ -228,17 +231,12 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         }
     }
 
-    /// @dev Runs after the inherited policy check, so this only narrows what policy permits.
+    /// @dev Runs after the inherited policy check, so this only narrows what policy permits. A module
+    ///      `registerRoot` would skip the owner hook's publication check.
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
         bytes4 selector = _decodeSelector(data);
-        require(!_isStaged(selector), ModuleStagingDenied(selector));
-    }
-
-    /// @dev Selectors staged from an owner transaction whatever its target or operation.
-    function _isStaged(bytes4 selector) private pure returns (bool) {
-        return
-            selector == IERC7786GatewaySource.sendMessage.selector
-                || selector == IRootRegistration.registerRoot.selector;
+        require(selector != IERC7786GatewaySource.sendMessage.selector, ModuleSendMessageDenied());
+        require(selector != IRootRegistration.registerRoot.selector, ModuleRegisterRootDenied());
     }
 
     function _tloadSignedSafeTx(bytes32 safeId) private view returns (SignedSafeTx memory signedSafeTx) {

@@ -123,7 +123,7 @@ contract LeafPublicationTest is GuardTestBase {
         }
     }
 
-    function test_registerRoot_unpublishedFailsBeforeStaging() public {
+    function test_registerRoot_unpublishedRootReverts() public {
         bytes32 root = guard.publishLeaves(MerkleReference.executionLeaves(3));
         bytes32 other = keccak256("unpublished");
         uint256 nonce = safe.nonce();
@@ -133,13 +133,15 @@ contract LeafPublicationTest is GuardTestBase {
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.RootNotPublished.selector, other));
         _execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, signatures);
         assertEq(safe.nonce(), nonce);
+        assertEq(transmitter.registrations(), 0);
 
         _registerRoot(safe, transmitter, root);
         assertEq(transmitter.registrations(), 1);
         assertEq(transmitter.lastRoot(), root);
     }
 
-    function test_registerRoot_rejectedBeforePublication() public {
+    /// @dev The revert leaves the nonce in place, so the same signatures execute after publication.
+    function test_registerRoot_sameSignaturesAfterPublication() public {
         bytes[] memory leaves = MerkleReference.executionLeaves(3);
         bytes32 root = MerkleReference.leafHash(leaves[0]);
         bytes memory data = abi.encodeCall(TestTransmitter.registerRoot, (root));
@@ -147,30 +149,20 @@ contract LeafPublicationTest is GuardTestBase {
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.RootNotPublished.selector, root));
         _execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, signatures);
 
-        // The same signatures stay valid: the nonce did not advance.
         guard.publishLeaves(MerkleReference.executionLeaves(1));
         assertTrue(_execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, signatures));
         assertEq(transmitter.lastRoot(), root);
     }
 
-    /// @dev The transmitter receives the Safe's signed authorization, and the record is cleared in
-    ///      the same transaction.
-    function test_registerRoot_consumedAndCleared() public {
+    /// @dev A relayer supplies the registration's signatures, so the guard stages no record for it.
+    function test_registerRoot_stagesNothing() public {
         bytes32 root = guard.publishLeaves(MerkleReference.executionLeaves(5));
-        bytes memory data = abi.encodeCall(TestTransmitter.registerRoot, (root));
-        bytes32 txHash = _txHash(safe, address(transmitter), 0, data, Enum.Operation.Call);
-        bytes memory signatures = _sign(_signers(), txHash);
-
-        _run(
-            _execCallWith(safe, address(transmitter), 0, data, Enum.Operation.Call, signatures),
-            _cleared(safe, _words(signatures))
-        );
-        assertEq(transmitter.lastSafeTxHash(), txHash);
-        assertEq(transmitter.lastSignatures(), signatures);
+        _registerRoot(safe, transmitter, root);
+        assertEq(transmitter.registrations(), 1);
+        assertFalse(transmitter.stagedDuringRegistration());
     }
 
-    /// @dev One publication serves every Safe on the guard. Each Safe's transmitter consumes that
-    ///      Safe's own signatures.
+    /// @dev One publication serves every Safe on the guard. Each Safe registers with its own execution.
     function test_registerRoot_publicationSharedAcrossSafes() public {
         Safe second = _newEoaSafe();
         TestTransmitter secondTransmitter = new TestTransmitter(address(second), sink);
@@ -179,30 +171,31 @@ contract LeafPublicationTest is GuardTestBase {
         vm.prank(STRANGER);
         bytes32 root = guard.publishLeaves(MerkleReference.executionLeaves(3));
 
-        bytes memory firstSignatures = _registerRoot(safe, transmitter, root);
-        bytes memory secondSignatures = _registerRoot(second, secondTransmitter, root);
-        assertEq(transmitter.lastSignatures(), firstSignatures);
-        assertEq(secondTransmitter.lastSignatures(), secondSignatures);
-        assertNotEq(keccak256(firstSignatures), keccak256(secondSignatures));
+        _registerRoot(safe, transmitter, root);
+        assertEq(transmitter.lastRoot(), root);
+        assertEq(secondTransmitter.registrations(), 0);
+        _registerRoot(second, secondTransmitter, root);
         assertEq(secondTransmitter.lastRoot(), root);
     }
 
-    /// @dev Publication is the only gate on a matching selector. An unrelated target with a published
-    ///      root leaves its record unconsumed, and the post-hook clears it.
-    function test_registerRoot_unrelatedTargetCleared() public {
+    /// @dev The check matches the selector on any target.
+    function test_registerRoot_unrelatedTargetChecked() public {
         RootCollider collider = new RootCollider();
         bytes32 root = guard.publishLeaves(MerkleReference.executionLeaves(2));
-        bytes memory data = abi.encodeCall(RootCollider.registerRoot, (root));
-        bytes memory signatures = _signFor(safe, _signers(), address(collider), 0, data, Enum.Operation.Call);
-
-        _run(
-            _execCallWith(safe, address(collider), 0, data, Enum.Operation.Call, signatures),
-            _cleared(safe, _words(signatures))
+        assertTrue(
+            _exec(
+                safe,
+                _signers(),
+                address(collider),
+                0,
+                abi.encodeCall(RootCollider.registerRoot, (root)),
+                Enum.Operation.Call
+            )
         );
         assertEq(collider.calls(), 1);
 
         bytes memory unpublished = abi.encodeCall(RootCollider.registerRoot, (bytes32(0)));
-        signatures = _signFor(safe, _signers(), address(collider), 0, unpublished, Enum.Operation.Call);
+        bytes memory signatures = _signFor(safe, _signers(), address(collider), 0, unpublished, Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.RootNotPublished.selector, bytes32(0)));
         _execWith(safe, address(collider), 0, unpublished, Enum.Operation.Call, signatures);
     }
@@ -214,13 +207,17 @@ contract LeafPublicationTest is GuardTestBase {
         _execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, signatures);
     }
 
-    function _registerRoot(Safe safe_, TestTransmitter transmitter_, bytes32 root)
-        internal
-        returns (bytes memory signatures)
-    {
-        bytes memory data = abi.encodeCall(TestTransmitter.registerRoot, (root));
-        signatures = _signFor(safe_, _signers(), address(transmitter_), 0, data, Enum.Operation.Call);
-        assertTrue(_execWith(safe_, address(transmitter_), 0, data, Enum.Operation.Call, signatures));
+    function _registerRoot(Safe safe_, TestTransmitter transmitter_, bytes32 root) internal {
+        assertTrue(
+            _exec(
+                safe_,
+                _signers(),
+                address(transmitter_),
+                0,
+                abi.encodeCall(TestTransmitter.registerRoot, (root)),
+                Enum.Operation.Call
+            )
+        );
     }
 
     function _slice(bytes memory data, uint256 start) internal pure returns (bytes memory out) {

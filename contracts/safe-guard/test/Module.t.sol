@@ -131,12 +131,10 @@ contract ModuleTest is GuardTestBase {
     }
 
     function test_moduleSendMessage_rejectedOnPermittedTarget() public {
-        bytes memory denied =
-            abi.encodeWithSelector(ICrossecuteGuard.ModuleStagingDenied.selector, TestTransmitter.sendMessage.selector);
-        vm.expectRevert(denied);
+        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
         module.exec(guarded, address(guardedTransmitter), _sendMessageData(), Enum.Operation.Call);
 
-        vm.expectRevert(denied);
+        vm.expectRevert(ICrossecuteGuard.ModuleSendMessageDenied.selector);
         module.exec(guarded, address(collider), _sendMessageData(), Enum.Operation.Call);
     }
 
@@ -145,9 +143,7 @@ contract ModuleTest is GuardTestBase {
         bytes[] memory leaves = new bytes[](1);
         leaves[0] = hex"01";
         bytes32 root = guard.publishLeaves(leaves);
-        vm.expectRevert(
-            abi.encodeWithSelector(ICrossecuteGuard.ModuleStagingDenied.selector, TestTransmitter.registerRoot.selector)
-        );
+        vm.expectRevert(ICrossecuteGuard.ModuleRegisterRootDenied.selector);
         module.exec(
             guarded,
             address(guardedTransmitter),
@@ -202,7 +198,7 @@ contract ModuleTest is GuardTestBase {
             abi.encodeCall(safe.enableModule, (address(module))),
             Enum.Operation.Call
         );
-        // `execTransactionFromModule` reports the inner NoLiveRecord revert as `false`.
+        // `execTransactionFromModule` reports the inner NoLiveSendMessage revert as `false`.
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(safe))));
         assertFalse(module.exec(safe, address(transmitter), _sendMessageData(), Enum.Operation.Call));
         assertEq(transmitter.sends(), 0);

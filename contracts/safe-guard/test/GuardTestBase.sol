@@ -96,10 +96,6 @@ abstract contract GuardTestBase is SafeFixture {
         );
     }
 
-    function _words(bytes memory signatures) internal pure returns (uint256) {
-        return (signatures.length + 31) / 32;
-    }
-
     /// @dev Reverts the batch unless `safe_`'s record is zero, including `signatureWords` words.
     function _cleared(Safe safe_, uint256 signatureWords) internal view returns (Batch.Call memory) {
         return Batch.Call(address(guard), abi.encodeCall(guard.requireCleared, (address(safe_), signatureWords)), false);

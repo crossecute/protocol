@@ -8,7 +8,7 @@ import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
-/// @dev Stands in for an external effect. Records whether the caller's staged record was already
+/// @dev Stands in for an external effect. Records whether the caller's sendMessage record was already
 ///      consumed when the effect ran.
 contract Sink {
     uint256 public calls;
@@ -58,6 +58,8 @@ contract TestTransmitter is IRootRegistration {
     uint256[] public lastApprovalNonces;
     uint256 public registrations;
     bytes32 public lastRoot;
+    /// @dev Whether the guard held a live record for the owner during the last registration.
+    bool public stagedDuringRegistration;
 
     constructor(address owner, Sink sink) {
         OWNER = owner;
@@ -101,14 +103,11 @@ contract TestTransmitter is IRootRegistration {
         return lastSafeTxHash;
     }
 
-    /// @dev Records the consumed authorization where #108's transmitter would cache it.
+    /// @dev Records the root as #108's transmitter would. A relayer supplies the signatures later.
     function registerRoot(bytes32 root) external {
         require(msg.sender == OWNER, NotOwner());
-        ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
-        signedSafeTx.safeTx.data = msg.data;
-        lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
-        lastSignatures = signedSafeTx.signatures;
+        CrossecuteGuardHarness guard = CrossecuteGuardHarness(GuardDiscovery.transactionGuard(msg.sender));
+        stagedDuringRegistration = guard.recordWords(msg.sender, 0)[0] != 0;
         lastRoot = root;
         ++registrations;
     }
