@@ -13,12 +13,6 @@ struct ExecutionLeaf {
     bytes callPayload; // abi.encode(Call[]) for EVM destinations.
 }
 
-/// @notice Proposed `sendMessage` payload, encoded as one ABI tuple with `abi.encode(dispatch)`.
-struct DispatchPayload {
-    bytes32 merkleRoot;
-    uint256 authorityCounter;
-}
-
 /// @notice Signed child approval keyed by the child Safe and its Safe message hash.
 struct NestedApproval {
     address childSafe;
@@ -34,17 +28,21 @@ struct SignedDelivery {
 }
 
 /// @notice Proposed Safe-signed transmitter interface.
-/// @dev `sendMessage` takes an encoded root authorization. Leaf witnesses are supplied separately.
-interface ISignedTransmitter is IERC7786GatewaySource {}
+interface ISignedTransmitter is IERC7786GatewaySource {
+    /// @notice Cache the owner's Safe authorization for a Merkle root.
+    function registerRoot(bytes32 root) external;
+
+    /// @notice Deliver one unused leaf proven under a registered root.
+    function relayLeaf(bytes32 root, ExecutionLeaf calldata leaf, bytes32[] calldata proof, bytes[] calldata attributes)
+        external
+        payable
+        returns (bytes32 sendId);
+}
 
 /// @notice Proposed permissionless submission interface for a Safe-signed receiver.
 interface ISignedReceiver {
     event DuplicateMessage();
 
-    /// @notice Submit one leaf and proof against the root in the original signed Safe calldata.
-    /// @param delivery Full signed Safe transaction, original signatures and nested approval evidence.
-    /// @param leaf The leaf to execute on this receiver.
-    /// @param proof Sibling hashes proving membership in the signed root.
-    function submitDirect(SignedDelivery calldata delivery, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
-        external;
+    /// @notice Submit a standalone Safe-signed send to its signed recipient.
+    function submitDirect(SignedDelivery calldata delivery) external;
 }

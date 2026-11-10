@@ -1,7 +1,7 @@
 # Safe-signed dispatch
 
-How a signature-enabled transmitter sends a Safe-signed Merkle dispatch, and how a receiver
-verifies it through provider delivery or permissionless direct submission. Tracked in
+How a signature-enabled transmitter sends a standalone Safe-signed dispatch or relays a leaf
+from a registered Merkle root, and how a receiver verifies and executes it. Tracked in
 [issue #108](https://github.com/crossecute/protocol/issues/108). The source guard is
 [#107](https://github.com/crossecute/protocol/issues/107) (implemented in
 [PR #117](https://github.com/crossecute/protocol/pull/117)); authority changes are
@@ -21,44 +21,48 @@ answers are recommendations awaiting agreement. *Open* items have no recommendat
 
 Envelope and routing:
 
-- **D1.** The Safe signs a normal queued `sendMessage(bytes,bytes,bytes[])` transaction.
-  Its payload commits to the Merkle root and parent authority counter. One Safe quorum
-  authorizes every leaf under that root.
-- **D2.** The ERC-7786 signature is unchanged. Each leaf commits to its full ERC-7930
-  destination. Leaf publication and delivery use witnesses supplied separately from the
-  signed payload. Q1 covers the source entry points and routing.
+- **D1.** A standalone Safe transaction signs the normal `sendMessage(bytes,bytes,bytes[])`
+  calldata for one destination. The recipient, payload and attributes use the plain variant's
+  encoding. The transmitter consumes the guard-staged authorization and sends in the same
+  source transaction, wrapping the exact calldata with Safe context, signatures and any
+  nested approval evidence. The standalone message has no Merkle root, leaf or proof.
+- **D2.** The owner Safe can register any `bytes32` root. The transmitter caches its signed
+  registration and nested approval evidence for later relays. Registration needs no leaf data.
+  Track cache presence independently of the root value so a zero root can also be registered.
 - **D3.** The signed Safe `to` must equal the receiver's configured source transmitter.
-- **D4.** A locked receiver deployment uses one fixed payload format. There is no payload
-  version field.
-- **D5.** Both delivery paths supply the exact signed Safe calldata and context. The receiver
-  verifies the Safe quorum over the root authorization and checks the submitted leaf's proof
-  against that root. It hashes and executes only that leaf. No per-leaf signature is required.
+- **D4.** A locked receiver deployment uses fixed, distinct standalone and Merkle envelope
+  formats. The receiver checks the signed selector for the path being executed.
+- **D5.** Anyone can call `relayLeaf` with a registered root, one execution leaf and its
+  proof. The transmitter checks membership and the configured route, then sends one
+  message to the leaf's destination with the cached Safe authorization, root, leaf and proof.
+  The receiver reconstructs the signed root registration, verifies the Safe quorum and
+  proof, and checks that the decoded leaf names this chain and receiver before executing it.
 
-The transmitter discovers the transaction guard from the owner Safe on every send. Only the
-signed target can consume the staged record, once. The guard clears it in the Safe post-hook.
-Each dispatch in an outer batch must be a separately signed, top-level Safe execution.
-A single Safe-signed MultiSend does not stage its inner calls. Module calls do not stage
-owner authorization either.
+Only the signed target can consume the guard's staged record, once. The guard clears it in
+the Safe post-hook. A batch of standalone sends uses separately signed, top-level Safe
+executions. A signed MultiSend or module call does not stage its inner calls.
 
 Trees and leaves:
 
-- **D6.** One tree can cover multiple destinations and consecutive local nonces on the same
-  receiver. Each provider delivery or direct submission processes exactly one leaf. A leaf
-  carries an ordered batch of calls that executes atomically.
-- **D7.** The transmitter records authorized roots and their verified leaf hashes. The full
-  signed Safe transaction, signature blob and nested approval evidence are published in
-  source-chain logs. Full leaf data is published so anyone can submit every batch independently
-  with its proof. The receiver verifies the submission locally using its configured authority.
-- **D8.** Each leaf commits to its destination receiver's local nonce. The source Safe nonce
-  stays in the signed Safe transaction context and is used only to rebuild the digest.
+- **D6.** One registered root can cover multiple destinations and multiple local nonces on
+  the same receiver. Each `relayLeaf` call sends one leaf to one destination. A leaf can
+  contain an ordered batch of calls that executes atomically on that destination.
+- **D7.** The transmitter marks the leaf hash used when its provider send succeeds. Mark
+  before calling the provider and let a revert roll back the mark. The receiver marks the
+  same leaf hash used when execution succeeds. The source mark is keyed by leaf hash across all registered roots on that transmitter.
+  Destination failure rolls back only the receiver mark, and the original delivery can be
+  retried through the provider.
+- **D8.** Each Merkle leaf commits to its receiver's local nonce. The Safe nonce stays in the
+  signed transaction context. A standalone send has the same application payload as the
+  plain path and uses the Safe digest as its replay identity.
 
 Verification and replay:
 
-- **D9.** Provider delivery and direct submission share one verifier and one replay state.
-  Every dispatch, including a commit-only leaf, verifies before changing state. Provider
+- **D9.** Every dispatch verifies before changing state, including a commit-only message.
+  Standalone provider delivery and direct submission share the same verifier and replay state. Provider
   sender metadata and local self-calls never substitute for it, including where the
   transmitter and receiver share an address on different chains.
-- **D10.** Each receiver starts at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
+- **D10.** Each receiver starts Merkle execution at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the leaf hash and advances before external calls, rejects
   overflow, and rolls both back if execution reverts.
 - **D11.** An authenticated replay of an executed leaf returns successfully with
@@ -83,11 +87,12 @@ Authority:
 - **D17.** Empty nested payloads count only with independently verified signed direct-approval
   evidence. The receiver does not check the signing library's address or code hash. `v = 1`
   is rejected at every level. `v = 27/28` and `v = 31/32` are supported, including mixed sets.
-- **D18.** Trees commit to the parent's authority-change counter, which must equal the
-  receiver's counter. Authority updates and dispatch execution have separate entry points.
-  The change protocol is #109's.
-- **D19.** No light clients. Quorum-authorized dispatches can execute at the destination
-  without source execution or bridge delivery.
+- **D18.** #108 uses fixed authority. #109 specifies how standalone sends and cached
+  root approvals are invalidated when authority changes. Authority updates and dispatch
+  execution have separate entry points.
+- **D19.** No light clients. Standalone signed dispatches can execute directly at the
+  destination without source execution or bridge delivery. A direct path for Merkle leaves
+  would need to account for transmitter-side used state (Q1.7).
 
 ## Conflicts to resolve first
 
@@ -96,20 +101,20 @@ Authority:
   already executed the leaf.
 - **C2. #109 fields in the bootstrap snapshot.** The snapshot carries one applied
   authority counter per Safe. #109 owns the fields and rules for later authority changes.
-- **C3. "Verify source counter consistency."** #108 uses the phrase without defining what the
-  receiver checks. *Proposed:* the transmitter compares the tree's counter with its stored
-  parent counter at root registration (T5); the receiver checks only equality with its own counter.
+- **C3.** Deferred to #109. Specify how standalone sends and cached approvals bind the
+  source authority counter once rotations are supported.
 - **C4. One tree cannot span providers.** D3 binds the signed `to` to one transmitter. Each
   provider has its own transceiver and so its own transmitter and conduit address. Receivers of
   a LayerZero conduit and a CCIP conduit cannot share a signed Safe transaction. *Proposed:*
   state the limit; accepting a set of transmitters is a larger change.
 - **C5. Source-side policy does not gate destination effects.** Under D19 a signed but
-  unexecuted Safe transaction executes at the destination, so checks the home Safe applies at
-  execution time (the guard's PolicyEngine, SafenetPolicy, delay modules) never see it.
+  unexecuted standalone Safe transaction can execute at the destination, so checks the home
+  Safe applies at execution time (the guard's PolicyEngine, SafenetPolicy, delay modules) never see it.
   *Open:* document as accepted, or not.
 - **C6. Safe cancellation does not cancel.** Signing a rejection at the same Safe nonce
   replaces the source transaction but leaves the original signatures valid at the destination
-  until the window expires, a replacement leaf consumes the nonce, or a parent rotation lands.
+  under the standalone replay rules. For registered roots, replacing a source Safe transaction
+  at the same nonce cannot undo a registration that already executed.
   Signatures in the Safe Transaction Service are public once threshold is reached. *Open:*
   document as accepted, and say what tooling shows signers.
 - **C7. PR #115's draft of this file.** It describes a superseded design: `minimumNonce` with
@@ -121,45 +126,40 @@ Authority:
 ### Q1. Signed calldata and delivery envelope
 
 [`ISignedDispatch.sol`](../contracts/evm/src/messaging/ISignedDispatch.sol) proposes a
-two-word `DispatchPayload` containing the root and parent authority counter. Both delivery
-paths carry a `SignedDelivery` with the exact
-[`ICrossecuteGuard.SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), the original
-parent signature blob and nested approval evidence. The leaf and proof travel alongside it.
-A direct submission carries only the batch being executed and its proof, even when the root
-authorizes other destinations.
+shared `SignedDelivery` containing the exact
+[`ICrossecuteGuard.SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), signatures
+and nested approval evidence. For a standalone delivery, decode recipient and plain payload
+from the signed `sendMessage` calldata. For a Merkle delivery, decode the root from the
+signed `registerRoot` calldata and use the separately supplied leaf and proof.
 
 - **Q1.1** Use the configured source Safe and chain ID for the EIP-712 domain. Check the
-  signed target against the configured source transmitter and require `operation == CALL`
-  and zero `safeTxGas` and `gasPrice`, as the guard policy does.
-- **Q1.2** All SafeTx fields travel in Safe 1.5.0 EIP-712 order. The transmitter restores
-  `safeTx.data` from `msg.data` after `consume(ownerSafe)` returns it empty.
-- **Q1.3** Check the selector before decoding. Hash the exact calldata and test digest parity
+  signed target and require `operation == CALL` and zero `safeTxGas` and `gasPrice`.
+- **Q1.2** Carry all SafeTx fields in Safe 1.5.0 EIP-712 order. Restore `safeTx.data` from
+  `msg.data` after consuming the staged record.
+- **Q1.3** Check the signed selector before decoding. Hash exact calldata and test parity
   with Safe 1.5.0 `getTransactionHash`.
-- **Q1.4** *Open:* require canonical ABI encoding of the signed calldata. Hash the exact
-  call payload bytes and decode those same bytes for execution.
-- **Q1.5** Provider and direct delivery of the same leaf share the proof check and duplicate
-  record.
-- **Q1.6** *Proposed:* `sendMessage` registers and publishes the signed root authorization.
-  A permissionless source entry point accepts a leaf and proof for a registered root,
-  verifies membership, and records and publishes the leaf. A proof is required before a
-  leaf hash is recorded. Direct submission can proceed independently of source registration.
-- **Q1.7** *Open:* whether to combine leaf publication with provider relay, and how to
-  supply the signed bundle, pay provider fees and return a send ID in that flow.
-- **Q1.8** *Open:* required values for the signed ERC-7786 `recipient` and `attributes`
-  when registering a root.
-- **Q1.9** *Open:* registry layout, event format and publication limits. Measure source
-  storage and log cost per root and per leaf, plus the provider envelope with signatures
-  and nested evidence. A relay must have the full bytes and proof even if a leaf hash is
-  already registered.
-- **Q1.10** If a root is signed at different Safe nonces, the signatures authenticate distinct
-  Safe transactions. Publish each authorization independently. Executing a leaf via one
-  still consumes the same receiver nonce.
+- **Q1.4** *Open:* whether to require canonical ABI encoding for signed calldata. Hash and
+  execute the same call bytes.
+- **Q1.5** The standalone quote and send use the signed `recipient`. The Merkle quote and
+  relay use the leaf destination. Each pair prices the same final wire bytes.
+- **Q1.6** Teach the guard to stage `registerRoot(bytes32)` for owner transactions and
+  reject that selector on the module path. Cache the resulting `SignedDelivery` on the
+  transmitter, so relayers only supply the root and witness.
+- **Q1.7** *Open:* whether to support direct Merkle delivery and how to keep source tracking
+  accurate if it can bypass `relayLeaf`. Also specify recovery where the provider cannot
+  retry a failed destination execution.
+- **Q1.8** *Open:* relay fee funding and how permissionless relays apply provider attributes
+  and gas limits.
+- **Q1.9** *Open:* measure cache writes and provider envelope costs, including nested evidence,
+  and define bounds. Leaf data and proofs are variable length because the number of calls and
+  tree depth vary.
+- **Q1.10** A new registration of the same root cannot make an already-used leaf relayable.
+  *Open:* whether a repeated registration can replace the cached authorization.
 
 ### Q2. Leaf and tree encoding
 
 What fields and byte encoding define an execution leaf? How does it commit to the ordered
-calls with the existing EVM `Call[]` codec, where does the parent authority counter belong,
-and how are leaves and internal nodes hashed? Specify proof ordering and the single-leaf tree.
+calls with the existing EVM `Call[]` codec, and how are leaves and internal nodes hashed? Specify proof ordering and the single-leaf tree.
 
 *Proposed.* Frame the leaf fields with `abi.encode` and double-hash the result. Include the
 full destination and `callPayload` bytes in the inner hash. EVM call payloads use the existing
@@ -169,11 +169,8 @@ order and integer widths remain open.
 
 Cases:
 
-- **Q2.1** Counter placement. In each leaf, a leaf re-signed after a rotation gets a new hash
-  and stops matching its duplicate record. Beside the root in the signed payload, the leaf
-  hash is stable across rotations and every leaf in a tree shares the parent counter.
-  *Proposed:* beside the root. #109's management leaves carry their own prior and next
-  counters either way.
+- **Q2.1** #109 owns authority counter binding for root registration. Keep the leaf hash
+  stable when the same leaf is approved again.
 - **Q2.2** An empty replacement leaf carries the normal encoding of an empty `Call[]`.
 - **Q2.3** The leaf hash includes the exact encoded call payload bytes. A call to `commit`
   still takes the existing commitment hash for the batch to be finalized later.
@@ -290,8 +287,7 @@ For each entry `i < t`, with `t` the stored threshold of the node:
   bytes; the same rule applies.
 - **Q5.10** Recursion depth is bounded by graph depth and uses memory, not call depth.
 - **Q5.11** A shared child under two groups is evaluated twice, over different hashes.
-- **Q5.12** The counter check runs before signatures to save gas on stale trees. Its order
-  relative to the duplicate check follows C1.
+- **Q5.12** #109 specifies the order of counter, signature and duplicate checks after rotation.
 - **Q5.13** An EIP-7702 account signing with ECDSA is an EOA owner; contract-style signatures
   from it are unsupported.
 
@@ -369,14 +365,14 @@ source execution and when the provider is unavailable?
 Cases:
 
 - **Q8.1** The bundle holds every Safe transaction field, the Safe address and home chain id,
-  signatures, recursive evidence, the root and counter, every leaf with its full calls and
-  proof, the graph or its commitment, and each receiver's nonce at build time. It carries an
+  signatures and recursive evidence. For Merkle relay, include the root, every leaf with its
+  full calls and proof, and each receiver's Merkle nonce at build time. It carries an
   off-chain schema version; D4 applies only to the on-chain payload.
 - **Q8.2** Before source execution, signatures exist only with signers or in the Safe
   Transaction Service. A partial set is useless until it meets the receiver's thresholds.
-- **Q8.3** Source registration publishes the original Safe transaction, signatures and nested
-  evidence in a log keyed by root. Relayers can retrieve the authorization without tracing a
-  Safe call. The registry holds hashes for lookup.
+- **Q8.3** The transmitter caches the original Safe transaction, signatures and nested
+  evidence by root. `relayLeaf` reads the cached authorization. The cache itself does not
+  contain the tree's leaf data.
 - **Q8.4** Publish every leaf's full encoded fields and calls with its proof, or publish the
   full ordered tree data needed to construct proofs. A root and hashes alone cannot recover
   the calls. The entire tree is independently relayable only once those bytes are available.
@@ -384,13 +380,13 @@ Cases:
   needs no trust.
 - **Q8.6** Signers need the bundle to review other leaves, since the Safe UI shows an opaque
   payload.
-- **Q8.7** Direct submitters read `nextNonce` and the counter from receiver views to pick an
-  executable leaf.
+- **Q8.7** Merkle relayers read the transmitter's used state and the receiver's `nextNonce`
+  to pick a leaf to relay.
 - **Q8.8** #109's update history must stay available for initialized receivers that lag behind.
-- **Q8.9** Failures a submitter can retry: early, future nonce, receiver counter behind, low
-  balance or gas, and possibly a reverting call. Failures that need a replacement leaf or new
-  signatures: expired, conflicting leaf at a consumed nonce, invalid signatures, receiver
-  counter ahead, `v = 1`, missing evidence, wrong destination.
+- **Q8.9** Retryable destination failures include early delivery, a future Merkle nonce,
+  insufficient funds or gas, and some target reverts. An expired or conflicting leaf, invalid
+  signatures, `v = 1`, missing evidence or a wrong destination needs a corrected submission
+  or new authorization.
 
 ## Other open items
 
@@ -406,7 +402,8 @@ Cases:
 - **O4.** Quote and send parity. Quote and provider relay need the same signed bundle and
   leaf witness to price the wire message. `DeliveryGas.PAYLOAD` (200,000) does not cover
   nested verification.
-- **O5.** `MessageSent` reports the leaf's destination, not `recipient`.
+- **O5.** `MessageSent` reports the signed recipient for a standalone send and the leaf
+  destination for `relayLeaf`. Root registration creates no provider message.
 - **O6.** One reentrancy lock covers `receiveMessage`, direct submission, `finalize`, `execute`
   and #109's update entry point. A leaf calling `finalize` reverts; document it.
 - **O7.** Gas griefing. `Executor` reverts on any failed call, but a target that catches an
@@ -417,9 +414,8 @@ Cases:
   moment within the window, so narrow windows limit MEV on parameter changes.
 - **O9.** With a fixed signer policy in the first release, *open:* what stops source owner
   changes before #109 ships. Without a block, removed owners keep destination authority.
-- **O10.** Exact counter equality invalidates every pending tree at each parent rotation, and a
-  lagging receiver rejects new trees until someone delivers updates. A child rotation
-  invalidates in-flight dispatches that used that child.
+- **O10.** #109 specifies which pending approvals and in-flight dispatches survive parent
+  and child rotations.
 - **O11.** No atomicity across destinations: a two-chain upgrade can stay half applied.
 - **O12.** EVM destinations only in the first release. No leaf can target the home chain.
 - **O13.** Receiver code size: the verifier, codec and Merkle code likely exceed EIP-170 and
@@ -433,56 +429,57 @@ Cases:
 
 ## Receiver check order
 
-The proposed sequence for both delivery routes. "Retryable" means the same bytes can succeed
+The proposed sequence for standalone and Merkle delivery. "Retryable" means the same bytes can succeed
 later; "permanent" means a replacement leaf or new signatures are needed.
 
 | # | Check | On failure |
 | --- | --- | --- |
 | R1 | Entry: provider (role and origin checks if kept, O2) or direct | revert |
 | R2 | Reentrancy lock | revert |
-| R3 | `sendMessage` selector; calldata decode (canonical if Q1.4) | revert, permanent |
-| R4 | Decode the supplied leaf; tag | revert, permanent |
+| R3 | Rebuild the Safe digest from exact calldata and check the expected signed selector | revert, permanent |
+| R4 | Decode the signed standalone recipient and payload, or the registered root and supplied leaf | revert, permanent |
 | R5 | Destination is (`block.chainid`, `address(this)`) | revert, permanent |
-| R6 | Proof against the root from the signed calldata | revert, permanent |
-| R7 | Rebuild the Safe digest from configuration and wire fields | |
-| R8 | Counter equals the receiver's counter (order per C1) | revert; retryable if the receiver lags, permanent if ahead |
-| R9 | Signatures and evidence under current authority, then check the inclusive execution window | revert, permanent |
-| R10 | `executed[nonce] == leafHash` | emit `DuplicateMessage()`, succeed |
+| R6 | Merkle only: verify the leaf proof against the root in signed registration calldata | revert, permanent |
+| R8 | Authority counter checks are deferred to #109 | |
+| R9 | Verify signatures and nested evidence, then check the execution window for a Merkle leaf | revert, permanent |
+| R10 | Standalone digest or Merkle leaf already executed | emit `DuplicateMessage()`, succeed |
 | R11 | `executed[nonce] != 0` | revert, conflicting leaf, permanent |
 | R12 | `nonce > nextNonce` | revert, future nonce, retryable |
 | R14 | Minimum gas, if O7 is adopted | revert, retryable |
-| R15 | Record the leaf hash; increment `nextNonce`, rejecting overflow | |
+| R15 | Record the standalone digest or Merkle leaf hash. For a new leaf, increment `nextNonce`, rejecting overflow | revert, permanent |
 | R16 | Execute the calls atomically; an empty batch is allowed | revert undoes R15, retryable |
 
 A nonce below `nextNonce` always has a record, because nonces advance only through execution,
 so R10 to R12 cover every case and a lower nonce with no record is an invariant failure.
 
-## Transmitter registration and relay order
-
-The split below is proposed in Q1.6. Q1.7 covers the provider entry point and fee handling.
+## Transmitter send and relay order
 
 | # | Check |
 | --- | --- |
-| T1 | Root registration requires the conduit owner Safe |
-| T2 | Discover the current guard, consume the Safe record once, and restore `safeTx.data` from `msg.data` |
-| T3 | Decode the signed root and counter; check canonical encoding if Q1.4 is adopted |
-| T4 | For provider relay, require the leaf's destination to be the recorded receiver on a bootstrapped chain |
-| T5 | Check the live counter at root registration. Verify a leaf's proof against a registered root before recording its hash or relaying it |
-| T6 | *Proposed:* no `v = 1`, evidence found (Q6.1), and within receiver caps before paying for provider relay (Q7.3) |
-| T7 | Build `SignedDelivery` with the full SafeTx, original parent signatures and keyed approvals. Record the root and publish the bundle |
-| T8 | For provider relay, quote the wire message and check funding (O4) |
-| T9 | Send the signed bundle with the leaf and proof; emit `MessageSent` with the leaf's destination (O5) |
+| T1 | Only the owner Safe may call `sendMessage` or `registerRoot`. Anyone may call `relayLeaf` |
+| T2 | For either Safe call, consume the staged guard record and restore `safeTx.data` from `msg.data` |
+| T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
+| T4 | For `registerRoot`, cache the signed authorization and evidence for the supplied root |
+| T5 | For `relayLeaf`, require a cached registration, verify the proof, require an unused leaf hash, and validate the destination route |
+| T6 | Validate signature and evidence limits before paying for provider relay |
+| T7 | Build the Merkle wire message from the cache, root, leaf and proof |
+| T8 | Quote the final wire message and check funding |
+| T9 | Mark the relayed leaf hash used before calling the provider. Revert the mark if the send fails |
 
 ## Tests
 
 #108's acceptance criteria list the required tests. These cases follow from the items above
 and are not in them yet:
 
-- two destination leaves execute from one signed root and separate proofs;
-- a relayer supplies altered calls or a leaf from another tree with an otherwise valid signed
-  root, and registration and execution both reject the proof;
-- an independent relayer can reconstruct submissions for all leaves from the published bundle
-  and leaf data;
+- standalone signed sends use the plain recipient and application payload, execute once
+  across both delivery routes, and never read the root cache;
+- only the owner can register a root. Anyone can relay two leaves from the same root in two
+  calls using the cached authorization;
+- source relay and destination execution each reject altered calls or a proof from another
+  root. A standalone authorization cannot serve as root approval or vice versa;
+- failed provider sends roll back the source mark. Successful sends reject another relay
+  of the same leaf. Destination failure leaves the receiver unmarked, and a retry succeeds
+  once without another source send;
 - a signed DELEGATECALL dispatch rejects (Q1.1);
 - replay through the same Safe and transmitter addresses on another chain (Q4.2);
 - non-canonical calldata and ERC-7930 encodings (Q1.4, Q2.4);
