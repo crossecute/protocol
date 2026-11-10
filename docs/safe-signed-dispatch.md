@@ -403,7 +403,9 @@ Cases:
 - **Q6.6** Missing required evidence reverts. The receiver ignores unused approval records.
   An approval can contribute to quorum only when an empty nested signature requires its
   exact child Safe and message digest and the approval verifies.
-- **Q6.7** A shared child needing evidence for two hashes contributes two entries.
+- **Q6.7** Use one approval record per `(childSafe, messageHash)`. If multiple
+  verification paths reach the same child Safe and message hash, reuse that record.
+  Different message hashes for the same child Safe require separate records.
 - **Q6.8** Evidence that no longer meets the child's current stored composition rejects; the
   child re-approves, which replaces the cached record for that hash. A provider message
   already sent carries the old copy.
