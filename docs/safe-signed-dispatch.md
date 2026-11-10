@@ -36,7 +36,8 @@ Envelope and routing:
   proof. Each leaf commits to its provider attributes, including any LayerZero execution
   options. The transmitter verifies membership and the route, then quotes and sends one
   message using those attributes, with the cached Safe authorization, root, leaf and proof.
-  The relayer pays the full provider fee from `msg.value`.
+  The relayer pays the full provider fee from `msg.value` and receives any excess.
+  A successful relay preserves the transmitter's pre-call native balance.
   The receiver reconstructs the signed root registration, verifies the Safe quorum and
   proof, and checks that the decoded leaf names this chain and receiver before executing it.
 
@@ -172,9 +173,13 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   It leaves the transmitter's used state unchanged. A later provider delivery of that
   leaf follows D11.
 - **Q1.8** The leaf supplies the exact attributes for both quote and send. The relayer
-  funds the full fee in that call, without using any existing transmitter balance. Direct
-  submission proves membership using the same full leaf and executes without applying its
-  provider attributes. *Open:* how to handle any excess payment.
+  funds the full fee in that call. Record `balanceBefore = address(this).balance - msg.value`
+  at entry. Require `msg.value >= fee` and send only the quoted fee to the provider. Where the
+  adapter takes a provider refund address, use the relayer. Refund `msg.value - fee` and
+  any synchronous provider refund returned to the transmitter to the relayer. Require
+  `address(this).balance == balanceBefore` after settlement. Protect settlement against reentrancy. A failed refund or balance mismatch
+  reverts the relay, including the used mark. Direct submission proves membership using
+  the full leaf and executes without applying its provider attributes.
 - **Q1.9** *Open:* measure cache writes and provider envelope costs, including nested evidence,
   and define bounds. Leaf data, proofs and attributes are variable length because the
   number of calls, tree depth and provider options vary.
@@ -515,7 +520,7 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | T6 | Validate signature and evidence limits before paying for provider relay |
 | T7 | Build the Merkle wire message from the cache, root, leaf and proof |
 | T8 | Quote and send using the verified leaf attributes. Require the relay fee from this call's `msg.value` |
-| T9 | Mark the relayed leaf hash used before calling the provider. Revert the mark if the send fails |
+| T9 | Mark the leaf hash used, send, refund excess to the relayer, and assert the transmitter's final native balance equals its pre-call balance |
 
 ## Tests
 
@@ -534,6 +539,9 @@ and are not in them yet:
   root. A standalone authorization cannot serve as root approval or vice versa;
 - altering only the attributes invalidates the proof. Quote and send use the exact verified
   attributes, and underpayment reverts even when the transmitter is funded;
+- exact payment and overpayment preserve a prefunded transmitter's native balance.
+  Overpayment and any synchronous provider fee refund go to the relayer. A rejected
+  refund or balance mismatch reverts both the provider send and source used mark;
 - new attributes under a newly approved root allow another relay. If the first batch
   succeeded, the second delivery is silent. If it failed, the new delivery can execute it;
 - failed provider sends roll back the source mark. Successful sends reject another relay

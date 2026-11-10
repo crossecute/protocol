@@ -34,6 +34,7 @@ interface ISignedTransmitter is IERC7786GatewaySource {
     function registerRoot(bytes32 root) external;
 
     /// @notice Pay to deliver one unused leaf using its proven attributes.
+    /// @dev Refunds excess native payment to the caller and preserves the transmitter balance.
     function relayLeaf(bytes32 root, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
         external
         payable
