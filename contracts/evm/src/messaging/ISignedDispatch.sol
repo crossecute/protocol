@@ -11,14 +11,7 @@ struct ExecutionLeaf {
     uint256 validAfter;
     uint256 deadline;
     bytes callPayload; // abi.encode(Call[]) for EVM destinations.
-}
-
-/// @notice Proposed `sendMessage` payload, encoded as one ABI tuple with `abi.encode(dispatch)`.
-struct DispatchPayload {
-    bytes32 merkleRoot;
-    uint256 authorityCounter;
-    ExecutionLeaf selectedLeaf;
-    bytes32[] selectedProof;
+    bytes[] attributes; // Provider options committed by the leaf hash.
 }
 
 /// @notice Signed child approval keyed by the child Safe and its Safe message hash.
@@ -35,18 +28,32 @@ struct SignedDelivery {
     NestedApproval[] nestedApprovals;
 }
 
-/// @notice Proposed Safe-signed transmitter interface.
-/// @dev `sendMessage` takes an encoded `DispatchPayload` and routes using its selected leaf.
-interface ISignedTransmitter is IERC7786GatewaySource {}
+/// @notice Proposed interface for the shared transmitter in signed mode.
+interface ISignedTransmitter is IERC7786GatewaySource {
+    error RootAlreadyRegistered(bytes32 root);
 
-/// @notice Proposed permissionless submission interface for a Safe-signed receiver.
+    /// @notice Cache the owner's Safe authorization for an unregistered Merkle root.
+    function registerRoot(bytes32 root) external;
+
+    /// @notice Pay to deliver one unused leaf using its proven attributes.
+    /// @dev Refunds excess native payment to the caller and preserves the transmitter balance.
+    function relayLeaf(bytes32 root, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
+        external
+        payable
+        returns (bytes32 sendId);
+}
+
+/// @notice Proposed permissionless submission interface for the shared receiver in signed mode.
 interface ISignedReceiver {
     event DuplicateMessage();
 
-    /// @notice Submit one leaf and proof against the root in the original signed Safe calldata.
-    /// @param delivery Full signed Safe transaction, original signatures and nested approval evidence.
-    /// @param leaf The leaf to execute on this receiver.
-    /// @param proof Sibling hashes proving membership in the signed root.
-    function submitDirect(SignedDelivery calldata delivery, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
-        external;
+    /// @notice Submit a standalone Safe-signed send to its signed recipient.
+    /// @dev Attached native value tops up the receiver.
+    function submitMessage(SignedDelivery calldata delivery) external payable;
+
+    /// @notice Submit a leaf directly using its signed root registration and proof.
+    /// @dev Attached native value tops up the receiver, including on authenticated duplicates.
+    function submitLeaf(SignedDelivery calldata delivery, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
+        external
+        payable;
 }
