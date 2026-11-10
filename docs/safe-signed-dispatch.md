@@ -63,9 +63,10 @@ Verification and replay:
 
 - **D9.** Every dispatch verifies before changing state, including a commit-only message.
   For each format, provider delivery and direct submission share the verifier and replay
-  state. Provider
-  sender metadata and local self-calls never substitute for it, including where the
-  transmitter and receiver share an address on different chains.
+  state. Provider delivery also requires an enabled gateway and authenticated origin and
+  sender matching the configured source chain and transmitter. Direct submission uses
+  the signed Safe domain and target without provider metadata. A shared transmitter
+  and receiver address across chains does not relax verification.
 - **D10.** Each receiver starts Merkle execution at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the execution ID, which excludes delivery attributes, and
   advances before external calls. It rejects overflow and rolls both writes back if
@@ -456,9 +457,8 @@ Cases:
   `msg.sender == sourceTransmitter`, which on those chains is whatever code sits at the home
   transmitter's address. *Proposed:* a receiver in signed mode accepts only `address(this)` during
   verified execution.
-- **O2.** Signed provider delivery requires an enabled gateway and always routes to
-  the signed verifier. *Open:* retain the existing provider origin and sender checks
-  in addition to signature verification.
+- **O2.** Resolved in D9. Signed provider delivery retains the existing gateway, origin
+  and sender checks and always routes to the signed verifier.
 - **O3.** Standalone send fee drain. Whoever executes a fully signed Safe transaction
   controls the bytes after the threshold entries (#117). LayerZero and CCIP price the
   byte-exact parent blob. *Open:* choose a payload cap after measurement. Permissionless
@@ -499,7 +499,7 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 
 | # | Check | On failure |
 | --- | --- | --- |
-| R1 | Entry: enabled provider gateway (origin and sender checks per O2) or direct | revert |
+| R1 | Entry: enabled gateway with the configured source chain and transmitter, or direct submission | revert |
 | R2 | Reentrancy lock | revert |
 | R3 | Rebuild the Safe digest from exact calldata and check the expected signed selector | revert, permanent |
 | R4 | Decode the signed standalone recipient and payload, or the registered root and supplied leaf | revert, permanent |
@@ -559,6 +559,9 @@ and are not in them yet:
   the transmitter and delivers successfully, with no destination event, calls or nonce
   advance, including after the deadline;
 - a forged or invalid proof still rejects after the leaf has already executed;
+- a valid signed bundle delivered through an enabled gateway with the wrong origin or
+  sender reverts without writing receiver state. The same bundle can execute through
+  direct submission;
 - a signed DELEGATECALL dispatch rejects (Q1.1);
 - replay through the same Safe and transmitter addresses on another chain (Q4.2);
 - non-canonical calldata and ERC-7930 encodings (Q1.4, Q2.4);
