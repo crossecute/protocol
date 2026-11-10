@@ -424,21 +424,18 @@ Cases:
 
 ### Q7. Resource limits
 
-Which limits are part of the protocol for owner counts, graph depth, proof length, call batch
-size, signature blobs and evidence? Which need measurements first?
+Which source or provider limits, if any, should apply, and what measurements inform them?
 
 Cases:
 
-- **Q7.1** Limits in a locked receiver never change for that conduit. Limits enforced only by
-  the transmitter can.
-- **Q7.2** Graph limits (owners per node, nodes, depth, total owners) must be identical at
-  `createTransmitter` and receiver bootstrap. Otherwise a conduit can exist whose graph no
-  receiver accepts.
-- **Q7.3** The guard caps neither blobs nor evidence, so any receiver cap makes some
-  source-valid sends undeliverable. The transmitter enforces receiver caps before paying (T6).
-- **Q7.4** Candidates: proof length, calls per leaf (or gas only), blob length, evidence count
-  and size, total signature checks per dispatch (the product of thresholds along used paths),
-  and #109's catch-up batch size.
+- **Q7.1** The receiver adds no resource caps on gas, owner counts, graph depth, proof
+  length, call batch size, signature blobs or nested evidence. Normal chain execution
+  limits apply.
+- **Q7.2** At `createTransmitter` and receiver bootstrap, use the same authority graph
+  validity rules so a signed transmitter cannot commit to an invalid graph.
+- **Q7.3** Source checks for provider payload limits apply to the full encoded payload
+  before paying the provider (Q6.10).
+- **Q7.4** Whether to cap standalone payload size on the source remains open (O3).
 - **Q7.5** Measurements needed before choosing numbers: gas per signature entry, per nested
   level and per evidence item; memory expansion for large blobs; bootstrap storage gas against
   owners and nodes; receiver code size against EIP-170; each provider's maximum message size
@@ -547,7 +544,7 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
 | T4 | For `registerRoot`, reject an existing root with `RootAlreadyRegistered(root)`; otherwise cache the signed authorization and evidence |
 | T5 | For `relayLeaf`, require a cached registration, verify the proof, require an unused leaf hash, and validate the destination route |
-| T6 | Validate signature and evidence limits before paying for provider relay |
+| T6 | Validate the signature and evidence format before paying for provider relay |
 | T7 | Build the Merkle wire message from the cache, root, leaf and proof |
 | T8 | Quote using the final wire message, destination and verified leaf attributes. Use those same inputs for send and require the quoted fee from this call's `msg.value` |
 | T9 | Mark the leaf hash used, send, refund excess to the relayer, and assert the transmitter's final native balance equals its pre-call balance |
