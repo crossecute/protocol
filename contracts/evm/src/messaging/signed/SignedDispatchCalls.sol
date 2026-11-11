@@ -7,13 +7,14 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
-import {Slices} from "src/messaging/signed/Slices.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
 
 /// @notice Reading a signed Safe transaction's target and calldata, shared by the transmitter that
 ///         sends it and the receiver that verifies it, so both decode the same bytes alike.
 /// @dev Calldata is decoded as the transmitter's ABI decoder reads it (Q1.4): the selector must
 ///      match, trailing bytes are ignored, and canonical re-encoding is not required.
 library SignedDispatchCalls {
+    using Bytes for bytes;
     uint8 internal constant CALL = 0;
 
     /// @dev Not a CALL to `target` with zero `safeTxGas` and `gasPrice`.
@@ -27,40 +28,57 @@ library SignedDispatchCalls {
     /// @dev `registerRoot` is nonpayable on the source transmitter.
     error NonzeroRegistrationValue(uint256 value);
 
+    /// @notice Require a CALL to the expected transmitter with zero Safe transaction gas and
+    ///         gas price.
+    /// @dev These are the supported source-call rules; destination verification must not accept
+    ///      a different target, operation or unsupported gas configuration as equivalent
+    ///      authorization.
     function requireSourceCall(SafeTx memory safeTx, address target) internal pure {
         if (safeTx.to != target || safeTx.operation != CALL || safeTx.safeTxGas != 0 || safeTx.gasPrice != 0) {
             revert NotSourceCall(target);
         }
     }
 
+    /// @notice Check the `sendMessage` selector and decode its recipient, payload and
+    ///         attributes.
+    /// @dev Both ends must interpret the exact signed calldata the same way before routing or
+    ///      executing its payload.
     function sendMessageArgs(bytes memory data)
         internal
         pure
         returns (bytes memory recipient, bytes memory payload, bytes[] memory attributes)
     {
-        return abi.decode(Slices.arguments(data, IERC7786GatewaySource.sendMessage.selector), (bytes, bytes, bytes[]));
+        return abi.decode(data.arguments(IERC7786GatewaySource.sendMessage.selector), (bytes, bytes, bytes[]));
     }
 
+    /// @notice Check a nonpayable `registerRoot` call and return the root it authorizes.
+    /// @dev Reject nonzero transaction value so the receiver cannot accept evidence for a
+    ///      registration that would be invalid on the source.
     function registeredRoot(SafeTx memory safeTx) internal pure returns (bytes32) {
         if (safeTx.value != 0) revert NonzeroRegistrationValue(safeTx.value);
-        return abi.decode(Slices.arguments(safeTx.data, ISignedTransmitter.registerRoot.selector), (bytes32));
+        return abi.decode(safeTx.data.arguments(ISignedTransmitter.registerRoot.selector), (bytes32));
     }
 
-    /// @notice The signed `bootstrap(payload, attributes)`, with `payload` unpacked.
+    /// @notice Decode a signed bootstrap's root, setup leaf, proof and provider attributes.
+    /// @dev Unpacking the inner payload gives both ends the same initialization authorization;
+    ///      a nonzero authority counter is rejected because authority updates are not
+    ///      implemented here.
     function bootstrapArgs(bytes memory data)
         internal
         pure
         returns (bytes32 root, BootstrapLeaf memory leaf, bytes32[] memory proof, bytes[] memory attributes)
     {
         bytes memory payload;
-        (payload, attributes) =
-            abi.decode(Slices.arguments(data, ISignedTransmitter.bootstrap.selector), (bytes, bytes[]));
+        (payload, attributes) = abi.decode(data.arguments(ISignedTransmitter.bootstrap.selector), (bytes, bytes[]));
         uint256 counter;
         (root, counter, leaf, proof) = abi.decode(payload, (bytes32, uint256, BootstrapLeaf, bytes32[]));
         if (counter != 0) revert AuthorityCounterMismatch(counter);
     }
 
-    /// @notice A new execution's inclusive window, on this chain's time.
+    /// @notice Require the current destination block time to fall inside the inclusive validity
+    ///         window.
+    /// @dev New execution must respect the signed start and deadline, and an inverted window
+    ///      cannot authorize execution.
     function requireOpen(uint256 validAfter, uint256 deadline) internal view {
         // forge-lint: disable-next-line(block-timestamp) the signed window is on this chain's block time (#108)
         if (validAfter > deadline || block.timestamp < validAfter || block.timestamp > deadline) {
@@ -68,7 +86,9 @@ library SignedDispatchCalls {
         }
     }
 
-    /// @notice Reverts unless `destination` is the ERC-7930 address of `self` on this chain.
+    /// @notice Require the destination to name this EVM chain and the expected receiver
+    ///         address.
+    /// @dev A valid signature for another chain or contract must not authorize execution here.
     function requireDestination(bytes memory destination, address self) internal view {
         Erc7930.Interop memory io = Erc7930.parseStrict(destination);
         if (

@@ -34,7 +34,10 @@ library SafeAuthority {
     error MissingNestedSafeApproval(address childSafe, bytes32 messageHash);
     error DuplicateNestedSafeApproval(address childSafe, bytes32 messageHash);
 
-    /// @notice Validate `records` as canonical and store one state per Safe.
+    /// @notice Validate and store the root Safe, source chain and each reachable Safe's owner
+    ///         configuration.
+    /// @dev The destination needs an authenticated local authority snapshot because the source
+    ///      Safes cannot be queried during destination verification.
     function store(SafeAuthorityState storage self, SafeAuthorityRecord[] memory records, uint256 sourceChainId)
         public
     {
@@ -47,7 +50,9 @@ library SafeAuthority {
         }
     }
 
-    /// @notice The stored graph in canonical order.
+    /// @notice Reconstruct the stored authority graph in canonical order.
+    /// @dev Readback lets callers inspect the ownership snapshot and reproduce its commitment
+    ///      without relying on source-chain state.
     function readRecords(SafeAuthorityState storage self) public view returns (SafeAuthorityRecord[] memory) {
         bytes32 context;
         assembly ("memory-safe") {
@@ -56,6 +61,10 @@ library SafeAuthority {
         return SafeAuthorityGraph.walk(self.root, context, _loadStored);
     }
 
+    /// @notice Read one Safe's stored owners and threshold through the supplied storage
+    ///         context.
+    /// @dev This adapts receiver storage to the same graph traversal used for source
+    ///      derivation; `context` identifies the authority storage slot.
     function _loadStored(bytes32 context, address safe) private view returns (SafeOwner[] memory, uint256) {
         SafeAuthorityState storage self;
         assembly ("memory-safe") {
@@ -65,9 +74,10 @@ library SafeAuthority {
         return (ownerState.getOwners(), ownerState.threshold);
     }
 
-    /// @notice Reverts unless `signatures` is a quorum of the root Safe over `dataHash`, with
-    ///         every empty nested signature backed by an entry of `approvals`. Unused entries are
-    ///         ignored; each `(childSafe, messageHash)` may appear once.
+    /// @notice Require a valid root-Safe quorum over `dataHash`, including any nested
+    ///         approvals.
+    /// @dev This is the receiver's authorization check, independent of who delivered the
+    ///      message. Duplicate child/message approvals revert; unused approvals are ignored.
     function verify(
         SafeAuthorityState storage self,
         bytes32 dataHash,
@@ -85,6 +95,9 @@ library SafeAuthority {
         _check(self, self.root, dataHash, signatures, approvals);
     }
 
+    /// @notice Verify the required number of distinct, ascending owners for one Safe.
+    /// @dev Threshold enforcement and strict signer ordering prevent an incomplete quorum or
+    ///      repeated signer from authorizing a message.
     function _check(
         SafeAuthorityState storage self,
         address safe,
@@ -105,8 +118,10 @@ library SafeAuthority {
         }
     }
 
-    /// @dev The owner behind entry `index`, checked as an owner of the entry's kind. A nested
-    ///      Safe's own quorum is verified here, after its membership.
+    /// @notice Recover an EOA or validate a claimed child Safe, then return that owner's
+    ///         address.
+    /// @dev The owner must exist with the correct stored kind. A child address read from `r`
+    ///      counts only after its own quorum is recursively verified.
     function _signer(
         SafeAuthorityState storage self,
         address safe,
@@ -129,11 +144,14 @@ library SafeAuthority {
             self,
             signer,
             dataHash,
-            SafeSignaturesUtils.contractSignature(safe, signatures, uint256(s), threshold),
+            SafeSignaturesUtils.extractContractSignature(safe, signatures, uint256(s), threshold),
             approvals
         );
     }
 
+    /// @notice Require an address to be a real stored owner of the expected kind.
+    /// @dev Signature recovery or a claimed child address alone does not establish authority,
+    ///      and the linked-list sentinel must never count as an owner.
     function _requireOwner(SafeOwnerState storage ownerState, address safe, address signer, uint8 kind) private view {
         OwnerLink storage link = ownerState.owners[signer];
         if (signer == NestedOwnerManagerLib.SENTINEL || link.next == address(0) || link.kind != kind) {
@@ -141,6 +159,10 @@ library SafeAuthority {
         }
     }
 
+    /// @notice Verify a child Safe's inline signatures or the signed approval backing an empty
+    ///         payload.
+    /// @dev Binding verification to the child and source-chain domain proves that the child
+    ///      authorized this parent hash without calling a destination copy of the Safe.
     function _checkNested(
         SafeAuthorityState storage self,
         address child,
@@ -164,6 +186,10 @@ library SafeAuthority {
         );
     }
 
+    /// @notice Find the signed approval for this exact child and message hash, reverting if
+    ///         absent.
+    /// @dev An empty nested payload is not self-authenticating; the caller must obtain and
+    ///      verify the matching child transaction evidence.
     function _approval(NestedSafeApproval[] memory approvals, address child, bytes32 messageHash)
         private
         pure

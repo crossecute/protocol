@@ -22,7 +22,7 @@ import {
 } from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
-import {Slices} from "src/messaging/signed/Slices.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
 
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
@@ -35,11 +35,16 @@ contract Sink {
     uint256 public hits;
     bytes public last;
 
+    /// @notice Record a successful payload call and its data, accepting attached value.
+    /// @dev Tests observe this state to distinguish execution, duplication and rollback.
     function hit(bytes calldata data) external payable {
         ++hits;
         last = data;
     }
 
+    /// @notice Always revert when called.
+    /// @dev A predictable failure lets receiver tests verify atomic setup and execution
+    ///      rollback.
     function boom() external pure {
         revert("boom");
     }
@@ -58,14 +63,22 @@ contract SignedReceiverTest is Test {
     address receiver;
     uint256 nonceSeq;
 
+    /// @notice Build the fixture source Safe's 2-of-3 EOA authority record.
+    /// @dev All receiver evidence must be checked against one known stored quorum.
     function _records() internal pure returns (SafeAuthorityRecord[] memory) {
         return Records.list(Records.record(SAFE, 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
+    /// @notice Hash the fixture authority records.
+    /// @dev Initialization tests bind the carried authority to the expected signed-address
+    ///      commitment.
     function _graph() internal pure returns (bytes32) {
         return SafeAuthorityGraph.hash(_records());
     }
 
+    /// @notice Deploy a provider receiver with plain initialization but no setup calls.
+    /// @dev Tests can exercise the second signed-initialization step and ensure it is properly
+    ///      restricted.
     function _plainReceiver() internal returns (address r) {
         r = deployConduit(
             address(new HyperlaneReceiver(address(mailbox))),
@@ -73,16 +86,26 @@ contract SignedReceiverTest is Test {
         );
     }
 
+    /// @notice Encode a receiver address with the current EVM chain ID.
+    /// @dev Destination checks need a complete chain-and-contract address rather than a bare
+    ///      EVM address.
     function _here(address r) internal view returns (bytes memory) {
         return Erc7930.encodeEvm(block.chainid, r);
     }
 
+    /// @notice Encode one observable sink call carrying the supplied data.
+    /// @dev Execution tests can track exactly which authorized batch ran and whether effects
+    ///      rolled back.
     function _calls(bytes memory data) internal view returns (bytes memory) {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, (data)));
         return abi.encode(c);
     }
 
+    /// @notice Sign a source-transmitter call using the selected signer descriptions and a
+    ///         fresh Safe nonce.
+    /// @dev Each test gets distinct evidence bound to the fixture Safe, source chain and exact
+    ///      calldata.
     function _signed(bytes memory data, Sig[] memory sigs) internal returns (SafeTxEvidence memory evidence) {
         evidence.signedSafeTx.safeTx.to = TRANSMITTER;
         evidence.signedSafeTx.safeTx.data = data;
@@ -91,14 +114,23 @@ contract SignedReceiverTest is Test {
             SafeSigs.blob(sigs, SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
     }
 
+    /// @notice Return two authorized source-owner signing keys.
+    /// @dev Valid control cases need a quorum that can be reused while individual tests alter
+    ///      evidence.
     function _quorum() internal pure returns (Sig[] memory) {
         return SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(3));
     }
 
+    /// @notice Build a setup leaf for the selected receiver inside a one-day window.
+    /// @dev Initialization tests start from an executable destination and window before
+    ///      mutating a specific condition.
     function _bootstrapLeaf(address r, bytes memory setup) internal view returns (BootstrapLeaf memory) {
         return BootstrapLeaf(_here(r), block.timestamp, block.timestamp + 1 days, setup);
     }
 
+    /// @notice Sign a single-leaf bootstrap and package its authority records.
+    /// @dev The receiver needs the complete authorization body even when a one-leaf tree
+    ///      requires no siblings.
     function _bootstrapBody(BootstrapLeaf memory leaf, Sig[] memory sigs) internal returns (bytes memory) {
         bytes32 leafHash = DispatchLeaves.hash(leaf);
         bytes memory payload = abi.encode(leafHash, uint256(0), leaf, new bytes32[](0));
@@ -107,10 +139,16 @@ contract SignedReceiverTest is Test {
         return abi.encode(SignedBootstrap(evidence, _records()));
     }
 
+    /// @notice Call signed initialization as the configured parent transceiver.
+    /// @dev Ordinary setup helpers must satisfy the caller restriction so tests isolate other
+    ///      validation rules.
     function _initialize(address r, bytes memory body) internal {
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, _graph(), body);
     }
 
+    /// @notice Deploy and initialize a signed receiver with an observable setup call.
+    /// @dev Each test starts with a stored source authority and a known setup effect for replay
+    ///      and rollback assertions.
     function setUp() public {
         vm.warp(1_000_000);
         receiver = _plainReceiver();
@@ -119,6 +157,10 @@ contract SignedReceiverTest is Test {
 
     /* ================================ bootstrap ================================= */
 
+    /// @notice Inspect the authority, nonce, setup effects and protected-call access after
+    ///         initialization.
+    /// @dev Successful setup must establish signed verification state without authorizing the
+    ///      transmitter address itself.
     function test_initializationStoresTheAuthorityAndRunsSetup() public view {
         SignedReceiver r = SignedReceiver(payable(receiver));
         assertEq(r.authorityGraph(), _graph());
@@ -130,6 +172,9 @@ contract SignedReceiverTest is Test {
         assertTrue(r.isAuthorizedCaller(receiver));
     }
 
+    /// @notice Attempt signed initialization from an unrelated caller.
+    /// @dev Only the transceiver that created the receiver may establish its authority
+    ///      snapshot.
     function test_onlyTheParentTransceiverInitializes() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
@@ -138,6 +183,9 @@ contract SignedReceiverTest is Test {
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, _graph(), body);
     }
 
+    /// @notice Initialize with a mismatched graph commitment or source owner.
+    /// @dev Neither the authority snapshot nor its root Safe may be substituted after address
+    ///      derivation.
     function test_substitutedRecordsOrAnotherOwnerRefuse() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
@@ -150,6 +198,8 @@ contract SignedReceiverTest is Test {
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), _graph(), body);
     }
 
+    /// @notice Submit bootstrap evidence naming a different destination receiver.
+    /// @dev A valid setup signature must not authorize initialization at an unintended address.
     function test_aBootstrapForAnotherReceiverRefuses() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(receiver, _calls("x")), _quorum());
@@ -157,6 +207,8 @@ contract SignedReceiverTest is Test {
         _initialize(r, body);
     }
 
+    /// @notice Submit a bootstrap with too few valid owner signatures.
+    /// @dev Receiver creation must require the stored source Safe's full quorum.
     function test_aBootstrapWithoutQuorumRefuses() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), SafeSigs.one(SafeSigs.eoa(1)));
@@ -164,6 +216,8 @@ contract SignedReceiverTest is Test {
         _initialize(r, body);
     }
 
+    /// @notice Try bootstrap before its start, after its deadline and with reversed endpoints.
+    /// @dev Initialization must honor the entire signed timing constraint.
     function test_anEarlyExpiredOrInvertedBootstrapWindowRefuses() public {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
@@ -182,6 +236,9 @@ contract SignedReceiverTest is Test {
         _initialize(r, _bootstrapBody(leaf, _quorum()));
     }
 
+    /// @notice Make the setup batch fail during signed initialization.
+    /// @dev A receiver must not remain partially initialized when authorized setup cannot
+    ///      complete.
     function test_aRevertingSetupRevertsInitialization() public {
         address r = _plainReceiver();
         Call[] memory c = new Call[](1);
@@ -190,6 +247,8 @@ contract SignedReceiverTest is Test {
         _initialize(r, _bootstrapBody(_bootstrapLeaf(r, abi.encode(c)), _quorum()));
     }
 
+    /// @notice Sign bootstrap as a DELEGATECALL instead of CALL.
+    /// @dev Destination acceptance must match the supported source-transmitter operation.
     function test_aDelegatecallBootstrapRefuses() public {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
@@ -204,6 +263,9 @@ contract SignedReceiverTest is Test {
         _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
     }
 
+    /// @notice Carry a nonzero authority counter in the bootstrap payload.
+    /// @dev This implementation fixes creation authority and must not imply support for later
+    ///      counter updates.
     function test_aNonzeroAuthorityCounterRefuses() public {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
@@ -214,6 +276,9 @@ contract SignedReceiverTest is Test {
         _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
     }
 
+    /// @notice Retry the original bootstrap, then vary its leaf or time window.
+    /// @dev Transport retries should acknowledge setup without rerunning it or accepting a new
+    ///      initialization authorization.
     function test_theSameBootstrapRepeatsInItsWindowAndNothingElseDoes() public {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
@@ -230,6 +295,8 @@ contract SignedReceiverTest is Test {
         SignedReceiver(payable(r)).requireBootstrapRepeat(body);
     }
 
+    /// @notice Call signed initialization again on an initialized receiver.
+    /// @dev Stored authority must not be overwritten through the creation entry point.
     function test_aSecondInitializationRefuses() public {
         bytes memory body = _bootstrapBody(_bootstrapLeaf(receiver, _calls("x")), _quorum());
         vm.expectRevert(SignedReceiver.AlreadySigned.selector);
@@ -238,15 +305,24 @@ contract SignedReceiverTest is Test {
 
     /* ================================ standalone ================================ */
 
+    /// @notice Build signed `sendMessage` evidence for a recipient and encoded calls.
+    /// @dev Standalone tests need the same source-call shape the receiver decodes in
+    ///      production.
     function _message(bytes memory recipient, bytes memory calls) internal returns (SafeTxEvidence memory) {
         return _signed(abi.encodeCall(IERC7786GatewaySource.sendMessage, (recipient, calls, new bytes[](0))), _quorum());
     }
 
+    /// @notice Deliver a wire payload through the mock provider using the expected origin and
+    ///         transmitter.
+    /// @dev This exercises provider authentication before the shared signed-message verifier.
     function _deliver(bytes memory wire) internal {
         vm.prank(address(mailbox));
         HyperlaneReceiver(payable(receiver)).handle(HOME_DOMAIN, bytes32(uint256(uint160(TRANSMITTER))), wire);
     }
 
+    /// @notice Deliver the same standalone authorization through provider and direct routes.
+    /// @dev Both entry paths must share replay tracking so changing transport cannot repeat
+    ///      execution.
     function test_aStandaloneMessageRunsOnceAcrossBothRoutes() public {
         SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         ISignedReceiver(receiver).submitMessage{value: 1}(evidence);
@@ -261,6 +337,8 @@ contract SignedReceiverTest is Test {
         assertEq(logs[0].topics[0], ISignedReceiver.DuplicateMessage.selector);
     }
 
+    /// @notice Submit a signed standalone send naming another receiver.
+    /// @dev Correct signatures must not override destination binding.
     function test_aStandaloneMessageForAnotherRecipientRefuses() public {
         bytes memory elsewhere = Erc7930.encodeEvm(block.chainid, address(0xD00D));
         SafeTxEvidence memory evidence = _message(elsewhere, _calls("m"));
@@ -268,6 +346,8 @@ contract SignedReceiverTest is Test {
         ISignedReceiver(receiver).submitMessage(evidence);
     }
 
+    /// @notice Change signed calldata or point the transaction at another source target.
+    /// @dev The receiver must verify the exact authorized transaction and expected transmitter.
     function test_alteredCalldataOrAnotherTargetRefuses() public {
         SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         evidence.signedSafeTx.safeTx.data =
@@ -281,6 +361,9 @@ contract SignedReceiverTest is Test {
         ISignedReceiver(receiver).submitMessage(evidence);
     }
 
+    /// @notice Try an incorrect provider sender, then submit the valid evidence directly.
+    /// @dev Provider authentication and signature authorization are separate; a rejected
+    ///      transport must not consume valid direct evidence.
     function test_aProviderWithTheWrongSenderRefusesAndDirectSubmissionStillWorks() public {
         SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         vm.prank(address(mailbox));
@@ -292,6 +375,9 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 2);
     }
 
+    /// @notice Deliver an unsigned plain payload to a signed receiver.
+    /// @dev The signed mode must not fall back to trusting the source transmitter's address
+    ///      alone.
     function test_aPlainPayloadFromTheProviderRefuses() public {
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.UnknownWire.selector, 32));
         _deliver(_calls("plain"));
@@ -299,6 +385,9 @@ contract SignedReceiverTest is Test {
 
     /* =================================== leaves ================================= */
 
+    /// @notice Build an execution leaf with selected calls and nonce for this receiver.
+    /// @dev Leaf tests can vary ordering or payload while retaining a valid destination and
+    ///      window.
     function _leaf(uint256 nonce, bytes memory calls) internal view returns (ExecutionLeaf memory leaf) {
         leaf.destination = _here(receiver);
         leaf.nonce = nonce;
@@ -308,6 +397,9 @@ contract SignedReceiverTest is Test {
         leaf.attributes = new bytes[](0);
     }
 
+    /// @notice Build a tree, sign its root registration and return proofs for every leaf.
+    /// @dev Receiver tests need independently generated membership evidence without requiring a
+    ///      source registration transaction.
     function _register(ExecutionLeaf[] memory leaves)
         internal
         returns (SafeTxEvidence memory evidence, bytes32[][] memory proofs)
@@ -323,16 +415,26 @@ contract SignedReceiverTest is Test {
         evidence = _signed(abi.encodeCall(ISignedTransmitter.registerRoot, (MerkleBuilder.root(hashes))), _quorum());
     }
 
+    /// @notice Wrap a single execution leaf in an array.
+    /// @dev One-leaf cases can use the same registration and proof helpers as multi-leaf
+    ///      batches.
     function _one(ExecutionLeaf memory a) internal pure returns (ExecutionLeaf[] memory l) {
         l = new ExecutionLeaf[](1);
         l[0] = a;
     }
 
+    /// @notice Build a two-leaf execution array in the supplied order.
+    /// @dev Tests can express ordered, conflicting and replacement batches with explicit nonce
+    ///      choices.
     function _two(ExecutionLeaf memory a, ExecutionLeaf memory b) internal pure returns (ExecutionLeaf[] memory l) {
         l = new ExecutionLeaf[](2);
         (l[0], l[1]) = (a, b);
     }
 
+    /// @notice Attach nonzero transaction value to signed root registration evidence on both
+    ///         delivery routes.
+    /// @dev The nonpayable source call rule must also apply when destinations verify
+    ///      authorization directly.
     function test_aValueBearingRegistrationCannotAuthorizeALeaf() public {
         ExecutionLeaf memory leaf = _leaf(0, _calls("nonpayable"));
         (SafeTxEvidence memory evidence, bytes32[][] memory proofs) = _register(_one(leaf));
@@ -348,6 +450,8 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 1);
     }
 
+    /// @notice Deliver leaves out of order and then in order through different routes.
+    /// @dev The local execution sequence must hold regardless of how each leaf arrives.
     function test_leavesRunInLocalNonceOrderAcrossRoutes() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         ExecutionLeaf memory l1 = _leaf(1, _calls("1"));
@@ -362,6 +466,9 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 3);
     }
 
+    /// @notice Resubmit an executed batch after expiry and with changed delivery attributes.
+    /// @dev Authenticated retries must be harmless acknowledgments rather than new execution or
+    ///      timing failures.
     function test_anExecutedLeafRepeatsSilentlyEvenPastItsDeadlineAndUnderNewAttributes() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
@@ -381,6 +488,9 @@ contract SignedReceiverTest is Test {
         assertEq(receiver.balance, 5);
     }
 
+    /// @notice Submit a different batch at a nonce that has already executed.
+    /// @dev Replay tracking must reject conflicting authorization instead of treating it as a
+    ///      valid repeat.
     function test_aConflictingLeafAtAConsumedNonceRefuses() public {
         (SafeTxEvidence memory evidence, bytes32[][] memory p) =
             _register(_two(_leaf(0, _calls("a")), _leaf(0, _calls("b"))));
@@ -389,6 +499,9 @@ contract SignedReceiverTest is Test {
         ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, _calls("b")), p[1]);
     }
 
+    /// @notice Execute leaves at the exact start and deadline boundaries.
+    /// @dev Relayers need the signed validity window to have consistent inclusive endpoint
+    ///      behavior.
     function test_windowEndpointsAreInclusive() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         l0.validAfter = block.timestamp + 10;
@@ -409,6 +522,9 @@ contract SignedReceiverTest is Test {
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 1);
     }
 
+    /// @notice Execute an empty authorized batch at the next nonce.
+    /// @dev An explicit replacement can consume an ordering position without making payload
+    ///      calls.
     function test_anEmptyReplacementLeafAdvancesTheNonce() public {
         (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(_leaf(0, abi.encode(new Call[](0)))));
         ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, abi.encode(new Call[](0))), p[0]);
@@ -416,6 +532,8 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 1);
     }
 
+    /// @notice Fail leaf execution and retry after removing the cause.
+    /// @dev A failed batch must not consume its nonce or replay slot permanently.
     function test_aFailingLeafRollsBackAndCanBeRetried() public {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.boom, ()));
@@ -427,13 +545,17 @@ contract SignedReceiverTest is Test {
         assertEq(SignedReceiver(payable(receiver)).executionAt(0), bytes32(0));
     }
 
+    /// @notice Pass standalone signed-send evidence where root registration is required.
+    /// @dev Different source-call selectors must not be interchangeable authorizations.
     function test_aStandaloneAuthorizationIsNotARootRegistration() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
-        vm.expectRevert(abi.encodeWithSelector(Slices.WrongSelector.selector, ISignedTransmitter.registerRoot.selector));
+        vm.expectRevert(abi.encodeWithSelector(Bytes.WrongSelector.selector, ISignedTransmitter.registerRoot.selector));
         ISignedReceiver(receiver).submitLeaf(evidence, l0, new bytes32[](0));
     }
 
+    /// @notice Change a leaf or give it membership evidence for a different root.
+    /// @dev Signature validity cannot compensate for an invalid Merkle commitment.
     function test_anAlteredLeafOrAProofUnderAnotherRootRefuses() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
@@ -448,6 +570,9 @@ contract SignedReceiverTest is Test {
 
     /* ============================ protected self-calls =========================== */
 
+    /// @notice Call protected receiver operations as the source transmitter.
+    /// @dev Signed mode must derive authority from verified execution rather than
+    ///      sender-address impersonation.
     function test_theTransmitterAddressGrantsNothing() public {
         vm.startPrank(TRANSMITTER);
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
@@ -461,6 +586,9 @@ contract SignedReceiverTest is Test {
         vm.stopPrank();
     }
 
+    /// @notice Execute a signed commitment and finalize its batch afterward.
+    /// @dev Deferred payload execution must coexist with ordered authorization and receiver
+    ///      self-call access rules.
     function test_aCommitOnlyLeafAdvancesTheNonceAndFinalizesLater() public {
         Call[] memory later = new Call[](1);
         later[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, ("later")));
@@ -480,6 +608,10 @@ contract SignedReceiverTest is Test {
         assertEq(sink.last(), "later");
     }
 
+    /// @notice Execute gateway revocation, then compare provider delivery with direct
+    ///         submission.
+    /// @dev Revoking a transport must stop that transport without disabling independent signed
+    ///      authorization.
     function test_aSignedRevokeStopsTheProviderAndLeavesDirectSubmission() public {
         Call[] memory revoke = new Call[](1);
         revoke[0] = Call(receiver, 0, abi.encodeCall(ReceiverBase.revokeGateway, (address(mailbox))));
@@ -492,6 +624,9 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 2);
     }
 
+    /// @notice Call the signed submission API on a plain receiver.
+    /// @dev Mode-specific entry points must not install or assume an authority snapshot that
+    ///      was never initialized.
     function test_aPlainReceiverRefusesSignedSubmission() public {
         address r = _plainReceiver();
         SafeTxEvidence memory evidence = _message(_here(r), _calls("m"));
@@ -501,6 +636,9 @@ contract SignedReceiverTest is Test {
     bytes private reentryCall;
     bool private reentryAttempted;
 
+    /// @notice Attempt the selected nested receiver call and assert the shared lock rejects it.
+    /// @dev An executing payload can call back into the receiver, so reentrancy protection must
+    ///      be tested from inside execution.
     function attemptReentry() external {
         require(msg.sender == receiver);
         reentryAttempted = true;
@@ -509,6 +647,9 @@ contract SignedReceiverTest is Test {
         assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
     }
 
+    /// @notice Exercise each direct and provider route against nested message, leaf and
+    ///         finalization entry.
+    /// @dev A lock that protects only one route would leave cross-route reentrancy available.
     function test_reentrancyAcrossAllSignedEntryRoutes() public {
         for (uint256 outer; outer < 4; ++outer) {
             for (uint256 inner; inner < 3; ++inner) {
@@ -517,6 +658,10 @@ contract SignedReceiverTest is Test {
         }
     }
 
+    /// @notice Execute one outer/inner route combination and retry its refused nested message
+    ///         afterward.
+    /// @dev Reentrancy rejection must preserve both the outer operation and the future
+    ///      usability of unexecuted evidence.
     function _reentryScenario(uint256 outer, uint256 inner) private {
         uint256 nonce = SignedReceiver(payable(receiver)).nextNonce();
         SafeTxEvidence memory nestedMessageEvidence = _message(_here(receiver), _calls("nested"));
@@ -550,6 +695,10 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), before + 1);
     }
 
+    /// @notice Run a batch with a successful prefix followed by an unfunded transfer, then fund
+    ///         and retry.
+    /// @dev Failure must roll back earlier effects and nonce state, while later duplication
+    ///      must not repeat the successful retry.
     function test_failedValueTransferRollsBackLeafAndEarlierCallsThenRetriesOnce() public {
         Call[] memory calls = new Call[](2);
         calls[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, ("prefix")));
@@ -568,6 +717,9 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 3);
     }
 
+    /// @notice Fail an unfunded standalone execution and retry through the provider after
+    ///         funding.
+    /// @dev Both routes must share a digest that is recorded only when execution succeeds.
     function test_failedStandaloneTransferLeavesDigestRetryableAcrossRoutes() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(sink), 1, abi.encodeCall(Sink.hit, ("paid")));

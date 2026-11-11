@@ -37,6 +37,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
     StubGuard guard;
     Sink sink = new Sink();
 
+    /// @notice Deploy a routed Hyperlane transceiver and a configurable 2-of-3 Safe fixture.
+    /// @dev Tests need real conduit creation with controllable source guard compatibility and a
+    ///      listed destination chain.
     function setUp() public {
         vm.warp(1_000_000);
         TransceiverConfig memory c = _config();
@@ -59,16 +62,25 @@ contract SignedTransceiverTest is HyperlaneFixture {
         guard = new StubGuard();
     }
 
+    /// @notice Build the fixture Safe's canonical authority records.
+    /// @dev Address-prediction assertions need the same ownership snapshot that signed creation
+    ///      derives.
     function _records() internal view returns (SafeAuthorityRecord[] memory) {
         return Records.list(Records.record(address(safe), 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
+    /// @notice Hash the fixture creation records.
+    /// @dev The graph commitment is the additional salt input separating signed conduits from
+    ///      plain ones.
     function _graph() internal view returns (bytes32) {
         return SafeAuthorityGraph.hash(_records());
     }
 
     /* ============================ mode at creation ============================= */
 
+    /// @notice Create a transmitter for a Safe advertising the Crossecute guard interface.
+    /// @dev Creation must select signed mode, retain its snapshot and derive the corresponding
+    ///      signed address.
     function test_aSafeWithACompatibleGuardGetsASignedTransmitter() public {
         safe.setGuard(address(guard));
         vm.prank(address(safe));
@@ -82,6 +94,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertTrue(conduit != ext(address(t)).predictConduit(address(safe), SALT, t.localChainKey()));
     }
 
+    /// @notice Independently derive the signed conduit salt and address.
+    /// @dev The address must commit to owner, user salt, home and authority graph in the
+    ///      documented order.
     function test_theSignedSaltIsTheFourFieldPreimage() public {
         safe.setGuard(address(guard));
         vm.prank(address(safe));
@@ -90,10 +105,16 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(conduit, vm.computeCreate2Address(expected, keccak256(_proxyInitCode()), address(t)));
     }
 
+    /// @notice Return the exact proxy creation bytecode used by the fixture.
+    /// @dev Independent CREATE2 address calculations must use the same init-code hash as
+    ///      deployment.
     function _proxyInitCode() internal pure returns (bytes memory) {
         return type(ProxyForHash).creationCode;
     }
 
+    /// @notice Create conduits for unsupported guard and owner cases.
+    /// @dev Capability discovery must fail safely to plain mode rather than assuming signed
+    ///      compatibility.
     function test_noGuardAnIncompatibleGuardOrAnEoaGetPlain() public {
         vm.prank(address(safe));
         assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).authorityGraph(), bytes32(0));
@@ -107,6 +128,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).authorityGraph(), bytes32(0));
     }
 
+    /// @notice Change the source guard after creating a conduit.
+    /// @dev Mode and address are creation-time choices and must not change when the owner's
+    ///      guard changes later.
     function test_aGuardChangeAfterCreationKeepsTheMode() public {
         safe.setGuard(address(guard));
         vm.prank(address(safe));
@@ -118,6 +142,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         st.sendMessage(Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(st)), hex"00", new bytes[](0));
     }
 
+    /// @notice Vary the user salt and source threshold independently.
+    /// @dev Both user isolation and authority changes must affect signed conduit address
+    ///      derivation.
     function test_userSaltAndThresholdEachMoveTheAddress() public {
         safe.setGuard(address(guard));
         vm.prank(address(safe));
@@ -136,12 +163,18 @@ contract SignedTransceiverTest is HyperlaneFixture {
 
     /* ============================== inbound bootstrap ============================ */
 
-    /// @dev The conduit homed on `remote` sits at the same address here: one transceiver
-    ///      address, Ethereum's CREATE2 on both chains.
+    /// @notice Predict the local receiver address from the fixture's source information and
+    ///         graph hash.
+    /// @dev Bootstrap tests need to distinguish the expected signed address from addresses for
+    ///      substituted records.
     function _receiver(bytes32 graph) internal view returns (address) {
         return ext(address(t)).predictConduit(address(safe), SALT, remote, graph);
     }
 
+    /// @notice Build a signed bootstrap body with selected receiver, source target, setup and
+    ///         authority records.
+    /// @dev Tests can mutate each binding independently while retaining otherwise valid
+    ///      signatures.
     function _body(address receiver, address target, bytes memory setup, SafeAuthorityRecord[] memory records)
         internal
         view
@@ -161,12 +194,18 @@ contract SignedTransceiverTest is HyperlaneFixture {
         return abi.encode(SignedBootstrap(evidence, records));
     }
 
+    /// @notice Encode one tagged sink call for receiver initialization.
+    /// @dev A visible effect shows whether setup ran, repeated or rolled back during receiver
+    ///      creation.
     function _setup(bytes memory tag) internal view returns (bytes memory) {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, (tag)));
         return abi.encode(c);
     }
 
+    /// @notice Deliver a signed bootstrap envelope through the configured mock provider.
+    /// @dev This exercises transceiver inbound derivation and receiver initialization as one
+    ///      operation.
     function _send(address transmitter, bytes memory body) internal {
         _deliver(
             address(t),
@@ -176,6 +215,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         );
     }
 
+    /// @notice Deliver a valid signed bootstrap and inspect the receiver and setup effects.
+    /// @dev Address derivation, authority storage and authorized setup must agree in the
+    ///      complete destination creation path.
     function test_aSignedBootstrapCreatesAndInitializesTheDerivedReceiver() public {
         address r = _receiver(_graph());
         _send(r, _body(r, r, _setup("go"), _records()));
@@ -184,6 +226,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(sink.hits(), 1);
     }
 
+    /// @notice Redeliver the bootstrap and then substitute a different setup leaf.
+    /// @dev Retries must not repeat initialization, and an existing receiver must not accept
+    ///      replacement setup.
     function test_aRepeatIsSilentAndADifferentLeafRefuses() public {
         address r = _receiver(_graph());
         bytes memory body = _body(r, r, _setup("go"), _records());
@@ -195,6 +240,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         _send(r, _body(r, r, _setup("other"), _records()));
     }
 
+    /// @notice Carry authority records different from the transmitter's creation snapshot.
+    /// @dev The graph in address derivation must prevent an attacker from substituting a more
+    ///      permissive verifier.
     function test_substitutedRecordsDeriveAnotherTransmitter() public {
         address r = _receiver(_graph());
         SafeAuthorityRecord[] memory otherRecords =
@@ -204,6 +252,8 @@ contract SignedTransceiverTest is HyperlaneFixture {
         _send(r, _body(r, r, _setup("go"), otherRecords));
     }
 
+    /// @notice Try plain bootstrap while naming a transmitter derived for signed mode.
+    /// @dev The plain address formula must not reach or initialize the signed receiver address.
     function test_aPlainBootstrapNamingTheSignedTransmitterCreatesNothingThere() public {
         address r = _receiver(_graph());
         address plain = ext(address(t)).predictConduit(address(safe), SALT, remote);
@@ -219,6 +269,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(SignedReceiver(payable(r)).authorityGraph(), _graph());
     }
 
+    /// @notice Make signed receiver setup revert during transceiver delivery.
+    /// @dev Receiver deployment and initialization must roll back together instead of leaving a
+    ///      partially configured conduit.
     function test_aRevertingSetupLeavesTheReceiverUndeployed() public {
         address r = _receiver(_graph());
         Call[] memory c = new Call[](1);
@@ -228,6 +281,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(r.code.length, 0);
     }
 
+    /// @notice Sign setup against a source target other than the derived transmitter.
+    /// @dev The transceiver must not turn unrelated source authorization into receiver
+    ///      creation.
     function test_aBootstrapSignedForAnotherTargetRefuses() public {
         address r = _receiver(_graph());
         vm.expectRevert();

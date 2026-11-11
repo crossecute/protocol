@@ -11,10 +11,11 @@ library SafeViewer {
     // ERC-165 supportsInterface(bytes4)
     bytes4 private constant SUPPORTS_INTERFACE = 0x01ffc9a7;
 
-    /// @notice True only if `owner` answers its transaction guard slot with a contract that
-    ///         affirms `ICrossecuteGuard` through ERC-165. Any failure along the way is false.
-    /// @dev Unlike `GuardDiscovery.transactionGuard`, never reverts: an EOA, a non-Safe or a Safe
-    ///      without a compatible guard creates a plain conduit.
+    /// @notice Probe whether the owner's transaction guard advertises the Crossecute guard
+    ///         interface.
+    /// @dev Conduit creation uses this capability to choose signed mode once. Failed queries or
+    ///      malformed replies select plain mode rather than assuming the owner is a compatible
+    ///      Safe.
     function isSigned(address owner) internal view returns (bool) {
         (bool ok, bytes memory reply) =
             owner.staticcall(abi.encodeWithSelector(GET_STORAGE_AT, GuardDiscovery.GUARD_STORAGE_SLOT, 1));

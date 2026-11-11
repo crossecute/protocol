@@ -39,6 +39,9 @@ import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 
 /// @notice Rejects every refund, to show a failed refund reverts the relay.
 contract RefuseEth {
+    /// @notice Forward a leaf relay from a contract that cannot receive refunds.
+    /// @dev The transmitter test needs refund rejection to originate from the actual relayer
+    ///      address.
     function relay(SignedTransmitter st, SafeTxEvidence memory evidence, ExecutionLeaf memory l, bytes32[] memory p)
         external
         payable
@@ -60,6 +63,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
     SignedTransmitter st;
     uint256 safeNonce;
 
+    /// @notice Deploy a routed Hyperlane transmitter for a guarded 2-of-3 stub Safe and fund
+    ///         it.
+    /// @dev Tests need real transport and fee behavior while controlling which transaction
+    ///      evidence the guard stages.
     function setUp() public {
         vm.warp(1_000_000);
         TransceiverConfig memory c = _config();
@@ -82,21 +89,33 @@ contract SignedTransmitterTest is HyperlaneFixture {
         vm.deal(address(st), 1 ether);
     }
 
+    /// @notice Deploy a stub Safe with selected owners, threshold and the fixture guard.
+    /// @dev Nested-owner tests can build children with distinct quorums using the same source
+    ///      interfaces.
     function _safe(address[] memory owners, uint256 threshold) internal returns (StubSafe s) {
         s = new StubSafe();
         s.setOwners(owners, threshold);
         s.setGuard(address(guard));
     }
 
+    /// @notice Build a three-address owner array in the supplied order.
+    /// @dev The fixture's live owner order must match its creation authority snapshot.
     function _addrs(address a, address b, address c) internal pure returns (address[] memory r) {
         r = new address[](3);
         (r[0], r[1], r[2]) = (a, b, c);
     }
 
+    /// @notice Return two authorized fixture EOA signers.
+    /// @dev Control cases need valid root authorization before individual tests alter a
+    ///      signature or call.
     function _quorum() internal pure returns (Sig[] memory) {
         return SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2));
     }
 
+    /// @notice Build a source Safe transaction with the supplied target, data and a fresh
+    ///         nonce.
+    /// @dev Unique nonces keep independently signed fixture operations from accidentally
+    ///      sharing transaction identity.
     function _safeTx(StubSafe s, address to, bytes memory data) internal returns (SafeTx memory safeTx) {
         safeTx.to = to;
         safeTx.data = data;
@@ -104,6 +123,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         s;
     }
 
+    /// @notice Sign a fixture transaction in the selected Safe's current-chain domain.
+    /// @dev Transmitter tests need exact source-call evidence that can be staged, quoted and
+    ///      carried to a receiver.
     function _delivery(StubSafe s, address to, bytes memory data, Sig[] memory sigs)
         internal
         returns (SafeTxEvidence memory evidence)
@@ -113,33 +135,51 @@ contract SignedTransmitterTest is HyperlaneFixture {
             SafeSigs.blob(sigs, SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(s), block.chainid));
     }
 
-    /// @dev The guard's pre-hook stages the signed transaction; the Safe then calls its target.
+    /// @notice Stage the evidence in the guard, then forward its call through the stub Safe.
+    /// @dev This models the real guard pre-hook followed by Safe execution so the transmitter
+    ///      consumes the expected live record.
     function _exec(StubSafe s, SafeTxEvidence memory evidence) internal {
         guard.stage(address(s), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
         s.exec(evidence.signedSafeTx.safeTx.to, 0, evidence.signedSafeTx.safeTx.data);
     }
 
+    /// @notice Encode the predicted remote receiver as a full destination address.
+    /// @dev Routing tests must use the signed conduit destination rather than a bare or
+    ///      unrelated contract address.
     function _receiverHere() internal view returns (bytes memory) {
         return Erc7930.encodeEvm(REMOTE_CHAIN_ID, _receiverAddress());
     }
 
+    /// @notice Predict the remote receiver using the creation Safe, salt and authority graph.
+    /// @dev The send and bootstrap fixture must agree with the transceiver's signed address
+    ///      derivation.
     function _receiverAddress() internal view returns (address) {
         return address(bytes20(t.predictReceiver(remote, address(safe), SALT, st.authorityGraph())));
     }
 
+    /// @notice Encode a zero-counter bootstrap authorizing one setup leaf.
+    /// @dev A one-leaf root isolates bootstrap behavior without requiring sibling proof data.
     function _bootstrapCall(BootstrapLeaf memory leaf) internal pure returns (bytes memory) {
         bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
         return abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
     }
 
+    /// @notice Build a valid empty-setup bootstrap leaf for the predicted receiver.
+    /// @dev Tests begin with a usable destination and timing window before mutating one
+    ///      condition.
     function _leaf() internal view returns (BootstrapLeaf memory) {
         return BootstrapLeaf(_receiverHere(), block.timestamp, block.timestamp + 1 days, abi.encode(new Call[](0)));
     }
 
+    /// @notice Read the last wire message recorded by the mock mailbox.
+    /// @dev Assertions can inspect exactly what the transmitter paid to send.
     function _lastBody() internal view returns (bytes memory) {
         return mailbox.sent(mailbox.sentLength() - 1).body;
     }
 
+    /// @notice Sign and execute the default bootstrap, returning its source evidence.
+    /// @dev Later relay and send tests need a reachable destination established through the
+    ///      real signed path.
     function _bootstrap() internal returns (SafeTxEvidence memory evidence) {
         evidence = _delivery(safe, address(st), _bootstrapCall(_leaf()), _quorum());
         _exec(safe, evidence);
@@ -147,6 +187,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
     /* ================================== bootstrap ================================ */
 
+    /// @notice Decode a sent bootstrap and compare its authorization, authority records and
+    ///         quote.
+    /// @dev The destination must receive the same signed setup and snapshot that source
+    ///      creation committed to.
     function test_aSignedBootstrapCarriesTheSignedCallAndTheCreationRecords() public {
         SafeTxEvidence memory evidence = _bootstrap();
         (address owner, bytes32 salt, bytes32 transmitter, bytes memory body) = this.decodeSigned(_lastBody());
@@ -162,10 +206,16 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(st.pendingBootstrap(remote), bytes32(0));
     }
 
+    /// @notice Expose signed-bootstrap envelope decoding through an external helper.
+    /// @dev Tests can inspect the provider body without duplicating the envelope's decoding
+    ///      rules at every assertion.
     function decodeSigned(bytes calldata m) external pure returns (address, bytes32, bytes32, bytes memory) {
         return Envelope.decodeSignedBootstrap(m);
     }
 
+    /// @notice Fail the initial bootstrap transport send and retry it from another caller.
+    /// @dev Source Safe authorization should remain usable after a temporary provider failure
+    ///      without requiring the owners to sign again.
     function test_aFailedSendStaysPendingAndAnyoneCanRetryIt() public {
         mailbox.setFee(2 ether);
         vm.recordLogs();
@@ -190,6 +240,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(st.pendingBootstrap(remote), bytes32(0));
     }
 
+    /// @notice Create a new bootstrap authorization while an earlier send is pending.
+    /// @dev Only the currently pending body should remain eligible for permissionless retry.
     function test_aNewSignedBootstrapReplacesAPendingOne() public {
         mailbox.setFee(2 ether);
         _bootstrap();
@@ -198,12 +250,17 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertTrue(st.pendingBootstrap(remote) != first);
     }
 
+    /// @notice Call signed bootstrap without guard-staged evidence.
+    /// @dev An owner-address call alone must not manufacture the signatures the receiver needs.
     function test_aBootstrapWithoutAStagedRecordReverts() public {
         bytes memory data = _bootstrapCall(_leaf());
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         safe.exec(address(st), 0, data);
     }
 
+    /// @notice Try a substituted destination and an expired bootstrap.
+    /// @dev Invalid setup authorization must fail on the source before transport fees are
+    ///      spent.
     function test_aBootstrapForAnotherReceiverOrPastItsDeadlineReverts() public {
         BootstrapLeaf memory leaf = _leaf();
         leaf.destination = Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBAD));
@@ -223,6 +280,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
     }
 
+    /// @notice Try bootstrap as another caller and attempt to transfer signed ownership.
+    /// @dev The fixed creation Safe must remain the only owner-authorized source caller.
     function test_onlyTheOwnerBootstrapsAndOwnershipIsFixed() public {
         bytes memory data = _bootstrapCall(_leaf());
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
@@ -234,6 +293,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.transferOwnership(address(0x1));
     }
 
+    /// @notice Try renouncing signed ownership, then bootstrap with the retained owner.
+    /// @dev The ownership freeze must block permanent owner-only lockout and leave normal
+    ///      operations usable.
     function test_signedOwnershipCannotBeRenounced() public {
         vm.prank(address(safe));
         vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
@@ -244,6 +306,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertTrue(st.isBootstrapped(remote));
     }
 
+    /// @notice Renounce ownership of a plain-mode transmitter.
+    /// @dev Signed-mode restrictions must not change the inherited plain ownership behavior.
     function test_plainOwnershipCanStillBeRenounced() public {
         SignedTransmitter plain = SignedTransmitter(payable(t.createTransmitter(keccak256("plain"))));
         assertEq(plain.authorityGraph(), bytes32(0));
@@ -253,6 +317,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
     /* ================================= standalone ================================ */
 
+    /// @notice Sign and execute a standalone send to the selected recipient.
+    /// @dev Tests can inspect both the staged source evidence and the wire message emitted by
+    ///      the normal send path.
     function _send(bytes memory recipient, bytes memory payload) internal returns (SafeTxEvidence memory evidence) {
         evidence = _delivery(
             safe,
@@ -262,12 +329,18 @@ contract SignedTransmitterTest is HyperlaneFixture {
         );
     }
 
+    /// @notice Encode an empty call batch as a nonempty payload.
+    /// @dev This provides valid signed message data without unrelated destination-side effects.
     function _payload() internal pure returns (bytes memory) {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(0xCAFE), 0, hex"01");
         return abi.encode(c);
     }
 
+    /// @notice Inspect the standalone wire payload and compare the paid fee with the signed
+    ///         quote.
+    /// @dev Rebuilding transport data must preserve exact signed calldata and include all
+    ///      priced evidence bytes.
     function test_aStandaloneSendWrapsTheExactSignedCallAndPaysItsQuote() public {
         _bootstrap();
         mailbox.setFeePerByte(10);
@@ -281,6 +354,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(quote, 10 * abi.encode(WIRE_STANDALONE, evidence).length);
     }
 
+    /// @notice Call plain quote APIs on a signed transmitter.
+    /// @dev A quote without signatures cannot price the signed wire payload accurately and must
+    ///      direct callers to the signed API.
     function test_thePlainQuotesRefuseInSignedMode() public {
         bytes memory recipient = _receiverHere();
         vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
@@ -289,6 +365,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.quoteBootstrap(hex"00", new bytes[](0));
     }
 
+    /// @notice Send a signed message before its destination is bootstrapped.
+    /// @dev Signature evidence must not bypass the conduit's reachability requirement.
     function test_aStandaloneSendToAnUnbootstrappedChainReverts() public {
         SafeTxEvidence memory evidence = _send(_receiverHere(), _payload());
         guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
@@ -296,6 +374,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
     }
 
+    /// @notice Stage a blob containing a `v = 1` signature entry and attempt to send.
+    /// @dev Unsupported source-state-dependent evidence should be rejected before any provider
+    ///      fee is spent.
     function test_anApprovedHashEntryRevertsBeforePaying() public {
         _bootstrap();
         SafeTxEvidence memory evidence = _send(_receiverHere(), _payload());
@@ -311,6 +392,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
     /* ============================ registration and relay ========================= */
 
+    /// @notice Build an execution leaf with the selected nonce and delivery attributes.
+    /// @dev Relay tests need explicit control over both receiver ordering and provider options
+    ///      bound into the proof.
     function _execLeaf(uint256 nonce, bytes[] memory attributes) internal view returns (ExecutionLeaf memory l) {
         l.destination = _receiverHere();
         l.nonce = nonce;
@@ -320,6 +404,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         l.attributes = attributes;
     }
 
+    /// @notice Build a two-leaf root and its sibling proofs.
+    /// @dev Tests can compare distinct leaf relays under one owner-authorized registration.
     function _tree(ExecutionLeaf memory a, ExecutionLeaf memory b)
         internal
         pure
@@ -330,12 +416,19 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return (MerkleBuilder.root(hashes), MerkleBuilder.proof(hashes, 0), MerkleBuilder.proof(hashes, 1));
     }
 
+    /// @notice Sign and execute root registration through the fixture Safe.
+    /// @dev Relay tests need both source registration state and the signed evidence that each
+    ///      relay must supply.
     function _register(bytes32 root) internal returns (SafeTxEvidence memory evidence) {
         guard.publish(root);
         evidence = _delivery(safe, address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), _quorum());
         safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
     }
 
+    /// @notice Try registration without owner authority, without guard publication and after
+    ///         prior registration.
+    /// @dev Every root, including zero, must pass the same explicit source authorization and
+    ///      uniqueness checks.
     function test_rootRegistrationIsOwnerOnlyPublishedOnlyAndOnce() public {
         vm.prank(address(safe));
         vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.RootNotPublished.selector, bytes32(0)));
@@ -353,6 +446,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.registerRoot(bytes32(0));
     }
 
+    /// @notice Supply root registration evidence with nonzero signed transaction value.
+    /// @dev Quotes and relays must reject a call that cannot execute against the source's
+    ///      nonpayable registration API.
     function test_aValueBearingRegistrationCannotBeQuotedOrRelayed() public {
         _bootstrap();
         ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
@@ -372,6 +468,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertFalse(st.isLeafRelayed(DispatchLeaves.hash(leaf)));
     }
 
+    /// @notice Relay leaves from an ordinary caller and inspect fees, refunds, balance and used
+    ///         marks.
+    /// @dev Permissionless sending must preserve conduit funds and prevent a second source
+    ///      relay of the same leaf.
     function test_anyoneRelaysEachLeafOncePayingTheQuoteWithTheExcessRefunded() public {
         _bootstrap();
         mailbox.setFee(0.01 ether);
@@ -404,6 +504,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.relayLeaf{value: quote}(registrationEvidence, b, pb);
     }
 
+    /// @notice Try invalid registration signatures, missing registration and altered delivery
+    ///         attributes.
+    /// @dev A leaf relay needs all three independent checks: valid live authority, local root
+    ///      state and exact proof-bound content.
     function test_aRelayIsRefusedForBadEvidenceAnUnregisteredRootOrChangedAttributes() public {
         _bootstrap();
         ExecutionLeaf memory a = _execLeaf(0, new bytes[](0));
@@ -430,6 +534,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.relayLeaf{value: 1 ether}(messageEvidence, a, pa);
     }
 
+    /// @notice Relay from a refund-rejecting contract with excess payment.
+    /// @dev Refund failure must roll back the send and used-leaf mark rather than consume
+    ///      authorization or strand a partial relay.
     function test_aRejectedRefundRevertsTheRelayAndItsMark() public {
         _bootstrap();
         ExecutionLeaf memory a = _execLeaf(0, new bytes[](0));
@@ -445,6 +552,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
     /* ================================ nested evidence ============================= */
 
+    /// @notice Send with an empty child signature payload backed by guard-cached approval
+    ///         evidence.
+    /// @dev The wire message must include the child authorization the receiver cannot read from
+    ///      source storage; missing evidence must fail before payment.
     function test_anEmptyNestedSignatureCarriesTheChildsCachedApproval() public {
         StubSafe child = _safe(_addrs(vm.addr(4), vm.addr(5), vm.addr(6)), 1);
         address[] memory owners = new address[](2);

@@ -21,17 +21,39 @@ import {
 
 /// @dev Safe 1.5.0's signature check against its live owners and threshold.
 interface ISafeSignatures {
+    /// @notice Ask the source Safe to validate signatures against its live owners and
+    ///         threshold.
+    /// @dev A permissionless registration relay did not execute the signed Safe transaction
+    ///      itself, so its source authorization must be checked before transmission.
     function checkSignatures(address executor, bytes32 dataHash, bytes memory signatures) external view;
 }
 
 /// @dev The transmitter's own getters, read back by self-call so this library does not depend on
 ///      its storage layout.
 interface ISignedTransmitterView {
+    /// @notice Return the creation-time owner Safe used as the signed transaction's domain.
+    /// @dev The linked builder needs the fixed source Safe without depending on the
+    ///      transmitter's storage layout.
     function deployer() external view returns (address);
+    /// @notice Return the transmitter's parent transceiver.
+    /// @dev Bootstrap routing, receiver prediction and provider fee queries must use that fixed
+    ///      parent.
     function transceiver() external view returns (address);
+    /// @notice Return the user's conduit salt.
+    /// @dev Receiver prediction must preserve the salt selected at conduit creation rather than
+    ///      inventing a new destination address.
     function conduitSalt() external view returns (bytes32);
+    /// @notice Return the transmitter's creation-graph commitment.
+    /// @dev The builder includes the same authority commitment when predicting the destination
+    ///      receiver.
     function authorityGraph() external view returns (bytes32);
+    /// @notice Return the transmitter's encoded creation authority records.
+    /// @dev Signed bootstraps carry those records so the receiver can reconstruct its fixed
+    ///      verification authority.
     function creationRecords() external view returns (bytes memory);
+    /// @notice Report whether this conduit has already bootstrapped a destination chain.
+    /// @dev The builder must reject a new bootstrap for a destination the transmitter already
+    ///      considers initialized.
     function isBootstrapped(bytes32 chainKey) external view returns (bool);
 }
 
@@ -41,7 +63,10 @@ interface ISignedTransmitterView {
 ///         no encoder for the nested structs.
 /// @dev Each send and its quote share one internal builder, so they price the same bytes.
 library SignedTransmitterLib {
-    /// @notice The owner Safe's staged `sendMessage`, as the standalone wire message.
+    /// @notice Consume the owner's staged transaction and build its standalone wire message and
+    ///         route.
+    /// @dev Capturing evidence during the Safe call preserves the exact signed calldata and
+    ///      attaches approvals the destination cannot read from source guards.
     /// @param callData The transmitter's `msg.data`, which the Safe signed.
     function consumeMessage(bytes calldata callData)
         external
@@ -51,6 +76,10 @@ library SignedTransmitterLib {
         return _standalone(safe, _consume(safe, callData));
     }
 
+    /// @notice Build a standalone message from supplied evidence without consuming the guard's
+    ///         staged transaction.
+    /// @dev Reusing the send builder lets the transmitter quote the same signature and approval
+    ///      bytes it would transmit.
     /// @param args `abi.encode(SafeTxEvidence)`.
     function quoteMessage(bytes calldata args)
         external
@@ -65,8 +94,10 @@ library SignedTransmitterLib {
     error SignedReceiverNotDerivable(bytes32 destinationChainKey);
     error WrongBootstrapTarget(bytes destination);
 
-    /// @notice The owner Safe's staged `bootstrap`, as the body `bootstrapSigned` carries, and
-    ///         where it goes.
+    /// @notice Consume the staged bootstrap and build its body, destination key, route and
+    ///         attributes.
+    /// @dev The transceiver needs both signed setup authorization and creation records to
+    ///      derive and initialize the destination receiver.
     function consumeBootstrap(bytes calldata callData)
         external
         returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
@@ -75,6 +106,10 @@ library SignedTransmitterLib {
         return _bootstrap(safe, _consume(safe, callData));
     }
 
+    /// @notice Build the bootstrap body and route from supplied evidence without consuming
+    ///         guard state.
+    /// @dev The quote path needs the same encoded body as the send, including any nested
+    ///      approvals and authority records.
     /// @param args `abi.encode(SafeTxEvidence)`.
     function quoteBootstrap(bytes calldata args)
         external
@@ -84,7 +119,10 @@ library SignedTransmitterLib {
         return _bootstrap(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
     }
 
-    /// @notice Where a retry of a logged bootstrap `body` sends, if it still could initialize.
+    /// @notice Recheck and return the destination route and attributes of an encoded bootstrap
+    ///         body.
+    /// @dev A permissionless retry must still target a derivable, not-yet-bootstrapped receiver
+    ///      and must not send an expired authorization.
     function bootstrapTarget(bytes calldata body)
         external
         view
@@ -93,8 +131,11 @@ library SignedTransmitterLib {
         return _target(abi.decode(body, (SignedBootstrap)).evidence);
     }
 
-    /// @notice The Merkle wire message for one leaf, after checking the signed registration
-    ///         against the owner Safe's live authority and the leaf against its root.
+    /// @notice Validate the signed root registration and leaf proof, then build the Merkle wire
+    ///         payload.
+    /// @dev A relayer cannot rely on source transaction execution, so the live Safe checks the
+    ///      signatures here. Local root-registration and used-leaf state are checked by the
+    ///      transmitter wrapper.
     /// @param args `abi.encode(SafeTxEvidence, ExecutionLeaf, bytes32[])`, as `relayLeaf` takes.
     function relay(bytes calldata args)
         external
@@ -117,13 +158,19 @@ library SignedTransmitterLib {
 
     /* ================================= internals ================================ */
 
-    /// @dev The staged record, with `data` restored from the call the Safe made.
+    /// @notice Read the Safe's staged transaction and restore its data from the current call.
+    /// @dev The guard omits the calldata from its staged return; restoring the bytes the Safe
+    ///      called lets destination verification hash the original signed transaction.
     function _consume(address safe, bytes calldata callData) private returns (SafeTxEvidence memory evidence) {
         SignedSafeTx memory staged = ICrossecuteGuard(GuardDiscovery.transactionGuard(safe)).consume(safe);
         staged.safeTx.data = callData;
         evidence.signedSafeTx = staged;
     }
 
+    /// @notice Check the signed source call, decode a nonempty payload, collect approvals and
+    ///         encode the standalone wire format.
+    /// @dev Both quoting and sending need one builder so signatures, recipient and provider
+    ///      attributes describe the same transmitted message.
     function _standalone(address safe, SafeTxEvidence memory evidence)
         private
         view
@@ -137,6 +184,10 @@ library SignedTransmitterLib {
         wire = abi.encode(WIRE_STANDALONE, evidence);
     }
 
+    /// @notice Validate the bootstrap target, collect nested approvals and package the creation
+    ///         records with its evidence.
+    /// @dev The receiver needs both authorization and its complete authority snapshot to
+    ///      perform initialization independently of the provider.
     function _bootstrap(address safe, SafeTxEvidence memory evidence)
         private
         view
@@ -148,9 +199,11 @@ library SignedTransmitterLib {
         body = abi.encode(SignedBootstrap(evidence, abi.decode(records, (SafeAuthorityRecord[]))));
     }
 
-    /// @dev A signed bootstrap that could still initialize its receiver: an open or future window,
-    ///      a destination with none yet, and the receiver this chain predicts for the conduit. An
-    ///      early window is allowed, since delivery may land later.
+    /// @notice Validate the bootstrap proof and window, derive its route and match its
+    ///         destination to the predicted receiver.
+    /// @dev Reject existing or nonderivable destinations so setup cannot initialize an
+    ///      unrelated receiver. A future window is allowed because delivery may happen later;
+    ///      an expired window is not.
     function _target(SafeTxEvidence memory evidence)
         private
         view
@@ -180,8 +233,10 @@ library SignedTransmitterLib {
         if (keccak256(io.addr) != keccak256(predicted)) revert WrongBootstrapTarget(leaf.destination);
     }
 
-    /// @dev Replaces `evidence.nestedApprovals` with what the owner Safe's signatures need, read from the
-    ///      guards, and returns the Safe transaction hash.
+    /// @notice Hash the signed Safe transaction and replace its nested approvals with evidence
+    ///         read from current guards.
+    /// @dev The destination cannot query source guard state, and the payload must carry exactly
+    ///      the approvals required by the source signature blob.
     function _collect(address safe, SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
         safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, safe, block.chainid);
         evidence.nestedApprovals = NestedApprovalCollector.collect(safe, safeTxHash, evidence.signedSafeTx.signatures);

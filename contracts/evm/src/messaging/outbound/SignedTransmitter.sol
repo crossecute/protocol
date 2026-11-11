@@ -61,17 +61,26 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     error RelayReentered();
     error NoPendingBootstrap(bytes32 destinationChainKey);
 
+    /// @notice Return this transmitter's namespaced signed-mode storage.
+    /// @dev A fixed namespace avoids changing the base contracts' sequential layout when signed
+    ///      authority and relay tracking are added.
     function _signedStorage() private pure returns (SignedTransmitterStorage storage $) {
         assembly ("memory-safe") {
             $.slot := SIGNED_TRANSMITTER_STORAGE
         }
     }
 
+    /// @notice Return the creation-graph hash, reverting if this is a plain transmitter.
+    /// @dev Signed-only entry points use this check to reject operations without a stored
+    ///      signed authority snapshot.
     function _graph() private view returns (bytes32 graph) {
         graph = _signedStorage().graph;
         if (graph == bytes32(0)) revert NotSigned();
     }
 
+    /// @notice Store creation records and their hash once, when called by the transceiver.
+    /// @dev This fixes signed mode and retains the authority snapshot that every destination
+    ///      receiver must use.
     /// @inheritdoc ISignedTransmitterInit
     function initializeSigned(bytes calldata records) external {
         if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
@@ -84,9 +93,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* ================================ owner calls =============================== */
 
-    /// @notice In signed mode, send the owner Safe's signed `sendMessage` with its signatures and
-    ///         nested approvals; the receiver checks them and runs the plain `payload`.
-    /// @dev Paid from this balance, as in plain mode; `quoteSignedMessage` prices it.
+    /// @notice In signed mode, consume the Safe's staged call and transmit its signed evidence
+    ///         with nested approvals.
+    /// @dev The receiver needs the original authorization to verify independently of the
+    ///      provider. Fees come from the conduit balance; plain mode uses the base send path.
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
         payable
@@ -99,6 +109,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _sendStandalone(to, wire, options);
     }
 
+    /// @notice Quote, fund and transmit a standalone wire message while emitting the standard
+    ///         send event.
+    /// @dev Using the already built wire bytes ensures the amount paid matches the signed
+    ///      payload the provider actually sends.
     function _sendStandalone(bytes memory recipient, bytes memory wire, bytes[] memory attributes)
         private
         returns (bytes32)
@@ -109,6 +123,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _sendMessage(recipient, wire, attributes, fee);
     }
 
+    /// @notice Validate the conduit recipient and quote the complete signed wire payload.
+    /// @dev Only this conduit's reachable receiver is a valid route, and signatures must be
+    ///      included in the provider's payload price.
     function _quoteStandalone(bytes memory recipient, bytes memory wire, bytes[] memory attributes)
         private
         view
@@ -118,10 +135,11 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _quoteMessage(recipient, wire, attributes);
     }
 
-    /// @notice In signed mode, send the owner Safe's signed `bootstrap` through the transceiver.
-    /// @dev The bundle is recorded before the send, which runs as `retryBootstrap`: if it reverts
-    ///      the Safe transaction still succeeds, and anyone can retry with the logged body. A new
-    ///      signed bootstrap replaces a pending one until a send succeeds.
+    /// @notice Build and record a signed bootstrap, then attempt to send it through the
+    ///         transceiver.
+    /// @dev Recording before the attempt keeps a failed send retryable without reverting the
+    ///      Safe transaction. A newer signed bootstrap can replace a pending one until a send
+    ///      succeeds; plain mode uses the base path.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         payable
@@ -136,9 +154,11 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         try this.retryBootstrap(body) {} catch {}
     }
 
+    /// @notice Require the owner's root to be published by its current guard, then register it
+    ///         once.
+    /// @dev Later leaf relays need an explicit source registration, while keeping signatures
+    ///      out of storage lets each relayer supply its own evidence.
     /// @inheritdoc ISignedTransmitter
-    /// @dev The guard lets the call through only for a root it published, which this checks too,
-    ///      on the guard installed now.
     function registerRoot(bytes32 root) external onlyConduitOwner {
         _graph();
         if (!ICrossecuteGuard(GuardDiscovery.transactionGuard(deployer)).isPublished(root)) {
@@ -150,13 +170,17 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         emit RootRegistered(root);
     }
 
-    /// @notice Ownership is fixed in signed mode.
+    /// @notice Transfer ownership only in plain mode; reject changes in signed mode.
+    /// @dev Signed receivers are bound to the creation-time Safe, so changing the transmitter
+    ///      owner would diverge from their authority snapshot.
     function transferOwnership(address newOwner) public virtual override {
         if (_signedStorage().graph != bytes32(0)) revert OwnershipFixed();
         super.transferOwnership(newOwner);
     }
 
-    /// @notice Renouncing would permanently disable the fixed Safe's owner-only operations.
+    /// @notice Allow plain-mode renunciation but reject it in signed mode.
+    /// @dev Renouncing signed ownership would permanently disable the fixed Safe's owner-only
+    ///      operations without changing destination authority.
     function renounceOwnership() public virtual override {
         if (_signedStorage().graph != bytes32(0)) revert OwnershipFixed();
         super.renounceOwnership();
@@ -164,8 +188,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* ============================== permissionless ============================== */
 
-    /// @notice Retry a pending signed bootstrap with its logged body. Anyone may call; value tops
-    ///         up the balance the fee is paid from.
+    /// @notice Retry the exact pending bootstrap body, accepting value to fund its transport
+    ///         fee.
+    /// @dev Anyone can recover a failed send without another Safe transaction. Clearing pending
+    ///      state and marking bootstrap roll back if the retry fails.
     function retryBootstrap(bytes calldata body) external payable {
         bytes32 graph = _graph();
         (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLib.bootstrapTarget(body);
@@ -181,9 +207,11 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         t.bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
     }
 
+    /// @notice Verify and transmit an unused authorized leaf, charging the caller and refunding
+    ///         any synchronous excess.
+    /// @dev The relay lock, used-leaf mark and final balance check prevent reentrant reuse or
+    ///      spending preexisting conduit funds on another caller's relay.
     /// @inheritdoc ISignedTransmitter
-    /// @dev The caller pays the full fee. Excess and any synchronous provider refund go back to
-    ///      the caller, and this conduit's balance ends where it began.
     function relayLeaf(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
@@ -219,7 +247,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* =================================== quotes ================================= */
 
-    /// @notice Signed mode prices a send with its signatures, through `quoteSignedMessage`.
+    /// @notice Quote the plain send path, reverting when this transmitter is in signed mode.
+    /// @dev Signed transport fees depend on signatures absent from these arguments, so signed
+    ///      callers must use `quoteSignedMessage` instead.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
         view
@@ -230,7 +260,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return super.quoteMessage(recipient, payload, attributes);
     }
 
-    /// @notice Signed mode prices a bootstrap with its signatures, through `quoteSignedBootstrap`.
+    /// @notice Quote plain bootstrap, reverting in signed mode.
+    /// @dev A signed bootstrap includes evidence not present in this API;
+    ///      `quoteSignedBootstrap` supplies the complete payload needed for an accurate fee.
     function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         view
@@ -241,8 +273,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return super.quoteBootstrap(payload, attributes);
     }
 
-    /// @notice What `sendMessage` would pay for `evidence`, a signed `sendMessage` to this
-    ///         conduit. Nested approvals are read from the guards, as the send reads them.
+    /// @notice Build the signed standalone payload and return the fee its send would pay.
+    /// @dev Sharing the send builder, including live nested approval collection, prevents
+    ///      quotes from omitting evidence bytes or pricing a different message.
     function quoteSignedMessage(SafeTxEvidence calldata evidence) external view returns (uint256) {
         _graph();
         evidence;
@@ -251,7 +284,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _quoteStandalone(recipient, wire, attributes);
     }
 
-    /// @notice What `bootstrap` would pay for `evidence`, and the body it would log.
+    /// @notice Return a signed bootstrap's transport fee and encoded body without consuming
+    ///         staged state.
+    /// @dev Owners can fund the eventual send and inspect the retry body using the same builder
+    ///      as bootstrap execution.
     function quoteSignedBootstrap(SafeTxEvidence calldata evidence)
         external
         view
@@ -265,7 +301,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         fee = IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
     }
 
-    /// @notice What `relayLeaf` would charge for the same arguments.
+    /// @notice Return the fee for relaying the supplied signed registration, leaf and proof.
+    /// @dev Sharing relay validation and wire construction avoids quoting an unregistered,
+    ///      already relayed or differently encoded leaf as executable.
     function quoteRelay(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
@@ -277,8 +315,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* ================================= builders ================================= */
 
-    /// @dev `relayLeaf`'s checks on this conduit's own state, around the logic's checks of the
-    ///      registrationEvidence and leaf, read from this call's arguments.
+    /// @notice Build the relay wire payload, check local root and leaf state, validate the
+    ///         recipient and quote the fee.
+    /// @dev The linked builder checks signatures and proofs; this wrapper adds the
+    ///      transmitter's registration, replay and routing state for both quotes and sends.
     function _relay()
         private
         view
@@ -296,25 +336,39 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* =================================== views ================================== */
 
-    /// @notice The graph hash this conduit's salt commits to; zero for a plain conduit.
+    /// @notice Return the creation-graph hash, or zero for a plain transmitter.
+    /// @dev Address prediction and callers inspecting signed mode need the exact authority
+    ///      commitment retained at creation.
     function authorityGraph() external view returns (bytes32) {
         return _signedStorage().graph;
     }
 
-    /// @notice The creation records forwarded at bootstrap, `abi.encode(SafeAuthorityRecord[])`.
+    /// @notice Return the ABI-encoded creation authority records forwarded in signed
+    ///         bootstraps.
+    /// @dev Receivers must initialize from the same snapshot used to derive this transmitter's
+    ///      address, even if the source Safe later changes owners.
     function creationRecords() external view returns (bytes memory) {
         return _signedStorage().records;
     }
 
+    /// @notice Report whether the owner has registered a root on this transmitter.
+    /// @dev Relayers can check the source authorization prerequisite before paying to send a
+    ///      leaf.
     function isRootRegistered(bytes32 root) external view returns (bool) {
         return _signedStorage().roots[root];
     }
 
+    /// @notice Report whether this transmitter has already relayed the leaf hash.
+    /// @dev A leaf may be relayed through this transmitter only once, so callers can avoid
+    ///      duplicate source sends.
     function isLeafRelayed(bytes32 leafHash) external view returns (bool) {
         return _signedStorage().relayed[leafHash];
     }
 
-    /// @notice The hash of the body a retry to `destinationChainKey` must supply, or zero.
+    /// @notice Return the pending bootstrap body hash for a destination, or zero if none is
+    ///         pending.
+    /// @dev Anyone retrying must supply the exact logged body; this view identifies which
+    ///      authorization is still eligible.
     function pendingBootstrap(bytes32 destinationChainKey) external view returns (bytes32) {
         return _signedStorage().pendingBootstrap[destinationChainKey];
     }

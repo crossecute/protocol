@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
-import {Slices} from "src/messaging/signed/Slices.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
 
 /// @notice Safe 1.5.0 signature blob parsing shared by the receiver's verifier and the source's
 ///         evidence collection.
@@ -23,11 +23,17 @@ library SafeSignaturesUtils {
     /// @dev The evidence is not a DELEGATECALL of `signMessage(abi.encode(parentHash))`.
     error NotANestedSafeApprovalOf(address childSafe, bytes32 parentHash);
 
+    /// @notice Check that the blob contains enough 65-byte entries for the required signatures.
+    /// @dev Call this before reading entries so truncated input cannot be mistaken for a
+    ///      complete quorum.
     function requireLength(address safe, bytes memory signatures, uint256 threshold) internal pure {
         if (signatures.length < threshold * 65) revert SignaturesTooShort(safe);
     }
 
-    /// @notice Entry `index` of `signatures`, with `v = 1` refused.
+    /// @notice Read the `r`, `s` and `v` fields of one 65-byte Safe signature entry.
+    /// @dev `v` tells the caller how to interpret the entry. Reject `v = 1` because source-side
+    ///      hash approvals and executor identity cannot be reproduced on the receiver. The
+    ///      caller must check the blob length first.
     function entry(address safe, bytes memory signatures, uint256 index)
         internal
         pure
@@ -42,8 +48,10 @@ library SafeSignaturesUtils {
         if (v == 1) revert ApprovedHashUnsupported(safe);
     }
 
-    /// @notice The EOA behind an ECDSA entry: `v` of 27 or 28 over `dataHash`, 31 or 32 over its
-    ///         eth_sign digest. Any other `v` reverts.
+    /// @notice Recover the EOA address for a direct or Ethereum-prefixed ECDSA signature.
+    /// @dev Safe uses `v = 27/28` for the supplied hash and `31/32` for its `eth_sign` digest.
+    ///      Other values revert. The caller must still check owner membership; an invalid
+    ///      recovery can return zero.
     function recover(bytes32 dataHash, bytes32 r, bytes32 s, uint8 v) internal pure returns (address) {
         // forge-lint: disable-next-line(ecrecover) as Safe: a malleable twin recovers the same owner, which the ascending check refuses twice
         if (v == 27 || v == 28) return ecrecover(dataHash, v, r, s);
@@ -54,9 +62,15 @@ library SafeSignaturesUtils {
         revert InvalidSignatureType(v);
     }
 
-    /// @notice The length-prefixed payload a `v = 0` entry points to, under Safe's bounds (GS021
-    ///         to GS023). Payloads may overlap and may sit among entries past the threshold.
-    function contractSignature(address safe, bytes memory signatures, uint256 offset, uint256 threshold)
+    /// @notice Extract the child contract's signature bytes from a Safe signature blob.
+    /// @dev A contract-owner entry (`v = 0`) puts its address in `r` and a payload offset in
+    ///      `s`, rather than containing an EOA signature. Read the length-prefixed bytes at
+    ///      that offset so the caller can verify the child's own signatures. Check the offset
+    ///      and length against the blob and required static entries; extraction alone does not
+    ///      authenticate the child. Empty payloads are returned for the separate
+    ///      approval-evidence path. As in Safe, payloads may overlap or occupy bytes after the
+    ///      required static entries.
+    function extractContractSignature(address safe, bytes memory signatures, uint256 offset, uint256 threshold)
         internal
         pure
         returns (bytes memory)
@@ -68,20 +82,24 @@ library SafeSignaturesUtils {
             length := mload(add(add(signatures, 0x20), offset))
         }
         if (length > total - offset - 32) revert MalformedContractSignature(safe);
-        return Slices.slice(signatures, offset + 32, length);
+        return Bytes.slice(signatures, offset + 32, length);
     }
 
-    /// @notice What a nested Safe signs for its parent: the child-domain `SafeMessage` hash of
-    ///         `abi.encode(parentHash)`, as `CompatibilityFallbackHandler` computes it.
+    /// @notice Compute the child Safe's message hash for the parent's signed hash.
+    /// @dev Binding the parent's hash to the child Safe and source chain matches Safe's
+    ///      fallback handler and prevents reusing a child's signatures for a different Safe
+    ///      domain.
     function nestedHash(bytes32 parentHash, address child, uint256 chainId) internal pure returns (bytes32) {
         return SafeHashes.messageHash(abi.encode(parentHash), child, chainId);
     }
 
-    /// @notice The child Safe transaction hash `approval`'s signatures cover, once it is shown to
-    ///         be the child's DELEGATECALL of `signMessage(abi.encode(parentHash))`.
-    /// @dev The target is in the hash and not otherwise checked: the child's quorum over this
-    ///      call authorizes the message in its calldata, whatever the library wrote. The calldata
-    ///      is decoded as Safe's `SignMessageLib` decodes it, without requiring canonical bytes.
+    /// @notice Check that a transaction approves this parent hash, then compute its child Safe
+    ///         transaction hash.
+    /// @dev An empty nested signature needs separate evidence: a signed DELEGATECALL of
+    ///      `signMessage(abi.encode(parentHash))`. The caller verifies the child's quorum over
+    ///      the returned hash. The target is bound into that hash but is not independently
+    ///      checked here; calldata is decoded as Safe's SignMessageLib decodes it, without
+    ///      requiring canonical encoding.
     function approvalHash(address child, bytes32 parentHash, SafeTx memory approval, uint256 chainId)
         internal
         pure
@@ -92,7 +110,7 @@ library SafeSignaturesUtils {
         if (approval.operation != DELEGATECALL || data.length < 4 || bytes4(data) != SIGN_MESSAGE) {
             revert NotANestedSafeApprovalOf(child, parentHash);
         }
-        bytes memory message = abi.decode(Slices.slice(data, 4, data.length - 4), (bytes));
+        bytes memory message = abi.decode(Bytes.slice(data, 4, data.length - 4), (bytes));
         if (keccak256(message) != keccak256(abi.encode(parentHash))) {
             revert NotANestedSafeApprovalOf(child, parentHash);
         }

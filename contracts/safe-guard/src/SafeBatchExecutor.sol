@@ -3,6 +3,10 @@ pragma solidity ^0.8.28;
 
 /// @dev Safe 1.5.0's `execTransaction`.
 interface ISafeExec {
+    /// @notice Execute a signed transaction through the target Safe and report whether its
+    ///         inner call succeeded.
+    /// @dev The batch executor must detect a Safe returning `false` as well as a revert,
+    ///      otherwise a failed inner call could leave a partially successful batch.
     function execTransaction(
         address to,
         uint256 value,
@@ -43,6 +47,11 @@ contract SafeBatchExecutor {
 
     error SafeExecutionFailed(uint256 index);
 
+    /// @notice Execute the supplied separately signed Safe transactions in order, reverting the
+    ///         whole batch on any failure.
+    /// @dev Atomic execution keeps earlier sends and Safe nonce advances from surviving a later
+    ///      failed call. The caller orders transactions by their signed Safe nonces; the
+    ///      executor holds no owner privilege.
     function execute(SafeExecution[] calldata executions) external {
         for (uint256 i = 0; i < executions.length; ++i) {
             SafeExecution calldata execution = executions[i];
