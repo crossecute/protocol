@@ -49,6 +49,23 @@ interface IConduitTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
+    /// @notice `bootstrap`, for a conduit whose receiver verifies a Safe-signed `body`.
+    function bootstrapSigned(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes calldata body,
+        bytes[] calldata attributes
+    ) external payable;
+
+    function quoteBootstrapSigned(
+        bytes32 destinationChainKey,
+        address owner,
+        bytes32 salt,
+        bytes calldata body,
+        bytes[] calldata attributes
+    ) external view returns (uint256);
+
     /// @notice The message the calling conduit sends itself, through its own transport, to stand
     ///         up on the chain `route` names. An empty `recipient` means this transceiver
     ///         carries the bootstrap, through `bootstrap` or `bootstrapElements`.
@@ -68,6 +85,12 @@ interface IConduitTransceiver {
 
     /// @notice Where this conduit's receiver will sit on a chain that does not report it.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
+
+    /// @notice `predictReceiver` for a signed conduit, whose salt also commits to `graph`.
+    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes32 graph)
+        external
+        view
+        returns (bytes memory);
 }
 
 /// @title TransmitterBase
@@ -204,7 +227,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
         if (!hasCounterpart(chainKey)) revert NotBootstrapped(chainKey);
     }
 
-    function _requireNotBootstrapped(bytes32 chainKey) private view {
+    function _requireNotBootstrapped(bytes32 chainKey) internal view {
         if (_bootstrapDispatched[chainKey]) revert AlreadyBootstrapped(chainKey);
     }
 
@@ -238,8 +261,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @return sendId Zero when the gateway has taken the message. A binding that returns
     ///         non-zero has a second step to perform and says so in its own NatSpec.
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
-        external
+        public
         payable
+        virtual
         onlyConduitOwner
         returns (bytes32 sendId)
     {
@@ -301,7 +325,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @dev Checks bootstrap first so an unreached destination reverts `NotBootstrapped`
     ///      rather than `NoRouteFor` from `_recipientOn`. A stored receiver means the bootstrap
     ///      passed the registry's live check, which is never undone, so sends are not checked again.
-    function _requireOwnRecipient(bytes calldata recipient) private view returns (bytes32 chainKey) {
+    function _requireOwnRecipient(bytes memory recipient) internal view returns (bytes32 chainKey) {
         if (recipient.length == 0) revert NoDestination();
 
         chainKey = ChainKey.fromIdentifier(recipient);
@@ -328,9 +352,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///
     /// @dev Pays `_quoteBootstrap` from this conduit's balance, as `sendMessage` does. `quoteBootstrap` takes the same arguments, for
     ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
-    function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable onlyConduitOwner {
+    function bootstrap(bytes calldata payload, bytes[] calldata attributes) public payable virtual onlyConduitOwner {
         (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
-        _markBootstrapped(chainKey, route);
+        _markBootstrapped(chainKey, route, bytes32(0));
         _sendBootstrap(chainKey, route, typed, body, attributes);
     }
 
@@ -351,8 +375,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @dev Takes `sendMessage`'s arguments and applies its checks, so a quote never succeeds
     ///      for a send that would be refused. Ungated, so the balance can be sized off-chain.
     function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
-        external
+        public
         view
+        virtual
         override
         returns (uint256 nativeFee)
     {
@@ -367,8 +392,9 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      `(owner, salt)` check is not applied: a quote spends nothing and may be taken before
     ///      the conduit exists.
     function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
-        external
+        public
         view
+        virtual
         returns (uint256 nativeFee)
     {
         (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
@@ -461,7 +487,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
 
     /// @dev Bounded only by this balance, which is meant to hold pre-funded bridging fees and
     ///      nothing else.
-    function _requireFunded(uint256 fee) private view {
+    function _requireFunded(uint256 fee) internal view {
         if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
     }
 
@@ -473,13 +499,20 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      report), as the transceiver predicts it there: this conduit's own address only when
     ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
     ///      unreachable until the report arrives, rather than addressed at a guess.
-    function _markBootstrapped(bytes32 chainKey, bytes memory route) private {
+    ///
+    /// @param graph Zero for a plain conduit; a signed one's receiver derives with it.
+    function _markBootstrapped(bytes32 chainKey, bytes memory route, bytes32 graph) internal {
         _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, route);
 
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         if (!t.reportsReceiver(chainKey)) {
-            _setCounterpart(chainKey, t.predictReceiver(chainKey, deployer, conduitSalt));
+            _setCounterpart(
+                chainKey,
+                graph == bytes32(0)
+                    ? t.predictReceiver(chainKey, deployer, conduitSalt)
+                    : t.predictReceiver(chainKey, deployer, conduitSalt, graph)
+            );
         }
 
         emit DestinationBootstrapped(chainKey);
@@ -559,7 +592,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     }
 
     /// @inheritdoc OutboundBase
-    function _defaultGas(bytes memory) internal pure override returns (uint256) {
+    function _defaultGas(bytes memory) internal pure virtual override returns (uint256) {
         return DeliveryGas.PAYLOAD;
     }
 

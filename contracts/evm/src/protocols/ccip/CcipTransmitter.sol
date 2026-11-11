@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/signed/SignedTransmitter.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -9,7 +9,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: no `ccipReceive` inherited or implemented, so R3.1 is answered by
 ///      absence rather than a guard, and no gateway is granted here.
-contract CcipTransmitter is OwnableTransmitter {
+contract CcipTransmitter is SignedTransmitter {
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
 
     /// @notice CCIP Router on this chain. Set on the implementation; safe because the

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/signed/SignedTransmitter.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
@@ -10,7 +10,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 /// @dev Sender-only: no `handle` implemented, so R3.1 is answered by absence rather than a
 ///      guard. Plain `OwnableUpgradeable`, not Hyperlane's `MailboxClient`, which pins OZ
 ///      4.9.3's zero-arg `__Ownable_init()`.
-contract HyperlaneTransmitter is OwnableTransmitter {
+contract HyperlaneTransmitter is SignedTransmitter {
     bytes4 public constant HYPERLANE_GAS_LIMIT_ATTRIBUTE = HyperlaneMessage.GAS_LIMIT_ATTRIBUTE;
 
     /// @notice Hyperlane Mailbox on this chain. Set on the implementation; safe because the
