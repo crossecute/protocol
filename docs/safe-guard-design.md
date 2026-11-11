@@ -6,9 +6,12 @@ leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
 **Status.** Implemented and tested in [`contracts/safe-guard/`](../contracts/safe-guard/), a
-separate Foundry project, against real Safe 1.5.0 proxies. Only a test transmitter consumes it;
-nothing in `contracts/evm/` depends on it yet. Receiver verification of what the guard hands out is
-[#108](https://github.com/crossecute/protocol/issues/108); authority updates are
+separate Foundry project, against real Safe 1.5.0 proxies. The protocol's signed transmitters
+consume it and its receivers verify what it hands out
+([#108](https://github.com/crossecute/protocol/issues/108),
+[`safe-signed-dispatch.md`](safe-signed-dispatch.md)); the guard's own tests drive a minimal
+test transmitter, and an end-to-end test joining the two is
+[#134](https://github.com/crossecute/protocol/issues/134). Authority updates are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
 **Where the reasoning lives.** As in [`message-flow.md`](message-flow.md), each decision is
@@ -59,7 +62,8 @@ These are settled. The sections below describe each in full.
   sources are MIT; vendored policy-engine files keep their `LGPL-3.0-only` headers.
 - **Out of scope here.** Receiver checks on what the guard hands out, including approved-hash
   (`v = 1`) entries and signing modes, are [#108](https://github.com/crossecute/protocol/issues/108).
-  The split between plain and signature-enabled protocol transmitters is not part of this guard.
+  The guard only advertises `ICrossecuteGuard` through ERC-165; the transceiver reads that at
+  `createTransmitter` to choose a plain or signed transmitter (#108).
 
 ## Shape
 
@@ -206,8 +210,8 @@ A signature-enabled transmitter, called directly by its owner Safe through `send
 It never pins a guard address and never falls back to an unsigned send. It does not compare
 calldata or value with the record: the direct call from the Safe already delivers what the
 owners signed, and the guard only lets the signed target consume. The minimal transmitter in
-`contracts/safe-guard/test/` exercises this flow; the protocol's own transmitters are
-unchanged. `ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy
+`contracts/safe-guard/test/` exercises this flow, and `SignedTransmitter` in `contracts/evm/`
+follows it. `ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy
 engine and compile under the protocol's Solidity 0.8.28 and Paris settings, so a protocol
 transmitter or receiver can import them.
 
@@ -275,12 +279,12 @@ approval with it.
 consuming it, and reverts when none exists. A transmitter consumes its parent's staged
 record and reads children's cached evidence to attach to the message it sends. A relayer can
 read the same evidence for direct submission. The receiver verifies authorization independently
-([#108](https://github.com/crossecute/protocol/issues/108)). This ABI is not final.
+([#108](https://github.com/crossecute/protocol/issues/108)).
 
 Approval signatures sign the approval transaction, not the handler's message digest, so they
 cannot stand in for the empty child payload. A child signature set may contain approved-hash
-entries (`v = 1`) that a receiver cannot verify offchain; how the receiver treats them is
-part of #108.
+entries (`v = 1`) that a receiver cannot verify offchain, so the transmitter and receiver
+reject them at every level (#108).
 
 [`safe-approval-evidence-sizing.md`](safe-approval-evidence-sizing.md) works through the size
 and storage cost of this evidence for one nested Safe shape.

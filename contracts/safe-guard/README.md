@@ -9,15 +9,16 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | Path | What it holds |
 | --- | --- |
 | `src/CrossecuteGuard.sol` | The guard: `sendMessage` and `bootstrap` staging, consumption and cleanup, module rejection of both selectors and of `registerRoot`, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
-| `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their structs, events and errors; the `SafeTx` struct the guard, transmitter and receiver share |
+| `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their events and errors; above it, the file-level `SafeTx` and `SignedSafeTx` structs the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 | `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
+| `src/SafeBatchExecutor.sol` | Runs several separately signed Safe transactions in one outer transaction, all or nothing: #108's atomic source batch |
 | `test/SafeFixture.sol` | Real Safe 1.5.0 proxies, owner signing (EOA and nested Safe owners), owner-signed installation |
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
 | `test/*.t.sol` | `sendMessage` lifecycle, rerun for `bootstrap` in `Bootstrap.t.sol`, leaf publication and `registerRoot`, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
 
-`ICrossecuteGuard`, `GuardDiscovery` and `SafeHashes` import nothing from the policy engine and
+`ICrossecuteGuard`, `GuardDiscovery`, `SafeHashes` and `SafeBatchExecutor` import nothing from the policy engine and
 declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own compiler settings.
 
 ## Pins
@@ -38,11 +39,10 @@ from a signature blob. Its `main` branch mirrors upstream.
 The staged selectors are `sendMessage(bytes,bytes,bytes[])` and `bootstrap(bytes,bytes[])`.
 The first is `IERC7786GatewaySource.sendMessage.selector`, imported from
 `contracts/evm/src/messaging/IErc7786.sol`, so the guard and the protocol cannot disagree on it.
-`contracts/evm/` has no `bootstrap(bytes,bytes[])` yet
-([#120](https://github.com/crossecute/protocol/issues/120)), so the guard declares it in a
-minimal `IBootstrap` interface. The plain `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo`
-overloads have other selectors and are not staged. Nor does it have `registerRoot`, so
-`CrossecuteGuard.sol` declares `IRootRegistration` for the checked selector.
+The second, and the checked `registerRoot(bytes32)`, come from the import-free
+`contracts/evm/src/messaging/signed/ISignedOwnerCalls.sol`, which the signed transmitter
+implements (#108). The plain `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads
+have other selectors and are not staged.
 
 ## Build and chain support
 
