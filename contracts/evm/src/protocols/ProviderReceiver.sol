@@ -2,11 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
 
 /// @notice A receiver whose only provider setup is naming the provider's delivery contract as
 ///         its gateway.
-abstract contract ProviderReceiver is ReceiverBase {
+abstract contract ProviderReceiver is SignedReceiver {
     /// @dev `_grantInitialRole` is `onlyInitializing`, so this initializer is the only window the
     ///      gateway grant ever gets. It runs before `__ReceiverBase_init`, which executes the
     ///      payload.

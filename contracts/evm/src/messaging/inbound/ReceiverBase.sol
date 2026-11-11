@@ -128,7 +128,7 @@ abstract contract ReceiverBase is
     ///      `_execute` can produce it, reachable from an authenticated inbound message or a
     ///      gated entry point. Stated explicitly because receiver and transmitter addresses
     ///      differ on zkSync and Tron.
-    function isAuthorizedCaller(address conduit) public view returns (bool) {
+    function isAuthorizedCaller(address conduit) public view virtual returns (bool) {
         return conduit == address(this) || isSourceTransmitter(conduit);
     }
 
@@ -345,7 +345,7 @@ abstract contract ReceiverBase is
     ///
     /// @dev `nonReentrant`, shared with `finalize`, since it calls arbitrary targets from a
     ///      provider callback.
-    function _onMessage(bytes calldata payload) internal nonReentrant {
+    function _onMessage(bytes calldata payload) internal virtual nonReentrant {
         Call[] memory calls = Payload.decodeCalls(payload);
         emit Delivered(calls.length);
         _execute(calls);
