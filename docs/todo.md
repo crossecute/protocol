@@ -88,16 +88,19 @@ the seventh; what they mean for an operator is in the README.
   and a chain added after the first deployment, whose files repeat what is already set. zkSync
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
+  `WormholeMessage` or `LzMessage` linked, their conduits with `SafeAuthority` and
+  `SignedTransmitterLogic` linked, and their `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
-- **No protocol transmitter consumes the Safe guard yet.** `CrossecuteGuard` stages owner
-  signatures and caches child approvals ([`safe-guard-design.md`](safe-guard-design.md)), but
-  only the test transmitter in `contracts/safe-guard/test/` consumes them. A signature-enabled
-  transmitter and receiver verification are [#108](https://github.com/crossecute/protocol/issues/108),
-  and authority updates [#109](https://github.com/crossecute/protocol/issues/109).
+- **Signed dispatch is unmeasured and has no end-to-end test with real Safe 1.5.0.** Signed
+  transmitters and receivers ([#108](https://github.com/crossecute/protocol/issues/108)) are
+  tested against a stub Safe and stub guard, and the guard against a test transmitter. Gas,
+  payload sizes, a default delivery gas for signed payloads, and a test joining real Safe 1.5.0,
+  the real guard and the real conduits are
+  [#134](https://github.com/crossecute/protocol/issues/134). Authority updates are
+  [#109](https://github.com/crossecute/protocol/issues/109).
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
   tests check its root against a vector computed with `cast` and its proofs against
@@ -230,7 +233,15 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
 ## 6. Safe-signed dispatch
 
 The signature-enabled transmitter and receiver
-([#108](https://github.com/crossecute/protocol/issues/108)) are not designed to the point of
-building. [`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions, the
-conflicts that block the rest, and the open questions; they are tracked there rather than
-copied here. Authority changes are [#109](https://github.com/crossecute/protocol/issues/109).
+([#108](https://github.com/crossecute/protocol/issues/108)) are built;
+[`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
+"Implementation", what the build leaves out. Outstanding:
+
+- **Measurements and an end-to-end test**:
+  [#134](https://github.com/crossecute/protocol/issues/134).
+- **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap, because
+  the receiver report carries no graph hash for the home to find the transmitter with.
+- **Relayer refunds.** `relayLeaf` forwards synchronous provider refunds to the relayer, but no
+  binding passes the relayer as the provider's refund address, so a refund that arrives later
+  stays with the transmitter.
+- **Authority changes**: [#109](https://github.com/crossecute/protocol/issues/109).
