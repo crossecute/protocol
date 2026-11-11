@@ -1,8 +1,9 @@
 name: publish
 
-# Publishes @crossecute/protocol from a tag `npm-v<version>` through npm trusted publishing:
-# no npm token exists, and npm attaches provenance tying the tarball to this run. The `npm`
-# environment holds the job until a reviewer approves it.
+# Stages @crossecute/protocol from a tag `npm-v<version>` through npm trusted publishing: no
+# npm token exists, and npm attaches provenance tying the tarball to this run. The `npm`
+# environment holds the job until a reviewer approves it, and the staged version stays hidden
+# until a maintainer approves it on npmjs.com with 2FA, so this run alone cannot release.
 on:
   push:
     tags: ["npm-v*"]
@@ -34,7 +35,7 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      # Staged publishing needs npm 11.15.0 or later; Node 22 ships npm 10.
       - run: npm install -g npm@11.21.1
 
       - name: The tag names the package version
@@ -54,6 +55,6 @@ jobs:
 
       - run: npm/check-consumer.sh
 
-      # prepack rebuilds the sources and ABIs from this checkout.
-      - run: npm publish --access public
+      # check-consumer.sh has just rebuilt the sources and ABIs under npm/ from this checkout.
+      - run: npm stage publish . --access public
         working-directory: contracts/evm/npm
