@@ -1,0 +1,59 @@
+name: publish
+
+# Publishes @crossecute/protocol from a tag `npm-v<version>` through npm trusted publishing:
+# no npm token exists, and npm attaches provenance tying the tarball to this run. The `npm`
+# environment holds the job until a reviewer approves it.
+on:
+  push:
+    tags: ["npm-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: contracts/evm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@11.21.1
+
+      - name: The tag names the package version
+        run: |
+          version=$(node -p 'require("./npm/package.json").version')
+          [[ "$GITHUB_REF_NAME" == "npm-v$version" ]] \
+            || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+
+      # Install scripts run on every consumer's machine, so the package must have none.
+      - name: The package has no install scripts
+        run: |
+          node -e 'const s = require("./npm/package.json").scripts ?? {};
+            const found = ["preinstall", "install", "postinstall", "prepare"].filter((k) => k in s);
+            if (found.length) { console.error("install scripts: " + found); process.exit(1); }'
+
+      - run: forge build
+
+      - run: npm/check-consumer.sh
+
+      # prepack rebuilds the sources and ABIs from this checkout.
+      - run: npm publish --access public
+        working-directory: contracts/evm/npm

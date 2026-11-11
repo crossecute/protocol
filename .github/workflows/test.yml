@@ -47,6 +47,30 @@ jobs:
 
       - run: forge test -vvv
 
+  # Compiles every source the npm package ships from a project that installs it, so an import
+  # npm/pack.mjs cannot rewrite fails here rather than for integrators.
+  npm-package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/evm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - run: forge build
+
+      - run: npm/check-consumer.sh
+
   # Reports coverage of src/ and enforces no minimum. The build is unoptimized, so the tests
   # that need solc's optimized bytecode skip here: those pinning Proxy's initcode hash and
   # the deployer's address, the delivery gas measurements, and the deploy tests that deploy
