@@ -7,11 +7,13 @@ from a registered Merkle root, and how a receiver verifies and executes it. Trac
 [PR #117](https://github.com/crossecute/protocol/pull/117)); authority changes are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
-**Status.** Working design with proposed Solidity interfaces. It records what is decided,
-the conflicts that block a decision, and the open questions with proposed answers and the cases
-each answer must handle. The design part of #108 is resolved when every item under
-[Conflicts](#conflicts-to-resolve-first) and [Open questions](#open-questions) is either
-decided (moved to [Decisions](#decisions)) or explicitly deferred with a reason.
+**Status.** Implemented under
+[`contracts/evm/src/messaging/signed/`](../contracts/evm/src/messaging/signed/); see
+[Implementation](#implementation) for where each part lives and what it leaves out. Gas and
+payload sizes, a signed default delivery gas, and an end-to-end test against real Safe 1.5.0
+and the real guard are [#134](https://github.com/crossecute/protocol/issues/134). Where this
+file and #108 disagree, #108 is current: its "Fixed authority and shared salt" section and its
+root registration text, which stores no signatures, are what the code follows.
 
 **Labels.** *Decided* items come from #108 or were agreed while refining it. *Proposed*
 answers are recommendations awaiting agreement. *Open* items have no recommendation yet. IDs
@@ -26,17 +28,20 @@ Envelope and routing:
   encoding. The transmitter consumes the guard-staged authorization and sends in the same
   source transaction, wrapping the exact calldata with Safe context, signatures and any
   nested approval evidence. The standalone message has no Merkle root, leaf or proof.
-- **D2.** The owner Safe can register any `bytes32` root. The transmitter caches its signed
-  registration and nested approval evidence for later relays. Registration needs no leaf data.
-  Track cache presence independently of the root value so a zero root can also be registered.
-  Registering an existing root reverts with `RootAlreadyRegistered(bytes32 root)`.
+- **D2.** The owner Safe can register any `bytes32` root. The transmitter records the root as
+  registered and stores no signatures: the signed registration is in the source
+  `execTransaction` calldata, and each relay or direct submission supplies it. Registration
+  needs no leaf data. A zero root can be registered once. Registering an existing root reverts
+  with `RootAlreadyRegistered(bytes32 root)`.
 - **D3.** The signed Safe `to` must equal the receiver's configured source transmitter.
 - **D4.** A locked receiver deployment uses fixed, distinct standalone and Merkle envelope
   formats. The receiver checks the signed selector for the path being executed.
-- **D5.** Anyone can call `relayLeaf` with a registered root, one execution leaf and its
-  proof. Each leaf commits to its provider attributes, including any LayerZero execution
-  options. The transmitter verifies membership and the route, then quotes and sends one
-  message using those attributes, with the cached Safe authorization, root, leaf and proof.
+- **D5.** Anyone can call `relayLeaf` with the signed registration of a registered root, one
+  execution leaf and its proof. Each leaf commits to its provider attributes, including any
+  LayerZero execution options. The transmitter checks that the registration is
+  `registerRoot(root)` addressed to itself, verifies its signatures against the Safe's live
+  authority with Safe 1.5.0's `checkSignatures`, verifies membership and the route, then quotes
+  and sends one message using those attributes, with the registration, leaf and proof.
   The relayer pays the full provider fee from `msg.value` and receives any excess.
   A successful relay preserves the transmitter's pre-call native balance.
   The receiver reconstructs the signed root registration, verifies the Safe quorum and
@@ -166,9 +171,9 @@ Authority:
 
 ### Q1. Signed calldata and delivery envelope
 
-[`ISignedDispatch.sol`](../contracts/evm/src/messaging/ISignedDispatch.sol) proposes a
+[`ISignedDispatch.sol`](../contracts/evm/src/messaging/signed/ISignedDispatch.sol) declares a
 shared `SignedDelivery` containing the exact
-[`ICrossecuteGuard.SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), signatures
+[`SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), signatures
 and nested approval evidence. For a standalone delivery, decode recipient and plain payload
 from the signed `sendMessage` calldata. For a Merkle delivery, decode the root from the
 signed `registerRoot` calldata and use the separately supplied leaf and proof.
@@ -184,10 +189,10 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   passes those checks without requiring it to match a canonical re-encoding.
 - **Q1.5** The standalone quote and send use the signed `recipient`. The Merkle quote and
   relay use the leaf destination. Each pair prices the same final wire bytes.
-- **Q1.6** For an owner transaction calling `registerRoot(bytes32)`, the guard checks
-  that it previously recorded the root through Q8.4 before staging the authorization.
-  Reject that selector on the module path. The transmitter caches the resulting signed
-  authorization, so relayers only supply the root and witness.
+- **Q1.6** For an owner transaction calling `registerRoot(bytes32)`, the guard reverts unless
+  it previously recorded the root through Q8.4, and stages nothing. Reject that selector on the
+  module path. The transmitter checks publication on the current guard too and records only
+  the root, so a relayer supplies the signed registration along with the leaf and proof.
 - **Q1.7** Direct Merkle submission can execute a leaf when the provider is unavailable.
   It leaves the transmitter's used state unchanged. A later provider delivery of that
   leaf follows D11.
@@ -199,11 +204,11 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   `address(this).balance == balanceBefore` after settlement. Protect settlement against reentrancy. A failed refund or balance mismatch
   reverts the relay, including the used mark. Direct submission proves membership using
   the full leaf and executes without applying its provider attributes.
-- **Q1.9** *Open:* measure cache writes and provider envelope costs, including nested evidence,
-  and define bounds. Leaf data, proofs and attributes are variable length because the
+- **Q1.9** Measuring provider envelope costs, including nested evidence, and defining
+  bounds is [#134](https://github.com/crossecute/protocol/issues/134). Leaf data, proofs and attributes are variable length because the
   number of calls, tree depth and provider options vary.
 - **Q1.10** A repeat `registerRoot` reverts with `RootAlreadyRegistered(root)`, including
-  when the Safe signs it at a new nonce. The original approval and used-leaf records
+  when the Safe signs it at a new nonce. The original registration and used-leaf records
   stay intact. New leaf attributes require a new root.
 
 ### Q2. Leaf and tree encoding
@@ -270,8 +275,8 @@ Cases:
   `graphHash = keccak256(abi.encode(authorityRecords))`. Include `graphHash` in the outer
   signed conduit salt preimage in Q4.7.
 - **Q3.8** The root node is the transmitter's owner Safe.
-- **Q3.9** [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/NestedOwnerManager.sol)
-  proposes one `SafeState` per Safe, with a linked owner list and threshold. Keep the
+- **Q3.9** [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManager.sol)
+  holds one `SafeState` per Safe, with a linked owner list and threshold. Keep the
   authority counter and owner kind metadata in the surrounding record. The signed update
   carries Safe's mutation selector and arguments. After verifying the update, the receiver
   can use `using NestedOwnerManager for SafeState` and call
@@ -303,9 +308,10 @@ authorization before source execution (D22).
   It verifies the source and destination bindings, Safe quorum, leaf proof and execution
   window before setup. It stores the records and starts the Merkle nonce at zero.
   #109 covers rotations.
-- **Q4.4** PR #117 stages only the top-level `sendMessage` selector today. Before signed
-  bootstrap can use `consume`, the guard must also stage the bootstrap selector for
-  owner transactions and reject it in the installed module guard.
+- **Q4.4** The guard stages the `bootstrap(bytes,bytes[])` selector for owner transactions
+  and rejects it in the installed module guard
+  ([#133](https://github.com/crossecute/protocol/pull/133)), so signed bootstrap consumes its
+  record as `sendMessage` does.
 - **Q4.5** An initialized receiver can accept direct ordinary dispatch before the source
   receives a readiness report. An authenticated repeat of the same bootstrap leaf within
   its window succeeds silently.
@@ -373,7 +379,7 @@ independently? The cache key is the child Safe and message hash.
 
 For a source send or root registration, collect evidence using live source Safe authority.
 The receiver applies its own stored quorum on delivery. Look up the child's current
-transaction guard with `GuardDiscovery`, then `getApproval(child, messageHash)`. The current guard returns `ICrossecuteGuard.SignedSafeTx`
+transaction guard with `GuardDiscovery`, then `getApproval(child, messageHash)`. The current guard returns `SignedSafeTx`
 with the full approval calldata and the child's signatures with its policy extension removed.
 Wrap it in a `NestedApproval` keyed by child Safe and message hash. Carry one item per key
 in an unsorted flat array and look it up by linear scan.
@@ -395,8 +401,8 @@ Cases:
   recurse into the approval's signatures with the child Safe transaction digest. Use that
   transaction digest as the input to Q6.2 for any empty nested signature in the approval.
 - **Q6.4** Reject `v = 1` in every signature entry used for authorization, including entries
-  in cached approvals. Validate this during source evidence collection, before registering
-  a root or paying the provider. The receiver also rejects these entries, since the original
+  in cached approvals. Validate this during source evidence collection, including for the
+  signed registration supplied to `relayLeaf`, before paying the provider. The receiver also rejects these entries, since the original
   caller and source Safe's approved-hash state cannot be verified from the signed bundle.
 - **Q6.5** The receiver rebuilds the child transaction hash with `operation = DELEGATECALL` and
   the child domain, verifies its signatures under the current child node, checks the
@@ -409,8 +415,8 @@ Cases:
   verification paths reach the same child Safe and message hash, reuse that record.
   Different message hashes for the same child Safe require separate records.
 - **Q6.8** Reapproval replaces the guard's record for the same child Safe and message hash
-  for future lookups. A provider bundle already sent and a root registration already cached
-  retain the evidence they captured. A direct submitter can attach replacement evidence to
+  for future lookups. A provider bundle already sent retains the evidence it captured. A
+  registered root holds no evidence; each relay collects it. A direct submitter can attach replacement evidence to
   the original signed dispatch if it matches the same child Safe and digest and meets the
   receiver's stored quorum.
 - **Q6.9** Direct submission can use a fully signed child approval before that transaction
@@ -459,15 +465,15 @@ Cases:
   protocol's encoding and hashing rules. D4 applies to the on-chain payload.
 - **Q8.2** Before source execution, signatures exist only with signers or in the Safe
   Transaction Service. A partial set is useless until it meets the receiver's thresholds.
-- **Q8.3** The transmitter caches the original Safe transaction, signatures and nested
-  evidence by root. `relayLeaf` reads the cached authorization. The cache itself does not
-  contain the tree's leaf data.
+- **Q8.3** The transmitter stores only which roots are registered. `relayLeaf` takes the
+  signed registration from its caller, who reads it from the source `execTransaction`
+  calldata, and collects nested evidence from the child guards. Neither holds leaf data.
 - **Q8.4** Publish the complete ordered, encoded leaves in calldata to a guard entry
   point in a prior source transaction. The guard computes and records the Merkle root
   and emits one event per leaf with its indexed leaf hash. An indexer can use the
   events to find the publication transaction and recover the leaves and build proofs.
-  The Safe then signs and executes `registerRoot(bytes32)`. Its guard validates that
-  the root was published before staging the authorization. Relay uses the registered
+  The Safe then signs and executes `registerRoot(bytes32)`. Its guard reverts unless the
+  root was published, and stages nothing. Relay uses the registered
   root, one leaf and its proof. The full tree stays in the publication transaction.
   Anyone can publish. Records are keyed by root on the guard and shared by Safes
   using that guard. Each Safe authorizes registration separately. Guard work is tracked
@@ -528,7 +534,7 @@ Cases:
 
 ## Receiver check order
 
-The proposed sequence for standalone and Merkle delivery. "Retryable" means the same bytes can succeed
+The sequence `SignedReceiver` follows for standalone and Merkle delivery. "Retryable" means the same bytes can succeed
 later; "permanent" means a replacement leaf or new signatures are needed.
 
 | # | Check | On failure |
@@ -555,33 +561,88 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | # | Check |
 | --- | --- |
 | T1 | Only the owner Safe may call `sendMessage` or `registerRoot`. Anyone may call `relayLeaf` |
-| T2 | For either Safe call, consume the staged guard record and restore `safeTx.data` from `msg.data` |
+| T2 | For `sendMessage` and `bootstrap`, consume the staged guard record and restore `safeTx.data` from `msg.data` |
 | T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
-| T4 | For `registerRoot`, reject an existing root with `RootAlreadyRegistered(root)`; otherwise cache the signed authorization and evidence |
-| T5 | For `relayLeaf`, require a cached registration, verify the proof, require an unused leaf hash, and validate the destination route |
-| T6 | Validate the signature and evidence format before paying for provider relay |
-| T7 | Build the Merkle wire message from the cache, root, leaf and proof |
+| T4 | For `registerRoot`, require the root published on the current guard, reject an existing root with `RootAlreadyRegistered(root)`, and record it |
+| T5 | For `relayLeaf`, require the supplied registration to be `registerRoot(root)` to this transmitter for a registered root, verify the proof, require an unused leaf hash, and validate the destination route |
+| T6 | Reject `v = 1` and collect nested evidence before paying; for `relayLeaf`, also run Safe's `checkSignatures` against the live authority |
+| T7 | Build the Merkle wire message from the supplied registration, leaf and proof |
 | T8 | Quote using the final wire message, destination and verified leaf attributes. Use those same inputs for send and require the quoted fee from this call's `msg.value` |
 | T9 | Mark the leaf hash used, send, refund excess to the relayer, and assert the transmitter's final native balance equals its pre-call balance |
 
+## Implementation
+
+Where the design lives in code, and what #108's implementation leaves out.
+
+| Part | Where |
+| --- | --- |
+| Shared types, wire format tags, `ISignedTransmitter`, `ISignedReceiver`, init interfaces | [`signed/ISignedDispatch.sol`](../contracts/evm/src/messaging/signed/ISignedDispatch.sol) |
+| Import-free `bootstrap` and `registerRoot` the guard reads selectors from | [`signed/ISignedOwnerCalls.sol`](../contracts/evm/src/messaging/signed/ISignedOwnerCalls.sol) |
+| Leaf hash, execution ID, proof check (Q2) | [`signed/DispatchLeaves.sol`](../contracts/evm/src/messaging/signed/DispatchLeaves.sol) |
+| Graph derivation from live Safes, canonical check, hash (Q3) | [`signed/AuthorityGraph.sol`](../contracts/evm/src/messaging/signed/AuthorityGraph.sol) |
+| Stored authority and recursive verification (Q5, Q6) | [`signed/SafeAuthority.sol`](../contracts/evm/src/messaging/signed/SafeAuthority.sol), [`SafeSignatures.sol`](../contracts/evm/src/messaging/signed/SafeSignatures.sol), [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManager.sol) |
+| Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/SafeEvidence.sol`](../contracts/evm/src/messaging/signed/SafeEvidence.sol) |
+| Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedCalls.sol`](../contracts/evm/src/messaging/signed/SignedCalls.sol) |
+| Mode at creation (D20) | [`signed/SignedMode.sol`](../contracts/evm/src/messaging/signed/SignedMode.sol), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter` |
+| Signed bootstrap send and arrival (Q4) | `TransceiverBase.bootstrapSigned` and `_signedBootstrapInbound` |
+| Transmitter (T1 to T9) | [`signed/SignedTransmitter.sol`](../contracts/evm/src/messaging/signed/SignedTransmitter.sol), with its builders in [`SignedTransmitterLogic.sol`](../contracts/evm/src/messaging/signed/SignedTransmitterLogic.sol) |
+| Receiver (R1 to R16) | [`signed/SignedReceiver.sol`](../contracts/evm/src/messaging/signed/SignedReceiver.sol) |
+| Atomic source batch | [`SafeBatchExecutor.sol`](../contracts/safe-guard/src/SafeBatchExecutor.sol) |
+
+How the pieces fit:
+
+- **One implementation per provider.** Every binding's transmitter extends `SignedTransmitter`
+  and its receiver `SignedReceiver`, except LayerZero OFT's. A conduit is plain until
+  the transceiver calls `initializeSigned`, right after arming it with the plain initializer
+  and no calls, in the same transaction. Provider setup has one path for both modes. LayerZero
+  OFT conduits are created by `LzOftConduitFactory`, which never selects signed mode.
+- **Conduit salt.** `TransceiverCore._conduitSalt` appends the graph hash for a signed conduit
+  (Q4.7). Every chain-specific address formula now overrides `_conduitAt(bytes32)`, so the
+  signed salt reuses it. `SignedConduitCreated(conduit, graph)` follows `ConduitCreated`.
+- **Wire formats.** A signed provider message leads with one word: `WIRE_STANDALONE` before
+  `SignedDelivery`, or `WIRE_MERKLE` before `(SignedDelivery, ExecutionLeaf, bytes32[])` (D4).
+  Each decoder then requires its signed selector.
+- **Quotes.** In signed mode `quoteMessage` and `quoteBootstrap` revert, since the fee depends
+  on signatures. `quoteSignedMessage`, `quoteSignedBootstrap` and `quoteRelay` share each
+  send's builder, so quote and send price the same bytes (Q6.10).
+- **Size.** `SafeAuthority`'s public functions and `SignedTransmitterLogic` are linked
+  libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
+  receivers under EIP-170.
+- **Settlement.** Provider refunds land on the transmitter, which forwards them with the
+  excess to the relayer before checking its balance (Q1.8). No binding passes the relayer as
+  the provider's refund address.
+
+Not in #108's implementation:
+
+- **Authority counters** are always zero: the bootstrap payload carries one and the receiver
+  requires zero. Counters, rotations and the retry checks that depend on them are #109.
+- **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
+  Tron): the receiver report carries no graph, so the home could not find the transmitter.
+  The source refuses a signed bootstrap to a destination that reports its receiver. Non-EVM
+  destinations are [#128](https://github.com/crossecute/protocol/issues/128).
+- **Measurements and the end-to-end test** with real Safe 1.5.0 are
+  [#134](https://github.com/crossecute/protocol/issues/134).
+
 ## Tests
 
-#108's acceptance criteria list the required tests. These cases follow from the items above
-and are not in them yet:
+#108's acceptance criteria list the required tests; the suites are in
+[`contracts/evm/test/signed/`](../contracts/evm/test/signed/) and
+[`contracts/safe-guard/test/SafeBatchExecutor.t.sol`](../contracts/safe-guard/test/SafeBatchExecutor.t.sol).
+These cases follow from the items above and are not in the acceptance criteria:
 
 - the transceiver selects signed mode for a compatible installed guard and plain mode
   for an absent or incompatible guard. Both modes use the same implementation.
   Installing or removing the guard later does not flip mode or allow a signed
   transmitter to send without fresh staged authorization;
 - standalone signed sends use the plain recipient and application payload, execute once
-  across both delivery routes, and never read the root cache;
+  across both delivery routes, and never read the registered roots;
 - after a source owner change, a live-quorum standalone send or root registration succeeds
   on the source. A delivery that fails the stored receiver quorum leaves its execution
   record and nonce unchanged. Applying the update and retrying belong to #109;
 - only the owner can register a root. Anyone can relay two leaves from the same root in two
-  calls using the cached authorization;
+  calls by supplying its signed registration;
 - a second registration at a new Safe nonce reverts with `RootAlreadyRegistered(root)`
-  and preserves the approval and used marks. Cover a registered zero root as well;
+  and preserves the registration and used marks. Cover a registered zero root as well;
 - source relay and destination execution each reject altered calls or a proof from another
   root. A standalone authorization cannot serve as root approval or vice versa;
 - altering only the attributes invalidates the proof. Quote and send use the exact verified
