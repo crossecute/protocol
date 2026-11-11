@@ -21,7 +21,7 @@ import {Proxy} from "src/conduit/Proxy.sol";
 ///      `ripemd160`, and zksolc rejects a compilation unit that contains it at all.
 ///
 /// @dev Not a `TransceiverBase`: a mixin that did inherit it would meet every transceiver base's
-///      own overrides in a diamond. Each transceiver overrides `_predictConduit`, in both
+///      own overrides in a diamond. Each transceiver overrides `_conduitAt`, in both
 ///      its `TransceiverBase` and its extension, and `_deployConduit` with a one-line call into the
 ///      helpers below.
 abstract contract DivergentConduits is Initializable {

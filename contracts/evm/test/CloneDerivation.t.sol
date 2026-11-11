@@ -138,16 +138,11 @@ contract DivergingFormulaTransceiver is AnyGatewayTransceiver {
         return _predictConduit(owner, salt, homeChainKey);
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        override
-        returns (address)
-    {
-        if (!overridePrediction) return super._predictConduit(owner, salt, homeChainKey);
+    function _conduitAt(bytes32 conduitSalt) internal view override returns (address) {
+        if (!overridePrediction) return super._conduitAt(conduitSalt);
         // A different formula, standing in for zkSync's `zksyncCreate2` hash chain or
         // Tron's prefix. `_deployConduit` is deliberately not overridden to match.
-        return address(uint160(uint256(keccak256(abi.encode("other", owner, salt)))));
+        return address(uint160(uint256(keccak256(abi.encode("other", conduitSalt)))));
     }
 
     function create(address owner, bytes32 salt) external returns (address) {

@@ -36,13 +36,13 @@ contract ZkSym is ZkSyncTransceiver, SymHarness {
         return _proxyInitCode;
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _conduitAt(bytes32 conduitSalt)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictConduit(owner, salt, homeChainKey);
+        return super._conduitAt(conduitSalt);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
@@ -67,13 +67,13 @@ contract TronSym is TronTransceiver, SymHarness {
         return _proxyInitCode;
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _conduitAt(bytes32 conduitSalt)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictConduit(owner, salt, homeChainKey);
+        return super._conduitAt(conduitSalt);
     }
 }
 
