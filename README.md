@@ -391,19 +391,20 @@ What an operator or integrator has to know:
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA. Automatic delivery needs
   a relay provider's signed quote, fetched off-chain and passed with each send, which
   expires an hour after it is issued. A sender that cannot land its transaction within that
-  hour, such as a multisig collecting signatures, sends publish-only instead: it pays
+  hour, such as a multisig collecting signatures, sends publish-only instead: its provider payment goes to
   Core alone, and whoever submits the signed VAA to `executeVAAv1` delivers it, paying the
   destination gas. A send with neither reverts (#53).
-- **`op-stack-l1-l2` sends carry no value and cost only gas.** The quote is zero, so a send spends
-  nothing from the conduit, and the binding refuses a nonzero `value` because the messenger
+- **`op-stack-l1-l2` sends carry no value.** The provider quote is zero; a routine send pays
+  a fixed 0.0001 ETH Crossecute fee. The binding refuses a nonzero provider `value` because the messenger
   would bridge it rather than spend it. `op-stack-l1-l2`'s transceiver holds, per chain,
   the messenger that reaches it, write-once: on Ethereum one `L1CrossDomainMessenger` per OP
   Stack chain, on each OP Stack chain the `L2CrossDomainMessenger` predeploy, which reaches
   only Ethereum. A delivery's origin is the chain of the messenger that called.
 - **OP Stack interop carries no value and no options, and needs a relayer.**
-  `op-stack-l2-l2`'s messenger takes no value and no gas limit, so the quote is zero and any
+  `op-stack-l2-l2`'s messenger takes no value and no gas limit, so its provider quote is zero and any
   attribute is refused; the relay is a separate transaction whose sender picks the gas. A send
-  reaches only a routed chain, which should be one in the sender's dependency set.
+  reaches only a routed chain, which should be one in the sender's dependency set. A routine
+  send pays the same fixed 0.0001 ETH Crossecute fee.
 - **A `layerzero-oft` conduit trusts its OFT, not this protocol's operators.** No governor,
   transceiver or crossecute DVN setting is in its path. What it trusts, on every chain it
   reaches, is the OFT's owner, whose re-peering cuts a destination off and whose pausing or
@@ -465,10 +466,18 @@ script's pinned commit changes, re-check the matching section there.
   `paris` (`Roles.sol`), and v6's `ReentrancyGuardTransient` needs Cancun. ERC-7786's two
   interfaces are vendored at `src/messaging/IErc7786.sol` instead of imported, because they
   are a `draft-` upstream and this protocol's ABI here.
-- A transmitter holds only pre-funded bridging fees. Every send and bootstrap is paid from
+- A transmitter holds pre-funded provider and Crossecute fees. Every send and bootstrap is paid from
   that balance at a quote nothing caps, so value kept there for any other purpose is exposed
   to the bootstrap fee, which the transceiver's owner or its operator sets, and to a provider's
   price. A fee lands in the chain's treasury, so an operator can overcharge but not take it.
+- Fee-aware transmitters charge 10% of the provider's native quote, rounded down, per
+  `sendMessage`. Both OP Stack bindings instead charge 0.0001 ETH. `quoteMessage` includes
+  both amounts; `quoteMessageBreakdown` returns them separately. The provider receives only
+  its quote, and the Crossecute fee accumulates in `Treasury` for its owner's withdrawal,
+  outside the receiver-report float. A provider revert rolls both payments back. Refunds
+  return to the transmitter without reducing the Crossecute fee. Bootstrap, destination
+  execution, local finalization and delivery retries add no Crossecute fee. Already-armed
+  transmitters remain locked to their existing implementations; migration is separate work.
 - A transceiver's owner can limit which conduits bootstrap through it by naming an
   `IBootstrapAllowlist` (`setBootstrapAllowlist`), and lift it by setting zero. It gates
   bootstraps and their quotes only: a conduit's messages to receivers it already has go

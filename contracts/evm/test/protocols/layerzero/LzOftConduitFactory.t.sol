@@ -52,7 +52,7 @@ abstract contract LzOftConduitFactoryBase is Test {
         vm.chainId(chainId);
         LzOftTransmitter t = new LzOftTransmitter{salt: bytes32(0)}();
         LzOftReceiver r = new LzOftReceiver{salt: bytes32(0)}();
-        factory = new LzOftConduitFactory{salt: bytes32(0)}(address(t), address(r));
+        factory = new LzOftConduitFactory{salt: bytes32(0)}(address(t), address(r), address(0x7EA5));
         endpoint = new MockLzEndpoint{salt: bytes32(chainId)}();
         endpoint.setEid(localEid);
         oft = new MockOft{salt: bytes32(chainId)}(address(endpoint));
@@ -122,6 +122,13 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     function test_noDestinationsIsRefused() public {
         vm.expectRevert(LzOftConduitFactory.NoDestinations.selector);
         _create(new LzOftConduitFactory.Leaf[](0));
+    }
+
+    function test_aZeroTreasuryIsRefused() public {
+        address transmitterImpl = factory.transmitterImplementation();
+        address receiverImpl = factory.receiverImplementation();
+        vm.expectRevert(LzOftConduitFactory.NoTreasury.selector);
+        new LzOftConduitFactory(transmitterImpl, receiverImpl, address(0));
     }
 
     /// @dev Strictly ascending, which also refuses a chain listed twice.

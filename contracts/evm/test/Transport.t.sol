@@ -285,7 +285,8 @@ contract TransportTest is Test {
         vm.prank(owner);
         transmitter.sendMessage(_recip(DEST), payload, NONE);
 
-        assertEq(transmitter.sentValue(), quote, "the binding is handed the quote");
+        (uint256 providerFee,) = transmitter.quoteMessageBreakdown(_recip(DEST), payload, NONE);
+        assertEq(transmitter.sentValue(), providerFee, "the binding is handed only the provider quote");
         assertEq(before - address(transmitter).balance, quote, "and nothing else left the conduit");
     }
 
@@ -300,7 +301,8 @@ contract TransportTest is Test {
         vm.prank(owner);
         transmitter.sendMessage{value: 0.3 ether}(_recip(DEST), payload, NONE);
 
-        assertEq(transmitter.sentValue(), quote);
+        (uint256 providerFee,) = transmitter.quoteMessageBreakdown(_recip(DEST), payload, NONE);
+        assertEq(transmitter.sentValue(), providerFee);
         assertEq(address(transmitter).balance, 0.3 ether - quote);
     }
 
@@ -317,7 +319,7 @@ contract TransportTest is Test {
 
     /// @dev ERC-7786 requires `MessageSent`, and it superseded our own event. `Dispatched`
     ///      carried two hashes; this carries the recipient, the payload, the value, and the
-    ///      attributes, so there is nothing left for a second event to add.
+    ///      attributes. `CrossecuteFeePaid` records the treasury's share separately.
     function test_theSendEmitsTheStandardEvent() public {
         Call[] memory calls = _calls();
 
@@ -335,7 +337,7 @@ contract TransportTest is Test {
             assertEq(sender, Erc7930.encodeEvm(block.chainid, address(transmitter)));
             assertEq(recipient, _recip(DEST));
             assertEq(payload, Payload.encodeCalls(calls));
-            assertEq(value, transmitter.sentValue(), "the fee paid, not msg.value");
+            assertEq(value, transmitter.quoteMessage(recipient, payload, NONE), "the total fee paid, not msg.value");
         }
         assertTrue(found, "MessageSent is mandatory for a gateway source");
     }
@@ -838,7 +840,8 @@ contract TransportTest is Test {
         vm.prank(owner);
         _sendCalls(DEST, calls);
 
-        assertEq(quoted, transmitter.sentPayload().length * transmitter.WEI_PER_BYTE(), "priced the bytes that left");
+        uint256 providerFee = transmitter.sentPayload().length * transmitter.WEI_PER_BYTE();
+        assertEq(quoted, providerFee + providerFee / 10, "priced the bytes that left plus the Crossecute fee");
     }
 
     /// @dev A longer payload costs more, which is the property a caller is relying on. A

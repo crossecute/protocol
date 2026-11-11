@@ -38,7 +38,8 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         endpoint.setEid(DEST_EID);
         oft = new MockOft(address(endpoint));
         oft.setPeer(HOME_EID, HOME_OFT);
-        factory = new LzOftConduitFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()));
+        factory =
+            new LzOftConduitFactory(address(new LzOftTransmitter()), address(new LzOftReceiver()), address(0x7EA5));
     }
 
     /// @dev This chain's leaf first, then `n - 1` others, so the proof has `ceil(log2 n)` words.

@@ -21,6 +21,8 @@ interface IHomeOft {
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
 contract MockOftConduitFactory is ILzOftConduitFactory {
+    address public immutable treasury = address(0x7EA5);
+
     struct Route {
         uint32 eid;
         address dstOft;
@@ -202,13 +204,19 @@ contract LzOftTransmitterTest is Test {
         bytes memory recipient = conduit.recipientOn(DEST);
         bytes memory payload = Payload.encodeCalls(_calls());
 
-        uint256 quote = conduit.quoteMessage(recipient, payload, new bytes[](0));
+        (uint256 providerFee, uint256 fee) = conduit.quoteMessageBreakdown(recipient, payload, new bytes[](0));
+        uint256 beforeTreasury = factory.treasury().balance;
+        uint256 beforeConduit = address(conduit).balance;
+        assertEq(fee, providerFee / 10);
+        assertEq(conduit.quoteMessage(recipient, payload, new bytes[](0)), providerFee + fee);
         vm.prank(owner);
         conduit.sendMessage(recipient, payload, new bytes[](0));
 
         MockOft.Sent memory s = oft.sent(1);
         assertEq(s.from, address(conduit));
-        assertEq(s.value, quote);
+        assertEq(s.value, providerFee);
+        assertEq(factory.treasury().balance - beforeTreasury, fee);
+        assertEq(beforeConduit - address(conduit).balance, providerFee + fee);
         assertEq(s.param.dstEid, DEST_EID);
         assertEq(s.param.to, bytes32(uint256(uint160(address(conduit)))), "the receiver, at this address on parity");
         assertEq(s.param.composeMsg, payload);
