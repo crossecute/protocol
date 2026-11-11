@@ -6,7 +6,7 @@ import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {IBootstrap, IRootRegistration} from "../src/CrossecuteGuard.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
 /// @dev Stands in for an external effect. Records whether the caller's staged record was already
@@ -111,7 +111,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
 
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
+        SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
         lastSendMessage = abi.encode(signedSafeTx);
         signedSafeTx.safeTx.data = msg.data;
         lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
@@ -140,7 +140,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
         ++registrations;
     }
 
-    function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
+    function _safeTxHash(SafeTx memory t) private view returns (bytes32) {
         return ISafe(payable(OWNER))
             .getTransactionHash(
                 t.to,

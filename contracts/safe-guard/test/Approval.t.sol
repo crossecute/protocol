@@ -7,7 +7,7 @@ import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {TestTransmitter} from "./TestTransmitter.sol";
 
@@ -77,7 +77,7 @@ contract ApprovalTest is GuardTestBase {
 
         bytes32 messageHash = _childMessageHash(child, parentTxHash);
         assertEq(child.signedMessages(messageHash), 1);
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
         assertEq(signedSafeTx.safeTx.operation, uint8(Operation.DELEGATECALL));
         assertEq(signedSafeTx.safeTx.value, 0);
@@ -110,7 +110,7 @@ contract ApprovalTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall, payment);
 
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
+        SignedSafeTx memory signedSafeTx =
             guard.getApproval(address(child), _childMessageHash(child, bytes32(uint256(7))));
         assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
         assertEq(signedSafeTx.safeTx.operation, uint8(Enum.Operation.DelegateCall));
@@ -239,7 +239,7 @@ contract ApprovalTest is GuardTestBase {
 
     function test_approval_persistsAcrossLaterTransactions() public {
         bytes32 messageHash = _approve(child, _signers(), bytes32(uint256(7)));
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         _exec(child, _signers(), address(0xBEEF), 0, "", Enum.Operation.Call);
         vm.roll(block.number + 100);
         vm.warp(block.timestamp + 30 days);
@@ -259,7 +259,7 @@ contract ApprovalTest is GuardTestBase {
         bytes memory sigs = _signFor(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
         _execWith(child, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, sigs);
 
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         assertEq(signedSafeTx.safeTx.nonce, nonce);
         assertEq(signedSafeTx.signatures, sigs);
     }

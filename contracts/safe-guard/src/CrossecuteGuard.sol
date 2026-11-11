@@ -10,7 +10,7 @@ import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGu
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
-import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "./ICrossecuteGuard.sol";
 import {SafeHashes} from "./SafeHashes.sol";
 
 /// @dev The #108 transmitter's owner-facing bootstrap (#120), which has no interface in

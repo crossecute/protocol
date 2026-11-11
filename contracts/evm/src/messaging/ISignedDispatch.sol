@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ICrossecuteGuard} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
+import {SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 
 /// @notice Proposed leaf for an ordered batch on one receiver.
@@ -18,12 +18,12 @@ struct ExecutionLeaf {
 struct NestedApproval {
     address childSafe;
     bytes32 messageHash;
-    ICrossecuteGuard.SignedSafeTx approval;
+    SignedSafeTx approval;
 }
 
 /// @notice Safe authorization shared by provider and direct delivery.
 struct SignedDelivery {
-    ICrossecuteGuard.SafeTx safeTx;
+    SafeTx safeTx;
     bytes signatures;
     NestedApproval[] nestedApprovals;
 }

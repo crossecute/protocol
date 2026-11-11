@@ -13,7 +13,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {IBootstrap} from "../src/CrossecuteGuard.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
 import {Batch} from "./Batch.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
@@ -54,9 +54,8 @@ contract SendMessageTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(safe, _signers(), address(transmitter), 2, data, Enum.Operation.Call, payment);
 
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
-            abi.decode(transmitter.lastSendMessage(), (ICrossecuteGuard.SignedSafeTx));
-        ICrossecuteGuard.SafeTx memory safeTx = signedSafeTx.safeTx;
+        SignedSafeTx memory signedSafeTx = abi.decode(transmitter.lastSendMessage(), (SignedSafeTx));
+        SafeTx memory safeTx = signedSafeTx.safeTx;
         assertEq(safeTx.to, address(transmitter));
         assertEq(safeTx.value, 2);
         assertEq(safeTx.data.length, 0);
@@ -612,7 +611,7 @@ contract HookCaller {
     }
 
     function stageAndClear(address to, bytes calldata data) external {
-        ICrossecuteGuard.SafeTx memory safeTx;
+        SafeTx memory safeTx;
         (safeTx.to, safeTx.data) = (to, data);
         bytes32 txHash = SafeHashes.transactionHash(safeTx, address(this), block.chainid);
         _stage(to, data);
