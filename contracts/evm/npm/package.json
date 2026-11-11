@@ -1,6 +1,6 @@
 {
   "name": "@crossecute/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Crossecute protocol interfaces, libraries and ABIs for integrators",
   "license": "MIT",
   "repository": {
