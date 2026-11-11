@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
-import {ISignedOwnerCalls} from "crossecute/messaging/signed/ISignedOwnerCalls.sol";
+import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {IERC165} from "policy-engine/interfaces/IERC165.sol";
 import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
@@ -76,7 +76,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     {
         signedSafeTx = $approvals[childSafe][messageHash];
         // A Safe threshold is at least one, so stored evidence always carries a signature.
-        require(signedSafeTx.signatures.length != 0, ApprovalNotFound(childSafe, messageHash));
+        require(signedSafeTx.signatures.length != 0, NestedSafeApprovalNotFound(childSafe, messageHash));
     }
 
     /// @inheritdoc ICrossecuteGuard
@@ -131,7 +131,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
 
         bytes4 selector = _decodeSelector(data);
-        if (selector == ISignedOwnerCalls.registerRoot.selector) {
+        if (selector == ISignedTransmitter.registerRoot.selector) {
             // Nothing is staged: a relayer supplies the registration's signatures. The root is
             // decoded as the transmitter's ABI decoder reads it, ignoring trailing bytes.
             bytes32 root = abi.decode(data[4:], (bytes32));
@@ -195,7 +195,7 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         stored.nonce = safeTx.nonce;
         signedSafeTx.signatures = _approvalSignatures(signatures);
         // forge-lint: disable-next-line(reentrancy-events) the earlier calls are staticcalls to the caller
-        emit ApprovalCached(msg.sender, messageHash);
+        emit NestedSafeApprovalCached(msg.sender, messageHash);
     }
 
     /// @dev Safe verified the original blob. Stripping may not remove any threshold entry or
@@ -232,14 +232,14 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
         bytes4 selector = _decodeSelector(data);
         require(!_isStaged(selector), ModuleStagedCallDenied());
-        require(selector != ISignedOwnerCalls.registerRoot.selector, ModuleRegisterRootDenied());
+        require(selector != ISignedTransmitter.registerRoot.selector, ModuleRegisterRootDenied());
     }
 
     /// @dev The selectors whose owner transactions are staged and whose module transactions are
     ///      rejected. Each is matched by selector alone, whatever the target.
     function _isStaged(bytes4 selector) private pure returns (bool) {
         return
-            selector == IERC7786GatewaySource.sendMessage.selector || selector == ISignedOwnerCalls.bootstrap.selector;
+            selector == IERC7786GatewaySource.sendMessage.selector || selector == ISignedTransmitter.bootstrap.selector;
     }
 
     function _tloadSignedSafeTx(bytes32 safeId) private view returns (SignedSafeTx memory signedSafeTx) {

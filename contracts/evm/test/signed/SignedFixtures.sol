@@ -4,7 +4,8 @@ pragma solidity ^0.8.28;
 import {Vm} from "forge-std/Vm.sol";
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
-import {SafeRecord, OwnerEntry, NestedApproval, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/ISignedDispatch.sol";
+import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @notice An independent Merkle builder for the dispatch tree: sorted pairs, the unpaired last
 ///         hash of a level carried up, a single leaf as its own root.
@@ -125,54 +126,58 @@ library SafeSigs {
     function approval(address child, bytes32 parentHash, uint256 chainId, Sig[] memory childSigs, address lib)
         internal
         pure
-        returns (NestedApproval memory a)
+        returns (NestedSafeApproval memory nestedApproval)
     {
         SafeTx memory t;
         t.to = lib;
         t.data = abi.encodeWithSelector(bytes4(0x85a5affe), abi.encode(parentHash));
         t.operation = 1;
         t.nonce = 7;
-        a.childSafe = child;
-        a.messageHash = SafeHashes.messageHash(abi.encode(parentHash), child, chainId);
-        a.approval.safeTx = t;
-        a.approval.signatures = blob(childSigs, SafeHashes.transactionHash(t, child, chainId));
+        nestedApproval.childSafe = child;
+        nestedApproval.messageHash = SafeHashes.messageHash(abi.encode(parentHash), child, chainId);
+        nestedApproval.approval.safeTx = t;
+        nestedApproval.approval.signatures = blob(childSigs, SafeHashes.transactionHash(t, child, chainId));
     }
 }
 
-/// @notice `SafeRecord` builders.
+/// @notice `SafeAuthorityRecord` builders.
 library Records {
-    function eoaOwners(uint256[] memory pks) internal pure returns (OwnerEntry[] memory owners) {
-        owners = new OwnerEntry[](pks.length);
+    function eoaOwners(uint256[] memory pks) internal pure returns (SafeOwner[] memory owners) {
+        owners = new SafeOwner[](pks.length);
         for (uint256 i; i < pks.length; ++i) {
-            owners[i] = OwnerEntry(Vm(address(uint160(uint256(keccak256("hevm cheat code"))))).addr(pks[i]), OWNER_EOA);
+            owners[i] = SafeOwner(Vm(address(uint160(uint256(keccak256("hevm cheat code"))))).addr(pks[i]), OWNER_EOA);
         }
     }
 
-    function record(address safe, uint256 threshold, OwnerEntry[] memory owners)
+    function record(address safe, uint256 threshold, SafeOwner[] memory owners)
         internal
         pure
-        returns (SafeRecord memory)
+        returns (SafeAuthorityRecord memory)
     {
-        return SafeRecord(safe, threshold, owners);
+        return SafeAuthorityRecord(safe, threshold, owners);
     }
 
-    function list(SafeRecord memory a) internal pure returns (SafeRecord[] memory r) {
-        r = new SafeRecord[](1);
-        r[0] = a;
+    function list(SafeAuthorityRecord memory firstRecord) internal pure returns (SafeAuthorityRecord[] memory records) {
+        records = new SafeAuthorityRecord[](1);
+        records[0] = firstRecord;
     }
 
-    function list(SafeRecord memory a, SafeRecord memory b) internal pure returns (SafeRecord[] memory r) {
-        r = new SafeRecord[](2);
-        (r[0], r[1]) = (a, b);
-    }
-
-    function list(SafeRecord memory a, SafeRecord memory b, SafeRecord memory c)
+    function list(SafeAuthorityRecord memory firstRecord, SafeAuthorityRecord memory secondRecord)
         internal
         pure
-        returns (SafeRecord[] memory r)
+        returns (SafeAuthorityRecord[] memory records)
     {
-        r = new SafeRecord[](3);
-        (r[0], r[1], r[2]) = (a, b, c);
+        records = new SafeAuthorityRecord[](2);
+        (records[0], records[1]) = (firstRecord, secondRecord);
+    }
+
+    function list(
+        SafeAuthorityRecord memory firstRecord,
+        SafeAuthorityRecord memory secondRecord,
+        SafeAuthorityRecord memory thirdRecord
+    ) internal pure returns (SafeAuthorityRecord[] memory records) {
+        records = new SafeAuthorityRecord[](3);
+        (records[0], records[1], records[2]) = (firstRecord, secondRecord, thirdRecord);
     }
 
     function pks(uint256 a, uint256 b, uint256 c) internal pure returns (uint256[] memory p) {

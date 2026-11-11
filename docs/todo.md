@@ -89,7 +89,7 @@ the seventh; what they mean for an operator is in the README.
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
   `WormholeMessage` or `LzMessage` linked, their conduits with `SafeAuthority` and
-  `SignedTransmitterLogic` linked, and their `TransceiverExtension` variant are built by
+  `SignedTransmitterLib` linked, and their `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not

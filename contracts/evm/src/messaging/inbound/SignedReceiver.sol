@@ -5,21 +5,20 @@ import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
-import {Authority, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
-import {AuthorityGraph} from "src/messaging/signed/AuthorityGraph.sol";
+import {SafeAuthorityState, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {SignedCalls} from "src/messaging/signed/SignedCalls.sol";
+import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
-    SafeRecord,
     ExecutionLeaf,
     BootstrapLeaf,
-    SignedDelivery,
+    SafeTxEvidence,
     SignedBootstrap,
-    ISignedReceiver,
-    ISignedReceiverInit,
     WIRE_STANDALONE,
     WIRE_MERKLE
-} from "src/messaging/signed/ISignedDispatch.sol";
+} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
 
 /// @title SignedReceiver
 /// @notice A receiver that can be created in signed mode (#108): it stores its source Safe's
@@ -37,11 +36,11 @@ import {
 ///
 /// @dev State is ERC-7201 namespaced so it does not extend the base's sequential layout (R8.2).
 abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiverInit {
-    using SafeAuthority for Authority;
+    using SafeAuthority for SafeAuthorityState;
 
     /// @custom:storage-location erc7201:crossecute.storage.SignedReceiver
     struct SignedReceiverStorage {
-        Authority authority;
+        SafeAuthorityState authority;
         // Nonzero exactly in signed mode.
         bytes32 graph;
         bytes32 bootstrapLeaf;
@@ -61,7 +60,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     error NotSigned();
     error NotParentTransceiver(address caller);
     error AlreadySigned();
-    error GraphMismatch(bytes32 expected, bytes32 carried);
+    error AuthorityGraphMismatch(bytes32 expected, bytes32 carried);
     error RootIsNotOwner(address owner, address root);
     error UnknownWire(uint256 format);
     error ConflictingLeaf(uint256 nonce);
@@ -82,7 +81,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /// @inheritdoc ISignedReceiverInit
     function bootstrapGraph(bytes calldata body) external pure returns (bytes32) {
-        return AuthorityGraph.hash(abi.decode(body, (SignedBootstrap)).records);
+        return SafeAuthorityGraph.hash(abi.decode(body, (SignedBootstrap)).records);
     }
 
     /// @notice Store the creation authority, verify the signed bootstrap against it, and run its
@@ -97,15 +96,15 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
         SignedReceiverStorage storage $ = _signedStorage();
         if ($.graph != bytes32(0)) revert AlreadySigned();
 
-        SignedBootstrap memory b = abi.decode(body, (SignedBootstrap));
-        SafeRecord[] memory records = b.records;
-        bytes32 carried = AuthorityGraph.hash(records);
-        if (carried != graph) revert GraphMismatch(graph, carried);
+        SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
+        SafeAuthorityRecord[] memory records = bootstrap.records;
+        bytes32 carried = SafeAuthorityGraph.hash(records);
+        if (carried != graph) revert AuthorityGraphMismatch(graph, carried);
         $.authority.store(records, sourceChainId);
         if (records[0].safe != owner) revert RootIsNotOwner(owner, records[0].safe);
         $.graph = graph;
 
-        (bytes32 leafHash, BootstrapLeaf memory leaf) = _verifyBootstrap(b.delivery);
+        (bytes32 leafHash, BootstrapLeaf memory leaf) = _verifyBootstrap(bootstrap.evidence);
         $.bootstrapLeaf = leafHash;
         emit SignedReceiverInitialized(owner, graph, leafHash);
 
@@ -115,45 +114,45 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /// @inheritdoc ISignedReceiverInit
     function requireBootstrapRepeat(bytes calldata body) external view {
-        (bytes32 leafHash,) = _verifyBootstrap(abi.decode(body, (SignedBootstrap)).delivery);
+        (bytes32 leafHash,) = _verifyBootstrap(abi.decode(body, (SignedBootstrap)).evidence);
         bytes32 stored = _signedStorage().bootstrapLeaf;
         if (leafHash != stored) revert NotTheBootstrap(leafHash);
     }
 
     /// @dev Target, selector, proof, destination, window and signatures. A repeat is held to the
     ///      same window as the first delivery.
-    function _verifyBootstrap(SignedDelivery memory d)
+    function _verifyBootstrap(SafeTxEvidence memory evidence)
         private
         view
         returns (bytes32 leafHash, BootstrapLeaf memory leaf)
     {
-        SignedCalls.requireSourceCall(d.safeTx, sourceTransmitter);
+        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, sourceTransmitter);
         bytes32 root;
         bytes32[] memory proof;
-        (root, leaf, proof,) = SignedCalls.bootstrapArgs(d.safeTx.data);
-        SignedCalls.requireDestination(leaf.destination, address(this));
+        (root, leaf, proof,) = SignedDispatchCalls.bootstrapArgs(evidence.signedSafeTx.safeTx.data);
+        SignedDispatchCalls.requireDestination(leaf.destination, address(this));
         leafHash = DispatchLeaves.hash(leaf);
         DispatchLeaves.requireProof(proof, root, leafHash);
-        _verify(d);
-        SignedCalls.requireOpen(leaf.validAfter, leaf.deadline);
+        _verify(evidence);
+        SignedDispatchCalls.requireOpen(leaf.validAfter, leaf.deadline);
     }
 
     /* ================================== dispatch ================================ */
 
     /// @inheritdoc ISignedReceiver
-    function submitMessage(SignedDelivery calldata delivery) external payable nonReentrant {
+    function submitMessage(SafeTxEvidence calldata evidence) external payable nonReentrant {
         if (!_isSigned()) revert NotSigned();
-        _runMessage(delivery);
+        _runMessage(evidence);
     }
 
     /// @inheritdoc ISignedReceiver
-    function submitLeaf(SignedDelivery calldata registration, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
-        external
-        payable
-        nonReentrant
-    {
+    function submitLeaf(
+        SafeTxEvidence calldata registrationEvidence,
+        ExecutionLeaf calldata leaf,
+        bytes32[] calldata proof
+    ) external payable nonReentrant {
         if (!_isSigned()) revert NotSigned();
-        _runLeaf(registration, leaf, proof);
+        _runLeaf(registrationEvidence, leaf, proof);
     }
 
     /// @dev Provider delivery, after the base's gateway, origin and sender checks. In signed mode
@@ -166,23 +165,24 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     function _onSignedMessage(bytes calldata payload) private nonReentrant {
         uint256 format = payload.length < 32 ? 0 : abi.decode(payload[:32], (uint256));
         if (format == WIRE_STANDALONE) {
-            (, SignedDelivery memory d) = abi.decode(payload, (uint256, SignedDelivery));
-            _runMessage(d);
+            (, SafeTxEvidence memory evidence) = abi.decode(payload, (uint256, SafeTxEvidence));
+            _runMessage(evidence);
         } else if (format == WIRE_MERKLE) {
-            (, SignedDelivery memory d, ExecutionLeaf memory leaf, bytes32[] memory proof) =
-                abi.decode(payload, (uint256, SignedDelivery, ExecutionLeaf, bytes32[]));
-            _runLeaf(d, leaf, proof);
+            (, SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof) =
+                abi.decode(payload, (uint256, SafeTxEvidence, ExecutionLeaf, bytes32[]));
+            _runLeaf(evidence, leaf, proof);
         } else {
             revert UnknownWire(format);
         }
     }
 
     /// @dev R3 to R16 for a signed `sendMessage`. Replay is keyed by the Safe transaction hash.
-    function _runMessage(SignedDelivery memory d) private {
-        SignedCalls.requireSourceCall(d.safeTx, sourceTransmitter);
-        (bytes memory recipient, bytes memory payload,) = SignedCalls.sendMessageArgs(d.safeTx.data);
-        SignedCalls.requireDestination(recipient, address(this));
-        bytes32 safeTxHash = _verify(d);
+    function _runMessage(SafeTxEvidence memory evidence) private {
+        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, sourceTransmitter);
+        (bytes memory recipient, bytes memory payload,) =
+            SignedDispatchCalls.sendMessageArgs(evidence.signedSafeTx.safeTx.data);
+        SignedDispatchCalls.requireDestination(recipient, address(this));
+        bytes32 safeTxHash = _verify(evidence);
 
         SignedReceiverStorage storage $ = _signedStorage();
         if ($.messages[safeTxHash]) {
@@ -197,12 +197,14 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     }
 
     /// @dev R3 to R16 for a leaf under a signed `registerRoot`.
-    function _runLeaf(SignedDelivery memory registration, ExecutionLeaf memory leaf, bytes32[] memory proof) private {
-        SignedCalls.requireSourceCall(registration.safeTx, sourceTransmitter);
-        bytes32 root = SignedCalls.registeredRoot(registration.safeTx);
-        SignedCalls.requireDestination(leaf.destination, address(this));
+    function _runLeaf(SafeTxEvidence memory registrationEvidence, ExecutionLeaf memory leaf, bytes32[] memory proof)
+        private
+    {
+        SignedDispatchCalls.requireSourceCall(registrationEvidence.signedSafeTx.safeTx, sourceTransmitter);
+        bytes32 root = SignedDispatchCalls.registeredRoot(registrationEvidence.signedSafeTx.safeTx);
+        SignedDispatchCalls.requireDestination(leaf.destination, address(this));
         DispatchLeaves.requireProof(proof, root, DispatchLeaves.hash(leaf));
-        _verify(registration);
+        _verify(registrationEvidence);
 
         SignedReceiverStorage storage $ = _signedStorage();
         bytes32 id = DispatchLeaves.executionId(leaf);
@@ -211,7 +213,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
         if (stored == id) return;
         if (stored != bytes32(0)) revert ConflictingLeaf(leaf.nonce);
         if (leaf.nonce != $.nextNonce) revert NonceNotNext(leaf.nonce, $.nextNonce);
-        SignedCalls.requireOpen(leaf.validAfter, leaf.deadline);
+        SignedDispatchCalls.requireOpen(leaf.validAfter, leaf.deadline);
 
         $.executions[leaf.nonce] = id;
         $.nextNonce = leaf.nonce + 1;
@@ -223,10 +225,10 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /// @dev The source Safe's transaction hash over the exact calldata, with its signatures
     ///      verified against the stored authority.
-    function _verify(SignedDelivery memory d) private view returns (bytes32 safeTxHash) {
-        Authority storage authority = _signedStorage().authority;
-        safeTxHash = SafeHashes.transactionHash(d.safeTx, authority.root, authority.sourceChainId);
-        authority.verify(safeTxHash, d.signatures, d.nestedApprovals);
+    function _verify(SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
+        SafeAuthorityState storage authority = _signedStorage().authority;
+        safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, authority.root, authority.sourceChainId);
+        authority.verify(safeTxHash, evidence.signedSafeTx.signatures, evidence.nestedApprovals);
     }
 
     /* =================================== access ================================= */
@@ -245,7 +247,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     }
 
     /// @notice The stored authority in canonical order, which hashes to `authorityGraph`.
-    function authorityRecords() external view returns (SafeRecord[] memory) {
+    function authorityRecords() external view returns (SafeAuthorityRecord[] memory) {
         return _signedStorage().authority.readRecords();
     }
 

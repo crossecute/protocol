@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {SignedTransmitter} from "src/messaging/signed/SignedTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 

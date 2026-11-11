@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {OwnerEntry, OWNER_SAFE} from "src/messaging/signed/ISignedDispatch.sol";
+import {SafeOwner, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 
 /// @notice An owner's successor in its Safe's list, and whether it is an EOA or a nested Safe.
 struct OwnerLink {
@@ -13,38 +13,38 @@ struct OwnerLink {
 /// @dev `owners` is Safe's own linked list from the sentinel, so reading it back gives
 ///      `getOwners()` order and membership is one read. A nonzero threshold marks the state
 ///      initialized. The three counters share a slot.
-struct SafeState {
+struct SafeOwnerState {
     mapping(address => OwnerLink) owners;
     uint32 ownerCount;
     uint32 threshold;
     uint192 authorityCounter;
 }
 
-/// @notice Owner-list operations on a stored `SafeState`, mirroring Safe 1.5.0's `OwnerManager`
+/// @notice Owner-list operations on a stored `SafeOwnerState`, mirroring Safe 1.5.0's `OwnerManager`
 ///         so the list order stays the source Safe's.
 /// @dev The caller authenticates the creation record or the signed mutation before applying it.
-library NestedOwnerManager {
+library NestedOwnerManagerLib {
     address internal constant SENTINEL = address(1);
 
-    error SafeAlreadyInitialized();
-    error SafeNotInitialized();
+    error SafeOwnerStateAlreadyInitialized();
+    error SafeOwnerStateNotInitialized();
     error InvalidOwner(address owner);
     error InvalidOwnerKind(address owner);
     error InvalidPredecessor(address prevOwner, address owner);
     error InvalidThreshold(uint256 threshold, uint256 ownerCount);
 
-    function setupOwners(SafeState storage self, address sourceSafe, OwnerEntry[] memory owners, uint256 threshold)
+    function setupOwners(SafeOwnerState storage self, address sourceSafe, SafeOwner[] memory owners, uint256 threshold)
         internal
     {
-        if (self.threshold != 0) revert SafeAlreadyInitialized();
+        if (self.threshold != 0) revert SafeOwnerStateAlreadyInitialized();
         _checkThreshold(threshold, owners.length);
 
         address next = SENTINEL;
         for (uint256 i = owners.length; i != 0; --i) {
-            OwnerEntry memory entry = owners[i - 1];
-            _checkNewOwner(self, sourceSafe, entry.owner, entry.kind);
-            self.owners[entry.owner] = OwnerLink(next, entry.kind);
-            next = entry.owner;
+            SafeOwner memory safeOwner = owners[i - 1];
+            _checkNewOwner(self, sourceSafe, safeOwner.owner, safeOwner.kind);
+            self.owners[safeOwner.owner] = OwnerLink(next, safeOwner.kind);
+            next = safeOwner.owner;
         }
         self.owners[SENTINEL].next = next;
         // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds both by uint32
@@ -52,7 +52,7 @@ library NestedOwnerManager {
     }
 
     function addOwnerWithThreshold(
-        SafeState storage self,
+        SafeOwnerState storage self,
         address sourceSafe,
         address owner,
         uint8 kind,
@@ -69,7 +69,7 @@ library NestedOwnerManager {
         (self.ownerCount, self.threshold) = (uint32(count), uint32(threshold));
     }
 
-    function removeOwner(SafeState storage self, address prevOwner, address owner, uint256 threshold) internal {
+    function removeOwner(SafeOwnerState storage self, address prevOwner, address owner, uint256 threshold) internal {
         _requireInitialized(self);
         _checkPredecessor(self, prevOwner, owner);
         uint256 count = uint256(self.ownerCount) - 1;
@@ -82,7 +82,7 @@ library NestedOwnerManager {
     }
 
     function swapOwner(
-        SafeState storage self,
+        SafeOwnerState storage self,
         address sourceSafe,
         address prevOwner,
         address oldOwner,
@@ -98,7 +98,7 @@ library NestedOwnerManager {
         delete self.owners[oldOwner];
     }
 
-    function changeThreshold(SafeState storage self, uint256 threshold) internal {
+    function changeThreshold(SafeOwnerState storage self, uint256 threshold) internal {
         _requireInitialized(self);
         _checkThreshold(threshold, self.ownerCount);
         // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds it by uint32
@@ -106,28 +106,28 @@ library NestedOwnerManager {
     }
 
     /// @notice The owners in list order, which is the source Safe's `getOwners()` order.
-    function getOwners(SafeState storage self) internal view returns (OwnerEntry[] memory owners) {
-        owners = new OwnerEntry[](self.ownerCount);
+    function getOwners(SafeOwnerState storage self) internal view returns (SafeOwner[] memory owners) {
+        owners = new SafeOwner[](self.ownerCount);
         address current = self.owners[SENTINEL].next;
         for (uint256 i; i < owners.length; ++i) {
             OwnerLink storage link = self.owners[current];
-            owners[i] = OwnerEntry(current, link.kind);
+            owners[i] = SafeOwner(current, link.kind);
             current = link.next;
         }
     }
 
-    function _requireInitialized(SafeState storage self) private view {
-        if (self.threshold == 0) revert SafeNotInitialized();
+    function _requireInitialized(SafeOwnerState storage self) private view {
+        if (self.threshold == 0) revert SafeOwnerStateNotInitialized();
     }
 
-    function _checkNewOwner(SafeState storage self, address sourceSafe, address owner, uint8 kind) private view {
+    function _checkNewOwner(SafeOwnerState storage self, address sourceSafe, address owner, uint8 kind) private view {
         if (owner == address(0) || owner == SENTINEL || owner == sourceSafe || self.owners[owner].next != address(0)) {
             revert InvalidOwner(owner);
         }
         if (kind > OWNER_SAFE) revert InvalidOwnerKind(owner);
     }
 
-    function _checkPredecessor(SafeState storage self, address prevOwner, address owner) private view {
+    function _checkPredecessor(SafeOwnerState storage self, address prevOwner, address owner) private view {
         if (owner == address(0) || owner == SENTINEL || self.owners[prevOwner].next != owner) {
             revert InvalidPredecessor(prevOwner, owner);
         }

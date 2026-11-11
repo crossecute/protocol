@@ -91,7 +91,7 @@ contract StubGuard {
     }
 
     function getApproval(address child, bytes32 messageHash) external view returns (SignedSafeTx memory) {
-        if (!hasApproval[child][messageHash]) revert ICrossecuteGuard.ApprovalNotFound(child, messageHash);
+        if (!hasApproval[child][messageHash]) revert ICrossecuteGuard.NestedSafeApprovalNotFound(child, messageHash);
         return _approvals[child][messageHash];
     }
 

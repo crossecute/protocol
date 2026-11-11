@@ -7,17 +7,17 @@ import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {SafeEvidence} from "src/messaging/signed/SafeEvidence.sol";
-import {SignedCalls} from "src/messaging/signed/SignedCalls.sol";
+import {NestedApprovalCollector} from "src/messaging/signed/NestedApprovalCollector.sol";
+import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
-    SafeRecord,
     ExecutionLeaf,
     BootstrapLeaf,
-    SignedDelivery,
+    SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
     WIRE_MERKLE
-} from "src/messaging/signed/ISignedDispatch.sol";
+} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @dev Safe 1.5.0's signature check against its live owners and threshold.
 interface ISafeSignatures {
@@ -26,7 +26,7 @@ interface ISafeSignatures {
 
 /// @dev The transmitter's own getters, read back by self-call so this library does not depend on
 ///      its storage layout.
-interface ISignedSelf {
+interface ISignedTransmitterView {
     function deployer() external view returns (address);
     function transceiver() external view returns (address);
     function conduitSalt() external view returns (bytes32);
@@ -40,24 +40,24 @@ interface ISignedSelf {
 ///         guard's `consume` caller. Takes and returns raw ABI bytes so the transmitter carries
 ///         no encoder for the nested structs.
 /// @dev Each send and its quote share one internal builder, so they price the same bytes.
-library SignedTransmitterLogic {
+library SignedTransmitterLib {
     /// @notice The owner Safe's staged `sendMessage`, as the standalone wire message.
     /// @param callData The transmitter's `msg.data`, which the Safe signed.
     function consumeMessage(bytes calldata callData)
         external
         returns (bytes memory recipient, bytes memory wire, bytes[] memory attributes)
     {
-        address safe = ISignedSelf(address(this)).deployer();
+        address safe = ISignedTransmitterView(address(this)).deployer();
         return _standalone(safe, _consume(safe, callData));
     }
 
-    /// @param args `abi.encode(SignedDelivery)`.
+    /// @param args `abi.encode(SafeTxEvidence)`.
     function quoteMessage(bytes calldata args)
         external
         view
         returns (bytes memory recipient, bytes memory wire, bytes[] memory attributes)
     {
-        return _standalone(ISignedSelf(address(this)).deployer(), abi.decode(args, (SignedDelivery)));
+        return _standalone(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
     }
 
     error AlreadyBootstrapped(bytes32 destinationChainKey);
@@ -71,17 +71,17 @@ library SignedTransmitterLogic {
         external
         returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
     {
-        address safe = ISignedSelf(address(this)).deployer();
+        address safe = ISignedTransmitterView(address(this)).deployer();
         return _bootstrap(safe, _consume(safe, callData));
     }
 
-    /// @param args `abi.encode(SignedDelivery)`.
+    /// @param args `abi.encode(SafeTxEvidence)`.
     function quoteBootstrap(bytes calldata args)
         external
         view
         returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
     {
-        return _bootstrap(ISignedSelf(address(this)).deployer(), abi.decode(args, (SignedDelivery)));
+        return _bootstrap(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
     }
 
     /// @notice Where a retry of a logged bootstrap `body` sends, if it still could initialize.
@@ -90,82 +90,81 @@ library SignedTransmitterLogic {
         view
         returns (bytes32 chainKey, bytes memory route, bytes[] memory attributes)
     {
-        return _target(abi.decode(body, (SignedBootstrap)).delivery);
+        return _target(abi.decode(body, (SignedBootstrap)).evidence);
     }
 
     /// @notice The Merkle wire message for one leaf, after checking the signed registration
     ///         against the owner Safe's live authority and the leaf against its root.
-    /// @param args `abi.encode(SignedDelivery, ExecutionLeaf, bytes32[])`, as `relayLeaf` takes.
+    /// @param args `abi.encode(SafeTxEvidence, ExecutionLeaf, bytes32[])`, as `relayLeaf` takes.
     function relay(bytes calldata args)
         external
         view
         returns (bytes32 root, bytes32 leafHash, bytes memory destination, bytes[] memory attributes, bytes memory wire)
     {
-        (SignedDelivery memory d, ExecutionLeaf memory leaf, bytes32[] memory proof) =
-            abi.decode(args, (SignedDelivery, ExecutionLeaf, bytes32[]));
-        address safe = ISignedSelf(address(this)).deployer();
-        SignedCalls.requireSourceCall(d.safeTx, address(this));
-        root = SignedCalls.registeredRoot(d.safeTx);
+        (SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof) =
+            abi.decode(args, (SafeTxEvidence, ExecutionLeaf, bytes32[]));
+        address safe = ISignedTransmitterView(address(this)).deployer();
+        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, address(this));
+        root = SignedDispatchCalls.registeredRoot(evidence.signedSafeTx.safeTx);
         leafHash = DispatchLeaves.hash(leaf);
         DispatchLeaves.requireProof(proof, root, leafHash);
 
-        bytes32 safeTxHash = _collect(safe, d);
-        ISafeSignatures(safe).checkSignatures(address(0), safeTxHash, d.signatures);
-        wire = abi.encode(WIRE_MERKLE, d, leaf, proof);
+        bytes32 safeTxHash = _collect(safe, evidence);
+        ISafeSignatures(safe).checkSignatures(address(0), safeTxHash, evidence.signedSafeTx.signatures);
+        wire = abi.encode(WIRE_MERKLE, evidence, leaf, proof);
         return (root, leafHash, leaf.destination, leaf.attributes, wire);
     }
 
     /* ================================= internals ================================ */
 
     /// @dev The staged record, with `data` restored from the call the Safe made.
-    function _consume(address safe, bytes calldata callData) private returns (SignedDelivery memory d) {
+    function _consume(address safe, bytes calldata callData) private returns (SafeTxEvidence memory evidence) {
         SignedSafeTx memory staged = ICrossecuteGuard(GuardDiscovery.transactionGuard(safe)).consume(safe);
         staged.safeTx.data = callData;
-        d.safeTx = staged.safeTx;
-        d.signatures = staged.signatures;
+        evidence.signedSafeTx = staged;
     }
 
-    function _standalone(address safe, SignedDelivery memory d)
+    function _standalone(address safe, SafeTxEvidence memory evidence)
         private
         view
         returns (bytes memory recipient, bytes memory wire, bytes[] memory attributes)
     {
-        SignedCalls.requireSourceCall(d.safeTx, address(this));
+        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, address(this));
         bytes memory payload;
-        (recipient, payload, attributes) = SignedCalls.sendMessageArgs(d.safeTx.data);
-        if (payload.length == 0) revert SignedCalls.EmptySignedPayload();
-        _collect(safe, d);
-        wire = abi.encode(WIRE_STANDALONE, d);
+        (recipient, payload, attributes) = SignedDispatchCalls.sendMessageArgs(evidence.signedSafeTx.safeTx.data);
+        if (payload.length == 0) revert SignedDispatchCalls.EmptySignedPayload();
+        _collect(safe, evidence);
+        wire = abi.encode(WIRE_STANDALONE, evidence);
     }
 
-    function _bootstrap(address safe, SignedDelivery memory d)
+    function _bootstrap(address safe, SafeTxEvidence memory evidence)
         private
         view
         returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
     {
-        (chainKey, route, attributes) = _target(d);
-        _collect(safe, d);
-        bytes memory records = ISignedSelf(address(this)).creationRecords();
-        body = abi.encode(SignedBootstrap(d, abi.decode(records, (SafeRecord[]))));
+        (chainKey, route, attributes) = _target(evidence);
+        _collect(safe, evidence);
+        bytes memory records = ISignedTransmitterView(address(this)).creationRecords();
+        body = abi.encode(SignedBootstrap(evidence, abi.decode(records, (SafeAuthorityRecord[]))));
     }
 
     /// @dev A signed bootstrap that could still initialize its receiver: an open or future window,
     ///      a destination with none yet, and the receiver this chain predicts for the conduit. An
     ///      early window is allowed, since delivery may land later.
-    function _target(SignedDelivery memory d)
+    function _target(SafeTxEvidence memory evidence)
         private
         view
         returns (bytes32 chainKey, bytes memory route, bytes[] memory attributes)
     {
-        SignedCalls.requireSourceCall(d.safeTx, address(this));
+        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, address(this));
         bytes32 root;
         BootstrapLeaf memory leaf;
         bytes32[] memory proof;
-        (root, leaf, proof, attributes) = SignedCalls.bootstrapArgs(d.safeTx.data);
+        (root, leaf, proof, attributes) = SignedDispatchCalls.bootstrapArgs(evidence.signedSafeTx.safeTx.data);
         DispatchLeaves.requireProof(proof, root, DispatchLeaves.hash(leaf));
         // forge-lint: disable-next-line(block-timestamp) an expired window cannot initialize anywhere later
         if (leaf.validAfter > leaf.deadline || block.timestamp > leaf.deadline) {
-            revert SignedCalls.WindowClosed(leaf.validAfter, leaf.deadline);
+            revert SignedDispatchCalls.WindowClosed(leaf.validAfter, leaf.deadline);
         }
 
         Erc7930.Interop memory io = Erc7930.parseStrict(leaf.destination);
@@ -173,7 +172,7 @@ library SignedTransmitterLogic {
         route = Erc7930.encodeChainId(io.chainType, io.chainRef);
         chainKey = keccak256(route);
 
-        ISignedSelf self = ISignedSelf(address(this));
+        ISignedTransmitterView self = ISignedTransmitterView(address(this));
         if (self.isBootstrapped(chainKey)) revert AlreadyBootstrapped(chainKey);
         IConduitTransceiver t = IConduitTransceiver(self.transceiver());
         if (t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
@@ -181,10 +180,10 @@ library SignedTransmitterLogic {
         if (keccak256(io.addr) != keccak256(predicted)) revert WrongBootstrapTarget(leaf.destination);
     }
 
-    /// @dev Replaces `d.nestedApprovals` with what the owner Safe's signatures need, read from the
+    /// @dev Replaces `evidence.nestedApprovals` with what the owner Safe's signatures need, read from the
     ///      guards, and returns the Safe transaction hash.
-    function _collect(address safe, SignedDelivery memory d) private view returns (bytes32 safeTxHash) {
-        safeTxHash = SafeHashes.transactionHash(d.safeTx, safe, block.chainid);
-        d.nestedApprovals = SafeEvidence.collect(safe, safeTxHash, d.signatures);
+    function _collect(address safe, SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
+        safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, safe, block.chainid);
+        evidence.nestedApprovals = NestedApprovalCollector.collect(safe, safeTxHash, evidence.signedSafeTx.signatures);
     }
 }

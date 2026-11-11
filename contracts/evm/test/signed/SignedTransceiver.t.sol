@@ -10,12 +10,14 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
-import {SignedTransmitter} from "src/messaging/signed/SignedTransmitter.sol";
-import {AuthorityGraph} from "src/messaging/signed/AuthorityGraph.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {ISignedOwnerCalls} from "src/messaging/signed/ISignedOwnerCalls.sol";
-import {SafeRecord, BootstrapLeaf, SignedDelivery, SignedBootstrap} from "src/messaging/signed/ISignedDispatch.sol";
+import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {BootstrapLeaf, SafeTxEvidence, SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+
 import {unseeded} from "test/RegistrySeed.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
@@ -57,12 +59,12 @@ contract SignedTransceiverTest is HyperlaneFixture {
         guard = new StubGuard();
     }
 
-    function _records() internal view returns (SafeRecord[] memory) {
+    function _records() internal view returns (SafeAuthorityRecord[] memory) {
         return Records.list(Records.record(address(safe), 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
     function _graph() internal view returns (bytes32) {
-        return AuthorityGraph.hash(_records());
+        return SafeAuthorityGraph.hash(_records());
     }
 
     /* ============================ mode at creation ============================= */
@@ -140,7 +142,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
         return ext(address(t)).predictConduit(address(safe), SALT, remote, graph);
     }
 
-    function _body(address receiver, address target, bytes memory setup, SafeRecord[] memory records)
+    function _body(address receiver, address target, bytes memory setup, SafeAuthorityRecord[] memory records)
         internal
         view
         returns (bytes memory)
@@ -149,14 +151,14 @@ contract SignedTransceiverTest is HyperlaneFixture {
             Erc7930.encodeEvm(block.chainid, receiver), block.timestamp, block.timestamp + 1 days, setup
         );
         bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
-        SignedDelivery memory d;
-        d.safeTx.to = target;
-        d.safeTx.data = abi.encodeCall(ISignedOwnerCalls.bootstrap, (payload, new bytes[](0)));
-        d.signatures = SafeSigs.blob(
+        SafeTxEvidence memory evidence;
+        evidence.signedSafeTx.safeTx.to = target;
+        evidence.signedSafeTx.safeTx.data = abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
+        evidence.signedSafeTx.signatures = SafeSigs.blob(
             SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)),
-            SafeHashes.transactionHash(d.safeTx, address(safe), REMOTE_CHAIN_ID)
+            SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(safe), REMOTE_CHAIN_ID)
         );
-        return abi.encode(SignedBootstrap(d, records));
+        return abi.encode(SignedBootstrap(evidence, records));
     }
 
     function _setup(bytes memory tag) internal view returns (bytes memory) {
@@ -195,11 +197,11 @@ contract SignedTransceiverTest is HyperlaneFixture {
 
     function test_substitutedRecordsDeriveAnotherTransmitter() public {
         address r = _receiver(_graph());
-        SafeRecord[] memory other =
+        SafeAuthorityRecord[] memory otherRecords =
             Records.list(Records.record(address(safe), 1, Records.eoaOwners(Records.pks(1, 2, 3))));
-        address otherTransmitter = _receiver(AuthorityGraph.hash(other));
+        address otherTransmitter = _receiver(SafeAuthorityGraph.hash(otherRecords));
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.SourceTransmitterMismatch.selector, otherTransmitter, r));
-        _send(r, _body(r, r, _setup("go"), other));
+        _send(r, _body(r, r, _setup("go"), otherRecords));
     }
 
     function test_aPlainBootstrapNamingTheSignedTransmitterCreatesNothingThere() public {

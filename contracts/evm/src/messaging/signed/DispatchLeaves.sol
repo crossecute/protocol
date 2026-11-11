@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/ISignedDispatch.sol";
+import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @notice Leaf hashes and proof verification for a Safe-signed dispatch tree, matching the
 ///         guard's `publishLeaves`.

@@ -5,24 +5,25 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {IReceiverInit, ReceiverBase, ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
-import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
-import {SignedCalls} from "src/messaging/signed/SignedCalls.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
+import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {AuthorityGraph} from "src/messaging/signed/AuthorityGraph.sol";
-import {ISignedOwnerCalls} from "src/messaging/signed/ISignedOwnerCalls.sol";
-import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
-import {Slices} from "src/messaging/signed/Slices.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
-    SafeRecord,
     ExecutionLeaf,
     BootstrapLeaf,
-    SignedDelivery,
+    SafeTxEvidence,
     SignedBootstrap,
-    ISignedReceiver,
     WIRE_STANDALONE,
     WIRE_MERKLE
-} from "src/messaging/signed/ISignedDispatch.sol";
+} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
+import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
+import {Slices} from "src/messaging/signed/Slices.sol";
+
 import {Call} from "src/messaging/Call.sol";
 import {Commitment} from "src/messaging/Commitment.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
@@ -57,12 +58,12 @@ contract SignedReceiverTest is Test {
     address receiver;
     uint256 nonceSeq;
 
-    function _records() internal pure returns (SafeRecord[] memory) {
+    function _records() internal pure returns (SafeAuthorityRecord[] memory) {
         return Records.list(Records.record(SAFE, 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
     function _graph() internal pure returns (bytes32) {
-        return AuthorityGraph.hash(_records());
+        return SafeAuthorityGraph.hash(_records());
     }
 
     function _plainReceiver() internal returns (address r) {
@@ -82,11 +83,12 @@ contract SignedReceiverTest is Test {
         return abi.encode(c);
     }
 
-    function _signed(bytes memory data, Sig[] memory sigs) internal returns (SignedDelivery memory d) {
-        d.safeTx.to = TRANSMITTER;
-        d.safeTx.data = data;
-        d.safeTx.nonce = ++nonceSeq;
-        d.signatures = SafeSigs.blob(sigs, SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN));
+    function _signed(bytes memory data, Sig[] memory sigs) internal returns (SafeTxEvidence memory evidence) {
+        evidence.signedSafeTx.safeTx.to = TRANSMITTER;
+        evidence.signedSafeTx.safeTx.data = data;
+        evidence.signedSafeTx.safeTx.nonce = ++nonceSeq;
+        evidence.signedSafeTx.signatures =
+            SafeSigs.blob(sigs, SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
     }
 
     function _quorum() internal pure returns (Sig[] memory) {
@@ -100,8 +102,9 @@ contract SignedReceiverTest is Test {
     function _bootstrapBody(BootstrapLeaf memory leaf, Sig[] memory sigs) internal returns (bytes memory) {
         bytes32 leafHash = DispatchLeaves.hash(leaf);
         bytes memory payload = abi.encode(leafHash, uint256(0), leaf, new bytes32[](0));
-        SignedDelivery memory d = _signed(abi.encodeCall(ISignedOwnerCalls.bootstrap, (payload, new bytes[](0))), sigs);
-        return abi.encode(SignedBootstrap(d, _records()));
+        SafeTxEvidence memory evidence =
+            _signed(abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), sigs);
+        return abi.encode(SignedBootstrap(evidence, _records()));
     }
 
     function _initialize(address r, bytes memory body) internal {
@@ -138,7 +141,9 @@ contract SignedReceiverTest is Test {
     function test_substitutedRecordsOrAnotherOwnerRefuse() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.GraphMismatch.selector, keccak256("g"), _graph()));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignedReceiver.AuthorityGraphMismatch.selector, keccak256("g"), _graph())
+        );
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, keccak256("g"), body);
 
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.RootIsNotOwner.selector, address(0x1), SAFE));
@@ -148,7 +153,7 @@ contract SignedReceiverTest is Test {
     function test_aBootstrapForAnotherReceiverRefuses() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(receiver, _calls("x")), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WrongDestination.selector, _here(receiver)));
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WrongDestination.selector, _here(receiver)));
         _initialize(r, body);
     }
 
@@ -163,13 +168,17 @@ contract SignedReceiverTest is Test {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
         leaf.validAfter = block.timestamp + 1;
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline)
+        );
         _initialize(r, _bootstrapBody(leaf, _quorum()));
 
         leaf = _bootstrapLeaf(r, _calls("x"));
         leaf.validAfter = block.timestamp - 10;
         leaf.deadline = block.timestamp - 1;
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline)
+        );
         _initialize(r, _bootstrapBody(leaf, _quorum()));
     }
 
@@ -185,23 +194,24 @@ contract SignedReceiverTest is Test {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
         bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
-        SignedDelivery memory d;
-        d.safeTx.to = TRANSMITTER;
-        d.safeTx.operation = 1;
-        d.safeTx.data = abi.encodeCall(ISignedOwnerCalls.bootstrap, (payload, new bytes[](0)));
-        d.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN));
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NotSourceCall.selector, TRANSMITTER));
-        _initialize(r, abi.encode(SignedBootstrap(d, _records())));
+        SafeTxEvidence memory evidence;
+        evidence.signedSafeTx.safeTx.to = TRANSMITTER;
+        evidence.signedSafeTx.safeTx.operation = 1;
+        evidence.signedSafeTx.safeTx.data = abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
+        evidence.signedSafeTx.signatures =
+            SafeSigs.blob(_quorum(), SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NotSourceCall.selector, TRANSMITTER));
+        _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
     }
 
     function test_aNonzeroAuthorityCounterRefuses() public {
         address r = _plainReceiver();
         BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
         bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(1), leaf, new bytes32[](0));
-        SignedDelivery memory d =
-            _signed(abi.encodeCall(ISignedOwnerCalls.bootstrap, (payload, new bytes[](0))), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.AuthorityCounterMismatch.selector, 1));
-        _initialize(r, abi.encode(SignedBootstrap(d, _records())));
+        SafeTxEvidence memory evidence =
+            _signed(abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), _quorum());
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.AuthorityCounterMismatch.selector, 1));
+        _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
     }
 
     function test_theSameBootstrapRepeatsInItsWindowAndNothingElseDoes() public {
@@ -216,7 +226,7 @@ contract SignedReceiverTest is Test {
         SignedReceiver(payable(r)).requireBootstrapRepeat(other);
 
         vm.warp(leaf.deadline + 1);
-        vm.expectPartialRevert(SignedCalls.WindowClosed.selector);
+        vm.expectPartialRevert(SignedDispatchCalls.WindowClosed.selector);
         SignedReceiver(payable(r)).requireBootstrapRepeat(body);
     }
 
@@ -228,7 +238,7 @@ contract SignedReceiverTest is Test {
 
     /* ================================ standalone ================================ */
 
-    function _message(bytes memory recipient, bytes memory calls) internal returns (SignedDelivery memory) {
+    function _message(bytes memory recipient, bytes memory calls) internal returns (SafeTxEvidence memory) {
         return _signed(abi.encodeCall(IERC7786GatewaySource.sendMessage, (recipient, calls, new bytes[](0))), _quorum());
     }
 
@@ -238,13 +248,13 @@ contract SignedReceiverTest is Test {
     }
 
     function test_aStandaloneMessageRunsOnceAcrossBothRoutes() public {
-        SignedDelivery memory d = _message(_here(receiver), _calls("m"));
-        ISignedReceiver(receiver).submitMessage{value: 1}(d);
+        SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
+        ISignedReceiver(receiver).submitMessage{value: 1}(evidence);
         assertEq(sink.hits(), 2);
         assertEq(receiver.balance, 1);
 
         vm.recordLogs();
-        _deliver(abi.encode(WIRE_STANDALONE, d));
+        _deliver(abi.encode(WIRE_STANDALONE, evidence));
         assertEq(sink.hits(), 2);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(logs.length, 1);
@@ -253,32 +263,32 @@ contract SignedReceiverTest is Test {
 
     function test_aStandaloneMessageForAnotherRecipientRefuses() public {
         bytes memory elsewhere = Erc7930.encodeEvm(block.chainid, address(0xD00D));
-        SignedDelivery memory d = _message(elsewhere, _calls("m"));
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WrongDestination.selector, elsewhere));
-        ISignedReceiver(receiver).submitMessage(d);
+        SafeTxEvidence memory evidence = _message(elsewhere, _calls("m"));
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WrongDestination.selector, elsewhere));
+        ISignedReceiver(receiver).submitMessage(evidence);
     }
 
     function test_alteredCalldataOrAnotherTargetRefuses() public {
-        SignedDelivery memory d = _message(_here(receiver), _calls("m"));
-        d.safeTx.data =
+        SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
+        evidence.signedSafeTx.safeTx.data =
             abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("n"), new bytes[](0)));
         vm.expectPartialRevert(SafeAuthority.NotAnOwner.selector);
-        ISignedReceiver(receiver).submitMessage(d);
+        ISignedReceiver(receiver).submitMessage(evidence);
 
-        d = _message(_here(receiver), _calls("m"));
-        d.safeTx.to = address(0x8888);
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NotSourceCall.selector, TRANSMITTER));
-        ISignedReceiver(receiver).submitMessage(d);
+        evidence = _message(_here(receiver), _calls("m"));
+        evidence.signedSafeTx.safeTx.to = address(0x8888);
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NotSourceCall.selector, TRANSMITTER));
+        ISignedReceiver(receiver).submitMessage(evidence);
     }
 
     function test_aProviderWithTheWrongSenderRefusesAndDirectSubmissionStillWorks() public {
-        SignedDelivery memory d = _message(_here(receiver), _calls("m"));
+        SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         vm.prank(address(mailbox));
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
         HyperlaneReceiver(payable(receiver))
-            .handle(HOME_DOMAIN, bytes32(uint256(0xBAD)), abi.encode(WIRE_STANDALONE, d));
+            .handle(HOME_DOMAIN, bytes32(uint256(0xBAD)), abi.encode(WIRE_STANDALONE, evidence));
         assertEq(sink.hits(), 1);
-        ISignedReceiver(receiver).submitMessage(d);
+        ISignedReceiver(receiver).submitMessage(evidence);
         assertEq(sink.hits(), 2);
     }
 
@@ -300,7 +310,7 @@ contract SignedReceiverTest is Test {
 
     function _register(ExecutionLeaf[] memory leaves)
         internal
-        returns (SignedDelivery memory d, bytes32[][] memory proofs)
+        returns (SafeTxEvidence memory evidence, bytes32[][] memory proofs)
     {
         bytes32[] memory hashes = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
@@ -310,7 +320,7 @@ contract SignedReceiverTest is Test {
         for (uint256 i; i < leaves.length; ++i) {
             proofs[i] = MerkleBuilder.proof(hashes, i);
         }
-        d = _signed(abi.encodeCall(ISignedOwnerCalls.registerRoot, (MerkleBuilder.root(hashes))), _quorum());
+        evidence = _signed(abi.encodeCall(ISignedTransmitter.registerRoot, (MerkleBuilder.root(hashes))), _quorum());
     }
 
     function _one(ExecutionLeaf memory a) internal pure returns (ExecutionLeaf[] memory l) {
@@ -325,14 +335,15 @@ contract SignedReceiverTest is Test {
 
     function test_aValueBearingRegistrationCannotAuthorizeALeaf() public {
         ExecutionLeaf memory leaf = _leaf(0, _calls("nonpayable"));
-        (SignedDelivery memory d, bytes32[][] memory proofs) = _register(_one(leaf));
-        d.safeTx.value = 1;
-        d.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN));
+        (SafeTxEvidence memory evidence, bytes32[][] memory proofs) = _register(_one(leaf));
+        evidence.signedSafeTx.safeTx.value = 1;
+        evidence.signedSafeTx.signatures =
+            SafeSigs.blob(_quorum(), SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
 
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
-        ISignedReceiver(receiver).submitLeaf(d, leaf, proofs[0]);
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
-        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proofs[0]));
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
+        ISignedReceiver(receiver).submitLeaf(evidence, leaf, proofs[0]);
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
+        _deliver(abi.encode(WIRE_MERKLE, evidence, leaf, proofs[0]));
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
         assertEq(sink.hits(), 1);
     }
@@ -340,66 +351,67 @@ contract SignedReceiverTest is Test {
     function test_leavesRunInLocalNonceOrderAcrossRoutes() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         ExecutionLeaf memory l1 = _leaf(1, _calls("1"));
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_two(l0, l1));
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_two(l0, l1));
 
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NonceNotNext.selector, 1, 0));
-        ISignedReceiver(receiver).submitLeaf(d, l1, p[1]);
+        ISignedReceiver(receiver).submitLeaf(evidence, l1, p[1]);
 
-        _deliver(abi.encode(WIRE_MERKLE, d, l0, p[0]));
-        ISignedReceiver(receiver).submitLeaf(d, l1, p[1]);
+        _deliver(abi.encode(WIRE_MERKLE, evidence, l0, p[0]));
+        ISignedReceiver(receiver).submitLeaf(evidence, l1, p[1]);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 2);
         assertEq(sink.hits(), 3);
     }
 
     function test_anExecutedLeafRepeatsSilentlyEvenPastItsDeadlineAndUnderNewAttributes() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_one(l0));
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
 
         ExecutionLeaf memory reattributed = _leaf(0, _calls("0"));
         reattributed.attributes = new bytes[](1);
         reattributed.attributes[0] = hex"01";
-        (SignedDelivery memory d2, bytes32[][] memory p2) = _register(_one(reattributed));
+        (SafeTxEvidence memory replacementEvidence, bytes32[][] memory p2) = _register(_one(reattributed));
 
         vm.warp(l0.deadline + 1);
         vm.recordLogs();
-        ISignedReceiver(receiver).submitLeaf{value: 5}(d2, reattributed, p2[0]);
-        _deliver(abi.encode(WIRE_MERKLE, d, l0, p[0]));
+        ISignedReceiver(receiver).submitLeaf{value: 5}(replacementEvidence, reattributed, p2[0]);
+        _deliver(abi.encode(WIRE_MERKLE, evidence, l0, p[0]));
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(sink.hits(), 2);
         assertEq(receiver.balance, 5);
     }
 
     function test_aConflictingLeafAtAConsumedNonceRefuses() public {
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_two(_leaf(0, _calls("a")), _leaf(0, _calls("b"))));
-        ISignedReceiver(receiver).submitLeaf(d, _leaf(0, _calls("a")), p[0]);
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) =
+            _register(_two(_leaf(0, _calls("a")), _leaf(0, _calls("b"))));
+        ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, _calls("a")), p[0]);
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.ConflictingLeaf.selector, 0));
-        ISignedReceiver(receiver).submitLeaf(d, _leaf(0, _calls("b")), p[1]);
+        ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, _calls("b")), p[1]);
     }
 
     function test_windowEndpointsAreInclusive() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         l0.validAfter = block.timestamp + 10;
         l0.deadline = block.timestamp + 20;
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_one(l0));
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
 
         vm.warp(l0.validAfter - 1);
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WindowClosed.selector, l0.validAfter, l0.deadline));
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, l0.validAfter, l0.deadline));
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
 
         vm.warp(l0.deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(SignedCalls.WindowClosed.selector, l0.validAfter, l0.deadline));
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, l0.validAfter, l0.deadline));
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
 
         vm.warp(l0.deadline);
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 1);
     }
 
     function test_anEmptyReplacementLeafAdvancesTheNonce() public {
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_one(_leaf(0, abi.encode(new Call[](0)))));
-        ISignedReceiver(receiver).submitLeaf(d, _leaf(0, abi.encode(new Call[](0))), p[0]);
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(_leaf(0, abi.encode(new Call[](0)))));
+        ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, abi.encode(new Call[](0))), p[0]);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 1);
         assertEq(sink.hits(), 1);
     }
@@ -408,30 +420,30 @@ contract SignedReceiverTest is Test {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.boom, ()));
         ExecutionLeaf memory l0 = _leaf(0, abi.encode(c));
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_one(l0));
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
         vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
         assertEq(SignedReceiver(payable(receiver)).executionAt(0), bytes32(0));
     }
 
     function test_aStandaloneAuthorizationIsNotARootRegistration() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
-        SignedDelivery memory d = _message(_here(receiver), _calls("m"));
-        vm.expectRevert(abi.encodeWithSelector(Slices.WrongSelector.selector, ISignedOwnerCalls.registerRoot.selector));
-        ISignedReceiver(receiver).submitLeaf(d, l0, new bytes32[](0));
+        SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
+        vm.expectRevert(abi.encodeWithSelector(Slices.WrongSelector.selector, ISignedTransmitter.registerRoot.selector));
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, new bytes32[](0));
     }
 
     function test_anAlteredLeafOrAProofUnderAnotherRootRefuses() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_one(l0));
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_one(l0));
         ExecutionLeaf memory altered = _leaf(0, _calls("1"));
         vm.expectRevert(DispatchLeaves.InvalidProof.selector);
-        ISignedReceiver(receiver).submitLeaf(d, altered, p[0]);
+        ISignedReceiver(receiver).submitLeaf(evidence, altered, p[0]);
         // Repeat after execution still authenticates first.
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
         vm.expectRevert(DispatchLeaves.InvalidProof.selector);
-        ISignedReceiver(receiver).submitLeaf(d, altered, p[0]);
+        ISignedReceiver(receiver).submitLeaf(evidence, altered, p[0]);
     }
 
     /* ============================ protected self-calls =========================== */
@@ -458,10 +470,10 @@ contract SignedReceiverTest is Test {
 
         ExecutionLeaf memory l0 = _leaf(0, abi.encode(commitCall));
         ExecutionLeaf memory l1 = _leaf(1, _calls("1"));
-        (SignedDelivery memory d, bytes32[][] memory p) = _register(_two(l0, l1));
-        ISignedReceiver(receiver).submitLeaf(d, l0, p[0]);
+        (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_two(l0, l1));
+        ISignedReceiver(receiver).submitLeaf(evidence, l0, p[0]);
         assertTrue(ReceiverBase(payable(receiver)).isCommitted(commitment));
-        ISignedReceiver(receiver).submitLeaf(d, l1, p[1]);
+        ISignedReceiver(receiver).submitLeaf(evidence, l1, p[1]);
 
         ICommitFinalize(receiver).finalize(later);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 2);
@@ -473,18 +485,18 @@ contract SignedReceiverTest is Test {
         revoke[0] = Call(receiver, 0, abi.encodeCall(ReceiverBase.revokeGateway, (address(mailbox))));
         ISignedReceiver(receiver).submitMessage(_message(_here(receiver), abi.encode(revoke)));
 
-        SignedDelivery memory d = _message(_here(receiver), _calls("m"));
+        SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         vm.expectRevert();
-        _deliver(abi.encode(WIRE_STANDALONE, d));
-        ISignedReceiver(receiver).submitMessage(d);
+        _deliver(abi.encode(WIRE_STANDALONE, evidence));
+        ISignedReceiver(receiver).submitMessage(evidence);
         assertEq(sink.hits(), 2);
     }
 
     function test_aPlainReceiverRefusesSignedSubmission() public {
         address r = _plainReceiver();
-        SignedDelivery memory d = _message(_here(r), _calls("m"));
+        SafeTxEvidence memory evidence = _message(_here(r), _calls("m"));
         vm.expectRevert(SignedReceiver.NotSigned.selector);
-        ISignedReceiver(r).submitMessage(d);
+        ISignedReceiver(r).submitMessage(evidence);
     }
     bytes private reentryCall;
     bool private reentryAttempted;
@@ -507,13 +519,14 @@ contract SignedReceiverTest is Test {
 
     function _reentryScenario(uint256 outer, uint256 inner) private {
         uint256 nonce = SignedReceiver(payable(receiver)).nextNonce();
-        SignedDelivery memory nestedMessage = _message(_here(receiver), _calls("nested"));
+        SafeTxEvidence memory nestedMessageEvidence = _message(_here(receiver), _calls("nested"));
         ExecutionLeaf memory nestedLeaf = _leaf(nonce + 1, _calls("nested leaf"));
-        (SignedDelivery memory nestedReg, bytes32[][] memory nestedProof) = _register(_one(nestedLeaf));
+        (SafeTxEvidence memory nestedRegistrationEvidence, bytes32[][] memory nestedProof) = _register(_one(nestedLeaf));
         if (inner == 0) {
-            reentryCall = abi.encodeCall(ISignedReceiver.submitMessage, (nestedMessage));
+            reentryCall = abi.encodeCall(ISignedReceiver.submitMessage, (nestedMessageEvidence));
         } else if (inner == 1) {
-            reentryCall = abi.encodeCall(ISignedReceiver.submitLeaf, (nestedReg, nestedLeaf, nestedProof[0]));
+            reentryCall =
+                abi.encodeCall(ISignedReceiver.submitLeaf, (nestedRegistrationEvidence, nestedLeaf, nestedProof[0]));
         } else {
             reentryCall = abi.encodeWithSignature("finalize((address,uint256,bytes)[])", new Call[](0));
         }
@@ -521,19 +534,19 @@ contract SignedReceiverTest is Test {
         calls[0] = Call(address(this), 0, abi.encodeCall(this.attemptReentry, ()));
         reentryAttempted = false;
         if (outer < 2) {
-            SignedDelivery memory d = _message(_here(receiver), abi.encode(calls));
-            if (outer == 0) ISignedReceiver(receiver).submitMessage(d);
-            else _deliver(abi.encode(WIRE_STANDALONE, d));
+            SafeTxEvidence memory evidence = _message(_here(receiver), abi.encode(calls));
+            if (outer == 0) ISignedReceiver(receiver).submitMessage(evidence);
+            else _deliver(abi.encode(WIRE_STANDALONE, evidence));
         } else {
             ExecutionLeaf memory leaf = _leaf(nonce, abi.encode(calls));
-            (SignedDelivery memory d, bytes32[][] memory proof) = _register(_one(leaf));
-            if (outer == 2) ISignedReceiver(receiver).submitLeaf(d, leaf, proof[0]);
-            else _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+            (SafeTxEvidence memory evidence, bytes32[][] memory proof) = _register(_one(leaf));
+            if (outer == 2) ISignedReceiver(receiver).submitLeaf(evidence, leaf, proof[0]);
+            else _deliver(abi.encode(WIRE_MERKLE, evidence, leaf, proof[0]));
         }
         assertTrue(reentryAttempted);
         uint256 before = sink.hits();
         // A refused nested message remains usable after the outer lock is released.
-        ISignedReceiver(receiver).submitMessage(nestedMessage);
+        ISignedReceiver(receiver).submitMessage(nestedMessageEvidence);
         assertEq(sink.hits(), before + 1);
     }
 
@@ -542,32 +555,32 @@ contract SignedReceiverTest is Test {
         calls[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, ("prefix")));
         calls[1] = Call(address(sink), 1, abi.encodeCall(Sink.hit, ("paid")));
         ExecutionLeaf memory leaf = _leaf(0, abi.encode(calls));
-        (SignedDelivery memory d, bytes32[][] memory proof) = _register(_one(leaf));
+        (SafeTxEvidence memory evidence, bytes32[][] memory proof) = _register(_one(leaf));
         vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
-        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+        _deliver(abi.encode(WIRE_MERKLE, evidence, leaf, proof[0]));
         assertEq(sink.hits(), 1, "prefix rolled back");
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
         assertEq(SignedReceiver(payable(receiver)).executionAt(0), bytes32(0));
-        ISignedReceiver(receiver).submitLeaf{value: 1}(d, leaf, proof[0]);
+        ISignedReceiver(receiver).submitLeaf{value: 1}(evidence, leaf, proof[0]);
         assertEq(sink.hits(), 3);
         assertEq(SignedReceiver(payable(receiver)).nextNonce(), 1);
-        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+        _deliver(abi.encode(WIRE_MERKLE, evidence, leaf, proof[0]));
         assertEq(sink.hits(), 3);
     }
 
     function test_failedStandaloneTransferLeavesDigestRetryableAcrossRoutes() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(sink), 1, abi.encodeCall(Sink.hit, ("paid")));
-        SignedDelivery memory d = _message(_here(receiver), abi.encode(calls));
-        bytes32 digest = SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN);
+        SafeTxEvidence memory evidence = _message(_here(receiver), abi.encode(calls));
+        bytes32 digest = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
         vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
-        ISignedReceiver(receiver).submitMessage(d);
+        ISignedReceiver(receiver).submitMessage(evidence);
         assertFalse(SignedReceiver(payable(receiver)).isMessageExecuted(digest));
         vm.deal(receiver, 1);
-        _deliver(abi.encode(WIRE_STANDALONE, d));
+        _deliver(abi.encode(WIRE_STANDALONE, evidence));
         assertTrue(SignedReceiver(payable(receiver)).isMessageExecuted(digest));
         assertEq(sink.hits(), 2);
-        ISignedReceiver(receiver).submitMessage(d);
+        ISignedReceiver(receiver).submitMessage(evidence);
         assertEq(sink.hits(), 2);
     }
 }

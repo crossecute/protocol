@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/ISignedDispatch.sol";
+import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MerkleBuilder} from "test/signed/SignedFixtures.sol";

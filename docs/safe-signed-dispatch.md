@@ -171,10 +171,10 @@ Authority:
 
 ### Q1. Signed calldata and delivery envelope
 
-[`ISignedDispatch.sol`](../contracts/evm/src/messaging/signed/ISignedDispatch.sol) declares a
-shared `SignedDelivery` containing the exact
-[`SafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol), signatures
-and nested approval evidence. For a standalone delivery, decode recipient and plain payload
+[`SignedDispatchTypes.sol`](../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) declares a
+shared `SafeTxEvidence` containing a
+[`SignedSafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol) in `signedSafeTx`
+(the exact `SafeTx` and its signatures), and nested approval evidence. For a standalone delivery, decode recipient and plain payload
 from the signed `sendMessage` calldata. For a Merkle delivery, decode the root from the
 signed `registerRoot` calldata and use the separately supplied leaf and proof.
 
@@ -275,11 +275,11 @@ Cases:
   `graphHash = keccak256(abi.encode(authorityRecords))`. Include `graphHash` in the outer
   signed conduit salt preimage in Q4.7.
 - **Q3.8** The root node is the transmitter's owner Safe.
-- **Q3.9** [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManager.sol)
-  holds one `SafeState` per Safe, with a linked owner list and threshold. Keep the
+- **Q3.9** [`NestedOwnerManagerLib.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManagerLib.sol)
+  holds one `SafeOwnerState` per Safe, with a linked owner list and threshold. Keep the
   authority counter and owner kind metadata in the surrounding record. The signed update
   carries Safe's mutation selector and arguments. After verifying the update, the receiver
-  can use `using NestedOwnerManager for SafeState` and call
+  can use `using NestedOwnerManagerLib for SafeOwnerState` and call
   `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
   The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
   layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
@@ -300,7 +300,7 @@ authorization before source execution (D22).
   origin and source chain key.
 - **Q4.3** The signed envelope carries
   `(SIGNED_BOOTSTRAP, owner, userSalt, sourceTransmitter, body)`, with
-  `body = abi.encode(SignedBootstrap)` using a single struct with the `SignedDelivery`
+  `body = abi.encode(SignedBootstrap)` using a single struct with the `SafeTxEvidence`
   followed by the canonical creation authority records. The transmitter retains the original
   `userSalt` and records from creation and forwards them automatically. The signed Safe
   bootstrap call needs no separate salt or graph argument. The destination validates the
@@ -381,7 +381,7 @@ For a source send or root registration, collect evidence using live source Safe 
 The receiver applies its own stored quorum on delivery. Look up the child's current
 transaction guard with `GuardDiscovery`, then `getApproval(child, messageHash)`. The current guard returns `SignedSafeTx`
 with the full approval calldata and the child's signatures with its policy extension removed.
-Wrap it in a `NestedApproval` keyed by child Safe and message hash. Carry one item per key
+Wrap it in a `NestedSafeApproval` keyed by child Safe and message hash. Carry one item per key
 in an unsorted flat array and look it up by linear scan.
 
 Cases:
@@ -576,17 +576,20 @@ Where the design lives in code, and what #108's implementation leaves out.
 
 | Part | Where |
 | --- | --- |
-| Shared types, wire format tags, `ISignedTransmitter`, `ISignedReceiver`, init interfaces | [`signed/ISignedDispatch.sol`](../contracts/evm/src/messaging/signed/ISignedDispatch.sol) |
-| Import-free `bootstrap` and `registerRoot` the guard reads selectors from | [`signed/ISignedOwnerCalls.sol`](../contracts/evm/src/messaging/signed/ISignedOwnerCalls.sol) |
+| Dispatch payload types and wire format tags | [`signed/types/SignedDispatchTypes.sol`](../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) |
+| Shared Safe owners, authority records and owner-kind constants | [`signed/types/SafeAuthorityTypes.sol`](../contracts/evm/src/messaging/signed/types/SafeAuthorityTypes.sol) |
+| Transmitter interface and initialization interface | [`outbound/ISignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
+| Receiver interface and initialization interface | [`inbound/ISignedReceiver.sol`](../contracts/evm/src/messaging/inbound/ISignedReceiver.sol) |
+| `ISignedTransmitter.bootstrap` and `registerRoot`, whose selectors the guard reads | [`outbound/ISignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
 | Leaf hash, execution ID, proof check (Q2) | [`signed/DispatchLeaves.sol`](../contracts/evm/src/messaging/signed/DispatchLeaves.sol) |
-| Graph derivation from live Safes, canonical check, hash (Q3) | [`signed/AuthorityGraph.sol`](../contracts/evm/src/messaging/signed/AuthorityGraph.sol) |
-| Stored authority and recursive verification (Q5, Q6) | [`signed/SafeAuthority.sol`](../contracts/evm/src/messaging/signed/SafeAuthority.sol), [`SafeSignatures.sol`](../contracts/evm/src/messaging/signed/SafeSignatures.sol), [`NestedOwnerManager.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManager.sol) |
-| Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/SafeEvidence.sol`](../contracts/evm/src/messaging/signed/SafeEvidence.sol) |
-| Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedCalls.sol`](../contracts/evm/src/messaging/signed/SignedCalls.sol) |
-| Mode at creation (D20) | [`signed/SignedMode.sol`](../contracts/evm/src/messaging/signed/SignedMode.sol), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter` |
+| Graph derivation from live Safes, canonical check, hash (Q3) | [`signed/SafeAuthorityGraph.sol`](../contracts/evm/src/messaging/signed/SafeAuthorityGraph.sol) |
+| Stored authority and recursive verification (Q5, Q6) | [`signed/SafeAuthority.sol`](../contracts/evm/src/messaging/signed/SafeAuthority.sol), [`SafeSignaturesUtils.sol`](../contracts/evm/src/messaging/signed/SafeSignaturesUtils.sol), [`NestedOwnerManagerLib.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManagerLib.sol) |
+| Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/NestedApprovalCollector.sol`](../contracts/evm/src/messaging/signed/NestedApprovalCollector.sol) |
+| Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedDispatchCalls.sol`](../contracts/evm/src/messaging/signed/SignedDispatchCalls.sol) |
+| Mode at creation (D20) | [`signed/SafeViewer.sol`](../contracts/evm/src/messaging/signed/SafeViewer.sol), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter` |
 | Signed bootstrap send and arrival (Q4) | `TransceiverBase.bootstrapSigned` and `_signedBootstrapInbound` |
-| Transmitter (T1 to T9) | [`signed/SignedTransmitter.sol`](../contracts/evm/src/messaging/signed/SignedTransmitter.sol), with its builders in [`SignedTransmitterLogic.sol`](../contracts/evm/src/messaging/signed/SignedTransmitterLogic.sol) |
-| Receiver (R1 to R16) | [`signed/SignedReceiver.sol`](../contracts/evm/src/messaging/signed/SignedReceiver.sol) |
+| Transmitter (T1 to T9) | [`outbound/SignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitter.sol), with its builders in [`SignedTransmitterLib.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitterLib.sol) |
+| Receiver (R1 to R16) | [`inbound/SignedReceiver.sol`](../contracts/evm/src/messaging/inbound/SignedReceiver.sol) |
 | Atomic source batch | [`SafeBatchExecutor.sol`](../contracts/safe-guard/src/SafeBatchExecutor.sol) |
 
 How the pieces fit:
@@ -600,12 +603,12 @@ How the pieces fit:
   (Q4.7). Every chain-specific address formula now overrides `_conduitAt(bytes32)`, so the
   signed salt reuses it. `SignedConduitCreated(conduit, graph)` follows `ConduitCreated`.
 - **Wire formats.** A signed provider message leads with one word: `WIRE_STANDALONE` before
-  `SignedDelivery`, or `WIRE_MERKLE` before `(SignedDelivery, ExecutionLeaf, bytes32[])` (D4).
+  `SafeTxEvidence`, or `WIRE_MERKLE` before `(SafeTxEvidence, ExecutionLeaf, bytes32[])` (D4).
   Each decoder then requires its signed selector.
 - **Quotes.** In signed mode `quoteMessage` and `quoteBootstrap` revert, since the fee depends
   on signatures. `quoteSignedMessage`, `quoteSignedBootstrap` and `quoteRelay` share each
   send's builder, so quote and send price the same bytes (Q6.10).
-- **Size.** `SafeAuthority`'s public functions and `SignedTransmitterLogic` are linked
+- **Size.** `SafeAuthority`'s public functions and `SignedTransmitterLib` are linked
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
   receivers under EIP-170.
 - **Settlement.** Provider refunds land on the transmitter, which forwards them with the

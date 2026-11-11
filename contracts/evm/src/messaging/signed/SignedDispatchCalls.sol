@@ -4,15 +4,16 @@ pragma solidity ^0.8.28;
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ISignedOwnerCalls} from "src/messaging/signed/ISignedOwnerCalls.sol";
-import {BootstrapLeaf} from "src/messaging/signed/ISignedDispatch.sol";
+import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+
 import {Slices} from "src/messaging/signed/Slices.sol";
 
 /// @notice Reading a signed Safe transaction's target and calldata, shared by the transmitter that
 ///         sends it and the receiver that verifies it, so both decode the same bytes alike.
 /// @dev Calldata is decoded as the transmitter's ABI decoder reads it (Q1.4): the selector must
 ///      match, trailing bytes are ignored, and canonical re-encoding is not required.
-library SignedCalls {
+library SignedDispatchCalls {
     uint8 internal constant CALL = 0;
 
     /// @dev Not a CALL to `target` with zero `safeTxGas` and `gasPrice`.
@@ -42,7 +43,7 @@ library SignedCalls {
 
     function registeredRoot(SafeTx memory safeTx) internal pure returns (bytes32) {
         if (safeTx.value != 0) revert NonzeroRegistrationValue(safeTx.value);
-        return abi.decode(Slices.arguments(safeTx.data, ISignedOwnerCalls.registerRoot.selector), (bytes32));
+        return abi.decode(Slices.arguments(safeTx.data, ISignedTransmitter.registerRoot.selector), (bytes32));
     }
 
     /// @notice The signed `bootstrap(payload, attributes)`, with `payload` unpacked.
@@ -53,7 +54,7 @@ library SignedCalls {
     {
         bytes memory payload;
         (payload, attributes) =
-            abi.decode(Slices.arguments(data, ISignedOwnerCalls.bootstrap.selector), (bytes, bytes[]));
+            abi.decode(Slices.arguments(data, ISignedTransmitter.bootstrap.selector), (bytes, bytes[]));
         uint256 counter;
         (root, counter, leaf, proof) = abi.decode(payload, (bytes32, uint256, BootstrapLeaf, bytes32[]));
         if (counter != 0) revert AuthorityCounterMismatch(counter);

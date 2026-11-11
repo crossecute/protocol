@@ -5,7 +5,6 @@ import {Call} from "crossecute/messaging/Call.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
-import {ISignedOwnerCalls} from "crossecute/messaging/signed/ISignedOwnerCalls.sol";
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
@@ -29,7 +28,7 @@ interface IPlainBootstrap {
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter is ISignedOwnerCalls, IPlainBootstrap {
+contract TestTransmitter is IPlainBootstrap {
     enum Mode {
         Consume,
         Skip,

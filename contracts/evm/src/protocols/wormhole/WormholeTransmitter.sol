@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {SignedTransmitter} from "src/messaging/signed/SignedTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {WormholeMessage} from "src/protocols/wormhole/WormholeMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";

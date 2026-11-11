@@ -5,7 +5,7 @@ import {ICrossecuteGuard} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
 
 /// @notice Whether a conduit owner gets signed mode at creation (#108).
-library SignedMode {
+library SafeViewer {
     // Safe's StorageAccessible.getStorageAt(uint256,uint256)
     bytes4 private constant GET_STORAGE_AT = 0x5624b25b;
     // ERC-165 supportsInterface(bytes4)

@@ -20,6 +20,7 @@ cbor_metadata = false
 remappings = [
     "@openzeppelin/contracts/=../evm/lib/openzeppelin-contracts/contracts/",
     "crossecute/=../evm/src/",
+    "@crossecute/safe-guard/=src/",
     "forge-std/=../evm/lib/forge-std/src/",
     "policy-engine/=lib/policy-engine/contracts/",
     "safe-smart-account/=lib/safe-smart-account/contracts/",

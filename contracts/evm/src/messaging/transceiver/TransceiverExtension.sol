@@ -6,8 +6,8 @@ import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {AuthorityGraph} from "src/messaging/signed/AuthorityGraph.sol";
-import {SignedMode} from "src/messaging/signed/SignedMode.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
 
 /// @title TransceiverExtension
 /// @notice A transceiver's initialization, owner configuration, float withdrawal, and the views
@@ -222,12 +222,12 @@ contract TransceiverExtension is TransceiverCore {
     }
 
     /// @notice The creation records `createTransmitter` gives `owner`'s transmitter,
-    ///         `abi.encode(SafeRecord[])`, or empty for a plain one. Their keccak256 is the graph.
+    ///         `abi.encode(SafeAuthorityRecord[])`, or empty for a plain one. Their keccak256 is the graph.
     /// @dev Here rather than in the transceiver for its size. Derived from live Safe state, so
     ///      it can change between this call and creation.
     function signedAuthority(address owner) external view returns (bytes memory) {
-        if (!SignedMode.isSigned(owner)) return "";
-        return abi.encode(AuthorityGraph.derive(owner));
+        if (!SafeViewer.isSigned(owner)) return "";
+        return abi.encode(SafeAuthorityGraph.derive(owner));
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.

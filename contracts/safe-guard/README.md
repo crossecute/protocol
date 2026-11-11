@@ -39,8 +39,8 @@ from a signature blob. Its `main` branch mirrors upstream.
 The staged selectors are `sendMessage(bytes,bytes,bytes[])` and `bootstrap(bytes,bytes[])`.
 The first is `IERC7786GatewaySource.sendMessage.selector`, imported from
 `contracts/evm/src/messaging/IErc7786.sol`, so the guard and the protocol cannot disagree on it.
-The second, and the checked `registerRoot(bytes32)`, come from the import-free
-`contracts/evm/src/messaging/signed/ISignedOwnerCalls.sol`, which the signed transmitter
+The second, and the checked `registerRoot(bytes32)`, come from `ISignedTransmitter` in
+`contracts/evm/src/messaging/outbound/ISignedTransmitter.sol`, which the signed transmitter
 implements (#108). The plain `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads
 have other selectors and are not staged.
 

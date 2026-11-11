@@ -2,25 +2,26 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {Authority, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
-import {SafeSignatures} from "src/messaging/signed/SafeSignatures.sol";
-import {SafeRecord, OwnerEntry, NestedApproval, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/ISignedDispatch.sol";
+import {SafeAuthorityState, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol";
+import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
 
 contract AuthorityHarness {
-    using SafeAuthority for Authority;
+    using SafeAuthority for SafeAuthorityState;
 
-    Authority internal authority;
+    SafeAuthorityState internal authority;
 
-    function store(SafeRecord[] memory records, uint256 chainId) external {
+    function store(SafeAuthorityRecord[] memory records, uint256 chainId) external {
         authority.store(records, chainId);
     }
 
-    function verify(bytes32 hash, bytes memory signatures, NestedApproval[] memory approvals) external view {
+    function verify(bytes32 hash, bytes memory signatures, NestedSafeApproval[] memory approvals) external view {
         authority.verify(hash, signatures, approvals);
     }
 
-    function records() external view returns (SafeRecord[] memory) {
+    function records() external view returns (SafeAuthorityRecord[] memory) {
         return authority.readRecords();
     }
 }
@@ -40,10 +41,10 @@ contract SafeAuthorityTest is Test {
     /// ROOT 2-of-3: CHILD (1-of-2 over keys 4, 5), key 1, key 2.
     function setUp() public {
         h = new AuthorityHarness();
-        OwnerEntry[] memory rootOwners = new OwnerEntry[](3);
-        rootOwners[0] = OwnerEntry(CHILD, OWNER_SAFE);
-        rootOwners[1] = OwnerEntry(vm.addr(1), OWNER_EOA);
-        rootOwners[2] = OwnerEntry(vm.addr(2), OWNER_EOA);
+        SafeOwner[] memory rootOwners = new SafeOwner[](3);
+        rootOwners[0] = SafeOwner(CHILD, OWNER_SAFE);
+        rootOwners[1] = SafeOwner(vm.addr(1), OWNER_EOA);
+        rootOwners[2] = SafeOwner(vm.addr(2), OWNER_EOA);
         h.store(
             Records.list(
                 Records.record(ROOT, 2, rootOwners), Records.record(CHILD, 1, Records.eoaOwners(Records.pks(4, 5)))
@@ -52,12 +53,12 @@ contract SafeAuthorityTest is Test {
         );
     }
 
-    function _none() internal pure returns (NestedApproval[] memory) {
-        return new NestedApproval[](0);
+    function _none() internal pure returns (NestedSafeApproval[] memory) {
+        return new NestedSafeApproval[](0);
     }
 
     function _childHash() internal pure returns (bytes32) {
-        return SafeSignatures.nestedHash(H, CHILD, CHAIN);
+        return SafeSignaturesUtils.nestedHash(H, CHILD, CHAIN);
     }
 
     function test_twoEoaOwnersVerify() public view {
@@ -69,17 +70,17 @@ contract SafeAuthorityTest is Test {
     }
 
     function test_theReadbackPreservesOwnerOrder() public view {
-        SafeRecord[] memory r = h.records();
-        assertEq(r.length, 2);
-        assertEq(r[0].owners[0].owner, CHILD);
-        assertEq(r[0].owners[1].owner, vm.addr(1));
-        assertEq(r[0].owners[2].owner, vm.addr(2));
-        assertEq(r[1].safe, CHILD);
+        SafeAuthorityRecord[] memory records = h.records();
+        assertEq(records.length, 2);
+        assertEq(records[0].owners[0].owner, CHILD);
+        assertEq(records[0].owners[1].owner, vm.addr(1));
+        assertEq(records[0].owners[2].owner, vm.addr(2));
+        assertEq(records[1].safe, CHILD);
     }
 
     function test_oneSignatureShortRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), H);
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.SignaturesTooShort.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.SignaturesTooShort.selector, ROOT));
         h.verify(H, blob, _none());
     }
 
@@ -106,14 +107,14 @@ contract SafeAuthorityTest is Test {
     function test_anApprovedHashEntryRefuses() public {
         bytes memory approved = abi.encodePacked(bytes32(uint256(uint160(vm.addr(1)))), bytes32(0), uint8(1));
         bytes memory blob = abi.encodePacked(approved, SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(2)), H));
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.ApprovedHashUnsupported.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.ApprovedHashUnsupported.selector, ROOT));
         h.verify(H, blob, _none());
     }
 
     function test_anUnknownSignatureTypeRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)), H);
         blob[64] = bytes1(uint8(29));
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.InvalidSignatureType.selector, uint8(29)));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.InvalidSignatureType.selector, uint8(29)));
         h.verify(H, blob, _none());
     }
 
@@ -135,9 +136,9 @@ contract SafeAuthorityTest is Test {
         h.verify(H, blob, _none());
     }
 
-    function _approvalFor(uint256 pk) internal pure returns (NestedApproval[] memory a) {
-        a = new NestedApproval[](1);
-        a[0] = SafeSigs.approval(CHILD, H, CHAIN, SafeSigs.one(SafeSigs.eoa(pk)), LIB);
+    function _approvalFor(uint256 pk) internal pure returns (NestedSafeApproval[] memory nestedApprovals) {
+        nestedApprovals = new NestedSafeApproval[](1);
+        nestedApprovals[0] = SafeSigs.approval(CHILD, H, CHAIN, SafeSigs.one(SafeSigs.eoa(pk)), LIB);
     }
 
     function _emptyNested() internal pure returns (bytes memory) {
@@ -149,7 +150,7 @@ contract SafeAuthorityTest is Test {
     }
 
     function test_anEmptyNestedSignatureWithoutAnApprovalRefuses() public {
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.MissingApproval.selector, CHILD, _childHash()));
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.MissingNestedSafeApproval.selector, CHILD, _childHash()));
         h.verify(H, _emptyNested(), _none());
     }
 
@@ -159,35 +160,37 @@ contract SafeAuthorityTest is Test {
     }
 
     function test_anApprovalOfAnotherMessageRefuses() public {
-        NestedApproval[] memory a = _approvalFor(5);
-        a[0].approval.safeTx.data = abi.encodeWithSelector(bytes4(0x85a5affe), abi.encode(keccak256("other")));
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.NotAnApprovalOf.selector, CHILD, H));
-        h.verify(H, _emptyNested(), a);
+        NestedSafeApproval[] memory nestedApprovals = _approvalFor(5);
+        nestedApprovals[0].approval.safeTx.data =
+            abi.encodeWithSelector(bytes4(0x85a5affe), abi.encode(keccak256("other")));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.NotANestedSafeApprovalOf.selector, CHILD, H));
+        h.verify(H, _emptyNested(), nestedApprovals);
     }
 
     function test_anApprovalAsACallRefuses() public {
-        NestedApproval[] memory a = _approvalFor(5);
-        a[0].approval.safeTx.operation = 0;
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.NotAnApprovalOf.selector, CHILD, H));
-        h.verify(H, _emptyNested(), a);
+        NestedSafeApproval[] memory nestedApprovals = _approvalFor(5);
+        nestedApprovals[0].approval.safeTx.operation = 0;
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.NotANestedSafeApprovalOf.selector, CHILD, H));
+        h.verify(H, _emptyNested(), nestedApprovals);
     }
 
     function test_anApprovalWithAnApprovedHashEntryRefuses() public {
-        NestedApproval[] memory a = _approvalFor(5);
-        a[0].approval.signatures = abi.encodePacked(bytes32(uint256(uint160(vm.addr(5)))), bytes32(0), uint8(1));
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.ApprovedHashUnsupported.selector, CHILD));
-        h.verify(H, _emptyNested(), a);
+        NestedSafeApproval[] memory nestedApprovals = _approvalFor(5);
+        nestedApprovals[0].approval.signatures =
+            abi.encodePacked(bytes32(uint256(uint160(vm.addr(5)))), bytes32(0), uint8(1));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.ApprovedHashUnsupported.selector, CHILD));
+        h.verify(H, _emptyNested(), nestedApprovals);
     }
 
     function test_unusedApprovalsAreIgnoredAndDuplicatesRefuse() public {
-        NestedApproval[] memory two = new NestedApproval[](2);
-        two[0] = SafeSigs.approval(CHILD, keccak256("unrelated"), CHAIN, SafeSigs.one(SafeSigs.eoa(4)), LIB);
-        two[1] = _approvalFor(5)[0];
-        h.verify(H, _emptyNested(), two);
+        NestedSafeApproval[] memory nestedApprovals = new NestedSafeApproval[](2);
+        nestedApprovals[0] = SafeSigs.approval(CHILD, keccak256("unrelated"), CHAIN, SafeSigs.one(SafeSigs.eoa(4)), LIB);
+        nestedApprovals[1] = _approvalFor(5)[0];
+        h.verify(H, _emptyNested(), nestedApprovals);
 
-        two[0] = two[1];
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.DuplicateApproval.selector, CHILD, _childHash()));
-        h.verify(H, _emptyNested(), two);
+        nestedApprovals[0] = nestedApprovals[1];
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.DuplicateNestedSafeApproval.selector, CHILD, _childHash()));
+        h.verify(H, _emptyNested(), nestedApprovals);
     }
 
     function test_aContractSignatureOffsetIntoTheStaticPartRefuses() public {
@@ -197,7 +200,7 @@ contract SafeAuthorityTest is Test {
         for (uint256 i; i < 32; ++i) {
             blob[entry + 32 + i] = 0;
         }
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.MalformedContractSignature.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.MalformedContractSignature.selector, ROOT));
         h.verify(H, blob, _approvalFor(5));
     }
 
@@ -207,7 +210,7 @@ contract SafeAuthorityTest is Test {
         assembly ("memory-safe") {
             mstore(blob, sub(mload(blob), 1))
         }
-        vm.expectRevert(abi.encodeWithSelector(SafeSignatures.MalformedContractSignature.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.MalformedContractSignature.selector, ROOT));
         h.verify(H, blob, _none());
     }
 

@@ -27,7 +27,7 @@ interface ISafeExec {
 ///      does, so every send and nonce advance in it rolls back. Holds nothing and has no owner,
 ///      so anyone holding the signatures can submit them.
 contract SafeBatchExecutor {
-    struct Execution {
+    struct SafeExecution {
         ISafeExec safe;
         address to;
         uint256 value;
@@ -41,27 +41,27 @@ contract SafeBatchExecutor {
         bytes signatures;
     }
 
-    error ExecutionFailed(uint256 index);
+    error SafeExecutionFailed(uint256 index);
 
-    function execute(Execution[] calldata executions) external {
+    function execute(SafeExecution[] calldata executions) external {
         for (uint256 i = 0; i < executions.length; ++i) {
-            Execution calldata e = executions[i];
+            SafeExecution calldata execution = executions[i];
             // forge-lint: disable-start(calls-loop) one Safe execution per batch entry is the purpose
-            bool success = e.safe
+            bool success = execution.safe
                 .execTransaction(
-                    e.to,
-                    e.value,
-                    e.data,
-                    e.operation,
-                    e.safeTxGas,
-                    e.baseGas,
-                    e.gasPrice,
-                    e.gasToken,
-                    e.refundReceiver,
-                    e.signatures
+                    execution.to,
+                    execution.value,
+                    execution.data,
+                    execution.operation,
+                    execution.safeTxGas,
+                    execution.baseGas,
+                    execution.gasPrice,
+                    execution.gasToken,
+                    execution.refundReceiver,
+                    execution.signatures
                 );
             // forge-lint: disable-end(calls-loop)
-            require(success, ExecutionFailed(i));
+            require(success, SafeExecutionFailed(i));
         }
     }
 }

@@ -35,22 +35,21 @@ contract SafeBatchExecutorTest is GuardTestBase {
     function _send(TestTransmitter to, bytes memory recipient, uint256 nonce)
         internal
         view
-        returns (SafeBatchExecutor.Execution memory e)
+        returns (SafeBatchExecutor.SafeExecution memory execution)
     {
         bytes memory data = abi.encodeCall(TestTransmitter.sendMessage, (recipient, hex"02", new bytes[](0)));
-        e.safe = ISafeExec(address(safe));
-        e.to = address(to);
-        e.data = data;
-        e.signatures = _sign(_signers(), _txHashAt(safe, address(to), 0, data, Enum.Operation.Call, nonce));
+        execution.safe = ISafeExec(address(safe));
+        execution.to = address(to);
+        execution.data = data;
+        execution.signatures = _sign(_signers(), _txHashAt(safe, address(to), 0, data, Enum.Operation.Call, nonce));
     }
 
-    function _pair(SafeBatchExecutor.Execution memory a, SafeBatchExecutor.Execution memory b)
-        internal
-        pure
-        returns (SafeBatchExecutor.Execution[] memory l)
-    {
-        l = new SafeBatchExecutor.Execution[](2);
-        (l[0], l[1]) = (a, b);
+    function _pair(
+        SafeBatchExecutor.SafeExecution memory firstExecution,
+        SafeBatchExecutor.SafeExecution memory secondExecution
+    ) internal pure returns (SafeBatchExecutor.SafeExecution[] memory executions) {
+        executions = new SafeBatchExecutor.SafeExecution[](2);
+        (executions[0], executions[1]) = (firstExecution, secondExecution);
     }
 
     function test_twoSendsAtConsecutiveNoncesRunInOneTransaction() public {
@@ -72,18 +71,20 @@ contract SafeBatchExecutorTest is GuardTestBase {
 
     function test_aRevertingSecondSendRollsBackBothSendsAndNonces() public {
         arbitrum.setMode(TestTransmitter.Mode.ConsumeThenRevert, address(0), "");
-        SafeBatchExecutor.Execution[] memory batch_ = _pair(_send(base, hex"2105", 42), _send(arbitrum, hex"a4b1", 43));
+        SafeBatchExecutor.SafeExecution[] memory executions =
+            _pair(_send(base, hex"2105", 42), _send(arbitrum, hex"a4b1", 43));
         vm.expectRevert();
-        executor.execute(batch_);
+        executor.execute(executions);
         assertEq(safe.nonce(), 42);
         assertEq(base.sends(), 0);
         assertEq(sink.calls(), 0);
     }
 
     function test_outOfOrderNoncesRevert() public {
-        SafeBatchExecutor.Execution[] memory batch_ = _pair(_send(arbitrum, hex"a4b1", 43), _send(base, hex"2105", 42));
+        SafeBatchExecutor.SafeExecution[] memory executions =
+            _pair(_send(arbitrum, hex"a4b1", 43), _send(base, hex"2105", 42));
         vm.expectRevert();
-        executor.execute(batch_);
+        executor.execute(executions);
         assertEq(safe.nonce(), 42);
     }
 
@@ -95,13 +96,13 @@ contract SafeBatchExecutorTest is GuardTestBase {
         bytes memory ok = abi.encodeWithSignature("getThreshold()");
         bytes memory bad = abi.encodeCall(Reverter.fail, ());
 
-        SafeBatchExecutor.Execution memory first;
+        SafeBatchExecutor.SafeExecution memory first;
         first.safe = ISafeExec(address(plain));
         first.to = address(plain);
         first.data = ok;
         first.signatures = _sign(_signers(), _txHashAt(plain, address(plain), 0, ok, Enum.Operation.Call, 0));
 
-        SafeBatchExecutor.Execution memory second;
+        SafeBatchExecutor.SafeExecution memory second;
         second.safe = ISafeExec(address(plain));
         second.to = address(reverter);
         second.data = bad;
@@ -113,7 +114,7 @@ contract SafeBatchExecutorTest is GuardTestBase {
             )
         );
 
-        vm.expectRevert(abi.encodeWithSelector(SafeBatchExecutor.ExecutionFailed.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(SafeBatchExecutor.SafeExecutionFailed.selector, 1));
         executor.execute(_pair(first, second));
         assertEq(plain.nonce(), 0);
     }

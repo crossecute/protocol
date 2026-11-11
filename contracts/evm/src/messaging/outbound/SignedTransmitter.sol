@@ -6,14 +6,9 @@ import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {IConduitTransceiver, TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
-import {ISignedOwnerCalls} from "src/messaging/signed/ISignedOwnerCalls.sol";
-import {SignedTransmitterLogic} from "src/messaging/signed/SignedTransmitterLogic.sol";
-import {
-    ExecutionLeaf,
-    SignedDelivery,
-    ISignedTransmitter,
-    ISignedTransmitterInit
-} from "src/messaging/signed/ISignedDispatch.sol";
+import {ISignedTransmitter, ISignedTransmitterInit} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {ExecutionLeaf, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
 
 /// @title SignedTransmitter
 /// @notice A transmitter that can be created in signed mode (#108): every owner send and
@@ -33,7 +28,7 @@ import {
 abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, ISignedTransmitterInit {
     /// @custom:storage-location erc7201:crossecute.storage.SignedTransmitter
     struct SignedTransmitterStorage {
-        // `abi.encode(SafeRecord[])` at creation; its keccak256 is the graph in the conduit salt.
+        // `abi.encode(SafeAuthorityRecord[])` at creation; its keccak256 is the graph in the conduit salt.
         bytes records;
         // Nonzero exactly in signed mode.
         bytes32 graph;
@@ -47,7 +42,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     bytes32 private constant SIGNED_TRANSMITTER_STORAGE =
         0x8566b709a423746963d200f6840e900d54ab8ebbe69c13e71ed1cbb86e81aa00;
 
-    event SignedModeSet(bytes32 graph);
+    event SignedTransmitterInitialized(bytes32 graph);
     event RootRegistered(bytes32 indexed root);
     event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
     /// @dev `body` is what `retryBootstrap` takes, kept until a send of it succeeds.
@@ -84,7 +79,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         if ($.graph != bytes32(0)) revert AlreadySigned();
         $.records = records;
         $.graph = keccak256(records);
-        emit SignedModeSet($.graph);
+        emit SignedTransmitterInitialized($.graph);
     }
 
     /* ================================ owner calls =============================== */
@@ -100,7 +95,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     {
         if (_signedStorage().graph == bytes32(0)) return super.sendMessage(recipient, payload, attributes);
         _checkOwner();
-        (bytes memory to, bytes memory wire, bytes[] memory options) = SignedTransmitterLogic.consumeMessage(msg.data);
+        (bytes memory to, bytes memory wire, bytes[] memory options) = SignedTransmitterLib.consumeMessage(msg.data);
         return _sendStandalone(to, wire, options);
     }
 
@@ -130,18 +125,18 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     function bootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         payable
-        override(TransmitterBase, ISignedOwnerCalls)
+        override(TransmitterBase, ISignedTransmitter)
     {
         if (_signedStorage().graph == bytes32(0)) return super.bootstrap(payload, attributes);
         _checkOwner();
-        (bytes memory body, bytes32 chainKey,,) = SignedTransmitterLogic.consumeBootstrap(msg.data);
+        (bytes memory body, bytes32 chainKey,,) = SignedTransmitterLib.consumeBootstrap(msg.data);
         _signedStorage().pendingBootstrap[chainKey] = keccak256(body);
         emit BootstrapPending(chainKey, body);
         // A failed send leaves the bundle pending, which is the point of the try.
         try this.retryBootstrap(body) {} catch {}
     }
 
-    /// @inheritdoc ISignedOwnerCalls
+    /// @inheritdoc ISignedTransmitter
     /// @dev The guard lets the call through only for a root it published, which this checks too,
     ///      on the guard installed now.
     function registerRoot(bytes32 root) external onlyConduitOwner {
@@ -173,7 +168,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     ///         up the balance the fee is paid from.
     function retryBootstrap(bytes calldata body) external payable {
         bytes32 graph = _graph();
-        (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLogic.bootstrapTarget(body);
+        (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLib.bootstrapTarget(body);
         SignedTransmitterStorage storage $ = _signedStorage();
         if ($.pendingBootstrap[chainKey] != keccak256(body)) revert NoPendingBootstrap(chainKey);
         delete $.pendingBootstrap[chainKey];
@@ -189,12 +184,12 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @inheritdoc ISignedTransmitter
     /// @dev The caller pays the full fee. Excess and any synchronous provider refund go back to
     ///      the caller, and this conduit's balance ends where it began.
-    function relayLeaf(SignedDelivery calldata registration, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
-        external
-        payable
-        returns (bytes32 sendId)
-    {
-        (registration, leaf, proof);
+    function relayLeaf(
+        SafeTxEvidence calldata registrationEvidence,
+        ExecutionLeaf calldata leaf,
+        bytes32[] calldata proof
+    ) external payable returns (bytes32 sendId) {
+        (registrationEvidence, leaf, proof);
         SignedTransmitterStorage storage $ = _signedStorage();
         if ($.relaying) revert RelayReentered();
         $.relaying = true;
@@ -246,44 +241,44 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return super.quoteBootstrap(payload, attributes);
     }
 
-    /// @notice What `sendMessage` would pay for `delivery`, a signed `sendMessage` to this
+    /// @notice What `sendMessage` would pay for `evidence`, a signed `sendMessage` to this
     ///         conduit. Nested approvals are read from the guards, as the send reads them.
-    function quoteSignedMessage(SignedDelivery calldata delivery) external view returns (uint256) {
+    function quoteSignedMessage(SafeTxEvidence calldata evidence) external view returns (uint256) {
         _graph();
-        delivery;
+        evidence;
         (bytes memory recipient, bytes memory wire, bytes[] memory attributes) =
-            SignedTransmitterLogic.quoteMessage(msg.data[4:]);
+            SignedTransmitterLib.quoteMessage(msg.data[4:]);
         return _quoteStandalone(recipient, wire, attributes);
     }
 
-    /// @notice What `bootstrap` would pay for `delivery`, and the body it would log.
-    function quoteSignedBootstrap(SignedDelivery calldata delivery)
+    /// @notice What `bootstrap` would pay for `evidence`, and the body it would log.
+    function quoteSignedBootstrap(SafeTxEvidence calldata evidence)
         external
         view
         returns (uint256 fee, bytes memory body)
     {
         _graph();
-        delivery;
+        evidence;
         bytes32 chainKey;
         bytes[] memory attributes;
-        (body, chainKey,, attributes) = SignedTransmitterLogic.quoteBootstrap(msg.data[4:]);
+        (body, chainKey,, attributes) = SignedTransmitterLib.quoteBootstrap(msg.data[4:]);
         fee = IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
     }
 
     /// @notice What `relayLeaf` would charge for the same arguments.
-    function quoteRelay(SignedDelivery calldata registration, ExecutionLeaf calldata leaf, bytes32[] calldata proof)
-        external
-        view
-        returns (uint256 fee)
-    {
-        (registration, leaf, proof);
+    function quoteRelay(
+        SafeTxEvidence calldata registrationEvidence,
+        ExecutionLeaf calldata leaf,
+        bytes32[] calldata proof
+    ) external view returns (uint256 fee) {
+        (registrationEvidence, leaf, proof);
         (,,,, fee) = _relay();
     }
 
     /* ================================= builders ================================= */
 
     /// @dev `relayLeaf`'s checks on this conduit's own state, around the logic's checks of the
-    ///      registration and leaf, read from this call's arguments.
+    ///      registrationEvidence and leaf, read from this call's arguments.
     function _relay()
         private
         view
@@ -291,7 +286,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     {
         _graph();
         bytes32 root;
-        (root, leafHash, destination, attributes, wire) = SignedTransmitterLogic.relay(msg.data[4:]);
+        (root, leafHash, destination, attributes, wire) = SignedTransmitterLib.relay(msg.data[4:]);
         SignedTransmitterStorage storage $ = _signedStorage();
         if (!$.roots[root]) revert RootNotRegistered(root);
         if ($.relayed[leafHash]) revert LeafAlreadyRelayed(leafHash);
@@ -306,7 +301,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _signedStorage().graph;
     }
 
-    /// @notice The creation records forwarded at bootstrap, `abi.encode(SafeRecord[])`.
+    /// @notice The creation records forwarded at bootstrap, `abi.encode(SafeAuthorityRecord[])`.
     function creationRecords() external view returns (bytes memory) {
         return _signedStorage().records;
     }

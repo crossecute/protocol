@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Call} from "src/messaging/Call.sol";
-import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {
     OAppReceiverUpgradeable,
     Origin

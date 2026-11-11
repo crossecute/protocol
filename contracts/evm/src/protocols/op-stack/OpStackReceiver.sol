@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Call} from "src/messaging/Call.sol";
-import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 

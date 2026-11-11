@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Call} from "src/messaging/Call.sol";
-import {SignedReceiver} from "src/messaging/signed/SignedReceiver.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 
 /// @notice A receiver whose only provider setup is naming the provider's delivery contract as
 ///         its gateway.

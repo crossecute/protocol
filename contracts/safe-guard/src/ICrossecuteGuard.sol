@@ -29,7 +29,7 @@ struct SignedSafeTx {
 ///      `operation` is Safe's `Enum.Operation` as a `uint8`: 0 for CALL, 1 for DELEGATECALL.
 ///      `safeTxGas` and `gasPrice` are always zero, which the inherited policy check requires.
 interface ICrossecuteGuard {
-    event ApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
+    event NestedSafeApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
     /// @notice One per leaf of a `publishLeaves` call, in leaf order. The leaf bytes are in that
     ///         call's calldata at `index`.
     event LeafPublished(bytes32 indexed root, bytes32 indexed leafHash, uint256 index);
@@ -41,7 +41,7 @@ interface ICrossecuteGuard {
     error HashMismatch(bytes32 live, bytes32 txHash);
     error ModuleStagedCallDenied();
     error ModuleRegisterRootDenied();
-    error ApprovalNotFound(address childSafe, bytes32 messageHash);
+    error NestedSafeApprovalNotFound(address childSafe, bytes32 messageHash);
     error SignatureExtensionOverlap();
     error NoLeaves();
     error RootNotPublished(bytes32 root);

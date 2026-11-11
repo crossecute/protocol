@@ -9,7 +9,7 @@ import {Slices} from "src/messaging/signed/Slices.sol";
 ///         evidence collection.
 /// @dev Only the first threshold-many 65-byte entries are read, as in `Safe.checkNSignatures`, so
 ///      bytes after them that no read entry points into are unauthenticated and ignored.
-library SafeSignatures {
+library SafeSignaturesUtils {
     // SignMessageLib.signMessage(bytes)
     bytes4 internal constant SIGN_MESSAGE = 0x85a5affe;
     uint8 internal constant DELEGATECALL = 1;
@@ -21,7 +21,7 @@ library SafeSignatures {
     /// @dev A contract signature's offset or length leaves the blob or enters its static part.
     error MalformedContractSignature(address safe);
     /// @dev The evidence is not a DELEGATECALL of `signMessage(abi.encode(parentHash))`.
-    error NotAnApprovalOf(address childSafe, bytes32 parentHash);
+    error NotANestedSafeApprovalOf(address childSafe, bytes32 parentHash);
 
     function requireLength(address safe, bytes memory signatures, uint256 threshold) internal pure {
         if (signatures.length < threshold * 65) revert SignaturesTooShort(safe);
@@ -90,10 +90,12 @@ library SafeSignatures {
         bytes memory data = approval.data;
         // forge-lint: disable-next-line(unsafe-typecast) the first four bytes, after the length check
         if (approval.operation != DELEGATECALL || data.length < 4 || bytes4(data) != SIGN_MESSAGE) {
-            revert NotAnApprovalOf(child, parentHash);
+            revert NotANestedSafeApprovalOf(child, parentHash);
         }
         bytes memory message = abi.decode(Slices.slice(data, 4, data.length - 4), (bytes));
-        if (keccak256(message) != keccak256(abi.encode(parentHash))) revert NotAnApprovalOf(child, parentHash);
+        if (keccak256(message) != keccak256(abi.encode(parentHash))) {
+            revert NotANestedSafeApprovalOf(child, parentHash);
+        }
         return SafeHashes.transactionHash(approval, child, chainId);
     }
 }

@@ -10,7 +10,8 @@ import {
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
 import {TransceiverExtension} from "src/messaging/transceiver/TransceiverExtension.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
-import {ISignedReceiverInit, ISignedTransmitterInit} from "src/messaging/signed/ISignedDispatch.sol";
+import {ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
+import {ISignedTransmitterInit} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Conduits} from "src/conduit/Conduits.sol";
