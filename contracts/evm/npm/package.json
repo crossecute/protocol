@@ -1,0 +1,38 @@
+{
+  "name": "@crossecute/protocol",
+  "version": "0.1.0",
+  "description": "Crossecute protocol interfaces, libraries and ABIs for integrators",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crossecute/protocol.git",
+    "directory": "contracts/evm/npm"
+  },
+  "type": "module",
+  "exports": {
+    "./abi": {
+      "types": "./abi/index.d.ts",
+      "default": "./abi/index.js"
+    },
+    "./abi/*.json": "./abi/*.json",
+    "./contracts/*": "./contracts/*"
+  },
+  "files": [
+    "abi",
+    "contracts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "cd .. && forge build && node npm/pack.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@openzeppelin/contracts-upgradeable": {
+      "optional": true
+    }
+  }
+}
