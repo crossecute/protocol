@@ -231,6 +231,23 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.transferOwnership(address(0x1));
     }
 
+    function test_signedOwnershipCannotBeRenounced() public {
+        vm.prank(address(safe));
+        vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
+        st.renounceOwnership();
+        assertEq(st.owner(), address(safe));
+        // Refusal leaves the fixed owner able to bootstrap normally.
+        _bootstrap();
+        assertTrue(st.isBootstrapped(remote));
+    }
+
+    function test_plainOwnershipCanStillBeRenounced() public {
+        SignedTransmitter plain = SignedTransmitter(payable(t.createTransmitter(keccak256("plain"))));
+        assertEq(plain.authorityGraph(), bytes32(0));
+        plain.renounceOwnership();
+        assertEq(plain.owner(), address(0));
+    }
+
     /* ================================= standalone ================================ */
 
     function _send(bytes memory recipient, bytes memory payload) internal returns (SignedDelivery memory d) {

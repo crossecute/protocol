@@ -161,6 +161,12 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         super.transferOwnership(newOwner);
     }
 
+    /// @notice Renouncing would permanently disable the fixed Safe's owner-only operations.
+    function renounceOwnership() public virtual override {
+        if (_signedStorage().graph != bytes32(0)) revert OwnershipFixed();
+        super.renounceOwnership();
+    }
+
     /* ============================== permissionless ============================== */
 
     /// @notice Retry a pending signed bootstrap with its logged body. Anyone may call; value tops

@@ -42,6 +42,11 @@ contract LzTransmitter is SignedTransmitter, OAppSenderUpgradeable, LzWriteOnceP
         super.transferOwnership(newOwner);
     }
 
+    /// @dev Resolves the inheritance diamond; the body is `SignedTransmitter`'s.
+    function renounceOwnership() public override(SignedTransmitter, OwnableUpgradeable) {
+        super.renounceOwnership();
+    }
+
     /// @dev Resolves the inheritance diamond; the body is `LzWriteOncePeer`'s.
     function setPeer(uint32 eid, bytes32 peer) public override(OAppCoreUpgradeable, LzWriteOncePeer) {
         super.setPeer(eid, peer);
