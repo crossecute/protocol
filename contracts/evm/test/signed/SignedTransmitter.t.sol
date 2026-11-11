@@ -50,6 +50,29 @@ contract RefuseEth {
     }
 }
 
+/// @notice Tries to reenter the same relay when its provider sends a refund directly.
+contract ReenterRefund {
+    address internal transmitter;
+    bytes internal relayData;
+    bool public blocked;
+
+    /// @notice Relay while retaining the exact calldata for a refund callback attempt.
+    function relay(address target, bytes memory data) external payable {
+        transmitter = target;
+        relayData = data;
+        (bool ok, bytes memory reason) = target.call{value: msg.value}(data);
+        if (!ok) {
+            assembly ("memory-safe") { revert(add(reason, 32), mload(reason)) }
+        }
+    }
+
+    /// @notice Record that the transmitter's relay lock rejects provider-refund reentry.
+    receive() external payable {
+        (bool ok, bytes memory reason) = transmitter.call(relayData);
+        blocked = !ok && bytes4(reason) == SignedTransmitter.RelayReentered.selector;
+    }
+}
+
 /// @dev The transmitter in signed mode (#108) behind a real Hyperlane transceiver, with a stub
 ///      Safe whose stub guard stages what the test signs. The Safe's `exec` stands in for
 ///      `execTransaction` after the guard's pre-hook.
@@ -502,6 +525,48 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
         vm.prank(relayer);
         st.relayLeaf{value: quote}(registrationEvidence, b, pb);
+    }
+
+    /// @notice Price and send a relay with the payer as the provider refund recipient.
+    /// @dev A recipient-sensitive fee catches mismatched quote metadata; a delayed refund
+    ///      demonstrates that no relay bookkeeping is needed after the send returns.
+    function test_providerRefundsBelongToTheRelayerAndQuotesUseItsMetadata() public {
+        _bootstrap();
+        ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
+        SafeTxEvidence memory evidence = _register(DispatchLeaves.hash(leaf));
+        address relayer = address(0xF00);
+        mailbox.setFee(100);
+        mailbox.setRefundSurcharge(relayer, 23);
+        mailbox.setRefundSurcharge(address(st), 999);
+        vm.deal(relayer, 1000);
+        vm.prank(relayer);
+        uint256 fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+        assertEq(fee, 123);
+        uint256 balanceBefore = address(st).balance;
+        vm.prank(relayer);
+        st.relayLeaf{value: fee + 10}(evidence, leaf, new bytes32[](0));
+        assertEq(mailbox.sent(mailbox.sentLength() - 1).refundTo, relayer);
+        assertEq(relayer.balance, 1000 - fee);
+        mailbox.refundLater(mailbox.sentLength() - 1, 20);
+        assertEq(relayer.balance, 1000 - fee + 20);
+        assertEq(address(st).balance, balanceBefore);
+    }
+
+    /// @notice Retain the relay lock while a provider refunds the payer directly.
+    /// @dev The callback must not reuse the leaf or change prefunded conduit balance.
+    function test_directProviderRefundCannotReenterRelay() public {
+        _bootstrap();
+        mailbox.setFee(100);
+        mailbox.setSynchronousRebate(20);
+        ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
+        SafeTxEvidence memory e = _register(DispatchLeaves.hash(leaf));
+        ReenterRefund relayer = new ReenterRefund();
+        uint256 balanceBefore = address(st).balance;
+        relayer.relay{value: 100}(address(st), abi.encodeCall(st.relayLeaf, (e, leaf, new bytes32[](0))));
+        assertTrue(relayer.blocked());
+        assertEq(address(relayer).balance, 20);
+        assertEq(address(st).balance, balanceBefore);
+        assertTrue(st.isLeafRelayed(DispatchLeaves.hash(leaf)));
     }
 
     /// @notice Try invalid registration signatures, missing registration and altered delivery

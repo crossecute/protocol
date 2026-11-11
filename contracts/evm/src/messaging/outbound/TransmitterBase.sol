@@ -587,7 +587,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @inheritdoc OutboundBase
     /// @dev Path A: this conduit paid from its own balance. Path B refunds come here too, as
     ///      the transceiver's caller.
-    function _refundTo() internal view override returns (address) {
+    function _refundTo() internal view virtual override returns (address) {
         return address(this);
     }
 
