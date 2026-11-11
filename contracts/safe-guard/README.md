@@ -109,6 +109,24 @@ calldata per leaf of this size (the leaf, its offset and its length):
 forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationGasTest' -vv
 ```
 
+## Signed protocol integration
+
+`test/SignedDispatchIntegration.t.sol` runs real Safe 1.5.0 proxies, the actual guard and
+actual signed Hyperlane transceivers/conduits with a mock transport. Context-specific
+remappings import EVM sources into this Cancun test project; the production Paris
+compiler settings remain unchanged. See
+[the measured gas, sizes and test boundaries](../../docs/safe-signed-dispatch-measurements.md).
+
+```bash
+forge test --match-contract SignedDispatchIntegrationTest -vv
+python3 script/lint.py -D notes
+FOUNDRY_PROFILE=lint-src python3 script/lint.py -D notes src
+```
+
+The lint wrapper canonicalizes external import paths for Forge 1.8.1's Solar frontend,
+which otherwise reports duplicate declarations under relative/absolute paths. It preserves
+all lint rules and accepts normal `forge lint` arguments. CI uses it for both profiles.
+
 ## Licenses
 
 Sources under `src/` and `test/` are MIT, like `contracts/evm/src/`. The vendored policy-engine

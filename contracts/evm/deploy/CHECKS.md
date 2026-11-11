@@ -380,3 +380,35 @@ for it was not checked.
   before `markLive`, so an unverified deployer-placed contract at that address could originate
   messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
   it.
+
+## 8. Safe-signed dispatch (#134, 2026-11-11)
+
+Measured at code commit `c598ef99da5453590a08d7329183b0106bcdc7f1`.
+[Complete reproducible tables, assumptions and provider-size checks](../../../docs/safe-signed-dispatch-measurements.md)
+are in the signed-dispatch measurement note. Paris production receiver measurements and
+Cancun real-Safe source integration are separate; no live fee or lane-cap certification is implied.
+
+| Paris fixture | Standalone gas | Merkle gas | initializeSigned gas | Merkle wire bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 2-of-3 EOA | 168,011 | 158,130 | 306,208 | 1,600 |
+| Inline child | 176,859 | 167,027 | 387,931 | 1,696 |
+| Cached child approval | 191,845 | 181,977 | 402,873 | 2,432 |
+| Two nested levels | 185,974 | 176,115 | 470,161 | 1,792 |
+| Shared child | 213,497 | 203,724 | 595,644 | 2,112 |
+| Large cached graph, 10 calls, depth 8, attributes | 386,526 | 384,971 | 1,040,412 | 7,264 |
+
+`initializeSigned` excludes conduit deployment and outer transceiver work. Application state
+and benchmark boundaries are documented in the full note. **The 200k payload and 1m bootstrap
+defaults are unsuitable for general signed delivery.** Sign explicit gas attributes after
+simulating the exact full provider-entry-point call. No universal constant can cover unbounded
+authority graphs and arbitrary application calls. No protocol cap or gas floor is added.
+
+Real Safe 1.5.0/guard/conduit tests in `contracts/safe-guard/test/SignedDispatchIntegration.t.sol`
+cover both provider/direct delivery, cached child evidence, shared nested owners, two-destination
+root publication/registration/relay, nonce-42/43 atomic batching and rollback, bootstrap before
+source execution, and destination out-of-gas followed by a successful direct retry.
+
+All production contracts remain below EIP-170: CCIP transmitter headroom 535 bytes, LayerZero
+642, Hyperlane 944. Source gas includes mock mailbox journaling and is not a real provider fee.
+The three existing external-fork tests are still RPC-dependent. zkSync/Tron signed support,
+signed OFT and authority rotation remain outside this PR.

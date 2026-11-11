@@ -94,13 +94,12 @@ the seventh; what they mean for an operator is in the README.
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
-- **Signed dispatch is unmeasured and has no end-to-end test with real Safe 1.5.0.** Signed
-  transmitters and receivers ([#108](https://github.com/crossecute/protocol/issues/108)) are
-  tested against a stub Safe and stub guard, and the guard against a test transmitter. Gas,
-  payload sizes, a default delivery gas for signed payloads, and a test joining real Safe 1.5.0,
-  the real guard and the real conduits are
-  [#134](https://github.com/crossecute/protocol/issues/134). Authority updates are
-  [#109](https://github.com/crossecute/protocol/issues/109).
+- **Signed delivery needs an explicit, simulated gas budget.** #134's reproducible gas,
+  size and real Safe 1.5.0 integration evidence is in
+  [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). The inherited
+  200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
+  gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
+  those live configurations. Authority updates remain #109.
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
   tests check its root against a vector computed with `cast` and its proofs against
@@ -237,11 +236,6 @@ The signature-enabled transmitter and receiver
 [`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
 "Implementation", what the build leaves out. Outstanding:
 
-- **Measurements and an end-to-end test**:
-  [#134](https://github.com/crossecute/protocol/issues/134).
 - **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap, because
   the receiver report carries no graph hash for the home to find the transmitter with.
-- **Relayer refunds.** `relayLeaf` forwards synchronous provider refunds to the relayer, but no
-  binding passes the relayer as the provider's refund address, so a refund that arrives later
-  stays with the transmitter.
 - **Authority changes**: [#109](https://github.com/crossecute/protocol/issues/109).

@@ -9,9 +9,10 @@ from a registered Merkle root, and how a receiver verifies and executes it. Trac
 
 **Status.** Implemented under
 [`contracts/evm/src/messaging/signed/`](../contracts/evm/src/messaging/signed/); see
-[Implementation](#implementation) for where each part lives and what it leaves out. Gas and
-payload sizes, a signed default delivery gas, and an end-to-end test against real Safe 1.5.0
-and the real guard are [#134](https://github.com/crossecute/protocol/issues/134). Where this
+[Implementation](#implementation) for where each part lives and what it leaves out. Gas/payload measurements and real Safe 1.5.0/guard/conduit integration tests are recorded in
+[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md), completing #134.
+The inherited delivery-gas defaults are unsuitable for general signed delivery: use explicit
+provider gas attributes derived from an exact destination simulation. Where this
 file and #108 disagree, #108 is current: its "Fixed authority and shared salt" section and its
 root registration text, which stores no signatures, are what the code follows.
 
@@ -204,8 +205,8 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   `address(this).balance == balanceBefore` after settlement. Protect settlement against reentrancy. A failed refund or balance mismatch
   reverts the relay, including the used mark. Direct submission proves membership using
   the full leaf and executes without applying its provider attributes.
-- **Q1.9** Measuring provider envelope costs, including nested evidence, and defining
-  bounds is [#134](https://github.com/crossecute/protocol/issues/134). Leaf data, proofs and attributes are variable length because the
+- **Q1.9** Provider envelope costs, including nested evidence, and provider-limit checks are
+  recorded in [the measurements](safe-signed-dispatch-measurements.md). Leaf data, proofs and attributes are variable length because the
   number of calls, tree depth and provider options vary.
 - **Q1.10** A repeat `registerRoot` reverts with `RootAlreadyRegistered(root)`, including
   when the Safe signs it at a new nonce. The original registration and used-leaf records
@@ -611,9 +612,13 @@ How the pieces fit:
 - **Size.** `SafeAuthority`'s public functions and `SignedTransmitterLib` are linked
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
   receivers under EIP-170.
-- **Settlement.** Provider refunds land on the transmitter, which forwards them with the
-  excess to the relayer before checking its balance (Q1.8). No binding passes the relayer as
-  the provider's refund address.
+- **Settlement.** `relayLeaf` and `quoteRelay` select the caller as the provider refund
+  recipient (LayerZero, Hyperlane and Wormhole support that plumbing). Delayed provider
+  refunds can return directly to the payer. Any synchronous refund received by the transmitter
+  is forwarded with excess payment before its final balance check. The relay lock covers
+  provider callbacks and refund settlement. Safe-funded sends retain refunds in the conduit.
+  This creates no refund entitlement where the provider offers none (for example CCIP unused
+  execution gas); providers without a recipient field cannot be redirected.
 
 Not in #108's implementation:
 
@@ -623,8 +628,9 @@ Not in #108's implementation:
   Tron): the receiver report carries no graph, so the home could not find the transmitter.
   The source refuses a signed bootstrap to a destination that reports its receiver. Non-EVM
   destinations are [#128](https://github.com/crossecute/protocol/issues/128).
-- **Measurements and the end-to-end test** with real Safe 1.5.0 are
-  [#134](https://github.com/crossecute/protocol/issues/134).
+Completed #134 measurements and real-Safe integration evidence are in
+[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). No signed OFT,
+zkSync/Tron or authority-rotation support is added by that work.
 
 ## Tests
 
