@@ -1,0 +1,17 @@
+# Actions are pinned by commit and npm dependencies exactly, so nothing moves unless one of these
+# PRs is merged. The cooldown skips versions published in the last week; security updates ignore it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: npm
+    directory: /contracts/evm/npm
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
