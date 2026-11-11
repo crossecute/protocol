@@ -199,7 +199,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     /// @dev R3 to R16 for a leaf under a signed `registerRoot`.
     function _runLeaf(SignedDelivery memory registration, ExecutionLeaf memory leaf, bytes32[] memory proof) private {
         SignedCalls.requireSourceCall(registration.safeTx, sourceTransmitter);
-        bytes32 root = SignedCalls.registeredRoot(registration.safeTx.data);
+        bytes32 root = SignedCalls.registeredRoot(registration.safeTx);
         SignedCalls.requireDestination(leaf.destination, address(this));
         DispatchLeaves.requireProof(proof, root, DispatchLeaves.hash(leaf));
         _verify(registration);

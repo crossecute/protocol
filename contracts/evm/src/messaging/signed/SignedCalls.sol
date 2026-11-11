@@ -23,6 +23,8 @@ library SignedCalls {
     /// @dev #108 fixes authority at creation, so every signed counter is zero (#109 advances it).
     error AuthorityCounterMismatch(uint256 counter);
     error EmptySignedPayload();
+    /// @dev `registerRoot` is nonpayable on the source transmitter.
+    error NonzeroRegistrationValue(uint256 value);
 
     function requireSourceCall(SafeTx memory safeTx, address target) internal pure {
         if (safeTx.to != target || safeTx.operation != CALL || safeTx.safeTxGas != 0 || safeTx.gasPrice != 0) {
@@ -38,8 +40,9 @@ library SignedCalls {
         return abi.decode(Slices.arguments(data, IERC7786GatewaySource.sendMessage.selector), (bytes, bytes, bytes[]));
     }
 
-    function registeredRoot(bytes memory data) internal pure returns (bytes32) {
-        return abi.decode(Slices.arguments(data, ISignedOwnerCalls.registerRoot.selector), (bytes32));
+    function registeredRoot(SafeTx memory safeTx) internal pure returns (bytes32) {
+        if (safeTx.value != 0) revert NonzeroRegistrationValue(safeTx.value);
+        return abi.decode(Slices.arguments(safeTx.data, ISignedOwnerCalls.registerRoot.selector), (bytes32));
     }
 
     /// @notice The signed `bootstrap(payload, attributes)`, with `payload` unpacked.
