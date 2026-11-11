@@ -11,7 +11,6 @@ import {AccessSelector} from "policy-engine/libraries/AccessSelector.sol";
 import {AllowPolicy} from "policy-engine/policies/AllowPolicy.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {IBootstrap} from "../src/CrossecuteGuard.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
@@ -571,7 +570,7 @@ contract SendMessageTest is GuardTestBase {
 
 /// @dev Calls the Safe's `setGuard` through the module path. The Safe has no module guard here.
 ///      Its `sendMessage` and `bootstrap` swap the guard mid-execution.
-contract GuardSwapModule is IBootstrap {
+contract GuardSwapModule {
     Safe internal immutable SAFE;
     address internal immutable REPLACEMENT;
 

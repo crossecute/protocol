@@ -5,7 +5,7 @@ import {Call} from "crossecute/messaging/Call.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
-import {IBootstrap, IRootRegistration} from "../src/CrossecuteGuard.sol";
+import {ISignedOwnerCalls} from "crossecute/messaging/signed/ISignedOwnerCalls.sol";
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
@@ -29,7 +29,7 @@ interface IPlainBootstrap {
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
+contract TestTransmitter is ISignedOwnerCalls, IPlainBootstrap {
     enum Mode {
         Consume,
         Skip,
@@ -167,7 +167,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
 }
 
 /// @dev Has the staged selectors and no relation to the guard.
-contract Collider is IBootstrap {
+contract Collider {
     uint256 public calls;
 
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
@@ -181,7 +181,7 @@ contract Collider is IBootstrap {
 }
 
 /// @dev Has the `registerRoot` selector and no relation to the guard.
-contract RootCollider is IRootRegistration {
+contract RootCollider {
     uint256 public calls;
 
     function registerRoot(bytes32) external {
