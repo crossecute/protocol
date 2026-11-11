@@ -105,7 +105,7 @@ library SignedTransmitterLogic {
             abi.decode(args, (SignedDelivery, ExecutionLeaf, bytes32[]));
         address safe = ISignedSelf(address(this)).deployer();
         SignedCalls.requireSourceCall(d.safeTx, address(this));
-        root = SignedCalls.registeredRoot(d.safeTx.data);
+        root = SignedCalls.registeredRoot(d.safeTx);
         leafHash = DispatchLeaves.hash(leaf);
         DispatchLeaves.requireProof(proof, root, leafHash);
 

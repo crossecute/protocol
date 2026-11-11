@@ -323,6 +323,20 @@ contract SignedReceiverTest is Test {
         (l[0], l[1]) = (a, b);
     }
 
+    function test_aValueBearingRegistrationCannotAuthorizeALeaf() public {
+        ExecutionLeaf memory leaf = _leaf(0, _calls("nonpayable"));
+        (SignedDelivery memory d, bytes32[][] memory proofs) = _register(_one(leaf));
+        d.safeTx.value = 1;
+        d.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN));
+
+        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
+        ISignedReceiver(receiver).submitLeaf(d, leaf, proofs[0]);
+        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
+        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proofs[0]));
+        assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
+        assertEq(sink.hits(), 1);
+    }
+
     function test_leavesRunInLocalNonceOrderAcrossRoutes() public {
         ExecutionLeaf memory l0 = _leaf(0, _calls("0"));
         ExecutionLeaf memory l1 = _leaf(1, _calls("1"));

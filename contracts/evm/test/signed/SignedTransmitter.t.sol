@@ -350,6 +350,23 @@ contract SignedTransmitterTest is HyperlaneFixture {
         st.registerRoot(bytes32(0));
     }
 
+    function test_aValueBearingRegistrationCannotBeQuotedOrRelayed() public {
+        _bootstrap();
+        ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
+        SignedDelivery memory d = _register(DispatchLeaves.hash(leaf));
+        // registerRoot is nonpayable even when called by the owner.
+        vm.deal(address(safe), 1);
+        vm.expectRevert();
+        safe.exec(address(st), 1, d.safeTx.data);
+        d.safeTx.value = 1;
+        d.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(d.safeTx, address(safe), block.chainid));
+        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
+        st.quoteRelay(d, leaf, new bytes32[](0));
+        vm.expectRevert(abi.encodeWithSelector(SignedCalls.NonzeroRegistrationValue.selector, 1));
+        st.relayLeaf(d, leaf, new bytes32[](0));
+        assertFalse(st.isLeafRelayed(DispatchLeaves.hash(leaf)));
+    }
+
     function test_anyoneRelaysEachLeafOncePayingTheQuoteWithTheExcessRefunded() public {
         _bootstrap();
         mailbox.setFee(0.01 ether);
