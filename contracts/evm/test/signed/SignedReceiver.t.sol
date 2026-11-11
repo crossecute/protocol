@@ -486,4 +486,88 @@ contract SignedReceiverTest is Test {
         vm.expectRevert(SignedReceiver.NotSigned.selector);
         ISignedReceiver(r).submitMessage(d);
     }
+    bytes private reentryCall;
+    bool private reentryAttempted;
+
+    function attemptReentry() external {
+        require(msg.sender == receiver);
+        reentryAttempted = true;
+        (bool ok, bytes memory reason) = receiver.call(reentryCall);
+        assertFalse(ok, "nested dispatch succeeded");
+        assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
+    }
+
+    function test_reentrancyAcrossAllSignedEntryRoutes() public {
+        for (uint256 outer; outer < 4; ++outer) {
+            for (uint256 inner; inner < 3; ++inner) {
+                _reentryScenario(outer, inner);
+            }
+        }
+    }
+
+    function _reentryScenario(uint256 outer, uint256 inner) private {
+        uint256 nonce = SignedReceiver(payable(receiver)).nextNonce();
+        SignedDelivery memory nestedMessage = _message(_here(receiver), _calls("nested"));
+        ExecutionLeaf memory nestedLeaf = _leaf(nonce + 1, _calls("nested leaf"));
+        (SignedDelivery memory nestedReg, bytes32[][] memory nestedProof) = _register(_one(nestedLeaf));
+        if (inner == 0) {
+            reentryCall = abi.encodeCall(ISignedReceiver.submitMessage, (nestedMessage));
+        } else if (inner == 1) {
+            reentryCall = abi.encodeCall(ISignedReceiver.submitLeaf, (nestedReg, nestedLeaf, nestedProof[0]));
+        } else {
+            reentryCall = abi.encodeWithSignature("finalize((address,uint256,bytes)[])", new Call[](0));
+        }
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(this), 0, abi.encodeCall(this.attemptReentry, ()));
+        reentryAttempted = false;
+        if (outer < 2) {
+            SignedDelivery memory d = _message(_here(receiver), abi.encode(calls));
+            if (outer == 0) ISignedReceiver(receiver).submitMessage(d);
+            else _deliver(abi.encode(WIRE_STANDALONE, d));
+        } else {
+            ExecutionLeaf memory leaf = _leaf(nonce, abi.encode(calls));
+            (SignedDelivery memory d, bytes32[][] memory proof) = _register(_one(leaf));
+            if (outer == 2) ISignedReceiver(receiver).submitLeaf(d, leaf, proof[0]);
+            else _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+        }
+        assertTrue(reentryAttempted);
+        uint256 before = sink.hits();
+        // A refused nested message remains usable after the outer lock is released.
+        ISignedReceiver(receiver).submitMessage(nestedMessage);
+        assertEq(sink.hits(), before + 1);
+    }
+
+    function test_failedValueTransferRollsBackLeafAndEarlierCallsThenRetriesOnce() public {
+        Call[] memory calls = new Call[](2);
+        calls[0] = Call(address(sink), 0, abi.encodeCall(Sink.hit, ("prefix")));
+        calls[1] = Call(address(sink), 1, abi.encodeCall(Sink.hit, ("paid")));
+        ExecutionLeaf memory leaf = _leaf(0, abi.encode(calls));
+        (SignedDelivery memory d, bytes32[][] memory proof) = _register(_one(leaf));
+        vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
+        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+        assertEq(sink.hits(), 1, "prefix rolled back");
+        assertEq(SignedReceiver(payable(receiver)).nextNonce(), 0);
+        assertEq(SignedReceiver(payable(receiver)).executionAt(0), bytes32(0));
+        ISignedReceiver(receiver).submitLeaf{value: 1}(d, leaf, proof[0]);
+        assertEq(sink.hits(), 3);
+        assertEq(SignedReceiver(payable(receiver)).nextNonce(), 1);
+        _deliver(abi.encode(WIRE_MERKLE, d, leaf, proof[0]));
+        assertEq(sink.hits(), 3);
+    }
+
+    function test_failedStandaloneTransferLeavesDigestRetryableAcrossRoutes() public {
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(sink), 1, abi.encodeCall(Sink.hit, ("paid")));
+        SignedDelivery memory d = _message(_here(receiver), abi.encode(calls));
+        bytes32 digest = SafeHashes.transactionHash(d.safeTx, SAFE, SOURCE_CHAIN);
+        vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
+        ISignedReceiver(receiver).submitMessage(d);
+        assertFalse(SignedReceiver(payable(receiver)).isMessageExecuted(digest));
+        vm.deal(receiver, 1);
+        _deliver(abi.encode(WIRE_STANDALONE, d));
+        assertTrue(SignedReceiver(payable(receiver)).isMessageExecuted(digest));
+        assertEq(sink.hits(), 2);
+        ISignedReceiver(receiver).submitMessage(d);
+        assertEq(sink.hits(), 2);
+    }
 }
