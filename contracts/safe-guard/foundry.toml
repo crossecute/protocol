@@ -7,7 +7,7 @@ libs = ["lib"]
 # forge-std is shared with the protocol project rather than pinned a second time, and the
 # `sendMessage` selector is read from the protocol's own ERC-7786 interface. Tests check Merkle
 # proofs with the protocol's pinned OpenZeppelin verifier.
-allow_paths = ["../evm/lib/forge-std", "../evm/src/messaging", "../evm/lib/openzeppelin-contracts"]
+allow_paths = ["../evm"]
 # Pinned to the policy-engine's own settings: SafePolicyGuard declares `pragma =0.8.30` and
 # does not compile without via-IR. Cancun is required for EIP-1153 transient storage.
 solc_version = "0.8.30"
@@ -17,7 +17,21 @@ optimizer = true
 optimizer_runs = 200
 bytecode_hash = "none"
 cbor_metadata = false
+# Context-specific EVM roots keep the guard's own src/ imports in this project.
+# Prefixes include a subdirectory because Forge drops a remapping named exactly src/.
 remappings = [
+    "../evm/:src/addressing/=../evm/src/addressing/",
+    "../evm/:src/conduit/=../evm/src/conduit/",
+    "../evm/:src/derivation/=../evm/src/derivation/",
+    "../evm/:src/messaging/=../evm/src/messaging/",
+    "../evm/:src/protocols/=../evm/src/protocols/",
+    "../evm/:src/registry/=../evm/src/registry/",
+    "../evm/:src/schemes/=../evm/src/schemes/",
+    "../evm/:src/treasury/=../evm/src/treasury/",
+    "../evm/:src/validators/=../evm/src/validators/",
+    "@openzeppelin/contracts-upgradeable/=../evm/lib/openzeppelin-contracts-upgradeable/contracts/",
+    "@hyperlane/=../evm/lib/hyperlane/solidity/contracts/",
+    "evm-test/=../evm/test/",
     "@openzeppelin/contracts/=../evm/lib/openzeppelin-contracts/contracts/",
     "crossecute/=../evm/src/",
     "@crossecute/safe-guard/=src/",
