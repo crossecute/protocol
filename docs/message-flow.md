@@ -19,7 +19,10 @@ contract is right.
 ## Three properties the whole design turns on
 
 **The home chain is a property of the conduit.** Any chain can be home: an owner picks one
-per conduit by calling `createTransmitter` there, and it is part of the conduit's address.
+per conduit by calling `createTransmitter` there, and it is part of the conduit's address. A
+Safe whose transaction guard advertises `ICrossecuteGuard` gets a Safe-signed conduit instead,
+whose address also commits to its owner graph
+([`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation)).
 Every chain runs one transceiver per provider, which creates transmitters for conduits homed
 on its chain and receivers for conduits homed elsewhere. Everything below reads "home" and
 "destination" rather than "Ethereum" and "elsewhere" for that reason.
@@ -109,7 +112,7 @@ that chain.
 
 ```mermaid
 flowchart LR
-    Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
+    Owner([owner]) -->|"bootstrap(payload)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Home[Transceiver at home]
     Home -->|"bridge"| Dest[Transceiver at the destination]
     Dest -->|"CREATE2(owner, salt, home)"| Proxy[Proxy]
@@ -120,9 +123,13 @@ flowchart LR
 
 Hop by hop:
 
-- `transmitter.bootstrap(chainId, calls)` is `onlyConduitOwner`, and refuses a destination
-  this conduit has already bootstrapped. It asks its transceiver's `quoteBootstrap` and
-  forwards exactly that, bootstrap fee included, from its own balance.
+- `transmitter.bootstrap(payload, attributes)` is `onlyConduitOwner`. `payload` is
+  `bootstrapPayload(destinationChainIdentifier, wire)`, naming the destination and the calls
+  its receiver runs, and it refuses a destination this conduit has already bootstrapped. It
+  asks its transceiver's `quoteBootstrap` and forwards exactly that, bootstrap fee included,
+  from its own balance. A transceiver that answers `conduitBootstrap` with a message (the
+  `layerzero-oft` factory) has the conduit send that message through its own transport
+  instead, priced by its own quote.
 - `bootstrap(chainKey, owner, salt, calls, attributes)` on the home's transceiver:
   `msg.sender` must be the conduit homed there, `_requireRoutable(chainKey)` applies the
   registry's grade, the suspension flag, and the provenance bar, and
@@ -286,9 +293,10 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. Grants are `onlyInitializing`, so membership arrives while a contract is armed and never afterwards: an initializer grants through the internal `_grantInitialRole`, and the public `grantRole` accepts only the contract's own call, which a receiver's bootstrap payload can make (#68). `RolesEnumerable` adds on-chain enumeration for conduits; a transceiver's fixed set is read from its `RoleGranted` logs. | `hasRole`; `getRoleMembers` on conduits |
 | `messaging/Executor.sol` | The shared execution loop. In order, all or nothing, reverting with `CallFailed(index, reason)`. | `isAllowed(address, bytes4)`, open by default |
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
-| `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap` / `bootstrapTo` (three overloads), the matching quotes, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
+| `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap`, `quoteBootstrap`, `bootstrapPayload`, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side conduit. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
-| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain of one deployer. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a bootstrap whose carried transmitter is not the one the home's transceiver derives, as the registry records it, when that home is `Predetermined` (`SourceTransmitterMismatch`). It refuses to bootstrap, or quote a bootstrap to, a chain the registry has not marked live (`DestinationNotLive`). Its default counterpart on a `Predetermined` chain is the registry's prediction from the deployer recorded for that chain. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `Proxy` that `ProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
+| `messaging/signed/` | Safe-signed mode (#108), used by `outbound/SignedTransmitter.sol` and `inbound/SignedReceiver.sol`: the owner graph, the stored-authority verifier, leaf hashing, and the linked `SafeAuthority` and `SignedTransmitterLib`. See [`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation). | `registerRoot`, `relayLeaf`, `retryBootstrap`, `quoteSignedMessage`, `quoteSignedBootstrap`, `quoteRelay`; `submitMessage`, `submitLeaf`; `initializeSigned` |
+| `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain of one deployer. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a bootstrap whose carried transmitter is not the one the home's transceiver derives, as the registry records it, when that home is `Predetermined` (`SourceTransmitterMismatch`). It refuses to bootstrap, or quote a bootstrap to, a chain the registry has not marked live (`DestinationNotLive`). Its default counterpart on a `Predetermined` chain is the registry's prediction from the deployer recorded for that chain. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `Proxy` that `ProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `conduitBootstrap`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
 | `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `conduitSalt`, `predictConduit`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
 | `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `PROXY_INIT_CODE_HASH` |
 | `messaging/transceiver/DivergentTransceiver.sol` | The transceiver on zkSync and Tron. Always reports its receivers, derives its owner with its own formula, and, like every transceiver, takes its default counterpart on a parity chain from the registry's prediction. | as `TransceiverBase`, plus `conduitBytecodeHash`; `ZkSyncTransceiverExtension` and `TronTransceiverExtension` derive alike |

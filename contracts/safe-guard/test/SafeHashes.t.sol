@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {SafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 
@@ -10,7 +10,7 @@ import {GuardTestBase} from "./GuardTestBase.sol";
 ///      `sendMessage` whose staged hash differs from the one the Safe computes, and an approval cached
 ///      under another message hash is never found.
 contract SafeHashesTest is GuardTestBase {
-    function testFuzz_hash_matchesSafe(ICrossecuteGuard.SafeTx memory safeTx, uint64 chainId) public {
+    function testFuzz_hash_matchesSafe(SafeTx memory safeTx, uint64 chainId) public {
         safeTx.operation = uint8(bound(safeTx.operation, 0, 1));
         vm.chainId(bound(chainId, 1, type(uint64).max));
         assertEq(SafeHashes.transactionHash(safeTx, address(safe), block.chainid), _safeHash(safeTx));
@@ -27,7 +27,7 @@ contract SafeHashesTest is GuardTestBase {
     /// @dev Every field is distinct and nonzero, so a swapped or dropped field fails. The policy
     ///      rejects nonzero `safeTxGas` and `gasPrice`, but the hash must match Safe on any input.
     function test_hash_matchesSafeWithSendMessageCalldata() public view {
-        ICrossecuteGuard.SafeTx memory safeTx = ICrossecuteGuard.SafeTx({
+        SafeTx memory safeTx = SafeTx({
             to: address(transmitter),
             value: 1 ether,
             data: _sendMessageData(),
@@ -45,7 +45,7 @@ contract SafeHashesTest is GuardTestBase {
     /// @dev The hash scratch space sits past the free memory pointer, so it must leave the struct
     ///      and its calldata intact.
     function test_hash_leavesMemoryIntact() public view {
-        ICrossecuteGuard.SafeTx memory safeTx;
+        SafeTx memory safeTx;
         safeTx.to = address(transmitter);
         safeTx.data = _sendMessageData();
         bytes memory before = abi.encode(safeTx);
@@ -53,7 +53,7 @@ contract SafeHashesTest is GuardTestBase {
         assertEq(abi.encode(safeTx), before);
     }
 
-    function _safeHash(ICrossecuteGuard.SafeTx memory t) internal view returns (bytes32) {
+    function _safeHash(SafeTx memory t) internal view returns (bytes32) {
         return safe.getTransactionHash(
             t.to,
             t.value,

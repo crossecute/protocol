@@ -17,6 +17,12 @@ contract MockHyperlaneMailbox {
 
     Sent[] internal _sent;
     uint256 public fee;
+    uint256 public synchronousRebate;
+
+    /// @notice Configure a synchronous refund even when the quoted fee was paid exactly.
+    function setSynchronousRebate(uint256 amount) external {
+        synchronousRebate = amount;
+    }
 
     function setFee(uint256 nativeFee) external {
         fee = nativeFee;
@@ -65,6 +71,13 @@ contract MockHyperlaneMailbox {
         return price == 0 ? 1 : price;
     }
 
+    /// @notice Return part of a recorded payment after dispatch has completed.
+    /// @dev Models a provider using the persisted recipient rather than the current caller.
+    function refundLater(uint256 index, uint256 amount) external {
+        (bool ok,) = _sent[index].refundTo.call{value: amount}("");
+        require(ok, "refund failed");
+    }
+
     function dispatch(uint32 destinationDomain, bytes32 recipientAddress, bytes calldata body, bytes calldata metadata)
         external
         payable
@@ -74,8 +87,8 @@ contract MockHyperlaneMailbox {
         require(msg.value >= required, "insufficient fee");
         address refundTo = metadata.length >= 86 ? address(bytes20(metadata[66:86])) : msg.sender;
         _sent.push(Sent(destinationDomain, recipientAddress, body, metadata, msg.value, refundTo));
-        if (msg.value > required) {
-            (bool ok,) = refundTo.call{value: msg.value - required}("");
+        if (msg.value > required || synchronousRebate != 0) {
+            (bool ok,) = refundTo.call{value: msg.value - required + synchronousRebate}("");
             require(ok, "refund failed");
         }
         return keccak256(abi.encode(_sent.length, destinationDomain, body));

@@ -130,6 +130,8 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     IBootstrapAllowlist internal _bootstrapAllowlist;
 
     event ConduitCreated(address indexed owner, address indexed conduit, bytes32 salt, bytes32 homeChainKey);
+    /// @dev After `ConduitCreated` for a signed conduit: the graph hash its salt also commits to.
+    event SignedConduitCreated(address indexed conduit, bytes32 graph);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the conduit.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
@@ -194,6 +196,10 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      with this chain's. Refused on the first bootstrap rather than leaving every such
     ///      conduit unreachable.
     error SourceTransmitterMismatch(address expected, address carried);
+    /// @dev A signed receiver is created only for a home whose transmitter this chain can derive.
+    error SourceTransmitterNotDerivable(bytes32 home);
+    /// @dev A signed receiver is not created where this chain's addresses diverge (#108 scope).
+    error SignedReceiverNotDerivable();
     error NotTreasury(address caller);
     error NotOwnerOrOperator(address caller);
     error NotAllowed(address conduit);
@@ -211,30 +217,57 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      transmitter on one would otherwise sit where the other's receiver lands. The home
     ///      is its own field: adding or XORing it into `salt` would let one owner make two
     ///      homes collide. `abi.encode` is fixed-width, so no two triples collide.
+    ///
+    /// @dev A signed conduit (Safe-signed dispatch, #108) appends `graph`, the hash of its owner
+    ///      Safe's canonical authority records at creation. The fourth field separates the two
+    ///      preimages, so a plain envelope can never derive a signed conduit's address. A graph
+    ///      hash is a keccak256 output, so zero stands for plain.
     function _conduitSalt(address owner, bytes32 salt, bytes32 homeChainKey) internal pure returns (bytes32) {
-        return keccak256(abi.encode(owner, salt, homeChainKey));
+        return _conduitSalt(owner, salt, homeChainKey, bytes32(0));
+    }
+
+    function _conduitSalt(address owner, bytes32 salt, bytes32 homeChainKey, bytes32 graph)
+        internal
+        pure
+        returns (bytes32)
+    {
+        if (graph == bytes32(0)) return keccak256(abi.encode(owner, salt, homeChainKey));
+        return keccak256(abi.encode(owner, salt, homeChainKey, graph));
     }
 
     /// @notice Where an owner's conduit lives on this chain, before it exists.
     /// @dev Ethereum's CREATE2, identical wherever the formula holds since all three inputs
     ///      are: this address (one per provider on every chain), the salt, and a constant
-    ///      initcode. zkSync and Tron derive differently, so a variant there overrides this,
-    ///      in both its `TransceiverBase` and its extension, and `_deployConduit` with it;
-    ///      `_createConduit` checks the two agree.
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    ///      initcode. zkSync and Tron derive differently, so a variant there overrides
+    ///      `_conduitAt`, in both its `TransceiverBase` and its extension, and `_deployConduit`
+    ///      with it; `_createConduit` checks the two agree.
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey) internal view returns (address) {
+        return _predictConduit(owner, salt, homeChainKey, bytes32(0));
+    }
+
+    /// @notice `_predictConduit`, for a conduit whose salt commits to `graph` (zero for plain).
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey, bytes32 graph)
         internal
         view
-        virtual
         returns (address)
     {
-        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), PROXY_INIT_CODE_HASH, address(this));
+        return _conduitAt(_conduitSalt(owner, salt, homeChainKey, graph));
+    }
+
+    /// @notice Where the conduit deployed under `conduitSalt` lands on this chain.
+    function _conduitAt(bytes32 conduitSalt) internal view virtual returns (address) {
+        return Create2.computeAddress(conduitSalt, PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice `(owner, salt)`'s conduit homed on this chain: its transmitter here.
     /// @dev One expression for the bootstrap caller check, the transmitter a bootstrap and its
     ///      quote carry, and every lookup of a conduit a report is for, so they cannot drift.
     function _localConduit(address owner, bytes32 salt) internal view returns (address) {
-        return _predictConduit(owner, salt, localChainKey);
+        return _localConduit(owner, salt, bytes32(0));
+    }
+
+    function _localConduit(address owner, bytes32 salt, bytes32 graph) internal view returns (address) {
+        return _predictConduit(owner, salt, localChainKey, graph);
     }
 
     /// @notice The exact report bytes for `(owner, salt)` and `receiver`.

@@ -105,7 +105,7 @@ goes to the one contract that already exists there.
 
 ```mermaid
 flowchart LR
-    Owner([owner]) -->|"bootstrap(chainId, calls)"| Tx[Transmitter]
+    Owner([owner]) -->|"bootstrap(payload)"| Tx[Transmitter]
     Tx -->|"bootstrap(chainKey, owner, salt, calls)"| Home[Transceiver at home]
     Home -->|"bridge"| Dest[Transceiver at the destination]
     Dest -->|"CREATE2(owner, salt, home)"| Proxy[Proxy]
@@ -509,6 +509,10 @@ script's pinned commit changes, re-check the matching section there.
   guarantees about replay, how ERC-7786 attaches, and the design influences and candidate
   additions each suggests. Pinned to other people's releases, so it goes stale on their
   schedule rather than ours
+- [`docs/safe-signed-dispatch.md`](docs/safe-signed-dispatch.md): the Safe-signed dispatch
+  design for #108, with its decisions, the check orders the transmitter and receiver follow,
+  and where each part is implemented under
+  [`contracts/evm/src/messaging/signed/`](contracts/evm/src/messaging/signed/)
 - [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
 
 ## Status

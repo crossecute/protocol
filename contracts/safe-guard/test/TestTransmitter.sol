@@ -5,8 +5,7 @@ import {Call} from "crossecute/messaging/Call.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
-import {IBootstrap, IRootRegistration} from "../src/CrossecuteGuard.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
 /// @dev Stands in for an external effect. Records whether the caller's staged record was already
@@ -29,7 +28,7 @@ interface IPlainBootstrap {
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
+contract TestTransmitter is IPlainBootstrap {
     enum Mode {
         Consume,
         Skip,
@@ -111,7 +110,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
 
         if (mode == Mode.CallThenConsume) _call();
         ICrossecuteGuard guard = ICrossecuteGuard(GuardDiscovery.transactionGuard(msg.sender));
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
+        SignedSafeTx memory signedSafeTx = guard.consume(msg.sender);
         lastSendMessage = abi.encode(signedSafeTx);
         signedSafeTx.safeTx.data = msg.data;
         lastSafeTxHash = _safeTxHash(signedSafeTx.safeTx);
@@ -140,7 +139,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
         ++registrations;
     }
 
-    function _safeTxHash(ICrossecuteGuard.SafeTx memory t) private view returns (bytes32) {
+    function _safeTxHash(SafeTx memory t) private view returns (bytes32) {
         return ISafe(payable(OWNER))
             .getTransactionHash(
                 t.to,
@@ -167,7 +166,7 @@ contract TestTransmitter is IBootstrap, IPlainBootstrap, IRootRegistration {
 }
 
 /// @dev Has the staged selectors and no relation to the guard.
-contract Collider is IBootstrap {
+contract Collider {
     uint256 public calls;
 
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external payable returns (bytes32) {
@@ -181,7 +180,7 @@ contract Collider is IBootstrap {
 }
 
 /// @dev Has the `registerRoot` selector and no relation to the guard.
-contract RootCollider is IRootRegistration {
+contract RootCollider {
     uint256 public calls;
 
     function registerRoot(bytes32) external {

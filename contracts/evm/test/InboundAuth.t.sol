@@ -17,7 +17,8 @@ import {
     AnyGatewayReceiver,
     SharedAddressTransceiver,
     AnyGatewayTransmitter,
-    ext
+    ext,
+    bootstrapPayload
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 
@@ -192,7 +193,7 @@ contract InboundAuthTest is Test {
         vm.startPrank(transmitter);
         acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
         vm.deal(address(acct), 1 ether);
-        acct.bootstrap(chainId, new Call[](0), new bytes[](0));
+        acct.bootstrap(bootstrapPayload(chainId, new Call[](0)), new bytes[](0));
         vm.stopPrank();
     }
 
@@ -259,7 +260,7 @@ contract InboundAuthTest is Test {
         vm.startPrank(second);
         Transmitter acct = Transmitter(payable(node.createTransmitter(bytes32(0))));
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.ChainSuspended.selector, baseKey));
-        acct.bootstrap(8453, new Call[](0), new bytes[](0));
+        acct.bootstrap(bootstrapPayload(8453, new Call[](0)), new bytes[](0));
         vm.stopPrank();
 
         vm.prank(msig);
@@ -297,7 +298,7 @@ contract InboundAuthTest is Test {
     }
 
     function testFuzz_onlyDefinedKindsAreRead(uint256 kind) public {
-        vm.assume(kind == 0 || kind > Envelope.RECEIVER_REPORT);
+        vm.assume(kind == 0 || kind > Envelope.SIGNED_BOOTSTRAP);
         bytes memory m = abi.encode(kind, transmitter, bytes32(0), _boot());
 
         vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, kind));

@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+/// @dev Safe 1.5.0's `execTransaction`.
+interface ISafeExec {
+    /// @notice Execute a signed transaction through the target Safe and report whether its
+    ///         inner call succeeded.
+    /// @dev The batch executor must detect a Safe returning `false` as well as a revert,
+    ///      otherwise a failed inner call could leave a partially successful batch.
+    function execTransaction(
+        address to,
+        uint256 value,
+        bytes calldata data,
+        uint8 operation,
+        uint256 safeTxGas,
+        uint256 baseGas,
+        uint256 gasPrice,
+        address gasToken,
+        address payable refundReceiver,
+        bytes calldata signatures
+    ) external payable returns (bool success);
+}
+
+/// @title SafeBatchExecutor
+/// @notice Runs several separately signed Safe transactions in one outer transaction, all or
+///         nothing: the atomic source batch of #108, such as two single-destination sends at
+///         consecutive Safe nonces.
+/// @dev Each transaction is executed as given, so the caller orders them by nonce; the Safe
+///      refuses a nonce out of order. A Safe that returns `false`, which it does for a failed
+///      inner call when `safeTxGas` or `gasPrice` is nonzero, reverts the batch like a revert
+///      does, so every send and nonce advance in it rolls back. Holds nothing and has no owner,
+///      so anyone holding the signatures can submit them.
+contract SafeBatchExecutor {
+    struct SafeExecution {
+        ISafeExec safe;
+        address to;
+        uint256 value;
+        bytes data;
+        uint8 operation;
+        uint256 safeTxGas;
+        uint256 baseGas;
+        uint256 gasPrice;
+        address gasToken;
+        address payable refundReceiver;
+        bytes signatures;
+    }
+
+    error SafeExecutionFailed(uint256 index);
+
+    /// @notice Execute the supplied separately signed Safe transactions in order, reverting the
+    ///         whole batch on any failure.
+    /// @dev Atomic execution keeps earlier sends and Safe nonce advances from surviving a later
+    ///      failed call. The caller orders transactions by their signed Safe nonces; the
+    ///      executor holds no owner privilege.
+    function execute(SafeExecution[] calldata executions) external {
+        for (uint256 i = 0; i < executions.length; ++i) {
+            SafeExecution calldata execution = executions[i];
+            // forge-lint: disable-start(calls-loop) one Safe execution per batch entry is the purpose
+            bool success = execution.safe
+                .execTransaction(
+                    execution.to,
+                    execution.value,
+                    execution.data,
+                    execution.operation,
+                    execution.safeTxGas,
+                    execution.baseGas,
+                    execution.gasPrice,
+                    execution.gasToken,
+                    execution.refundReceiver,
+                    execution.signatures
+                );
+            // forge-lint: disable-end(calls-loop)
+            require(success, SafeExecutionFailed(i));
+        }
+    }
+}

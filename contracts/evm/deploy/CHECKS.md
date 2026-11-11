@@ -178,12 +178,13 @@ the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 624,484 | 623,943 | 678,164 | 629,844 | 668,001 |
-| The same with one call to an address with no code | 631,141 | 630,606 | 684,818 | 636,605 | 675,771 |
-| Report arriving at the home transceiver | 127,263 | 126,730 | 127,381 | 124,485 | n/a (170,877) |
-| Payload to an existing receiver, no calls | 24,891 | 24,382 | 27,612 | 23,171 | 67,651 |
+| Bootstrap to a plain transceiver, no calls | 443,017 | 442,478 | 496,641 | 445,520 | 486,538 |
+| The same with one call to an address with no code | 449,273 | 448,740 | 502,895 | 451,875 | 493,908 |
+| Report arriving at the home transceiver | 122,539 | 122,007 | 122,680 | 119,734 | n/a (166,165) |
+| Payload to an existing receiver, no calls | 22,563 | 22,054 | 25,284 | 20,806 | 65,323 |
 
-Measured 2026-10-25 against mock gateways. Wormhole's numbers include verifying the VAA
+Measured 2026-11-08 at `994a586`, with Forge 1.8.1 and the repository's compiler settings,
+against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
 row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
@@ -195,11 +196,11 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 651,291 |
-| Bootstrap to the factory, 8 destinations, one call | 659,121 |
-| Payload to an existing receiver, no calls | 34,246 |
+| Bootstrap to the factory, 1 destination, no calls | 469,125 |
+| Bootstrap to the factory, 8 destinations, one call | 476,545 |
+| Payload to an existing receiver, no calls | 31,844 |
 
-Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+Measured 2026-11-08 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
 (`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
 of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
 and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
@@ -207,14 +208,15 @@ a send with a compose message (250,000 to both):
 
 | Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
 | --- | --- | --- |
-| Bootstrap, lzCompose into the factory, 2 destinations | 649,133 | 649,218 |
-| Bootstrap, the OFT's `lzReceive` | 105,826 | 85,369 |
-| Payload, lzCompose into the receiver | 42,138 | 42,081 |
+| Bootstrap, lzCompose into the factory, 2 destinations | 469,736 | 469,821 |
+| Bootstrap, the OFT's `lzReceive` | 105,814 | 85,357 |
+| Payload, lzCompose into the receiver | 39,773 | 39,716 |
 | Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
 
-Measured 2026-10-25. A payload costs about 7,900 more than against the mocks and a bootstrap
-about 2,100 less; each stays well under its default. The `lzReceive` figure leaves out the
-endpoint's clearing of the verified payload around it.
+Measured 2026-11-09 through public RPCs, on the code the mock rows were measured on. A payload
+costs about 7,900 more than against the mocks and a bootstrap about 600 to 700 more; each stays
+well under its default. The `lzReceive` figure leaves out the endpoint's clearing of the
+verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
@@ -378,3 +380,35 @@ for it was not checked.
   before `markLive`, so an unverified deployer-placed contract at that address could originate
   messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
   it.
+
+## 8. Safe-signed dispatch (#134, 2026-11-11)
+
+Measured at code commit `c598ef99da5453590a08d7329183b0106bcdc7f1`.
+[Complete reproducible tables, assumptions and provider-size checks](../../../docs/safe-signed-dispatch-measurements.md)
+are in the signed-dispatch measurement note. Paris production receiver measurements and
+Cancun real-Safe source integration are separate; no live fee or lane-cap certification is implied.
+
+| Paris fixture | Standalone gas | Merkle gas | initializeSigned gas | Merkle wire bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 2-of-3 EOA | 168,011 | 158,130 | 306,208 | 1,600 |
+| Inline child | 176,859 | 167,027 | 387,931 | 1,696 |
+| Cached child approval | 191,845 | 181,977 | 402,873 | 2,432 |
+| Two nested levels | 185,974 | 176,115 | 470,161 | 1,792 |
+| Shared child | 213,497 | 203,724 | 595,644 | 2,112 |
+| Large cached graph, 10 calls, depth 8, attributes | 386,526 | 384,971 | 1,040,412 | 7,264 |
+
+`initializeSigned` excludes conduit deployment and outer transceiver work. Application state
+and benchmark boundaries are documented in the full note. **The 200k payload and 1m bootstrap
+defaults are unsuitable for general signed delivery.** Sign explicit gas attributes after
+simulating the exact full provider-entry-point call. No universal constant can cover unbounded
+authority graphs and arbitrary application calls. No protocol cap or gas floor is added.
+
+Real Safe 1.5.0/guard/conduit tests in `contracts/safe-guard/test/SignedDispatchIntegration.t.sol`
+cover both provider/direct delivery, cached child evidence, shared nested owners, two-destination
+root publication/registration/relay, nonce-42/43 atomic batching and rollback, bootstrap before
+source execution, and destination out-of-gas followed by a successful direct retry.
+
+All production contracts remain below EIP-170: CCIP transmitter headroom 535 bytes, LayerZero
+642, Hyperlane 944. Source gas includes mock mailbox journaling and is not a real provider fee.
+The three existing external-fork tests are still RPC-dependent. zkSync/Tron signed support,
+signed OFT and authority rotation remain outside this PR.

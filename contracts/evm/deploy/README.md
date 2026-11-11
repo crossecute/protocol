@@ -99,9 +99,10 @@ transceiver's configuration, and the registry's record (R8.4). The deployer choo
 implementation behind the proxy, and nothing on chain checks it, so no registry marks the
 transceiver live because the script passed: see "Marking a chain live".
 
-Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`. `forge script`
-deploys each before them, through Arachnid's factory, so it has one address on every parity
-chain.
+Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`, and every
+binding's transmitter and receiver except LayerZero OFT's link `SignedTransmitterLib` and
+`SafeAuthority` (#108). `forge script` deploys each before them, through Arachnid's factory, so
+it has one address on every parity chain.
 
 Every transceiver implementation names the chain's `TransceiverExtension` (#70), which
 `script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider

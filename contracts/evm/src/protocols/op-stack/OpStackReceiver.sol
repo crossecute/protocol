@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -15,7 +15,7 @@ interface IOpStackReceiverInit {
 /// @notice Per-user conduit on a non-home chain, for `op-stack-l1-l2`.
 /// @dev The origin is the messenger that called, the one granted `GATEWAY_ROLE`, which relays
 ///      only from the conduit's home.
-contract OpStackReceiver is ReceiverBase, IOpStackRecipient, IOpStackReceiverInit {
+contract OpStackReceiver is SignedReceiver, IOpStackRecipient, IOpStackReceiverInit {
     /// @dev Refused, not just unused: it would arm the conduit with no gateway.
     error UseOpStackInitializer();
 

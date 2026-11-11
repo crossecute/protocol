@@ -7,7 +7,7 @@ import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
-import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
+import {ICrossecuteGuard, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {TestTransmitter} from "./TestTransmitter.sol";
 
@@ -77,7 +77,7 @@ contract ApprovalTest is GuardTestBase {
 
         bytes32 messageHash = _childMessageHash(child, parentTxHash);
         assertEq(child.signedMessages(messageHash), 1);
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
         assertEq(signedSafeTx.safeTx.operation, uint8(Operation.DELEGATECALL));
         assertEq(signedSafeTx.safeTx.value, 0);
@@ -110,7 +110,7 @@ contract ApprovalTest is GuardTestBase {
         (bytes32 txHash, bytes memory signatures) =
             _execPaid(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall, payment);
 
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx =
+        SignedSafeTx memory signedSafeTx =
             guard.getApproval(address(child), _childMessageHash(child, bytes32(uint256(7))));
         assertEq(signedSafeTx.safeTx.to, address(signMessageLib));
         assertEq(signedSafeTx.safeTx.operation, uint8(Enum.Operation.DelegateCall));
@@ -177,7 +177,9 @@ contract ApprovalTest is GuardTestBase {
         assertEq(approving.nonce(), nonce);
         assertEq(approving.signedMessages(messageHash), 0);
         vm.expectRevert(
-            abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(approving), messageHash)
+            abi.encodeWithSelector(
+                ICrossecuteGuard.NestedSafeApprovalNotFound.selector, address(approving), messageHash
+            )
         );
         guard.getApproval(address(approving), messageHash);
 
@@ -239,7 +241,7 @@ contract ApprovalTest is GuardTestBase {
 
     function test_approval_persistsAcrossLaterTransactions() public {
         bytes32 messageHash = _approve(child, _signers(), bytes32(uint256(7)));
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         _exec(child, _signers(), address(0xBEEF), 0, "", Enum.Operation.Call);
         vm.roll(block.number + 100);
         vm.warp(block.timestamp + 30 days);
@@ -259,7 +261,7 @@ contract ApprovalTest is GuardTestBase {
         bytes memory sigs = _signFor(child, _signers(), address(signMessageLib), 0, data, Enum.Operation.DelegateCall);
         _execWith(child, address(signMessageLib), 0, data, Enum.Operation.DelegateCall, sigs);
 
-        ICrossecuteGuard.SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
+        SignedSafeTx memory signedSafeTx = guard.getApproval(address(child), messageHash);
         assertEq(signedSafeTx.safeTx.nonce, nonce);
         assertEq(signedSafeTx.signatures, sigs);
     }
@@ -270,7 +272,9 @@ contract ApprovalTest is GuardTestBase {
         bytes memory execCall = _approvalExecCall(child, _signers(), bytes32(uint256(7)), child.nonce());
         vm.expectRevert(Reverter.RolledBack.selector);
         reverter.run(child, execCall);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(child), messageHash));
+        vm.expectRevert(
+            abi.encodeWithSelector(ICrossecuteGuard.NestedSafeApprovalNotFound.selector, address(child), messageHash)
+        );
         guard.getApproval(address(child), messageHash);
 
         _approve(child, _signers(), bytes32(uint256(7)));
@@ -281,7 +285,7 @@ contract ApprovalTest is GuardTestBase {
         assertEq(guard.getApproval(address(child), messageHash).safeTx.nonce, kept);
     }
 
-    /// @dev One `ApprovalCached` from the guard per write, a replacement included, and none when
+    /// @dev One `NestedSafeApprovalCached` from the guard per write, a replacement included, and none when
     ///      nothing is cached.
     function test_approval_emitsApprovalCachedOncePerWrite() public {
         bytes32 messageHash = _childMessageHash(child, bytes32(uint256(7)));
@@ -310,7 +314,9 @@ contract ApprovalTest is GuardTestBase {
         // A CALL to the real library would revert, since it reads its own domain separator.
         assertTrue(_exec(child, _signers(), address(fake), 0, data, Enum.Operation.Call));
         bytes32 messageHash = _childMessageHash(child, bytes32(uint256(7)));
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(child), messageHash));
+        vm.expectRevert(
+            abi.encodeWithSelector(ICrossecuteGuard.NestedSafeApprovalNotFound.selector, address(child), messageHash)
+        );
         guard.getApproval(address(child), messageHash);
     }
 
@@ -331,16 +337,21 @@ contract ApprovalTest is GuardTestBase {
         assertTrue(childHash != siblingHash);
         assertEq(guard.getApproval(address(child), childHash).safeTx.nonce, child.nonce() - 1);
         assertEq(guard.getApproval(address(sibling), siblingHash).safeTx.nonce, sibling.nonce() - 1);
-        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.ApprovalNotFound.selector, address(sibling), childHash));
+        vm.expectRevert(
+            abi.encodeWithSelector(ICrossecuteGuard.NestedSafeApprovalNotFound.selector, address(sibling), childHash)
+        );
         guard.getApproval(address(sibling), childHash);
     }
 
-    /// @dev Counts the guard's recorded `ApprovalCached` logs, requiring each to name `childSafe` and
+    /// @dev Counts the guard's recorded `NestedSafeApprovalCached` logs, requiring each to name `childSafe` and
     ///      `messageHash` in its topics and carry no data.
     function _approvalCachedCount(address childSafe, bytes32 messageHash) internal returns (uint256 count) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; ++i) {
-            if (logs[i].emitter != address(guard) || logs[i].topics[0] != ICrossecuteGuard.ApprovalCached.selector) {
+            if (
+                logs[i].emitter != address(guard)
+                    || logs[i].topics[0] != ICrossecuteGuard.NestedSafeApprovalCached.selector
+            ) {
                 continue;
             }
             assertEq(logs[i].topics.length, 3);

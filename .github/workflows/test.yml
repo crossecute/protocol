@@ -67,9 +67,9 @@ jobs:
 
       - run: forge build --sizes src
 
-      - run: forge lint -D notes
+      - run: python3 script/lint.py -D notes
 
-      - run: forge lint -D notes src
+      - run: python3 script/lint.py -D notes src
         env:
           FOUNDRY_PROFILE: lint-src
 

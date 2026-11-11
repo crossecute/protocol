@@ -4,7 +4,7 @@ pragma solidity =0.8.30;
 import {Call} from "crossecute/messaging/Call.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {IBootstrap} from "../src/CrossecuteGuard.sol";
+import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {ModuleTest} from "./Module.t.sol";
 import {SendMessageTest} from "./SendMessage.t.sol";
@@ -21,8 +21,8 @@ contract BootstrapTest is SendMessageTest {
     }
 
     function test_transmitterUsesBootstrapSelector() public pure {
-        assertEq(bytes4(_bootstrapData()), IBootstrap.bootstrap.selector);
-        assertTrue(IPlainBootstrap.bootstrap.selector != IBootstrap.bootstrap.selector);
+        assertEq(bytes4(_bootstrapData()), ISignedTransmitter.bootstrap.selector);
+        assertTrue(IPlainBootstrap.bootstrap.selector != ISignedTransmitter.bootstrap.selector);
     }
 
     function test_plainBootstrap_notStaged() public {

@@ -5,11 +5,16 @@ pragma solidity ^0.8.0;
 ///         it does on arrival.
 /// @dev Measured cold on Forge's EVM with every binding's fixture (deploy/CHECKS.md §4), and
 ///      held at least 10% above that by `ProviderDeliveryGasSpec`: a bootstrap that creates a
-///      conduit 624k to 678k, a report arriving home up to 128k on the bindings that carry one.
+///      conduit with no calls 442k to 497k, a report arriving home up to 123k on the bindings
+///      that carry one (2026-11-08).
 ///      A bootstrap on a reporting chain also pays for the report's send. On EraVM a
 ///      bootstrap's execution is about 385k to 389k; its pubdata is not measured. A gas
 ///      attribute replaces these with no floor: a delivery short of gas reverts and is retried
 ///      with more (provider-spec R1.5).
+///      These inherited defaults are unsuitable for general Safe-signed delivery: #134's
+///      shared-child payload exceeds 200k and a large graph's signed initialization alone
+///      exceeds 1m. Supply explicit provider gas attributes after simulating the complete
+///      destination entry point (docs/safe-signed-dispatch-measurements.md).
 library DeliveryGas {
     uint256 internal constant BOOTSTRAP = 1_000_000;
     uint256 internal constant REPORT = 250_000;

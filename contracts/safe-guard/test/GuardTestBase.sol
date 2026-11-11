@@ -6,7 +6,7 @@ import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {IBootstrap} from "../src/CrossecuteGuard.sol";
+import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {Batch} from "./Batch.sol";
 import {SafeFixture} from "./SafeFixture.sol";
 import {Sink, TestTransmitter} from "./TestTransmitter.sol";
@@ -64,7 +64,7 @@ abstract contract GuardTestBase is SafeFixture {
     }
 
     function _bootstrapData() internal pure returns (bytes memory) {
-        return abi.encodeCall(IBootstrap.bootstrap, (hex"01", new bytes[](0)));
+        return abi.encodeCall(ISignedTransmitter.bootstrap, (hex"01", new bytes[](0)));
     }
 
     /// @dev The staged calldata the shared lifecycle tests sign. Suites rerun them by overriding it.

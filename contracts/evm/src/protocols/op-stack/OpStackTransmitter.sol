@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {OpStackMessage} from "src/protocols/op-stack/OpStackMessage.sol";
 import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 
@@ -11,7 +11,7 @@ import {providerIdOf} from "src/protocols/ProviderChainId.sol";
 /// @dev Sender-only: no `receiveOpStackMessage`, so R3.1 is answered by absence rather than a
 ///      guard. Binds to `ICrossDomainMessenger`, not `OptimismPortal`: the messenger un-aliases
 ///      the sender, so `AddressDerive.undoL1ToL2Alias` stays unused.
-contract OpStackTransmitter is OwnableTransmitter {
+contract OpStackTransmitter is SignedTransmitter {
     bytes4 public constant OP_STACK_MIN_GAS_LIMIT_ATTRIBUTE = OpStackMessage.MIN_GAS_LIMIT_ATTRIBUTE;
 
     function _sendMessage(bytes memory recipient, bytes memory payload, bytes[] memory attributes, uint256 value)

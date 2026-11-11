@@ -1,0 +1,245 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import {Vm} from "forge-std/Vm.sol";
+import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
+import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
+import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+
+/// @notice An independent Merkle builder for the dispatch tree: sorted pairs, the unpaired last
+///         hash of a level carried up, a single leaf as its own root.
+library MerkleBuilder {
+    /// @notice Build a sorted-pair Merkle root from the supplied leaf hashes.
+    /// @dev An independent test builder checks the production verifier against separately
+    ///      constructed trees, including odd-level carry.
+    function root(bytes32[] memory leaves) internal pure returns (bytes32) {
+        bytes32[] memory level = leaves;
+        while (level.length > 1) {
+            level = _up(level);
+        }
+        return level[0];
+    }
+
+    /// @notice Build the sibling list proving one leaf under the fixture root.
+    /// @dev Tests need valid proofs for varied tree sizes and positions without relying on
+    ///      production proof-generation code.
+    function proof(bytes32[] memory leaves, uint256 index) internal pure returns (bytes32[] memory out) {
+        bytes32[] memory scratch = new bytes32[](64);
+        uint256 n;
+        bytes32[] memory level = leaves;
+        while (level.length > 1) {
+            uint256 sibling = index ^ 1;
+            if (sibling < level.length) scratch[n++] = level[sibling];
+            level = _up(level);
+            index /= 2;
+        }
+        out = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = scratch[i];
+        }
+    }
+
+    /// @notice Combine adjacent sorted pairs and carry an unpaired final hash into the next
+    ///         level.
+    /// @dev This defines the fixture's tree shape so root and proof construction agree on
+    ///      odd-sized levels.
+    function _up(bytes32[] memory level) private pure returns (bytes32[] memory next) {
+        next = new bytes32[]((level.length + 1) / 2);
+        for (uint256 i; i < level.length / 2; ++i) {
+            bytes32 a = level[2 * i];
+            bytes32 b = level[2 * i + 1];
+            next[i] = a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
+        }
+        if (level.length % 2 == 1) next[next.length - 1] = level[level.length - 1];
+    }
+}
+
+/// @notice One entry of a Safe signature blob before encoding.
+struct Sig {
+    address owner;
+    // EOA: `pk` signs; `prefixed` uses the eth_sign digest (v + 4). Safe: `payload` is the
+    // child's own blob, empty for an approval.
+    uint8 kind;
+    uint256 pk;
+    bool prefixed;
+    bytes payload;
+}
+
+/// @notice Builds Safe 1.5.0 signature blobs, owners ascending, contract payloads after the
+///         static part.
+library SafeSigs {
+    Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    /// @notice Describe a direct EOA signature using a test private key.
+    /// @dev The blob builder can derive the signer and generate reproducible signatures for
+    ///      quorum tests.
+    function eoa(uint256 pk) internal pure returns (Sig memory s) {
+        s.owner = VM.addr(pk);
+        s.kind = OWNER_EOA;
+        s.pk = pk;
+    }
+
+    /// @notice Describe an EOA signature using the Ethereum signed-message prefix.
+    /// @dev Tests need to cover Safe's prefixed format alongside direct ECDSA entries.
+    function prefixed(uint256 pk) internal pure returns (Sig memory s) {
+        s = eoa(pk);
+        s.prefixed = true;
+    }
+
+    /// @notice Describe a contract-owner entry with a child address and payload.
+    /// @dev Inline child signatures and empty approval-backed entries share the same Safe
+    ///      contract-signature encoding.
+    function nested(address child, bytes memory payload) internal pure returns (Sig memory s) {
+        s.owner = child;
+        s.kind = OWNER_SAFE;
+        s.payload = payload;
+    }
+
+    /// @notice Sort signer entries, sign EOA hashes and append length-prefixed child payloads.
+    /// @dev Tests need realistic Safe blobs with correct offsets while retaining control over
+    ///      nested signature contents.
+    function blob(Sig[] memory sigs, bytes32 hash) internal pure returns (bytes memory out) {
+        _sort(sigs);
+        bytes memory dynamicPart;
+        uint256 staticLength = sigs.length * 65;
+        for (uint256 i; i < sigs.length; ++i) {
+            Sig memory s = sigs[i];
+            if (s.kind == OWNER_SAFE) {
+                uint256 offset = staticLength + dynamicPart.length;
+                out = abi.encodePacked(out, bytes32(uint256(uint160(s.owner))), bytes32(offset), uint8(0));
+                dynamicPart = abi.encodePacked(dynamicPart, uint256(s.payload.length), s.payload);
+            } else if (s.prefixed) {
+                bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+                (uint8 v, bytes32 r, bytes32 ss) = VM.sign(s.pk, digest);
+                out = abi.encodePacked(out, r, ss, v + 4);
+            } else {
+                (uint8 v, bytes32 r, bytes32 ss) = VM.sign(s.pk, hash);
+                out = abi.encodePacked(out, r, ss, v);
+            }
+        }
+        out = abi.encodePacked(out, dynamicPart);
+    }
+
+    /// @notice Wrap one signature description in an array.
+    /// @dev Single-owner and deliberately incomplete quorum fixtures can share the normal blob
+    ///      encoder.
+    function one(Sig memory a) internal pure returns (Sig[] memory s) {
+        s = new Sig[](1);
+        s[0] = a;
+    }
+
+    /// @notice Wrap two signature descriptions in the supplied order.
+    /// @dev The shared encoder can then sort valid fixtures or tests can mutate the encoded
+    ///      ordering afterward.
+    function two(Sig memory a, Sig memory b) internal pure returns (Sig[] memory s) {
+        s = new Sig[](2);
+        (s[0], s[1]) = (a, b);
+    }
+
+    /// @notice Sort signature descriptions by owner address.
+    /// @dev Safe requires ascending signer addresses, so valid test blobs must obey the same
+    ///      rule.
+    function _sort(Sig[] memory sigs) private pure {
+        for (uint256 i = 1; i < sigs.length; ++i) {
+            Sig memory key = sigs[i];
+            uint256 j = i;
+            while (j > 0 && sigs[j - 1].owner > key.owner) {
+                sigs[j] = sigs[j - 1];
+                --j;
+            }
+            sigs[j] = key;
+        }
+    }
+
+    /// @notice Build a child's signed `signMessage(abi.encode(parentHash))` transaction
+    ///         evidence.
+    /// @dev Empty contract payloads need independently verifiable child authorization in the
+    ///      correct Safe and chain domain.
+    function approval(address child, bytes32 parentHash, uint256 chainId, Sig[] memory childSigs, address lib)
+        internal
+        pure
+        returns (NestedSafeApproval memory nestedApproval)
+    {
+        SafeTx memory t;
+        t.to = lib;
+        t.data = abi.encodeWithSelector(bytes4(0x85a5affe), abi.encode(parentHash));
+        t.operation = 1;
+        t.nonce = 7;
+        nestedApproval.childSafe = child;
+        nestedApproval.messageHash = SafeHashes.messageHash(abi.encode(parentHash), child, chainId);
+        nestedApproval.approval.safeTx = t;
+        nestedApproval.approval.signatures = blob(childSigs, SafeHashes.transactionHash(t, child, chainId));
+    }
+}
+
+/// @notice `SafeAuthorityRecord` builders.
+library Records {
+    /// @notice Convert test private keys into ordered EOA owner entries.
+    /// @dev Graph records and signature fixtures must agree on the same owner addresses and
+    ///      kinds.
+    function eoaOwners(uint256[] memory pks) internal pure returns (SafeOwner[] memory owners) {
+        owners = new SafeOwner[](pks.length);
+        for (uint256 i; i < pks.length; ++i) {
+            owners[i] = SafeOwner(Vm(address(uint160(uint256(keccak256("hevm cheat code"))))).addr(pks[i]), OWNER_EOA);
+        }
+    }
+
+    /// @notice Build one Safe's authority record from its address, threshold and owner entries.
+    /// @dev A shared constructor keeps fixture graphs readable without hiding the fields
+    ///      relevant to validation.
+    function record(address safe, uint256 threshold, SafeOwner[] memory owners)
+        internal
+        pure
+        returns (SafeAuthorityRecord memory)
+    {
+        return SafeAuthorityRecord(safe, threshold, owners);
+    }
+
+    /// @notice Wrap one authority record in an array.
+    /// @dev Single-Safe fixtures can use the same canonical graph APIs as nested fixtures.
+    function list(SafeAuthorityRecord memory firstRecord) internal pure returns (SafeAuthorityRecord[] memory records) {
+        records = new SafeAuthorityRecord[](1);
+        records[0] = firstRecord;
+    }
+
+    /// @notice Build a two-record array in the supplied order.
+    /// @dev Tests can express either canonical traversal order or a deliberate ordering
+    ///      violation.
+    function list(SafeAuthorityRecord memory firstRecord, SafeAuthorityRecord memory secondRecord)
+        internal
+        pure
+        returns (SafeAuthorityRecord[] memory records)
+    {
+        records = new SafeAuthorityRecord[](2);
+        (records[0], records[1]) = (firstRecord, secondRecord);
+    }
+
+    /// @notice Build a three-record array in the supplied order.
+    /// @dev Shared-child and duplicate-record cases need explicit control over each graph
+    ///      position.
+    function list(
+        SafeAuthorityRecord memory firstRecord,
+        SafeAuthorityRecord memory secondRecord,
+        SafeAuthorityRecord memory thirdRecord
+    ) internal pure returns (SafeAuthorityRecord[] memory records) {
+        records = new SafeAuthorityRecord[](3);
+        (records[0], records[1], records[2]) = (firstRecord, secondRecord, thirdRecord);
+    }
+
+    /// @notice Build an ordered list of three test private keys.
+    /// @dev Owner-list construction and signing helpers need reproducible keys without repeated
+    ///      array setup.
+    function pks(uint256 a, uint256 b, uint256 c) internal pure returns (uint256[] memory p) {
+        p = new uint256[](3);
+        (p[0], p[1], p[2]) = (a, b, c);
+    }
+
+    /// @notice Build an ordered list of two test private keys.
+    /// @dev Two-owner and child-quorum fixtures can use the same owner conversion helper as
+    ///      larger fixtures.
+    function pks(uint256 a, uint256 b) internal pure returns (uint256[] memory p) {
+        p = new uint256[](2);
+        (p[0], p[1]) = (a, b);
+    }
+}

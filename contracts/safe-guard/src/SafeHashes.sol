@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ICrossecuteGuard} from "./ICrossecuteGuard.sol";
+import {SafeTx} from "./ICrossecuteGuard.sol";
 
 /// @notice Safe 1.5.0's EIP-712 hashes, computed without calling the Safe.
 /// @dev Mirrors `Safe.getTransactionHash`, `Safe.domainSeparator` and `SignMessageLib.getMessageHash`
@@ -19,7 +19,7 @@ library SafeHashes {
     bytes32 internal constant SAFE_MSG_TYPEHASH = 0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca;
 
     /// @notice The hash `safe` on chain `chainId` returns from `getTransactionHash` for `safeTx`.
-    function transactionHash(ICrossecuteGuard.SafeTx memory safeTx, address safe, uint256 chainId)
+    function transactionHash(SafeTx memory safeTx, address safe, uint256 chainId)
         internal
         pure
         returns (bytes32 txHash)

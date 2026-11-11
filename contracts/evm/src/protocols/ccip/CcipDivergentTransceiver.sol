@@ -26,13 +26,13 @@ contract CcipZkSyncTransceiver is ZkSyncTransceiver, CcipTransceiverBase {
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _conduitAt(bytes32 conduitSalt)
         internal
         view
         override(TransceiverCore, ZkSyncTransceiver)
         returns (address)
     {
-        return super._predictConduit(owner, salt, homeChainKey);
+        return super._conduitAt(conduitSalt);
     }
 
     function _deployConduit(bytes32 salt) internal override(TransceiverBase, ZkSyncTransceiver) returns (address) {
@@ -76,13 +76,13 @@ contract CcipTronTransceiver is TronTransceiver, CcipTransceiverBase {
         __DivergentTransceiver_init(c, conduitBytecodeHash_);
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _conduitAt(bytes32 conduitSalt)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictConduit(owner, salt, homeChainKey);
+        return super._conduitAt(conduitSalt);
     }
 
     function _conduitInitializer(

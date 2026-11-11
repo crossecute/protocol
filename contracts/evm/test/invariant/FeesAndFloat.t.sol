@@ -20,7 +20,8 @@ import {
     toBytes32,
     AnyGatewayReceiver,
     AnyGatewayTransceiver,
-    AnyGatewayTransmitter
+    AnyGatewayTransmitter,
+    bootstrapPayload
 } from "test/Harness.sol";
 import {deployTransceiver} from "test/DeployProxy.sol";
 
@@ -177,12 +178,14 @@ contract FloatHandler is Test {
         } else if (reporting(d) && fee[d] == 0) {
             vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, key));
         } else {
-            assertEq(a.quoteBootstrap(chainId(d), calls(), new bytes[](0)), messageFee(i) + fee[d], "quote");
+            assertEq(
+                a.quoteBootstrap(bootstrapPayload(chainId(d), calls()), new bytes[](0)), messageFee(i) + fee[d], "quote"
+            );
             booted[i][d] = true;
             feesCharged += fee[d];
             messageFees += messageFee(i);
         }
-        a.bootstrap(chainId(d), calls(), new bytes[](0));
+        a.bootstrap(bootstrapPayload(chainId(d), calls()), new bytes[](0));
     }
 
     /// @dev The conduit calling the transceiver directly with less than the fee.
@@ -409,7 +412,7 @@ contract FeesAndFloatInvariantTest is Test {
         uint256 zkSyncId = handler.chainId(0);
         Call[] memory c = handler.calls();
         vm.prank(address(handler));
-        a.bootstrap(zkSyncId, c, new bytes[](0));
+        a.bootstrap(bootstrapPayload(zkSyncId, c), new bytes[](0));
         assertEq(address(handler.treasury()).balance, treasuryBefore + 1, "the home charged 1 wei");
 
         for (uint256 n = 1; n <= 3; ++n) {

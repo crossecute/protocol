@@ -9,6 +9,8 @@ import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {Call} from "src/messaging/Call.sol";
+import {Payload} from "src/messaging/Payload.sol";
 
 /// @notice The conduit home most suites use: Ethereum.
 function home() pure returns (bytes32) {
@@ -163,4 +165,19 @@ contract OwnedTransceiver is SharedAddressTransceiver {
         __TransceiverBase_init(c);
         _transferOwnership(owner_);
     }
+}
+
+/// @notice `TransmitterBase.bootstrap`'s payload for an EVM chain named by its chain id.
+function bootstrapPayload(uint256 chainId, Call[] memory calls) pure returns (bytes memory) {
+    return bootstrapPayload(Erc7930.encodeEvmChain(chainId), calls);
+}
+
+/// @notice `TransmitterBase.bootstrap`'s payload carrying `Call[]` to the chain `identifier` names.
+function bootstrapPayload(bytes memory identifier, Call[] memory calls) pure returns (bytes memory) {
+    return Payload.encodeBootstrap(identifier, Payload.encodeCalls(calls));
+}
+
+/// @notice `TransmitterBase.bootstrap`'s payload carrying opaque elements.
+function bootstrapPayload(bytes memory identifier, bytes[] memory elements) pure returns (bytes memory) {
+    return Payload.encodeBootstrap(identifier, Payload.encodeElements(elements));
 }

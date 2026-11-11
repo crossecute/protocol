@@ -14,12 +14,13 @@ the seventh; what they mean for an operator is in the README.
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
+(2026-10-07; §4's mock EVM destination gas, 2026-11-08; its fork gas and §7's
+`layerzero-oft` checks, 2026-10-25; its EraVM gas, 2026-10-20).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where a conduit creation costs
-  about 624,000 to 678,000. On a local EraVM node a bootstrap's execution needs about 385,000
-  to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
+  about 442,000 to 497,000 with no calls. On a local EraVM node a bootstrap's execution needs
+  about 385,000 to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
   against the gas limit a provider calls the transceiver with. A report arriving at a zkSync
   home is not measured either.
@@ -87,16 +88,18 @@ the seventh; what they mean for an operator is in the README.
   and a chain added after the first deployment, whose files repeat what is already set. zkSync
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
+  `WormholeMessage` or `LzMessage` linked, their conduits with `SafeAuthority` and
+  `SignedTransmitterLib` linked, and their `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
-- **No protocol transmitter consumes the Safe guard yet.** `CrossecuteGuard` stages owner
-  signatures and caches child approvals ([`safe-guard-design.md`](safe-guard-design.md)), but
-  only the test transmitter in `contracts/safe-guard/test/` consumes them. A signature-enabled
-  transmitter and receiver verification are [#108](https://github.com/crossecute/protocol/issues/108),
-  and authority updates [#109](https://github.com/crossecute/protocol/issues/109).
+- **Signed delivery needs an explicit, simulated gas budget.** #134's reproducible gas,
+  size and real Safe 1.5.0 integration evidence is in
+  [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). The inherited
+  200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
+  gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
+  those live configurations. Authority updates remain #109.
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
   tests check its root against a vector computed with `cast` and its proofs against
@@ -226,3 +229,13 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
+## 6. Safe-signed dispatch
+
+The signature-enabled transmitter and receiver
+([#108](https://github.com/crossecute/protocol/issues/108)) are built;
+[`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
+"Implementation", what the build leaves out. Outstanding:
+
+- **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap, because
+  the receiver report carries no graph hash for the home to find the transmitter with.
+- **Authority changes**: [#109](https://github.com/crossecute/protocol/issues/109).

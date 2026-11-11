@@ -127,11 +127,12 @@ EVM destination       wire = abi.encode(Call[] calls)
 everything else       wire = abi.encode(bytes[] elements)
 ```
 
-The sender picks by destination chain type. On path B that is still enforced on-chain:
-`bootstrap(uint256, ...)` is `eip155` by construction, and `bootstrapTo(bytes, ...)` reads
-the type off the ERC-7930 envelope it was handed, refusing typed calls to a non-EVM chain
-(`TypedPayloadToNonEvmDestination`) and opaque elements to an EVM one
-(`OpaquePayloadToEvmDestination`). On path A it is not. `sendMessage` takes the payload
+The sender picks by destination chain type. On path B the transmitter picks on-chain:
+`bootstrap(payload, attributes)` takes `Payload.encodeBootstrap(destinationChainIdentifier,
+wire)`, which is `abi.encode(bytes, bytes)`, and decodes `wire` in the form the identifier's
+chain type implies before the transceiver builds its envelope, so what crosses is always that
+form. A body built for the other form reverts in that decode, at the quote as at the send. On
+path A it is not. `sendMessage` takes the payload
 already built, and `bytes` cannot be asked which form it holds, so the pairing is the
 caller's to get right. `payloadForCalls` and `payloadForElements` exist so it is at least
 spelled the same way here as it is decoded there. The receiver still decodes the single
@@ -409,7 +410,8 @@ premise is false there, and the merkle-policy work is moot, because **the vocabu
 the policy**. Non-EVM receivers are constrained conduits by construction.
 
 **One argument-free `Proxy` per conduit, at a CREATE2 address derived from
-`(owner, salt, home)`** (`conduit/Proxy.sol`, `TransceiverCore._conduitSalt`). Move modules
+`(owner, salt, home)`, plus the owner graph's hash for a Safe-signed conduit** (`conduit/Proxy.sol`,
+`TransceiverCore._conduitSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
 Move deployment is one module holding a table keyed by owner. The one-conduit-per-owner
 model, and the single address that goes with it, does not survive the trip.
