@@ -146,7 +146,7 @@ contract DivergingFormulaTransceiver is AnyGatewayTransceiver {
     }
 
     function create(address owner, bytes32 salt) external returns (address) {
-        return _createConduit(owner, salt, localChainKey, address(0), new Call[](0));
+        return _createConduit(owner, salt, localChainKey, bytes32(0), address(0), new Call[](0));
     }
 
     /// @dev `MinimalConduit` takes no arguments.
@@ -220,7 +220,7 @@ contract ZkHarness is LzZkSyncTransceiver {
     constructor(address _endpoint) LzZkSyncTransceiver(_endpoint, zkSyncTransceiverExtension()) {}
 
     function create(address o, bytes32 s) external returns (address) {
-        return _createConduit(o, s, home(), address(0x7A11), new Call[](0));
+        return _createConduit(o, s, home(), bytes32(0), address(0x7A11), new Call[](0));
     }
 }
 

@@ -298,7 +298,7 @@ contract InboundAuthTest is Test {
     }
 
     function testFuzz_onlyDefinedKindsAreRead(uint256 kind) public {
-        vm.assume(kind == 0 || kind > Envelope.RECEIVER_REPORT);
+        vm.assume(kind == 0 || kind > Envelope.SIGNED_BOOTSTRAP);
         bytes memory m = abi.encode(kind, transmitter, bytes32(0), _boot());
 
         vm.expectRevert(abi.encodeWithSelector(Envelope.UnknownEnvelopeKind.selector, kind));

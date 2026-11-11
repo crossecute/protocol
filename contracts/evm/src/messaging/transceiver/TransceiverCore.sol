@@ -130,6 +130,8 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     IBootstrapAllowlist internal _bootstrapAllowlist;
 
     event ConduitCreated(address indexed owner, address indexed conduit, bytes32 salt, bytes32 homeChainKey);
+    /// @dev After `ConduitCreated` for a signed conduit: the graph hash its salt also commits to.
+    event SignedConduitCreated(address indexed conduit, bytes32 graph);
     /// @dev Path B's record, since a transceiver is not an ERC-7786 gateway source and emits
     ///      no `MessageSent`. `(chainKey, owner, salt)` identifies the conduit.
     event BootstrapSent(bytes32 indexed destinationChainKey, address indexed owner, bytes32 salt);
@@ -194,6 +196,10 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      with this chain's. Refused on the first bootstrap rather than leaving every such
     ///      conduit unreachable.
     error SourceTransmitterMismatch(address expected, address carried);
+    /// @dev A signed receiver is created only for a home whose transmitter this chain can derive.
+    error SourceTransmitterNotDerivable(bytes32 home);
+    /// @dev A signed receiver is not created where this chain's addresses diverge (#108 scope).
+    error SignedReceiverNotDerivable();
     error NotTreasury(address caller);
     error NotOwnerOrOperator(address caller);
     error NotAllowed(address conduit);
