@@ -100,8 +100,9 @@ implementation behind the proxy, and nothing on chain checks it, so no registry 
 transceiver live because the script passed: see "Marking a chain live".
 
 Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`, and every
-binding's transmitter and receiver except LayerZero OFT's link `SignedTransmitterLib` and
-`SafeAuthority` (#108). `forge script` deploys each before them, through Arachnid's factory, so
+binding's transmitter and receiver, including LayerZero OFT's, link `SignedTransmitterLib` and
+`SafeAuthority` (#108). OFT send/quote/parameter encoding also links `LzOftMessage` to keep its
+signed transmitter below EIP-170. `forge script` deploys each before them, through Arachnid's factory, so
 it has one address on every parity chain.
 
 Every transceiver implementation names the chain's `TransceiverExtension` (#70), which

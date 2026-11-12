@@ -2,13 +2,13 @@
 pragma solidity ^0.8.20;
 
 import {SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
-import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {ILzOftConduitFactory, ILzOftSignedConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @dev The initializer the factory arms a transmitter with; `LzOftTransmitter.initialize` is
 ///      overloaded, so it is named here for `abi.encodeCall`.
@@ -25,7 +25,7 @@ interface ILzOftTransmitterInit {
 ///      destination's eid and OFT. It relays nothing.
 ///
 /// @dev Not an OApp: the OFT is the sender LayerZero sees, so this carries no OApp storage.
-contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
+contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     struct Destination {
@@ -68,6 +68,28 @@ contract LzOftTransmitter is OwnableTransmitter, ILzOftTransmitterInit {
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
         return selector == LZ_OPTIONS_ATTRIBUTE;
+    }
+
+    /// @dev The same factory envelope is quoted and sent by this conduit through its OFT.
+    function _quoteSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes)
+        internal
+        view
+        override
+        returns (uint256)
+    {
+        (bytes memory recipient, bytes memory message) =
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(chainKey, body);
+        return _quoteMessage(recipient, message, attributes);
+    }
+
+    /// @dev Preserve composeFrom and record the destination before the external OFT call.
+    function _sendSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes, uint256 fee)
+        internal
+        override
+    {
+        (bytes memory recipient, bytes memory message) =
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(chainKey, body);
+        _sendMessage(recipient, message, attributes, fee);
     }
 
     /* ================================= transport =============================== */

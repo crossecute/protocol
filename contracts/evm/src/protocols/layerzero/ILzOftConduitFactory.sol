@@ -8,3 +8,13 @@ interface ILzOftConduitFactory {
     /// @dev Reverts for a chain the conduit was not created with.
     function destinationOf(address conduit, bytes32 chainKey) external view returns (uint32 eid, address oft);
 }
+
+/// @notice Bootstrap transport for a signed OFT conduit; the conduit remains the OFT sender.
+interface ILzOftSignedConduitFactory is ILzOftConduitFactory {
+    /// @notice Encode the calling conduit's signed bootstrap and its destination factory route.
+    /// @dev Quote and retry use identical bytes without making the factory the composeFrom.
+    function signedConduitBootstrap(bytes32 chainKey, bytes calldata body)
+        external
+        view
+        returns (bytes memory recipient, bytes memory message);
+}

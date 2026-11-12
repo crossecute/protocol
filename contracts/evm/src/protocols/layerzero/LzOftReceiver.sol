@@ -5,7 +5,7 @@ import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 
@@ -30,7 +30,7 @@ interface ILzOftReceiverInit {
 ///      transmitter. `composeFrom` is `send`'s caller, which `OFTMsgCodec` writes and the
 ///      caller cannot set, and the OFT queues a compose only for a packet its own DVNs
 ///      verified from a peer.
-contract LzOftReceiver is ReceiverBase, ILayerZeroComposer, ILzOftReceiverInit {
+contract LzOftReceiver is SignedReceiver, ILayerZeroComposer, ILzOftReceiverInit {
     /// @notice The OFT on this conduit's home, which this chain's OFT must still peer.
     address public homeOft;
     /// @notice This chain's OFT, the only `_from` accepted.
