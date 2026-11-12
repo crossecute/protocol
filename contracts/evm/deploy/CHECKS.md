@@ -410,5 +410,17 @@ source execution, and destination out-of-gas followed by a successful direct ret
 
 All production contracts remain below EIP-170: CCIP transmitter headroom 535 bytes, LayerZero
 642, Hyperlane 944. Source gas includes mock mailbox journaling and is not a real provider fee.
-The three existing external-fork tests are still RPC-dependent. zkSync/Tron signed support,
-signed OFT and authority rotation remain outside this PR.
+The three existing external-fork tests are still RPC-dependent. These measurements predate
+signed OFT integration. zkSync/Tron signed support and authority rotation remain separate work.
+
+### Signed LayerZero OFT routes
+
+Before enabling signed OFT routes, run the #118 deployment validation against each intended
+OFT pair. Verify zero-amount sends and compose support, peers and endpoint/eid configuration,
+complete signed-bootstrap and message wire sizes, byte-sensitive quote/send fee parity and
+refund recipients. Simulate the complete factory/receiver compose entry point with the actual
+nested authority graph and application calls, and sign explicit compose gas attributes. The
+local OFT tests use mock transport and do not certify live gas, fees, payload caps or OFT
+compatibility. Confirm all copies of the factory, its logic and linked libraries use the same
+release build and deterministic addresses. Plain and signed derivations differ by graph;
+use the seven-argument factory prediction for signed conduits.

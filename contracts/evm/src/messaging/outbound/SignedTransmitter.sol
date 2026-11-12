@@ -186,6 +186,25 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         super.renounceOwnership();
     }
 
+    /// @dev Override for bindings whose conduit carries its own bootstrap transport.
+    function _quoteSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes)
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
+        return IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+    }
+
+    /// @dev The default transport is the transceiver; OFT sends must originate at the conduit.
+    function _sendSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes, uint256 fee)
+        internal
+        virtual
+    {
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
+        IConduitTransceiver(transceiver).bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
+    }
+
     /* ============================== permissionless ============================== */
 
     /// @notice Retry the exact pending bootstrap body, accepting value to fund its transport
@@ -200,11 +219,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         delete $.pendingBootstrap[chainKey];
 
         _markBootstrapped(chainKey, route, graph);
-        IConduitTransceiver t = IConduitTransceiver(transceiver);
-        uint256 fee = t.quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+        uint256 fee = _quoteSignedBootstrap(chainKey, body, attributes);
         _requireFunded(fee);
-        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
+        _sendSignedBootstrap(chainKey, body, attributes, fee);
     }
 
     /// @notice Verify and transmit an unused authorized leaf, charging the caller and refunding
@@ -298,7 +315,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         bytes32 chainKey;
         bytes[] memory attributes;
         (body, chainKey,, attributes) = SignedTransmitterLib.quoteBootstrap(msg.data[4:]);
-        fee = IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+        fee = _quoteSignedBootstrap(chainKey, body, attributes);
     }
 
     /// @notice Return the fee for relaying the supplied signed registration, leaf and proof.
