@@ -1,0 +1,371 @@
+{
+  "schema": "crossecute-authority-review-v1",
+  "status": "Offline baseline crypto vectors; semantic #109 expectations, not Solidity test results.",
+  "abiCoverage": "Existing SafeTx and SafeMessage hashes only; new #109 ABI/domain tags are not frozen.",
+  "fixturePrivateKey": "0x0000000000000000000000000000000000000000000000000000000000000001",
+  "types": {
+    "domain": "EIP712Domain(uint256 chainId,address verifyingContract)",
+    "safeTx": "SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)",
+    "safeMessage": "SafeMessage(bytes message)"
+  },
+  "typeHashes": {
+    "domain": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218",
+    "safeTx": "0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8",
+    "safeMessage": "0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca"
+  },
+  "cryptoVectors": [
+    {
+      "id": "safe-tx-chain1",
+      "safe": "0x1111111111111111111111111111111111111111",
+      "chainId": 1,
+      "domainPreimage": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a7946921800000000000000000000000000000000000000000000000000000000000000010000000000000000000000001111111111111111111111111111111111111111",
+      "domainSeparator": "0xf0dcfe86ad4a409690a57dbaae9b1e14c5ea1750a48271a0a3a6037a8100624d",
+      "structPreimage": "0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d80000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000030ca65d5da355227c97ff836c9c6719af9d3835fc6bc72bddc50eeecc1bb2b250000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007",
+      "structHash": "0x9b9817e7b522d07984c9bcdb25ac57581ee406ab7d4d8ed6ac642207bb210372",
+      "digest": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd",
+      "expectedSigner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "rawSafeSignature": "0x00e8d8ad5b5b70d30fa138d192f2b5ea6c4e0f5650bf29030cb9c8a7c9626db116280027482066f95dd7585a9a44c11908704aabd3d32327c550ab97987a4e751b",
+      "ethSignSafeSignature": "0x0c08fcd3b45935cf7c994e3e64589897c98393755a6d7b6814f63b9f853ae9c160bb7367b49882897f92db4c8315608f63b2dc7cf301ca4e916cbb786f211e421f",
+      "safeTx": {
+        "to": "0x3333333333333333333333333333333333333333",
+        "value": 0,
+        "data": "0x12345678",
+        "operation": 0,
+        "safeTxGas": 0,
+        "baseGas": 0,
+        "gasPrice": 0,
+        "gasToken": "0x0000000000000000000000000000000000000000",
+        "refundReceiver": "0x0000000000000000000000000000000000000000",
+        "nonce": 7
+      }
+    },
+    {
+      "id": "safe-tx-chain10",
+      "safe": "0x1111111111111111111111111111111111111111",
+      "chainId": 10,
+      "domainPreimage": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000001111111111111111111111111111111111111111",
+      "domainSeparator": "0xd6d6b410cf1e24299c1c9cb4c0b5f4af021a5ae775b279852d08712ac67217c2",
+      "structPreimage": "0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d80000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000030ca65d5da355227c97ff836c9c6719af9d3835fc6bc72bddc50eeecc1bb2b250000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007",
+      "structHash": "0x9b9817e7b522d07984c9bcdb25ac57581ee406ab7d4d8ed6ac642207bb210372",
+      "digest": "0x14280ba20bc5c5fe8cb790aeda82ac04a2e219a647ef1101af13d4b38c704896",
+      "expectedSigner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "rawSafeSignature": "0xeef4f49a682f70e84526dd47e4cd11cbe361cfea12fb0a2d1b5d207612d5a65178f77ab834cc990ca3c357353ebcc31921ba67ce1b588c044f2eddd50341886f1b",
+      "ethSignSafeSignature": "0x37c65d5d29df5fa4defbaa441381835ce90bf41ff739896c2ab4ae957d3bc0bd0f16a1d66a73070b37f148e536952fbddd6a69efa09641dc419408eb01c0b5e720",
+      "safeTx": {
+        "to": "0x3333333333333333333333333333333333333333",
+        "value": 0,
+        "data": "0x12345678",
+        "operation": 0,
+        "safeTxGas": 0,
+        "baseGas": 0,
+        "gasPrice": 0,
+        "gasToken": "0x0000000000000000000000000000000000000000",
+        "refundReceiver": "0x0000000000000000000000000000000000000000",
+        "nonce": 7
+      }
+    },
+    {
+      "id": "safe-tx-other-safe",
+      "safe": "0x2222222222222222222222222222222222222222",
+      "chainId": 1,
+      "domainPreimage": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a7946921800000000000000000000000000000000000000000000000000000000000000010000000000000000000000002222222222222222222222222222222222222222",
+      "domainSeparator": "0x91633d4e620a540bb09871d4654a6566b2caf859c5358470b34c0b4e05205f1f",
+      "structPreimage": "0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d80000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000030ca65d5da355227c97ff836c9c6719af9d3835fc6bc72bddc50eeecc1bb2b250000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007",
+      "structHash": "0x9b9817e7b522d07984c9bcdb25ac57581ee406ab7d4d8ed6ac642207bb210372",
+      "digest": "0xe7b0890d67cce05930fc4869b752677b52a99daa9222d66b99e8eaf8578b7957",
+      "expectedSigner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "rawSafeSignature": "0x607672839abe8ff9427f5b871007a08c32598f1e173978036157a4144e73c8e248ee41ca57cd8c610e7f19ce22e8816802556bb665904beaed8017cf6a9c94531b",
+      "ethSignSafeSignature": "0xcace1c3f01774930ab099c276332066153c73d3abf5fbf12a267eb458619a11d28b4b1adea649f3cafbe35e434b3de364d5cff3f40933480b5b53f86e15aff4720",
+      "safeTx": {
+        "to": "0x3333333333333333333333333333333333333333",
+        "value": 0,
+        "data": "0x12345678",
+        "operation": 0,
+        "safeTxGas": 0,
+        "baseGas": 0,
+        "gasPrice": 0,
+        "gasToken": "0x0000000000000000000000000000000000000000",
+        "refundReceiver": "0x0000000000000000000000000000000000000000",
+        "nonce": 7
+      }
+    },
+    {
+      "id": "nested-child",
+      "safe": "0x2222222222222222222222222222222222222222",
+      "chainId": 1,
+      "domainPreimage": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a7946921800000000000000000000000000000000000000000000000000000000000000010000000000000000000000002222222222222222222222222222222222222222",
+      "domainSeparator": "0x91633d4e620a540bb09871d4654a6566b2caf859c5358470b34c0b4e05205f1f",
+      "structPreimage": "0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbcaba9f83d14fdfc89bc87368947a616d28681adf43f262212febf41096029b9da0",
+      "structHash": "0x55add3a1c1cc7f577be49d4a89c5a6c935ab86d3711a0a8a91c0dd552d86f984",
+      "digest": "0x85ba65affff924c080839a65641727f9a7dd525e64b3504b0d5b3b3f1cd89ab4",
+      "expectedSigner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "rawSafeSignature": "0x8983e8f98ae30d77b634d8ce9294150873531ca66168b001ce00a3c8464b87e2037d1a3adc4d8205529e33ebe238b0d476916b083d65fb9582d543f0e500f9b41b",
+      "ethSignSafeSignature": "0xbe9dbf859c41634a7ffd0a7fc9184dc7cad320a3faf2d33d0e3f47a9541a3389500869ec3657cc802659587a1bb0081a9a1f9d4057ff00b98eb1e4d3e4b6ec4a20",
+      "parentHash": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd",
+      "message": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd"
+    },
+    {
+      "id": "nested-root-revisited",
+      "safe": "0x1111111111111111111111111111111111111111",
+      "chainId": 1,
+      "domainPreimage": "0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a7946921800000000000000000000000000000000000000000000000000000000000000010000000000000000000000001111111111111111111111111111111111111111",
+      "domainSeparator": "0xf0dcfe86ad4a409690a57dbaae9b1e14c5ea1750a48271a0a3a6037a8100624d",
+      "structPreimage": "0x60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbcad32d17023874068028be27e1fb80c1dee631d7d15313021e79f50d1543145c1f",
+      "structHash": "0xdd66554ede5edde93fc90aea6eefc66ff6aa1fbe4781a72569cace6f45cd2688",
+      "digest": "0xe11f260146fbbbdca1edc687db3077917ece903fd9c9bb9225afe3c0821ab365",
+      "expectedSigner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+      "rawSafeSignature": "0xe1cf912f434452f15b74bef7b64b19d359288e3b76badef296dcec0e9817298054835b18cb069a18f2462d5ef5a6f62d8932634184678ecb82cde3397db845db1b",
+      "ethSignSafeSignature": "0x7411192aef54112e1f796020af100938eedfbf33f83d74585e94bf314f391cc236ed1f910b179767ff7601ba996a16ac1a8d08a2da846f9bcf871f49cb653d9820",
+      "parentHash": "0x85ba65affff924c080839a65641727f9a7dd525e64b3504b0d5b3b3f1cd89ab4",
+      "message": "0x85ba65affff924c080839a65641727f9a7dd525e64b3504b0d5b3b3f1cd89ab4"
+    }
+  ],
+  "finiteRepeatedSafeProof": {
+    "status": "Encoded proof fixture; native Safe integration still required.",
+    "rootSafe": "0x1111111111111111111111111111111111111111",
+    "rootDigest": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd",
+    "rootSignatures": "0x000000000000000000000000222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000000000000000410000000000000000000000000000000000000000000000000000000000000000a200000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000041000000000000000000000000000000000000000000000000000000000000000041e1cf912f434452f15b74bef7b64b19d359288e3b76badef296dcec0e9817298054835b18cb069a18f2462d5ef5a6f62d8932634184678ecb82cde3397db845db1b",
+    "records": [
+      {
+        "safe": "0x1111111111111111111111111111111111111111",
+        "threshold": 1,
+        "owners": [
+          "0x2222222222222222222222222222222222222222",
+          "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+        ]
+      },
+      {
+        "safe": "0x2222222222222222222222222222222222222222",
+        "threshold": 1,
+        "owners": [
+          "0x1111111111111111111111111111111111111111"
+        ]
+      }
+    ],
+    "steps": [
+      {
+        "safe": "0x1111111111111111111111111111111111111111",
+        "digest": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd",
+        "owner": "0x2222222222222222222222222222222222222222"
+      },
+      {
+        "safe": "0x2222222222222222222222222222222222222222",
+        "digest": "0x85ba65affff924c080839a65641727f9a7dd525e64b3504b0d5b3b3f1cd89ab4",
+        "owner": "0x1111111111111111111111111111111111111111"
+      },
+      {
+        "safe": "0x1111111111111111111111111111111111111111",
+        "digest": "0xe11f260146fbbbdca1edc687db3077917ece903fd9c9bb9225afe3c0821ab365",
+        "owner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+      }
+    ],
+    "expected": "Finite leaf-backed proof; repeated Safe address alone must not reject it."
+  },
+  "semanticCases": [
+    {
+      "id": "initialize-once",
+      "readyBefore": false,
+      "readyAfter": true,
+      "requires": "validated native guard activation; repeat cannot reset"
+    },
+    {
+      "id": "source-mutation",
+      "sourceHashBefore": "B-old",
+      "sourceHashAfter": "B-new",
+      "requires": "atomic registered mutation and matching actual post-state; no authority counter"
+    },
+    {
+      "id": "provider-shared-selection",
+      "key": [
+        "sourceChainId",
+        "A"
+      ],
+      "providers": [
+        "LayerZero",
+        "CCIP"
+      ],
+      "result": "same selected full graph hash and management replay enforcement"
+    },
+    {
+      "id": "independent-child-selection",
+      "selectedA": "A-with-B-old",
+      "selectedB": "B-new",
+      "result": "B own entry does not change A embedded B snapshot"
+    },
+    {
+      "id": "stricter-child-parent-responsibility",
+      "selectedBThreshold": 1,
+      "sourceBThreshold": 2,
+      "result": "selected threshold 1 remains eligible; A must explicitly adopt stricter B before further A work; no automatic update or child counter"
+    },
+    {
+      "id": "stricter-child-adopted",
+      "selectedBThreshold": 2,
+      "result": "fresh B approvals need threshold 2; already accepted commitments survive under D92"
+    },
+    {
+      "id": "stricter-root-receiver-freshness",
+      "selectedRootThreshold": 1,
+      "sourceRootThreshold": 2,
+      "result": "stored threshold 1 remains eligible until update installation; A must update relevant receivers before further signing; accepted operational risk"
+    },
+    {
+      "id": "root-ordering-policy-retained",
+      "result": "linked predecessor ordering supersedes D93; no numeric authority counter or source freshness check introduced"
+    },
+    {
+      "id": "explicit-parent-replacement",
+      "selectedA": "A-with-B-old",
+      "authorization": "current A quorum signs exact predecessor update/authority hashes and replacement graph in a recognized source guard call",
+      "result": "install A-with-B-new only after independent descendant authentication"
+    },
+    {
+      "id": "implicit-adoption-rejected",
+      "selectedA": "A-with-B-old",
+      "evidence": "signed B transition and successor approval attached to ordinary A execution",
+      "result": "cannot install successor implicitly; approval must match selected authority"
+    },
+    {
+      "id": "new-quorum-self-install-rejected",
+      "evidence": "proposed replacement owners alone sign graph replacement",
+      "result": "reject; management authorization must verify under current A graph"
+    },
+    {
+      "id": "unexecuted-child-state",
+      "evidence": "authentic child transition and explicit current A quorum replacement",
+      "sourceExecuted": false,
+      "result": "selection allowed; source execution proof not required"
+    },
+    {
+      "id": "management-replay",
+      "deliveries": [
+        "direct",
+        "LayerZero",
+        "CCIP"
+      ],
+      "result": "shared linked head and exact acceptance receipt prevent replay"
+    },
+    {
+      "id": "out-of-order-linked-update",
+      "currentHead": "H0",
+      "submittedPreviousHead": "H1",
+      "result": "reject without consuming or advancing state, regardless of nonce magnitude"
+    },
+    {
+      "id": "huge-nonce-then-lower-linked-update",
+      "safeNonces": [
+        "uint256.max",
+        11
+      ],
+      "result": "both may apply with valid successive heads/current quorums; no numeric watermark"
+    },
+    {
+      "id": "universal-evidence",
+      "destinations": [
+        "current chain",
+        "future chain"
+      ],
+      "result": "same signed source evidence reused after independent genesis and predecessor verification"
+    },
+    {
+      "id": "registration-sentinel",
+      "authorityHash": "bytes32(0)",
+      "result": "unregistered; reject zero initial/replacement graph hashes"
+    },
+    {
+      "id": "mutation-batch",
+      "innerOperation": "CALL",
+      "outerOperation": "DELEGATECALL",
+      "result": "pinned MultiSendCallOnly executes ordered zero-value supported self-calls; pair completion mandatory"
+    },
+    {
+      "id": "returning-authority",
+      "selections": [
+        "X",
+        "Y",
+        "X"
+      ],
+      "result": "old unexecuted approval may qualify under X; normal nonce/window checks still apply"
+    },
+    {
+      "id": "execution-replay",
+      "selections": [
+        "X",
+        "Y",
+        "X"
+      ],
+      "result": "consumed execution stays blocked; graph replacement cannot reset consumption"
+    },
+    {
+      "id": "no-extra-resource-caps",
+      "immediateOwnerCap": 16,
+      "aggregateEntryCap": null,
+      "depthCap": null,
+      "evidenceByteCap": null,
+      "verificationStepCap": null,
+      "result": "finite valid proofs and terminating enumeration required; only VM/chain/provider resource limits apply beyond per-Safe owner cap"
+    },
+    {
+      "id": "shared-node",
+      "edges": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "A",
+          "C"
+        ],
+        [
+          "B",
+          "C"
+        ]
+      ],
+      "result": "graph allowed; shared C enumerated once; retain per-node thresholds"
+    },
+    {
+      "id": "cyclic-graph",
+      "edges": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "C"
+        ],
+        [
+          "C",
+          "B"
+        ]
+      ],
+      "result": "stored graph allowed; every accepted proof must be finite and valid"
+    },
+    {
+      "id": "unresolved-approval-loop",
+      "dependencies": [
+        [
+          "claim1",
+          "claim2"
+        ],
+        [
+          "claim2",
+          "claim1"
+        ]
+      ],
+      "result": "reject; no in-progress claim is an authenticated approval"
+    },
+    {
+      "id": "no-post-execution-refresh",
+      "result": "ordinary execution leaves selected graph unchanged; shared context frozen through calls"
+    },
+    {
+      "id": "commitment-child-authorization",
+      "result": "accepted child authorization is not rechecked or refreshed at finalize"
+    },
+    {
+      "id": "commitment-root-replacement",
+      "result": "accepted commitment remains executable after root replacement; no signature recheck or authority-hash/counter equality; cancellation/consumption checks remain"
+    }
+  ]
+}

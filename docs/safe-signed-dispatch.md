@@ -20,6 +20,18 @@ root registration text, which stores no signatures, are what the code follows.
 answers are recommendations awaiting agreement. *Open* items have no recommendation yet. IDs
 (D3, C2, Q4.6, R10) are stable so discussion can refer to them; a resolved item keeps its ID.
 
+## Planned authority-update integration (#109)
+
+This file describes implemented fixed-authority #108. The
+[authority design](safe-authority-updates.md) owns #109's linked, destination-independent
+Safe-scoped graph selection and commitment lifetime. Its
+[abstract registry template](../contracts/evm/src/messaging/authority/AuthorityRegistryTemplate.sol)
+is not wired into current receivers. Provider receivers will share the selected
+source-chain/Safe graph; there is no global child latest-state feed or automatic
+refresh. Baseline zero-counter wire fields are legacy encoding, not planned
+numeric authority versions. Integration and migration checks belong to the
+[verification plan](safe-authority-verification-review.md).
+
 ## Decisions
 
 Envelope and routing:
@@ -148,9 +160,10 @@ Authority:
   the receiver's applied authority. #109 owns duplicate and retry behavior across applied
   updates.
 - **C2. #109 fields in the bootstrap snapshot.** #109 owns the fields and rules for
-  later authority changes, including per-Safe counters.
-- **C3.** Deferred to #109. Specify how standalone sends and cached approvals bind the
-  source authority counter once rotations are supported.
+  later explicit Safe-scoped graph replacement, without authority counters.
+- **C3.** #109 uses the selected graph for fresh verification and explicitly enforced
+  transaction replay state, not an authority counter. Exact graph/cache context and
+  linked predecessor rules are in its verification plan.
 - **C4. One transmitter per signed root registration.** The signed Safe transaction
   binds the root to its target transmitter (D3). Leaves may target different destinations
   served by that transmitter. Using another provider's transmitter requires a separate
@@ -229,7 +242,8 @@ Carry an unpaired hash to the next level unchanged.
 
 Cases:
 
-- **Q2.1** #109 owns authority counter binding for root registration. Reapproving identical
+- **Q2.1** #109 owns authority selection and replay checks for root registration,
+  without a separate authority counter. Reapproving identical
   fields preserves both hashes. Changing only the attributes changes the leaf hash and
   preserves the execution ID.
 - **Q2.2** An empty replacement leaf carries the normal encoding of an empty `Call[]`.
@@ -264,10 +278,11 @@ Cases:
   nested owner if its record is missing.
 - **Q3.2** Preserve each Safe's `getOwners()` order. Signature verification separately
   requires ascending signer addresses.
-- **Q3.3** Traverse depth first from the root, in owner order. Emit each Safe record on
-  first visit and reject cycles.
+- **Q3.3** For the #108 baseline, traverse depth first from the root in owner order,
+  emit each Safe record on first visit and reject cycles. Planned #109 keeps
+  first-visit ordering but permits stored cycles; see the authority-update design.
 - **Q3.4** For #108, bootstrap carries the fixed creation authority records. Authority
-  counters for later changes are #109 scope.
+  graph replacement for later changes is #109 scope; no authority counter is planned.
 - **Q3.5** Reject invalid thresholds, zero and sentinel owners, duplicate owners, duplicate
   or unreachable records, and inconsistent owner kinds.
 - **Q3.6** Classify empty code and the EIP-7702 delegation indicator as EOA. For other
@@ -277,12 +292,12 @@ Cases:
   signed conduit salt preimage in Q4.7.
 - **Q3.8** The root node is the transmitter's owner Safe.
 - **Q3.9** [`NestedOwnerManagerLib.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManagerLib.sol)
-  holds one `SafeOwnerState` per Safe, with a linked owner list and threshold. Keep the
-  authority counter and owner kind metadata in the surrounding record. The signed update
-  carries Safe's mutation selector and arguments. After verifying the update, the receiver
-  can use `using NestedOwnerManagerLib for SafeOwnerState` and call
-  `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
-  The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
+  holds one `SafeOwnerState` per Safe, with a linked owner list and threshold.
+  #109 commits to canonical full graph data with owner kinds and exact child snapshots;
+  explicit root-quorum management selects its hash in the shared Safe-scoped registry.
+  A child mutation alone cannot alter a parent's selected graph. Exact cache/library
+  integration is an implementation gate. The baseline signed state is ERC-7201
+  namespaced so it does not freeze the base's sequential
   layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
 - **Q3.10** Derive the graph onchain from live `getOwners()` and `getThreshold()` at
   transmitter creation. Creation does not enforce nested Safe implementation identity.
@@ -368,7 +383,8 @@ For each entry `i < t`, with `t` the stored threshold of the node:
   bytes; the same rule applies.
 - **Q5.10** Recursion depth is bounded by graph depth and uses memory, not call depth.
 - **Q5.11** A shared child under two groups is evaluated twice, over different hashes.
-- **Q5.12** #109 specifies the order of counter, signature and duplicate checks after rotation.
+- **Q5.12** #109 specifies selected-hash, signature, nonce and authenticated duplicate
+  checks after graph replacement; no authority counter is introduced.
 - **Q5.13** An EIP-7702 account signing with ECDSA is an EOA owner; contract-style signatures
   from it are unsupported.
 
@@ -485,7 +501,9 @@ Cases:
   payload.
 - **Q8.7** Merkle relayers read the transmitter's used state and the receiver's `nextNonce`
   to pick a leaf to relay.
-- **Q8.8** #109's update history must stay available for initialized receivers that lag behind.
+- **Q8.8** #109 requires availability of graph/authentication witnesses for intended
+  updates. On-chain version history is not required; optional exact-content caches
+  do not select authority. Late destinations authenticate from a recognized anchor.
 - **Q8.9** Retryable destination failures include early delivery, a future Merkle nonce,
   insufficient funds or gas, and some target reverts. An expired or conflicting leaf, invalid
   signatures, `v = 1`, missing evidence or a wrong destination needs a corrected submission
@@ -517,7 +535,7 @@ Cases:
 - **O9.** Resolved in D18. Source owner changes remain allowed. Receivers continue using
   their creation graph until an authority update is supported and applied under #109.
 - **O10.** #109 owns applying parent and child authority changes before retrying pending
-  messages, including the counter and validity rules for that retry.
+  messages, including selected-graph, nonce and validity rules for that retry.
 - **O11.** No atomicity across destinations: a two-chain upgrade can stay half applied.
 - **O12.** EVM destinations only in the first release. No leaf can target the home chain.
 - **O13.** Receiver code size: the verifier, codec and Merkle code likely exceed EIP-170 and
@@ -546,7 +564,7 @@ later; "permanent" means a replacement leaf or new signatures are needed.
 | R4 | Decode the signed standalone recipient and payload, or the registered root and supplied leaf | revert, permanent |
 | R5 | Destination is (`block.chainid`, `address(this)`) | revert, permanent |
 | R6 | Merkle only: verify the leaf proof against the root in signed registration calldata | revert, permanent |
-| R8 | Authority counter checks are deferred to #109 | |
+| R8 | #109 uses Safe-scoped selected graph hashes and linked management replay checks, without authority counters | |
 | R9 | Verify signatures and nested evidence | revert, permanent |
 | R10 | Standalone digest or Merkle execution ID at the nonce already executed | succeed silently for Merkle, emit `DuplicateMessage()` for standalone |
 | R11 | Merkle only: nonce already used by a different execution ID | revert, conflicting batch, permanent |
@@ -623,7 +641,9 @@ How the pieces fit:
 Not in #108's implementation:
 
 - **Authority counters** are always zero: the bootstrap payload carries one and the receiver
-  requires zero. Counters, rotations and the retry checks that depend on them are #109.
+  requires zero. This is a baseline encoding field, not a #109 versioning decision.
+  #109 replaces authority selection with a shared current graph hash/update head and no numeric authority
+  counter; field removal/migration and retry checks belong to its ABI gates.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
   Tron): the receiver report carries no graph, so the home could not find the transmitter.
   The source refuses a signed bootstrap to a destination that reports its receiver. Non-EVM

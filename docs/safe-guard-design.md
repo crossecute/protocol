@@ -18,6 +18,19 @@ test transmitter, and an end-to-end test joining the two is
 argued in the NatSpec of the contract that implements it. This file says what the pieces are
 and how they connect. Where the two disagree, the contract is right.
 
+## Planned authority-update extension (#109)
+
+This file describes the implemented #107 guard. The
+[authority design](safe-authority-updates.md#source-guard-and-mutation-batch) owns
+#109's source lifecycle: two guard operations, linked portable updates and atomic
+registration/MultiSendCallOnly ownership batches. The abstract
+[source interface](../contracts/safe-guard/src/authority/ISourceAuthorityGuard.sol)
+and [fail-closed template](../contracts/safe-guard/src/authority/SourceAuthorityGuardTemplate.sol)
+are not implemented by current CrossecuteGuard. Production #109 requires both
+guard slots; this baseline permits the module slot to remain optional.
+See the [verification plan](safe-authority-verification-review.md) for integration
+checks rather than interpreting scaffold selectors as deployed guard capabilities.
+
 ## Decisions
 
 These are settled. The sections below describe each in full.
@@ -26,7 +39,7 @@ These are settled. The sections below describe each in full.
 - **One guard.** A single shared `CrossecuteGuard` extends `SafePolicyGuard` and reuses its
   `PolicyEngine`, with all state keyed by Safe. `SafenetPolicy` is a policy a Safe may select,
   not part of the guard. The guard registers, forwards to, and delegatecalls no other guard.
-- **Guard slots.** The transaction guard slot is required. The module guard slot is the
+- **Guard slots (#107 baseline).** The transaction guard slot is required. The module guard slot is the
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same

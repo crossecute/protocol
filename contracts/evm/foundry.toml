@@ -30,6 +30,8 @@ bytecode_hash = "none"
 cbor_metadata = false
 remappings = [
     "src/=src/",
+    # Shared source-guard interfaces reuse protocol Call without duplicating the type.
+    "crossecute/=src/",
     "@crossecute/safe-guard/=../safe-guard/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
