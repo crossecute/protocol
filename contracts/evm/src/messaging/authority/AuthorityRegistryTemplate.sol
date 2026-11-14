@@ -3,19 +3,29 @@ pragma solidity ^0.8.28;
 
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {AuthoritySelection, AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "../signed/types/SignedDispatchTypes.sol";
-import {AuthorityGraph} from "./AuthorityGraph.sol";
-import {UpdateWitness} from "./AuthorityWitness.sol";
+import {AuthorityEntry, AuthorityGraph, AuthorityNode} from "./AuthorityGraph.sol";
+import {ChildUpdate} from "./ChildUpdate.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
 import {IAuthorityRegistry} from "./IAuthorityRegistry.sol";
 
 /// @notice Non-deployable linked-update state-machine template for #109.
-/// @dev Mandatory abstract hooks cover signatures, source calls, genesis, graph and child proofs.
-///      Current receivers do not read this state. Concrete integration must freeze the shared
-///      context throughout application execution. This is absent from deployment scripts.
+/// @dev Mandatory abstract hooks cover source calls, creation proofs, graph and child proofs and
+///      signatures. Current receivers do not read this state. Concrete integration must freeze
+///      the shared context throughout application execution. This is absent from deployment
+///      scripts.
 abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
+    enum UpdateKind {
+        Activation,
+        OwnershipChange,
+        Selection
+    }
+
     mapping(uint256 => mapping(address => AuthoritySelection)) private _selections;
-    mapping(bytes32 => bytes) private _graphs;
+    // Content-addressed: a record shared by several graphs or kept across updates is written once.
+    mapping(bytes32 => bytes) private _records;
+    mapping(bytes32 => AuthorityEntry[]) private _graphs;
     // Exact receipts prevent replay without storing historical authority versions.
     mapping(uint256 => mapping(address => mapping(bytes32 => bool))) private _accepted;
     bool private _submitting;
@@ -23,21 +33,14 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     error UnregisteredAuthority();
     error AlreadyRegistered();
     error WrongRoot();
-    error PositionCountMismatch();
+    error RootPositionNotZero();
     error ZeroCommitment();
     error PreviousUpdateMismatch();
-    error PreviousAuthorityMismatch();
     error ReplacementHashMismatch();
     error UpdateAlreadyAccepted();
     error AuthoritySubmissionReentered();
     error GraphNotCached();
-
-    modifier submissionLock() {
-        if (_submitting) revert AuthoritySubmissionReentered();
-        _submitting = true;
-        _;
-        _submitting = false;
-    }
+    error RecordNotCached();
 
     /// @inheritdoc IAuthorityRegistry
     function selection(uint256 sourceChainId, address sourceSafe) public view returns (AuthoritySelection memory) {
@@ -45,10 +48,20 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     }
 
     /// @inheritdoc IAuthorityRegistry
-    function graph(bytes32 authorityHash) external view returns (AuthorityGraph memory) {
-        bytes memory encoded = _graphs[authorityHash];
-        if (encoded.length == 0) revert GraphNotCached();
-        return abi.decode(encoded, (AuthorityGraph));
+    function graph(bytes32 authorityHash) public view returns (AuthorityGraph memory authority) {
+        AuthorityEntry[] storage stored = _graphs[authorityHash];
+        if (stored.length == 0) revert GraphNotCached();
+        authority.nodes = new AuthorityNode[](stored.length);
+        for (uint256 i; i < stored.length; ++i) {
+            authority.nodes[i] = AuthorityNode(record(stored[i].recordHash), stored[i].position);
+        }
+    }
+
+    /// @inheritdoc IAuthorityRegistry
+    function record(bytes32 recordHash) public view returns (SafeAuthorityRecord memory) {
+        bytes storage encoded = _records[recordHash];
+        if (encoded.length == 0) revert RecordNotCached();
+        return abi.decode(encoded, (SafeAuthorityRecord));
     }
 
     /// @inheritdoc IAuthorityRegistry
@@ -56,97 +69,100 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         uint256 sourceChainId,
         address sourceSafe,
         SafeTxEvidence calldata evidence,
-        UpdateWitness calldata witness
-    ) external submissionLock {
+        AuthorityGraph calldata newGraph,
+        ChildUpdate[] calldata childUpdates
+    ) external {
+        if (_submitting) revert AuthoritySubmissionReentered();
+        _submitting = true;
         _requireAuthorityContextIdle(sourceChainId, sourceSafe);
-        AuthoritySelection memory current = _selections[sourceChainId][sourceSafe];
-        if (current.authorityHash == bytes32(0)) revert UnregisteredAuthority();
-        AuthorityGraph calldata newGraph = witness.newGraph;
-        _requireShape(sourceSafe, newGraph);
+        _requireRoot(sourceSafe, newGraph);
         bytes32 updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
-        if (_accepted[sourceChainId][sourceSafe][updateHash]) revert UpdateAlreadyAccepted();
         if (updateHash == bytes32(0)) revert ZeroCommitment();
+        if (_accepted[sourceChainId][sourceSafe][updateHash]) revert UpdateAlreadyAccepted();
 
-        AuthorityUpdate memory update = _recognizeUpdate(sourceChainId, sourceSafe, evidence);
-        if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
-        if (update.previousAuthorityHash != current.authorityHash) revert PreviousAuthorityMismatch();
+        AuthoritySelection memory current = _selections[sourceChainId][sourceSafe];
+        (UpdateKind kind, AuthorityUpdate memory update) = _recognizeUpdate(sourceChainId, sourceSafe, evidence);
+        if (current.authorityHash == bytes32(0)) {
+            if (kind != UpdateKind.Activation) revert UnregisteredAuthority();
+        } else {
+            if (kind == UpdateKind.Activation) revert AlreadyRegistered();
+            if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
+        }
         if (update.newAuthorityHash == bytes32(0)) revert ZeroCommitment();
-        if (AuthorityUpdateEncoding.graphHash(sourceChainId, newGraph) != update.newAuthorityHash) {
+        AuthorityEntry[] memory newEntries = AuthorityUpdateEncoding.entries(newGraph);
+        if (AuthorityUpdateEncoding.graphHash(sourceChainId, newEntries) != update.newAuthorityHash) {
             revert ReplacementHashMismatch();
         }
         // Signatures are checked after the graph because each descendant votes under the
         // position newGraph names for it. No default verification implementation exists.
-        _authenticateGraph(sourceChainId, current.authorityHash, witness);
-        _verifyUpdateSignatures(sourceChainId, current.authorityHash, newGraph, evidence);
+        _authenticateGraph(sourceChainId, current.authorityHash, kind, evidence, newGraph, childUpdates);
+        _verifyUpdateSignatures(sourceChainId, current.authorityHash, kind, evidence, newGraph);
 
         // Validation precedes writes. Any revert rolls back the lock and receipts too.
-        _graphs[update.newAuthorityHash] = abi.encode(newGraph);
+        _store(newGraph, newEntries, update.newAuthorityHash);
         _accepted[sourceChainId][sourceSafe][updateHash] = true;
         _selections[sourceChainId][sourceSafe] = AuthoritySelection(updateHash, update.newAuthorityHash);
         emit AuthoritySelected(sourceChainId, sourceSafe, updateHash, update.newAuthorityHash);
+        _submitting = false;
     }
 
-    /// @dev Building block for future authenticated bootstrap; no public initializer here.
-    function _initializeAuthority(
-        uint256 sourceChainId,
-        address sourceSafe,
-        AuthorityGraph calldata initialGraph,
-        bytes memory creationWitness
-    ) internal submissionLock {
-        _requireAuthorityContextIdle(sourceChainId, sourceSafe);
-        if (_selections[sourceChainId][sourceSafe].authorityHash != bytes32(0)) revert AlreadyRegistered();
-        if (sourceSafe == address(0)) revert WrongRoot();
-        _requireShape(sourceSafe, initialGraph);
-        _authenticateGenesis(sourceChainId, sourceSafe, initialGraph, creationWitness);
-        bytes32 authorityHash = AuthorityUpdateEncoding.graphHash(sourceChainId, initialGraph);
-        if (authorityHash == bytes32(0)) revert ZeroCommitment();
-        bytes32 head = AuthorityUpdateEncoding.genesisHead(sourceChainId, sourceSafe, authorityHash);
-        if (head == bytes32(0)) revert ZeroCommitment();
-        _graphs[authorityHash] = abi.encode(initialGraph);
-        _selections[sourceChainId][sourceSafe] = AuthoritySelection(head, authorityHash);
-        emit AuthoritySelected(sourceChainId, sourceSafe, head, authorityHash);
+    function _requireRoot(address sourceSafe, AuthorityGraph calldata authority) private pure {
+        if (sourceSafe == address(0) || authority.nodes.length == 0 || authority.nodes[0].record.safe != sourceSafe) {
+            revert WrongRoot();
+        }
+        if (authority.nodes[0].position != bytes32(0)) revert RootPositionNotZero();
     }
 
-    function _requireShape(address sourceSafe, AuthorityGraph calldata authority) private pure {
-        if (authority.rootSafe != sourceSafe) revert WrongRoot();
-        if (authority.positions.length != authority.records.length) revert PositionCountMismatch();
+    function _store(AuthorityGraph calldata authority, AuthorityEntry[] memory graphEntries, bytes32 authorityHash)
+        private
+    {
+        for (uint256 i; i < graphEntries.length; ++i) {
+            bytes storage stored = _records[graphEntries[i].recordHash];
+            // forge-lint: disable-next-line(costly-loop) one write per record not stored yet
+            if (stored.length == 0) _records[graphEntries[i].recordHash] = abi.encode(authority.nodes[i].record);
+        }
+        // A graph returning to an earlier hash is already stored under it.
+        AuthorityEntry[] storage graphSlot = _graphs[authorityHash];
+        if (graphSlot.length != 0) return;
+        for (uint256 i; i < graphEntries.length; ++i) {
+            graphSlot.push(graphEntries[i]);
+        }
     }
 
-    /// @dev Recognize the guard target and selector and return the signed update. No signature check.
+    /// @dev Recognize the signed source call and return its kind and update. An activation
+    ///      returns a zero previousUpdateHash and its signed graph hash. No signature check.
     function _recognizeUpdate(uint256 sourceChainId, address sourceSafe, SafeTxEvidence calldata evidence)
         internal
         view
         virtual
-        returns (AuthorityUpdate memory);
+        returns (UpdateKind kind, AuthorityUpdate memory update);
 
-    /// @dev Check canonical root closure, 16 owners per Safe, kinds/thresholds and the absence
-    ///      of cycles; no extra work caps. The root's own position is zero. Each
-    ///      descendant starts at its position in the graph cached under currentAuthorityHash,
-    ///      or at the genesis head of its introduced entry, authenticated like a root's initial
-    ///      registration. Its links, each naming the position before it and signed under the
-    ///      record before it, must end at the position the new graph names, and its new record
-    ///      must equal the result of the links' signed mutations.
-    function _authenticateGraph(uint256 sourceChainId, bytes32 currentAuthorityHash, UpdateWitness calldata witness)
-        internal
-        view
-        virtual;
+    /// @dev Check canonical acyclic structure, 16 owners per Safe and kinds/thresholds; no extra
+    ///      work caps. The root's new record is its creation record for an activation (verified
+    ///      from the signed creation proof), its stored record after the signed mutations for an
+    ///      ownership change, and its stored record for a selection. Descendant positions are
+    ///      proven in one flat pass over childUpdates, seeded with the graph stored under
+    ///      currentAuthorityHash (empty for an activation) and with supplied activations: each
+    ///      child update needs its predecessor and its nested voters' positions already proven.
+    ///      A retained descendant's position must descend from its stored one.
+    function _authenticateGraph(
+        uint256 sourceChainId,
+        bytes32 currentAuthorityHash,
+        UpdateKind kind,
+        SafeTxEvidence calldata evidence,
+        AuthorityGraph calldata newGraph,
+        ChildUpdate[] calldata childUpdates
+    ) internal view virtual;
 
-    /// @dev Full portable quorum. The root votes under its record in the graph cached under
-    ///      currentAuthorityHash; each descendant votes under its record in the authenticated
-    ///      new graph.
+    /// @dev Full portable quorum. The root votes under its record in the graph stored under
+    ///      currentAuthorityHash, or under its creation record for an activation; each
+    ///      descendant votes under its record in the authenticated new graph.
     function _verifyUpdateSignatures(
         uint256 sourceChainId,
         bytes32 currentAuthorityHash,
-        AuthorityGraph calldata newGraph,
-        SafeTxEvidence calldata evidence
-    ) internal view virtual;
-
-    /// @dev Prove supported creation/configuration and the complete initial graph independently.
-    function _authenticateGenesis(
-        uint256 sourceChainId,
-        address sourceSafe,
-        AuthorityGraph calldata authority,
-        bytes memory creationWitness
+        UpdateKind kind,
+        SafeTxEvidence calldata evidence,
+        AuthorityGraph calldata newGraph
     ) internal view virtual;
 
     /// @dev Concrete integration must share application-execution locking across providers.

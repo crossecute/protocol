@@ -3,15 +3,23 @@ pragma solidity ^0.8.28;
 
 import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
 
+/// @notice One Safe in a root's graph and the position of that Safe the root last adopted.
+/// @dev position is an update head in record.safe's own update list. It is zero for the root,
+///      whose position is the selection's updateHead.
+struct AuthorityNode {
+    SafeAuthorityRecord record;
+    bytes32 position;
+}
+
 /// @notice A root Safe's complete selected graph, including its chosen descendant snapshots.
-/// @dev Reuses existing SafeOwner/SafeAuthorityRecord, including owner kind constants.
-///      Canonical traversal emits each reachable identity once and rejects cycles.
-///      A record for B here is independent of B's own root selection in the registry.
-///      positions[i] is the update head of records[i].safe that the root last adopted, in
-///      that Safe's own update list. It is zero for the root's own record, whose position
-///      is the selection's updateHead.
+/// @dev nodes are in canonical depth-first order, so nodes[0] is the root. Stored graphs are
+///      acyclic. A node for B here is independent of B's own root selection in the registry.
 struct AuthorityGraph {
-    address rootSafe;
-    SafeAuthorityRecord[] records;
-    bytes32[] positions;
+    AuthorityNode[] nodes;
+}
+
+/// @notice The hashed form of one node. The graph hash covers one entry per node.
+struct AuthorityEntry {
+    bytes32 recordHash;
+    bytes32 position;
 }

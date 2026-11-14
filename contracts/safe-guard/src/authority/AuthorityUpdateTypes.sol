@@ -8,11 +8,20 @@ struct AuthoritySelection {
     bytes32 authorityHash;
 }
 
-/// @notice Signed predecessor and replacement commitments, reusable on every destination.
+/// @notice What an ownership change or selectAuthority signs, reusable on every destination.
 /// @dev The surrounding SafeTx binds the source Safe, source chain and recognized guard.
-///      Ordering uses previousUpdateHash, not a numeric SafeTx nonce watermark.
+///      previousUpdateHash is the predecessor's SafeTx hash, which already commits to that
+///      update's graph hash, so the previous graph hash is not repeated here.
 struct AuthorityUpdate {
     bytes32 previousUpdateHash;
-    bytes32 previousAuthorityHash;
     bytes32 newAuthorityHash;
+}
+
+/// @notice The Safe 1.5.0 factory inputs that prove a Safe's creation owners and threshold.
+/// @dev The factory and the proxy creation code are pinned per source chain, so neither is
+///      carried. initializer is setup(...): owners and threshold are read from it.
+struct SafeCreationProof {
+    address singleton;
+    bytes initializer;
+    uint256 saltNonce;
 }
