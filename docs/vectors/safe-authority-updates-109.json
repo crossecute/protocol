@@ -166,13 +166,13 @@
       "id": "initialize-once",
       "readyBefore": false,
       "readyAfter": true,
-      "requires": "validated native guard activation; repeat cannot reset"
+      "requires": "guard set, then activate signed by the creation quorum at creation state; repeat cannot reset"
     },
     {
       "id": "source-mutation",
       "sourceHashBefore": "B-old",
       "sourceHashAfter": "B-new",
-      "requires": "atomic registered mutation and matching actual post-state; no authority counter"
+      "requires": "one SafeTx batch: guard call then owner mutations, matching actual post-state; no authority counter"
     },
     {
       "id": "provider-shared-selection",
@@ -217,7 +217,7 @@
       "id": "explicit-parent-replacement",
       "selectedA": "A-with-B-old",
       "authorization": "current A quorum signs exact predecessor update/authority hashes and replacement graph in a recognized source guard call",
-      "result": "install A-with-B-new only after B links from the stored B position verify"
+      "result": "install A-with-B-new only after B updates from the stored B position verify"
     },
     {
       "id": "implicit-adoption-rejected",
@@ -240,14 +240,14 @@
       "id": "child-position-forward",
       "storedB": "p",
       "namedB": "p+2",
-      "evidence": "B links p->p+1->p+2, each signed under the B record before it",
+      "evidence": "B updates p->p+1->p+2, each signed under the B record before it",
       "result": "accept in one A update; B record is the result of the signed mutations"
     },
     {
       "id": "child-position-not-forward",
       "storedB": "p+1",
       "namedB": "p",
-      "result": "reject; a position is kept or reached from the stored one through links"
+      "result": "reject; a position is kept or reached from the stored one through child updates"
     },
     {
       "id": "child-vote-under-named-position",
@@ -269,10 +269,30 @@
       "result": "source accepts: p+1 is an executed head at or after the stored position"
     },
     {
-      "id": "introduced-child-genesis",
+      "id": "introduced-child-activation",
       "addedSafe": "D",
-      "evidence": "D creation proof for its creation-state graph, then D links from the genesis head",
-      "result": "accept at the named position; source also requires that position executed, so a D that never installed the guard is rejected there"
+      "evidence": "D signed activation with its creation proof, then D updates to the named position",
+      "result": "accept at the named position; source also requires that position executed, so a D that never activated is rejected there"
+    },
+    {
+      "id": "readded-child-earlier-position",
+      "removedAt": "p5",
+      "namedOnReadd": "p2",
+      "result": "accept from D activation when p2 executed; any executed position leads to later ones"
+    },
+    {
+      "id": "nested-voter-flat-proof",
+      "voterInChildUpdate": "C at q",
+      "storedC": "later than q",
+      "result": "accept; C counts under q as on source, proven once in the flat child-update pass"
+    },
+    {
+      "id": "creation-proof-salts",
+      "salts": [
+        "plain",
+        "chain-specific"
+      ],
+      "result": "either recomputed address proves the initializer; setup delegatecall other than pinned setupToL2 rejects"
     },
     {
       "id": "child-own-entry-ignored",
@@ -308,18 +328,18 @@
         "current chain",
         "future chain"
       ],
-      "result": "same signed source evidence reused after independent genesis and predecessor verification"
+      "result": "same signed source evidence reused after independent activation and predecessor verification"
     },
     {
       "id": "registration-sentinel",
       "authorityHash": "bytes32(0)",
-      "result": "unregistered; reject zero initial/replacement graph hashes"
+      "result": "unregistered; activation signs zero previous hashes; reject zero initial/replacement graph hashes"
     },
     {
       "id": "mutation-batch",
       "innerOperation": "CALL",
       "outerOperation": "DELEGATECALL",
-      "result": "pinned MultiSendCallOnly executes ordered zero-value supported self-calls; pair completion mandatory"
+      "result": "pinned MultiSendCallOnly runs the guard call, then ordered zero-value supported self-calls, in one SafeTx"
     },
     {
       "id": "returning-authority",

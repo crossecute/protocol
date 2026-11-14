@@ -22,8 +22,8 @@ and how they connect. Where the two disagree, the contract is right.
 
 This file describes the implemented #107 guard. The
 [authority design](safe-authority-updates.md#source-guard-and-mutation-batch) owns
-#109's source lifecycle: two guard operations, linked portable updates and atomic
-registration/MultiSendCallOnly ownership batches. The abstract
+#109's source lifecycle: activation, linked portable updates staged with
+stageUpdate, and ownership changes as one SafeTx through MultiSendCallOnly. The abstract
 [source interface](../contracts/safe-guard/src/authority/ISourceAuthorityGuard.sol)
 and [fail-closed template](../contracts/safe-guard/src/authority/SourceAuthorityGuardTemplate.sol)
 are not implemented by current CrossecuteGuard. Production #109 requires both
