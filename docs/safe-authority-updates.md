@@ -101,6 +101,10 @@ only one; the losing successor cannot overwrite it. The chain does not prove whi
 successor executed on source. Restoration requires valid authorization under the
 currently selected branch, not a special old-owner override.
 
+Updates carry no expiry. A signed update stays valid until its predecessor is
+superseded, even if its SafeTx is rejected or replaced on source (Y4). Tooling must
+tell source rejection apart from destination revocation.
+
 ## Source guard and mutation batch
 
 Both operations belong to the shared deterministic guard, not a separate authority
@@ -154,7 +158,14 @@ validate the linked authority update.
 ## Parent responsibility and accepted authorization
 
 Only A's explicitly signed graph update changes A's tracked children. Independent
-B source changes or B's own selected entry do not. A must adopt authenticated stricter
+B source changes or B's own selected entry do not. B has no global identity inside A
+and there is no default to B's state: nothing B does reaches A's graph. To adopt B's
+new owners, A's current quorum signs selectAuthority for a graph holding B's new
+state. B's registration evidence rides in that update only as the witness that the
+state is authentic; A may equally keep, replace or drop B. Anyone may carry A's
+signed update to a destination, but acceptance needs A's selected quorum. In the
+#109 nested example (B rotates while A executes nothing, then A dispatches), A signs
+selectAuthority before dispatching under B's new owners. A must adopt authenticated stricter
 child snapshots before authorizing further A transactions (D94). A must likewise
 install its own authority changes on relevant receivers before signing further
 application transactions (D96). These are operational responsibilities, not automatic
@@ -168,7 +179,16 @@ transition witnesses; A selects authentic states, not invented child owners.
 Source signatures prove authorization, not source execution/time/deployment. A may
 select an authenticated unexecuted child state. Removed keys cannot authorize a
 new branch after the receiver replaces them unless they still satisfy its selected
-quorum. Lagging/new destinations have the additional review risks in Y2/Y3.
+quorum.
+
+A lagging or new destination accepts any valid successor of its stored head,
+including one signed by a retired quorum; the first accepted wins (T5) and the loser
+cannot overwrite it. A destination cannot know what executed on source, so one
+captured this way stays on that branch and no recovery bypass exists (Y2, Y3). A new
+destination starts at genesis and applies the full linked chain, possibly in one
+batch; there is no latest-state shortcut. Update calldata and registry events are
+archived off-chain so late destinations can bootstrap; the registry stores only
+receipts and the graph cache.
 
 Accepted receiver commitments survive root and nested ownership changes (D92).
 Finalize uses the recorded exact-call authorization without a fresh signature check
@@ -196,7 +216,9 @@ singleton/handler/module configuration, supported actual starting authority, and
 child readiness/handler matching. Destination registration cannot fabricate native
 source readiness. Block unregistered owner changes, guard/handler replacement,
 module self-calls/delegatecalls and protected-configuration bypasses. Pin approved
-helper code/configuration; mutable pins remain review X13 work.
+helper code/configuration: helper, executor, singleton and handler pins are fixed at
+guard deployment, with no setter and no owner or governance override (X13). Changing
+one means a new guard, and guard migration is outside this design.
 
 Canonical graph enumeration allows cycles, but authorization must be a finite valid
 proof. A repeated Safe at a different nested message digest is not automatically a
@@ -216,5 +238,11 @@ during application verification/execution across all provider and direct entry
 points. Application leaves/callbacks cannot act as management bypasses. Ordinary
 execution never refreshes child snapshots or advances updateHead. Emergency/admin
 recovery, guard migration, custom validators, zkSync/Tron and signed OFT are outside
-this scaffold; other home-contract authority adapters require separate portable proof
-support and must reject unsupported paths rather than trust a bridge assertion.
+this scaffold. Other home-contract authority (such as a DAO) is rejected at
+registration and no adapter is added; a later one needs separate portable proof
+support, not a bridge assertion.
+
+No freeze, equivocation-evidence submission or unfreeze role is designed. A freeze
+below the selected quorum is a new authority, on a lagging destination the freezing
+quorum may be a retired one, and unfreezing needs a recovery role this design does
+not have. Conflicting successors are handled by first-accepted.

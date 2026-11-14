@@ -12,9 +12,9 @@ tracker are removed from the current tree.
 | ID | Finding | Current disposition |
 | --- | --- | --- |
 | Y1 | A huge signed Safe nonce can exhaust a numeric destination ordering watermark. | Addressed by linked update heads. No numeric watermark/max-gap rule; max-nonce then smaller-nonce linked handoff has a scaffold regression. Source execution divergence remains Y2, not solved by the hash. |
-| Y2 | Removed old quorum can capture a lagging destination before its legitimate update arrives. | D96 accepts stale-quorum authority and requires receiver updates before further signing. The stronger compromise/capture consequence must be explicit before production: linked heads cannot prove source execution or repair a losing branch automatically. No recovery bypass has been authorized. |
-| Y3 | Late destinations anchor genesis; retired keys can compete and lost lineage blocks bootstrap. | Universal update evidence and deterministic genesis permit replay on future chains. Preserve durable full linked witnesses. Winner/freshness/recovery for competing genesis branches remains unresolved; no source-state proof or trusted latest-state shortcut is implied. |
-| Y4 | Rejecting/replacing a Safe transaction on source does not revoke portable signed updates. | Existing destination-first model retains this consequence. Expiry was proposed by review, not adopted; no silent validUntil field is added. Tooling must distinguish source rejection from destination revocation. |
+| Y2 | Removed old quorum can capture a lagging destination before its legitimate update arrives. | Decided: accepted, no recovery. D96 accepts stale-quorum authority and requires receiver updates before further signing. Linked heads cannot prove source execution or repair a losing branch; a destination captured by a retired quorum stays on that branch. No recovery bypass exists. Stated in the design's "Parent responsibility" section. |
+| Y3 | Late destinations anchor genesis; retired keys can compete and lost lineage blocks bootstrap. | Universal update evidence and deterministic genesis permit replay on future chains. Decided: first accepted successor wins, with no freshness rule and no latest-state shortcut. A new destination applies the full chain from genesis, possibly in one batch. Witnesses are archived off-chain (calldata and registry events); the registry stores receipts and the graph cache only. Y7/Y8 checkpoint and graph publication work remains. |
+| Y4 | Rejecting/replacing a Safe transaction on source does not revoke portable signed updates. | Decided: no expiry and no validUntil field; updates are nonexpiring as in protocol-v2#2. The destination-first model retains this consequence. Tooling must distinguish source rejection from destination revocation. |
 | Y5 | Destination binding changes cross-chain reuse and bootstrap. | Resolved: authority updates have no destination chain/provider/registry binding. Source identity/recognized guard/domain remain authenticated. Transport and ordinary application dispatch routing stay destination-specific. |
 | Y6 | Existing generic SafeBatchExecutor cannot enforce registration/mutation pairing. | Architecture requires invocation-scoped completion through an enforcing executor/wrapper, exact next MultiSendCallOnly batch, and full rollback. Source template intentionally reverts until implemented. Pinning existing executor alone is not a fix. |
 | Y7 | Child genesis-to-current lineage grows and missing witnesses block adoption. | Exact authenticated content cache may anchor later lineage. Specify durable full source registration evidence and checkpoint interfaces before production; no numeric evidence/depth/work cap is added. |
@@ -33,7 +33,15 @@ tracker are removed from the current tree.
 | X6/X7 | Old commitment invalidation questions superseded by D92 permanent accepted authorization subject to explicit cancellation/consumption. |
 | X10 | Same-Safe nested execution/staging overwrite: enforce invocation-scoped reentrancy boundaries before source integration. |
 | X11 | Activation must name/verify singleton, both guards, handler and enabled modules; slot installation alone is insufficient. |
-| X13 | Default/helper/configuration governance must not gain an unreviewed way to replace authenticated owner authority. Final immutability/override enforcement is production work. |
+| X13 | Default/helper/configuration governance must not gain an unreviewed way to replace authenticated owner authority. Decided: helper, executor, singleton and handler pins are fixed at guard deployment, with no setter and no owner or governance override. Changing one means a new guard; guard migration is out of scope. Enforcement is production work. |
+
+## Other decisions
+
+| Topic | Decision |
+| --- | --- |
+| Freeze and equivocation (#109 criterion) | Rejected. No freeze leaf, equivocation-evidence submission or unfreeze role. A freeze below the selected quorum is a new authority, on a lagging destination the freezing quorum may be a retired one, and unfreezing needs a recovery role that is out of scope. Conflicting successors are handled by first-accepted. |
+| Nested example (#109) | A alone updates its authority regarding its children. B has no global identity inside A and there is no default to B's state. After B rotates, A's selectAuthority carrying B's witness is required before A dispatches under B's new owners; the issue's "A executes no transaction" wording is reconciled in the task list. |
+| Other home-contract authority (DAO) | Rejected at registration; no adapter in this PR. A later one needs portable proof support, not a bridge assertion. |
 
 ## Decision lineage
 

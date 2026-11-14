@@ -15,7 +15,7 @@ This file owns concrete implementation gates and acceptance coverage for the
 | Source guard | Two-function fail-closed abstract template. | Implement native caller/guard configuration validation, portable signature staging, head tracking, exact next batch and invocation-scoped completion. No production function is enabled by this draft. |
 | Mutation encoding | Pack zero-value supported self-CALLs into MultiSendCallOnly calldata, including a one-element batch. | Derive/validate actual Safe intermediate and final ordered authority; enforce both guard slots and bypass matrix. |
 | Transport | Source-safe/source-chain identity and signed source call; no destination fields or numeric nonce watermark. | relayAuthority/quote/direct adapters, authenticated duplicate response, publication and durable evidence availability. |
-| Initial registration | Internal initialization building block with mandatory abstract genesis hook; not a public bootstrap API. | Factory/initializer witness ABI, module/singleton/handler checks and late-chain lineage/branch procedure (Y3). |
+| Initial registration | Internal initialization building block with mandatory abstract genesis hook; not a public bootstrap API. | Factory/initializer witness ABI, module/singleton/handler checks and late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
 | Caches | Template stores full encoded graph by content hash. | Authenticated descendant checkpoint API, graph publication/recovery and cache integration with current execution verifier. |
 | Execution isolation | Registry submission lock and abstract idle-context requirement. | Shared execution lock/lease across every provider and callback, including bootstrap/finalize integration. |
 | Commitments | D92 lifetime specified; existing implementation untouched. | Explicit repeat/cancel/consume accounting and integration regression tests. No authority-based invalidation. |
@@ -44,13 +44,13 @@ selectAuthority SafeTx hash, computed with existing SafeHashes.
 | T10 | Ordered ownership batch vs external target/value/configuration selector. | Exact MultiSendCallOnly encoding; reject disallowed calls. Scaffold encoding tests. |
 | T11 | Source registration-only batch or mutation failure/post-state mismatch. | Whole pair reverts, no persistent pending lock. Must test actual enforcing executor/guard. |
 | T12 | Batch changes threshold halfway; nonce m+1 executes all mutations. | One pre-batch source quorum, final graph checked; preserve intermediate native Safe constraints. Real Safe test required. |
-| T13 | B rotates/raises threshold but A does not update. | A's selected B snapshot persists; D94/D96 operational responsibility, no implicit update. |
+| T13 | B rotates/raises threshold but A does not update. | A's selected B snapshot persists; D94/D96 operational responsibility, no implicit update. Nested #109 end-to-end: after B rotates, A's selectAuthority carrying B's witness is required before A dispatches under B's new owners. |
 | T14 | B's own registry entry advances. | A's embedded B snapshot unchanged; shared provider A contexts still agree. |
 | T15 | Root changes graph after commitment acceptance; removed actor finalizes first. | D92 accepted work remains executable; explicit cancel can lose a timing race (Y9). |
 | T16 | Shared child, A -> B -> C -> B and finite nested Safe proofs. | Enumerate identities once; retain individual thresholds/message domains; no unresolved circular approval premise. Actual verifier work remains. |
 | T17 | Malformed offsets, repeated signers, wrong child hash, v=1, delegated EOA contract signature. | Portable verification rejects before source pending state or destination writes. |
 | T18 | 16 versus 17 immediate owners, 80 aggregate entries, deep/large finite proof. | Enforce only immediate-owner cap; VM/provider resource failures remain atomic. |
-| T19 | New destination after rotations; retired compromised genesis key competes. | Follow explicit genesis/lineage procedure and document competing-branch limitation; Y3 remains open. |
+| T19 | New destination after rotations; retired compromised genesis key competes. | Full linked chain from genesis, no latest-state shortcut; first accepted successor wins and a retired key that submits first captures that destination (documented limitation, Y3). |
 | T20 | Cache loss, checkpoint reuse, missing transition witness or interrupted catch-up batch. | Never invent authority; validated checkpoints can anchor proofs, missing data fails cleanly. Recovery/publication API remains work. |
 | T21 | Same-Safe nested execution or callback attempts to overwrite staged update. | Invocation-scoped staging/lock rejects; no transient/persistent contamination. Review X10. |
 | T22 | All existing application, cancel/finalize and duplicate flows after graph changes. | Preserve conduit identity, exact-message approvals and replay consumption; unsupported management-as-application path rejects. |
