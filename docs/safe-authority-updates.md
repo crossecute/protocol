@@ -27,7 +27,9 @@ struct AuthoritySelection {
 Zero authorityHash means unregistered. Initial and replacement hashes must be
 nonzero; no separate initialized boolean is needed. updateHead identifies the last
 accepted signed update, not the owner graph. There is no independently advancing
-global child authority, authority counter or mandatory on-chain version history.
+global child authority and no authority counter. A destination registry keeps no
+version history. The source guard keeps the set of update heads each Safe has
+executed, as hashes only, to check [child positions](#child-positions).
 
 The source identity is (source chain, Safe). Each graph has one root Safe, ordered
 Safe records and each node's owners/kinds/threshold. Canonical depth-first traversal
@@ -39,7 +41,8 @@ node while recursively checking signatures.
 For A -> B -> C -> B, A's graph has root A and records A/B/C. C points back to the
 same B record. B's own selected graph and C's own selected graph are independent
 entries; their B snapshots can differ from A's authenticated B snapshot. No dynamic
-lookup of B's root selection may change B inside A. Provider receivers for A share
+lookup of B's root selection may change B inside A. Next to each descendant record,
+A's graph stores that Safe's [position](#child-positions). Provider receivers for A share
 A's selected hash on that destination, not independent local branches.
 
 Graph data can be supplied against the selected hash or read from an exact-content
@@ -84,13 +87,15 @@ updates. A graph returning to an earlier hash has a different update head.
 To accept a destination update:
 
 1. Load the source identity's registered selection and require an idle shared context.
-2. Decode the actual signed source guard calldata, recognize its target/function and
-   validate its portable signatures/nested quorum against the current selected graph.
+2. Decode the actual signed source guard calldata and recognize its target/function.
 3. Check signed previousUpdateHash == stored updateHead and previousAuthorityHash ==
    stored authorityHash. Reject a wrong predecessor even if old/new owners overlap.
 4. Recompute the complete new graph hash and authenticate canonical structure,
-   thresholds, owner kinds and introduced descendant-state evidence.
-5. Atomically cache the graph, record the exact accepted update receipt and set the
+   thresholds, owner kinds and every descendant [position](#child-positions): kept,
+   or reached from the stored one through the supplied links.
+5. Validate the portable signatures/nested quorum. The root votes under its stored
+   record. Each descendant votes under the position the new graph names for it.
+6. Atomically cache the graph, record the exact accepted update receipt and set the
    new hash/head. Validation failure must leave no head, receipt or pending state.
 
 U2 cannot precede U1 if it names hash(U1). Consecutive handoffs may be submitted in
@@ -104,6 +109,35 @@ currently selected branch, not a special old-owner override.
 Updates carry no expiry. A signed update stays valid until its predecessor is
 superseded, even if its SafeTx is rejected or replaced on source (Y4). Tooling must
 tell source rejection apart from destination revocation.
+
+## Child positions
+
+Every Safe with the guard has its own linked update list. Each of its update heads
+is a position in that list. A's graph stores, next to each descendant Safe's record,
+the position of that Safe that A last adopted. A position is the head hash. A height
+cannot identify it: a Safe can sign two different updates after the same head, so
+two positions can share a height away from source.
+
+A new graph must keep each retained descendant at its stored position or move it
+forward. Forward means reached from the stored position through that Safe's own
+signed updates, each naming the one before it. These links travel with A's update.
+Each is verified against the descendant's record in A's graph, never against that
+descendant's own registry entry, which can lag or sit on another branch. A
+registerOwnershipChange link changes the descendant's record to the result of its
+signed mutations. A selectAuthority link moves the position only. One update may
+move a descendant forward by several links. An update that keeps a position needs
+no links.
+
+A descendant's signatures on an update count under the position that update names
+for it. An update that keeps B's position is voted by B's stored owners. One that
+moves B forward is voted by the owners the links prove. The root always votes under
+its stored record (T6). Adopting B's rotation therefore never needs B's removed
+owners. A returning owner set (X, Y, X) is a new position, so an old link cannot be
+replayed.
+
+How the first position of a newly added Safe owner is proven is open with the
+genesis witness ABI. Removing and re-adding a Safe must not move it backwards.
+The scaffold types do not carry positions or links yet.
 
 ## Source guard and mutation batch
 
@@ -119,9 +153,25 @@ selection(address sourceSafe) -> AuthoritySelection
 ```
 
 selectAuthority changes A's tracked graph (for example its B snapshot), without a
-source owner mutation. It must be signed and validated under A's current source
-Safe rules and portable selected authority, then advance the same linked source
-head. No private key belongs to a Safe contract; owners sign the SafeTx digest.
+source owner mutation. It is a normal Safe transaction, executed on source, and it
+advances the same linked source head. No private key belongs to a Safe contract;
+owners sign the SafeTx digest.
+
+Both operations pass two signature checks on source. Safe's own check counts each
+child's live owners. The guard's portable check is the destination check: A's
+selected graph, with each descendant counted under the position the update names.
+One signature set normally passes both. They differ when a child rotates between
+its vote and A's quorum. Then the child's live owners sign for execution, and the
+earlier set is handed to the guard outside the signed SafeTx. The guard must
+verify that set and emit it as the evidence destinations receive. This keeps source
+able to execute whatever destinations would accept. How the set reaches the guard is
+part of the ABI to freeze.
+
+For every descendant position an update names, the guard requires a head that Safe
+executed on source, at or after the position A stores. The guard records a head
+only when that Safe's update executes, so the executed list on source has no
+forks. The check covers any executed head, not only the descendant's current one:
+a later rotation by B does not revert A's adoption of an earlier executed position.
 
 registerOwnershipChange is the first of two signed Safe transactions:
 
@@ -160,9 +210,9 @@ validate the linked authority update.
 Only A's explicitly signed graph update changes A's tracked children. Independent
 B source changes or B's own selected entry do not. B has no global identity inside A
 and there is no default to B's state: nothing B does reaches A's graph. To adopt B's
-new owners, A's current quorum signs selectAuthority for a graph holding B's new
-state. B's registration evidence rides in that update only as the witness that the
-state is authentic; A may equally keep, replace or drop B. Anyone may carry A's
+new owners, A's quorum signs selectAuthority for a graph holding B's new record and
+position. B's registration evidence rides in that update as the links proving the
+position; A may equally keep B where it is or drop B. Anyone may carry A's
 signed update to a destination, but acceptance needs A's selected quorum. In the
 #109 nested example (B rotates while A executes nothing, then A dispatches), A signs
 selectAuthority before dispatching under B's new owners. A must adopt authenticated stricter
@@ -176,10 +226,28 @@ All fresh approvals use the selected graph, with native per-node thresholds and
 child-domain SafeMessage hashing. No global/local fallback or opportunistic child
 adoption is permitted. Child records need independently authenticated genesis or
 transition witnesses; A selects authentic states, not invented child owners.
-Source signatures prove authorization, not source execution/time/deployment. A may
-select an authenticated unexecuted child state. Removed keys cannot authorize a
-new branch after the receiver replaces them unless they still satisfy its selected
-quorum.
+Removed keys cannot authorize a new branch after the receiver replaces them unless
+they still satisfy its selected quorum.
+
+A must not adopt a child position the child signed but did not execute on source.
+A's owners sign an adoption only after the child's update has executed there. The
+source guard enforces this. A destination cannot: source signatures prove
+authorization, not source execution/time/deployment, so both a child's abandoned
+update and A's adoption of it would verify. On destinations the rule rests on A's
+signers, and the registry treats every position in A's graph as executed. Breaking
+it is permanent for that child: its real later positions do not descend from the
+abandoned one, so A could never reach them.
+
+Two trust assumptions follow, and they differ by role. For the root: once an update
+has a quorum destinations would accept, A executes it on source and does not reject
+or replace it. A root that breaks this is a broken multisig, which the design does
+not protect. A child's earlier vote counts toward that quorum even if the child has
+since rotated, so A cannot withdraw an update after a child misbehaves. A executes
+it and corrects with a new update. For a child: nothing is assumed. B may sign an
+update and abandon it, or sign two at one nonce. That gives B no more than its
+native veto. B can make its own vote unusable on source, which blocks A only when A
+cannot reach threshold without B. B cannot reach a destination quorum alone, and
+forking its own registry entry harms only B as a root.
 
 A lagging or new destination accepts any valid successor of its stored head,
 including one signed by a retired quorum; the first accepted wins (T5) and the loser

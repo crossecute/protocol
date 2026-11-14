@@ -217,7 +217,7 @@
       "id": "explicit-parent-replacement",
       "selectedA": "A-with-B-old",
       "authorization": "current A quorum signs exact predecessor update/authority hashes and replacement graph in a recognized source guard call",
-      "result": "install A-with-B-new only after independent descendant authentication"
+      "result": "install A-with-B-new only after B links from the stored B position verify"
     },
     {
       "id": "implicit-adoption-rejected",
@@ -228,13 +228,50 @@
     {
       "id": "new-quorum-self-install-rejected",
       "evidence": "proposed replacement owners alone sign graph replacement",
-      "result": "reject; management authorization must verify under current A graph"
+      "result": "reject; the root votes under its stored record"
     },
     {
       "id": "unexecuted-child-state",
-      "evidence": "authentic child transition and explicit current A quorum replacement",
+      "evidence": "child update signed but not executed on source, named by an A adoption",
       "sourceExecuted": false,
-      "result": "selection allowed; source execution proof not required"
+      "result": "source guard rejects: not a head the child executed; a destination cannot check execution and relies on A signers not to sign it"
+    },
+    {
+      "id": "child-position-forward",
+      "storedB": "p",
+      "namedB": "p+2",
+      "evidence": "B links p->p+1->p+2, each signed under the B record before it",
+      "result": "accept in one A update; B record is the result of the signed mutations"
+    },
+    {
+      "id": "child-position-not-forward",
+      "storedB": "p+1",
+      "namedB": "p",
+      "result": "reject; a position is kept or reached from the stored one through links"
+    },
+    {
+      "id": "child-vote-under-named-position",
+      "storedB": "p owners X",
+      "namedB": "p+1 owners Y",
+      "result": "B vote on the adoption counts under Y; X signatures do not count for B; root still votes under its stored record"
+    },
+    {
+      "id": "child-rotates-before-root-quorum",
+      "storedB": "p owners X",
+      "liveB": "p+1 owners Y",
+      "evidence": "update keeps B at p; X signed before rotating",
+      "result": "Y signs for source execution; guard verifies and emits the X set as portable evidence"
+    },
+    {
+      "id": "child-rotates-after-adoption-signed",
+      "namedB": "p+1",
+      "liveB": "p+2",
+      "result": "source accepts: p+1 is an executed head at or after the stored position"
+    },
+    {
+      "id": "child-own-entry-ignored",
+      "selectedB": "abandoned branch on this destination",
+      "result": "A adoption verifies links against the B record in A graph; B own entry is not read"
     },
     {
       "id": "management-replay",

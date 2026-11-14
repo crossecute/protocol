@@ -10,9 +10,9 @@ This file owns concrete implementation gates and acceptance coverage for the
 
 | Area | Present in draft | Required before production |
 | --- | --- | --- |
-| Types/interfaces | AuthoritySelection/AuthorityUpdate, graph wrapper, source guard and shared registry interfaces; reuse existing Call/owner/evidence types. | Freeze selector/witness ABI and migration from baseline fixed-authority fields. |
-| Linked registry state machine | Hash predecessor checks, current-graph hook, exact receipts, atomic graph/head/cache writes, zero sentinel and deterministic draft genesis head. | Implement independent canonical/genesis/descendant/signature verification hooks; wire actual receivers. |
-| Source guard | Two-function fail-closed abstract template. | Implement native caller/guard configuration validation, portable signature staging, head tracking, exact next batch and invocation-scoped completion. No production function is enabled by this draft. |
+| Types/interfaces | AuthoritySelection/AuthorityUpdate, graph wrapper, source guard and shared registry interfaces; reuse existing Call/owner/evidence types. | Freeze selector/witness ABI and migration from baseline fixed-authority fields. Add a position per descendant record to the graph, typed child links in place of the opaque proof bytes, and the portable-set channel. |
+| Linked registry state machine | Hash predecessor checks, current-graph hook, exact receipts, atomic graph/head/cache writes, zero sentinel and deterministic draft genesis head. | Implement independent canonical/genesis/descendant/signature verification hooks; wire actual receivers. Verify child links from each stored position before signatures, derive each moved record from its signed mutations, and count descendants under named positions. |
+| Source guard | Two-function fail-closed abstract template. | Implement native caller/guard configuration validation, portable signature staging, head tracking, exact next batch and invocation-scoped completion. Record every executed head per Safe, require named descendant positions to be executed heads at or after the stored ones, and verify and emit a separately supplied portable set. No production function is enabled by this draft. |
 | Mutation encoding | Pack zero-value supported self-CALLs into MultiSendCallOnly calldata, including a one-element batch. | Derive/validate actual Safe intermediate and final ordered authority; enforce both guard slots and bypass matrix. |
 | Transport | Source-safe/source-chain identity and signed source call; no destination fields or numeric nonce watermark. | relayAuthority/quote/direct adapters, authenticated duplicate response, publication and durable evidence availability. |
 | Initial registration | Internal initialization building block with mandatory abstract genesis hook; not a public bootstrap API. | Factory/initializer witness ABI, module/singleton/handler checks and late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
@@ -54,6 +54,13 @@ selectAuthority SafeTx hash, computed with existing SafeHashes.
 | T20 | Cache loss, checkpoint reuse, missing transition witness or interrupted catch-up batch. | Never invent authority; validated checkpoints can anchor proofs, missing data fails cleanly. Recovery/publication API remains work. |
 | T21 | Same-Safe nested execution or callback attempts to overwrite staged update. | Invocation-scoped staging/lock rejects; no transient/persistent contamination. Review X10. |
 | T22 | All existing application, cancel/finalize and duplicate flows after graph changes. | Preserve conduit identity, exact-message approvals and replay consumption; unsupported management-as-application path rejects. |
+| T23 | A moves B forward one link and several links in one update; an update names B behind or off the stored position. | Forward accepts with B's record equal to the result of the signed mutations; anything else rejects without writes. |
+| T24 | Adoption of B's rotation X to Y signed by Y for B; same adoption signed by X for B; new root owners sign their own installation. | Y counts, X does not, and the root case still rejects (T6). |
+| T25 | B goes X, Y, X; the first X-to-Y link is replayed against the second X. | Reject: the link names an earlier position. |
+| T26 | A's adoption names a B update that B signed and never executed on source. | Source guard rejects. A destination accepts it if A's quorum signed; documented trust in A's signers. |
+| T27 | A's adoption names executed position p+1; B executes p+2 before A executes. | Source accepts. A stays one position behind and a later adoption of p+2 is voted by B's live owners. |
+| T28 | B votes on A's update through X, rotates to Y, then A reaches quorum. | Source executes with Y's live signatures; the guard verifies and emits the X set; destinations accept the same evidence. Without the X set, source rejects. |
+| T29 | B's own registry entry on a destination sits on an abandoned branch. | A's adoption of B's executed position still verifies there; B's entry is not read. |
 
 ## Validation boundaries
 
@@ -61,7 +68,9 @@ The scaffold tests use a one-EOA fixture for abstract verification hooks. They t
 linked state-machine behavior and genuine SafeTx digest signatures, not production
 nested verification, actual Safe creation, source execution pairing or live providers.
 No empty/default-success production verification hooks exist. The source template
-always reverts for mutating operations and remains abstract.
+always reverts for mutating operations and remains abstract. T23 to T29 have no
+scaffold coverage: the draft types hold no descendant positions, child links or
+executed-head set.
 
 The offline vector generator checks existing Safe hash/signature bytes plus labels
 for semantic cases. It is not a Solidity acceptance runner and does not freeze the
