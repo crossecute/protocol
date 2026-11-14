@@ -56,13 +56,14 @@ tracker are removed from the current tree.
 | Execution path | Decided. Updates execute through our tooling as multicall([stageUpdate, execTransaction]) via any multicall contract, unpinned: the multicall holds no invariant, the single SafeTx makes registration and mutation atomic and the guard enforces every check. Owners can sign in the Safe UI, but its plain execTransaction reverts because nothing is staged. SafeBatchExecutor cannot serve, as it only calls execTransaction. |
 | Graph hash and storage | Decided. The graph hash covers (recordHash, position) per Safe; each record is stored once under its hash and each graph as its entry list, so an update writes only changed records. |
 | Migration from #108 fixed authority | None. Nothing from #108 is deployed; receivers adopt the shared registry directly. |
+| Stored cycles | Decided: rejected, with #108's SafeAuthorityGraph rule and traversal. The guard checks every activation and update graph on source and the registry on destinations, with stored owner kinds. Stored graphs therefore never hold a cycle; a live source cycle only blocks the adoption that would store it. Supersedes the "permits stored cycles" wording added in 24b7f7f. |
+| Undeployed owner address | Decided: an owner added with no code is EOA-kind and stays so after a Safe is deployed there, until its Safe swaps it out; its contract signatures never count (Y10). Not a security issue: the portable check runs on source too, so source and destinations agree. The guard cannot distinguish it from an EOA; tooling should warn. No guard check on EOA-kind owners with code. |
 | Two signature sets on source | Decided. Safe's check counts live child owners; the guard's portable check is the destination check. When a child rotates between its vote and A's quorum, live owners execute and the earlier set is handed to the guard outside the signed SafeTx. The guard must verify and emit it. |
 
 ## Open
 
 | Topic | What is missing |
 | --- | --- |
-| Stored cycles | The design and safe-signed-dispatch.md Q3.3 (added in 24b7f7f) say #109 permits stored cycles; #108's SafeAuthorityGraph.walk rejects them (OwnerCycle), and walkthrough row W8.5 (11dabb4) proposed keeping that rule. No recorded decision chooses. Rejecting reuses one traversal for #108 and #109; permitting needs a second one and lets a Safe in a source ownership cycle use updates. |
 | Scaffold | Types and interfaces predate the decisions above: derived genesis head, introduced genesis entries, two-transaction registerOwnershipChange(update, Call[]), stageUpdate without nested approvals and one-blob graph hash. Every check is still an abstract hook, and the test fixture rejects any witness with child entries. |
 
 ## Decision lineage

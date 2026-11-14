@@ -121,7 +121,7 @@
     }
   ],
   "finiteRepeatedSafeProof": {
-    "status": "Encoded proof fixture; native Safe integration still required.",
+    "status": "Encoded nested-signature bytes only: these records form a cycle, which #109 rejects as a stored graph.",
     "rootSafe": "0x1111111111111111111111111111111111111111",
     "rootDigest": "0xffe187bd16dcd5d9267f148a2ba56b8b07448e2ae9042da9a797a611986dd4dd",
     "rootSignatures": "0x000000000000000000000000222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000000000000000410000000000000000000000000000000000000000000000000000000000000000a200000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000041000000000000000000000000000000000000000000000000000000000000000041e1cf912f434452f15b74bef7b64b19d359288e3b76badef296dcec0e9817298054835b18cb069a18f2462d5ef5a6f62d8932634184678ecb82cde3397db845db1b",
@@ -159,7 +159,7 @@
         "owner": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
       }
     ],
-    "expected": "Finite leaf-backed proof; repeated Safe address alone must not reject it."
+    "expected": "Signature bytes decode as a finite leaf-backed proof; the graph itself is rejected as cyclic."
   },
   "semanticCases": [
     {
@@ -402,7 +402,13 @@
           "B"
         ]
       ],
-      "result": "stored graph allowed; every accepted proof must be finite and valid"
+      "result": "stored graph rejected on source and destination; a live cycle only blocks the adoption that would store it"
+    },
+    {
+      "id": "undeployed-owner-later-deployed",
+      "ownerAtAddition": "no code",
+      "ownerLater": "Safe",
+      "result": "stays EOA-kind until swapped; its contract signature does not count on source or destination"
     },
     {
       "id": "unresolved-approval-loop",

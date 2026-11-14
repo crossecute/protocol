@@ -279,8 +279,8 @@ Cases:
 - **Q3.2** Preserve each Safe's `getOwners()` order. Signature verification separately
   requires ascending signer addresses.
 - **Q3.3** For the #108 baseline, traverse depth first from the root in owner order,
-  emit each Safe record on first visit and reject cycles. Planned #109 keeps
-  first-visit ordering but permits stored cycles; see the authority-update design.
+  emit each Safe record on first visit and reject cycles. #109 keeps the same rule and
+  traversal; see the authority-update design.
 - **Q3.4** For #108, bootstrap carries the fixed creation authority records. Authority
   graph replacement for later changes is #109 scope; no authority counter is planned.
 - **Q3.5** Reject invalid thresholds, zero and sentinel owners, duplicate owners, duplicate

@@ -127,7 +127,7 @@ def generate():
         'typeHashes': {'domain': DOMAIN_TYPEHASH, 'safeTx': TX_TYPEHASH, 'safeMessage': MSG_TYPEHASH},
         'cryptoVectors': vectors,
         'finiteRepeatedSafeProof': {
-            'status': 'Encoded proof fixture; native Safe integration still required.',
+            'status': 'Encoded nested-signature bytes only: these records form a cycle, which #109 rejects as a stored graph.',
             'rootSafe': SAFE, 'rootDigest': vectors[0]['digest'],
             'rootSignatures': root_blob,
             'records': [
@@ -139,7 +139,7 @@ def generate():
                 {'safe': CHILD, 'digest': vectors[-2]['digest'], 'owner': SAFE},
                 {'safe': SAFE, 'digest': vectors[-1]['digest'], 'owner': vectors[-1]['expectedSigner']},
             ],
-            'expected': 'Finite leaf-backed proof; repeated Safe address alone must not reject it.',
+            'expected': 'Signature bytes decode as a finite leaf-backed proof; the graph itself is rejected as cyclic.',
         },
         'semanticCases': [
             {'id': 'initialize-once', 'readyBefore': False, 'readyAfter': True,
@@ -220,7 +220,9 @@ def generate():
             {'id': 'shared-node', 'edges': [['A', 'B'], ['A', 'C'], ['B', 'C']],
              'result': 'graph allowed; shared C enumerated once; retain per-node thresholds'},
             {'id': 'cyclic-graph', 'edges': [['A', 'B'], ['B', 'C'], ['C', 'B']],
-             'result': 'stored graph allowed; every accepted proof must be finite and valid'},
+             'result': 'stored graph rejected on source and destination; a live cycle only blocks the adoption that would store it'},
+            {'id': 'undeployed-owner-later-deployed', 'ownerAtAddition': 'no code', 'ownerLater': 'Safe',
+             'result': 'stays EOA-kind until swapped; its contract signature does not count on source or destination'},
             {'id': 'unresolved-approval-loop', 'dependencies': [['claim1', 'claim2'], ['claim2', 'claim1']],
              'result': 'reject; no in-progress claim is an authenticated approval'},
             {'id': 'no-post-execution-refresh',

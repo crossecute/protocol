@@ -37,14 +37,13 @@ executed, as hashes only, to check [child positions](#child-positions).
 
 The source identity is (source chain, Safe). Each graph has one root Safe, ordered
 Safe records and each node's owners/kinds/threshold. Canonical depth-first traversal
-emits each reachable Safe once in owner order; cycles stop enumeration at visited
-nodes. Whether #109 keeps stored cycles, which #108's SafeAuthorityGraph rejects, is
-[open](planning/safe-authority-review-109.md#open). SafeOwner and SafeAuthorityRecord
+emits each reachable Safe once in owner order and rejects cycles, the same rule and
+traversal as #108's SafeAuthorityGraph. SafeOwner and SafeAuthorityRecord
 reuse existing signed-dispatch types, and Call reuses messaging/Call.sol. RootSafe
 identifies the graph owner, not the current node while recursively checking signatures.
 
-For A -> B -> C -> B, A's graph has root A and records A/B/C. C points back to the
-same B record. B's own selected graph and C's own selected graph are independent
+For A -> B -> C with A -> C, A's graph has root A and records A/B/C. B and A point to
+the same C record. B's own selected graph and C's own selected graph are independent
 entries; their B snapshots can differ from A's authenticated B snapshot. No dynamic
 lookup of B's root selection may change B inside A. Next to each descendant record,
 A's graph stores that Safe's [position](#child-positions). Provider receivers for A share
@@ -392,10 +391,22 @@ code/configuration: helper, singleton and handler pins are fixed at
 guard deployment, with no setter and no owner or governance override (X13). Changing
 one means a new guard, and guard migration is outside this design.
 
-Canonical graph enumeration allows cycles, but authorization must be a finite valid
-proof. A repeated Safe at a different nested message digest is not automatically a
-circular proof. Track unresolved/completed exact claims and never permit circular
-self-support. Reject portable v=1 and contract signatures for EOA-kind owners,
+Every stored graph is acyclic. The guard checks each activation and update graph on
+source and the registry checks it on every destination, using the stored owner kinds.
+A graph changes only when its root signs an update, so no stored graph holds a cycle
+whatever live ownership does; a live cycle only blocks the adoption that would store
+it. Acyclic graphs make every nested proof finite. A shared child may still sign
+several digests, each verified separately, and no unresolved claim counts as an
+approval.
+
+An owner added while its address has no code can only be EOA-kind: a Safe-kind owner
+needs an activated record. If a Safe is later deployed at that address, stored records
+keep it EOA-kind until its Safe swaps it out, so its contract signatures never count
+for that Safe on source or destinations (Y10). The guard cannot tell an undeployed
+address from an EOA. Tooling should warn signers who add an address that may be an
+undeployed Safe.
+
+Reject portable v=1 and contract signatures for EOA-kind owners,
 including EIP-7702 delegated EOAs. Do not flatten quorums or count a signer twice
 within one Safe's threshold. Cache only fully verified exact-message claims.
 

@@ -19,7 +19,7 @@ This file owns concrete implementation gates and acceptance coverage for the
 | Caches | Template stores full encoded graph by content hash. | Per-record storage: each record once under its hash, each graph as its entry list. Authenticated descendant checkpoint API, graph publication/recovery and cache integration with current execution verifier. |
 | Execution isolation | Registry submission lock and abstract idle-context requirement. | Shared execution lock/lease across every provider and callback, including bootstrap/finalize integration. |
 | Commitments | D92 lifetime specified; existing implementation untouched. | Explicit repeat/cancel/consume accounting and integration regression tests. No authority-based invalidation. |
-| Resource behavior | No extra caps; encoding loops operate on supplied data. | Terminating cycle enumeration, finite exact-message proof tracking, malformed input/out-of-gas atomicity and actual provider sizing. |
+| Resource behavior | No extra caps; encoding loops operate on supplied data. | Acyclic canonical traversal shared with SafeAuthorityGraph, finite exact-message proof tracking, malformed input/out-of-gas atomicity and actual provider sizing. |
 
 The graph hash is keccak256(abi.encode(keccak256("Crossecute.AuthorityGraph.v1"),
 sourceChainId, rootSafe, entries)), where entries holds one GraphEntry(recordHash,
@@ -50,7 +50,7 @@ abi.encode(graph) and derives a genesis head from the AuthorityGenesis.v1 label.
 | T13 | B rotates/raises threshold but A does not update. | A's selected B snapshot persists; D94/D96 operational responsibility, no implicit update. Nested #109 end-to-end: after B rotates, A's selectAuthority carrying B's witness is required before A dispatches under B's new owners. |
 | T14 | B's own registry entry advances. | A's embedded B snapshot unchanged; shared provider A contexts still agree. |
 | T15 | Root changes graph after commitment acceptance; removed actor finalizes first. | D92 accepted work remains executable; explicit cancel can lose a timing race (Y9). |
-| T16 | Shared child, A -> B -> C -> B and finite nested Safe proofs. | Enumerate identities once; retain individual thresholds/message domains; no unresolved circular approval premise. Actual verifier work remains. |
+| T16 | Shared child (A -> B -> C, A -> C) and a cyclic graph (A -> B -> C -> B), on source and destination. | Shared child enumerated once with individual thresholds/message domains; the cyclic graph rejects on both sides. An owner added with no code and later deployed as a Safe stays EOA-kind and its contract signature does not count. Actual verifier work remains. |
 | T17 | Malformed offsets, repeated signers, wrong child hash, v=1, delegated EOA contract signature. | Portable verification rejects before source execution or destination writes. |
 | T18 | 16 versus 17 immediate owners, 80 aggregate entries, deep/large finite proof. | Enforce only immediate-owner cap; VM/provider resource failures remain atomic. |
 | T19 | New destination after rotations; a retired compromised creation-owner key competes. | Full linked chain from the activation, no latest-state shortcut; first accepted successor wins and a retired key that submits first captures that destination (documented limitation, Y3). |

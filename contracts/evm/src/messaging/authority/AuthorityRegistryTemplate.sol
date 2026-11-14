@@ -119,8 +119,8 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         virtual
         returns (AuthorityUpdate memory);
 
-    /// @dev Check canonical root closure, 16 owners per Safe, kinds/thresholds and terminating
-    ///      cycle enumeration; no extra work caps. The root's own position is zero. Each
+    /// @dev Check canonical root closure, 16 owners per Safe, kinds/thresholds and the absence
+    ///      of cycles; no extra work caps. The root's own position is zero. Each
     ///      descendant starts at its position in the graph cached under currentAuthorityHash,
     ///      or at the genesis head of its introduced entry, authenticated like a root's initial
     ///      registration. Its links, each naming the position before it and signed under the
