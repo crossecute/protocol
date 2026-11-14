@@ -7,6 +7,7 @@ import {AuthorityGraph} from "./AuthorityGraph.sol";
 /// @notice Draft #109 encoding helpers. Callers must validate canonical graphs before hashing.
 library AuthorityUpdateEncoding {
     bytes32 internal constant GRAPH_DOMAIN = keccak256("Crossecute.AuthorityGraph.v1");
+    bytes32 internal constant GENESIS_DOMAIN = keccak256("Crossecute.AuthorityGenesis.v1");
     // Solidity selectors intentionally use the first four bytes of the signature hash.
     // forge-lint: disable-next-line(unsafe-typecast)
     bytes4 internal constant MULTISEND_SELECTOR = bytes4(keccak256("multiSend(bytes)"));
@@ -30,6 +31,12 @@ library AuthorityUpdateEncoding {
     /// @dev This helper alone authenticates neither graph shape nor signers.
     function graphHash(uint256 sourceChainId, AuthorityGraph memory authority) internal pure returns (bytes32) {
         return keccak256(abi.encode(GRAPH_DOMAIN, sourceChainId, authority));
+    }
+
+    /// @notice A Safe's first position, before any signed update.
+    /// @dev The same value for a root's initial registration and for a Safe a parent adds.
+    function genesisHead(uint256 sourceChainId, address safe, bytes32 authorityHash) internal pure returns (bytes32) {
+        return keccak256(abi.encode(GENESIS_DOMAIN, sourceChainId, safe, authorityHash));
     }
 
     /// @notice Build exact MultiSendCallOnly calldata for an ordered zero-value ownership batch.

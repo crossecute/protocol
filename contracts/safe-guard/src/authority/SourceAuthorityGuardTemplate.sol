@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Call} from "crossecute/messaging/Call.sol";
+import {UpdateWitness} from "crossecute/messaging/authority/AuthorityWitness.sol";
 import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "./ISourceAuthorityGuard.sol";
 
@@ -23,5 +24,13 @@ abstract contract SourceAuthorityGuardTemplate is ISourceAuthorityGuard {
     }
 
     /// @inheritdoc ISourceAuthorityGuard
+    function stageUpdate(address, UpdateWitness calldata, bytes calldata) external pure virtual {
+        revert AuthorityGuardNotImplemented();
+    }
+
+    /// @inheritdoc ISourceAuthorityGuard
     function selection(address) external view virtual returns (AuthoritySelection memory);
+
+    /// @inheritdoc ISourceAuthorityGuard
+    function executed(address, bytes32) external view virtual returns (bool);
 }
