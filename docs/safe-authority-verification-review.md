@@ -10,26 +10,25 @@ This file owns concrete implementation gates and acceptance coverage for the
 
 | Area | Present in draft | Required before production |
 | --- | --- | --- |
-| Types/interfaces | AuthoritySelection/AuthorityUpdate, graph wrapper with one position per record, UpdateWitness with introduced genesis entries and typed child links, source guard (stageUpdate, executed) and shared registry interfaces; reuse existing Call/owner/evidence types. | Move to the design's encodings: UpdateWitness {newGraph, ChildUpdate[]} with each child update's GraphEntry list, SafeCreationProof, activate(update, creation), registerOwnershipChange(update) without Call[], and stageUpdate with PortableEvidence (signatures and nested approvals). No migration from #108 fixed authority: nothing is deployed. |
-| Linked registry state machine | Hash predecessor checks, current-graph hook, exact receipts, atomic graph/head/cache writes, zero sentinel and deterministic draft genesis head. | Replace the derived genesis head with the activation head and register roots from their signed activation. Implement canonical/creation/descendant/signature verification; wire actual receivers. Prove positions in one flat pass over child updates, with a table of proven (Safe, position) records; derive each moved record from its signed mutations; count descendants under named positions and nested voters under the positions their child update's new graph names. |
+| Types/interfaces | The design's encodings: AuthoritySelection, AuthorityUpdate (previousUpdateHash, newAuthorityHash), SafeCreationProof, AuthorityNode/AuthorityGraph/AuthorityEntry, ChildUpdate; guard activate(authorityHash, creation), registerOwnershipChange(update), selectAuthority(update), stageUpdate(sourceSafe, newGraph, childUpdates, portableSignatures, nestedApprovals), executed; registry submitAuthority(sourceChainId, sourceSafe, evidence, newGraph, childUpdates), graph, record. | Freeze the ABI once the hooks are implemented. No migration from #108 fixed authority: nothing is deployed. |
+| Linked registry state machine | One submitAuthority for activations and updates: activation only while unregistered, predecessor head check otherwise, root as first node at position zero, graph hash check, exact receipts, atomic per-record and graph writes. The activation SafeTx hash is the first head. | Implement canonical/creation/descendant/signature verification; wire actual receivers. Prove positions in one flat pass over child updates, with a table of proven (Safe, position) records; derive each moved record from its signed mutations; count descendants under named positions and nested voters under the positions their child update's new graph names. |
 | Source guard | Two-function fail-closed abstract template. | Implement activation (creation proof, creation-state and owner-activation checks), native caller/guard configuration validation, stageUpdate staging under the per-Safe nesting lock, head tracking, and recognition of the one-SafeTx ownership batch. Record every executed head per Safe, require named descendant positions to be executed heads at or after the stored ones, and verify and emit a separately supplied portable set. No production function is enabled by this draft. |
-| Mutation encoding | Pack zero-value supported self-CALLs into MultiSendCallOnly calldata, including a one-element batch. | Prefix the guard's registerOwnershipChange(update) call; derive/validate actual Safe intermediate and final ordered authority with one shared function on source and destination; enforce both guard slots and bypass matrix. |
+| Mutation encoding | ownershipBatchData packs the guard's registerOwnershipChange(update) call and then zero-value supported self-CALLs into MultiSendCallOnly calldata; decodeOwnershipBatch inverts it and accepts only data that re-encodes exactly. | Derive/validate actual Safe intermediate and final ordered authority with one shared function on source and destination; enforce both guard slots and bypass matrix. |
 | Transport | Source-safe/source-chain identity and signed source call; no destination fields or numeric nonce watermark. | relayAuthority/quote/direct adapters, authenticated duplicate response, publication and durable evidence availability. |
-| Initial registration | Internal initialization building block with mandatory abstract genesis hook; not a public bootstrap API. | Registration from the signed activation and witness, verified like an update from an empty graph; creation proof checks with both salts and pinned factory/singleton/creation code; late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
-| Caches | Template stores full encoded graph by content hash. | Per-record storage: each record once under its hash, each graph as its entry list. Authenticated descendant checkpoint API, graph publication/recovery and cache integration with current execution verifier. |
+| Initial registration | submitAuthority accepts an activation for an unregistered Safe; the creation proof check is part of the abstract graph hook. | Creation proof checks with both salts and the pinned factory, singleton and creation code; late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
+| Caches | Each record stored once under its hash and each graph as its entry list; graph(hash) and record(hash) read them back. | Authenticated descendant checkpoint API, graph publication/recovery and cache integration with current execution verifier. |
 | Execution isolation | Registry submission lock and abstract idle-context requirement. | Shared execution lock/lease across every provider and callback, including bootstrap/finalize integration. |
 | Commitments | D92 lifetime specified; existing implementation untouched. | Explicit repeat/cancel/consume accounting and integration regression tests. No authority-based invalidation. |
 | Resource behavior | No extra caps; encoding loops operate on supplied data. | Acyclic canonical traversal shared with SafeAuthorityGraph, finite exact-message proof tracking, malformed input/out-of-gas atomicity and actual provider sizing. |
 
 The graph hash is keccak256(abi.encode(keccak256("Crossecute.AuthorityGraph.v1"),
-sourceChainId, rootSafe, entries)), where entries holds one GraphEntry(recordHash,
-position) per record in canonical order and recordHash is
+sourceChainId, entries)), where entries holds one AuthorityEntry(recordHash,
+position) per node in canonical order; entries[0] commits to the root and recordHash is
 keccak256(abi.encode(SafeAuthorityRecord)). The v1 label is kept because no earlier
 encoding was deployed. Every update head, the first included, is the SafeTx hash of
 the activation, ownership change or selectAuthority transaction, computed with
 existing SafeHashes. These are not hashes deployed by #108. Canonicality and
-authentication are mandatory before using either hash. The scaffold still hashes
-abi.encode(graph) and derives a genesis head from the AuthorityGenesis.v1 label.
+authentication are mandatory before using either hash.
 
 ## Acceptance matrix
 
@@ -40,21 +39,21 @@ abi.encode(graph) and derives a genesis head from the AuthorityGenesis.v1 label.
 | T3 | Same evidence on two destination registries. | Identical head/result, independently verified; no destination-specific signature. Scaffold test. |
 | T4 | X -> Y -> X then replay an accepted old update. | Exact receipt rejects; returned graph does not return old head. Scaffold test. |
 | T5 | Competing signed successors of one head. | First branch wins locally; second cannot overwrite. Scaffold test. No universal/source-finality claim. |
-| T6 | Proposed new owners sign their own installation. | Current quorum check rejects. Scaffold uses real ECDSA/SafeTx hashing with one-EOA fixture. |
-| T7 | Altered graph, wrong source chain, wrong guard/selector, malformed signature. | Reject without partial changes. Scaffold covers graph/source-chain binding; expand real verifier cases. |
+| T6 | Proposed new owners sign their own installation; an activation signed by keys other than the creation owners. | Current quorum (or creation record) check rejects. Scaffold uses real ECDSA/SafeTx hashing with one-EOA fixture. |
+| T7 | Altered graph, wrong source chain, wrong guard/selector, malformed signature. | Reject without partial changes. Scaffold covers graph/source-chain binding, root placement and strict ownership-batch decoding (wrong guard, trailing bytes, no mutation); expand real verifier cases. |
 | T8 | Shared context busy during application work. | Management blocked across provider paths. Scaffold tests required hook; actual multi-provider locking remains integration work. |
 | T9 | Repeat initialization or a second activation. | Reject without resetting authority or replay state. Scaffold test; activation and creation proof remain hooks. |
 | T10 | Ordered ownership batch vs external target/value/configuration selector. | Exact MultiSendCallOnly encoding; reject disallowed calls. Scaffold encoding tests. |
 | T11 | Ownership-change SafeTx whose batch lacks the guard call or the mutations, a mutation failure, a post-state mismatch, or a plain execTransaction with nothing staged. | The whole SafeTx reverts with its nonce; no staged state survives. Must test the actual guard. |
 | T12 | Batch changes threshold halfway through its mutations. | One pre-batch source quorum, final graph checked; preserve intermediate native Safe constraints. Real Safe test required. |
-| T13 | B rotates/raises threshold but A does not update. | A's selected B snapshot persists; D94/D96 operational responsibility, no implicit update. Nested #109 end-to-end: after B rotates, A's selectAuthority carrying B's witness is required before A dispatches under B's new owners. |
+| T13 | B rotates/raises threshold but A does not update. | A's selected B snapshot persists; D94/D96 operational responsibility, no implicit update. Nested #109 end-to-end: after B rotates, A's selectAuthority carrying B's child updates is required before A dispatches under B's new owners. |
 | T14 | B's own registry entry advances. | A's embedded B snapshot unchanged; shared provider A contexts still agree. |
 | T15 | Root changes graph after commitment acceptance; removed actor finalizes first. | D92 accepted work remains executable; explicit cancel can lose a timing race (Y9). |
 | T16 | Shared child (A -> B -> C, A -> C) and a cyclic graph (A -> B -> C -> B), on source and destination. | Shared child enumerated once with individual thresholds/message domains; the cyclic graph rejects on both sides. An owner added with no code and later deployed as a Safe stays EOA-kind and its contract signature does not count. Actual verifier work remains. |
 | T17 | Malformed offsets, repeated signers, wrong child hash, v=1, delegated EOA contract signature. | Portable verification rejects before source execution or destination writes. |
 | T18 | 16 versus 17 immediate owners, 80 aggregate entries, deep/large finite proof. | Enforce only immediate-owner cap; VM/provider resource failures remain atomic. |
 | T19 | New destination after rotations; a retired compromised creation-owner key competes. | Full linked chain from the activation, no latest-state shortcut; first accepted successor wins and a retired key that submits first captures that destination (documented limitation, Y3). |
-| T20 | Cache loss, checkpoint reuse, missing transition witness or interrupted catch-up batch. | Never invent authority; validated checkpoints can anchor proofs, missing data fails cleanly. Recovery/publication API remains work. |
+| T20 | Cache loss, checkpoint reuse, missing child update or interrupted catch-up batch. | Never invent authority; validated checkpoints can anchor proofs, missing data fails cleanly. Recovery/publication API remains work. |
 | T21 | Same-Safe nested execution or callback attempts to overwrite staged update. | Invocation-scoped staging/lock rejects; no transient/persistent contamination. Review X10. |
 | T22 | All existing application, cancel/finalize and duplicate flows after graph changes. | Preserve conduit identity, exact-message approvals and replay consumption; unsupported management-as-application path rejects. |
 | T23 | A moves B forward by one child update and by several in one update; an update names B behind or off the stored position. | Forward accepts with B's record equal to the result of the signed mutations; anything else rejects without writes. |
@@ -75,8 +74,8 @@ linked state-machine behavior and genuine SafeTx digest signatures, not producti
 nested verification, actual Safe creation, source execution pairing or live providers.
 No empty/default-success production verification hooks exist. The source template
 always reverts for mutating operations and remains abstract. T23 to T32 have no
-scaffold coverage: the draft types carry positions, introduced genesis entries and
-child links, but the fixture rejects any witness that has them.
+scaffold coverage: the fixture supports a root with one EOA owner and rejects any
+child update.
 
 Authority code under src/messaging/authority compiles via-IR through a path
 restriction in contracts/evm/foundry.toml, because its nested types exceed the legacy
@@ -87,7 +86,7 @@ a clean build.
 
 The offline vector generator checks existing Safe hash/signature bytes plus labels
 for semantic cases. It is not a Solidity acceptance runner and does not freeze the
-future child-witness ABI. Historical 43-case gas/wire benchmarks remain unchanged
+future child-update ABI. Historical 43-case gas/wire benchmarks remain unchanged
 measurements of the existing verifier. They do not price linked registry/source batch
 execution. Run relevant source/receiver integration, both lint profiles, formatting,
 size/selector checks and real Safe 1.5.0 fixtures before enabling any deployment.

@@ -10,10 +10,10 @@ Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
 **Status:** design plus non-deployable scaffold. Current receivers/guards are not
 wired to the new interfaces. The source template reverts; the registry template
 requires abstract security hooks. No production rotation or deployment is claimed.
-The scaffold predates the activation, one-transaction ownership change, per-record
-graph hash and flat child-update witness below; the
+The scaffold types and interfaces follow this file; its verification hooks are
+abstract. The
 [verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
-lists where it still differs.
+lists what remains.
 
 ## One selected graph per source Safe
 
@@ -39,8 +39,9 @@ The source identity is (source chain, Safe). Each graph has one root Safe, order
 Safe records and each node's owners/kinds/threshold. Canonical depth-first traversal
 emits each reachable Safe once in owner order and rejects cycles, the same rule and
 traversal as #108's SafeAuthorityGraph. SafeOwner and SafeAuthorityRecord
-reuse existing signed-dispatch types, and Call reuses messaging/Call.sol. RootSafe
-identifies the graph owner, not the current node while recursively checking signatures.
+reuse existing signed-dispatch types, and Call reuses messaging/Call.sol. The first
+node is the root: it identifies the graph owner, not the current node while
+recursively checking signatures.
 
 For A -> B -> C with A -> C, A's graph has root A and records A/B/C. B and A point to
 the same C record. B's own selected graph and C's own selected graph are independent
@@ -55,17 +56,19 @@ as its entry list, so an update writes only the records it changes plus 64 bytes
 Safe, and graph(hash) returns the graph. Graph data can also be supplied against the
 selected hash. Caches of authenticated child states may anchor later transition
 proofs; a cache entry never chooses a parent's authority. Lost source lineage and late
-bootstrap still need durable witnesses; see review Y3/Y7/Y8.
+bootstrap still need durable copies of past updates; see review Y3/Y7/Y8.
 
 ## Linked, universally reusable updates
 
 ```solidity
 struct AuthorityUpdate {
     bytes32 previousUpdateHash;
-    bytes32 previousAuthorityHash;
     bytes32 newAuthorityHash;
 }
 ```
+
+previousUpdateHash is the predecessor's SafeTx hash, which commits to that update's
+graph hash, so the previous graph hash is not signed again.
 
 A's currently selected full quorum signs the exact recognized source transaction: a
 guard call, or for an ownership change the pinned MultiSendCallOnly batch that starts
@@ -76,12 +79,12 @@ on current and future destination chains for that source identity, subject to th
 own predecessor, registration and quorum checks. Universal evidence is not automatic
 delivery, source execution proof or universal branch convergence.
 
-A new update follows the stored updateHead and previousAuthorityHash exactly.
+A new update follows the stored updateHead exactly.
 Its update identifier is the SafeTx hash of the signed activation, ownership change
 or selectAuthority transaction, not a receipt, outer executor hash or hash of
 signatures. The next update signs that identifier as previousUpdateHash. A Safe's
 first head is its [activation](#activation-and-creation-proof) SafeTx hash; the
-activation signs zero for both previous hashes.
+activation signs only its initial graph hash, as it has no predecessor.
 
 This linked chain supersedes D93's numeric management nonce watermark. There is no
 maximum-forward-gap rule: the proposed 2^16 gap was paused before adoption and is
@@ -94,8 +97,9 @@ To accept a destination update:
 
 1. Load the source identity's registered selection and require an idle shared context.
 2. Decode the actual signed source calldata and recognize its target/function.
-3. Check signed previousUpdateHash == stored updateHead and previousAuthorityHash ==
-   stored authorityHash. Reject a wrong predecessor even if old/new owners overlap.
+3. Accept an activation only while the Safe is unregistered. Otherwise check signed
+   previousUpdateHash == stored updateHead, and reject a wrong predecessor even if
+   old/new owners overlap.
 4. Recompute the complete new graph hash and authenticate canonical structure,
    thresholds, owner kinds, the root's new record (its stored record after any signed
    mutations) and every descendant [position](#child-positions): kept, or reached
@@ -148,7 +152,7 @@ own Safe owner C, C counts under the position B's new graph names for C, as B's 
 counted it on source. A's verifier therefore proves positions in one flat pass over
 child updates at any depth. It keeps a table of proven (Safe, position) records,
 seeded with A's stored entries and with the activations of Safes A adds. Each child
-update, in witness order, needs its predecessor and every nested voter's position
+update, in the order supplied, needs its predecessor and every nested voter's position
 already in the table, then adds its own result. Each carries its new graph's entry
 list, checked against the newAuthorityHash it signs, so the verifier can read its
 voters' positions; only Safes that vote need full records. Every entry of A's new
@@ -169,29 +173,37 @@ position to be executed, so a Safe that never activated cannot be added. A
 destination sees the signed activation, not its execution; that falls under the rule
 that A adopts only executed positions.
 
-The update's supporting data is one witness, the same on source and destinations:
+Each update travels with two unsigned arguments, the same on source and
+destinations: newGraph, which must hash to the signed graph hash, and childUpdates,
+which prove its positions.
 
 ```solidity
-struct UpdateWitness {
-    AuthorityGraph newGraph;  // records and one position per record
-    ChildUpdate[] updates;    // signed child updates at any depth, in proof order
+struct AuthorityNode {
+    SafeAuthorityRecord record;
+    bytes32 position;                  // zero for the root
+}
+
+struct AuthorityGraph {
+    AuthorityNode[] nodes;             // canonical order; nodes[0] is the root
+}
+
+struct AuthorityEntry {                // the hashed form of one node
+    bytes32 recordHash;
+    bytes32 position;
 }
 
 struct ChildUpdate {
-    address safe;
-    SafeTxEvidence evidence;  // the child's activation, ownership change or selectAuthority
-    GraphEntry[] newEntries;  // its new graph's entries; hash == its signed newAuthorityHash
-}
-
-struct GraphEntry {
-    bytes32 recordHash;
-    bytes32 position;
+    address sourceSafe;
+    SafeTxEvidence evidence;           // the child's activation, ownership change or selectAuthority
+    AuthorityEntry[] newGraphEntries;  // its new graph; hash == its signed graph hash
 }
 ```
 
 A descendant kept at its stored position needs no child update. One moved forward has
 child updates from the stored position. One added starts with its activation. Voters
-that child updates need are proven the same way.
+that child updates need are proven the same way. newGraphEntries may be empty when no
+Safe-kind owner votes on that child update, since only nested voters' positions are
+read from it.
 
 ## Source guard and mutation batch
 
@@ -201,26 +213,30 @@ Equal factory address, salt and initcode yield equal compatible-EVM addresses;
 constructor arguments affect initcode. Verify actual helper deployments/code.
 
 ```solidity
-activate(AuthorityUpdate update, SafeCreationProof creation)
+activate(bytes32 authorityHash, SafeCreationProof creation)
 registerOwnershipChange(AuthorityUpdate update)
 selectAuthority(AuthorityUpdate update)
-stageUpdate(address sourceSafe, UpdateWitness witness, PortableEvidence portable)
+stageUpdate(
+    address sourceSafe,
+    AuthorityGraph newGraph,
+    ChildUpdate[] childUpdates,
+    bytes portableSignatures,          // always the full set destinations verify
+    NestedSafeApproval[] nestedApprovals
+)
 selection(address sourceSafe) -> AuthoritySelection
 executed(address sourceSafe, bytes32 updateHead) -> bool
-
-struct PortableEvidence {
-    bytes signatures;                // empty when the executing signatures are portable
-    NestedSafeApproval[] approvals;  // signMessage evidence for empty nested signatures
-}
 ```
 
 The signed calls carry hashes only. stageUpdate, called earlier in the same outer
-transaction, supplies the witness those hashes commit to and the portable evidence.
-Anyone may call it. The guard holds it in transient storage for that Safe's next
-guarded transaction, under its per-Safe nesting lock (X10). The witness does not ride
-in Safe's signatures argument: that tail belongs to the policy engine's context
-extension, which allows one extension per blob. On execution the guard emits the
-portable evidence; destinations receive that and the witness, not Safe's executing
+transaction, supplies the new graph and child updates those hashes commit to and the
+signatures destinations verify. portableSignatures is always supplied, even when it
+equals the executing signatures; nestedApprovals are the signed signMessage
+transactions behind empty nested signatures. Anyone may call it. The guard holds the
+data in transient storage for that Safe's next guarded transaction, under its
+per-Safe nesting lock (X10). It does not ride in Safe's signatures argument: that tail
+belongs to the policy engine's context extension, which allows one extension per
+blob. On execution the guard emits portableSignatures and nestedApprovals;
+destinations receive those with newGraph and childUpdates, never Safe's executing
 signatures. Updates therefore execute as multicall([stageUpdate, execTransaction])
 through any multicall contract. It is not pinned: skipped or wrong staging only makes
 the guard revert, and transient data ends with the transaction. A plain
@@ -237,7 +253,7 @@ child's live owners. The guard's portable check is the destination check: A's
 selected graph, with each descendant counted under the position the update names.
 One signature set normally passes both. They differ when a child rotates between
 its vote and A's quorum. Then the child's live owners sign for execution, and the
-earlier set is staged as portable evidence outside the signed SafeTx. The guard
+earlier set is staged as portableSignatures outside the signed SafeTx. The guard
 verifies that set and emits it as the evidence destinations receive. This keeps
 source able to execute whatever destinations would accept.
 
@@ -254,7 +270,7 @@ An ownership change is one signed Safe transaction:
 | Outer SafeTx | DELEGATECALL the pinned MultiSendCallOnly, value zero. Its SafeTx hash is the new head. |
 | First packed call | CALL guard.registerOwnershipChange(update). |
 | Remaining packed calls | At least one ordered owner mutation: each a zero-value CALL to the signing Safe of addOwnerWithThreshold/removeOwner/swapOwner/changeThreshold. No inner delegatecall, external target or configuration change. |
-| Pre-hook | Recognize this exact shape; verify the staged witness and portable evidence; derive every intermediate owner list and check its predecessor/sentinel, insertion order, threshold and 16-owner cap; require the result to equal the root record of the new graph. |
+| Pre-hook | Recognize this exact shape; verify the staged graph, child updates and portable signatures; derive every intermediate owner list and check its predecessor/sentinel, insertion order, threshold and 16-owner cap; require the result to equal the root record of the new graph. |
 | Post-hook | Require actual ordered owners/threshold to equal that record; set the source selection/head and record the head as executed. |
 
 MultiSendCallOnly's inner CALLs originate from the Safe context, satisfying Safe's
@@ -289,8 +305,7 @@ eligible, including lower thresholds. This stale-authority risk is accepted.
 
 All fresh approvals use the selected graph, with native per-node thresholds and
 child-domain SafeMessage hashing. No global/local fallback or opportunistic child
-adoption is permitted. Child records need authenticated activation or child-update
-witnesses; A selects authentic states, not invented child owners.
+adoption is permitted. Child records need authenticated activations or child updates; A selects authentic states, not invented child owners.
 Removed keys cannot authorize a new branch after the receiver replaces them unless
 they still satisfy its selected quorum.
 
@@ -338,15 +353,14 @@ A Safe's authority starts from its Safe creation proof:
 
 ```solidity
 struct SafeCreationProof {
-    address factory;
     address singleton;
     bytes initializer;
     uint256 saltNonce;
 }
 ```
 
-The factory, the singleton and the proxy creation code hash must be pinned for the
-source chain. The verifier recomputes the Safe's CREATE2 address with both Safe 1.5.0
+One factory and its proxy creation code hash are pinned per source chain, so the
+proof does not carry them; the singleton must be one pinned for that chain. The verifier recomputes the Safe's CREATE2 address with both Safe 1.5.0
 factory salts, keccak256(keccak256(initializer), saltNonce) and the chain-specific
 keccak256(keccak256(initializer), saltNonce, sourceChainId); a match on either proves
 the initializer. The initializer must be Safe's setup with to and data either empty
@@ -361,14 +375,14 @@ formulas.
 Activation takes two guarded steps, which may share one outer transaction. The Safe
 first sets the guard; the guard cannot hook the transaction that installs it, and
 until activation it allows only activate. The creation quorum then signs and executes
-activate(update, creation) with update = (0, 0, initialGraphHash). The guard requires:
+activate(initialGraphHash, creation). The guard requires:
 
 - transaction and module guards, recognized singleton/handler/module configuration
   and handler matching (X11);
 - live owners and threshold equal to the creation record, so a Safe that has changed
   owners cannot activate;
 - every Safe owner already activated, and the initial graph naming each descendant at
-  a position that Safe executed, with its record proven by the staged witness;
+  a position that Safe executed, with its record proven by the staged child updates;
 - the portable check under the creation record, each descendant counted under the
   position the initial graph names.
 
@@ -378,8 +392,10 @@ creation state, and every destination registers the same graph because the creat
 quorum signed it. Two activations signed at one nonce compete like any successors;
 the first accepted wins on each destination (T5).
 
-A destination registers a root with its signed activation and witness, verified like
-an update whose old graph is empty and whose root votes under the creation record. A
+A destination registers a root through the same submitAuthority as every update: the
+signed activation with its new graph and child updates, accepted only while the Safe
+is unregistered and verified like an update whose old graph is empty and whose root
+votes under the creation record. A
 parent adds a Safe with the same activation as that Safe's first child update.
 Destination registration cannot fabricate native source readiness.
 
