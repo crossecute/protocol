@@ -17,7 +17,7 @@ tracker are removed from the current tree.
 | Y4 | Rejecting/replacing a Safe transaction on source does not revoke portable signed updates. | Decided: no expiry and no validUntil field; updates are nonexpiring as in protocol-v2#2. The destination-first model retains this consequence. Tooling must distinguish source rejection from destination revocation. The root is assumed to execute any update that has a destination quorum (see "Other decisions"); a child is not. |
 | Y5 | Destination binding changes cross-chain reuse and bootstrap. | Resolved: authority updates have no destination chain/provider/registry binding. Source identity/recognized guard/domain remain authenticated. Transport and ordinary application dispatch routing stay destination-specific. |
 | Y6 | Existing generic SafeBatchExecutor cannot enforce registration/mutation pairing. | Architecture requires invocation-scoped completion through an enforcing executor/wrapper, exact next MultiSendCallOnly batch, and full rollback. Source template intentionally reverts until implemented. Pinning existing executor alone is not a fix. |
-| Y7 | Child genesis-to-current lineage grows and missing witnesses block adoption. | A's graph stores each descendant's position, so an adoption needs links from that position only, not from the child's genesis. A newly added Safe owner still needs its first position proven (open). Exact authenticated content cache may anchor later lineage. Specify durable full source registration evidence and checkpoint interfaces before production; no numeric evidence/depth/work cap is added. |
+| Y7 | Child genesis-to-current lineage grows and missing witnesses block adoption. | A's graph stores each descendant's position, so an adoption needs links from that position only, not from the child's genesis. A newly added Safe starts from its creation proof and needs links from its genesis head. Exact authenticated content cache may anchor later lineage. Specify durable full source registration evidence and checkpoint interfaces before production; no numeric evidence/depth/work cap is added. |
 | Y8 | Hash-only graph storage can make execution unavailable if graph data is lost. | Draft registry caches complete graph on installation and exposes it by hash. Actual receiver use/publication/recovery still need integration; witnesses are not automatically recoverable from a hash. |
 | Y9 | Removed signers can permissionlessly finalize accepted work before cancellation. | Accepted consequence of D92. Existing explicit cancellation remains; ownership changes are not cancellation and there is no promised cancellation priority. |
 | Y10 | EIP-7702 EOA-kind owner may use a source contract signature not portable to receiver. | Guard portability validation must reject v=0 for EOA-kind owners before staging. Delegated-owner real-Safe fixture remains required. |
@@ -47,15 +47,17 @@ tracker are removed from the current tree.
 | Unexecuted child update | Decided: A must not adopt a child position the child signed but did not execute on source. The source guard enforces it against the set of heads the child executed, accepting any executed head at or after A's stored position. A destination cannot check execution, so there the rule is trust in A's signers. Breaking it is permanent for that child. |
 | Root executes at quorum | Accepted assumption for the root only: once an update has a quorum destinations would accept, A executes it on source and does not reject or replace it. A root that breaks this is a broken multisig. A child's earlier vote counts toward that quorum even after the child rotates. |
 | Adversarial child | Nothing is assumed of a child. B may sign and abandon an update or sign two at one nonce. B gains no more than its native veto: it cannot reach a destination quorum alone, and its own forked registry entry is never read for A. |
+| First position of an added Safe | Decided. A Safe installs the guard before any parent adds it, and the guard accepts installation only while the Safe has its creation owners and threshold. Its first position is the genesis head of its creation-state graph, proven by the Safe creation proof a root uses, followed by links. Source records the genesis head as executed at installation. A destination cannot see installation; that is covered by the unexecuted-update rule. |
 | Two signature sets on source | Decided. Safe's check counts live child owners; the guard's portable check is the destination check. When a child rotates between its vote and A's quorum, live owners execute and the earlier set is handed to the guard outside the signed SafeTx. The guard must verify and emit it. |
 
 ## Open
 
 | Topic | What is missing |
 | --- | --- |
-| First position of a newly added Safe owner | How it is proven belongs to the genesis witness ABI. Removing and re-adding a Safe must not move it backwards. |
-| Portable-set channel | How the earlier signature set reaches the guard when it differs from the executing set. |
-| Scaffold | Types, registry template and tests carry no positions, links or executed-head set yet. |
+| Removed and re-added Safe | Whether it may be named at an earlier executed position. No stored position exists to compare against after removal. |
+| Portable-set channel | The draft interface stages it with stageUpdate beside the witness. Not frozen. |
+| Creation proof format | ChildGenesis carries it as opaque bytes, the same as a root's initial registration. |
+| Scaffold | Types and interfaces carry positions, introduced genesis entries, links, stageUpdate and executed. Every check on them is still an abstract hook, and the test fixture rejects any witness that has them. |
 
 ## Decision lineage
 

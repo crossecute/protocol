@@ -10,7 +10,7 @@ This file owns concrete implementation gates and acceptance coverage for the
 
 | Area | Present in draft | Required before production |
 | --- | --- | --- |
-| Types/interfaces | AuthoritySelection/AuthorityUpdate, graph wrapper, source guard and shared registry interfaces; reuse existing Call/owner/evidence types. | Freeze selector/witness ABI and migration from baseline fixed-authority fields. Add a position per descendant record to the graph, typed child links in place of the opaque proof bytes, and the portable-set channel. |
+| Types/interfaces | AuthoritySelection/AuthorityUpdate, graph wrapper with one position per record, UpdateWitness with introduced genesis entries and typed child links, source guard (stageUpdate, executed) and shared registry interfaces; reuse existing Call/owner/evidence types. | Freeze selector/witness ABI, the creation proof format and migration from baseline fixed-authority fields. |
 | Linked registry state machine | Hash predecessor checks, current-graph hook, exact receipts, atomic graph/head/cache writes, zero sentinel and deterministic draft genesis head. | Implement independent canonical/genesis/descendant/signature verification hooks; wire actual receivers. Verify child links from each stored position before signatures, derive each moved record from its signed mutations, and count descendants under named positions. |
 | Source guard | Two-function fail-closed abstract template. | Implement native caller/guard configuration validation, portable signature staging, head tracking, exact next batch and invocation-scoped completion. Record every executed head per Safe, require named descendant positions to be executed heads at or after the stored ones, and verify and emit a separately supplied portable set. No production function is enabled by this draft. |
 | Mutation encoding | Pack zero-value supported self-CALLs into MultiSendCallOnly calldata, including a one-element batch. | Derive/validate actual Safe intermediate and final ordered authority; enforce both guard slots and bypass matrix. |
@@ -23,7 +23,8 @@ This file owns concrete implementation gates and acceptance coverage for the
 
 The template graph hash is keccak256(abi.encode(keccak256("Crossecute.AuthorityGraph.v1"),
 sourceChainId, graph)). Its genesis head uses the analogous AuthorityGenesis.v1
-label, source chain, Safe and initial graph hash. These are draft executable encoding
+label, source chain, Safe and initial graph hash; the same derivation gives the first
+position of a Safe a parent adds. The graph hash covers positions. These are draft executable encoding
 choices, not hashes deployed by #108. Canonicality/authentication is mandatory before
 using either hash. Every update head after genesis is the source registration or
 selectAuthority SafeTx hash, computed with existing SafeHashes.
@@ -61,6 +62,7 @@ selectAuthority SafeTx hash, computed with existing SafeHashes.
 | T27 | A's adoption names executed position p+1; B executes p+2 before A executes. | Source accepts. A stays one position behind and a later adoption of p+2 is voted by B's live owners. |
 | T28 | B votes on A's update through X, rotates to Y, then A reaches quorum. | Source executes with Y's live signatures; the guard verifies and emits the X set; destinations accept the same evidence. Without the X set, source rejects. |
 | T29 | B's own registry entry on a destination sits on an abandoned branch. | A's adoption of B's executed position still verifies there; B's entry is not read. |
+| T30 | A adds Safe D: D activated at creation state; D never activated; D changed owners before trying to activate; D added at a position some links past genesis. | Activated D is added from its creation proof, with links when past genesis. Source rejects a D whose genesis head is not executed. Activation rejects a Safe no longer at its creation owners and threshold. |
 
 ## Validation boundaries
 
@@ -68,9 +70,16 @@ The scaffold tests use a one-EOA fixture for abstract verification hooks. They t
 linked state-machine behavior and genuine SafeTx digest signatures, not production
 nested verification, actual Safe creation, source execution pairing or live providers.
 No empty/default-success production verification hooks exist. The source template
-always reverts for mutating operations and remains abstract. T23 to T29 have no
-scaffold coverage: the draft types hold no descendant positions, child links or
-executed-head set.
+always reverts for mutating operations and remains abstract. T23 to T30 have no
+scaffold coverage: the draft types carry positions, introduced genesis entries and
+child links, but the fixture rejects any witness that has them.
+
+Authority code under src/messaging/authority compiles via-IR through a path
+restriction in contracts/evm/foundry.toml, because its nested types exceed the legacy
+code generator's stack limit. The default profile stays legacy: via-IR changes
+Proxy's initcode. Files that import the authority code compile via-IR too. After a
+change that adds such an importer, compare the bytecode of untouched contracts from
+a clean build.
 
 The offline vector generator checks existing Safe hash/signature bytes plus labels
 for semantic cases. It is not a Solidity acceptance runner and does not freeze the

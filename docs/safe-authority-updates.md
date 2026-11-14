@@ -135,9 +135,29 @@ its stored record (T6). Adopting B's rotation therefore never needs B's removed
 owners. A returning owner set (X, Y, X) is a new position, so an old link cannot be
 replayed.
 
-How the first position of a newly added Safe owner is proven is open with the
-genesis witness ABI. Removing and re-adding a Safe must not move it backwards.
-The scaffold types do not carry positions or links yet.
+A Safe installs the guard before any parent adds it. The guard accepts installation
+only while the Safe still has its creation owners and threshold. A Safe's first
+position is therefore the genesis head of its creation-state graph, and the same
+Safe creation proof a root registers with proves it anywhere. A new graph that adds
+a Safe supplies that genesis, then links from the genesis head to the position it
+names. On source the guard records the genesis head as executed at installation, so
+a Safe that never installed the guard cannot be added. A destination sees only the
+creation proof, not the installation; that falls under the rule that A adopts only
+executed positions. Whether a removed and re-added Safe may be named at an earlier
+executed position is open.
+
+The update's supporting data is one witness, the same on source and destinations:
+
+```solidity
+struct UpdateWitness {
+    AuthorityGraph newGraph;    // records and one position per record
+    ChildGenesis[] introduced;  // creation-state graph and creation proof per added Safe
+    ChildLink[] links;          // one signed child update each, oldest first per Safe
+}
+```
+
+A descendant kept at its stored position has no entry. One moved forward has links
+from the stored position. One added has an introduced entry, then links.
 
 ## Source guard and mutation batch
 
@@ -149,8 +169,15 @@ constructor arguments affect initcode. Verify actual helper deployments/code.
 ```solidity
 registerOwnershipChange(AuthorityUpdate update, Call[] mutations)
 selectAuthority(AuthorityUpdate update)
+stageUpdate(address sourceSafe, UpdateWitness witness, bytes portableSignatures)
 selection(address sourceSafe) -> AuthoritySelection
+executed(address sourceSafe, bytes32 updateHead) -> bool
 ```
+
+The signed calls carry hashes only. stageUpdate supplies the witness those hashes
+commit to, and the portable signature set when it differs from the executing one.
+Anyone may call it; it holds for the current transaction only. It is a draft, not
+a frozen ABI.
 
 selectAuthority changes A's tracked graph (for example its B snapshot), without a
 source owner mutation. It is a normal Safe transaction, executed on source, and it
@@ -164,8 +191,7 @@ One signature set normally passes both. They differ when a child rotates between
 its vote and A's quorum. Then the child's live owners sign for execution, and the
 earlier set is handed to the guard outside the signed SafeTx. The guard must
 verify that set and emit it as the evidence destinations receive. This keeps source
-able to execute whatever destinations would accept. How the set reaches the guard is
-part of the ABI to freeze.
+able to execute whatever destinations would accept.
 
 For every descendant position an update names, the guard requires a head that Safe
 executed on source, at or after the position A stores. The guard records a head
@@ -281,7 +307,10 @@ support, not substitution into the ordinary CREATE2 formula.
 Source guard activation is explicit one-time readiness plus validated authority,
 not merely writing a guard slot. Require transaction and module guards, recognized
 singleton/handler/module configuration, supported actual starting authority, and
-child readiness/handler matching. Destination registration cannot fabricate native
+child readiness/handler matching. The starting authority must be the Safe's creation
+owners and threshold: a Safe that has already changed owners cannot activate. Every
+Safe owner must already be activated. Activation records the Safe's genesis head as
+its first executed position. Destination registration cannot fabricate native
 source readiness. Block unregistered owner changes, guard/handler replacement,
 module self-calls/delegatecalls and protected-configuration bypasses. Pin approved
 helper code/configuration: helper, executor, singleton and handler pins are fixed at
