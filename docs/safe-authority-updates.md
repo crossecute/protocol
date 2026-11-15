@@ -106,17 +106,19 @@ To accept a destination update:
    from the stored one through the supplied child updates.
 5. Validate the portable signatures/nested quorum. The root votes under its stored
    record. Each descendant votes under the position the new graph names for it.
-6. Atomically store new records and the graph, record the exact accepted update
-   receipt and set the new hash/head. Validation failure must leave no head, receipt
-   or other state.
+6. Atomically store new records and the graph and set the new hash/head. Validation
+   failure must leave no head or other state.
 
 U2 cannot precede U1 if it names hash(U1). Consecutive handoffs may be submitted in
-one batch, but each is independently verified. Exact duplicates reject in the draft
-scaffold; provider integrations may later add authenticated no-op acknowledgments.
-Conflicting signed successors of one head are possible. Each destination can accept
-only one; the losing successor cannot overwrite it. The chain does not prove which
-successor executed on source. Restoration requires valid authorization under the
-currently selected branch, not a special old-owner override.
+one batch, but each is independently verified. The predecessor check also rejects
+replays, so the registry keeps no record of accepted updates: each head commits to its
+predecessor, so heads never repeat and an accepted update never matches the stored
+head again, even after the graph returns to an earlier hash. Exact duplicates reject
+in the draft scaffold; provider integrations may later add authenticated no-op
+acknowledgments. Conflicting signed successors of one head are possible. Each
+destination can accept only one; the losing successor cannot overwrite it. The chain
+does not prove which successor executed on source. Restoration requires valid
+authorization under the currently selected branch, not a special old-owner override.
 
 Updates carry no expiry. A signed update stays valid until its predecessor is
 superseded, even if its SafeTx is rejected or replaced on source (Y4). Tooling must
@@ -336,7 +338,7 @@ captured this way stays on that branch and no recovery bypass exists (Y2, Y3). A
 destination starts from the signed activation and applies the full linked chain,
 possibly in one batch; there is no latest-state shortcut. Update calldata and
 registry events are archived off-chain so late destinations can bootstrap; the
-registry stores only receipts and the graph cache.
+registry stores only each Safe's selection and the graph cache.
 
 Accepted receiver commitments survive root and nested ownership changes (D92).
 Finalize uses the recorded exact-call authorization without a fresh signature check

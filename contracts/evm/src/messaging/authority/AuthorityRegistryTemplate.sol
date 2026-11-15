@@ -26,8 +26,6 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     // Content-addressed: a record shared by several graphs or kept across updates is written once.
     mapping(bytes32 => bytes) private _records;
     mapping(bytes32 => AuthorityEntry[]) private _graphs;
-    // Exact receipts prevent replay without storing historical authority versions.
-    mapping(uint256 => mapping(address => mapping(bytes32 => bool))) private _accepted;
     bool private _submitting;
 
     error UnregisteredAuthority();
@@ -37,7 +35,6 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     error ZeroCommitment();
     error PreviousUpdateMismatch();
     error ReplacementHashMismatch();
-    error UpdateAlreadyAccepted();
     error AuthoritySubmissionReentered();
     error GraphNotCached();
     error RecordNotCached();
@@ -78,7 +75,6 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         _requireRoot(sourceSafe, newGraph);
         bytes32 updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
         if (updateHash == bytes32(0)) revert ZeroCommitment();
-        if (_accepted[sourceChainId][sourceSafe][updateHash]) revert UpdateAlreadyAccepted();
 
         AuthoritySelection memory current = _selections[sourceChainId][sourceSafe];
         (UpdateKind kind, AuthorityUpdate memory update) = _recognizeUpdate(sourceChainId, sourceSafe, evidence);
@@ -86,6 +82,8 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
             if (kind != UpdateKind.Activation) revert UnregisteredAuthority();
         } else {
             if (kind == UpdateKind.Activation) revert AlreadyRegistered();
+            // Also the replay check: each head commits to its predecessor, so heads never repeat
+            // and an accepted update cannot match the stored head again.
             if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
         }
         if (update.newAuthorityHash == bytes32(0)) revert ZeroCommitment();
@@ -98,9 +96,8 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         _authenticateGraph(sourceChainId, current.authorityHash, kind, evidence, newGraph, childUpdates);
         _verifyUpdateSignatures(sourceChainId, current.authorityHash, kind, evidence, newGraph);
 
-        // Validation precedes writes. Any revert rolls back the lock and receipts too.
+        // Validation precedes writes. Any revert rolls back the lock too.
         _store(newGraph, newEntries, update.newAuthorityHash);
-        _accepted[sourceChainId][sourceSafe][updateHash] = true;
         _selections[sourceChainId][sourceSafe] = AuthoritySelection(updateHash, update.newAuthorityHash);
         emit AuthoritySelected(sourceChainId, sourceSafe, updateHash, update.newAuthorityHash);
         _submitting = false;

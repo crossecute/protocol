@@ -290,8 +290,19 @@ contract AuthorityRegistryTemplateTest is Test {
         SafeTxEvidence memory e1 = _rotation(_update(registry, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN);
         _submit(registry, CHAIN, e1, bob);
         _submit(registry, CHAIN, _rotation(_update(registry, CHAIN, alice), bob, alice, BOB_KEY, 12, CHAIN), alice);
-        vm.expectRevert(AuthorityRegistryTemplate.UpdateAlreadyAccepted.selector);
+        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
         _submit(registry, CHAIN, e1, bob);
+    }
+
+    function testExactDuplicateOfHeadRejected() public {
+        address bob = vm.addr(BOB_KEY);
+        SafeTxEvidence memory e =
+            _rotation(_update(registry, CHAIN, bob), vm.addr(ALICE_KEY), bob, ALICE_KEY, 10, CHAIN);
+        _submit(registry, CHAIN, e, bob);
+        AuthoritySelection memory accepted = registry.selection(CHAIN, SAFE);
+        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
+        _submit(registry, CHAIN, e, bob);
+        assertEq(registry.selection(CHAIN, SAFE).updateHead, accepted.updateHead);
     }
 
     function testCompetingSuccessorCannotOverwriteAcceptedBranch() public {
@@ -364,7 +375,7 @@ contract AuthorityRegistryTemplateTest is Test {
     }
 
     function testCannotActivateTwice() public {
-        vm.expectRevert(AuthorityRegistryTemplate.UpdateAlreadyAccepted.selector);
+        vm.expectRevert(AuthorityRegistryTemplate.AlreadyRegistered.selector);
         _submit(registry, CHAIN, activation, vm.addr(ALICE_KEY));
         SafeTxEvidence memory second = _activation(CHAIN, BOB_KEY, BOB_KEY);
         vm.expectRevert(AuthorityRegistryTemplate.AlreadyRegistered.selector);

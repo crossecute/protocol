@@ -198,7 +198,7 @@ def generate():
             {'id': 'child-own-entry-ignored', 'selectedB': 'abandoned branch on this destination',
              'result': 'A adoption verifies links against the B record in A graph; B own entry is not read'},
             {'id': 'management-replay', 'deliveries': ['direct', 'LayerZero', 'CCIP'],
-             'result': 'shared linked head and exact acceptance receipt prevent replay'},
+             'result': 'shared linked head prevents replay: each update names its predecessor and heads never repeat'},
             {'id': 'out-of-order-linked-update', 'currentHead': 'H0', 'submittedPreviousHead': 'H1',
              'result': 'reject without consuming or advancing state, regardless of nonce magnitude'},
             {'id': 'huge-nonce-then-lower-linked-update', 'safeNonces': ['uint256.max', 11],

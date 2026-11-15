@@ -306,7 +306,7 @@
         "LayerZero",
         "CCIP"
       ],
-      "result": "shared linked head and exact acceptance receipt prevent replay"
+      "result": "shared linked head prevents replay: each update names its predecessor and heads never repeat"
     },
     {
       "id": "out-of-order-linked-update",
