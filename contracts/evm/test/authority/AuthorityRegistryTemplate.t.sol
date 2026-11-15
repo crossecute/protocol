@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
-import {SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
+import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {
     AuthoritySelection,
     AuthorityUpdate,
@@ -13,114 +10,13 @@ import {
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
 import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
+import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
 import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegistryTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeOwner, SafeAuthorityRecord, OWNER_EOA} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence, NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
-
-/// @dev Test-only concrete hooks, restricted to a root with one EOA owner and no descendants.
-///      Ownership changes are a single swapOwner. Not a production verifier: the creation proof's
-///      address derivation and the flat child-update pass are not modelled.
-contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
-    address internal constant GUARD = address(0x1234);
-    address internal constant MULTISEND = address(0x5678);
-    address internal constant SENTINEL = address(1);
-    bool public busy;
-
-    function setBusy(bool value) external {
-        busy = value;
-    }
-
-    function _recognizeUpdate(uint256, address sourceSafe, SafeTxEvidence calldata e)
-        internal
-        pure
-        override
-        returns (UpdateKind, AuthorityUpdate memory)
-    {
-        SafeTx calldata tx_ = e.signedSafeTx.safeTx;
-        require(tx_.value == 0, "wrong source call");
-        if (tx_.to == MULTISEND && tx_.operation == 1) {
-            (AuthorityUpdate memory update,) = AuthorityUpdateEncoding.decodeOwnershipBatch(GUARD, sourceSafe, tx_.data);
-            return (UpdateKind.OwnershipChange, update);
-        }
-        require(tx_.to == GUARD && tx_.operation == 0, "wrong source call");
-        bytes4 selector = bytes4(tx_.data);
-        if (selector == ISourceAuthorityGuard.activate.selector) {
-            (bytes32 authorityHash,) = abi.decode(tx_.data[4:], (bytes32, SafeCreationProof));
-            return (UpdateKind.Activation, AuthorityUpdate(bytes32(0), authorityHash));
-        }
-        require(selector == ISourceAuthorityGuard.selectAuthority.selector, "wrong selector");
-        return (UpdateKind.Selection, abi.decode(tx_.data[4:], (AuthorityUpdate)));
-    }
-
-    function _authenticateGraph(
-        uint256,
-        bytes32 currentAuthorityHash,
-        UpdateKind kind,
-        SafeTxEvidence calldata e,
-        AuthorityGraph calldata newGraph,
-        ChildUpdate[] calldata childUpdates
-    ) internal view override {
-        require(childUpdates.length == 0 && newGraph.nodes.length == 1, "fixture root only");
-        SafeAuthorityRecord calldata next = newGraph.nodes[0].record;
-        require(next.threshold == 1 && next.owners.length == 1, "fixture quorum only");
-        require(next.owners[0].kind == OWNER_EOA, "fixture EOA only");
-        address expected;
-        if (kind == UpdateKind.Activation) {
-            expected = _creationOwner(e);
-        } else {
-            address stored = graph(currentAuthorityHash).nodes[0].record.owners[0].owner;
-            expected = kind == UpdateKind.Selection ? stored : _swappedOwner(next.safe, stored, e);
-        }
-        require(next.owners[0].owner == expected, "root record mismatch");
-    }
-
-    function _verifyUpdateSignatures(
-        uint256 chain,
-        bytes32 currentAuthorityHash,
-        UpdateKind kind,
-        SafeTxEvidence calldata e,
-        AuthorityGraph calldata newGraph
-    ) internal view override {
-        address voter = kind == UpdateKind.Activation
-            ? _creationOwner(e)
-            : graph(currentAuthorityHash).nodes[0].record.owners[0].owner;
-        bytes32 digest = SafeHashes.transactionHash(e.signedSafeTx.safeTx, newGraph.nodes[0].record.safe, chain);
-        require(ECDSA.recover(digest, e.signedSafeTx.signatures) == voter, "wrong current signer");
-    }
-
-    function _requireAuthorityContextIdle(uint256, address) internal view override {
-        require(!busy, "application context busy");
-    }
-
-    /// @dev Reads setup's owners and threshold; the fixture does not check the CREATE2 address.
-    function _creationOwner(SafeTxEvidence calldata e) private pure returns (address) {
-        (, SafeCreationProof memory creation) = abi.decode(e.signedSafeTx.safeTx.data[4:], (bytes32, SafeCreationProof));
-        bytes memory initializer = creation.initializer;
-        (address[] memory owners, uint256 threshold) = abi.decode(_tail(initializer), (address[], uint256));
-        require(owners.length == 1 && threshold == 1, "fixture creation only");
-        return owners[0];
-    }
-
-    function _swappedOwner(address safe, address stored, SafeTxEvidence calldata e) private pure returns (address) {
-        (, Call[] memory mutations) =
-            AuthorityUpdateEncoding.decodeOwnershipBatch(GUARD, safe, e.signedSafeTx.safeTx.data);
-        require(mutations.length == 1, "fixture single swap");
-        bytes memory data = mutations[0].data;
-        require(bytes4(data) == AuthorityUpdateEncoding.SWAP_OWNER, "fixture single swap");
-        (address prev, address oldOwner, address newOwner) = abi.decode(_tail(data), (address, address, address));
-        require(prev == SENTINEL && oldOwner == stored, "fixture single swap");
-        return newOwner;
-    }
-
-    function _tail(bytes memory data) private pure returns (bytes memory out) {
-        out = new bytes(data.length - 4);
-        for (uint256 i; i < out.length; ++i) {
-            out[i] = data[i + 4];
-        }
-    }
-}
+import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {AuthorityRegistryFixture, AuthorityRegistryTestBase} from "./AuthorityRegistryFixture.sol";
 
 contract AuthorityEncodingFixture {
     function ownershipBatchData(address guard, address safe, AuthorityUpdate memory update, Call[] memory calls)
@@ -140,12 +36,10 @@ contract AuthorityEncodingFixture {
     }
 }
 
-contract AuthorityRegistryTemplateTest is Test {
-    uint256 internal constant CHAIN = 1;
-    address internal constant SAFE = address(0xAAAA);
-    address internal constant GUARD = address(0x1234);
-    address internal constant MULTISEND = address(0x5678);
-    address internal constant SENTINEL = address(1);
+/// @dev A root with one EOA owner and no descendants; graph-pass cases are in AuthorityGraphPass.t.sol.
+contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
+    // The factory address of _creation(ALICE_KEY); testActivationSafeTxHashIsFirstHead checks it.
+    address internal constant SAFE = 0x21D9c001b9233ead0386c40BD1ACe1F3E6733E3D;
     uint256 internal constant ALICE_KEY = 1;
     uint256 internal constant BOB_KEY = 2;
     AuthorityRegistryFixture internal registry;
@@ -170,26 +64,10 @@ contract AuthorityRegistryTemplateTest is Test {
         target.submitAuthority(chain, SAFE, e, _graph(owner), new ChildUpdate[](0));
     }
 
-    function _sign(SafeTx memory tx_, uint256 key, uint256 chain) internal pure returns (SafeTxEvidence memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, SafeHashes.transactionHash(tx_, SAFE, chain));
-        return SafeTxEvidence(SignedSafeTx(tx_, abi.encodePacked(r, s, v)), new NestedSafeApproval[](0));
-    }
-
-    function _creation(address owner) internal pure returns (SafeCreationProof memory) {
+    function _creation(uint256 key) internal pure returns (SafeCreationProof memory) {
         address[] memory owners = new address[](1);
-        owners[0] = owner;
-        bytes memory initializer = abi.encodeWithSignature(
-            "setup(address[],uint256,address,bytes,address,address,uint256,address)",
-            owners,
-            1,
-            address(0),
-            "",
-            address(0),
-            address(0),
-            0,
-            address(0)
-        );
-        return SafeCreationProof(address(0x5AFE), initializer, 0);
+        owners[0] = vm.addr(key);
+        return _creation(owners, 1);
     }
 
     function _activation(uint256 chain, uint256 creationKey, uint256 signerKey)
@@ -197,13 +75,8 @@ contract AuthorityRegistryTemplateTest is Test {
         pure
         returns (SafeTxEvidence memory)
     {
-        address owner = vm.addr(creationKey);
-        SafeTx memory tx_;
-        tx_.to = GUARD;
-        tx_.data = abi.encodeCall(
-            ISourceAuthorityGuard.activate, (AuthorityUpdateEncoding.graphHash(chain, _graph(owner)), _creation(owner))
-        );
-        return _sign(tx_, signerKey, chain);
+        SafeTx memory tx_ = _activationTx(chain, _graph(vm.addr(creationKey)), _creation(creationKey));
+        return _sign(tx_, SAFE, chain, signerKey);
     }
 
     /// @dev An ownership change swapping the single owner `from` for `to`.
@@ -214,12 +87,7 @@ contract AuthorityRegistryTemplateTest is Test {
     {
         Call[] memory mutations = new Call[](1);
         mutations[0] = Call(SAFE, 0, abi.encodeWithSignature("swapOwner(address,address,address)", SENTINEL, from, to));
-        SafeTx memory tx_;
-        tx_.to = MULTISEND;
-        tx_.operation = 1;
-        tx_.data = AuthorityUpdateEncoding.ownershipBatchData(GUARD, SAFE, u, mutations);
-        tx_.nonce = nonce;
-        return _sign(tx_, key, chain);
+        return _sign(_ownershipTx(SAFE, u, mutations, nonce), SAFE, chain, key);
     }
 
     function _selection(AuthorityUpdate memory u, uint256 key, uint256 nonce)
@@ -227,11 +95,7 @@ contract AuthorityRegistryTemplateTest is Test {
         pure
         returns (SafeTxEvidence memory)
     {
-        SafeTx memory tx_;
-        tx_.to = GUARD;
-        tx_.data = abi.encodeCall(ISourceAuthorityGuard.selectAuthority, (u));
-        tx_.nonce = nonce;
-        return _sign(tx_, key, CHAIN);
+        return _sign(_selectionTx(u, nonce), SAFE, CHAIN, key);
     }
 
     function _update(AuthorityRegistryFixture target, uint256 chain, address nextOwner)
@@ -245,7 +109,7 @@ contract AuthorityRegistryTemplateTest is Test {
     }
 
     function _hash(SafeTxEvidence memory e) internal pure returns (bytes32) {
-        return SafeHashes.transactionHash(e.signedSafeTx.safeTx, SAFE, CHAIN);
+        return _hash(e, SAFE);
     }
 
     function testLinkedHandoffsRejectSecondFirstWithoutStateChange() public {
@@ -332,9 +196,17 @@ contract AuthorityRegistryTemplateTest is Test {
         _submit(registry, CHAIN, e, vm.addr(ALICE_KEY));
     }
 
+    function testOwnershipChangeRootMustBeMutationResult() public {
+        // Signs a graph naming carol while its swap installs bob.
+        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(3));
+        SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
+        vm.expectRevert(AuthorityMutations.MutationResultMismatch.selector);
+        _submit(registry, CHAIN, e, vm.addr(3));
+    }
+
     function testSelectionCannotChangeRootRecord() public {
         AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
-        vm.expectRevert("root record mismatch");
+        vm.expectRevert(AuthorityRegistryTemplate.RootRecordMismatch.selector);
         _submit(registry, CHAIN, _selection(u, ALICE_KEY, 10), vm.addr(BOB_KEY));
     }
 
@@ -369,6 +241,7 @@ contract AuthorityRegistryTemplateTest is Test {
     }
 
     function testActivationSafeTxHashIsFirstHead() public view {
+        assertEq(SAFE, _safeAddress(_creation(ALICE_KEY)), "fixture Safe address");
         AuthoritySelection memory current = registry.selection(CHAIN, SAFE);
         assertEq(current.updateHead, _hash(activation));
         assertEq(current.authorityHash, AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(ALICE_KEY))));

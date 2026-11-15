@@ -17,7 +17,7 @@ interface IAuthorityRegistry {
     ///         activation while it is unregistered, otherwise a successor of its stored head.
     /// @dev Source identity is explicit because SafeTxEvidence contains no Safe address/chain.
     ///      newGraph must hash to the signed graph hash; childUpdates prove every descendant
-    ///      position it adds or moves.
+    ///      position it adds or moves, and each must be used exactly once.
     function submitAuthority(
         uint256 sourceChainId,
         address sourceSafe,
