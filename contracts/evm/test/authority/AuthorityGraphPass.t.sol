@@ -668,4 +668,3 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         (children[0], children[1]) = (a, b);
     }
 }
-
