@@ -9,9 +9,9 @@ Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
 
 **Status:** design plus non-deployable scaffold. Current receivers/guards are not
 wired to the new interfaces. The source template reverts; the registry template
-requires abstract security hooks. No production rotation or deployment is claimed.
-The scaffold types and interfaces follow this file; its verification hooks are
-abstract. The
+authenticates graphs and child updates but leaves source-call recognition and vote
+checking to abstract hooks. No production rotation or deployment is claimed. The
+scaffold types and interfaces follow this file. The
 [verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
 lists what remains.
 
@@ -100,12 +100,15 @@ To accept a destination update:
 3. Accept an activation only while the Safe is unregistered. Otherwise check signed
    previousUpdateHash == stored updateHead, and reject a wrong predecessor even if
    old/new owners overlap.
-4. Recompute the complete new graph hash and authenticate canonical structure,
-   thresholds, owner kinds, the root's new record (its stored record after any signed
-   mutations) and every descendant [position](#child-positions): kept, or reached
-   from the stored one through the supplied child updates.
+4. Recompute the complete new graph hash and authenticate canonical structure, the
+   16-owner cap, thresholds, owner kinds, the root's new record (its creation record
+   for an activation, its stored record after the signed mutations for an ownership
+   change, its stored record unchanged for a selectAuthority) and every descendant
+   [position](#child-positions): kept, or reached from the stored one through the
+   supplied child updates.
 5. Validate the portable signatures/nested quorum. The root votes under its stored
-   record. Each descendant votes under the position the new graph names for it.
+   record, or its creation record for an activation. Each descendant votes under the
+   position the new graph names for it.
 6. Atomically store new records and the graph and set the new hash/head. Validation
    failure must leave no head or other state.
 
@@ -147,7 +150,9 @@ for it. An update that keeps B's position is voted by B's stored owners. One tha
 moves B forward is voted by the owners the child updates prove. The root always votes
 under its stored record (T6). Adopting B's rotation therefore never needs B's removed
 owners. A returning owner set (X, Y, X) is a new position, so an old child update
-cannot be replayed.
+cannot be replayed. A Safe owner that an update removes has no position in it, so its
+signatures on that update do not count; a removed EOA owner still votes. To remove a
+Safe owner whose vote it needs, a Safe first lowers its threshold.
 
 The same rule applies inside a child update. If B's update needed a vote from B's
 own Safe owner C, C counts under the position B's new graph names for C, as B's guard
@@ -155,12 +160,19 @@ counted it on source. A's verifier therefore proves positions in one flat pass o
 child updates at any depth. It keeps a table of proven (Safe, position) records,
 seeded with A's stored entries and with the activations of Safes A adds. Each child
 update, in the order supplied, needs its predecessor and every nested voter's position
-already in the table, then adds its own result. Each carries its new graph's entry
-list, checked against the newAuthorityHash it signs, so the verifier can read its
-voters' positions; only Safes that vote need full records. Every entry of A's new
-graph must end in the table, and a retained Safe's entry must descend from its stored
-position, not from an activation supplied for a voter. An order always exists,
-because each child update executed on source after the positions it relied on.
+already in the table, then adds its own result. Each carries its new record and its
+new graph's entry list. The list's first entry must be the record's hash and the list
+must hash to the newAuthorityHash it signs, so the verifier can read its voters'
+positions and the kinds of the owners it adds. An ownership change must turn the
+predecessor record into the new record, an activation must match its creation proof,
+and a selectAuthority must keep the predecessor record. Every owner kind in a new
+record must be EOA or Safe, and an activation's record has at most 16 owners. Every
+entry of A's new graph must end in the table, and a retained Safe's entry must descend
+from its stored position, not from an activation supplied for a voter. Every supplied
+child update must be used, by A's new graph or as a later child update's predecessor
+or voter. None may repeat or re-prove a position already in the table, such as a
+stored one. An order always exists, because each child update executed on source
+after the positions it relied on.
 Counting C under A's own record for C instead could leave A unable to adopt an
 executed B update once A had moved C past the position B used.
 
@@ -197,22 +209,26 @@ struct AuthorityEntry {                // the hashed form of one node
 struct ChildUpdate {
     address sourceSafe;
     SafeTxEvidence evidence;           // the child's activation, ownership change or selectAuthority
+    SafeAuthorityRecord newRecord;     // its new record; hash == newGraphEntries[0].recordHash
     AuthorityEntry[] newGraphEntries;  // its new graph; hash == its signed graph hash
 }
 ```
 
 A descendant kept at its stored position needs no child update. One moved forward has
 child updates from the stored position. One added starts with its activation. Voters
-that child updates need are proven the same way. newGraphEntries may be empty when no
-Safe-kind owner votes on that child update, since only nested voters' positions are
-read from it.
+that child updates need are proven the same way. newRecord costs 32 x (5 + 2n) bytes
+for an n-owner child; it carries the kinds of owners an ownership change or activation
+adds, which hashes alone do not.
 
 ## Source guard and mutation batch
 
 The operations belong to the shared deterministic guard, not a separate authority
-manager. Infrastructure defaults use CREATE2 with explicit source-chain exceptions.
-Equal factory address, salt and initcode yield equal compatible-EVM addresses;
-constructor arguments affect initcode. Verify actual helper deployments/code.
+manager. The guard and the registry compile in Safe 1.5.0's canonical factory,
+singletons, SafeToL2Setup and MultiSendCallOnly, the proxy initcode hashes and the
+guard's address, the same for every source chain, with no setter (X13). A chain
+without that canonical set is unsupported until a new guard and registry generation.
+The registry takes no constructor arguments, so it has one CREATE2 address on every
+standard EVM chain and receivers use that address.
 
 ```solidity
 activate(bytes32 authorityHash, SafeCreationProof creation)
@@ -361,18 +377,19 @@ struct SafeCreationProof {
 }
 ```
 
-One factory and its proxy creation code hash are pinned per source chain, so the
-proof does not carry them; the singleton must be one pinned for that chain. The verifier recomputes the Safe's CREATE2 address with both Safe 1.5.0
-factory salts, keccak256(keccak256(initializer), saltNonce) and the chain-specific
+The factory and the proxy initcode are compiled-in pins, so the proof does not carry
+them; the singleton must be the pinned Safe or SafeL2. The verifier recomputes the
+Safe's CREATE2 address with both Safe 1.5.0 factory salts,
+keccak256(keccak256(initializer), saltNonce) and the chain-specific
 keccak256(keccak256(initializer), saltNonce, sourceChainId); a match on either proves
 the initializer. The initializer must be Safe's setup with to and data either empty
 or exactly SafeToL2Setup.setupToL2 with the pinned L2 singleton, because setup's
 delegatecall could otherwise change owners, modules or the guard. The creation record
-is setup's owners and threshold, with owner kinds from the graph. The fallback handler
-and payment fields carry no authority and are not checked here. A creation proof
-proves a starting configuration, not deployment, current authority or activation.
-Other chain-specific derivations need explicit support, not substitution into these
-formulas.
+is setup's owners and threshold, with owner kinds from the graph. The fallback
+handler and payment fields carry no authority and are not checked here. A creation
+proof proves a starting configuration, not deployment, current authority or
+activation. Other chain-specific derivations need explicit support, not substitution
+into these formulas.
 
 Activation takes two guarded steps, which may share one outer transaction. The Safe
 first sets the guard; the guard cannot hook the transaction that installs it, and
@@ -418,20 +435,23 @@ several digests, each verified separately, and no unresolved claim counts as an
 approval.
 
 An owner added while its address has no code can only be EOA-kind: a Safe-kind owner
-needs an activated record. If a Safe is later deployed at that address, stored records
-keep it EOA-kind until its Safe swaps it out, so its contract signatures never count
-for that Safe on source or destinations (Y10). The guard cannot tell an undeployed
-address from an EOA. Tooling should warn signers who add an address that may be an
-undeployed Safe.
+needs an activated record. If a Safe is later deployed at that address, stored
+records keep it EOA-kind until its Safe removes or swaps it out, so its contract
+signatures never count for that Safe on source or destinations (Y10). An owner
+removed and added again, even within one ownership batch, takes the kind the new
+record names. The guard cannot tell an undeployed address from an EOA. Tooling should
+warn signers who add an address that may be an undeployed Safe.
 
 Reject portable v=1 and contract signatures for EOA-kind owners,
 including EIP-7702 delegated EOAs. Do not flatten quorums or count a signer twice
 within one Safe's threshold. Cache only fully verified exact-message claims.
 
-Each Safe has at most 16 immediate owners. No aggregate owner cap, nesting-depth
-cap, evidence-size cap or verification-work/gas budget is added (D95). VM/chain/provider
-limits still determine completion and relayability. Preserve terminating traversal
-and atomic failure; no promise of unlimited practical execution or data availability.
+Each Safe has at most 16 immediate owners: in every graph and child record and at
+every step of an ownership change, so a Safe created with more cannot activate. No
+aggregate owner cap, nesting-depth cap, evidence-size cap or verification-work/gas
+budget is added (D95). VM/chain/provider limits still determine completion and
+relayability. Preserve terminating traversal and atomic failure; no promise of
+unlimited practical execution or data availability.
 
 Keep immutable conduit creation identity, routing and application replay records
 through every authority update/cache cleanup. Freeze the shared authority context
