@@ -15,7 +15,7 @@ This file owns concrete implementation gates and acceptance coverage for the
 | Source guard | Two-function fail-closed abstract template. | Implement activation (creation proof, creation-state and owner-activation checks), native caller/guard configuration validation, stageUpdate staging under the per-Safe nesting lock, head tracking, and recognition of the one-SafeTx ownership batch. Record every executed head per Safe, require named descendant positions to be executed heads at or after the stored ones, and verify and emit a separately supplied portable set. No production function is enabled by this draft. |
 | Mutation encoding | ownershipBatchData packs the guard's registerOwnershipChange(update) call and then zero-value supported self-CALLs into MultiSendCallOnly calldata; decodeOwnershipBatch inverts it and accepts only data that re-encodes exactly. AuthorityMutations.applyMutations derives every intermediate owner list in Safe 1.5.0 order, checks predecessor/sentinel, threshold and the 16-owner cap at each step, and requires the result to equal the expected record; added owners take their kind from it. A differential fuzz test checks each step against a real Safe 1.5.0. | Call applyMutations from the guard pre-hook and the registry; enforce both guard slots and bypass matrix. |
 | Transport | Source-safe/source-chain identity and signed source call; no destination fields or numeric nonce watermark. | relayAuthority/quote/direct adapters, authenticated duplicate response, publication and durable evidence availability. |
-| Initial registration | submitAuthority accepts an activation for an unregistered Safe; the creation proof check is part of the abstract graph hook. | Creation proof checks with both salts and the pinned factory, singleton and creation code; late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
+| Initial registration | submitAuthority accepts an activation for an unregistered Safe. SafeCreation.requireCreationRecord checks a creation proof with both salts against the compiled Safe 1.5.0 pins (SafeDeployment.sol); no hook calls it yet. | Call it from the guard's activate and the registry's graph hook; late-chain full-chain bootstrap with off-chain archive of update evidence (Y3). |
 | Caches | Each record stored once under its hash and each graph as its entry list; graph(hash) and record(hash) read them back. | Authenticated descendant checkpoint API, graph publication/recovery and cache integration with current execution verifier. |
 | Execution isolation | Registry submission lock and abstract idle-context requirement. | Shared execution lock/lease across every provider and callback, including bootstrap/finalize integration. |
 | Commitments | D92 lifetime specified; existing implementation untouched. | Explicit repeat/cancel/consume accounting and integration regression tests. No authority-based invalidation. |
@@ -65,7 +65,7 @@ authentication are mandatory before using either hash.
 | T29 | B's own registry entry on a destination sits on an abandoned branch. | A's adoption of B's executed position still verifies there; B's entry is not read. |
 | T30 | A adds Safe D: D activated; D never activated; D changed owners before activating; D added at a position some updates past its activation; D removed, then re-added at an earlier executed position. | An activated D is added from its activation, with child updates when past it. Source rejects a D whose named position is not executed. Activation rejects a Safe no longer at its creation owners and threshold. Re-adding at an earlier executed position accepts. |
 | T31 | B's update needed a vote from B's Safe owner C at position q; A already holds C at a later position; A adopts B's update. | Accept: C's vote counts under q, proven in the flat pass from C's activation or an earlier proven position. A retained Safe named at a position reached only from a supplied activation, not from its stored position, rejects. |
-| T32 | Creation proofs: plain salt, chain-specific salt, setupToL2 with the pinned L2 singleton, another setup delegatecall, an unpinned factory or singleton. | The first three prove the creation record; the last two reject. |
+| T32 | Creation proofs: plain salt, chain-specific salt, setupToL2 with the pinned L2 singleton, another setup delegatecall, an unpinned singleton, an empty initializer. | The first three prove the creation record; the rest reject. Library tests: real mainnet creations (SafeCreation.t.sol) and the canonical factory's mainnet code (SafeCreationSafe.t.sol). Not yet through submitAuthority or activate. |
 
 ## Validation boundaries
 
@@ -73,9 +73,9 @@ The scaffold tests use a one-EOA fixture for abstract verification hooks. They t
 linked state-machine behavior and genuine SafeTx digest signatures, not production
 nested verification, actual Safe creation, source execution pairing or live providers.
 No empty/default-success production verification hooks exist. The source template
-always reverts for mutating operations and remains abstract. T23 to T32 have no
+always reverts for mutating operations and remains abstract. T23 to T31 have no
 scaffold coverage: the fixture supports a root with one EOA owner and rejects any
-child update.
+child update. T32 is covered at the library level only.
 
 Authority code under src/messaging/authority compiles via-IR through a path
 restriction in contracts/evm/foundry.toml, because its nested types exceed the legacy
