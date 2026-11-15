@@ -3,6 +3,10 @@ pragma solidity ^0.8.28;
 
 import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
 
+/// @dev Immediate owners per Safe in a stored graph and at every step of an ownership change
+///      (D87). No aggregate or depth cap.
+uint256 constant MAX_SAFE_OWNERS = 16;
+
 /// @notice One Safe in a root's graph and the position of that Safe the root last adopted.
 /// @dev position is an update head in record.safe's own update list. It is zero for the root,
 ///      whose position is the selection's updateHead.
