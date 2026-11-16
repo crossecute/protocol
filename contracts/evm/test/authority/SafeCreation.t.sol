@@ -3,8 +3,14 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {SafeCreationProof} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {SafeCreation} from "src/messaging/authority/SafeCreation.sol";
-import {SAFE_L2_SINGLETON, SAFE_SINGLETON} from "src/messaging/authority/SafeDeployment.sol";
+import {
+    SAFE_L2_SINGLETON,
+    SAFE_PROXY_FACTORY,
+    SAFE_PROXY_INITCODE_HASH,
+    SAFE_SINGLETON
+} from "src/messaging/authority/SafeDeployment.sol";
 import {OWNER_EOA, OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 
 contract SafeCreationHarness {
@@ -91,6 +97,17 @@ contract SafeCreationTest is Test {
         address[] memory three = new address[](3);
         (three[0], three[1], three[2]) = (OWNER_1, OWNER_2, OWNER_3);
         _expectRecordMismatch(_record(SAFE_A, three, 2));
+    }
+
+    function test_rejectsZeroThreshold() public {
+        // setup refuses a zero threshold, so no such Safe deploys, but its address still derives.
+        bytes memory initializer = _initializer(_pair(OWNER_1, OWNER_2), 0);
+        bytes32 salt = keccak256(abi.encodePacked(keccak256(initializer), uint256(0)));
+        address safe = AddressDerive.create2(SAFE_PROXY_FACTORY, salt, SAFE_PROXY_INITCODE_HASH);
+        vm.expectRevert(SafeCreation.ZeroCreationThreshold.selector);
+        harness.requireCreationRecord(
+            1, _record(safe, _pair(OWNER_1, OWNER_2), 0), SafeCreationProof(SAFE_SINGLETON, initializer, 0)
+        );
     }
 
     function _expectAddressMismatch(SafeAuthorityRecord memory record, SafeCreationProof memory proof) internal {

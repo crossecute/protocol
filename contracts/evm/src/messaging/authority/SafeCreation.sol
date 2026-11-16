@@ -27,13 +27,16 @@ library SafeCreation {
     error CreationAddressMismatch(address safe);
     error SetupCallNotAllowed(address to);
     error CreationRecordMismatch();
+    error ZeroCreationThreshold();
 
     /// @notice Require `record` to hold the owners, in order, and threshold its Safe was created
     ///         with, as `proof` shows.
     /// @dev The Safe address must be the canonical factory's CREATE2 result under the plain or
     ///      the chain-specific salt, so the initializer is the one setup ran with. Owner kinds are
     ///      not checked: they come from the graph. setup's delegatecall is the only other field
-    ///      that can change authority, so it must be absent or exactly setupToL2(SafeL2).
+    ///      that can change authority, so it must be absent or exactly setupToL2(SafeL2). The
+    ///      address derives for any initializer, deployable or not, so a zero threshold, which
+    ///      setup refuses and no signature could vote under, is rejected here.
     function requireCreationRecord(
         uint256 sourceChainId,
         SafeAuthorityRecord memory record,
@@ -60,6 +63,7 @@ library SafeCreation {
                     || keccak256(data) != keccak256(abi.encodeWithSelector(SETUP_TO_L2, SAFE_L2_SINGLETON)))
         ) revert SetupCallNotAllowed(to);
 
+        if (threshold == 0) revert ZeroCreationThreshold();
         if (threshold != record.threshold || owners.length != record.owners.length) revert CreationRecordMismatch();
         for (uint256 i; i < owners.length; ++i) {
             if (owners[i] != record.owners[i].owner) revert CreationRecordMismatch();

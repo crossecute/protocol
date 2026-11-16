@@ -377,7 +377,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         registry.submitAuthority(CHAIN, _a(), _signed(kept, _a(), CHAIN, both), g, new ChildUpdate[](0));
     }
 
-    function test_zeroThresholdCreationIsNotAnEmptyQuorum() public {
+    function test_rejectsZeroThresholdCreation() public {
         // A creation with threshold zero never deploys, but its address derives all the same.
         address[] memory creators = new address[](1);
         creators[0] = vm.addr(DAVE);
@@ -403,7 +403,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
             _change(_a(), head, g, _addOwner(_a(), safe), ALICE),
             g,
             _children(_childUpdate(act, zero), _childUpdate(raised, one)),
-            abi.encodeWithSelector(SafeQuorum.UnknownSafe.selector, safe)
+            abi.encodeWithSelector(SafeCreation.ZeroCreationThreshold.selector)
         );
     }
 

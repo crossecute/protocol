@@ -382,8 +382,9 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         SafeAuthorityGraph.requireCanonical(records);
     }
 
-    /// @dev A child record that names new owners: the 16-owner cap and known kinds. Other group
-    ///      rules follow from Safe setup or applyMutations.
+    /// @dev A child record that names new owners: the 16-owner cap and known kinds. applyMutations
+    ///      checks the other group rules of an ownership change. A creation record is checked for
+    ///      a nonzero threshold only, as a creation proof does not show the Safe deployed.
     function _requireOwnerKinds(SafeAuthorityRecord memory childRecord, uint256 index) private pure {
         if (childRecord.owners.length > MAX_SAFE_OWNERS) revert ChildRecordMismatch(index);
         for (uint256 i; i < childRecord.owners.length; ++i) {
