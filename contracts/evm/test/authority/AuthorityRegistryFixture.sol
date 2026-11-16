@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {AuthorityUpdate, SafeCreationProof} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
@@ -15,14 +14,12 @@ import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegist
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeCreation} from "src/messaging/authority/SafeCreation.sol";
 import {SAFE_PROXY_FACTORY, SAFE_PROXY_INITCODE_HASH, SAFE_SINGLETON} from "src/messaging/authority/SafeDeployment.sol";
-import {OWNER_EOA, OWNER_SAFE, SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {NestedSafeApproval, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {SafeSigs, Sig} from "../signed/SignedFixtures.sol";
 
-/// @dev Test-only hooks. Recognition uses placeholder guard and MultiSend addresses. The vote
-///      mock is not Safe's signature format: signatures are 65-byte ECDSA entries by distinct
-///      ascending EOA owners over the SafeTx hash, and each nested approval is one vote by a
-///      Safe owner whose single ECDSA signature over messageHash is by an EOA owner of the
-///      record _voterRecord returns. Steps 4 and 5 replace both hooks.
+/// @dev Test-only hooks. Recognition uses placeholder guard and MultiSend addresses; step 5
+///      replaces it. Votes are the template's own check over Safe 1.5.0 signature blobs.
 contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
     address internal constant GUARD = address(0x1234);
     address internal constant MULTISEND = address(0x5678);
@@ -57,46 +54,8 @@ contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
         r.update = abi.decode(tx_.data[4:], (AuthorityUpdate));
     }
 
-    function _verifyVotes(
-        uint256 chain,
-        address safe,
-        SafeTxEvidence calldata e,
-        SafeAuthorityRecord memory voters,
-        VoterPositions memory positions
-    ) internal pure override {
-        bytes32 digest = SafeHashes.transactionHash(e.signedSafeTx.safeTx, safe, chain);
-        bytes calldata signatures = e.signedSafeTx.signatures;
-        require(signatures.length % 65 == 0, "fixture signatures");
-        uint256 votes;
-        address last;
-        for (uint256 i; i < signatures.length; i += 65) {
-            address signer = ECDSA.recover(digest, signatures[i:i + 65]);
-            require(signer > last && _isOwner(voters, signer, OWNER_EOA), "wrong current signer");
-            last = signer;
-            ++votes;
-        }
-        last = address(0);
-        for (uint256 i; i < e.nestedApprovals.length; ++i) {
-            NestedSafeApproval calldata approval = e.nestedApprovals[i];
-            require(approval.childSafe > last && _isOwner(voters, approval.childSafe, OWNER_SAFE), "fixture nested");
-            last = approval.childSafe;
-            SafeAuthorityRecord memory child = _voterRecord(positions, approval.childSafe);
-            address signer = ECDSA.recover(approval.messageHash, approval.approval.signatures);
-            require(_isOwner(child, signer, OWNER_EOA), "wrong nested signer");
-            ++votes;
-        }
-        require(votes >= voters.threshold, "wrong current signer");
-    }
-
     function _requireAuthorityContextIdle(uint256, address) internal view override {
         require(!busy, "application context busy");
-    }
-
-    function _isOwner(SafeAuthorityRecord memory r, address owner, uint8 kind) private pure returns (bool) {
-        for (uint256 i; i < r.owners.length; ++i) {
-            if (r.owners[i].owner == owner) return r.owners[i].kind == kind;
-        }
-        return false;
     }
 }
 
@@ -148,23 +107,27 @@ abstract contract AuthorityRegistryTestBase is Test {
         tx_.nonce = nonce;
     }
 
-    /// @dev One ECDSA entry per key, ordered by signer address as the vote mock requires.
+    /// @dev A Safe 1.5.0 signature blob over the SafeTx hash, with no nested approvals.
+    function _signed(SafeTx memory tx_, address safe, uint256 chain, Sig[] memory sigs)
+        internal
+        pure
+        returns (SafeTxEvidence memory)
+    {
+        bytes memory signatures = SafeSigs.blob(sigs, SafeHashes.transactionHash(tx_, safe, chain));
+        return SafeTxEvidence(SignedSafeTx(tx_, signatures), new NestedSafeApproval[](0));
+    }
+
+    /// @dev One ECDSA entry per key.
     function _sign(SafeTx memory tx_, address safe, uint256 chain, uint256[] memory keys)
         internal
         pure
         returns (SafeTxEvidence memory)
     {
-        bytes32 digest = SafeHashes.transactionHash(tx_, safe, chain);
-        for (uint256 i = 1; i < keys.length; ++i) {
-            for (uint256 j = i; j != 0 && vm.addr(keys[j]) < vm.addr(keys[j - 1]); --j) {
-                (keys[j], keys[j - 1]) = (keys[j - 1], keys[j]);
-            }
-        }
-        bytes memory signatures;
+        Sig[] memory sigs = new Sig[](keys.length);
         for (uint256 i; i < keys.length; ++i) {
-            signatures = bytes.concat(signatures, _ecdsa(keys[i], digest));
+            sigs[i] = SafeSigs.eoa(keys[i]);
         }
-        return SafeTxEvidence(SignedSafeTx(tx_, signatures), new NestedSafeApproval[](0));
+        return _signed(tx_, safe, chain, sigs);
     }
 
     function _sign(SafeTx memory tx_, address safe, uint256 chain, uint256 key)
@@ -175,17 +138,24 @@ abstract contract AuthorityRegistryTestBase is Test {
         return _sign(tx_, safe, chain, _keys(key));
     }
 
-    /// @dev Adds a mock vote by Safe owner `child`, signed by `key` (one of child's owners).
-    function _withNested(SafeTxEvidence memory e, address child, uint256 key)
+    /// @dev Signed by Safe owner `child` alone, through child's EOA owner `key`.
+    function _signByChild(SafeTx memory tx_, address safe, address child, uint256 key)
         internal
         pure
         returns (SafeTxEvidence memory)
     {
-        bytes32 messageHash = keccak256(abi.encode(e.signedSafeTx.safeTx.data, child));
-        SafeTx memory empty;
-        e.nestedApprovals = new NestedSafeApproval[](1);
-        e.nestedApprovals[0] = NestedSafeApproval(child, messageHash, SignedSafeTx(empty, _ecdsa(key, messageHash)));
-        return e;
+        bytes32 digest = SafeHashes.transactionHash(tx_, safe, CHAIN);
+        return _signed(tx_, safe, CHAIN, SafeSigs.one(_inline(child, digest, SafeSigs.one(SafeSigs.eoa(key)))));
+    }
+
+    /// @dev Safe owner `child`'s entry over `parentHash`, carrying child's own blob inline.
+    function _inline(address child, bytes32 parentHash, Sig[] memory childSigs) internal pure returns (Sig memory) {
+        return SafeSigs.nested(child, SafeSigs.blob(childSigs, _nestedHash(parentHash, child)));
+    }
+
+    /// @dev The Safe message hash `child` signs to approve `parentHash`.
+    function _nestedHash(bytes32 parentHash, address child) internal pure returns (bytes32) {
+        return SafeHashes.messageHash(abi.encode(parentHash), child, CHAIN);
     }
 
     function _childUpdate(SafeTxEvidence memory e, AuthorityGraph memory childGraph)
@@ -209,10 +179,5 @@ abstract contract AuthorityRegistryTestBase is Test {
     function _keys(uint256 a, uint256 b) internal pure returns (uint256[] memory keys) {
         keys = new uint256[](2);
         (keys[0], keys[1]) = (a, b);
-    }
-
-    function _ecdsa(uint256 key, bytes32 digest) private pure returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
-        return abi.encodePacked(r, s, v);
     }
 }

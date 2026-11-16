@@ -14,6 +14,7 @@ import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
 import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegistryTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
+import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {SafeOwner, SafeAuthorityRecord, OWNER_EOA} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityRegistryFixture, AuthorityRegistryTestBase} from "./AuthorityRegistryFixture.sol";
@@ -185,7 +186,7 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
     function testNewOwnersCannotSelfInstall() public {
         AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), BOB_KEY, 10, CHAIN);
-        vm.expectRevert("wrong current signer");
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(BOB_KEY)));
         _submit(registry, CHAIN, e, vm.addr(BOB_KEY));
     }
 
@@ -215,7 +216,8 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
         // Chain 10's own predecessor and graph hash, signed under chain 1's Safe domain.
         AuthorityUpdate memory u = _update(registry, 10, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
-        vm.expectRevert("wrong current signer");
+        // The signature recovers some other address under chain 10's domain.
+        vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
         _submit(registry, 10, e, vm.addr(BOB_KEY));
     }
 
@@ -265,7 +267,7 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
 
     function testActivationMustBeSignedByCreationOwners() public {
         AuthorityRegistryFixture other = new AuthorityRegistryFixture();
-        vm.expectRevert("wrong current signer");
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(BOB_KEY)));
         _submit(other, CHAIN, _activation(CHAIN, ALICE_KEY, BOB_KEY), vm.addr(ALICE_KEY));
     }
 

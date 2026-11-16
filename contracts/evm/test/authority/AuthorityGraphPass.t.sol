@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
+import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {AuthorityUpdate, SafeCreationProof} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
@@ -10,8 +12,11 @@ import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegist
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeCreation} from "src/messaging/authority/SafeCreation.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
+import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol";
 import {OWNER_EOA, OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {NestedSafeApproval, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {SafeSigs, Sig} from "../signed/SignedFixtures.sol";
 import {AuthorityRegistryFixture, AuthorityRegistryTestBase} from "./AuthorityRegistryFixture.sol";
 
 /// @dev Root A = {alice, B}, B = {bob, C}, C = {carol}, all threshold 1; D = {dave} is outside
@@ -194,7 +199,11 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         // dave owns C only at A's position for C.
         (SafeTxEvidence memory byDave, AuthorityGraph memory g1) = _b1ByC(DAVE);
         g.nodes[1].position = _hash(byDave, _b());
-        _expectSelectA(g, _children(_cActUpdate(), _childUpdate(byDave, g1)), bytes("wrong nested signer"));
+        _expectSelectA(
+            g,
+            _children(_cActUpdate(), _childUpdate(byDave, g1)),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _c(), vm.addr(DAVE))
+        );
         // Without C's activation, the position B's graph names for C is unproven.
         (SafeTxEvidence memory byCarol,) = _b1ByC(CAROL);
         g.nodes[1].position = _hash(byCarol, _b());
@@ -211,8 +220,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         AuthorityGraph memory g1 = _graph(_rB1(), _node(_rC1(), _pC0()));
         AuthorityUpdate memory u = AuthorityUpdate(_pB0(), AuthorityUpdateEncoding.graphHash(CHAIN, g1));
         Call[] memory swap = _swap(_b(), SENTINEL, vm.addr(BOB), vm.addr(ERIN));
-        SafeTxEvidence memory e =
-            _withNested(_sign(_ownershipTx(_b(), u, swap, 7), _b(), CHAIN, new uint256[](0)), _c(), CAROL);
+        SafeTxEvidence memory e = _signByChild(_ownershipTx(_b(), u, swap, 7), _b(), _c(), CAROL);
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(e, _b())), _node(_rC1(), _pC1())),
             _children(_cActUpdate(), _childUpdate(e, g1)),
@@ -234,8 +242,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         Call[] memory removal = new Call[](1);
         removal[0] = Call(_b(), 0, abi.encodeWithSelector(AuthorityUpdateEncoding.REMOVE_OWNER, vm.addr(BOB), _c(), 1));
         AuthorityUpdate memory u = AuthorityUpdate(_pB0(), AuthorityUpdateEncoding.graphHash(CHAIN, g1));
-        SafeTxEvidence memory byC =
-            _withNested(_sign(_ownershipTx(_b(), u, removal, ++nonce), _b(), CHAIN, new uint256[](0)), _c(), CAROL);
+        SafeTxEvidence memory byC = _signByChild(_ownershipTx(_b(), u, removal, ++nonce), _b(), _c(), CAROL);
         AuthorityGraph memory g = _graph(_rA0(), _node(g1.nodes[0].record, _hash(byC, _b())));
         _expectSelectA(
             g,
@@ -246,6 +253,186 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         SafeTxEvidence memory byBob = _sign(_ownershipTx(_b(), u, removal, nonce), _b(), CHAIN, BOB);
         g.nodes[1].position = _hash(byBob, _b());
         _selectA(g, _children(_childUpdate(byBob, g1)));
+    }
+
+    /* =================================== T24 =================================== */
+
+    function test_adoptionCountsChildUnderItsNewPosition() public {
+        (SafeTxEvidence memory b1, AuthorityGraph memory g1) = _b1(BOB);
+        AuthorityGraph memory g = _graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC0(), _pC0()));
+        SafeTx memory adoption = _selectATx(g);
+        // bob left B in the update A adopts, so bob no longer signs for B.
+        _expectSubmitA(
+            _signByChild(adoption, _a(), _b(), BOB),
+            g,
+            _children(_childUpdate(b1, g1)),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _b(), vm.addr(BOB))
+        );
+        SafeTxEvidence memory byErin = _signByChild(adoption, _a(), _b(), ERIN);
+        registry.submitAuthority(CHAIN, _a(), byErin, g, _children(_childUpdate(b1, g1)));
+        assertEq(registry.selection(CHAIN, _a()).updateHead, _hash(byErin, _a()));
+    }
+
+    function test_keptPositionCountsChildUnderItsStoredRecord() public {
+        SafeTx memory kept = _selectATx(_graphA0());
+        _expectSubmitA(
+            _signByChild(kept, _a(), _b(), ERIN),
+            _graphA0(),
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _b(), vm.addr(ERIN))
+        );
+        registry.submitAuthority(CHAIN, _a(), _signByChild(kept, _a(), _b(), BOB), _graphA0(), new ChildUpdate[](0));
+    }
+
+    function test_newRootSafeOwnerCannotVoteItsInstallation() public {
+        AuthorityGraph memory g = _graphWithD(_pD0(), _rD0());
+        AuthorityUpdate memory u =
+            AuthorityUpdate(registry.selection(CHAIN, _a()).updateHead, AuthorityUpdateEncoding.graphHash(CHAIN, g));
+        SafeTx memory install = _ownershipTx(_a(), u, _addOwner(_a(), _d()), ++nonce);
+        // D is proven and named by the new graph, but the root votes under its stored record.
+        _expectSubmitA(
+            _signByChild(install, _a(), _d(), DAVE),
+            g,
+            _children(_dActUpdate()),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _a(), _d())
+        );
+    }
+
+    /* ================================ vote check ================================ */
+
+    function test_eoaOwnerCannotVoteThroughContractSignature() public {
+        SafeTx memory kept = _selectATx(_graphA0());
+        Sig[] memory sigs = SafeSigs.one(_inline(vm.addr(ALICE), _txHash(kept), SafeSigs.one(SafeSigs.eoa(ALICE))));
+        _expectSubmitA(
+            _signed(kept, _a(), CHAIN, sigs),
+            _graphA0(),
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _a(), vm.addr(ALICE))
+        );
+    }
+
+    function test_voterAtDepthTwoCountsUnderRootGraphPosition() public {
+        _adoptC1();
+        AuthorityGraph memory g = _graph(_rA0(), _node(_rB0(), _pB0()), _node(_rC1(), _pC1()));
+        SafeTx memory kept = _selectATx(g);
+        // A by B by C: C counts under the position A's graph names, where dave replaced carol.
+        _expectSubmitA(
+            _signed(kept, _a(), CHAIN, _byBByC(kept, CAROL)),
+            g,
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, _c(), vm.addr(CAROL))
+        );
+        registry.submitAuthority(CHAIN, _a(), _signed(kept, _a(), CHAIN, _byBByC(kept, DAVE)), g, new ChildUpdate[](0));
+    }
+
+    function test_emptyNestedSignatureNeedsOneSignedApproval() public {
+        SafeTx memory kept = _selectATx(_graphA0());
+        bytes32 digest = _txHash(kept);
+        SafeTxEvidence memory e = _signed(kept, _a(), CHAIN, SafeSigs.one(SafeSigs.nested(_b(), "")));
+        _expectSubmitA(
+            e,
+            _graphA0(),
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeQuorum.MissingNestedSafeApproval.selector, _b(), _nestedHash(digest, _b()))
+        );
+        NestedSafeApproval memory approval =
+            SafeSigs.approval(_b(), digest, CHAIN, SafeSigs.one(SafeSigs.eoa(BOB)), address(0x5161));
+        e.nestedApprovals = new NestedSafeApproval[](2);
+        (e.nestedApprovals[0], e.nestedApprovals[1]) = (approval, approval);
+        _expectSubmitA(
+            e,
+            _graphA0(),
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeQuorum.DuplicateNestedSafeApproval.selector, _b(), _nestedHash(digest, _b()))
+        );
+        e.nestedApprovals = new NestedSafeApproval[](1);
+        e.nestedApprovals[0] = approval;
+        registry.submitAuthority(CHAIN, _a(), e, _graphA0(), new ChildUpdate[](0));
+    }
+
+    function test_thresholdCountsDistinctOwners() public {
+        AuthorityGraph memory g =
+            _graph(SafeAuthorityRecord(_a(), 2, _rA0().owners), _node(_rB0(), _pB0()), _node(_rC0(), _pC0()));
+        Call[] memory raise = new Call[](1);
+        raise[0] = Call(_a(), 0, abi.encodeWithSelector(AuthorityUpdateEncoding.CHANGE_THRESHOLD, 2));
+        // The raise itself is voted under the stored threshold of one.
+        bytes32 head = registry.selection(CHAIN, _a()).updateHead;
+        registry.submitAuthority(CHAIN, _a(), _change(_a(), head, g, raise, ALICE), g, new ChildUpdate[](0));
+
+        SafeTx memory kept = _selectATx(g);
+        SafeTxEvidence memory byAlice = _sign(kept, _a(), CHAIN, ALICE);
+        _expectSubmitA(
+            byAlice,
+            g,
+            new ChildUpdate[](0),
+            abi.encodeWithSelector(SafeSignaturesUtils.SignaturesTooShort.selector, _a())
+        );
+        SafeTxEvidence memory twice = _sign(kept, _a(), CHAIN, ALICE);
+        twice.signedSafeTx.signatures = bytes.concat(byAlice.signedSafeTx.signatures, byAlice.signedSafeTx.signatures);
+        _expectSubmitA(
+            twice, g, new ChildUpdate[](0), abi.encodeWithSelector(SafeQuorum.SignersNotAscending.selector, _a())
+        );
+        Sig[] memory both =
+            SafeSigs.two(SafeSigs.eoa(ALICE), _inline(_b(), _txHash(kept), SafeSigs.one(SafeSigs.eoa(BOB))));
+        registry.submitAuthority(CHAIN, _a(), _signed(kept, _a(), CHAIN, both), g, new ChildUpdate[](0));
+    }
+
+    function test_zeroThresholdCreationIsNotAnEmptyQuorum() public {
+        // A creation with threshold zero never deploys, but its address derives all the same.
+        address[] memory creators = new address[](1);
+        creators[0] = vm.addr(DAVE);
+        SafeCreationProof memory creation = _creation(creators, 0);
+        address safe = _safeAddress(creation);
+        AuthorityGraph memory zero = _graph(SafeAuthorityRecord(safe, 0, _list(_eoa(DAVE))));
+        SafeTxEvidence memory act = _signed(_activationTx(CHAIN, zero, creation), safe, CHAIN, new Sig[](0));
+        // Unsigned, it then raises its threshold to one, a record A's canonical check accepts.
+        AuthorityGraph memory one = _graph(_rec(safe, _list(_eoa(DAVE))));
+        Call[] memory raise = new Call[](1);
+        raise[0] = Call(safe, 0, abi.encodeWithSelector(AuthorityUpdateEncoding.CHANGE_THRESHOLD, 1));
+        AuthorityUpdate memory u = AuthorityUpdate(_hash(act, safe), AuthorityUpdateEncoding.graphHash(CHAIN, one));
+        SafeTxEvidence memory raised = _signed(_ownershipTx(safe, u, raise, 1), safe, CHAIN, new Sig[](0));
+
+        AuthorityGraph memory g;
+        g.nodes = new AuthorityNode[](4);
+        g.nodes[0] = _node(_rec(_a(), _list(_sub(safe), _eoa(ALICE), _sub(_b()))), bytes32(0));
+        g.nodes[1] = _node(one.nodes[0].record, _hash(raised, safe));
+        g.nodes[2] = _node(_rB0(), _pB0());
+        g.nodes[3] = _node(_rC0(), _pC0());
+        bytes32 head = registry.selection(CHAIN, _a()).updateHead;
+        _expectSubmitA(
+            _change(_a(), head, g, _addOwner(_a(), safe), ALICE),
+            g,
+            _children(_childUpdate(act, zero), _childUpdate(raised, one)),
+            abi.encodeWithSelector(SafeQuorum.UnknownSafe.selector, safe)
+        );
+    }
+
+    /// @dev B's entry over A's `tx_`, carrying C's entry signed by C's owner `key`.
+    function _byBByC(SafeTx memory tx_, uint256 key) internal pure returns (Sig[] memory) {
+        bytes32 digest = _txHash(tx_);
+        Sig memory byC = _inline(_c(), _nestedHash(digest, _b()), SafeSigs.one(SafeSigs.eoa(key)));
+        return SafeSigs.one(_inline(_b(), digest, SafeSigs.one(byC)));
+    }
+
+    /// @dev A's selectAuthority of `g` after its stored head, unsigned.
+    function _selectATx(AuthorityGraph memory g) internal returns (SafeTx memory) {
+        AuthorityUpdate memory u =
+            AuthorityUpdate(registry.selection(CHAIN, _a()).updateHead, AuthorityUpdateEncoding.graphHash(CHAIN, g));
+        return _selectionTx(u, ++nonce);
+    }
+
+    function _txHash(SafeTx memory tx_) internal pure returns (bytes32) {
+        return SafeHashes.transactionHash(tx_, _a(), CHAIN);
+    }
+
+    function _expectSubmitA(
+        SafeTxEvidence memory e,
+        AuthorityGraph memory g,
+        ChildUpdate[] memory children,
+        bytes memory reason
+    ) internal {
+        vm.expectRevert(reason);
+        registry.submitAuthority(CHAIN, _a(), e, g, children);
     }
 
     /* ============================ strict child updates ========================== */
@@ -492,7 +679,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
         g = _graph(_rB1(), _node(_rC0(), _pC0()));
         AuthorityUpdate memory u = AuthorityUpdate(_pB0(), AuthorityUpdateEncoding.graphHash(CHAIN, g));
         Call[] memory swap = _swap(_b(), SENTINEL, vm.addr(BOB), vm.addr(ERIN));
-        e = _withNested(_sign(_ownershipTx(_b(), u, swap, 7), _b(), CHAIN, new uint256[](0)), _c(), key);
+        e = _signByChild(_ownershipTx(_b(), u, swap, 7), _b(), _c(), key);
     }
 
     /// @dev B swaps erin for dave after _b1.
@@ -549,9 +736,7 @@ contract AuthorityGraphPassTest is AuthorityRegistryTestBase {
     }
 
     function _expectSelectA(AuthorityGraph memory g, ChildUpdate[] memory children, bytes memory reason) internal {
-        SafeTxEvidence memory e = _select(_a(), registry.selection(CHAIN, _a()).updateHead, g, ALICE);
-        vm.expectRevert(reason);
-        registry.submitAuthority(CHAIN, _a(), e, g, children);
+        _expectSubmitA(_select(_a(), registry.selection(CHAIN, _a()).updateHead, g, ALICE), g, children, reason);
     }
 
     function _select(address safe, bytes32 previous, AuthorityGraph memory g, uint256 key)

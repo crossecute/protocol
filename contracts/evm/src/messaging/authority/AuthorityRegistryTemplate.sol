@@ -9,7 +9,8 @@ import {
 } from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {Call} from "../Call.sol";
 import {SafeAuthorityGraph} from "../signed/SafeAuthorityGraph.sol";
-import {OWNER_SAFE, SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
+import {OwnerSource, SafeQuorum} from "../signed/SafeQuorum.sol";
+import {OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "../signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "../signed/types/SignedDispatchTypes.sol";
 import {AuthorityEntry, AuthorityGraph, AuthorityNode, MAX_SAFE_OWNERS} from "./AuthorityGraph.sol";
 import {AuthorityMutations} from "./AuthorityMutations.sol";
@@ -19,9 +20,9 @@ import {IAuthorityRegistry} from "./IAuthorityRegistry.sol";
 import {SafeCreation} from "./SafeCreation.sol";
 
 /// @notice Non-deployable linked-update state-machine template for #109.
-/// @dev Owns graph authentication: canonical structure, each update kind's root record and the
-///      flat child-update pass. Source-call recognition, votes and context locking are abstract
-///      hooks. Current receivers do not read this state. Concrete integration must freeze the
+/// @dev Owns graph authentication: canonical structure, each update kind's root record, the
+///      flat child-update pass and every update's votes. Source-call recognition and context
+///      locking are abstract hooks. Current receivers do not read this state. Concrete integration must freeze the
 ///      shared context throughout application execution. This is absent from deployment
 ///      scripts.
 abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
@@ -56,11 +57,19 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         uint256 count;
     }
 
-    /// @dev Where a vote hook finds nested Safe voters: the voting update's new graph entries,
+    /// @dev Where the vote check finds nested Safe voters: the voting update's new graph entries,
     ///      each matched against proven rows.
     struct VoterPositions {
         ProvenTable table;
         AuthorityEntry[] entries;
+    }
+
+    /// @dev The owner source of one vote check: `voters` for the voting Safe, `positions` for
+    ///      every other Safe.
+    struct VoteContext {
+        address safe;
+        SafeAuthorityRecord voters;
+        VoterPositions positions;
     }
 
     mapping(uint256 => mapping(address => AuthoritySelection)) private _selections;
@@ -144,7 +153,9 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         if (AuthorityUpdateEncoding.graphHash(sourceChainId, newEntries) != update.newAuthorityHash) {
             revert ReplacementHashMismatch();
         }
-        _authenticate(sourceChainId, current.authorityHash, recognized, evidence, newGraph, newEntries, childUpdates);
+        _authenticate(
+            sourceChainId, current.authorityHash, updateHash, recognized, evidence, newGraph, newEntries, childUpdates
+        );
 
         // Validation precedes writes. Any revert rolls back the lock too.
         _store(newGraph, newEntries, update.newAuthorityHash);
@@ -182,6 +193,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     function _authenticate(
         uint256 sourceChainId,
         bytes32 currentAuthorityHash,
+        bytes32 updateHash,
         RecognizedUpdate memory recognized,
         SafeTxEvidence calldata evidence,
         AuthorityGraph calldata newGraph,
@@ -230,7 +242,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         for (uint256 i = seeds; i < table.count; ++i) {
             if (!table.rows[i].used) revert UnusedChildUpdate(i - seeds);
         }
-        _verifyVotes(sourceChainId, records[0].safe, evidence, voters, VoterPositions(table, newEntries));
+        _verifyVotes(sourceChainId, records[0].safe, updateHash, evidence, voters, VoterPositions(table, newEntries));
     }
 
     /// @dev childUpdates[index] must extend a proven position of its Safe, or be its activation,
@@ -277,7 +289,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
 
         bytes32 position = SafeHashes.transactionHash(child.evidence.signedSafeTx.safeTx, safe, sourceChainId);
         if (_find(table, safe, position) != table.count) revert RepeatedChildUpdate(index);
-        _verifyVotes(sourceChainId, safe, child.evidence, voters, VoterPositions(table, entries));
+        _verifyVotes(sourceChainId, safe, position, child.evidence, voters, VoterPositions(table, entries));
         table.rows[table.count++] = ProvenPosition(safe, position, newRecordHash, newRecord, fromStored, false);
     }
 
@@ -286,7 +298,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     /// @dev Marks the row used. A Safe owner the update removes has no named position, so it
     ///      cannot vote.
     function _voterRecord(VoterPositions memory positions, address safe)
-        internal
+        private
         pure
         returns (SafeAuthorityRecord memory)
     {
@@ -300,6 +312,60 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
             }
         }
         revert UnprovenVoter(safe);
+    }
+
+    /// @dev Full portable quorum of `voters` over `safeTxHash`, safe's SafeTx in evidence, as a
+    ///      Safe 1.5.0 signature blob. Nested Safe voters, at any depth, count under
+    ///      _voterRecord(positions, ...).
+    function _verifyVotes(
+        uint256 sourceChainId,
+        address safe,
+        bytes32 safeTxHash,
+        SafeTxEvidence calldata evidence,
+        SafeAuthorityRecord memory voters,
+        VoterPositions memory positions
+    ) private view {
+        VoteContext memory votes = VoteContext(safe, voters, positions);
+        bytes32 context;
+        assembly ("memory-safe") {
+            context := votes
+        }
+        SafeQuorum.verify(
+            OwnerSource(context, sourceChainId, _openVoter, _isVoterOwner),
+            safe,
+            safeTxHash,
+            evidence.signedSafeTx.signatures,
+            evidence.nestedApprovals
+        );
+    }
+
+    /// @dev `OwnerSource.open` over a vote context: the handle is the voter record's memory
+    ///      pointer. The voting Safe counts under `voters` wherever a blob names it, so never
+    ///      under its own new record (T6).
+    function _openVoter(bytes32 context, address safe) private pure returns (bytes32 owners, uint256 threshold) {
+        VoteContext memory votes;
+        assembly ("memory-safe") {
+            votes := context
+        }
+        SafeAuthorityRecord memory voterRecord = safe == votes.safe ? votes.voters : _voterRecord(votes.positions, safe);
+        assembly ("memory-safe") {
+            owners := voterRecord
+        }
+        threshold = voterRecord.threshold;
+    }
+
+    /// @dev `OwnerSource.isOwner` over a voter record. The kind must match exactly: an EOA-kind
+    ///      owner never counts through a contract signature (Y10).
+    function _isVoterOwner(bytes32 owners, address signer, uint8 kind) private pure returns (bool) {
+        SafeAuthorityRecord memory voterRecord;
+        assembly ("memory-safe") {
+            voterRecord := owners
+        }
+        SafeOwner[] memory list = voterRecord.owners;
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i].owner == signer) return list[i].kind == kind;
+        }
+        return false;
     }
 
     /// @dev #108's canonical acyclic traversal plus the 16-owner cap (D87).
@@ -346,16 +412,6 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         view
         virtual
         returns (RecognizedUpdate memory);
-
-    /// @dev Full portable quorum of `voters` over safe's SafeTx in evidence. Nested Safe voters,
-    ///      at any depth, count under _voterRecord(positions, ...).
-    function _verifyVotes(
-        uint256 sourceChainId,
-        address safe,
-        SafeTxEvidence calldata evidence,
-        SafeAuthorityRecord memory voters,
-        VoterPositions memory positions
-    ) internal view virtual;
 
     /// @dev Concrete integration must share application-execution locking across providers.
     function _requireAuthorityContextIdle(uint256 sourceChainId, address sourceSafe) internal view virtual;
