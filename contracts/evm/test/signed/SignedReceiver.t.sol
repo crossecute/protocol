@@ -7,7 +7,7 @@ import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {IReceiverInit, ReceiverBase, ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
-import {SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
@@ -352,7 +352,7 @@ contract SignedReceiverTest is Test {
         SafeTxEvidence memory evidence = _message(_here(receiver), _calls("m"));
         evidence.signedSafeTx.safeTx.data =
             abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("n"), new bytes[](0)));
-        vm.expectPartialRevert(SafeAuthority.NotAnOwner.selector);
+        vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
         ISignedReceiver(receiver).submitMessage(evidence);
 
         evidence = _message(_here(receiver), _calls("m"));
