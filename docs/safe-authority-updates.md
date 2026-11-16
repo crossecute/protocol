@@ -9,8 +9,8 @@ Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
 
 **Status:** design plus non-deployable scaffold. Current receivers/guards are not
 wired to the new interfaces. The source template reverts; the registry template
-authenticates graphs and child updates but leaves source-call recognition and vote
-checking to abstract hooks. No production rotation or deployment is claimed. The
+authenticates graphs, child updates and votes but leaves source-call recognition to
+an abstract hook. No production rotation or deployment is claimed. The
 scaffold types and interfaces follow this file. The
 [verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
 lists what remains.
@@ -385,7 +385,9 @@ keccak256(keccak256(initializer), saltNonce, sourceChainId); a match on either p
 the initializer. The initializer must be Safe's setup with to and data either empty
 or exactly SafeToL2Setup.setupToL2 with the pinned L2 singleton, because setup's
 delegatecall could otherwise change owners, modules or the guard. The creation record
-is setup's owners and threshold, with owner kinds from the graph. The fallback
+is setup's owners and threshold, with owner kinds from the graph. A zero threshold
+is rejected: setup refuses it, so no such Safe deploys, but the address derives for
+any initializer and no signature could vote under it. The fallback
 handler and payment fields carry no authority and are not checked here. A creation
 proof proves a starting configuration, not deployment, current authority or
 activation. Other chain-specific derivations need explicit support, not substitution
@@ -445,6 +447,12 @@ warn signers who add an address that may be an undeployed Safe.
 Reject portable v=1 and contract signatures for EOA-kind owners,
 including EIP-7702 delegated EOAs. Do not flatten quorums or count a signer twice
 within one Safe's threshold. Cache only fully verified exact-message claims.
+
+The portable check is #108's signature walk, shared with its receiver; only the
+source of each Safe's owners and threshold differs. As there, two nested approvals
+for the same child and message reject, and one that no empty nested signature needs
+is ignored: it is never counted or stored, and a signature blob can carry unread
+bytes in any case. A Safe with a zero threshold has no quorum.
 
 Each Safe has at most 16 immediate owners: in every graph and child record and at
 every step of an ownership change, so a Safe created with more cannot activate. No
