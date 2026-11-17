@@ -11,6 +11,7 @@ import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {MultiSendCallOnly} from "safe-smart-account/libraries/MultiSendCallOnly.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {SafeProxyFactory} from "safe-smart-account/proxies/SafeProxyFactory.sol";
+import {SourceAuthorityGuard} from "../src/authority/SourceAuthorityGuard.sol";
 import {CrossecuteGuardHarness} from "./CrossecuteGuardHarness.sol";
 
 /// @dev Real Safe 1.5.0 proxies, signed with real owner keys. Nothing in the signing or execution
@@ -45,7 +46,17 @@ abstract contract SafeFixture is Test {
         multiSend = new MultiSendCallOnly();
         signMessageLib = new SignMessageLib();
         allowPolicy = new AllowPolicy();
-        guard = new CrossecuteGuardHarness(0, 1 days);
+        guard = new CrossecuteGuardHarness(0, 1 days, _pins());
+    }
+
+    function _pins() internal view returns (SourceAuthorityGuard.Pins memory) {
+        return SourceAuthorityGuard.Pins({
+            multiSendCallOnly: address(multiSend),
+            signMessageLib: address(signMessageLib),
+            singleton: address(singleton),
+            singletonL2: address(0),
+            fallbackHandler: address(handler)
+        });
     }
 
     function _newSafe(address[] memory owners, uint256 threshold) internal returns (Safe safe) {
@@ -204,6 +215,17 @@ abstract contract SafeFixture is Test {
 
     function _multiSendEntry(address to, bytes memory data) internal pure returns (bytes memory) {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
+    }
+
+    /// @dev Owner-side policy only: any CALL, and the two delegatecall targets the tests use.
+    function _defaultConfig() internal view returns (SafePolicyGuard.Configuration[] memory configs) {
+        configs = new SafePolicyGuard.Configuration[](3);
+        configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(allowPolicy));
+        configs[1] =
+            _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
+        configs[2] = _config(
+            address(signMessageLib), SignMessageLib.signMessage.selector, Operation.DELEGATECALL, address(allowPolicy)
+        );
     }
 
     function _config(address target, bytes4 selector, Operation operation, address policy)

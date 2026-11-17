@@ -22,4 +22,15 @@ library GuardDiscovery {
         guard = address(uint160(word));
         require(guard.code.length != 0, NoGuard(safe));
     }
+
+    /// @dev One word of `safe`'s storage through `getStorageAt`, decoded strictly like the guard
+    ///      slot. Separate from `transactionGuard` so deployed transmitters' bytecode is unchanged.
+    function storageWord(address safe, uint256 slot) internal view returns (uint256) {
+        (bool success, bytes memory reply) =
+            safe.staticcall(abi.encodeWithSignature("getStorageAt(uint256,uint256)", slot, 1));
+        require(success && reply.length == 96, MalformedGuardSlot(safe));
+        (uint256 offset, uint256 length, uint256 word) = abi.decode(reply, (uint256, uint256, uint256));
+        require(offset == 32 && length == 32, MalformedGuardSlot(safe));
+        return word;
+    }
 }

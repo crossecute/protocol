@@ -434,7 +434,7 @@ contract SendMessageTest is GuardTestBase {
     /// @dev A module swaps the guard before the transmitter discovers it. The transmitter reads the
     ///      new guard, which holds no record, and rejects.
     function test_discovery_guardChangedBeforeConsumption() public {
-        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days);
+        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days, _pins());
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
         _exec(
             safe,
@@ -455,7 +455,7 @@ contract SendMessageTest is GuardTestBase {
     /// @dev Safe 1.5.0 sends the post-hook to the guard it read before execution, so a guard swapped
     ///      out during a `sendMessage` still clears its own record.
     function test_guardSwappedDuringSendMessage_oldGuardClears() public {
-        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days);
+        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days, _pins());
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
         _exec(
             safe,
