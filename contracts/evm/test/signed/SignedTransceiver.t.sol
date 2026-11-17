@@ -24,8 +24,9 @@ import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 import {Sink} from "test/signed/SignedReceiver.t.sol";
 
 /// @dev The transceiver's half of signed mode (#108): the mode chosen at creation from the
-///      owner's guard, the graph in the conduit salt, and the destination's checks on a
-///      `SIGNED_BOOTSTRAP` before it creates and initializes the receiver.
+///      owner's guard, the shared conduit salt, the bootstrap kind held to the conduit's mode,
+///      and the destination's checks on a `SIGNED_BOOTSTRAP` before it creates and initializes
+///      the receiver.
 contract SignedTransceiverTest is HyperlaneFixture {
     bytes32 constant SALT = keccak256("user salt");
 

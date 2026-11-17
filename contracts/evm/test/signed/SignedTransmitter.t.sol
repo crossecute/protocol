@@ -193,7 +193,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return mailbox.sent(mailbox.sentLength() - 1).body;
     }
 
-    /// @notice Sign and execute the default bootstrap, returning its source evidence.
+    /// @notice Sign and execute the default bootstrap, returning its source transaction.
     /// @dev Later relay and send tests need a reachable destination established through the
     ///      real signed path.
     function _bootstrap() internal returns (SafeTxEvidence memory evidence) {
@@ -271,8 +271,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(before - address(st).balance, quote);
     }
 
-    /// @notice Call signed bootstrap without guard-staged evidence.
-    /// @dev An owner-address call alone must not manufacture the signatures the receiver needs.
+    /// @notice Call signed bootstrap without a guard-staged record.
+    /// @dev Only a signed owner transaction stages one, so a call from the owner address alone
+    ///      cannot bootstrap.
     function test_aBootstrapWithoutAStagedRecordReverts() public {
         bytes memory data = _bootstrapCall();
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));

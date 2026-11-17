@@ -11,9 +11,9 @@ import {ExecutionLeaf, SafeTxEvidence} from "src/messaging/signed/types/SignedDi
 import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
 
 /// @title SignedTransmitter
-/// @notice A transmitter that can be created in signed mode (#108): every owner send and
-///         bootstrap carries the owner Safe's signed transaction, and anyone can relay a leaf of
-///         a root the Safe registered.
+/// @notice A transmitter that can be created in signed mode (#108): every owner send carries
+///         the owner Safe's signed transaction, a bootstrap carries its live authority records,
+///         and anyone can relay a leaf of a root the Safe registered.
 ///
 /// @dev Plain until `initializeSigned`, which the transceiver calls in `createTransmitter` when
 ///      the owner's guard advertises `ICrossecuteGuard`. In signed mode the owner Safe is the

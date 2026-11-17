@@ -75,8 +75,8 @@ Verification and replay:
   the signed Safe domain and target without provider metadata. In signed mode, a bare
   call from the local address matching `sourceTransmitter` grants no authority to
   `execute`, `commit`, `cancel`, or `revokeGateway`. Protected self-calls must run
-  within verified signed execution, including signed bootstrap setup, or through
-  `finalize` of a commitment established by signed authorization. Existing
+  within verified signed execution or bootstrap setup calls, or through `finalize` of a
+  commitment established by signed authorization. Existing
   function-specific checks still apply.
 - **D10.** Each receiver starts Merkle execution at `nextNonce = 0` and requires `leaf.localNonce == nextNonce` for a
   new execution. It records the execution ID, which excludes delivery attributes, and
@@ -160,7 +160,8 @@ Authority:
   signed registration.
 - **C5. Source-side policy does not gate destination effects.** Accepted. Under D19, valid
   Safe authorization is sufficient for dispatch execution even if the source transaction has
-  yet to execute. A bootstrap needs source execution (D22). Source guard policy and delays apply to source execution.
+  yet to execute. A bootstrap needs source execution (D22). Source guard policy and delays
+  apply to source execution.
 - **C6. Destination execution after signing.** Before each signer signs, proposal tooling
   must show a notice and require acknowledgment to continue. Once the signed bundle meets
   the destination quorum, anyone with the complete evidence can submit it directly without
@@ -564,8 +565,8 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 
 | # | Check |
 | --- | --- |
-| T1 | Only the owner Safe may call `sendMessage` or `registerRoot`. Anyone may call `relayLeaf` |
-| T2 | For `sendMessage` and `bootstrap`, consume the staged guard record and restore `safeTx.data` from `msg.data` |
+| T1 | Only the owner Safe may call `sendMessage`, `bootstrap` or `registerRoot`. Anyone may call `relayLeaf` |
+| T2 | For `sendMessage`, consume the staged guard record and restore `safeTx.data` from `msg.data`. For `bootstrap`, consume it and use nothing from it |
 | T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
 | T4 | For `registerRoot`, require the root published on the current guard, reject an existing root with `RootAlreadyRegistered(root)`, and record it |
 | T5 | For `relayLeaf`, require the supplied registration to be `registerRoot(root)` to this transmitter for a registered root, verify the proof, require an unused leaf hash, and validate the destination route |

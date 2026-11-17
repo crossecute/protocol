@@ -49,7 +49,7 @@ interface IConduitTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
-    /// @notice `bootstrap`, for a conduit whose receiver verifies a Safe-signed `body`.
+    /// @notice `bootstrap`, for a signed conduit: `body` is `abi.encode(SignedBootstrap)`.
     function bootstrapSigned(
         bytes32 destinationChainKey,
         address owner,

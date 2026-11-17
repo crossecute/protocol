@@ -38,8 +38,7 @@ library SafeAuthorityGraph {
 
     /// @notice Validate the supplied graph's owner groups, reachability, kinds and canonical
     ///         record order.
-    /// @dev Receivers must reject ambiguous or substituted graph encodings before trusting
-    ///      their authority or matching their address commitment.
+    /// @dev Receivers reject ambiguous graph encodings before storing them as authority.
     function requireCanonical(SafeAuthorityRecord[] memory records) internal view {
         if (records.length == 0) revert EmptyAuthorityGraph();
         bytes32 context;
