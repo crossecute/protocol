@@ -132,27 +132,23 @@ abstract contract CcipOptionsSpec is ProviderTransmitterFixture, CcipFixture {
         options.ccvArgs[1] = hex"1234";
         options.executorArgs = hex"abcd";
         options.requestedFinalityConfig = bytes4(0x00010000);
+        bytes memory verifierPrefix = abi.encodePacked(
+            bytes4(0xa69dd4aa),
+            uint32(500_000),
+            bytes4(0x00010000),
+            uint8(2),
+            uint8(0),
+            uint16(0),
+            uint8(20),
+            address(0xCC),
+            uint16(2),
+            hex"1234"
+        );
         address[2] memory executors = [address(0xEE), Client.NO_EXECUTION_ADDRESS];
         for (uint256 i; i < executors.length; ++i) {
             options.executor = executors[i];
-            bytes memory expected = abi.encodePacked(
-                bytes4(0xa69dd4aa),
-                uint32(500_000),
-                bytes4(0x00010000),
-                uint8(2),
-                uint8(0),
-                uint16(0),
-                uint8(20),
-                address(0xCC),
-                uint16(2),
-                hex"1234",
-                uint8(20),
-                executors[i],
-                uint16(2),
-                hex"abcd",
-                uint8(0),
-                uint16(0)
-            );
+            bytes memory expected =
+                abi.encodePacked(verifierPrefix, uint8(20), executors[i], uint16(2), hex"abcd", uint8(0), uint16(0));
             assertEq(expected.length, 69);
             _assertSent(_attrs(options), expected);
         }
