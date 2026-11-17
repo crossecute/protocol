@@ -166,7 +166,7 @@
       "id": "initialize-once",
       "readyBefore": false,
       "readyAfter": true,
-      "requires": "guard set, then activate signed by the creation quorum at creation state; repeat cannot reset"
+      "requires": "guard set, then activate signed by the quorum at live state; a receiver is seeded once from its bootstrap head and graph; repeat cannot reset"
     },
     {
       "id": "source-mutation",
@@ -175,16 +175,15 @@
       "requires": "one SafeTx batch: guard call then owner mutations, matching actual post-state; no authority counter"
     },
     {
-      "id": "provider-shared-selection",
+      "id": "per-receiver-selection",
       "key": [
-        "sourceChainId",
-        "A"
+        "receiver"
       ],
       "providers": [
         "LayerZero",
         "CCIP"
       ],
-      "result": "same selected full graph hash and management replay enforcement"
+      "result": "each provider receiver holds its own selection from its own bootstrap; the same updates apply to each independently"
     },
     {
       "id": "independent-child-selection",
@@ -269,30 +268,28 @@
       "result": "source accepts: p+1 is an executed head at or after the stored position"
     },
     {
-      "id": "introduced-child-activation",
+      "id": "added-child-named",
       "addedSafe": "D",
-      "evidence": "D signed activation with its creation proof, then D updates to the named position",
-      "result": "accept at the named position; source also requires that position executed, so a D that never activated is rejected there"
+      "evidence": "A new graph names D record and position; no child update",
+      "result": "accept as named on A signers; source requires that position executed and the record D held there, so a D that never activated is rejected there"
     },
     {
       "id": "readded-child-earlier-position",
       "removedAt": "p5",
       "namedOnReadd": "p2",
-      "result": "accept from D activation when p2 executed; any executed position leads to later ones"
+      "result": "accept as named when p2 executed; any executed position leads to later ones"
     },
     {
       "id": "nested-voter-flat-proof",
       "voterInChildUpdate": "C at q",
-      "storedC": "later than q",
+      "storedC": "q",
       "result": "accept; C counts under q as on source, proven once in the flat child-update pass"
     },
     {
-      "id": "creation-proof-salts",
-      "salts": [
-        "plain",
-        "chain-specific"
-      ],
-      "result": "either recomputed address proves the initializer; setup delegatecall other than pinned setupToL2 rejects"
+      "id": "nested-voter-behind-stored",
+      "voterInChildUpdate": "C at q",
+      "storedC": "later than q",
+      "result": "reject; no child update proves a position before the stored one"
     },
     {
       "id": "child-own-entry-ignored",
@@ -328,12 +325,12 @@
         "current chain",
         "future chain"
       ],
-      "result": "same signed source evidence reused after independent activation and predecessor verification"
+      "result": "same signed source evidence reused after independent seeding and predecessor verification"
     },
     {
-      "id": "registration-sentinel",
+      "id": "unseeded-sentinel",
       "authorityHash": "bytes32(0)",
-      "result": "unregistered; activation signs zero previous hashes; reject zero initial/replacement graph hashes"
+      "result": "unseeded; activation signs no previous hash and destinations reject it; reject zero initial/replacement graph hashes"
     },
     {
       "id": "mutation-batch",
