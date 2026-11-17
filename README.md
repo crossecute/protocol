@@ -343,7 +343,7 @@ bindings differ is in who delivers a message to a conduit and what authenticates
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
 | --- | --- | --- | --- |
 | LayerZero | `lzReceive`, from the endpoint | the vendored OApp's peer check, then `GATEWAY_ROLE` and the source transmitter | the endpoint |
-| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter | the off-ramp |
+| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter (receivers also check the immutable router) | the off-ramp |
 | Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
 | OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the conduit's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
@@ -561,3 +561,11 @@ The CCIP binding uses the MIT application interfaces and `Client` library from
 `@chainlink/contracts-ccip/contracts/` prefix. `GenericExtraArgsV2` preserves the
 previous V2 tag and encoding: a 4-byte tag and two 32-byte words. This dependency
 update does not add bytes to messages or change their per-byte fee contribution.
+
+`CcipReceiver` inherits the v2 `CCIPReceiver` helper, including its default CCV and
+full-finality configuration. Its callback retains gateway-role, home-origin and
+source-transmitter checks. `router()` remains available alongside `getRouter()`.
+The vendor script changes the helper's `supportsInterface` from `pure` to `view`
+to compose with AccessControl, and maps its IERC165 import to this repo's pinned
+OpenZeppelin version. No storage slots are added. CCIP delivery now copies the
+upstream message into memory; other providers retain their calldata decode path.

@@ -43,6 +43,7 @@ remappings = [
     # MIT application files from @chainlink/contracts-ccip 2.0.0, pinned by
     # script/vendor/ccip.sh. Per-file provenance lives under lib/ccip/contracts/.
     "@chainlink/contracts-ccip/=lib/ccip/",
+    "lib/ccip/:@openzeppelin/contracts@5.3.0/=lib/openzeppelin-contracts/contracts/",
 
     # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,
     # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free

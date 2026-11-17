@@ -17,8 +17,8 @@ library CcipMessage {
     /// @notice The EVM sender of a delivered message.
     /// @dev `abi.decode` reverts on a word with bits above the low 20 bytes set, so a wider
     ///      sender is refused rather than truncated (C10).
-    function sender(Client.Any2EVMMessage calldata message) internal pure returns (address) {
-        return abi.decode(message.sender, (address));
+    function sender(bytes memory encodedSender) internal pure returns (address) {
+        return abi.decode(encodedSender, (address));
     }
 
     function send(

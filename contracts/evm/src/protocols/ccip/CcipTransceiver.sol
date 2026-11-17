@@ -68,7 +68,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, IAny2EVMMessageRec
     /// @dev CCIP's off-ramp asserts nothing about the source-chain sender, so the base's
     ///      `_authenticateOrigin` is the only check. An unmapped selector reverts in the table.
     function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
-        _onProviderInbound(message.sourceChainSelector, CcipMessage.sender(message), message.data);
+        _onProviderInbound(message.sourceChainSelector, CcipMessage.sender(message.sender), message.data);
     }
 
     /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.

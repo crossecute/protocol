@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-vendors the three MIT-tagged CCIP application-facing files this binding depends on.
+# Re-vendors the MIT-tagged CCIP application-facing files this binding depends on.
 #
 # Usage: contracts/evm/script/vendor/ccip.sh
 #
@@ -26,3 +26,11 @@ vendor_file "$REPO" "$COMMIT" \
 vendor_file "$REPO" "$COMMIT" \
   "chains/evm/contracts/libraries/Client.sol" \
   "$DEST/libraries/Client.sol" "$NOTE"
+
+for path in applications/CCIPReceiver.sol interfaces/IAny2EVMMessageReceiverV2.sol libraries/FinalityCodec.sol; do
+  vendor_file "$REPO" "$COMMIT" "chains/evm/contracts/$path" "$DEST/$path" "$NOTE"
+done
+
+# Roles.supportsInterface reads storage; Solidity forbids a view override of pure.
+sed -i 's/public pure virtual override/public view virtual override/' "$DEST/applications/CCIPReceiver.sol"
+sed -i 's/Vendored, unmodified, from/Vendored, supportsInterface changed from pure to view, from/' "$DEST/applications/CCIPReceiver.sol"

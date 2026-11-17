@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Test} from "forge-std/Test.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {IAny2EVMMessageReceiverV2} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiverV2.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
@@ -90,6 +92,26 @@ contract CcipTransceiverSendTest is
 ///         authentication check here. `CcipReceiver` keeps no per-origin state, so every
 ///         non-source sender is refused the same way regardless of `sourceChainSelector`.
 contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
+    function test_proxyExposesRouterAndReceiverInterfaces() public view {
+        CcipReceiver r = CcipReceiver(payable(receiver));
+        assertEq(r.getRouter(), address(router));
+        assertEq(r.router(), address(router));
+        assertTrue(r.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
+        assertTrue(r.supportsInterface(type(IAny2EVMMessageReceiverV2).interfaceId));
+        assertTrue(r.supportsInterface(type(IAccessControl).interfaceId));
+        assertTrue(r.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(r.supportsInterface(bytes4(0xffffffff)));
+    }
+
+    function testFuzz_proxyUsesDefaultCcvAndFullFinality(uint64 selector, bytes memory sender) public view {
+        (address[] memory required, address[] memory optional, uint8 threshold, bytes4 finality) =
+            CcipReceiver(payable(receiver)).getCCVsAndFinalityConfig(selector, sender);
+        assertEq(required.length, 0);
+        assertEq(optional.length, 0);
+        assertEq(threshold, 0);
+        assertEq(finality, bytes4(0));
+    }
+
     /// @dev `abi.decode(sender, (address))` validates the high bytes and reverts without data.
     function _wideSenderRevert(bytes32) internal pure override returns (bytes memory) {
         return "";
