@@ -8,6 +8,7 @@ allow_paths = ["."]
 fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
+    { access = "read", path = "./test/fixtures/ccip-v2" },
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
 ]

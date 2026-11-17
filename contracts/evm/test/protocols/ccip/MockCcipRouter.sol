@@ -32,6 +32,14 @@ contract MockCcipRouter {
     }
 
     uint256 public feePerByte;
+    uint256 public feePerExtraArgByte;
+    bool public rejectV3;
+    error V3Rejected();
+
+    function configureV3Pricing(uint256 perByte, bool reject) external {
+        feePerExtraArgByte = perByte;
+        rejectV3 = reject;
+    }
 
     /// @dev The Router refuses a send paying less than `getFee`, as this does.
     error InsufficientFeeTokenAmount();
@@ -49,7 +57,8 @@ contract MockCcipRouter {
         view
         returns (uint256)
     {
-        return fee + feePerByte * message.data.length;
+        if (rejectV3 && bytes4(message.extraArgs) == bytes4(0xa69dd4aa)) revert V3Rejected();
+        return fee + feePerByte * message.data.length + feePerExtraArgByte * message.extraArgs.length;
     }
 
     function ccipSend(uint64 destinationChainSelector, Client.EVM2AnyMessage calldata message)

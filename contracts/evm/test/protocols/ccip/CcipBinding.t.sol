@@ -87,10 +87,8 @@ contract CcipTransceiverSendTest is
     }
 }
 
-/// @notice CCIP's off-ramp asserts nothing about the source-chain sender (unlike LayerZero's
-///         `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the only
-///         authentication check here. `CcipReceiver` keeps no per-origin state, so every
-///         non-source sender is refused the same way regardless of `sourceChainSelector`.
+/// @notice CCIP reports the source sender; the binding must also match the configured
+///         home and source transmitter. Per-source CCV policies do not authorize a sender.
 contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
     function test_proxyExposesRouterAndReceiverInterfaces() public view {
         CcipReceiver r = CcipReceiver(payable(receiver));

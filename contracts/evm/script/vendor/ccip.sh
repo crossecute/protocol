@@ -27,7 +27,7 @@ vendor_file "$REPO" "$COMMIT" \
   "chains/evm/contracts/libraries/Client.sol" \
   "$DEST/libraries/Client.sol" "$NOTE"
 
-for path in applications/CCIPReceiver.sol interfaces/IAny2EVMMessageReceiverV2.sol libraries/FinalityCodec.sol libraries/ExtraArgsCodec.sol; do
+for path in applications/CCIPReceiver.sol interfaces/IAny2EVMMessageReceiverV2.sol libraries/FinalityCodec.sol libraries/ExtraArgsCodec.sol libraries/MessageV1Codec.sol; do
   vendor_file "$REPO" "$COMMIT" "chains/evm/contracts/$path" "$DEST/$path" "$NOTE"
 done
 
