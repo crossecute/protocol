@@ -52,7 +52,9 @@ contract AuthorityRecognitionTest is Test {
         SafeTx memory safeTx;
         safeTx.to = GUARD;
         safeTx.data = abi.encodeCall(ISourceAuthorityGuard.activate, (bytes32(uint256(3))));
-        assertEq(uint8(this.recognize(safeTx).kind), uint8(ReceiverAuthority.UpdateKind.Activation));
+        ReceiverAuthority.RecognizedUpdate memory r = this.recognize(safeTx);
+        assertEq(uint8(r.kind), uint8(ReceiverAuthority.UpdateKind.Activation));
+        assertEq(r.update.newAuthorityHash, bytes32(uint256(3)));
     }
 
     function testRejectsEveryOtherShape() public {

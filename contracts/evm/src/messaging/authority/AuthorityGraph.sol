@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 
 /// @dev Immediate owners per Safe in a stored graph and at every step of an ownership change
 ///      (D87). No aggregate or depth cap.

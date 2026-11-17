@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {AuthoritySelection} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
-import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence} from "../signed/types/SignedDispatchTypes.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityGraph} from "./AuthorityGraph.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 import {IReceiverAuthority} from "./IReceiverAuthority.sol";

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence} from "../signed/types/SignedDispatchTypes.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityEntry} from "./AuthorityGraph.sol";
 
 /// @notice One signed update of a descendant Safe: its activation, ownership change or

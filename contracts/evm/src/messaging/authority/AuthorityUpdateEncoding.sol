@@ -3,9 +3,9 @@ pragma solidity ^0.8.28;
 
 import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
-import {Call} from "../Call.sol";
-import {Bytes} from "../signed/Bytes.sol";
-import {SafeAuthorityRecord} from "../signed/types/SafeAuthorityTypes.sol";
+import {Call} from "src/messaging/Call.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {AuthorityEntry, AuthorityGraph} from "./AuthorityGraph.sol";
 
 /// @notice Draft #109 encoding helpers. Callers must validate canonical graphs before hashing.
@@ -121,6 +121,37 @@ library AuthorityUpdateEncoding {
         if (keccak256(ownershipBatchData(guard, safe, update, mutations)) != keccak256(data)) {
             revert InvalidOwnershipBatch();
         }
+    }
+
+    /// @notice Whether a multiSend batch opens with a call to the guard's registerOwnershipChange.
+    /// @dev Shape detection only: decodeOwnershipBatch is what accepts the batch.
+    function isOwnershipBatch(address guard, bytes memory data) internal pure returns (bool) {
+        // forge-lint: disable-next-line(unsafe-typecast) the first four bytes, after the length check
+        if (data.length < 4 || bytes4(data) != MULTISEND_SELECTOR) return false;
+        bytes memory packed = abi.decode(Bytes.arguments(data, MULTISEND_SELECTOR), (bytes));
+        if (packed.length < 89) return false;
+        address target;
+        bytes4 selector;
+        assembly ("memory-safe") {
+            target := shr(96, mload(add(packed, 0x21)))
+            selector := mload(add(packed, 0x75))
+        }
+        return target == guard && selector == ISourceAuthorityGuard.registerOwnershipChange.selector;
+    }
+
+    /// @notice Whether any call of a multiSend batch targets `target`.
+    function batchCalls(bytes memory data, address target) internal pure returns (bool) {
+        bytes memory packed = abi.decode(Bytes.arguments(data, MULTISEND_SELECTOR), (bytes));
+        for (uint256 at; at < packed.length;) {
+            uint256 next = _nextEntry(packed, at);
+            address to;
+            assembly ("memory-safe") {
+                to := shr(96, mload(add(add(packed, 0x21), at)))
+            }
+            if (to == target) return true;
+            at = next;
+        }
+        return false;
     }
 
     /// @dev One packed MultiSend entry: uint8 operation, address to, uint256 value, uint256

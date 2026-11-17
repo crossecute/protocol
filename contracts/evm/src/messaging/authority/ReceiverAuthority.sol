@@ -3,11 +3,11 @@ pragma solidity ^0.8.28;
 
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {AuthoritySelection, AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
-import {Call} from "../Call.sol";
-import {SafeAuthorityGraph} from "../signed/SafeAuthorityGraph.sol";
-import {OwnerSource, SafeQuorum} from "../signed/SafeQuorum.sol";
-import {OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "../signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence} from "../signed/types/SignedDispatchTypes.sol";
+import {Call} from "src/messaging/Call.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {OwnerSource, SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
+import {OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityEntry, AuthorityGraph, AuthorityNode, MAX_SAFE_OWNERS} from "./AuthorityGraph.sol";
 import {AuthorityMutations} from "./AuthorityMutations.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
@@ -79,6 +79,9 @@ library ReceiverAuthority {
 
     error UnseededAuthority();
     error AlreadySeeded();
+    error ActivationHashMismatch();
+    error ActivationRootMismatch();
+    error ActivationKindRequired();
     error ActivationNotAccepted();
     error ChildRecognitionMismatch();
     error WrongRoot();
@@ -135,6 +138,45 @@ library ReceiverAuthority {
         authorityHash = AuthorityUpdateEncoding.graphHash(sourceChainId, entries);
         _store($, initial, entries, authorityHash);
         $.selection = AuthoritySelection(updateHead, authorityHash);
+    }
+
+    /// @notice A source Safe's first selection, from its signed activation.
+    /// @dev Source guard only: receivers start from `seed` and never accept an activation. The
+    ///      initial graph's root record must equal `live`, and the portable votes are checked under
+    ///      `live` with each descendant counted at the position the graph names. The caller has
+    ///      checked that every named position is an executed head with that record.
+    /// @return updateHash The activation's SafeTx hash, the Safe's first head.
+    function activate(
+        State storage $,
+        uint256 sourceChainId,
+        address sourceSafe,
+        SafeTxEvidence memory evidence,
+        AuthorityGraph memory initial,
+        SafeAuthorityRecord memory live,
+        RecognizedUpdate memory recognized
+    ) external returns (bytes32 updateHash) {
+        if ($.selection.authorityHash != bytes32(0)) revert AlreadySeeded();
+        if (recognized.kind != UpdateKind.Activation) revert ActivationKindRequired();
+        updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
+        if (updateHash == bytes32(0)) revert ZeroCommitment();
+        _requireRoot(sourceSafe, initial);
+        SafeAuthorityRecord[] memory records = _requireCanonical(initial);
+        AuthorityEntry[] memory entries = AuthorityUpdateEncoding.entries(initial);
+        if (
+            recognized.update.newAuthorityHash == bytes32(0)
+                || AuthorityUpdateEncoding.graphHash(sourceChainId, entries) != recognized.update.newAuthorityHash
+        ) revert ActivationHashMismatch();
+        if (entries[0].recordHash != AuthorityUpdateEncoding.recordHash(live)) revert ActivationRootMismatch();
+
+        ProvenTable memory table = ProvenTable(new ProvenPosition[](records.length), 0);
+        for (uint256 i = 1; i < records.length; ++i) {
+            if (entries[i].position == bytes32(0)) revert UnprovenPosition(records[i].safe);
+            table.rows[table.count++] =
+                ProvenPosition(records[i].safe, entries[i].position, entries[i].recordHash, records[i], false);
+        }
+        _verifyVotes(sourceChainId, sourceSafe, updateHash, evidence, live, VoterPositions(table, entries));
+        _store($, initial, entries, recognized.update.newAuthorityHash);
+        $.selection = AuthoritySelection(updateHash, recognized.update.newAuthorityHash);
     }
 
     /// @notice Verify and apply the next signed update: a successor of the stored head.

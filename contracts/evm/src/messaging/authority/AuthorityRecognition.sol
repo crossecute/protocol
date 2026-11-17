@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
-import {Bytes} from "../signed/Bytes.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
 import {ReceiverAuthority} from "./ReceiverAuthority.sol";
 
@@ -39,6 +39,7 @@ library AuthorityRecognition {
         bytes4 selector = bytes4(safeTx.data);
         if (selector == ISourceAuthorityGuard.activate.selector) {
             r.kind = ReceiverAuthority.UpdateKind.Activation;
+            r.update.newAuthorityHash = abi.decode(Bytes.arguments(safeTx.data, selector), (bytes32));
         } else if (selector == ISourceAuthorityGuard.selectAuthority.selector) {
             r.kind = ReceiverAuthority.UpdateKind.Selection;
             r.update = abi.decode(Bytes.arguments(safeTx.data, selector), (AuthorityUpdate));

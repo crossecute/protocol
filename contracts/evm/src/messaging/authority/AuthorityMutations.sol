@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Call} from "../Call.sol";
-import {Bytes} from "../signed/Bytes.sol";
-import {SafeAuthorityRecord, SafeOwner, OWNER_EOA} from "../signed/types/SafeAuthorityTypes.sol";
+import {Call} from "src/messaging/Call.sol";
+import {Bytes} from "src/messaging/signed/Bytes.sol";
+import {SafeAuthorityRecord, SafeOwner, OWNER_EOA} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {MAX_SAFE_OWNERS} from "./AuthorityGraph.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
 
