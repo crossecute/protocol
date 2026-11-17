@@ -2,7 +2,7 @@
 
 Recorded 2026-11-17 for PR #149 and issue #150. All production V3 lane flags remain
 disabled by default. Local tests and compilation do not establish live-lane readiness;
-that work is tracked in [issue #151](https://github.com/crossecute/protocol/issues/151).
+that work is tracked in [deployment issue #118](https://github.com/crossecute/protocol/issues/118).
 
 ## Tests
 
@@ -84,5 +84,5 @@ Both compilers produced the requested bytecode without errors. The Tron compiler
 a generic EVM-size warning for the 25,271-byte runtime. This report does not equate that
 warning with an enforced TVM limit or claim successful native deployment. Actual native
 deployment, derived addresses, execution/energy measurements and gas budgets remain
-explicit rollout gates in #151. The separate standard-solc EVM size check passes; the
+explicit rollout gates in deployment issue #118. The separate standard-solc EVM size check passes; the
 zkSync variant's EVM runtime is 24,437 bytes, with 139 bytes below EIP-170.

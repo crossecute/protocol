@@ -114,7 +114,7 @@ Local option tests, actual OffRamp/Router integration tests and native compilati
 recorded in [the validation report](ccip-v2-validation.md) for
 [issue #150](https://github.com/crossecute/protocol/issues/150). Live-lane and native
 execution/gas checks remain production-enablement requirements in
-[issue #151](https://github.com/crossecute/protocol/issues/151). No lane is enabled by
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118). No lane is enabled by
 these tests, and local signature-checking test CCVs do not validate production services.
 
 Sources: [CCIP message lifecycle](https://docs.chain.link/ccip/concepts/message-lifecycle),

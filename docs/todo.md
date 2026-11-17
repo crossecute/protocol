@@ -215,6 +215,6 @@ Local option coverage, actual OffRamp/Router enforcement tests, and native compi
 for [issue #150](https://github.com/crossecute/protocol/issues/150) are recorded in
 [the validation report](ccip-v2-validation.md). Live lane/version evidence, actual native
 VM deployment and delivery gas, and production executor/proof services remain tracked in
-[issue #151](https://github.com/crossecute/protocol/issues/151). Follow
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118). Follow
 [the options guide](ccip-v2.md) and
 [deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.

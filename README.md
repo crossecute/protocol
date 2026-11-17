@@ -576,5 +576,5 @@ The transceiver owner must enable a verified outbound lane first. Receiver polic
 remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/ccip-v2.md)
 for defaults, authority and pending-message effects.
 [Local validation](docs/ccip-v2-validation.md) covers the options and actual OffRamp
-behavior; [issue #151](https://github.com/crossecute/protocol/issues/151) tracks live-lane
+behavior; [deployment issue #118](https://github.com/crossecute/protocol/issues/118) tracks live-lane
 and native-execution checks before production enablement.

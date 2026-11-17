@@ -410,5 +410,5 @@ Local option and actual OffRamp/Router tests for
 zkSync/Tron compilation, are recorded in
 [the local validation report](../../../docs/ccip-v2-validation.md). Production lane
 evidence and native deployment/delivery-gas checks remain tracked in
-[issue #151](https://github.com/crossecute/protocol/issues/151).
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118).
 See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.

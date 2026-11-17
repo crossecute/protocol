@@ -1165,4 +1165,4 @@ force when CCIP executes them. Automatic reports retain default attributes. The
 [local validation report](ccip-v2-validation.md) records option-specific coverage and
 actual OffRamp enforcement tests for [issue #150](https://github.com/crossecute/protocol/issues/150).
 Live-lane and native execution checks remain tracked in
-[issue #151](https://github.com/crossecute/protocol/issues/151).
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118).
