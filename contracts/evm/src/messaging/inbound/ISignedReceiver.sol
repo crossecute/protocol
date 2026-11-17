@@ -30,17 +30,10 @@ interface ISignedReceiver {
 ///         armed first with its plain initializer and no calls, then `initializeSigned` in the
 ///         same transaction.
 interface ISignedReceiverInit {
-    /// @notice Store the source authority, verify its signed bootstrap and execute the
-    ///         receiver's setup.
+    /// @notice Store the source authority the bootstrap carried and execute the receiver's setup.
     /// @dev The transceiver must finish this immediately after plain initialization so a
     ///      receiver created from a signed bootstrap is never exposed with plain authorization.
     /// @param sourceChainId The EIP-155 id of the home chain, which is the Safe domain's.
     /// @param owner The conduit's owner, which the root record must name.
     function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external;
-
-    /// @notice Require the supplied body to be a valid repeat of this receiver's original
-    ///         bootstrap.
-    /// @dev Provider retries must acknowledge the same initialization without rerunning setup
-    ///      or accepting a different leaf; the signed window still applies.
-    function requireBootstrapRepeat(bytes calldata body) external view;
 }

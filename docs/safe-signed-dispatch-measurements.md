@@ -79,7 +79,8 @@ Integration assertions cover: one-transaction staging/consumption/delivery and r
 real cached `signMessage` approval collection and destination verification; nested/shared
 child message domains; published two-destination tree parity and independent relay;
 Safe nonces 42/43 in one batch, destination binding, and complete rollback on the second
-source failure; bootstrap before source execution; direct standalone and leaf submission
+source failure; an owner rotation followed by a bootstrap to a new chain that stores the
+rotated graph, rejects the previous quorum and executes the new one; direct standalone and leaf submission
 without source execution/publication; and source acceptance followed by destination
 out-of-gas, unchanged destination nonce and a successful exactly-once direct retry.
 The existing `SafeBatchExecutorTest` separately covers Safe's `false` return path; the

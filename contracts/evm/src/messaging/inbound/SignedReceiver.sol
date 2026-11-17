@@ -12,7 +12,6 @@ import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol"
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
-    BootstrapLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
@@ -41,7 +40,6 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
         SafeAuthorityState authority;
         // Nonzero exactly in signed mode.
         bytes32 graph;
-        bytes32 bootstrapLeaf;
         uint256 nextNonce;
         mapping(uint256 nonce => bytes32 executionId) executions;
         mapping(bytes32 safeTxHash => bool) messages;
@@ -51,7 +49,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     bytes32 private constant SIGNED_RECEIVER_STORAGE =
         0xee70333bd3c831863985f85848a518f67d0a54c38e49f2065c9698952a1a6e00;
 
-    event SignedReceiverInitialized(address indexed sourceSafe, bytes32 graph, bytes32 bootstrapLeaf);
+    event SignedReceiverInitialized(address indexed sourceSafe, bytes32 graph);
     event LeafExecuted(uint256 indexed nonce, bytes32 executionId);
     event MessageExecuted(bytes32 indexed safeTxHash);
 
@@ -62,7 +60,6 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     error UnknownWire(uint256 format);
     error ConflictingLeaf(uint256 nonce);
     error NonceNotNext(uint256 nonce, uint256 nextNonce);
-    error NotTheBootstrap(bytes32 leafHash);
 
     /// @notice Return this receiver's namespaced signed-mode storage.
     /// @dev A fixed namespace keeps the added authority and replay state separate from the base
@@ -82,9 +79,12 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /* ================================ initializing ============================== */
 
-    /// @notice Validate and store the source authority, verify the bootstrap and run its setup
-    ///         calls.
-    /// @dev Any failed check or setup call reverts initialization atomically.
+    /// @notice Validate and store the source authority the bootstrap carried, then run its
+    ///         setup calls.
+    /// @dev No signature is checked here: signatures cannot prove a carried graph, so the
+    ///      records are taken on the provider's authentication of the source transmitter.
+    ///      Owners confirm `authorityRecords` before relying on the receiver. Any failed check or
+    ///      setup call reverts initialization atomically.
     function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external nonReentrant {
         if (msg.sender != parentTransceiver) revert NotParentTransceiver(msg.sender);
         SignedReceiverStorage storage $ = _signedStorage();
@@ -97,43 +97,10 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
         if (records[0].safe != owner) revert RootIsNotOwner(owner, records[0].safe);
         $.graph = graph;
 
-        (bytes32 leafHash, BootstrapLeaf memory leaf) = _verifyBootstrap(bootstrap.evidence);
-        $.bootstrapLeaf = leafHash;
-        emit SignedReceiverInitialized(owner, graph, leafHash);
+        emit SignedReceiverInitialized(owner, graph);
 
-        Call[] memory calls = Payload.decodeCallsFromMemory(leaf.setupCalls);
+        Call[] memory calls = Payload.decodeCallsFromMemory(bootstrap.setupCalls);
         if (calls.length != 0) _execute(calls);
-    }
-
-    /// @notice Verify that a bootstrap body authorizes the same leaf that initialized this
-    ///         receiver.
-    /// @dev This makes transport retries harmless without allowing setup to run twice or a
-    ///      different bootstrap to replace the original one.
-    /// @inheritdoc ISignedReceiverInit
-    function requireBootstrapRepeat(bytes calldata body) external view {
-        (bytes32 leafHash,) = _verifyBootstrap(abi.decode(body, (SignedBootstrap)).evidence);
-        bytes32 stored = _signedStorage().bootstrapLeaf;
-        if (leafHash != stored) revert NotTheBootstrap(leafHash);
-    }
-
-    /// @notice Check the signed bootstrap's source call, proof, destination, signatures and
-    ///         time window.
-    /// @dev Receiver setup must be explicitly authorized for this address; even a repeat must
-    ///      remain inside the original signed window.
-    function _verifyBootstrap(SafeTxEvidence memory evidence)
-        private
-        view
-        returns (bytes32 leafHash, BootstrapLeaf memory leaf)
-    {
-        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, sourceTransmitter);
-        bytes32 root;
-        bytes32[] memory proof;
-        (root, leaf, proof,) = SignedDispatchCalls.bootstrapArgs(evidence.signedSafeTx.safeTx.data);
-        SignedDispatchCalls.requireDestination(leaf.destination, address(this));
-        leafHash = DispatchLeaves.hash(leaf);
-        DispatchLeaves.requireProof(proof, root, leafHash);
-        _verify(evidence);
-        SignedDispatchCalls.requireOpen(leaf.validAfter, leaf.deadline);
     }
 
     /* ================================== dispatch ================================ */
@@ -293,12 +260,5 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     ///      duplicated transport message needs execution.
     function isMessageExecuted(bytes32 safeTxHash) external view returns (bool) {
         return _signedStorage().messages[safeTxHash];
-    }
-
-    /// @notice Return the leaf hash that authorized this receiver's initial setup.
-    /// @dev The hash identifies the only bootstrap leaf the receiver will acknowledge as a
-    ///      repeat.
-    function bootstrapLeaf() external view returns (bytes32) {
-        return _signedStorage().bootstrapLeaf;
     }
 }

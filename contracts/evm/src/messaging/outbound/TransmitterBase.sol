@@ -412,7 +412,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      holds, so a conduit envelope names the same chain. `typed` is whether the
     ///      destination decodes `Call[]`.
     function _decodeBootstrap(bytes calldata payload)
-        private
+        internal
         view
         returns (bytes32 chainKey, bytes memory route, bool typed, bytes memory body)
     {

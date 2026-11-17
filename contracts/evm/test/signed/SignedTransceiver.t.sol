@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
@@ -13,15 +12,14 @@ import {Provenance} from "src/registry/Provenance.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
-import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {BootstrapLeaf, SafeTxEvidence, SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 import {unseeded} from "test/RegistrySeed.sol";
 import {toBytes32, ext} from "test/Harness.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
-import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
+import {Records} from "test/signed/SignedFixtures.sol";
 import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 import {Sink} from "test/signed/SignedReceiver.t.sol";
 
@@ -159,27 +157,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
         return ext(address(t)).predictConduit(address(safe), SALT, remote);
     }
 
-    /// @notice Build a signed bootstrap body with selected receiver, source target, setup and
-    ///         authority records.
-    /// @dev Tests can mutate each binding independently while retaining otherwise valid
-    ///      signatures.
-    function _body(address receiver, address target, bytes memory setup, SafeAuthorityRecord[] memory records)
-        internal
-        view
-        returns (bytes memory)
-    {
-        BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(block.chainid, receiver), block.timestamp, block.timestamp + 1 days, setup
-        );
-        bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
-        SafeTxEvidence memory evidence;
-        evidence.signedSafeTx.safeTx.to = target;
-        evidence.signedSafeTx.safeTx.data = abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
-        evidence.signedSafeTx.signatures = SafeSigs.blob(
-            SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)),
-            SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(safe), REMOTE_CHAIN_ID)
-        );
-        return abi.encode(SignedBootstrap(evidence, records));
+    /// @notice Build a signed bootstrap body from setup calls and authority records.
+    function _body(bytes memory setup, SafeAuthorityRecord[] memory records) internal pure returns (bytes memory) {
+        return abi.encode(SignedBootstrap(records, setup));
     }
 
     /// @notice Encode one tagged sink call for receiver initialization.
@@ -208,24 +188,20 @@ contract SignedTransceiverTest is HyperlaneFixture {
     ///      complete destination creation path.
     function test_aSignedBootstrapCreatesAndInitializesTheDerivedReceiver() public {
         address r = _receiver();
-        _send(r, _body(r, r, _setup("go"), _records()));
+        _send(r, _body(_setup("go"), _records()));
         assertEq(SignedReceiver(payable(r)).authorityGraph(), _graph());
         assertEq(SignedReceiver(payable(r)).sourceTransmitter(), r);
         assertEq(sink.hits(), 1);
     }
 
-    /// @notice Redeliver the bootstrap and then substitute a different setup leaf.
-    /// @dev Retries must not repeat initialization, and an existing receiver must not accept
-    ///      replacement setup.
-    function test_aRepeatIsSilentAndADifferentLeafRefuses() public {
+    /// @notice Deliver a second signed bootstrap for an existing receiver.
+    /// @dev Creation is single-shot: the second delivery reverts and changes nothing.
+    function test_aSecondBootstrapRefuses() public {
         address r = _receiver();
-        bytes memory body = _body(r, r, _setup("go"), _records());
-        _send(r, body);
-        _send(r, body);
+        _send(r, _body(_setup("go"), _records()));
+        vm.expectPartialRevert(Conduits.ConduitExists.selector);
+        _send(r, _body(_setup("other"), _records()));
         assertEq(sink.hits(), 1);
-
-        vm.expectPartialRevert(SignedReceiver.NotTheBootstrap.selector);
-        _send(r, _body(r, r, _setup("other"), _records()));
     }
 
     /// @notice Carry a source transmitter other than the one derived for the owner and salt.
@@ -233,7 +209,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
     function test_aBootstrapNamingAnotherTransmitterRefuses() public {
         address r = _receiver();
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.SourceTransmitterMismatch.selector, r, address(0xBAD)));
-        _send(address(0xBAD), _body(r, r, _setup("go"), _records()));
+        _send(address(0xBAD), _body(_setup("go"), _records()));
         assertEq(r.code.length, 0);
     }
 
@@ -270,17 +246,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.boom, ()));
         vm.expectRevert();
-        _send(r, _body(r, r, abi.encode(c), _records()));
-        assertEq(r.code.length, 0);
-    }
-
-    /// @notice Sign setup against a source target other than the derived transmitter.
-    /// @dev The transceiver must not turn unrelated source authorization into receiver
-    ///      creation.
-    function test_aBootstrapSignedForAnotherTargetRefuses() public {
-        address r = _receiver();
-        vm.expectRevert();
-        _send(r, _body(r, address(0xBAD), _setup("go"), _records()));
+        _send(r, _body(abi.encode(c), _records()));
         assertEq(r.code.length, 0);
     }
 }

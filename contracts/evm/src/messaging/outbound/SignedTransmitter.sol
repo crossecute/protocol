@@ -32,7 +32,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         bool signed;
         mapping(bytes32 root => bool) roots;
         mapping(bytes32 leafHash => bool) relayed;
-        mapping(bytes32 chainKey => bytes32 bodyHash) pendingBootstrap;
         bool relaying;
     }
 
@@ -43,8 +42,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     event SignedTransmitterInitialized();
     event RootRegistered(bytes32 indexed root);
     event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
-    /// @dev `body` is what `retryBootstrap` takes, kept until a send of it succeeds.
-    event BootstrapPending(bytes32 indexed destinationChainKey, bytes body);
 
     error NotSigned();
     error AlreadySigned();
@@ -57,7 +54,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     error RefundFailed();
     error BalanceChanged(uint256 before, uint256 afterwards);
     error RelayReentered();
-    error NoPendingBootstrap(bytes32 destinationChainKey);
 
     /// @notice Return this transmitter's namespaced signed-mode storage.
     /// @dev A fixed namespace avoids changing the base contracts' sequential layout when signed
@@ -125,11 +121,11 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _quoteMessage(recipient, wire, attributes);
     }
 
-    /// @notice Build and record a signed bootstrap, then attempt to send it through the
-    ///         transceiver.
-    /// @dev Recording before the attempt keeps a failed send retryable without reverting the
-    ///      Safe transaction. A newer signed bootstrap can replace a pending one until a send
-    ///      succeeds; plain mode uses the base path.
+    /// @notice In signed mode, consume the Safe's staged call and send the setup calls with the
+    ///         Safe's live authority records; plain mode uses the base path.
+    /// @dev Consuming the guard's record admits only a signed owner transaction, so a module
+    ///      cannot bootstrap. Nothing from the record is sent: the destination stores the records
+    ///      on the provider's authentication. A failed send reverts, as in plain mode.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         payable
@@ -137,11 +133,27 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     {
         if (!_signedStorage().signed) return super.bootstrap(payload, attributes);
         _checkOwner();
-        (bytes memory body, bytes32 chainKey,,) = SignedTransmitterLib.consumeBootstrap(msg.data);
-        _signedStorage().pendingBootstrap[chainKey] = keccak256(body);
-        emit BootstrapPending(chainKey, body);
-        // A failed send leaves the bundle pending, which is the point of the try.
-        try this.retryBootstrap(body) {} catch {}
+        SignedTransmitterLib.consumeStaged();
+        (bytes32 chainKey, bytes memory route, bytes memory body) = _signedBootstrap(payload);
+        _markBootstrapped(chainKey, route);
+        IConduitTransceiver t = IConduitTransceiver(transceiver);
+        uint256 fee = t.quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+        _requireFunded(fee);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
+        t.bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
+    }
+
+    /// @notice The destination key, route and `SignedBootstrap` body for a bootstrap payload.
+    /// @dev Shared by `bootstrap` and `quoteBootstrap`, so the quote prices the bytes sent.
+    function _signedBootstrap(bytes calldata payload)
+        private
+        view
+        returns (bytes32 chainKey, bytes memory route, bytes memory body)
+    {
+        bool typed;
+        bytes memory setupCalls;
+        (chainKey, route, typed, setupCalls) = _decodeBootstrap(payload);
+        body = SignedTransmitterLib.bootstrapBody(chainKey, typed, setupCalls);
     }
 
     /// @notice Require the owner's root to be published by its current guard, then register it
@@ -176,25 +188,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /* ============================== permissionless ============================== */
-
-    /// @notice Retry the exact pending bootstrap body, accepting value to fund its transport
-    ///         fee.
-    /// @dev Anyone can recover a failed send without another Safe transaction. Clearing pending
-    ///      state and marking bootstrap roll back if the retry fails.
-    function retryBootstrap(bytes calldata body) external payable {
-        _requireSigned();
-        (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLib.bootstrapTarget(body);
-        SignedTransmitterStorage storage $ = _signedStorage();
-        if ($.pendingBootstrap[chainKey] != keccak256(body)) revert NoPendingBootstrap(chainKey);
-        delete $.pendingBootstrap[chainKey];
-
-        _markBootstrapped(chainKey, route);
-        IConduitTransceiver t = IConduitTransceiver(transceiver);
-        uint256 fee = t.quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
-        _requireFunded(fee);
-        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
-    }
 
     /// @notice Verify and transmit an unused authorized leaf, charging the caller and refunding
     ///         any synchronous excess.
@@ -249,17 +242,16 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return super.quoteMessage(recipient, payload, attributes);
     }
 
-    /// @notice Quote plain bootstrap, reverting in signed mode.
-    /// @dev A signed bootstrap includes evidence not present in this API;
-    ///      `quoteSignedBootstrap` supplies the complete payload needed for an accurate fee.
+    /// @notice Quote a bootstrap in either mode; a signed one prices the live records it would carry.
     function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         view
         override
         returns (uint256)
     {
-        if (_signedStorage().signed) revert SignedQuoteRequired();
-        return super.quoteBootstrap(payload, attributes);
+        if (!_signedStorage().signed) return super.quoteBootstrap(payload, attributes);
+        (bytes32 chainKey,, bytes memory body) = _signedBootstrap(payload);
+        return IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
     }
 
     /// @notice Build the signed standalone payload and return the fee its send would pay.
@@ -271,23 +263,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         (bytes memory recipient, bytes memory wire, bytes[] memory attributes) =
             SignedTransmitterLib.quoteMessage(msg.data[4:]);
         return _quoteStandalone(recipient, wire, attributes);
-    }
-
-    /// @notice Return a signed bootstrap's transport fee and encoded body without consuming
-    ///         staged state.
-    /// @dev Owners can fund the eventual send and inspect the retry body using the same builder
-    ///      as bootstrap execution.
-    function quoteSignedBootstrap(SafeTxEvidence calldata evidence)
-        external
-        view
-        returns (uint256 fee, bytes memory body)
-    {
-        _requireSigned();
-        evidence;
-        bytes32 chainKey;
-        bytes[] memory attributes;
-        (body, chainKey,, attributes) = SignedTransmitterLib.quoteBootstrap(msg.data[4:]);
-        fee = IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
     }
 
     /// @notice Return the fee for relaying the supplied signed registration, leaf and proof.
@@ -350,13 +325,5 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     ///      duplicate source sends.
     function isLeafRelayed(bytes32 leafHash) external view returns (bool) {
         return _signedStorage().relayed[leafHash];
-    }
-
-    /// @notice Return the pending bootstrap body hash for a destination, or zero if none is
-    ///         pending.
-    /// @dev Anyone retrying must supply the exact logged body; this view identifies which
-    ///      authorization is still eligible.
-    function pendingBootstrap(bytes32 destinationChainKey) external view returns (bytes32) {
-        return _signedStorage().pendingBootstrap[destinationChainKey];
     }
 }

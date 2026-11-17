@@ -24,13 +24,7 @@ import {Provenance} from "crossecute/registry/Provenance.sol";
 import {Proxy} from "crossecute/conduit/Proxy.sol";
 import {ProxyDeployer, PROXY_DEPLOYER} from "crossecute/conduit/ProxyDeployer.sol";
 import {DispatchLeaves} from "crossecute/messaging/signed/DispatchLeaves.sol";
-import {SafeAuthorityRecord} from "crossecute/messaging/signed/types/SafeAuthorityTypes.sol";
-import {
-    SafeTxEvidence,
-    ExecutionLeaf,
-    BootstrapLeaf,
-    SignedBootstrap
-} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
+import {SafeTxEvidence, ExecutionLeaf} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {MockHyperlaneMailbox} from "evm-test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {unseeded} from "evm-test/RegistrySeed.sol";
 
@@ -58,6 +52,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     uint256 constant SOURCE = 10;
     uint256 constant BASE = 8453;
     uint256 constant ARBITRUM = 42161;
+    uint256 constant KEY_D = 0xD00D;
     bytes32 constant DEPLOY_SALT = keccak256("integration transceiver");
     bytes32 constant USER_SALT = keccak256("integration conduit");
     MockHyperlaneMailbox internal mailbox;
@@ -206,19 +201,13 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         return abi.encode(calls);
     }
 
-    /// @notice Sign an empty-setup bootstrap for one derived receiver.
+    /// @notice Sign an empty-setup bootstrap of one destination chain.
     function _bootstrapEvidence(uint256 chain) internal view returns (SafeTxEvidence memory) {
-        BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(chain, address(_receiver(chain))), block.timestamp, block.timestamp + 1 days, _calls(0)
-        );
-        return _evidence(
-            address(st),
-            abi.encodeCall(
-                ISignedTransmitter.bootstrap,
-                (abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0)), new bytes[](0))
-            ),
-            safe.nonce()
-        );
+        bytes memory payload = st.bootstrapPayload(Erc7930.encodeEvmChain(chain), st.payloadForCalls(new Call[](0)));
+        return
+            _evidence(
+                address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), safe.nonce()
+            );
     }
 
     /// @notice Deliver a recorded bootstrap through the authenticated destination handler.
@@ -268,25 +257,37 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         assertEq(effect.hits(), 1);
     }
 
-    /// @notice Accept signed bootstrap before its source Safe transaction executes.
-    function test_bootstrapCanArriveBeforeSourceExecution() public {
+    /// @notice Rotate an owner of the real Safe, then bootstrap a new chain and dispatch to it.
+    /// @dev The new chain stores the rotated graph: a send signed by the previous quorum is
+    ///      rejected there, the new quorum's send executes, and the chain bootstrapped earlier
+    ///      keeps its graph.
+    function test_aChainBootstrappedAfterARotationTrustsTheRotatedOwners() public {
         _create();
-        SafeTxEvidence memory e = _bootstrapEvidence(BASE);
-        bytes memory records = TransceiverExtension(address(source)).signedAuthority(address(safe));
-        bytes memory body = abi.encode(SignedBootstrap(e, abi.decode(records, (SafeAuthorityRecord[]))));
-        uint256 nonce = safe.nonce();
-        vm.chainId(BASE);
-        vm.prank(address(mailbox));
-        destination[BASE].handle(
-            uint32(SOURCE),
-            bytes32(uint256(uint160(address(source)))),
-            abi.encode(uint8(4), address(safe), USER_SALT, bytes32(uint256(uint160(address(st)))), body)
+        _bootstrap(BASE);
+        SafeTxEvidence memory stale = _message(ARBITRUM, safe.nonce() + 1);
+
+        address[] memory owners = safe.getOwners();
+        keys[vm.addr(KEY_D)] = KEY_D;
+        _execute(
+            _evidence(
+                address(safe), abi.encodeCall(safe.swapOwner, (address(1), owners[0], vm.addr(KEY_D))), safe.nonce()
+            )
         );
+        _bootstrap(ARBITRUM);
+
+        SignedReceiver ra = _receiver(ARBITRUM);
+        bytes32 rotated = keccak256(TransceiverExtension(address(source)).signedAuthority(address(safe)));
+        assertEq(ra.authorityGraph(), rotated);
+        assertTrue(_receiver(BASE).authorityGraph() != rotated);
+
+        vm.chainId(ARBITRUM);
+        vm.expectRevert();
+        ra.submitMessage(stale);
         vm.chainId(SOURCE);
-        assertEq(safe.nonce(), nonce);
-        assertEq(_receiver(BASE).authorityGraph(), keccak256(records));
-        _execute(e);
-        _deliverBootstrap(BASE, mailbox.sentLength() - 1);
+
+        _execute(_message(ARBITRUM, safe.nonce()));
+        _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
+        assertEq(effect.hits(), 1);
     }
 
     /// @notice Direct submission requires neither provider delivery nor source registration.

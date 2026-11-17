@@ -275,8 +275,8 @@ abstract contract TransceiverBase is TransceiverCore {
         );
     }
 
-    /// @notice `bootstrap` for a signed conduit, carrying `abi.encode(SignedBootstrap)`, which
-    ///         the destination's receiver verifies before it stores authority or runs a call.
+    /// @notice `bootstrap` for a signed conduit, carrying `abi.encode(SignedBootstrap)`: the
+    ///         Safe's live authority records and the receiver's setup calls.
     function bootstrapSigned(
         bytes32 destinationChainKey,
         address owner,
@@ -531,17 +531,13 @@ abstract contract TransceiverBase is TransceiverCore {
         }
     }
 
-    /// @notice Stand up the signed receiver of a conduit homed on `home`, or acknowledge a
-    ///         repeat of the bootstrap that already did.
+    /// @notice Stand up the signed receiver of a conduit homed on `home` with the authority its
+    ///         bootstrap carried.
     ///
     /// @dev The carried transmitter must be the one this chain derives for `(owner, salt)` under
     ///      the home's transceiver, so the home must be `Predetermined`: the receiver accepts Safe
-    ///      transactions signed for that address and nothing else vouches for it. Signed receivers
-    ///      are not created where this chain's addresses diverge (#108 scope).
-    ///
-    /// @dev A second delivery reaches the receiver's own check instead of `ConduitExists`: the
-    ///      same leaf inside its window returns, anything else reverts. It changes nothing either
-    ///      way.
+    ///      transactions signed for that address. Signed receivers are not created where this
+    ///      chain's addresses diverge (#108 scope). A second delivery reverts `ConduitExists`.
     function _signedBootstrapInbound(
         address owner,
         bytes32 salt,
@@ -554,12 +550,7 @@ abstract contract TransceiverBase is TransceiverCore {
         address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home);
         if (sourceTransmitter != expected) revert SourceTransmitterMismatch(expected, sourceTransmitter);
 
-        address receiver = _predictConduit(owner, salt, home);
-        if (receiver.code.length != 0) {
-            ISignedReceiverInit(receiver).requireBootstrapRepeat(body);
-            return;
-        }
-        _createConduit(owner, salt, home, sourceTransmitter, new Call[](0));
+        address receiver = _createConduit(owner, salt, home, sourceTransmitter, new Call[](0));
         ISignedReceiverInit(receiver)
             .initializeSigned(Erc7930.evmChainId(Erc7930.parseStrict(routeFor(home))), owner, body);
     }

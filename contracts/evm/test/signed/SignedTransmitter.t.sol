@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Vm} from "forge-std/Vm.sol";
 import {ICrossecuteGuard, SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -23,7 +22,6 @@ import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol"
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
-    BootstrapLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     NestedSafeApproval,
@@ -179,18 +177,14 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return address(bytes20(t.predictReceiver(remote, address(safe), SALT)));
     }
 
-    /// @notice Encode a zero-counter bootstrap authorizing one setup leaf.
-    /// @dev A one-leaf root isolates bootstrap behavior without requiring sibling proof data.
-    function _bootstrapCall(BootstrapLeaf memory leaf) internal pure returns (bytes memory) {
-        bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
-        return abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
+    /// @notice The plain-form bootstrap payload for the remote chain with empty setup calls.
+    function _bootstrapPayload() internal view returns (bytes memory) {
+        return st.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), st.payloadForCalls(new Call[](0)));
     }
 
-    /// @notice Build a valid empty-setup bootstrap leaf for the predicted receiver.
-    /// @dev Tests begin with a usable destination and timing window before mutating one
-    ///      condition.
-    function _leaf() internal view returns (BootstrapLeaf memory) {
-        return BootstrapLeaf(_receiverHere(), block.timestamp, block.timestamp + 1 days, abi.encode(new Call[](0)));
+    /// @notice The owner's `bootstrap` calldata for `_bootstrapPayload`.
+    function _bootstrapCall() internal view returns (bytes memory) {
+        return abi.encodeCall(ISignedTransmitter.bootstrap, (_bootstrapPayload(), new bytes[](0)));
     }
 
     /// @notice Read the last wire message recorded by the mock mailbox.
@@ -203,27 +197,26 @@ contract SignedTransmitterTest is HyperlaneFixture {
     /// @dev Later relay and send tests need a reachable destination established through the
     ///      real signed path.
     function _bootstrap() internal returns (SafeTxEvidence memory evidence) {
-        evidence = _delivery(safe, address(st), _bootstrapCall(_leaf()), _quorum());
+        evidence = _delivery(safe, address(st), _bootstrapCall(), _quorum());
         _exec(safe, evidence);
     }
 
     /* ================================== bootstrap ================================ */
 
-    /// @notice Decode a sent bootstrap and compare its authorization and authority records.
-    /// @dev The destination must receive the signed setup and the Safe's live authority.
-    function test_aSignedBootstrapCarriesTheSignedCallAndTheLiveRecords() public {
-        SafeTxEvidence memory evidence = _bootstrap();
+    /// @notice Decode a sent bootstrap and compare its records and setup calls.
+    /// @dev The destination receives the Safe's live authority and the setup calls, and nothing
+    ///      from the staged record.
+    function test_aSignedBootstrapCarriesTheLiveRecordsAndTheSetupCalls() public {
+        _bootstrap();
         (address owner, bytes32 salt, bytes32 transmitter, bytes memory body) = this.decodeSigned(_lastBody());
         assertEq(owner, address(safe));
         assertEq(salt, SALT);
         assertEq(transmitter, bytes32(uint256(uint160(address(st)))));
         SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
-        assertEq(bootstrap.evidence.signedSafeTx.safeTx.data, evidence.signedSafeTx.safeTx.data);
-        assertEq(bootstrap.evidence.signedSafeTx.signatures, evidence.signedSafeTx.signatures);
         assertEq(abi.encode(bootstrap.records), ext(address(t)).signedAuthority(address(safe)));
+        assertEq(bootstrap.setupCalls, st.payloadForCalls(new Call[](0)));
         assertTrue(st.isBootstrapped(remote));
         assertEq(st.destinationReceiverOn(remote), abi.encodePacked(_receiverAddress()));
-        assertEq(st.pendingBootstrap(remote), bytes32(0));
     }
 
     /// @notice Change the Safe's owners after creation, then bootstrap.
@@ -247,77 +240,62 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return Envelope.decodeSignedBootstrap(m);
     }
 
-    /// @notice Fail the initial bootstrap transport send and retry it from another caller.
-    /// @dev Source Safe authorization should remain usable after a temporary provider failure
-    ///      without requiring the owners to sign again.
-    function test_aFailedSendStaysPendingAndAnyoneCanRetryIt() public {
-        mailbox.setFee(2 ether);
-        vm.recordLogs();
-        _bootstrap();
-        bytes memory body;
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] == SignedTransmitter.BootstrapPending.selector) {
-                body = abi.decode(logs[i].data, (bytes));
-            }
-        }
-        assertEq(st.pendingBootstrap(remote), keccak256(body));
+    /// @notice Bootstrap with too little balance for the transport fee.
+    /// @dev A failed send reverts the Safe transaction, as in plain mode, and records nothing.
+    function test_aFailedSendRevertsAndRecordsNothing() public {
+        mailbox.setFee(address(st).balance + 1);
+        SafeTxEvidence memory evidence = _delivery(safe, address(st), _bootstrapCall(), _quorum());
+        guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
+        vm.expectPartialRevert(TransmitterBase.InsufficientBalance.selector);
+        safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
         assertFalse(st.isBootstrapped(remote));
-
-        bytes memory altered = abi.encodePacked(body, hex"00");
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.NoPendingBootstrap.selector, remote));
-        st.retryBootstrap(altered);
-
-        hoax(address(0xF00));
-        st.retryBootstrap{value: 2 ether}(body);
-        assertTrue(st.isBootstrapped(remote));
-        assertEq(st.pendingBootstrap(remote), bytes32(0));
     }
 
-    /// @notice Create a new bootstrap authorization while an earlier send is pending.
-    /// @dev Only the currently pending body should remain eligible for permissionless retry.
-    function test_aNewSignedBootstrapReplacesAPendingOne() public {
-        mailbox.setFee(2 ether);
+    /// @notice Quote a signed bootstrap and compare it with the transceiver's price for its body.
+    /// @dev The quote prices the same live records and setup calls the send carries.
+    function test_quoteBootstrapPricesTheSignedBody() public {
+        mailbox.setFeePerByte(10);
+        bytes memory body = abi.encode(
+            SignedBootstrap(
+                abi.decode(ext(address(t)).signedAuthority(address(safe)), (SafeAuthorityRecord[])),
+                st.payloadForCalls(new Call[](0))
+            )
+        );
+        assertEq(
+            st.quoteBootstrap(_bootstrapPayload(), new bytes[](0)),
+            t.quoteBootstrapSigned(remote, address(safe), SALT, body, new bytes[](0))
+        );
+        uint256 before = address(st).balance;
+        uint256 quote = st.quoteBootstrap(_bootstrapPayload(), new bytes[](0));
         _bootstrap();
-        bytes32 first = st.pendingBootstrap(remote);
-        _bootstrap();
-        assertTrue(st.pendingBootstrap(remote) != first);
+        assertEq(before - address(st).balance, quote);
     }
 
     /// @notice Call signed bootstrap without guard-staged evidence.
     /// @dev An owner-address call alone must not manufacture the signatures the receiver needs.
     function test_aBootstrapWithoutAStagedRecordReverts() public {
-        bytes memory data = _bootstrapCall(_leaf());
+        bytes memory data = _bootstrapCall();
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         safe.exec(address(st), 0, data);
     }
 
-    /// @notice Try a substituted destination and an expired bootstrap.
-    /// @dev Invalid setup authorization must fail on the source before transport fees are
-    ///      spent.
-    function test_aBootstrapForAnotherReceiverOrPastItsDeadlineReverts() public {
-        BootstrapLeaf memory leaf = _leaf();
-        leaf.destination = Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBAD));
-        SafeTxEvidence memory evidence = _delivery(safe, address(st), _bootstrapCall(leaf), _quorum());
-        guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitterLib.WrongBootstrapTarget.selector, leaf.destination));
-        safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
-
-        leaf = _leaf();
-        leaf.deadline = block.timestamp - 1;
-        leaf.validAfter = block.timestamp - 2;
-        evidence = _delivery(safe, address(st), _bootstrapCall(leaf), _quorum());
-        guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
-        vm.expectRevert(
-            abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline)
+    /// @notice Bootstrap a chain that does not execute `Call[]`.
+    /// @dev Signed receivers are created only on EVM destinations the home derives.
+    function test_aSignedBootstrapToANonEvmChainReverts() public {
+        bytes memory starknet = Erc7930.encodeChainId(Erc7930.CT_STARKNET, hex"534e5f4d41494e");
+        bytes memory payload = st.bootstrapPayload(starknet, st.payloadForElements(new bytes[](1)));
+        SafeTxEvidence memory evidence = _delivery(
+            safe, address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), _quorum()
         );
+        guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
+        vm.expectPartialRevert(SignedTransmitterLib.SignedReceiverNotDerivable.selector);
         safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
     }
 
     /// @notice Try bootstrap as another caller and attempt to transfer signed ownership.
     /// @dev The fixed creation Safe must remain the only owner-authorized source caller.
     function test_onlyTheOwnerBootstrapsAndOwnershipIsFixed() public {
-        bytes memory data = _bootstrapCall(_leaf());
+        bytes memory data = _bootstrapCall();
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(this)));
         (bool ok,) = address(st).call(data);
         assertTrue(ok, "expectRevert");
@@ -388,15 +366,13 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(quote, 10 * abi.encode(WIRE_STANDALONE, evidence).length);
     }
 
-    /// @notice Call plain quote APIs on a signed transmitter.
-    /// @dev A quote without signatures cannot price the signed wire payload accurately and must
-    ///      direct callers to the signed API.
-    function test_thePlainQuotesRefuseInSignedMode() public {
+    /// @notice Call the plain message quote on a signed transmitter.
+    /// @dev A quote without signatures cannot price the signed wire payload and must direct
+    ///      callers to the signed API.
+    function test_thePlainMessageQuoteRefusesInSignedMode() public {
         bytes memory recipient = _receiverHere();
         vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
         st.quoteMessage(recipient, _payload(), new bytes[](0));
-        vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
-        st.quoteBootstrap(hex"00", new bytes[](0));
     }
 
     /// @notice Send a signed message before its destination is bootstrapped.
@@ -629,9 +605,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
     /* ================================ nested evidence ============================= */
 
     /// @notice Send with an empty child signature payload backed by guard-cached approval
-    ///         evidence.
-    /// @dev The wire message must include the child authorization the receiver cannot read from
-    ///      source storage; missing evidence must fail before payment.
+    ///         evidence, after bootstrapping a parent with a nested Safe owner.
+    /// @dev The bootstrap carries both records; the standalone wire carries the child
+    ///      authorization the receiver cannot read from source storage, and missing evidence
+    ///      fails before payment.
     function test_anEmptyNestedSignatureCarriesTheChildsCachedApproval() public {
         StubSafe child = _safe(_addrs(vm.addr(4), vm.addr(5), vm.addr(6)), 1);
         address[] memory owners = new address[](2);
@@ -641,24 +618,34 @@ contract SignedTransmitterTest is HyperlaneFixture {
         parent.setGuard(address(guard));
         vm.prank(address(parent));
         SignedTransmitter nested = SignedTransmitter(payable(t.createTransmitter(SALT)));
-        SafeAuthorityRecord[] memory records =
-            abi.decode(ext(address(t)).signedAuthority(address(parent)), (SafeAuthorityRecord[]));
+        vm.deal(address(nested), 1 ether);
+
+        bytes memory bootstrapCall = abi.encodeCall(
+            ISignedTransmitter.bootstrap,
+            (
+                nested.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), nested.payloadForCalls(new Call[](0))),
+                new bytes[](0)
+            )
+        );
+        guard.stage(address(parent), _safeTx(parent, address(nested), bootstrapCall), "");
+        parent.exec(address(nested), 0, bootstrapCall);
+        (,,, bytes memory body) = this.decodeSigned(_lastBody());
+        SafeAuthorityRecord[] memory records = abi.decode(body, (SignedBootstrap)).records;
         assertEq(records.length, 2);
         assertEq(records[1].safe, address(child));
 
-        BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(bytes20(t.predictReceiver(remote, address(parent), SALT)))),
-            block.timestamp,
-            block.timestamp + 1 days,
-            abi.encode(new Call[](0))
-        );
+        bytes memory recipient =
+            Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(bytes20(t.predictReceiver(remote, address(parent), SALT))));
         SafeTxEvidence memory evidence;
-        evidence.signedSafeTx.safeTx = _safeTx(parent, address(nested), _bootstrapCall(leaf));
+        evidence.signedSafeTx.safeTx = _safeTx(
+            parent,
+            address(nested),
+            abi.encodeCall(IERC7786GatewaySource.sendMessage, (recipient, _payload(), new bytes[](0)))
+        );
         bytes32 h = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(parent), block.chainid);
         evidence.signedSafeTx.signatures =
             SafeSigs.blob(SafeSigs.two(SafeSigs.nested(address(child), ""), SafeSigs.eoa(1)), h);
 
-        // Without the child's cached approval the bootstrap reverts before paying.
         guard.stage(address(parent), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -672,15 +659,13 @@ contract SignedTransmitterTest is HyperlaneFixture {
         NestedSafeApproval memory nestedApproval =
             SafeSigs.approval(address(child), h, block.chainid, SafeSigs.one(SafeSigs.eoa(5)), address(0x5161));
         guard.cacheApproval(address(child), nestedApproval.messageHash, nestedApproval.approval);
-        vm.deal(address(nested), 1 ether);
         guard.stage(address(parent), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
         parent.exec(address(nested), 0, evidence.signedSafeTx.safeTx.data);
 
-        (,,, bytes memory body) = this.decodeSigned(_lastBody());
-        SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
-        assertEq(bootstrap.evidence.nestedApprovals.length, 1);
-        assertEq(bootstrap.evidence.nestedApprovals[0].childSafe, address(child));
-        assertEq(bootstrap.evidence.nestedApprovals[0].messageHash, nestedApproval.messageHash);
-        assertEq(bootstrap.evidence.nestedApprovals[0].approval.signatures, nestedApproval.approval.signatures);
+        (, SafeTxEvidence memory sent) = abi.decode(_lastBody(), (uint256, SafeTxEvidence));
+        assertEq(sent.nestedApprovals.length, 1);
+        assertEq(sent.nestedApprovals[0].childSafe, address(child));
+        assertEq(sent.nestedApprovals[0].messageHash, nestedApproval.messageHash);
+        assertEq(sent.nestedApprovals[0].approval.signatures, nestedApproval.approval.signatures);
     }
 }

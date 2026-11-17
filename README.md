@@ -62,8 +62,11 @@ confirms its destination, and the same bytes cannot be replayed onto another cha
 **What it costs.** The conduit's home chain and the message provider enter the trust path.
 For a plain receiver, a halt at home delays everything, and a provider that can forge a
 message can drive the conduit. A signed receiver executes only what its stored Safe owner
-graph signed, delivered by the provider or submitted directly by anyone, so a forging
-provider cannot drive it and a halt at home does not stop direct submission. Transceiver
+graph signed, delivered by the provider or submitted directly by anyone, so once it exists a
+forging provider cannot drive it and a halt at home does not stop direct submission. That
+graph is the one the provider delivered at bootstrap, so the provider is trusted to pass the
+Safe's authority correctly then; owners confirm a receiver's `authorityRecords()` before
+relying on it. Transceiver
 governance crosses a bridge in either mode, so it still trusts the provider. No
 shared failure is what N independent admin accounts buy with N of everything else. The exposure is
 narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes

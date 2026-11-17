@@ -14,7 +14,6 @@ import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol"
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
-    BootstrapLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
@@ -121,22 +120,9 @@ contract SignedReceiverTest is Test {
         return SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(3));
     }
 
-    /// @notice Build a setup leaf for the selected receiver inside a one-day window.
-    /// @dev Initialization tests start from an executable destination and window before
-    ///      mutating a specific condition.
-    function _bootstrapLeaf(address r, bytes memory setup) internal view returns (BootstrapLeaf memory) {
-        return BootstrapLeaf(_here(r), block.timestamp, block.timestamp + 1 days, setup);
-    }
-
-    /// @notice Sign a single-leaf bootstrap and package its authority records.
-    /// @dev The receiver needs the complete authorization body even when a one-leaf tree
-    ///      requires no siblings.
-    function _bootstrapBody(BootstrapLeaf memory leaf, Sig[] memory sigs) internal returns (bytes memory) {
-        bytes32 leafHash = DispatchLeaves.hash(leaf);
-        bytes memory payload = abi.encode(leafHash, uint256(0), leaf, new bytes32[](0));
-        SafeTxEvidence memory evidence =
-            _signed(abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), sigs);
-        return abi.encode(SignedBootstrap(evidence, _records()));
+    /// @notice Package the fixture's authority records with encoded setup calls.
+    function _bootstrapBody(bytes memory setup) internal view returns (bytes memory) {
+        return abi.encode(SignedBootstrap(_records(), setup));
     }
 
     /// @notice Call signed initialization as the configured parent transceiver.
@@ -152,7 +138,7 @@ contract SignedReceiverTest is Test {
     function setUp() public {
         vm.warp(1_000_000);
         receiver = _plainReceiver();
-        _initialize(receiver, _bootstrapBody(_bootstrapLeaf(receiver, _calls("setup")), _quorum()));
+        _initialize(receiver, _bootstrapBody(_calls("setup")));
     }
 
     /* ================================ bootstrap ================================= */
@@ -177,7 +163,7 @@ contract SignedReceiverTest is Test {
     ///      snapshot.
     function test_onlyTheParentTransceiverInitializes() public {
         address r = _plainReceiver();
-        bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
+        bytes memory body = _bootstrapBody(_calls("x"));
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NotParentTransceiver.selector, address(0xBAD)));
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, body);
@@ -187,47 +173,31 @@ contract SignedReceiverTest is Test {
     /// @dev The stored authority must be the owner's.
     function test_recordsRootedAtAnotherSafeRefuse() public {
         address r = _plainReceiver();
-        bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
+        bytes memory body = _bootstrapBody(_calls("x"));
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.RootIsNotOwner.selector, address(0x1), SAFE));
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), body);
     }
 
-    /// @notice Submit bootstrap evidence naming a different destination receiver.
-    /// @dev A valid setup signature must not authorize initialization at an unintended address.
-    function test_aBootstrapForAnotherReceiverRefuses() public {
+    /// @notice Initialize with records no signature supports.
+    /// @dev The receiver takes the carried graph on the provider's authentication; signatures
+    ///      could not prove the owners who did not sign, so none are checked.
+    function test_theCarriedRecordsAreStoredWithoutSignatures() public {
         address r = _plainReceiver();
-        bytes memory body = _bootstrapBody(_bootstrapLeaf(receiver, _calls("x")), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WrongDestination.selector, _here(receiver)));
-        _initialize(r, body);
+        SafeAuthorityRecord[] memory other =
+            Records.list(Records.record(SAFE, 1, Records.eoaOwners(Records.pks(7, 8, 9))));
+        _initialize(r, abi.encode(SignedBootstrap(other, _calls("x"))));
+        assertEq(keccak256(abi.encode(SignedReceiver(payable(r)).authorityRecords())), keccak256(abi.encode(other)));
     }
 
-    /// @notice Submit a bootstrap with too few valid owner signatures.
-    /// @dev Receiver creation must require the stored source Safe's full quorum.
-    function test_aBootstrapWithoutQuorumRefuses() public {
+    /// @notice Initialize with a graph that fails the canonical checks.
+    /// @dev Shape validation still applies to the carried records.
+    function test_aMalformedGraphRefuses() public {
         address r = _plainReceiver();
-        bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), SafeSigs.one(SafeSigs.eoa(1)));
-        vm.expectPartialRevert(bytes4(keccak256("SignaturesTooShort(address)")));
-        _initialize(r, body);
-    }
-
-    /// @notice Try bootstrap before its start, after its deadline and with reversed endpoints.
-    /// @dev Initialization must honor the entire signed timing constraint.
-    function test_anEarlyExpiredOrInvertedBootstrapWindowRefuses() public {
-        address r = _plainReceiver();
-        BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
-        leaf.validAfter = block.timestamp + 1;
-        vm.expectRevert(
-            abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline)
-        );
-        _initialize(r, _bootstrapBody(leaf, _quorum()));
-
-        leaf = _bootstrapLeaf(r, _calls("x"));
-        leaf.validAfter = block.timestamp - 10;
-        leaf.deadline = block.timestamp - 1;
-        vm.expectRevert(
-            abi.encodeWithSelector(SignedDispatchCalls.WindowClosed.selector, leaf.validAfter, leaf.deadline)
-        );
-        _initialize(r, _bootstrapBody(leaf, _quorum()));
+        SafeAuthorityRecord[] memory bad =
+            Records.list(Records.record(SAFE, 0, Records.eoaOwners(Records.pks(1, 2, 3))));
+        vm.expectRevert();
+        _initialize(r, abi.encode(SignedBootstrap(bad, _calls("x"))));
+        assertEq(SignedReceiver(payable(r)).authorityGraph(), bytes32(0));
     }
 
     /// @notice Make the setup batch fail during signed initialization.
@@ -238,61 +208,13 @@ contract SignedReceiverTest is Test {
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.boom, ()));
         vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
-        _initialize(r, _bootstrapBody(_bootstrapLeaf(r, abi.encode(c)), _quorum()));
-    }
-
-    /// @notice Sign bootstrap as a DELEGATECALL instead of CALL.
-    /// @dev Destination acceptance must match the supported source-transmitter operation.
-    function test_aDelegatecallBootstrapRefuses() public {
-        address r = _plainReceiver();
-        BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
-        bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
-        SafeTxEvidence memory evidence;
-        evidence.signedSafeTx.safeTx.to = TRANSMITTER;
-        evidence.signedSafeTx.safeTx.operation = 1;
-        evidence.signedSafeTx.safeTx.data = abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0)));
-        evidence.signedSafeTx.signatures =
-            SafeSigs.blob(_quorum(), SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
-        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NotSourceCall.selector, TRANSMITTER));
-        _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
-    }
-
-    /// @notice Carry a nonzero authority counter in the bootstrap payload.
-    /// @dev This implementation fixes creation authority and must not imply support for later
-    ///      counter updates.
-    function test_aNonzeroAuthorityCounterRefuses() public {
-        address r = _plainReceiver();
-        BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
-        bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(1), leaf, new bytes32[](0));
-        SafeTxEvidence memory evidence =
-            _signed(abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.AuthorityCounterMismatch.selector, 1));
-        _initialize(r, abi.encode(SignedBootstrap(evidence, _records())));
-    }
-
-    /// @notice Retry the original bootstrap, then vary its leaf or time window.
-    /// @dev Transport retries should acknowledge setup without rerunning it or accepting a new
-    ///      initialization authorization.
-    function test_theSameBootstrapRepeatsInItsWindowAndNothingElseDoes() public {
-        address r = _plainReceiver();
-        BootstrapLeaf memory leaf = _bootstrapLeaf(r, _calls("x"));
-        bytes memory body = _bootstrapBody(leaf, _quorum());
-        _initialize(r, body);
-        SignedReceiver(payable(r)).requireBootstrapRepeat(body);
-
-        bytes memory other = _bootstrapBody(_bootstrapLeaf(r, _calls("y")), _quorum());
-        vm.expectPartialRevert(SignedReceiver.NotTheBootstrap.selector);
-        SignedReceiver(payable(r)).requireBootstrapRepeat(other);
-
-        vm.warp(leaf.deadline + 1);
-        vm.expectPartialRevert(SignedDispatchCalls.WindowClosed.selector);
-        SignedReceiver(payable(r)).requireBootstrapRepeat(body);
+        _initialize(r, _bootstrapBody(abi.encode(c)));
     }
 
     /// @notice Call signed initialization again on an initialized receiver.
     /// @dev Stored authority must not be overwritten through the creation entry point.
     function test_aSecondInitializationRefuses() public {
-        bytes memory body = _bootstrapBody(_bootstrapLeaf(receiver, _calls("x")), _quorum());
+        bytes memory body = _bootstrapBody(_calls("x"));
         vm.expectRevert(SignedReceiver.AlreadySigned.selector);
         _initialize(receiver, body);
     }
