@@ -14,6 +14,19 @@ Without it, an owner on six chains needs six admin accounts: six addresses to ke
 six transactions per change, six balances to fund, and for a multisig, six signer sets.
 Everything below follows from reducing that to one.
 
+**One multisig, not one per chain.** A Safe on its home chain is the only multisig. No
+multisig contract or signer set is deployed or kept in step on any other chain: signers sign
+once, in one place, and the authority on each destination is a receiver this protocol deploys.
+Multichain multisig designs such as Chainlink's
+[ManyChainMultiSig](https://smartcontractkit.github.io/mcms/intro), LayerZero's
+[OneSig](https://www.openzeppelin.com/news/onesig-audit) and Candide's
+[Safe Unified Account](https://docs.candide.dev/wallet/abstractionkit/safe-unified-account/)
+let one signature cover many chains, but each verifies it against a multisig contract or Safe
+deployed on every chain, whose signers and configuration must exist there. A signed receiver
+holds a copy of the home Safe's owner graph to check signatures, but it is not a multisig of
+its own: the graph comes from the Safe at bootstrap and changes only through the Safe's own
+authority updates ([#109](https://github.com/crossecute/protocol/issues/109)).
+
 **Control changes once, not N times.** The owner's authority exists only on the conduit's
 home, whichever chain the owner picks. Receivers elsewhere never learn who or what the owner
 is: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a
@@ -49,7 +62,7 @@ currency draws on the receiver's address, which is derivable and fundable before
 receiver exists: topped up once, not per signer.
 
 **One admin address everywhere.** The same CREATE2 address holds the conduit on every
-supported chain, which unifies access control. Chains whose CREATE2 formula differs from
+supported chain, for plain and Safe-signed conduits alike, which unifies access control. Chains whose CREATE2 formula differs from
 EIP-1014's, such as Tron and zkSync, derive their own address and report it back to the
 conduit's home.
 
