@@ -308,7 +308,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         );
     }
 
-    function testNewOwnersCannotSignTheirOwnInstallation() public {
+    function testNewOwnerCannotSignItsOwnInstallation() public {
         _activated();
         Signer[] memory signers = new Signer[](2);
         signers[0] = _eoa(KEY_A);
@@ -317,7 +317,8 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         bytes memory data = _ownershipData(safe, _head(safe), _hash(next), _addOwner(vm.addr(KEY_D), 2));
         bytes memory signatures =
             _sign(signers, _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
-        vm.expectRevert();
+        // Safe checks live owners before the guard runs; the guard checks the stored record.
+        vm.expectRevert("GS026");
         _execStaged(
             safe,
             address(multiSend),
