@@ -110,11 +110,12 @@ These sizes describe provider extra args, not the larger ABI-encoded transaction
 attribute. Always use the router quote for fees rather than assuming an encoding saving
 implies a fee saving.
 
-New optional-path tests and real-v2 integration validation are deferred to
-[issue #150](https://github.com/crossecute/protocol/issues/150). Passing the existing suite
-covers existing behavior and does not validate the new optional settings. The issue also
-tracks actual lane/version evidence, delivery-gas checks, and native-VM validation before
-production enablement.
+Local option tests, actual OffRamp/Router integration tests and native compilation are
+recorded in [the validation report](ccip-v2-validation.md) for
+[issue #150](https://github.com/crossecute/protocol/issues/150). Live-lane and native
+execution/gas checks remain production-enablement requirements in
+[issue #151](https://github.com/crossecute/protocol/issues/151). No lane is enabled by
+these tests, and local signature-checking test CCVs do not validate production services.
 
 Sources: [CCIP message lifecycle](https://docs.chain.link/ccip/concepts/message-lifecycle),
 [V3 configuration](https://docs.chain.link/ccip/concepts/architecture/message-configuration-extraargs),

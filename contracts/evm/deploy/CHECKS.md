@@ -405,6 +405,10 @@ initially disabled for every outbound lane. Before the transceiver owner calls
    evidence or detect lane versions itself.
 
 No V3 lane checks have been recorded by this refactor, and no lane is enabled by it.
-New optional-path tests and production validation are tracked in
-[issue #150](https://github.com/crossecute/protocol/issues/150).
+Local option and actual OffRamp/Router tests for
+[issue #150](https://github.com/crossecute/protocol/issues/150), together with successful
+zkSync/Tron compilation, are recorded in
+[the local validation report](../../../docs/ccip-v2-validation.md). Production lane
+evidence and native deployment/delivery-gas checks remain tracked in
+[issue #151](https://github.com/crossecute/protocol/issues/151).
 See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.

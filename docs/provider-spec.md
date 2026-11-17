@@ -1161,6 +1161,8 @@ attributes, lane capability gate, inbound verifier/finality policies, and execut
 options. Policy and lane settings use ERC-7201 storage, preserving R8.2. The receiver
 retains source/self authority for policy updates; transceiver updates require its owner.
 Sender options do not override an inbound policy. Pending messages use the policy in
-force when CCIP executes them. Automatic reports retain default attributes. The new
-option-specific conformance tests are deferred to
-[issue #150](https://github.com/crossecute/protocol/issues/150).
+force when CCIP executes them. Automatic reports retain default attributes. The
+[local validation report](ccip-v2-validation.md) records option-specific coverage and
+actual OffRamp enforcement tests for [issue #150](https://github.com/crossecute/protocol/issues/150).
+Live-lane and native execution checks remain tracked in
+[issue #151](https://github.com/crossecute/protocol/issues/151).
