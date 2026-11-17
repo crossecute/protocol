@@ -293,7 +293,8 @@ gateway's own default, which is not sized for a conduit creation (#52). A gas at
 replaces the default with no floor, and sizing it is the sender's job: a delivery short of
 gas reverts whole, and every provider in scope lets anyone retry it at a higher limit
 ([provider-research §1](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay)).
-Wormhole
+The optional CCIP V3 attribute uses zero gas to select the bounded protocol default;
+its legacy V2 attribute retains its existing gas semantics. Wormhole
 requires one of its two attributes: the signed quote, whose gas limit of zero means the
 default, or publish-only, which pays no relay provider and so names no gas. A binding MUST answer `supportsAttribute`
 honestly, and a gateway that refuses an attribute it does not know is behaving correctly.
@@ -1152,3 +1153,14 @@ A binding is done when every line is true.
       script over `DeployProvider`, and the provider's ids in `deploy/providers/`, in the
       order of [§6](#6-configuration-a-compliant-deployment-performs)
 - [ ] The §8 specs that apply to it pass, with the binding's suite inheriting each one
+
+### CCIP 2.0 optional configuration
+
+The CCIP binding's [options guide](ccip-v2.md) defines its V2 defaults, opt-in V3
+attributes, lane capability gate, inbound verifier/finality policies, and execution
+options. Policy and lane settings use ERC-7201 storage, preserving R8.2. The receiver
+retains source/self authority for policy updates; transceiver updates require its owner.
+Sender options do not override an inbound policy. Pending messages use the policy in
+force when CCIP executes them. Automatic reports retain default attributes. The new
+option-specific conformance tests are deferred to
+[issue #150](https://github.com/crossecute/protocol/issues/150).

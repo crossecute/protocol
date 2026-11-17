@@ -382,3 +382,29 @@ for it was not checked.
   before `markLive`, so an unverified deployer-placed contract at that address could originate
   messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
   it.
+
+## CCIP 2.0 options
+
+Existing CCIP checks and recorded results do not establish V3 compatibility. V3 is
+initially disabled for every outbound lane. Before the transceiver owner calls
+`setCcipV3Lane(selector, true, evidenceHash)`:
+
+1. Verify the source lane's deployed OnRamp/FeeQuoter supports V3 and the destination
+   OffRamp supports the receiver policy interface. Record contract addresses, versions,
+   block numbers, direction, and date. Do not infer this from the npm package version.
+2. Quote representative V3 messages with defaults and every intended custom option.
+   Confirm the reverse direction independently where it is used. An arbitrary quote
+   failure is not evidence that fallback to V2 is safe.
+3. Check the configured CCVs, executor, and finality modes on that lane. Confirm that
+   receiver/transceiver inbound policies are satisfiable, including automatic reports
+   which still send without attributes.
+4. Validate actual delivery, full-finality rejection of faster requests, policy updates
+   with pending messages, No Exec/manual execution, and delivery gas on the target VM.
+5. Store the results in this file or a linked versioned record and use its content hash
+   as evidenceHash. The contract records this hash in an event; it does not verify the
+   evidence or detect lane versions itself.
+
+No V3 lane checks have been recorded by this refactor, and no lane is enabled by it.
+New optional-path tests and production validation are tracked in
+[issue #150](https://github.com/crossecute/protocol/issues/150).
+See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.

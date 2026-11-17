@@ -559,13 +559,20 @@ The CCIP binding uses the MIT application interfaces and `Client` library from
 `@chainlink/contracts-ccip` 2.0.0, vendored at the release commit by
 `contracts/evm/script/vendor/ccip.sh`. Imports use the package's canonical
 `@chainlink/contracts-ccip/contracts/` prefix. `GenericExtraArgsV2` preserves the
-previous V2 tag and encoding: a 4-byte tag and two 32-byte words. This dependency
-update does not add bytes to messages or change their per-byte fee contribution.
+previous V2 tag and encoding: a 4-byte tag and two 32-byte words. Messages without options
+retain this encoding; opt-in V3 has a different size and is priced by the router.
 
-`CcipReceiver` inherits the v2 `CCIPReceiver` helper, including its default CCV and
-full-finality configuration. Its callback retains gateway-role, home-origin and
+`CcipReceiver` inherits the v2 `CCIPReceiver` helper, with configurable CCV and
+finality policies that default to CCIP verification and full finality. Its callback retains gateway-role, home-origin and
 source-transmitter checks. `router()` remains available alongside `getRouter()`.
 The vendor script changes the helper's `supportsInterface` from `pure` to `view`
 to compose with AccessControl, and maps its IERC165 import to this repo's pinned
-OpenZeppelin version. No storage slots are added. CCIP delivery now copies the
+OpenZeppelin version. Optional configuration uses a separate ERC-7201 namespace,
+without adding sequential slots to protocol bases. CCIP delivery copies the
 upstream message into memory; other providers retain their calldata decode path.
+
+Transmitters and all CCIP transceiver variants support opt-in V3 message attributes.
+The transceiver owner must enable a verified outbound lane first. Receiver policies
+remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/ccip-v2.md)
+for defaults, authority, pending-message effects, and deferred validation in
+[issue #150](https://github.com/crossecute/protocol/issues/150).

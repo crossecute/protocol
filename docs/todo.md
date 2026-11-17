@@ -208,3 +208,11 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
+
+## CCIP 2.0 optional-path validation
+
+Track new CCIP verifier/finality, V3 lane/attribute, and executor/No Exec coverage in
+[issue #150](https://github.com/crossecute/protocol/issues/150). The tests and actual lane,
+VM, delivery-gas, and manual-execution checks are deferred; do not infer these from the
+legacy suite. Follow [the options guide](ccip-v2.md) and
+[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.
