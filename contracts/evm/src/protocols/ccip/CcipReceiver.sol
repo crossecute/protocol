@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {CcipPolicy} from "src/protocols/ccip/CcipPolicy.sol";
 import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
 import {CCIPReceiver} from "@chainlink/contracts-ccip/contracts/applications/CCIPReceiver.sol";
 import {RolesEnumerable} from "src/messaging/Roles.sol";
@@ -9,7 +10,7 @@ import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user conduit on a non-home chain.
-contract CcipReceiver is ProviderReceiver, CCIPReceiver {
+contract CcipReceiver is ProviderReceiver, CCIPReceiver, CcipPolicy {
     constructor(address router_) CCIPReceiver(_checkedRouter(router_)) {}
 
     function _checkedRouter(address router_) private pure returns (address) {
@@ -31,6 +32,24 @@ contract CcipReceiver is ProviderReceiver, CCIPReceiver {
         _onMessageFromMemory(
             bytes32(uint256(message.sourceChainSelector)), CcipMessage.sender(message.sender), message.data
         );
+    }
+
+    function _authorizeCcipPolicyChange() internal view override {
+        if (!isAuthorizedCaller(msg.sender)) revert NotSourceTransmitter();
+    }
+
+    function getCCVsAndFinalityConfig(uint64 source, bytes calldata sender)
+        public
+        view
+        override(CCIPReceiver, CcipPolicy)
+        returns (
+            address[] memory requiredCCVs,
+            address[] memory optionalCCVs,
+            uint8 optionalThreshold,
+            bytes4 allowedFinalityConfig
+        )
+    {
+        return CcipPolicy.getCCVsAndFinalityConfig(source, sender);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(RolesEnumerable, CCIPReceiver) returns (bool) {

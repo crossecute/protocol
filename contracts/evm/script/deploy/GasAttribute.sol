@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {ExtraArgsCodec} from "@chainlink/contracts-ccip/contracts/libraries/ExtraArgsCodec.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
@@ -21,6 +22,11 @@ library GasAttribute {
     /// @dev `(gasLimit, allowOutOfOrderExecution)`, which `CcipMessage` packs into GenericExtraArgsV2.
     function ccip(uint256 gas) internal pure returns (bytes memory) {
         return abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(gas, false));
+    }
+
+    /// @notice Opt-in V3 attribute; the transceiver must have enabled the outbound lane.
+    function ccip(ExtraArgsCodec.GenericExtraArgsV3 memory options) internal pure returns (bytes memory) {
+        return abi.encodePacked(CcipMessage.EXTRA_ARGS_V3_ATTRIBUTE, abi.encode(options));
     }
 
     function hyperlane(uint256 gas) internal pure returns (bytes memory) {
