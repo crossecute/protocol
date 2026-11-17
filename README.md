@@ -552,3 +552,12 @@ what adding a chain takes.
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and only the transceiver step of a chain's deployment is scripted. Both are tracked
 in [`docs/todo.md`](docs/todo.md).
+
+### CCIP dependency
+
+The CCIP binding uses the MIT application interfaces and `Client` library from
+`@chainlink/contracts-ccip` 2.0.0, vendored at the release commit by
+`contracts/evm/script/vendor/ccip.sh`. Imports use the package's canonical
+`@chainlink/contracts-ccip/contracts/` prefix. `GenericExtraArgsV2` preserves the
+previous V2 tag and encoding: a 4-byte tag and two 32-byte words. This dependency
+update does not add bytes to messages or change their per-byte fee contribution.

@@ -5,8 +5,8 @@ import {ProviderTransceiver} from "src/protocols/ProviderTransceiver.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
+import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @notice CCIP on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which

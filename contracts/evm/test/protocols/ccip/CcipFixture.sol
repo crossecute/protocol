@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {GasAttribute} from "script/deploy/GasAttribute.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
+import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
 import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {
@@ -134,7 +134,7 @@ abstract contract CcipFixture is ProviderGasFixture {
         return defaultReceiverInit(sourceTransmitter, _remoteProviderId(), calls);
     }
 
-    /// @dev `EVMExtraArgsV2` after its 4-byte tag; the gas limit is its first word.
+    /// @dev `GenericExtraArgsV2` after its 4-byte tag; the gas limit is its first word.
     function _lastGasLimit() internal view override returns (uint256) {
         return _uintAt(router.sent(router.sentLength() - 1).extraArgs, 4, 32);
     }

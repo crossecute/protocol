@@ -7,8 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
+import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
 import {
     ProviderIdTableSpec,
@@ -65,7 +65,14 @@ contract CcipTransceiverSendTest is
         harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
     }
 
-    function test_extraArgsAttributeBecomesEVMExtraArgsV2() public {
+    function testFuzz_extraArgsRetainLegacyWireEncoding(uint256 gasLimit, bool outOfOrder) public {
+        bytes[] memory attrs = new bytes[](1);
+        attrs[0] = abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(gasLimit, outOfOrder));
+        harness.sendMessagePublic(_configuredRecipient(), "x", attrs, 0);
+        assertEq(router.sent(0).extraArgs, abi.encodeWithSelector(bytes4(0x181dcf10), gasLimit, outOfOrder));
+    }
+
+    function test_extraArgsAttributeBecomesGenericExtraArgsV2() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(uint256(500_000), true));
 
@@ -73,7 +80,7 @@ contract CcipTransceiverSendTest is
 
         assertEq(
             router.sent(0).extraArgs,
-            Client._argsToBytes(Client.EVMExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
+            Client._argsToBytes(Client.GenericExtraArgsV2({gasLimit: 500_000, allowOutOfOrderExecution: true}))
         );
     }
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {Client} from "@ccip/libraries/Client.sol";
-import {IRouterClient} from "@ccip/interfaces/IRouterClient.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
+import {IRouterClient} from "@chainlink/contracts-ccip/contracts/interfaces/IRouterClient.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
@@ -61,7 +61,7 @@ library CcipMessage {
         });
     }
 
-    /// @notice One attribute: CCIP's `EVMExtraArgsV2`, as
+    /// @notice One attribute: CCIP's `GenericExtraArgsV2`, as
     ///         `abi.encodePacked(EXTRA_ARGS_ATTRIBUTE, abi.encode(gasLimit,
     ///         allowOutOfOrderExecution))`. Anything else is refused per ERC-7786.
     /// @dev Without it, `defaultGas` in order, which is what empty `extraArgs` would mean but
@@ -74,7 +74,7 @@ library CcipMessage {
             present ? abi.decode(encoded, (uint256, bool)) : (defaultGas, false);
         // forge-lint: disable-end(boolean-cst)
         return Client._argsToBytes(
-            Client.EVMExtraArgsV2({gasLimit: gasLimit, allowOutOfOrderExecution: allowOutOfOrderExecution})
+            Client.GenericExtraArgsV2({gasLimit: gasLimit, allowOutOfOrderExecution: allowOutOfOrderExecution})
         );
     }
 }

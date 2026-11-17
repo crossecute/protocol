@@ -9,19 +9,20 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 source contracts/evm/script/vendor/lib.sh
 
-REPO="smartcontractkit/ccip"
-COMMIT="171f9f0c"
+REPO="smartcontractkit/chainlink-ccip"
+# @chainlink/contracts-ccip 2.0.0 (contracts-ccip-v2.0.0).
+COMMIT="c2c125c27f056db2e98d21501922b6eff5750f36"
 NOTE=$'MIT-tagged in its own SPDX header, distinct from the BUSL-1.1 router/off-ramp\n// infrastructure this repo only ever calls.'
-DEST="contracts/evm/lib/ccip/contracts/src/v0.8/ccip"
+DEST="contracts/evm/lib/ccip/contracts"
 
 vendor_file "$REPO" "$COMMIT" \
-  "contracts/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol" \
+  "chains/evm/contracts/interfaces/IAny2EVMMessageReceiver.sol" \
   "$DEST/interfaces/IAny2EVMMessageReceiver.sol" "$NOTE"
 
 vendor_file "$REPO" "$COMMIT" \
-  "contracts/src/v0.8/ccip/interfaces/IRouterClient.sol" \
+  "chains/evm/contracts/interfaces/IRouterClient.sol" \
   "$DEST/interfaces/IRouterClient.sol" "$NOTE"
 
 vendor_file "$REPO" "$COMMIT" \
-  "contracts/src/v0.8/ccip/libraries/Client.sol" \
+  "chains/evm/contracts/libraries/Client.sol" \
   "$DEST/libraries/Client.sol" "$NOTE"

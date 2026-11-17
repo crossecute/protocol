@@ -2,8 +2,8 @@
 pragma solidity ^0.8.0;
 
 import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
+import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";

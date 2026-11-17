@@ -18,7 +18,7 @@ library GasAttribute {
         return abi.encodePacked(LzMessage.OPTIONS_ATTRIBUTE, uint16(3), uint8(1), uint16(17), uint8(1), uint128(gas));
     }
 
-    /// @dev `(gasLimit, allowOutOfOrderExecution)`, which `CcipMessage` packs into EVMExtraArgsV2.
+    /// @dev `(gasLimit, allowOutOfOrderExecution)`, which `CcipMessage` packs into GenericExtraArgsV2.
     function ccip(uint256 gas) internal pure returns (bytes memory) {
         return abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, abi.encode(gas, false));
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Client} from "@ccip/libraries/Client.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
 /// @notice Minimal Router surface the bindings actually call: `getFee`, `ccipSend`. Inbound
 ///         delivery isn't simulated: tests drive it with `vm.prank(address(router))` + a
