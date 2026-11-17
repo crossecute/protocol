@@ -22,14 +22,6 @@ struct ExecutionLeaf {
     bytes[] attributes; // The provider options `relayLeaf` quotes and sends with.
 }
 
-/// @notice The setup batch a receiver runs when it is created. It has no local nonce.
-struct BootstrapLeaf {
-    bytes destination;
-    uint256 validAfter;
-    uint256 deadline;
-    bytes setupCalls;
-}
-
 /// @notice A child Safe's signed `signMessage` transaction, standing in for an empty nested
 ///         signature. `messageHash` is the child-domain Safe message hash it approves.
 struct NestedSafeApproval {
@@ -46,9 +38,9 @@ struct SafeTxEvidence {
     NestedSafeApproval[] nestedApprovals;
 }
 
-/// @notice The body of a signed bootstrap envelope: the signed `bootstrap` call, then the
-///         transmitter's creation records in canonical order.
+/// @notice The body of a signed bootstrap envelope: the Safe's live authority records in
+///         canonical order, read when the bootstrap was sent, and the receiver's setup calls.
 struct SignedBootstrap {
-    SafeTxEvidence evidence;
     SafeAuthorityRecord[] records;
+    bytes setupCalls; // abi.encode(Call[]).
 }

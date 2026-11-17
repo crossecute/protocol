@@ -1,7 +1,7 @@
 # Safe guard
 
 The Safe guard a conduit owner installs so that its transmitter can attach the owners'
-signatures to a `sendMessage` or a signed `bootstrap`, and so that a child Safe's approval of a parent transaction
+signatures to a `sendMessage` and accept a signed `bootstrap` only from an owner transaction, and so that a child Safe's approval of a parent transaction
 leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
@@ -43,8 +43,9 @@ These are settled. The sections below describe each in full.
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
-  staged record. The complete signature blob is staged, with no size cap. The plain
-  `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads are not staged.
+  staged record. The complete signature blob is staged, with no size cap. A plain-mode
+  transmitter's `bootstrap` has the same selector; its record goes unconsumed and the post-hook
+  clears it.
 - **Leaf publication.** Anyone can publish a Merkle tree's ordered, encoded leaves to the guard,
   which records the root and emits one event per leaf. An owner `registerRoot(bytes32)` reverts
   unless its root is published on the Safe's guard, and stages nothing. Publication authorizes
@@ -217,8 +218,10 @@ A signature-enabled transmitter, called directly by its owner Safe through `send
 2. reads the Safe's transaction guard slot with `getStorageAt(slot, 1)`, decoding the reply
    strictly;
 3. calls `consume(msg.sender)` on that guard before any other external call;
-4. sets the returned transaction's `data` to its own calldata, uses it and the signature blob in
-   memory, and rejects if discovery or consumption fails.
+4. for `sendMessage`, sets the returned transaction's `data` to its own calldata and uses it and
+   the signature blob in memory; for `bootstrap`, uses nothing from the record, since consuming it
+   is the check that an owner transaction made the call. Either rejects if discovery or
+   consumption fails.
 
 It never pins a guard address and never falls back to an unsigned send. It does not compare
 calldata or value with the record: the direct call from the Safe already delivers what the

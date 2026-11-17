@@ -1,6 +1,6 @@
 # Safe-signed dispatch measurements
 
-Measured 2026-11-11 at code commit `c598ef99da5453590a08d7329183b0106bcdc7f1`
+Measured 2026-11-17 at code commit `a4dde1a039b5b8bb11ce802fae61381e70f28b2f`
 (Forge 1.8.1). This completes #134's reproducible local measurements and real-Safe
 integration tests. These are execution-gas observations, not live provider fee quotes.
 No fork RPC was configured; no transaction was broadcast.
@@ -17,8 +17,10 @@ Before each sample, `vm.cool` resets account and storage access warmth for the r
 its implementation, the authority library and the application target. Figures include
 an external call and ABI encoding/decoding, but exclude transaction intrinsic/calldata
 charges, transport verification and relayer transaction overhead. `initializeSigned`
-excludes CREATE2, the plain initializer, transceiver graph/address validation and setup
-application calls. Its bootstrap body size excludes the 192-byte outer signed envelope.
+excludes CREATE2, the plain initializer, transceiver address validation and setup
+application calls. The bootstrap body is the authority records and empty setup calls; it
+carries no signatures or evidence (#148), so inline and cached graphs bootstrap alike. Its
+size excludes the 192-byte outer signed envelope.
 Standalone/Merkle sizes are complete protocol wire bundles, including evidence.
 
 All baseline cases use one application call and an empty proof/attribute list. The
@@ -29,25 +31,26 @@ state is already nonzero: the two gas columns are not an isolated comparison of 
 
 | Graph / variant | initializeSigned gas | Standalone gas | Merkle gas | Bootstrap body bytes | Standalone bytes | Merkle bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 2-of-3 EOA | 306,208 | 168,011 | 158,130 | 1,792 | 1,376 | 1,600 |
-| One inline child | 387,931 | 176,859 | 167,027 | 2,112 | 1,472 | 1,696 |
-| One cached approval | 402,873 | 191,845 | 181,977 | 2,848 | 2,208 | 2,432 |
-| Two nested levels | 470,161 | 185,974 | 176,115 | 2,432 | 1,568 | 1,792 |
-| Shared child | 595,644 | 213,497 | 203,724 | 3,040 | 1,888 | 2,112 |
-| 10-of-13 + 5-of-7 inline | 1,011,348 | 288,812 | 279,145 | 4,352 | 2,400 | 2,624 |
-| 10-of-13 + 5-of-7 cached | 1,040,412 | 317,857 | 308,316 | 5,824 | 3,872 | 4,096 |
-| 2-of-10 EOA | 495,410 | 168,025 | 158,146 | 2,240 | 1,376 | 1,600 |
-| EOA, proof depth 8 | 306,208 | 168,011 | 165,516 | 1,792 | 1,376 | 1,856 |
-| EOA, 10 calls | 306,208 | 231,947 | 222,593 | 1,792 | 3,968 | 4,192 |
-| EOA, 256-byte attribute | 306,208 | 172,091 | 161,768 | 1,792 | 1,696 | 1,920 |
-| Large cached, 10 calls, depth 8, attribute | 1,040,412 | 386,526 | 384,971 | 5,824 | 6,784 | 7,264 |
+| 2-of-3 EOA | 237,440 | 167,961 | 158,116 | 576 | 1,376 | 1,600 |
+| One inline child | 313,789 | 176,798 | 166,999 | 800 | 1,472 | 1,696 |
+| One cached approval | 313,789 | 191,743 | 181,908 | 800 | 2,208 | 2,432 |
+| Two nested levels | 390,475 | 185,899 | 176,071 | 1,024 | 1,568 | 1,792 |
+| Shared child | 493,810 | 213,371 | 203,625 | 1,312 | 1,888 | 2,112 |
+| 10-of-13 + 5-of-7 inline | 851,875 | 288,556 | 278,907 | 2,112 | 2,400 | 2,624 |
+| 10-of-13 + 5-of-7 cached | 851,875 | 317,428 | 307,905 | 2,112 | 3,872 | 4,096 |
+| 2-of-10 EOA | 425,467 | 167,974 | 158,129 | 1,024 | 1,376 | 1,600 |
+| EOA, proof depth 8 | 237,440 | 167,961 | 165,497 | 576 | 1,376 | 1,856 |
+| EOA, 10 calls | 237,440 | 231,843 | 222,524 | 576 | 3,968 | 4,192 |
+| EOA, 256-byte attribute | 237,440 | 172,034 | 161,748 | 576 | 1,696 | 1,920 |
+| Large cached, 10 calls, depth 8, attribute | 851,875 | 385,799 | 384,234 | 2,112 | 6,784 | 7,264 |
 
 An eight-sibling proof adds 256 wire bytes; ten calls add 2,592 bytes in this fixture.
 A 256-byte attribute adds 320 bytes including array/element framing. Increasing the
-stored EOA owner count from 3 to 10 adds 448 bootstrap bytes and about 189k initialization
+stored EOA owner count from 3 to 10 adds 448 bootstrap bytes and about 188k initialization
 gas while keeping the 2-signature quorum; it barely changes subsequent verification.
-Nesting adds stored records and message-domain checks. Cached approvals replace inline
-child payloads with complete signed Safe transactions, increasing the wire size.
+Nesting adds stored records and message-domain checks. In standalone and Merkle wires, cached
+approvals replace inline child payloads with complete signed Safe transactions, increasing
+the size.
 
 ## Source integration with Safe 1.5.0
 
@@ -69,17 +72,18 @@ the Paris fixture's, hence its standalone bundles differ by 96 bytes.
 
 | Graph | Safe bootstrap gas | Safe send gas | Safe register gas | relayLeaf gas | Full bootstrap envelope bytes |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 2-of-3 EOA | 1,868,392 | 1,119,977 | 128,653 | 1,261,194 | 1,984 |
-| One inline child | 2,125,763 | 1,197,160 | 151,316 | 1,336,098 | 2,304 |
-| One cached approval | 2,575,321 | 1,637,270 | 135,726 | 1,781,793 | 3,040 |
-| Two nested levels | 2,400,940 | 1,292,131 | 171,590 | 1,428,802 | 2,624 |
-| Shared child | 2,938,028 | 1,596,429 | 213,401 | 1,725,542 | 3,232 |
+| 2-of-3 EOA | 1,142,379 | 1,119,752 | 128,635 | 1,260,968 | 768 |
+| One inline child | 1,337,980 | 1,196,909 | 151,280 | 1,335,829 | 992 |
+| One cached approval | 1,325,552 | 1,636,992 | 135,724 | 1,781,502 | 992 |
+| Two nested levels | 1,531,401 | 1,291,819 | 171,560 | 1,428,514 | 1,216 |
+| Shared child | 1,800,266 | 1,596,045 | 213,390 | 1,725,228 | 1,504 |
 
 Integration assertions cover: one-transaction staging/consumption/delivery and replay;
 real cached `signMessage` approval collection and destination verification; nested/shared
 child message domains; published two-destination tree parity and independent relay;
 Safe nonces 42/43 in one batch, destination binding, and complete rollback on the second
-source failure; bootstrap before source execution; direct standalone and leaf submission
+source failure; an owner rotation followed by a bootstrap to a new chain that stores the
+rotated graph, rejects the previous quorum and executes the new one; direct standalone and leaf submission
 without source execution/publication; and source acceptance followed by destination
 out-of-gas, unchanged destination nonce and a successful exactly-once direct retry.
 The existing `SafeBatchExecutorTest` separately covers Safe's `false` return path; the
@@ -89,8 +93,9 @@ installed guard refuses the nonzero payment-gas setting required to reach that p
 
 **The inherited 200,000 payload and 1,000,000 bootstrap defaults are unsuitable as
 general signed-delivery defaults. Always supply an explicit gas attribute for signed
-provider delivery.** The shared-child sample exceeds 200k, and the large graph exceeds
-1m for `initializeSigned` alone, before deployment and transceiver work. An unbounded
+provider delivery.** The shared-child sample exceeds 200k, and the large graph's
+`initializeSigned` alone uses about 852k of the 1m bootstrap default, before deployment,
+transceiver work and setup calls. An unbounded
 authority graph and arbitrary application calls admit no universally sufficient constant.
 #108 intentionally adds neither resource caps nor a minimum gas floor.
 
@@ -119,7 +124,7 @@ execution rolls back its replay state, but a successful source send stays marked
 ## Provider size and per-byte fee checks
 
 The largest tested Merkle wire is 7,264 bytes, its standalone wire 6,784 bytes, and the
-large bootstrap envelope is 6,016 bytes (5,824 + 192). These are a concrete realistic
+large bootstrap envelope is 2,304 bytes (2,112 + 192). These are a concrete realistic
 sizing case, not upper bounds. There is no Crossecute payload cap. Further nesting,
 approvals, signatures, calls or proofs can exceed any provider's configured limits.
 
@@ -150,10 +155,10 @@ Primary references checked 2026-11-11:
 
 | Production contract | Runtime bytes | EIP-170 headroom |
 | --- | ---: | ---: |
-| CcipTransmitter | 24,041 | 535 |
-| LzTransmitter | 23,934 | 642 |
-| HyperlaneTransmitter | 23,632 | 944 |
-| SignedTransmitterLib | 13,943 | 10,633 |
+| CcipTransmitter | 22,868 | 1,708 |
+| LzTransmitter | 22,766 | 1,810 |
+| HyperlaneTransmitter | 22,455 | 2,121 |
+| SignedTransmitterLib | 10,761 | 13,815 |
 | CrossecuteGuard (Cancun) | 9,880 | 14,696 |
 | SafeBatchExecutor (Cancun) | 699 | 23,877 |
 

@@ -5,7 +5,6 @@ import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
-import {BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 import {Bytes} from "src/messaging/signed/Bytes.sol";
 
@@ -23,7 +22,6 @@ library SignedDispatchCalls {
     /// @dev The destination is not this contract on this chain.
     error WrongDestination(bytes destination);
     /// @dev #108 fixes authority at creation, so every signed counter is zero (#109 advances it).
-    error AuthorityCounterMismatch(uint256 counter);
     error EmptySignedPayload();
     /// @dev `registerRoot` is nonpayable on the source transmitter.
     error NonzeroRegistrationValue(uint256 value);
@@ -57,22 +55,6 @@ library SignedDispatchCalls {
     function registeredRoot(SafeTx memory safeTx) internal pure returns (bytes32) {
         if (safeTx.value != 0) revert NonzeroRegistrationValue(safeTx.value);
         return abi.decode(safeTx.data.arguments(ISignedTransmitter.registerRoot.selector), (bytes32));
-    }
-
-    /// @notice Decode a signed bootstrap's root, setup leaf, proof and provider attributes.
-    /// @dev Unpacking the inner payload gives both ends the same initialization authorization;
-    ///      a nonzero authority counter is rejected because authority updates are not
-    ///      implemented here.
-    function bootstrapArgs(bytes memory data)
-        internal
-        pure
-        returns (bytes32 root, BootstrapLeaf memory leaf, bytes32[] memory proof, bytes[] memory attributes)
-    {
-        bytes memory payload;
-        (payload, attributes) = abi.decode(data.arguments(ISignedTransmitter.bootstrap.selector), (bytes, bytes[]));
-        uint256 counter;
-        (root, counter, leaf, proof) = abi.decode(payload, (bytes32, uint256, BootstrapLeaf, bytes32[]));
-        if (counter != 0) revert AuthorityCounterMismatch(counter);
     }
 
     /// @notice Require the current destination block time to fall inside the inclusive validity

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @notice Leaf hashes and proof verification for a Safe-signed dispatch tree, matching the
 ///         guard's `publishLeaves`.
@@ -37,16 +37,6 @@ library DispatchLeaves {
         return keccak256(
             abi.encode(keccak256(abi.encode(leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls)))
         );
-    }
-
-    /// @notice Double-hash the bootstrap destination, validity window and setup calls.
-    /// @dev This binds receiver setup to its Merkle authorization; the different field layout
-    ///      keeps bootstrap leaves distinct from execution leaves.
-    function hash(BootstrapLeaf memory leaf) internal pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(keccak256(abi.encode(leaf.destination, leaf.validAfter, leaf.deadline, leaf.setupCalls)))
-            );
     }
 
     /// @notice Revert unless `proof` places `leafHash` under `root` using sorted sibling

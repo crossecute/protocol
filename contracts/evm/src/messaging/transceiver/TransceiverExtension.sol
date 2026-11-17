@@ -10,8 +10,8 @@ import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
 
 /// @title TransceiverExtension
-/// @notice A transceiver's initialization, owner configuration, float withdrawal, and the views
-///         no contract calls. Runs only by `DELEGATECALL` from `TransceiverBase`'s `fallback`, so
+/// @notice A transceiver's initialization, owner configuration, float withdrawal, and its views,
+///         kept off `TransceiverBase` for size. Runs only by `DELEGATECALL` from its `fallback`, so
 ///         its storage is the transceiver's and `msg.sender` is the transceiver's caller.
 ///
 /// @dev Provider-agnostic: every provider's transceiver on a chain can name the same one. A
@@ -212,19 +212,10 @@ contract TransceiverExtension is TransceiverCore {
         return _predictConduit(owner, salt, homeChainKey);
     }
 
-    /// @notice `predictConduit` for a signed conduit, whose salt also commits to `graph`.
-    function predictConduit(address owner, bytes32 salt, bytes32 homeChainKey, bytes32 graph)
-        external
-        view
-        returns (address)
-    {
-        return _predictConduit(owner, salt, homeChainKey, graph);
-    }
-
-    /// @notice The creation records `createTransmitter` gives `owner`'s transmitter,
-    ///         `abi.encode(SafeAuthorityRecord[])`, or empty for a plain one. Their keccak256 is the graph.
-    /// @dev Here rather than in the transceiver for its size. Derived from live Safe state, so
-    ///      it can change between this call and creation.
+    /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty
+    ///         when its guard does not advertise `ICrossecuteGuard`. Read at transmitter creation
+    ///         to choose the mode and at each signed bootstrap as the receiver's authority.
+    /// @dev Here rather than in the transceiver for its size.
     function signedAuthority(address owner) external view returns (bytes memory) {
         if (!SafeViewer.isSigned(owner)) return "";
         return abi.encode(SafeAuthorityGraph.derive(owner));

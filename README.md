@@ -5,18 +5,37 @@ Secure operations across chains from one owner, anchored on whichever chain each
 ## Why
 
 A conduit's owner is any address that can make a call: an EOA, a multisig, a DAO's governor,
-or any other contract. The protocol never inspects what the owner is. It only authenticates
-the address.
+or any other contract. In plain mode the protocol never inspects what the owner is. It only
+authenticates the address. A Safe owner with a compatible guard can instead create its conduit
+in signed mode ([Safe-signed dispatch](docs/safe-signed-dispatch.md)), where receivers verify
+the Safe's own signatures.
 
 Without it, an owner on six chains needs six admin accounts: six addresses to keep in step,
 six transactions per change, six balances to fund, and for a multisig, six signer sets.
 Everything below follows from reducing that to one.
 
+**One multisig, not one per chain.** A Safe on its home chain is the only multisig. No
+multisig contract or signer set is deployed or kept in step on any other chain: signers sign
+once, in one place, and the authority on each destination is a receiver this protocol deploys.
+Multichain multisig designs such as Chainlink's
+[ManyChainMultiSig](https://smartcontractkit.github.io/mcms/intro), LayerZero's
+[OneSig](https://www.openzeppelin.com/news/onesig-audit) and Candide's
+[Safe Unified Account](https://docs.candide.dev/wallet/abstractionkit/safe-unified-account/)
+let one signature cover many chains, but each verifies it against a multisig contract or Safe
+deployed on every chain, whose signers and configuration must exist there. A signed receiver
+holds a copy of the home Safe's owner graph to check signatures, but it is not a multisig of
+its own: the graph comes from the Safe at bootstrap and changes only through the Safe's own
+authority updates ([#109](https://github.com/crossecute/protocol/issues/109)).
+
 **Control changes once, not N times.** The owner's authority exists only on the conduit's
 home, whichever chain the owner picks. Receivers elsewhere never learn who or what the owner
 is: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a
 change of owner or of a multisig's signers. Rotating a compromised key is one transaction,
-not N with a live attacker in the gaps.
+not N with a live attacker in the gaps. A signed receiver is the exception: it stores the
+source Safe's owner graph as it was when that receiver's bootstrap was sent, and later owner
+changes do not reach it until authority updates
+([#109](https://github.com/crossecute/protocol/issues/109)) land, after which each destination
+applies them.
 
 **One decision, one authorization, one fan-out.** A change touching six chains is one payload,
 approved once, dispatched from one transaction on the conduit's home. Team and DAO process stops
@@ -43,7 +62,7 @@ currency draws on the receiver's address, which is derivable and fundable before
 receiver exists: topped up once, not per signer.
 
 **One admin address everywhere.** The same CREATE2 address holds the conduit on every
-supported chain, which unifies access control. Chains whose CREATE2 formula differs from
+supported chain, for plain and Safe-signed conduits alike, which unifies access control. Chains whose CREATE2 formula differs from
 EIP-1014's, such as Tron and zkSync, derive their own address and report it back to the
 conduit's home.
 
@@ -53,8 +72,15 @@ Here it is one batch, reviewed in totality. The commitment folds the destination
 in with the calls, so an approval names what runs _and_ where: confirming a payload
 confirms its destination, and the same bytes cannot be replayed onto another chain.
 
-**What it costs.** The conduit's home chain and the message provider enter the trust path. A
-halt at home delays everything, and a provider that can forge a message can drive a conduit. No
+**What it costs.** The conduit's home chain and the message provider enter the trust path.
+For a plain receiver, a halt at home delays everything, and a provider that can forge a
+message can drive the conduit. A signed receiver executes only what its stored Safe owner
+graph signed, delivered by the provider or submitted directly by anyone, so once it exists a
+forging provider cannot drive it and a halt at home does not stop direct submission. That
+graph is the one the provider delivered at bootstrap, so the provider is trusted to pass the
+Safe's authority correctly then; owners confirm a receiver's `authorityRecords()` before
+relying on it. Transceiver
+governance crosses a bridge in either mode, so it still trusts the provider. No
 shared failure is what N independent admin accounts buy with N of everything else. The exposure is
 narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes
 it, after which it has no upgrade function; a conduit's upgrade key dies in the call that arms
@@ -381,7 +407,9 @@ What an operator or integrator has to know:
   honest and that whoever controls the set does not replace it: LayerZero's default
   configuration (or LayerZero Labs, on a pinned pathway), Chainlink, the Mailbox owner, and
   Wormhole's guardian governance. Nothing here checks a proof of the source chain's consensus.
-  The OP Stack providers have no signer set; they trust the chains themselves.
+  The OP Stack providers have no signer set; they trust the chains themselves. A signed
+  receiver checks the Safe's signatures itself, so for its messages that trust covers delivery,
+  not authorization.
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.

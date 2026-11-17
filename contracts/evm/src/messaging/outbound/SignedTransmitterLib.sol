@@ -5,14 +5,13 @@ import {ICrossecuteGuard, SignedSafeTx} from "@crossecute/safe-guard/ICrossecute
 import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
-import {Erc7930} from "src/addressing/Erc7930.sol";
+import {Payload} from "src/messaging/Payload.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {NestedApprovalCollector} from "src/messaging/signed/NestedApprovalCollector.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
-    BootstrapLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
@@ -35,26 +34,8 @@ interface ISignedTransmitterView {
     /// @dev The linked builder needs the fixed source Safe without depending on the
     ///      transmitter's storage layout.
     function deployer() external view returns (address);
-    /// @notice Return the transmitter's parent transceiver.
-    /// @dev Bootstrap routing, receiver prediction and provider fee queries must use that fixed
-    ///      parent.
+    /// @notice Return the transmitter's parent transceiver, which reads the Safe's live authority.
     function transceiver() external view returns (address);
-    /// @notice Return the user's conduit salt.
-    /// @dev Receiver prediction must preserve the salt selected at conduit creation rather than
-    ///      inventing a new destination address.
-    function conduitSalt() external view returns (bytes32);
-    /// @notice Return the transmitter's creation-graph commitment.
-    /// @dev The builder includes the same authority commitment when predicting the destination
-    ///      receiver.
-    function authorityGraph() external view returns (bytes32);
-    /// @notice Return the transmitter's encoded creation authority records.
-    /// @dev Signed bootstraps carry those records so the receiver can reconstruct its fixed
-    ///      verification authority.
-    function creationRecords() external view returns (bytes memory);
-    /// @notice Report whether this conduit has already bootstrapped a destination chain.
-    /// @dev The builder must reject a new bootstrap for a destination the transmitter already
-    ///      considers initialized.
-    function isBootstrapped(bytes32 chainKey) external view returns (bool);
 }
 
 /// @notice The wire builders of `SignedTransmitter`. External, so linked and called by
@@ -89,46 +70,31 @@ library SignedTransmitterLib {
         return _standalone(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
     }
 
-    error AlreadyBootstrapped(bytes32 destinationChainKey);
-    /// @dev The destination reports its receiver, and no report carries the graph yet.
+    /// @dev The destination reports its receiver or is not EVM; signed receivers are created
+    ///      only where the home derives them.
     error SignedReceiverNotDerivable(bytes32 destinationChainKey);
-    error WrongBootstrapTarget(bytes destination);
+    error NoSignedAuthority(address safe);
 
-    /// @notice Consume the staged bootstrap and build its body, destination key, route and
-    ///         attributes.
-    /// @dev The transceiver needs both signed setup authorization and creation records to
-    ///      derive and initialize the destination receiver.
-    function consumeBootstrap(bytes calldata callData)
-        external
-        returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
-    {
+    /// @notice Consume the owner's staged transaction without reading it.
+    /// @dev Consumption admits only a signed owner execution targeting this transmitter.
+    function consumeStaged() external {
         address safe = ISignedTransmitterView(address(this)).deployer();
-        return _bootstrap(safe, _consume(safe, callData));
+        // forge-lint: disable-next-line(unused-return) consuming is the check; nothing from the record is sent
+        ICrossecuteGuard(GuardDiscovery.transactionGuard(safe)).consume(safe);
     }
 
-    /// @notice Build the bootstrap body and route from supplied evidence without consuming
-    ///         guard state.
-    /// @dev The quote path needs the same encoded body as the send, including any nested
-    ///      approvals and authority records.
-    /// @param args `abi.encode(SafeTxEvidence)`.
-    function quoteBootstrap(bytes calldata args)
-        external
-        view
-        returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
-    {
-        return _bootstrap(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
-    }
-
-    /// @notice Recheck and return the destination route and attributes of an encoded bootstrap
-    ///         body.
-    /// @dev A permissionless retry must still target a derivable, not-yet-bootstrapped receiver
-    ///      and must not send an expired authorization.
-    function bootstrapTarget(bytes calldata body)
-        external
-        view
-        returns (bytes32 chainKey, bytes memory route, bytes[] memory attributes)
-    {
-        return _target(abi.decode(body, (SignedBootstrap)).evidence);
+    /// @notice Encode the `SignedBootstrap` body: the Safe's live authority records and the
+    ///         setup calls, after checking the destination derives the receiver.
+    /// @param typed Whether the destination executes `Call[]`, as `_decodeBootstrap` reports.
+    function bootstrapBody(bytes32 chainKey, bool typed, bytes memory setupCalls) external view returns (bytes memory) {
+        ISignedTransmitterView self = ISignedTransmitterView(address(this));
+        IConduitTransceiver t = IConduitTransceiver(self.transceiver());
+        if (!typed || t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
+        Payload.decodeCallsFromMemory(setupCalls);
+        address safe = self.deployer();
+        bytes memory records = t.signedAuthority(safe);
+        if (records.length == 0) revert NoSignedAuthority(safe);
+        return abi.encode(SignedBootstrap(abi.decode(records, (SafeAuthorityRecord[])), setupCalls));
     }
 
     /// @notice Validate the signed root registration and leaf proof, then build the Merkle wire
@@ -182,55 +148,6 @@ library SignedTransmitterLib {
         if (payload.length == 0) revert SignedDispatchCalls.EmptySignedPayload();
         _collect(safe, evidence);
         wire = abi.encode(WIRE_STANDALONE, evidence);
-    }
-
-    /// @notice Validate the bootstrap target, collect nested approvals and package the creation
-    ///         records with its evidence.
-    /// @dev The receiver needs both authorization and its complete authority snapshot to
-    ///      perform initialization independently of the provider.
-    function _bootstrap(address safe, SafeTxEvidence memory evidence)
-        private
-        view
-        returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
-    {
-        (chainKey, route, attributes) = _target(evidence);
-        _collect(safe, evidence);
-        bytes memory records = ISignedTransmitterView(address(this)).creationRecords();
-        body = abi.encode(SignedBootstrap(evidence, abi.decode(records, (SafeAuthorityRecord[]))));
-    }
-
-    /// @notice Validate the bootstrap proof and window, derive its route and match its
-    ///         destination to the predicted receiver.
-    /// @dev Reject existing or nonderivable destinations so setup cannot initialize an
-    ///      unrelated receiver. A future window is allowed because delivery may happen later;
-    ///      an expired window is not.
-    function _target(SafeTxEvidence memory evidence)
-        private
-        view
-        returns (bytes32 chainKey, bytes memory route, bytes[] memory attributes)
-    {
-        SignedDispatchCalls.requireSourceCall(evidence.signedSafeTx.safeTx, address(this));
-        bytes32 root;
-        BootstrapLeaf memory leaf;
-        bytes32[] memory proof;
-        (root, leaf, proof, attributes) = SignedDispatchCalls.bootstrapArgs(evidence.signedSafeTx.safeTx.data);
-        DispatchLeaves.requireProof(proof, root, DispatchLeaves.hash(leaf));
-        // forge-lint: disable-next-line(block-timestamp) an expired window cannot initialize anywhere later
-        if (leaf.validAfter > leaf.deadline || block.timestamp > leaf.deadline) {
-            revert SignedDispatchCalls.WindowClosed(leaf.validAfter, leaf.deadline);
-        }
-
-        Erc7930.Interop memory io = Erc7930.parseStrict(leaf.destination);
-        Erc7930.evmChainId(io);
-        route = Erc7930.encodeChainId(io.chainType, io.chainRef);
-        chainKey = keccak256(route);
-
-        ISignedTransmitterView self = ISignedTransmitterView(address(this));
-        if (self.isBootstrapped(chainKey)) revert AlreadyBootstrapped(chainKey);
-        IConduitTransceiver t = IConduitTransceiver(self.transceiver());
-        if (t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
-        bytes memory predicted = t.predictReceiver(chainKey, self.deployer(), self.conduitSalt(), self.authorityGraph());
-        if (keccak256(io.addr) != keccak256(predicted)) revert WrongBootstrapTarget(leaf.destination);
     }
 
     /// @notice Hash the signed Safe transaction and replace its nested approvals with evidence

@@ -24,12 +24,11 @@ import {Provenance} from "crossecute/registry/Provenance.sol";
 import {Proxy} from "crossecute/conduit/Proxy.sol";
 import {ProxyDeployer, PROXY_DEPLOYER} from "crossecute/conduit/ProxyDeployer.sol";
 import {DispatchLeaves} from "crossecute/messaging/signed/DispatchLeaves.sol";
-import {SafeAuthorityRecord} from "crossecute/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeQuorum} from "crossecute/messaging/signed/SafeQuorum.sol";
 import {
     SafeTxEvidence,
     ExecutionLeaf,
-    BootstrapLeaf,
-    SignedBootstrap
+    WIRE_STANDALONE
 } from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {MockHyperlaneMailbox} from "evm-test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {unseeded} from "evm-test/RegistrySeed.sol";
@@ -58,6 +57,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     uint256 constant SOURCE = 10;
     uint256 constant BASE = 8453;
     uint256 constant ARBITRUM = 42161;
+    uint256 constant KEY_D = 0xD00D;
     bytes32 constant DEPLOY_SALT = keccak256("integration transceiver");
     bytes32 constant USER_SALT = keccak256("integration conduit");
     MockHyperlaneMailbox internal mailbox;
@@ -182,23 +182,18 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     /// @notice Create and fund the actual signed transmitter through a signed Safe call.
     function _create() internal {
         _execute(_evidence(address(source), abi.encodeCall(source.createTransmitter, (USER_SALT)), safe.nonce()));
-        bytes32 graph = keccak256(TransceiverExtension(address(source)).signedAuthority(address(safe)));
         st = SignedTransmitter(
             payable(TransceiverExtension(address(source))
-                    .predictConduit(address(safe), USER_SALT, ChainKey.forEvm(SOURCE), graph))
+                    .predictConduit(address(safe), USER_SALT, ChainKey.forEvm(SOURCE)))
         );
-        assertTrue(st.authorityGraph() != bytes32(0));
+        assertTrue(st.isSigned());
         vm.deal(address(st), 100 ether);
     }
 
-    /// @notice Predict the signed receiver using retained creation records.
+    /// @notice Predict the signed receiver from the owner and user salt.
     function _receiver(uint256 chain) internal view returns (SignedReceiver) {
         return SignedReceiver(
-            payable(address(
-                    bytes20(
-                        source.predictReceiver(ChainKey.forEvm(chain), address(safe), USER_SALT, st.authorityGraph())
-                    )
-                ))
+            payable(address(bytes20(source.predictReceiver(ChainKey.forEvm(chain), address(safe), USER_SALT))))
         );
     }
 
@@ -211,19 +206,13 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         return abi.encode(calls);
     }
 
-    /// @notice Sign an empty-setup bootstrap for one derived receiver.
+    /// @notice Sign an empty-setup bootstrap of one destination chain.
     function _bootstrapEvidence(uint256 chain) internal view returns (SafeTxEvidence memory) {
-        BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(chain, address(_receiver(chain))), block.timestamp, block.timestamp + 1 days, _calls(0)
-        );
-        return _evidence(
-            address(st),
-            abi.encodeCall(
-                ISignedTransmitter.bootstrap,
-                (abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0)), new bytes[](0))
-            ),
-            safe.nonce()
-        );
+        bytes memory payload = st.bootstrapPayload(Erc7930.encodeEvmChain(chain), st.payloadForCalls(new Call[](0)));
+        return
+            _evidence(
+                address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), safe.nonce()
+            );
     }
 
     /// @notice Deliver a recorded bootstrap through the authenticated destination handler.
@@ -273,24 +262,61 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         assertEq(effect.hits(), 1);
     }
 
-    /// @notice Accept signed bootstrap before its source Safe transaction executes.
-    function test_bootstrapCanArriveBeforeSourceExecution() public {
+    /// @notice Rotate an owner of the real Safe, then bootstrap a new chain and dispatch to it.
+    /// @dev The new chain stores the rotated graph: a send and a root registration signed by the
+    ///      previous quorum are rejected there, by direct submission and provider delivery; the
+    ///      new quorum's standalone send and Merkle leaf execute; and the chain bootstrapped
+    ///      earlier keeps its graph.
+    function test_aChainBootstrappedAfterARotationTrustsTheRotatedOwners() public {
         _create();
-        SafeTxEvidence memory e = _bootstrapEvidence(BASE);
-        bytes memory body = abi.encode(SignedBootstrap(e, abi.decode(st.creationRecords(), (SafeAuthorityRecord[]))));
-        uint256 nonce = safe.nonce();
-        vm.chainId(BASE);
-        vm.prank(address(mailbox));
-        destination[BASE].handle(
-            uint32(SOURCE),
-            bytes32(uint256(uint160(address(source)))),
-            abi.encode(uint8(4), address(safe), USER_SALT, bytes32(uint256(uint160(address(st)))), body)
+        _bootstrap(BASE);
+        SafeTxEvidence memory stale = _message(ARBITRUM, safe.nonce() + 1);
+        ExecutionLeaf memory leaf = _leaf(ARBITRUM, 0);
+        SafeTxEvidence memory staleRegistration = _evidence(
+            address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (DispatchLeaves.hash(leaf))), safe.nonce() + 1
         );
+
+        address[] memory owners = safe.getOwners();
+        keys[vm.addr(KEY_D)] = KEY_D;
+        _execute(
+            _evidence(
+                address(safe), abi.encodeCall(safe.swapOwner, (address(1), owners[0], vm.addr(KEY_D))), safe.nonce()
+            )
+        );
+        _bootstrap(ARBITRUM);
+
+        SignedReceiver ra = _receiver(ARBITRUM);
+        bytes32 rotated = keccak256(TransceiverExtension(address(source)).signedAuthority(address(safe)));
+        assertEq(ra.authorityGraph(), rotated);
+        assertTrue(_receiver(BASE).authorityGraph() != rotated);
+
+        bytes memory notOwner = abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, address(safe), owners[0]);
+        vm.chainId(ARBITRUM);
+        vm.expectRevert(notOwner);
+        ra.submitMessage(stale);
+        vm.expectRevert(notOwner);
+        ra.submitLeaf(staleRegistration, leaf, new bytes32[](0));
+        vm.expectRevert(notOwner);
+        vm.prank(address(mailbox));
+        HyperlaneReceiver(payable(address(ra)))
+            .handle(uint32(SOURCE), bytes32(uint256(uint160(address(st)))), abi.encode(WIRE_STANDALONE, stale));
         vm.chainId(SOURCE);
-        assertEq(safe.nonce(), nonce);
-        assertEq(_receiver(BASE).authorityGraph(), st.authorityGraph());
-        _execute(e);
-        _deliverBootstrap(BASE, mailbox.sentLength() - 1);
+
+        _execute(_message(ARBITRUM, safe.nonce()));
+        _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
+        assertEq(effect.hits(), 1);
+
+        bytes[] memory leaves = new bytes[](1);
+        leaves[0] =
+            abi.encode(leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls, leaf.attributes);
+        bytes32 root = guard.publishLeaves(leaves);
+        SafeTxEvidence memory registration =
+            _evidence(address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), safe.nonce());
+        _execute(registration);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
+        st.relayLeaf{value: st.quoteRelay(registration, leaf, new bytes32[](0))}(registration, leaf, new bytes32[](0));
+        _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
+        assertEq(effect.hits(), 2);
     }
 
     /// @notice Direct submission requires neither provider delivery nor source registration.

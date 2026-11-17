@@ -88,11 +88,10 @@ library Envelope {
         return abi.encode(BOOTSTRAP_ELEMENTS, owner, salt, transmitter, elements);
     }
 
-    /// @notice A signed conduit's bootstrap (#108): `body` is `abi.encode(SignedBootstrap)`,
-    ///         which the receiver verifies before it runs anything.
-    /// @dev `owner`, `salt` and `transmitter` are as in `encodeBootstrap`. The graph hash of the
-    ///      records in `body` is the fourth field of the conduit salt, so the destination derives
-    ///      the transmitter and receiver from it rather than from a field of its own.
+    /// @notice A signed conduit's bootstrap (#108): `body` is `abi.encode(SignedBootstrap)`, the
+    ///         authority records the receiver stores and its setup calls.
+    /// @dev `owner`, `salt` and `transmitter` are as in `encodeBootstrap`, and derive the same
+    ///      addresses; the kind is what marks the receiver signed.
     function encodeSignedBootstrap(address owner, bytes32 salt, bytes32 transmitter, bytes memory body)
         internal
         pure

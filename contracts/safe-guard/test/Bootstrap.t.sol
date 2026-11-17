@@ -8,10 +8,10 @@ import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitt
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {ModuleTest} from "./Module.t.sol";
 import {SendMessageTest} from "./SendMessage.t.sol";
-import {IPlainBootstrap} from "./TestTransmitter.sol";
+import {IUnstagedBootstrap} from "./TestTransmitter.sol";
 
-function plainBootstrapData() pure returns (bytes memory) {
-    return abi.encodeCall(IPlainBootstrap.bootstrap, (1, new Call[](0), new bytes[](0)));
+function unstagedBootstrapData() pure returns (bytes memory) {
+    return abi.encodeCall(IUnstagedBootstrap.bootstrap, (1, new Call[](0), new bytes[](0)));
 }
 
 /// @dev The owner lifecycle tests with `bootstrap(bytes,bytes[])` as the staged selector.
@@ -22,11 +22,11 @@ contract BootstrapTest is SendMessageTest {
 
     function test_transmitterUsesBootstrapSelector() public pure {
         assertEq(bytes4(_bootstrapData()), ISignedTransmitter.bootstrap.selector);
-        assertTrue(IPlainBootstrap.bootstrap.selector != ISignedTransmitter.bootstrap.selector);
+        assertTrue(IUnstagedBootstrap.bootstrap.selector != ISignedTransmitter.bootstrap.selector);
     }
 
-    function test_plainBootstrap_notStaged() public {
-        bytes memory data = plainBootstrapData();
+    function test_otherBootstrapSelector_notStaged() public {
+        bytes memory data = unstagedBootstrapData();
         bytes memory sigs = _signFor(safe, _signers(), address(transmitter), 0, data, Enum.Operation.Call);
         vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
         _execWith(safe, address(transmitter), 0, data, Enum.Operation.Call, sigs);
@@ -53,11 +53,11 @@ contract ModuleBootstrapTest is ModuleTest {
         return _bootstrapData();
     }
 
-    /// @dev Policy permits the module's plain bootstrap, and the module callback lets it through.
+    /// @dev Policy permits the module's unstaged bootstrap, and the module callback lets it through.
     ///      The transmitter then finds nothing staged, and the module post-hook reports the failure.
-    function test_modulePlainBootstrap_notDeniedOrStaged() public {
+    function test_moduleUnstagedBootstrap_notDeniedOrStaged() public {
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(guarded))));
         vm.expectRevert(SafePolicyGuard.ModuleExecutionFailed.selector);
-        module.execStrict(guarded, address(guardedTransmitter), plainBootstrapData(), Enum.Operation.Call);
+        module.execStrict(guarded, address(guardedTransmitter), unstagedBootstrapData(), Enum.Operation.Call);
     }
 }

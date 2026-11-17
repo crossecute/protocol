@@ -49,7 +49,7 @@ interface IConduitTransceiver {
         bytes[] calldata attributes
     ) external view returns (uint256);
 
-    /// @notice `bootstrap`, for a conduit whose receiver verifies a Safe-signed `body`.
+    /// @notice `bootstrap`, for a signed conduit: `body` is `abi.encode(SignedBootstrap)`.
     function bootstrapSigned(
         bytes32 destinationChainKey,
         address owner,
@@ -86,11 +86,9 @@ interface IConduitTransceiver {
     /// @notice Where this conduit's receiver will sit on a chain that does not report it.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
 
-    /// @notice `predictReceiver` for a signed conduit, whose salt also commits to `graph`.
-    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes32 graph)
-        external
-        view
-        returns (bytes memory);
+    /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty for
+    ///         an owner without a compatible guard.
+    function signedAuthority(address owner) external view returns (bytes memory);
 }
 
 /// @title TransmitterBase
@@ -354,7 +352,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      funding the balance ahead of time. Pass empty `attributes` for the gateway's default.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) public payable virtual onlyConduitOwner {
         (bytes32 chainKey, bytes memory route, bool typed, bytes memory body) = _decodeBootstrap(payload);
-        _markBootstrapped(chainKey, route, bytes32(0));
+        _markBootstrapped(chainKey, route);
         _sendBootstrap(chainKey, route, typed, body, attributes);
     }
 
@@ -414,7 +412,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      holds, so a conduit envelope names the same chain. `typed` is whether the
     ///      destination decodes `Call[]`.
     function _decodeBootstrap(bytes calldata payload)
-        private
+        internal
         view
         returns (bytes32 chainKey, bytes memory route, bool typed, bytes memory body)
     {
@@ -499,20 +497,13 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     ///      report), as the transceiver predicts it there: this conduit's own address only when
     ///      both chains use Ethereum's CREATE2. On a reporting chain the destination stays
     ///      unreachable until the report arrives, rather than addressed at a guess.
-    ///
-    /// @param graph Zero for a plain conduit; a signed one's receiver derives with it.
-    function _markBootstrapped(bytes32 chainKey, bytes memory route, bytes32 graph) internal {
+    function _markBootstrapped(bytes32 chainKey, bytes memory route) internal {
         _bootstrapDispatched[chainKey] = true;
         _setRoute(chainKey, route);
 
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         if (!t.reportsReceiver(chainKey)) {
-            _setCounterpart(
-                chainKey,
-                graph == bytes32(0)
-                    ? t.predictReceiver(chainKey, deployer, conduitSalt)
-                    : t.predictReceiver(chainKey, deployer, conduitSalt, graph)
-            );
+            _setCounterpart(chainKey, t.predictReceiver(chainKey, deployer, conduitSalt));
         }
 
         emit DestinationBootstrapped(chainKey);

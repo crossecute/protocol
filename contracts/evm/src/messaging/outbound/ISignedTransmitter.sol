@@ -7,9 +7,10 @@ import {SafeTxEvidence, ExecutionLeaf} from "../signed/types/SignedDispatchTypes
 interface ISignedTransmitter {
     error RootAlreadyRegistered(bytes32 root);
 
-    /// @notice Submit the owner's signed receiver-setup authorization for transmission.
-    /// @dev This starts signed receiver creation and allows a failed transport send to remain
-    ///      retryable. `payload` encodes the root, authority counter, bootstrap leaf and proof.
+    /// @notice Send the owner's receiver setup with the Safe's live authority records.
+    /// @dev `payload` is `bootstrapPayload(destinationChainIdentifier, payloadForCalls(calls))`,
+    ///      as in plain mode. The guard stages this selector, and the transmitter consumes the
+    ///      record, so only a signed owner transaction can call it.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
 
     /// @notice Register an owner-authorized root for later permissionless leaf relays.
@@ -32,9 +33,9 @@ interface ISignedTransmitter {
 /// @notice What a transceiver asks of the transmitter logic for a signed conduit, after arming
 ///         it with its plain initializer.
 interface ISignedTransmitterInit {
-    /// @notice Store the encoded creation records and enable signed mode once.
-    /// @dev The transceiver uses the same records to derive conduit addresses and initialize
-    ///      destination authority, so signed sends must retain that snapshot.
-    /// @param records The creation records, `abi.encode(SafeAuthorityRecord[])`, whose hash is the graph.
-    function initializeSigned(bytes calldata records) external;
+    /// @notice Enable signed mode once.
+    function initializeSigned() external;
+
+    /// @notice Whether this transmitter is in signed mode.
+    function isSigned() external view returns (bool);
 }

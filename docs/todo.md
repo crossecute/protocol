@@ -236,6 +236,6 @@ The signature-enabled transmitter and receiver
 [`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
 "Implementation", what the build leaves out. Outstanding:
 
-- **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap, because
-  the receiver report carries no graph hash for the home to find the transmitter with.
+- **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap; supporting
+  them is outside #108's scope.
 - **Authority changes**: [#109](https://github.com/crossecute/protocol/issues/109).

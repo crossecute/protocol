@@ -181,8 +181,8 @@ abstract contract ReceiverBase is
     ///
     /// @dev The only membership change after initialization anywhere, and it only subtracts:
     ///      `grantRole` is `onlyInitializing`, and `Proxy` arms once, so a dropped
-    ///      transport is never replaced. A gateway that can deliver can forge, so going deaf is
-    ///      the recoverable failure.
+    ///      transport is never replaced. In plain mode a gateway that can deliver can forge, so
+    ///      going deaf is the recoverable failure.
     ///
     /// @dev A transceiver has no equivalent: it is shared by every owner on its chain.
     function revokeGateway(address gateway) external onlySourceTransmitter {

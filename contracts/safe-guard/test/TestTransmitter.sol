@@ -20,15 +20,16 @@ contract Sink {
     }
 }
 
-/// @dev `TransmitterBase`'s plain-mode bootstrap, which the guard does not stage.
-interface IPlainBootstrap {
+/// @dev A `bootstrap` overload with a selector the guard does not stage. The protocol has none:
+///      both of its modes use the staged `bootstrap(bytes,bytes[])`.
+interface IUnstagedBootstrap {
     function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes) external payable;
 }
 
 /// @dev Minimal signature-enabled transmitter: authenticates its owner Safe, discovers the guard,
 ///      consumes before any other external call, and sends nothing over a bridge. The modes exist
 ///      to drive the guard's failure paths.
-contract TestTransmitter is IPlainBootstrap {
+contract TestTransmitter is IUnstagedBootstrap {
     enum Mode {
         Consume,
         Skip,
