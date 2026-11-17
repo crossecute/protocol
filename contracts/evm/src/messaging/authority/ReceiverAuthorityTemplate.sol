@@ -2,11 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
-import {
-    AuthoritySelection,
-    AuthorityUpdate,
-    SafeCreationProof
-} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthoritySelection, AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {Call} from "../Call.sol";
 import {SafeAuthorityGraph} from "../signed/SafeAuthorityGraph.sol";
 import {OwnerSource, SafeQuorum} from "../signed/SafeQuorum.sol";
@@ -16,39 +12,35 @@ import {AuthorityEntry, AuthorityGraph, AuthorityNode, MAX_SAFE_OWNERS} from "./
 import {AuthorityMutations} from "./AuthorityMutations.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
-import {IAuthorityRegistry} from "./IAuthorityRegistry.sol";
-import {SafeCreation} from "./SafeCreation.sol";
+import {IReceiverAuthority} from "./IReceiverAuthority.sol";
 
-/// @notice Non-deployable linked-update state-machine template for #109.
+/// @notice Non-deployable linked-update state machine of one signed receiver (#109).
 /// @dev Owns graph authentication: canonical structure, each update kind's root record, the
-///      flat child-update pass and every update's votes. Source-call recognition and context
-///      locking are abstract hooks. Current receivers do not read this state. Concrete integration must freeze the
-///      shared context throughout application execution. This is absent from deployment
-///      scripts.
-abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
+///      flat child-update pass and every update's votes. Source-call recognition, the source
+///      identity and context locking are abstract hooks. The first selection is seeded from the
+///      receiver's bootstrap; activations are never accepted. Current receivers do not read this
+///      state, and it is absent from deployment scripts.
+abstract contract ReceiverAuthorityTemplate is IReceiverAuthority {
     enum UpdateKind {
         Activation,
         OwnershipChange,
         Selection
     }
 
-    /// @dev A recognized source call. mutations is set for an ownership change, creation for an
-    ///      activation.
+    /// @dev A recognized source call. mutations is set for an ownership change.
     struct RecognizedUpdate {
         UpdateKind kind;
         AuthorityUpdate update;
         Call[] mutations;
-        SafeCreationProof creation;
     }
 
-    /// @dev A (Safe, position) whose record the pass has proven. fromStored: reached from the
-    ///      stored graph, not from a supplied activation.
+    /// @dev A (Safe, position) whose record the pass has proven, from the stored graph or a
+    ///      child update extending it.
     struct ProvenPosition {
         address safe;
         bytes32 position;
         bytes32 recordHash;
         SafeAuthorityRecord record;
-        bool fromStored;
         bool used;
     }
 
@@ -72,14 +64,15 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         VoterPositions positions;
     }
 
-    mapping(uint256 => mapping(address => AuthoritySelection)) private _selections;
+    AuthoritySelection private _selection;
     // Content-addressed: a record shared by several graphs or kept across updates is written once.
     mapping(bytes32 => bytes) private _records;
     mapping(bytes32 => AuthorityEntry[]) private _graphs;
     bool private _submitting;
 
-    error UnregisteredAuthority();
-    error AlreadyRegistered();
+    error UnseededAuthority();
+    error AlreadySeeded();
+    error ActivationNotAccepted();
     error WrongRoot();
     error RootPositionNotZero();
     error ZeroCommitment();
@@ -97,15 +90,14 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     error UnusedChildUpdate(uint256 index);
     error UnprovenPosition(address safe);
     error DescendantRecordMismatch(address safe);
-    error RetainedPositionNotDescended(address safe);
     error UnprovenVoter(address safe);
 
-    /// @inheritdoc IAuthorityRegistry
-    function selection(uint256 sourceChainId, address sourceSafe) public view returns (AuthoritySelection memory) {
-        return _selections[sourceChainId][sourceSafe];
+    /// @inheritdoc IReceiverAuthority
+    function selection() public view returns (AuthoritySelection memory) {
+        return _selection;
     }
 
-    /// @inheritdoc IAuthorityRegistry
+    /// @inheritdoc IReceiverAuthority
     function graph(bytes32 authorityHash) public view returns (AuthorityGraph memory authority) {
         AuthorityEntry[] storage stored = _graphs[authorityHash];
         if (stored.length == 0) revert GraphNotCached();
@@ -115,39 +107,54 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         }
     }
 
-    /// @inheritdoc IAuthorityRegistry
+    /// @inheritdoc IReceiverAuthority
     function record(bytes32 recordHash) public view returns (SafeAuthorityRecord memory) {
         bytes storage encoded = _records[recordHash];
         if (encoded.length == 0) revert RecordNotCached();
         return abi.decode(encoded, (SafeAuthorityRecord));
     }
 
-    /// @inheritdoc IAuthorityRegistry
+    /// @notice Store the head and selected graph a bootstrap carried, once.
+    /// @dev Taken on the provider's authentication of the bootstrap (#148): signatures cannot
+    ///      prove a carried graph. Shape checks still apply.
+    function _seedAuthority(bytes32 updateHead, AuthorityGraph calldata initial) internal {
+        if (_selection.authorityHash != bytes32(0)) revert AlreadySeeded();
+        if (updateHead == bytes32(0)) revert ZeroCommitment();
+        (uint256 sourceChainId, address sourceSafe) = _authoritySource();
+        _requireRoot(sourceSafe, initial);
+        _requireCanonical(initial);
+        AuthorityEntry[] memory entries = AuthorityUpdateEncoding.entries(initial);
+        for (uint256 i = 1; i < entries.length; ++i) {
+            if (entries[i].position == bytes32(0)) revert UnprovenPosition(initial.nodes[i].record.safe);
+        }
+        bytes32 authorityHash = AuthorityUpdateEncoding.graphHash(sourceChainId, entries);
+        _store(initial, entries, authorityHash);
+        _selection = AuthoritySelection(updateHead, authorityHash);
+        emit AuthoritySelected(updateHead, authorityHash);
+    }
+
+    /// @inheritdoc IReceiverAuthority
     function submitAuthority(
-        uint256 sourceChainId,
-        address sourceSafe,
         SafeTxEvidence calldata evidence,
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates
     ) external {
         if (_submitting) revert AuthoritySubmissionReentered();
         _submitting = true;
-        _requireAuthorityContextIdle(sourceChainId, sourceSafe);
+        _requireAuthorityContextIdle();
+        (uint256 sourceChainId, address sourceSafe) = _authoritySource();
         _requireRoot(sourceSafe, newGraph);
         bytes32 updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
         if (updateHash == bytes32(0)) revert ZeroCommitment();
 
-        AuthoritySelection memory current = _selections[sourceChainId][sourceSafe];
+        AuthoritySelection memory current = _selection;
+        if (current.authorityHash == bytes32(0)) revert UnseededAuthority();
         RecognizedUpdate memory recognized = _recognizeUpdate(sourceChainId, sourceSafe, evidence);
+        if (recognized.kind == UpdateKind.Activation) revert ActivationNotAccepted();
         AuthorityUpdate memory update = recognized.update;
-        if (current.authorityHash == bytes32(0)) {
-            if (recognized.kind != UpdateKind.Activation) revert UnregisteredAuthority();
-        } else {
-            if (recognized.kind == UpdateKind.Activation) revert AlreadyRegistered();
-            // Also the replay check: each head commits to its predecessor, so heads never repeat
-            // and an accepted update cannot match the stored head again.
-            if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
-        }
+        // Also the replay check: each head commits to its predecessor, so heads never repeat
+        // and an accepted update cannot match the stored head again.
+        if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
         if (update.newAuthorityHash == bytes32(0)) revert ZeroCommitment();
         AuthorityEntry[] memory newEntries = AuthorityUpdateEncoding.entries(newGraph);
         if (AuthorityUpdateEncoding.graphHash(sourceChainId, newEntries) != update.newAuthorityHash) {
@@ -159,8 +166,8 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
 
         // Validation precedes writes. Any revert rolls back the lock too.
         _store(newGraph, newEntries, update.newAuthorityHash);
-        _selections[sourceChainId][sourceSafe] = AuthoritySelection(updateHash, update.newAuthorityHash);
-        emit AuthoritySelected(sourceChainId, sourceSafe, updateHash, update.newAuthorityHash);
+        _selection = AuthoritySelection(updateHash, update.newAuthorityHash);
+        emit AuthoritySelected(updateHash, update.newAuthorityHash);
         _submitting = false;
     }
 
@@ -187,9 +194,11 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         }
     }
 
-    /// @dev Checks newGraph's structure and root record, proves every descendant position in one
-    ///      flat pass over childUpdates, then the root's votes. Signatures follow the graph because
-    ///      each descendant votes under the position newGraph names for it.
+    /// @dev Checks newGraph's structure and root record, proves every retained descendant
+    ///      position in one flat pass over childUpdates, then the root's votes. An added Safe is
+    ///      taken as newGraph names it, on the root's signers; it has no proven row, so it cannot
+    ///      vote on this update. Signatures follow the graph because each descendant votes under
+    ///      the position newGraph names for it.
     function _authenticate(
         uint256 sourceChainId,
         bytes32 currentAuthorityHash,
@@ -201,29 +210,21 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         ChildUpdate[] calldata childUpdates
     ) private view {
         SafeAuthorityRecord[] memory records = _requireCanonical(newGraph);
-        // Empty for an activation: zero is never a stored graph hash.
         AuthorityEntry[] storage stored = _graphs[currentAuthorityHash];
         ProvenTable memory table = ProvenTable(new ProvenPosition[](stored.length + childUpdates.length), 0);
 
-        // The root votes under its creation record or its stored record, never the new one (T6).
-        SafeAuthorityRecord memory voters;
-        if (recognized.kind == UpdateKind.Activation) {
-            SafeCreation.requireCreationRecord(sourceChainId, records[0], recognized.creation);
-            voters = records[0];
-        } else {
-            voters = record(stored[0].recordHash);
-            if (recognized.kind == UpdateKind.OwnershipChange) {
-                AuthorityMutations.applyMutations(voters, recognized.mutations, records[0]);
-            } else if (stored[0].recordHash != newEntries[0].recordHash) {
-                revert RootRecordMismatch();
-            }
-            for (uint256 i = 1; i < stored.length; ++i) {
-                SafeAuthorityRecord memory seed = record(stored[i].recordHash);
-                table.rows[i - 1] =
-                    ProvenPosition(seed.safe, stored[i].position, stored[i].recordHash, seed, true, true);
-            }
-            table.count = stored.length - 1;
+        // The root votes under its stored record, never the new one (T6).
+        SafeAuthorityRecord memory voters = record(stored[0].recordHash);
+        if (recognized.kind == UpdateKind.OwnershipChange) {
+            AuthorityMutations.applyMutations(voters, recognized.mutations, records[0]);
+        } else if (stored[0].recordHash != newEntries[0].recordHash) {
+            revert RootRecordMismatch();
         }
+        for (uint256 i = 1; i < stored.length; ++i) {
+            SafeAuthorityRecord memory seed = record(stored[i].recordHash);
+            table.rows[i - 1] = ProvenPosition(seed.safe, stored[i].position, stored[i].recordHash, seed, true);
+        }
+        table.count = stored.length - 1;
 
         uint256 seeds = table.count;
         for (uint256 i; i < childUpdates.length; ++i) {
@@ -231,11 +232,15 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         }
         for (uint256 i = 1; i < records.length; ++i) {
             address safe = records[i].safe;
+            if (newEntries[i].position == bytes32(0)) revert UnprovenPosition(safe);
             uint256 at = _find(table, safe, newEntries[i].position);
-            if (at == table.count) revert UnprovenPosition(safe);
+            if (at == table.count) {
+                // A retained Safe must be proven; one absent from the stored graph is added.
+                if (_isSeeded(table, seeds, safe)) revert UnprovenPosition(safe);
+                continue;
+            }
             ProvenPosition memory row = table.rows[at];
             if (row.recordHash != newEntries[i].recordHash) revert DescendantRecordMismatch(safe);
-            if (!row.fromStored && _isSeeded(table, seeds, safe)) revert RetainedPositionNotDescended(safe);
             row.used = true;
         }
         // Each child update adds one row, so row seeds + i is childUpdates[i].
@@ -245,9 +250,9 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         _verifyVotes(sourceChainId, records[0].safe, updateHash, evidence, voters, VoterPositions(table, newEntries));
     }
 
-    /// @dev childUpdates[index] must extend a proven position of its Safe, or be its activation,
-    ///      and add a position not yet proven. Its voters are its predecessor record, or its
-    ///      creation record for an activation.
+    /// @dev childUpdates[index] must extend a proven position of its Safe and add a position not
+    ///      yet proven. Its voters are its predecessor record. An activation is never a child
+    ///      update: a retained Safe's stored position is already at or after it.
     function _proveChildUpdate(
         uint256 sourceChainId,
         ProvenTable memory table,
@@ -256,6 +261,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     ) private view {
         address safe = child.sourceSafe;
         RecognizedUpdate memory recognized = _recognizeUpdate(sourceChainId, safe, child.evidence);
+        if (recognized.kind == UpdateKind.Activation) revert ActivationNotAccepted();
         AuthorityEntry[] memory entries = child.newGraphEntries;
         SafeAuthorityRecord memory newRecord = child.newRecord;
         bytes32 newRecordHash = AuthorityUpdateEncoding.recordHash(newRecord);
@@ -266,31 +272,22 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
             revert ChildGraphHashMismatch(index);
         }
 
-        SafeAuthorityRecord memory voters;
-        bool fromStored;
-        if (recognized.kind == UpdateKind.Activation) {
+        uint256 at = _find(table, safe, recognized.update.previousUpdateHash);
+        if (at == table.count) revert UnprovenPredecessor(index);
+        ProvenPosition memory predecessor = table.rows[at];
+        predecessor.used = true;
+        SafeAuthorityRecord memory voters = predecessor.record;
+        if (recognized.kind == UpdateKind.OwnershipChange) {
             _requireOwnerKinds(newRecord, index);
-            SafeCreation.requireCreationRecord(sourceChainId, newRecord, recognized.creation);
-            voters = newRecord;
-        } else {
-            uint256 at = _find(table, safe, recognized.update.previousUpdateHash);
-            if (at == table.count) revert UnprovenPredecessor(index);
-            ProvenPosition memory predecessor = table.rows[at];
-            predecessor.used = true;
-            voters = predecessor.record;
-            fromStored = predecessor.fromStored;
-            if (recognized.kind == UpdateKind.OwnershipChange) {
-                _requireOwnerKinds(newRecord, index);
-                AuthorityMutations.applyMutations(voters, recognized.mutations, newRecord);
-            } else if (predecessor.recordHash != newRecordHash) {
-                revert ChildRecordMismatch(index);
-            }
+            AuthorityMutations.applyMutations(voters, recognized.mutations, newRecord);
+        } else if (predecessor.recordHash != newRecordHash) {
+            revert ChildRecordMismatch(index);
         }
 
         bytes32 position = SafeHashes.transactionHash(child.evidence.signedSafeTx.safeTx, safe, sourceChainId);
         if (_find(table, safe, position) != table.count) revert RepeatedChildUpdate(index);
         _verifyVotes(sourceChainId, safe, position, child.evidence, voters, VoterPositions(table, entries));
-        table.rows[table.count++] = ProvenPosition(safe, position, newRecordHash, newRecord, fromStored, false);
+        table.rows[table.count++] = ProvenPosition(safe, position, newRecordHash, newRecord, false);
     }
 
     /// @notice The record a nested Safe voter counts under: its proven row at the position the
@@ -383,8 +380,7 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
     }
 
     /// @dev A child record that names new owners: the 16-owner cap and known kinds. applyMutations
-    ///      checks the other group rules of an ownership change. A creation record is checked for
-    ///      a nonzero threshold only, as a creation proof does not show the Safe deployed.
+    ///      checks the other group rules of an ownership change.
     function _requireOwnerKinds(SafeAuthorityRecord memory childRecord, uint256 index) private pure {
         if (childRecord.owners.length > MAX_SAFE_OWNERS) revert ChildRecordMismatch(index);
         for (uint256 i; i < childRecord.owners.length; ++i) {
@@ -406,14 +402,17 @@ abstract contract AuthorityRegistryTemplate is IAuthorityRegistry {
         return false;
     }
 
-    /// @dev Recognize the signed source call of `sourceSafe`, the root or a child. An activation
-    ///      returns a zero previousUpdateHash and its signed graph hash. No signature check.
+    /// @dev Recognize the signed source call of `sourceSafe`, the root or a child, so an activation
+    ///      can be rejected by kind. No signature check.
     function _recognizeUpdate(uint256 sourceChainId, address sourceSafe, SafeTxEvidence calldata evidence)
         internal
         view
         virtual
         returns (RecognizedUpdate memory);
 
+    /// @dev The receiver's source chain and owner Safe.
+    function _authoritySource() internal view virtual returns (uint256 sourceChainId, address sourceSafe);
+
     /// @dev Concrete integration must share application-execution locking across providers.
-    function _requireAuthorityContextIdle(uint256 sourceChainId, address sourceSafe) internal view virtual;
+    function _requireAuthorityContextIdle() internal view virtual;
 }

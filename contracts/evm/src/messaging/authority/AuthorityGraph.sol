@@ -17,7 +17,7 @@ struct AuthorityNode {
 
 /// @notice A root Safe's complete selected graph, including its chosen descendant snapshots.
 /// @dev nodes are in canonical depth-first order, so nodes[0] is the root. Stored graphs are
-///      acyclic. A node for B here is independent of B's own root selection in the registry.
+///      acyclic. A node for B here is independent of B's own selection on its receivers.
 struct AuthorityGraph {
     AuthorityNode[] nodes;
 }

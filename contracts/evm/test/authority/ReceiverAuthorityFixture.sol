@@ -4,29 +4,37 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
-import {AuthorityUpdate, SafeCreationProof} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
-import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
-import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegistryTemplate.sol";
+import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
-import {SafeCreation} from "src/messaging/authority/SafeCreation.sol";
-import {SAFE_PROXY_FACTORY, SAFE_PROXY_INITCODE_HASH, SAFE_SINGLETON} from "src/messaging/authority/SafeDeployment.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {NestedSafeApproval, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {SafeSigs, Sig} from "../signed/SignedFixtures.sol";
 
 /// @dev Test-only hooks. Recognition uses placeholder guard and MultiSend addresses; step 5
 ///      replaces it. Votes are the template's own check over Safe 1.5.0 signature blobs.
-contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
+contract ReceiverAuthorityFixture is ReceiverAuthorityTemplate {
     address internal constant GUARD = address(0x1234);
     address internal constant MULTISEND = address(0x5678);
+    uint256 internal immutable _sourceChainId;
+    address internal immutable _sourceSafe;
     bool public busy;
+
+    constructor(uint256 sourceChainId, address sourceSafe) {
+        (_sourceChainId, _sourceSafe) = (sourceChainId, sourceSafe);
+    }
 
     function setBusy(bool value) external {
         busy = value;
+    }
+
+    /// @dev Stands in for the bootstrap that seeds a receiver.
+    function seed(bytes32 updateHead, AuthorityGraph calldata initial) external {
+        _seedAuthority(updateHead, initial);
     }
 
     function _recognizeUpdate(uint256, address sourceSafe, SafeTxEvidence calldata e)
@@ -46,7 +54,6 @@ contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
         bytes4 selector = bytes4(tx_.data);
         if (selector == ISourceAuthorityGuard.activate.selector) {
             r.kind = UpdateKind.Activation;
-            (r.update.newAuthorityHash, r.creation) = abi.decode(tx_.data[4:], (bytes32, SafeCreationProof));
             return r;
         }
         require(selector == ISourceAuthorityGuard.selectAuthority.selector, "wrong selector");
@@ -54,39 +61,27 @@ contract AuthorityRegistryFixture is AuthorityRegistryTemplate {
         r.update = abi.decode(tx_.data[4:], (AuthorityUpdate));
     }
 
-    function _requireAuthorityContextIdle(uint256, address) internal view override {
+    function _authoritySource() internal view override returns (uint256, address) {
+        return (_sourceChainId, _sourceSafe);
+    }
+
+    function _requireAuthorityContextIdle() internal view override {
         require(!busy, "application context busy");
     }
 }
 
-/// @dev Source-call builders and signers shared by the registry suites.
-abstract contract AuthorityRegistryTestBase is Test {
+/// @dev Source-call builders and signers shared by the receiver authority suites.
+abstract contract ReceiverAuthorityTestBase is Test {
     uint256 internal constant CHAIN = 1;
     address internal constant GUARD = address(0x1234);
     address internal constant MULTISEND = address(0x5678);
     address internal constant SENTINEL = address(1);
 
-    function _creation(address[] memory owners, uint256 threshold) internal pure returns (SafeCreationProof memory) {
-        bytes memory initializer = abi.encodeWithSelector(
-            SafeCreation.SETUP, owners, threshold, address(0), "", address(0), address(0), 0, address(0)
-        );
-        return SafeCreationProof(SAFE_SINGLETON, initializer, 0);
-    }
-
-    /// @dev The factory's plain-salt address, derived here independently of SafeCreation.
-    function _safeAddress(SafeCreationProof memory creation) internal pure returns (address) {
-        bytes32 salt = keccak256(abi.encodePacked(keccak256(creation.initializer), creation.saltNonce));
-        return AddressDerive.create2(SAFE_PROXY_FACTORY, salt, SAFE_PROXY_INITCODE_HASH);
-    }
-
-    function _activationTx(uint256 chain, AuthorityGraph memory initial, SafeCreationProof memory creation)
-        internal
-        pure
-        returns (SafeTx memory tx_)
-    {
+    /// @dev An activation names only its graph hash; receivers reject it by kind.
+    function _activationTx(uint256 chain, AuthorityGraph memory initial) internal pure returns (SafeTx memory tx_) {
         tx_.to = GUARD;
-        tx_.data = abi.encodeCall(
-            ISourceAuthorityGuard.activate, (AuthorityUpdateEncoding.graphHash(chain, initial), creation)
+        tx_.data = abi.encodeWithSelector(
+            ISourceAuthorityGuard.activate.selector, AuthorityUpdateEncoding.graphHash(chain, initial)
         );
     }
 

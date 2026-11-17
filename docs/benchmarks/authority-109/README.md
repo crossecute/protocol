@@ -56,7 +56,7 @@ and N-K direct EOAs. Each child has N EOA owners. Actual EOA signature count is
 - Setup, graph installation, signature generation, source Safe execution, transport,
   dispatch decoding, Merkle proofs, application calls, commitment/replay writes and
   linked authority updates/descendant authentication are excluded. This harness
-  does not implement the proposed #109 registry or source mutation batches.
+  does not implement the proposed #109 receiver authority or source mutation batches.
 - Cold measurements explicitly cool harness storage and harness/library accounts
   after graph installation. Warm measurements immediately repeat the same proof.
   Foundry `isolate=false` is explicit: isolated calls otherwise reset warming.

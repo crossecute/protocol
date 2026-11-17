@@ -7,7 +7,7 @@ import {SafeAuthorityRecord, SafeOwner, OWNER_EOA} from "../signed/types/SafeAut
 import {MAX_SAFE_OWNERS} from "./AuthorityGraph.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
 
-/// @notice Owner-change derivation shared by the source guard and destination registries.
+/// @notice Owner-change derivation shared by the source guard and receivers.
 /// @dev Mirrors Safe 1.5.0 OwnerManager: an added owner goes to the front, a swapped owner keeps
 ///      its place, and each step accepts exactly what Safe accepts, plus the 16-owner cap.
 library AuthorityMutations {

@@ -2,22 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
-import {
-    AuthoritySelection,
-    AuthorityUpdate,
-    SafeCreationProof
-} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthoritySelection, AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
 import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
 import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
-import {AuthorityRegistryTemplate} from "src/messaging/authority/AuthorityRegistryTemplate.sol";
+import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {SafeOwner, SafeAuthorityRecord, OWNER_EOA} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
-import {AuthorityRegistryFixture, AuthorityRegistryTestBase} from "./AuthorityRegistryFixture.sol";
+import {ReceiverAuthorityFixture, ReceiverAuthorityTestBase} from "./ReceiverAuthorityFixture.sol";
 
 contract AuthorityEncodingFixture {
     function ownershipBatchData(address guard, address safe, AuthorityUpdate memory update, Call[] memory calls)
@@ -37,21 +33,24 @@ contract AuthorityEncodingFixture {
     }
 }
 
-/// @dev A root with one EOA owner and no descendants; graph-pass cases are in AuthorityGraphPass.t.sol.
-contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
-    // The factory address of _creation(ALICE_KEY); testActivationSafeTxHashIsFirstHead checks it.
+/// @dev A root with one EOA owner and no descendants, seeded as a bootstrap would; graph-pass
+///      cases are in AuthorityGraphPass.t.sol.
+contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
     address internal constant SAFE = 0x21D9c001b9233ead0386c40BD1ACe1F3E6733E3D;
+    bytes32 internal constant HEAD = keccak256("bootstrap head");
     uint256 internal constant ALICE_KEY = 1;
     uint256 internal constant BOB_KEY = 2;
-    AuthorityRegistryFixture internal registry;
+    ReceiverAuthorityFixture internal receiver;
     AuthorityEncodingFixture internal encoding;
-    SafeTxEvidence internal activation;
 
     function setUp() public {
-        registry = new AuthorityRegistryFixture();
+        receiver = _seeded(CHAIN);
         encoding = new AuthorityEncodingFixture();
-        activation = _activation(CHAIN, ALICE_KEY, ALICE_KEY);
-        _submit(registry, CHAIN, activation, vm.addr(ALICE_KEY));
+    }
+
+    function _seeded(uint256 chain) internal returns (ReceiverAuthorityFixture target) {
+        target = new ReceiverAuthorityFixture(chain, SAFE);
+        target.seed(HEAD, _graph(vm.addr(ALICE_KEY)));
     }
 
     function _graph(address owner) internal pure returns (AuthorityGraph memory g) {
@@ -61,23 +60,8 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
         g.nodes[0] = AuthorityNode(SafeAuthorityRecord(SAFE, 1, owners), bytes32(0));
     }
 
-    function _submit(AuthorityRegistryFixture target, uint256 chain, SafeTxEvidence memory e, address owner) internal {
-        target.submitAuthority(chain, SAFE, e, _graph(owner), new ChildUpdate[](0));
-    }
-
-    function _creation(uint256 key) internal pure returns (SafeCreationProof memory) {
-        address[] memory owners = new address[](1);
-        owners[0] = vm.addr(key);
-        return _creation(owners, 1);
-    }
-
-    function _activation(uint256 chain, uint256 creationKey, uint256 signerKey)
-        internal
-        pure
-        returns (SafeTxEvidence memory)
-    {
-        SafeTx memory tx_ = _activationTx(chain, _graph(vm.addr(creationKey)), _creation(creationKey));
-        return _sign(tx_, SAFE, chain, signerKey);
+    function _submit(ReceiverAuthorityFixture target, SafeTxEvidence memory e, address owner) internal {
+        target.submitAuthority(e, _graph(owner), new ChildUpdate[](0));
     }
 
     /// @dev An ownership change swapping the single owner `from` for `to`.
@@ -99,14 +83,13 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
         return _sign(_selectionTx(u, nonce), SAFE, CHAIN, key);
     }
 
-    function _update(AuthorityRegistryFixture target, uint256 chain, address nextOwner)
+    function _update(ReceiverAuthorityFixture target, uint256 chain, address nextOwner)
         internal
         view
         returns (AuthorityUpdate memory)
     {
-        return AuthorityUpdate(
-            target.selection(chain, SAFE).updateHead, AuthorityUpdateEncoding.graphHash(chain, _graph(nextOwner))
-        );
+        return
+            AuthorityUpdate(target.selection().updateHead, AuthorityUpdateEncoding.graphHash(chain, _graph(nextOwner)));
     }
 
     function _hash(SafeTxEvidence memory e) internal pure returns (bytes32) {
@@ -116,172 +99,175 @@ contract AuthorityRegistryTemplateTest is AuthorityRegistryTestBase {
     function testLinkedHandoffsRejectSecondFirstWithoutStateChange() public {
         address alice = vm.addr(ALICE_KEY);
         address bob = vm.addr(BOB_KEY);
-        AuthorityUpdate memory u1 = _update(registry, CHAIN, bob);
+        AuthorityUpdate memory u1 = _update(receiver, CHAIN, bob);
         SafeTxEvidence memory e1 = _rotation(u1, alice, bob, ALICE_KEY, 10, CHAIN);
         AuthorityUpdate memory u2 = AuthorityUpdate(_hash(e1), AuthorityUpdateEncoding.graphHash(CHAIN, _graph(alice)));
         SafeTxEvidence memory e2 = _rotation(u2, bob, alice, BOB_KEY, 12, CHAIN);
-        bytes32 initialHead = registry.selection(CHAIN, SAFE).updateHead;
-        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
-        _submit(registry, CHAIN, e2, alice);
-        assertEq(registry.selection(CHAIN, SAFE).updateHead, initialHead);
-        _submit(registry, CHAIN, e1, bob);
-        _submit(registry, CHAIN, e2, alice);
-        assertEq(registry.selection(CHAIN, SAFE).authorityHash, u2.newAuthorityHash);
+        bytes32 initialHead = receiver.selection().updateHead;
+        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        _submit(receiver, e2, alice);
+        assertEq(receiver.selection().updateHead, initialHead);
+        _submit(receiver, e1, bob);
+        _submit(receiver, e2, alice);
+        assertEq(receiver.selection().authorityHash, u2.newAuthorityHash);
     }
 
     function testHugeSignedNonceDoesNotBlockLinkedLowerNonce() public {
         address alice = vm.addr(ALICE_KEY);
         address bob = vm.addr(BOB_KEY);
-        AuthorityUpdate memory u1 = _update(registry, CHAIN, bob);
-        _submit(registry, CHAIN, _rotation(u1, alice, bob, ALICE_KEY, type(uint256).max, CHAIN), bob);
-        AuthorityUpdate memory u2 = _update(registry, CHAIN, alice);
-        _submit(registry, CHAIN, _rotation(u2, bob, alice, BOB_KEY, 11, CHAIN), alice);
-        assertEq(registry.selection(CHAIN, SAFE).authorityHash, u2.newAuthorityHash);
+        AuthorityUpdate memory u1 = _update(receiver, CHAIN, bob);
+        _submit(receiver, _rotation(u1, alice, bob, ALICE_KEY, type(uint256).max, CHAIN), bob);
+        AuthorityUpdate memory u2 = _update(receiver, CHAIN, alice);
+        _submit(receiver, _rotation(u2, bob, alice, BOB_KEY, 11, CHAIN), alice);
+        assertEq(receiver.selection().authorityHash, u2.newAuthorityHash);
     }
 
-    function testSameSignedEvidenceReusableOnAnotherDestinationRegistry() public {
-        AuthorityRegistryFixture other = new AuthorityRegistryFixture();
-        _submit(other, CHAIN, activation, vm.addr(ALICE_KEY));
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
+    function testSameSignedEvidenceReusableOnAnotherReceiver() public {
+        ReceiverAuthorityFixture other = _seeded(CHAIN);
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 20, CHAIN);
-        _submit(registry, CHAIN, e, vm.addr(BOB_KEY));
-        _submit(other, CHAIN, e, vm.addr(BOB_KEY));
-        assertEq(registry.selection(CHAIN, SAFE).updateHead, other.selection(CHAIN, SAFE).updateHead);
+        _submit(receiver, e, vm.addr(BOB_KEY));
+        _submit(other, e, vm.addr(BOB_KEY));
+        assertEq(receiver.selection().updateHead, other.selection().updateHead);
     }
 
     function testReplayBlockedAfterOriginalGraphReturns() public {
         address alice = vm.addr(ALICE_KEY);
         address bob = vm.addr(BOB_KEY);
-        SafeTxEvidence memory e1 = _rotation(_update(registry, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN);
-        _submit(registry, CHAIN, e1, bob);
-        _submit(registry, CHAIN, _rotation(_update(registry, CHAIN, alice), bob, alice, BOB_KEY, 12, CHAIN), alice);
-        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
-        _submit(registry, CHAIN, e1, bob);
+        SafeTxEvidence memory e1 = _rotation(_update(receiver, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN);
+        _submit(receiver, e1, bob);
+        _submit(receiver, _rotation(_update(receiver, CHAIN, alice), bob, alice, BOB_KEY, 12, CHAIN), alice);
+        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        _submit(receiver, e1, bob);
     }
 
     function testExactDuplicateOfHeadRejected() public {
         address bob = vm.addr(BOB_KEY);
         SafeTxEvidence memory e =
-            _rotation(_update(registry, CHAIN, bob), vm.addr(ALICE_KEY), bob, ALICE_KEY, 10, CHAIN);
-        _submit(registry, CHAIN, e, bob);
-        AuthoritySelection memory accepted = registry.selection(CHAIN, SAFE);
-        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
-        _submit(registry, CHAIN, e, bob);
-        assertEq(registry.selection(CHAIN, SAFE).updateHead, accepted.updateHead);
+            _rotation(_update(receiver, CHAIN, bob), vm.addr(ALICE_KEY), bob, ALICE_KEY, 10, CHAIN);
+        _submit(receiver, e, bob);
+        AuthoritySelection memory accepted = receiver.selection();
+        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        _submit(receiver, e, bob);
+        assertEq(receiver.selection().updateHead, accepted.updateHead);
     }
 
     function testCompetingSuccessorCannotOverwriteAcceptedBranch() public {
-        AuthorityUpdate memory first = _update(registry, CHAIN, vm.addr(BOB_KEY));
-        AuthorityUpdate memory competing = _update(registry, CHAIN, vm.addr(ALICE_KEY));
+        AuthorityUpdate memory first = _update(receiver, CHAIN, vm.addr(BOB_KEY));
+        AuthorityUpdate memory competing = _update(receiver, CHAIN, vm.addr(ALICE_KEY));
         _submit(
-            registry,
-            CHAIN,
-            _rotation(first, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN),
-            vm.addr(BOB_KEY)
+            receiver, _rotation(first, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN), vm.addr(BOB_KEY)
         );
-        vm.expectRevert(AuthorityRegistryTemplate.PreviousUpdateMismatch.selector);
-        _submit(registry, CHAIN, _selection(competing, ALICE_KEY, 100), vm.addr(ALICE_KEY));
+        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        _submit(receiver, _selection(competing, ALICE_KEY, 100), vm.addr(ALICE_KEY));
     }
 
     function testNewOwnersCannotSelfInstall() public {
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), BOB_KEY, 10, CHAIN);
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(BOB_KEY)));
-        _submit(registry, CHAIN, e, vm.addr(BOB_KEY));
+        _submit(receiver, e, vm.addr(BOB_KEY));
     }
 
     function testAlteredReplacementGraphRejected() public {
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
-        vm.expectRevert(AuthorityRegistryTemplate.ReplacementHashMismatch.selector);
-        _submit(registry, CHAIN, e, vm.addr(ALICE_KEY));
+        vm.expectRevert(ReceiverAuthorityTemplate.ReplacementHashMismatch.selector);
+        _submit(receiver, e, vm.addr(ALICE_KEY));
     }
 
     function testOwnershipChangeRootMustBeMutationResult() public {
         // Signs a graph naming carol while its swap installs bob.
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(3));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(3));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
         vm.expectRevert(AuthorityMutations.MutationResultMismatch.selector);
-        _submit(registry, CHAIN, e, vm.addr(3));
+        _submit(receiver, e, vm.addr(3));
     }
 
     function testSelectionCannotChangeRootRecord() public {
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
-        vm.expectRevert(AuthorityRegistryTemplate.RootRecordMismatch.selector);
-        _submit(registry, CHAIN, _selection(u, ALICE_KEY, 10), vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
+        vm.expectRevert(ReceiverAuthorityTemplate.RootRecordMismatch.selector);
+        _submit(receiver, _selection(u, ALICE_KEY, 10), vm.addr(BOB_KEY));
     }
 
     function testWrongSourceChainCannotReuseSignature() public {
-        _submit(registry, 10, _activation(10, ALICE_KEY, ALICE_KEY), vm.addr(ALICE_KEY));
+        ReceiverAuthorityFixture other = _seeded(10);
         // Chain 10's own predecessor and graph hash, signed under chain 1's Safe domain.
-        AuthorityUpdate memory u = _update(registry, 10, vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(other, 10, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
         // The signature recovers some other address under chain 10's domain.
         vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
-        _submit(registry, 10, e, vm.addr(BOB_KEY));
+        _submit(other, e, vm.addr(BOB_KEY));
     }
 
     function testBusyContextBlocksUpdate() public {
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
-        registry.setBusy(true);
+        receiver.setBusy(true);
         vm.expectRevert("application context busy");
-        _submit(registry, CHAIN, e, vm.addr(BOB_KEY));
+        _submit(receiver, e, vm.addr(BOB_KEY));
     }
 
     function testRootMustBeFirstNodeAtPositionZero() public {
-        AuthorityUpdate memory u = _update(registry, CHAIN, vm.addr(BOB_KEY));
+        AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
         AuthorityGraph memory g = _graph(vm.addr(BOB_KEY));
         g.nodes[0].record.safe = address(0xBBBB);
-        vm.expectRevert(AuthorityRegistryTemplate.WrongRoot.selector);
-        registry.submitAuthority(CHAIN, SAFE, e, g, new ChildUpdate[](0));
+        vm.expectRevert(ReceiverAuthorityTemplate.WrongRoot.selector);
+        receiver.submitAuthority(e, g, new ChildUpdate[](0));
         g = _graph(vm.addr(BOB_KEY));
         g.nodes[0].position = bytes32(uint256(1));
-        vm.expectRevert(AuthorityRegistryTemplate.RootPositionNotZero.selector);
-        registry.submitAuthority(CHAIN, SAFE, e, g, new ChildUpdate[](0));
+        vm.expectRevert(ReceiverAuthorityTemplate.RootPositionNotZero.selector);
+        receiver.submitAuthority(e, g, new ChildUpdate[](0));
     }
 
-    function testActivationSafeTxHashIsFirstHead() public view {
-        assertEq(SAFE, _safeAddress(_creation(ALICE_KEY)), "fixture Safe address");
-        AuthoritySelection memory current = registry.selection(CHAIN, SAFE);
-        assertEq(current.updateHead, _hash(activation));
+    function testSeedSetsHeadAndGraph() public view {
+        AuthoritySelection memory current = receiver.selection();
+        assertEq(current.updateHead, HEAD);
         assertEq(current.authorityHash, AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(ALICE_KEY))));
     }
 
-    function testCannotActivateTwice() public {
-        vm.expectRevert(AuthorityRegistryTemplate.AlreadyRegistered.selector);
-        _submit(registry, CHAIN, activation, vm.addr(ALICE_KEY));
-        SafeTxEvidence memory second = _activation(CHAIN, BOB_KEY, BOB_KEY);
-        vm.expectRevert(AuthorityRegistryTemplate.AlreadyRegistered.selector);
-        _submit(registry, CHAIN, second, vm.addr(BOB_KEY));
+    function testSeedOnlyOnceAndChecksShape() public {
+        vm.expectRevert(ReceiverAuthorityTemplate.AlreadySeeded.selector);
+        receiver.seed(HEAD, _graph(vm.addr(BOB_KEY)));
+        ReceiverAuthorityFixture other = new ReceiverAuthorityFixture(CHAIN, SAFE);
+        vm.expectRevert(ReceiverAuthorityTemplate.ZeroCommitment.selector);
+        other.seed(bytes32(0), _graph(vm.addr(ALICE_KEY)));
+        AuthorityGraph memory g = _graph(vm.addr(ALICE_KEY));
+        g.nodes[0].record.safe = address(0xBBBB);
+        vm.expectRevert(ReceiverAuthorityTemplate.WrongRoot.selector);
+        other.seed(HEAD, g);
     }
 
-    function testUpdateBeforeActivationRejected() public {
-        AuthorityRegistryFixture other = new AuthorityRegistryFixture();
+    function testActivationIsNeverAccepted() public {
+        SafeTx memory tx_;
+        tx_.to = GUARD;
+        tx_.data = abi.encodeWithSelector(
+            ISourceAuthorityGuard.activate.selector, AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(BOB_KEY)))
+        );
+        vm.expectRevert(ReceiverAuthorityTemplate.ActivationNotAccepted.selector);
+        _submit(receiver, _sign(tx_, SAFE, CHAIN, ALICE_KEY), vm.addr(BOB_KEY));
+    }
+
+    function testUpdateBeforeSeedRejected() public {
+        ReceiverAuthorityFixture other = new ReceiverAuthorityFixture(CHAIN, SAFE);
         AuthorityUpdate memory u =
             AuthorityUpdate(bytes32(0), AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(ALICE_KEY))));
-        vm.expectRevert(AuthorityRegistryTemplate.UnregisteredAuthority.selector);
-        _submit(other, CHAIN, _selection(u, ALICE_KEY, 0), vm.addr(ALICE_KEY));
-    }
-
-    function testActivationMustBeSignedByCreationOwners() public {
-        AuthorityRegistryFixture other = new AuthorityRegistryFixture();
-        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(BOB_KEY)));
-        _submit(other, CHAIN, _activation(CHAIN, ALICE_KEY, BOB_KEY), vm.addr(ALICE_KEY));
+        vm.expectRevert(ReceiverAuthorityTemplate.UnseededAuthority.selector);
+        _submit(other, _selection(u, ALICE_KEY, 0), vm.addr(ALICE_KEY));
     }
 
     function testGraphAndRecordsReadBack() public {
         address alice = vm.addr(ALICE_KEY);
         address bob = vm.addr(BOB_KEY);
-        _submit(registry, CHAIN, _rotation(_update(registry, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN), bob);
-        AuthorityGraph memory stored = registry.graph(registry.selection(CHAIN, SAFE).authorityHash);
+        _submit(receiver, _rotation(_update(receiver, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN), bob);
+        AuthorityGraph memory stored = receiver.graph(receiver.selection().authorityHash);
         assertEq(stored.nodes.length, 1);
         assertEq(stored.nodes[0].record.owners[0].owner, bob);
         bytes32 aliceRecord = AuthorityUpdateEncoding.recordHash(_graph(alice).nodes[0].record);
-        assertEq(registry.record(aliceRecord).owners[0].owner, alice);
-        vm.expectRevert(AuthorityRegistryTemplate.GraphNotCached.selector);
-        registry.graph(bytes32(uint256(1)));
+        assertEq(receiver.record(aliceRecord).owners[0].owner, alice);
+        vm.expectRevert(ReceiverAuthorityTemplate.GraphNotCached.selector);
+        receiver.graph(bytes32(uint256(1)));
     }
 
     function testOwnershipBatchPacksGuardCallThenSelfCalls() public view {
