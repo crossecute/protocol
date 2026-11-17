@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {AuthorityGraph} from "crossecute/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
 import {NestedSafeApproval} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
-import {AuthoritySelection, AuthorityUpdate, SafeCreationProof} from "./AuthorityUpdateTypes.sol";
+import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "./ISourceAuthorityGuard.sol";
 
 /// @notice Non-deployable #109 integration template. It grants no source authority.
@@ -26,7 +26,7 @@ abstract contract SourceAuthorityGuardTemplate is ISourceAuthorityGuard {
     }
 
     /// @inheritdoc ISourceAuthorityGuard
-    function activate(bytes32, SafeCreationProof calldata) external pure virtual {
+    function activate(bytes32) external pure virtual {
         revert AuthorityGuardNotImplemented();
     }
 

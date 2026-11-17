@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {AuthorityGraph} from "crossecute/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
 import {NestedSafeApproval} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
-import {AuthoritySelection, AuthorityUpdate, SafeCreationProof} from "./AuthorityUpdateTypes.sol";
+import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 
 /// @notice Proposed #109 additions to the shared guard; the current CrossecuteGuard does not implement them.
 interface ISourceAuthorityGuard {
@@ -31,10 +31,11 @@ interface ISourceAuthorityGuard {
         NestedSafeApproval[] calldata nestedApprovals
     ) external;
 
-    /// @notice A Safe's first update, signed by its creation quorum after it sets the guard.
-    /// @dev The Safe's live owners and threshold must equal the record creation proves, and every
-    ///      Safe owner must already be activated. The SafeTx hash becomes the first head.
-    function activate(bytes32 authorityHash, SafeCreationProof calldata creation) external;
+    /// @notice A Safe's first update, signed by its quorum after it sets the guard.
+    /// @dev The initial graph's root record must equal the Safe's live owners and threshold, and
+    ///      every Safe owner must already be activated. The SafeTx hash becomes the first head.
+    ///      Destinations never receive it: each receiver starts from its bootstrap's head.
+    function activate(bytes32 authorityHash) external;
 
     /// @notice The first call of a one-SafeTx ownership change.
     /// @dev The SafeTx DELEGATECALLs the pinned MultiSendCallOnly with this call followed by the
