@@ -8,7 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
 import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
-import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
@@ -66,19 +66,17 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         AuthorityGraph memory behind = _graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC0(), _pC0()));
 
         _expectSelectA(
-            behind,
-            new ChildUpdate[](0),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenPosition.selector, _b())
+            behind, new ChildUpdate[](0), abi.encodeWithSelector(ReceiverAuthority.UnprovenPosition.selector, _b())
         );
         _expectSelectA(
             behind,
             _children(_childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenPredecessor.selector, 0)
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPredecessor.selector, 0)
         );
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), bytes32(uint256(123))), _node(_rC0(), _pC0())),
             new ChildUpdate[](0),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenPosition.selector, _b())
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPosition.selector, _b())
         );
         assertEq(receiver.selection().updateHead, head, "no writes");
     }
@@ -90,7 +88,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB0(), _hash(b1, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.DescendantRecordMismatch.selector, _b())
+            abi.encodeWithSelector(ReceiverAuthority.DescendantRecordMismatch.selector, _b())
         );
         // B signs a graph whose record is not the result of its swap.
         AuthorityGraph memory wrong = _graph(_rec(_b(), _list(_eoa(DAVE), _sub(_c()))), _node(_rC0(), _pC0()));
@@ -117,7 +115,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenPredecessor.selector, 0)
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPredecessor.selector, 0)
         );
     }
 
@@ -161,7 +159,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
             _change(_a(), head, g, _addOwner(_a(), _d()), ALICE),
             g,
             new ChildUpdate[](0),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenPosition.selector, _d())
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPosition.selector, _d())
         );
         SafeAuthorityRecord memory zero = _rD0();
         zero.threshold = 0;
@@ -200,7 +198,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC1(), _pC1())),
             _children(_childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenVoter.selector, _c())
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenVoter.selector, _c())
         );
     }
 
@@ -213,7 +211,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(e, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(e, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenVoter.selector, _c())
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenVoter.selector, _c())
         );
     }
 
@@ -223,7 +221,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB0(), _pB0()), _node(_rC1(), _hash(act, _c()))),
             _children(_childUpdate(act, g)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.ActivationNotAccepted.selector)
+            abi.encodeWithSelector(ReceiverAuthority.ActivationNotAccepted.selector)
         );
     }
 
@@ -235,9 +233,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         SafeTxEvidence memory byC = _signByChild(_ownershipTx(_b(), u, removal, ++nonce), _b(), _c(), CAROL);
         AuthorityGraph memory g = _graph(_rA0(), _node(g1.nodes[0].record, _hash(byC, _b())));
         _expectSelectA(
-            g,
-            _children(_childUpdate(byC, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnprovenVoter.selector, _c())
+            g, _children(_childUpdate(byC, g1)), abi.encodeWithSelector(ReceiverAuthority.UnprovenVoter.selector, _c())
         );
 
         SafeTxEvidence memory byBob = _sign(_ownershipTx(_b(), u, removal, nonce), _b(), CHAIN, BOB);
@@ -402,7 +398,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graphA0(),
             _children(_childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.UnusedChildUpdate.selector, 0)
+            abi.encodeWithSelector(ReceiverAuthority.UnusedChildUpdate.selector, 0)
         );
     }
 
@@ -411,7 +407,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(b1, g1), _childUpdate(b1, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.RepeatedChildUpdate.selector, 1)
+            abi.encodeWithSelector(ReceiverAuthority.RepeatedChildUpdate.selector, 1)
         );
     }
 
@@ -421,9 +417,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
 
         ChildUpdate memory child = _childUpdate(b1, g1);
         child.newRecord = _rB0();
-        _expectSelectA(
-            g, _children(child), abi.encodeWithSelector(ReceiverAuthorityTemplate.ChildRecordMismatch.selector, 0)
-        );
+        _expectSelectA(g, _children(child), abi.encodeWithSelector(ReceiverAuthority.ChildRecordMismatch.selector, 0));
         // B signs a graph whose root record names another Safe.
         AuthorityGraph memory elsewhere = _graph(_rec(_c(), _rB1().owners), _node(_rC0(), _pC0()));
         SafeTxEvidence memory e =
@@ -431,14 +425,12 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         child = _childUpdate(e, elsewhere);
         child.sourceSafe = _b();
         g.nodes[1].position = _hash(e, _b());
-        _expectSelectA(
-            g, _children(child), abi.encodeWithSelector(ReceiverAuthorityTemplate.ChildRecordMismatch.selector, 0)
-        );
+        _expectSelectA(g, _children(child), abi.encodeWithSelector(ReceiverAuthority.ChildRecordMismatch.selector, 0));
         child = _childUpdate(b1, g1);
         child.newGraphEntries[1].position = bytes32(uint256(1));
         g.nodes[1].position = _hash(b1, _b());
         _expectSelectA(
-            g, _children(child), abi.encodeWithSelector(ReceiverAuthorityTemplate.ChildGraphHashMismatch.selector, 0)
+            g, _children(child), abi.encodeWithSelector(ReceiverAuthority.ChildGraphHashMismatch.selector, 0)
         );
 
         // An owner kind outside EOA and Safe, even when signed. A names B with a valid record so
@@ -450,7 +442,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             g,
             _children(_childUpdate(e, odd)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.ChildRecordMismatch.selector, 0)
+            abi.encodeWithSelector(ReceiverAuthority.ChildRecordMismatch.selector, 0)
         );
     }
 
@@ -460,7 +452,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rA0(), _node(_rB1(), _hash(e, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(e, g1)),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.ChildRecordMismatch.selector, 0)
+            abi.encodeWithSelector(ReceiverAuthority.ChildRecordMismatch.selector, 0)
         );
     }
 
@@ -487,7 +479,7 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         _expectSelectA(
             _graph(_rec(_a(), owners)),
             new ChildUpdate[](0),
-            abi.encodeWithSelector(ReceiverAuthorityTemplate.TooManyGraphOwners.selector, _a())
+            abi.encodeWithSelector(ReceiverAuthority.TooManyGraphOwners.selector, _a())
         );
     }
 

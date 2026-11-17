@@ -8,7 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
 import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
-import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {SafeOwner, SafeAuthorityRecord, OWNER_EOA} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
@@ -104,7 +104,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         AuthorityUpdate memory u2 = AuthorityUpdate(_hash(e1), AuthorityUpdateEncoding.graphHash(CHAIN, _graph(alice)));
         SafeTxEvidence memory e2 = _rotation(u2, bob, alice, BOB_KEY, 12, CHAIN);
         bytes32 initialHead = receiver.selection().updateHead;
-        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
         _submit(receiver, e2, alice);
         assertEq(receiver.selection().updateHead, initialHead);
         _submit(receiver, e1, bob);
@@ -137,7 +137,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         SafeTxEvidence memory e1 = _rotation(_update(receiver, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN);
         _submit(receiver, e1, bob);
         _submit(receiver, _rotation(_update(receiver, CHAIN, alice), bob, alice, BOB_KEY, 12, CHAIN), alice);
-        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
         _submit(receiver, e1, bob);
     }
 
@@ -147,7 +147,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
             _rotation(_update(receiver, CHAIN, bob), vm.addr(ALICE_KEY), bob, ALICE_KEY, 10, CHAIN);
         _submit(receiver, e, bob);
         AuthoritySelection memory accepted = receiver.selection();
-        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
         _submit(receiver, e, bob);
         assertEq(receiver.selection().updateHead, accepted.updateHead);
     }
@@ -158,7 +158,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         _submit(
             receiver, _rotation(first, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN), vm.addr(BOB_KEY)
         );
-        vm.expectRevert(ReceiverAuthorityTemplate.PreviousUpdateMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
         _submit(receiver, _selection(competing, ALICE_KEY, 100), vm.addr(ALICE_KEY));
     }
 
@@ -172,7 +172,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
     function testAlteredReplacementGraphRejected() public {
         AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
-        vm.expectRevert(ReceiverAuthorityTemplate.ReplacementHashMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.ReplacementHashMismatch.selector);
         _submit(receiver, e, vm.addr(ALICE_KEY));
     }
 
@@ -186,7 +186,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
 
     function testSelectionCannotChangeRootRecord() public {
         AuthorityUpdate memory u = _update(receiver, CHAIN, vm.addr(BOB_KEY));
-        vm.expectRevert(ReceiverAuthorityTemplate.RootRecordMismatch.selector);
+        vm.expectRevert(ReceiverAuthority.RootRecordMismatch.selector);
         _submit(receiver, _selection(u, ALICE_KEY, 10), vm.addr(BOB_KEY));
     }
 
@@ -213,11 +213,11 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         SafeTxEvidence memory e = _rotation(u, vm.addr(ALICE_KEY), vm.addr(BOB_KEY), ALICE_KEY, 10, CHAIN);
         AuthorityGraph memory g = _graph(vm.addr(BOB_KEY));
         g.nodes[0].record.safe = address(0xBBBB);
-        vm.expectRevert(ReceiverAuthorityTemplate.WrongRoot.selector);
+        vm.expectRevert(ReceiverAuthority.WrongRoot.selector);
         receiver.submitAuthority(e, g, new ChildUpdate[](0));
         g = _graph(vm.addr(BOB_KEY));
         g.nodes[0].position = bytes32(uint256(1));
-        vm.expectRevert(ReceiverAuthorityTemplate.RootPositionNotZero.selector);
+        vm.expectRevert(ReceiverAuthority.RootPositionNotZero.selector);
         receiver.submitAuthority(e, g, new ChildUpdate[](0));
     }
 
@@ -228,14 +228,14 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
     }
 
     function testSeedOnlyOnceAndChecksShape() public {
-        vm.expectRevert(ReceiverAuthorityTemplate.AlreadySeeded.selector);
+        vm.expectRevert(ReceiverAuthority.AlreadySeeded.selector);
         receiver.seed(HEAD, _graph(vm.addr(BOB_KEY)));
         ReceiverAuthorityFixture other = new ReceiverAuthorityFixture(CHAIN, SAFE);
-        vm.expectRevert(ReceiverAuthorityTemplate.ZeroCommitment.selector);
+        vm.expectRevert(ReceiverAuthority.ZeroCommitment.selector);
         other.seed(bytes32(0), _graph(vm.addr(ALICE_KEY)));
         AuthorityGraph memory g = _graph(vm.addr(ALICE_KEY));
         g.nodes[0].record.safe = address(0xBBBB);
-        vm.expectRevert(ReceiverAuthorityTemplate.WrongRoot.selector);
+        vm.expectRevert(ReceiverAuthority.WrongRoot.selector);
         other.seed(HEAD, g);
     }
 
@@ -245,7 +245,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         tx_.data = abi.encodeWithSelector(
             ISourceAuthorityGuard.activate.selector, AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(BOB_KEY)))
         );
-        vm.expectRevert(ReceiverAuthorityTemplate.ActivationNotAccepted.selector);
+        vm.expectRevert(ReceiverAuthority.ActivationNotAccepted.selector);
         _submit(receiver, _sign(tx_, SAFE, CHAIN, ALICE_KEY), vm.addr(BOB_KEY));
     }
 
@@ -253,7 +253,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         ReceiverAuthorityFixture other = new ReceiverAuthorityFixture(CHAIN, SAFE);
         AuthorityUpdate memory u =
             AuthorityUpdate(bytes32(0), AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(ALICE_KEY))));
-        vm.expectRevert(ReceiverAuthorityTemplate.UnseededAuthority.selector);
+        vm.expectRevert(ReceiverAuthority.UnseededAuthority.selector);
         _submit(other, _selection(u, ALICE_KEY, 0), vm.addr(ALICE_KEY));
     }
 
@@ -266,7 +266,7 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         assertEq(stored.nodes[0].record.owners[0].owner, bob);
         bytes32 aliceRecord = AuthorityUpdateEncoding.recordHash(_graph(alice).nodes[0].record);
         assertEq(receiver.record(aliceRecord).owners[0].owner, alice);
-        vm.expectRevert(ReceiverAuthorityTemplate.GraphNotCached.selector);
+        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
         receiver.graph(bytes32(uint256(1)));
     }
 

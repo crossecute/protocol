@@ -9,6 +9,7 @@ import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAut
 import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
@@ -41,23 +42,23 @@ contract ReceiverAuthorityFixture is ReceiverAuthorityTemplate {
         internal
         pure
         override
-        returns (RecognizedUpdate memory r)
+        returns (ReceiverAuthority.RecognizedUpdate memory r)
     {
         SafeTx calldata tx_ = e.signedSafeTx.safeTx;
         require(tx_.value == 0, "wrong source call");
         if (tx_.to == MULTISEND && tx_.operation == 1) {
-            r.kind = UpdateKind.OwnershipChange;
+            r.kind = ReceiverAuthority.UpdateKind.OwnershipChange;
             (r.update, r.mutations) = AuthorityUpdateEncoding.decodeOwnershipBatch(GUARD, sourceSafe, tx_.data);
             return r;
         }
         require(tx_.to == GUARD && tx_.operation == 0, "wrong source call");
         bytes4 selector = bytes4(tx_.data);
         if (selector == ISourceAuthorityGuard.activate.selector) {
-            r.kind = UpdateKind.Activation;
+            r.kind = ReceiverAuthority.UpdateKind.Activation;
             return r;
         }
         require(selector == ISourceAuthorityGuard.selectAuthority.selector, "wrong selector");
-        r.kind = UpdateKind.Selection;
+        r.kind = ReceiverAuthority.UpdateKind.Selection;
         r.update = abi.decode(tx_.data[4:], (AuthorityUpdate));
     }
 
