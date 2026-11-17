@@ -20,18 +20,16 @@ import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.
 ///      creation-time owner (`deployer`), and ownership cannot move: the receivers hold that
 ///      Safe's authority.
 ///
-/// @dev Source checks use the Safes' live authority; receivers verify against the creation
-///      authority they store. A send that passes here can still fail there after an owner change,
-///      without consuming receiver state (#109 delivers the change).
+/// @dev Source checks use the Safes' live authority; each receiver verifies against the
+///      authority its bootstrap delivered, read live when that bootstrap was sent. A send that
+///      passes here can still fail there after a later owner change, without consuming receiver
+///      state (#109 delivers the change).
 ///
 /// @dev State is ERC-7201 namespaced so it does not extend the base's sequential layout (R8.2).
 abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, ISignedTransmitterInit {
     /// @custom:storage-location erc7201:crossecute.storage.SignedTransmitter
     struct SignedTransmitterStorage {
-        // `abi.encode(SafeAuthorityRecord[])` at creation; its keccak256 is the graph.
-        bytes records;
-        // Nonzero exactly in signed mode.
-        bytes32 graph;
+        bool signed;
         mapping(bytes32 root => bool) roots;
         mapping(bytes32 leafHash => bool) relayed;
         mapping(bytes32 chainKey => bytes32 bodyHash) pendingBootstrap;
@@ -42,7 +40,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     bytes32 private constant SIGNED_TRANSMITTER_STORAGE =
         0x8566b709a423746963d200f6840e900d54ab8ebbe69c13e71ed1cbb86e81aa00;
 
-    event SignedTransmitterInitialized(bytes32 graph);
+    event SignedTransmitterInitialized();
     event RootRegistered(bytes32 indexed root);
     event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
     /// @dev `body` is what `retryBootstrap` takes, kept until a send of it succeeds.
@@ -70,25 +68,17 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         }
     }
 
-    /// @notice Return the creation-graph hash, reverting if this is a plain transmitter.
-    /// @dev Signed-only entry points use this check to reject operations without a stored
-    ///      signed authority snapshot.
-    function _graph() private view returns (bytes32 graph) {
-        graph = _signedStorage().graph;
-        if (graph == bytes32(0)) revert NotSigned();
+    function _requireSigned() private view {
+        if (!_signedStorage().signed) revert NotSigned();
     }
 
-    /// @notice Store creation records and their hash once, when called by the transceiver.
-    /// @dev This fixes signed mode and retains the authority snapshot that every destination
-    ///      receiver must use.
     /// @inheritdoc ISignedTransmitterInit
-    function initializeSigned(bytes calldata records) external {
+    function initializeSigned() external {
         if (msg.sender != transceiver) revert NotTransceiver(msg.sender);
         SignedTransmitterStorage storage $ = _signedStorage();
-        if ($.graph != bytes32(0)) revert AlreadySigned();
-        $.records = records;
-        $.graph = keccak256(records);
-        emit SignedTransmitterInitialized($.graph);
+        if ($.signed) revert AlreadySigned();
+        $.signed = true;
+        emit SignedTransmitterInitialized();
     }
 
     /* ================================ owner calls =============================== */
@@ -103,7 +93,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         override
         returns (bytes32 sendId)
     {
-        if (_signedStorage().graph == bytes32(0)) return super.sendMessage(recipient, payload, attributes);
+        if (!_signedStorage().signed) return super.sendMessage(recipient, payload, attributes);
         _checkOwner();
         (bytes memory to, bytes memory wire, bytes[] memory options) = SignedTransmitterLib.consumeMessage(msg.data);
         return _sendStandalone(to, wire, options);
@@ -145,7 +135,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         payable
         override(TransmitterBase, ISignedTransmitter)
     {
-        if (_signedStorage().graph == bytes32(0)) return super.bootstrap(payload, attributes);
+        if (!_signedStorage().signed) return super.bootstrap(payload, attributes);
         _checkOwner();
         (bytes memory body, bytes32 chainKey,,) = SignedTransmitterLib.consumeBootstrap(msg.data);
         _signedStorage().pendingBootstrap[chainKey] = keccak256(body);
@@ -160,7 +150,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     ///      out of storage lets each relayer supply its own evidence.
     /// @inheritdoc ISignedTransmitter
     function registerRoot(bytes32 root) external onlyConduitOwner {
-        _graph();
+        _requireSigned();
         if (!ICrossecuteGuard(GuardDiscovery.transactionGuard(deployer)).isPublished(root)) {
             revert RootNotPublished(root);
         }
@@ -171,10 +161,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /// @notice Transfer ownership only in plain mode; reject changes in signed mode.
-    /// @dev Signed receivers are bound to the creation-time Safe, so changing the transmitter
-    ///      owner would diverge from their authority snapshot.
+    /// @dev Signed receivers hold the creation-time Safe's authority, so the owner cannot move.
     function transferOwnership(address newOwner) public virtual override {
-        if (_signedStorage().graph != bytes32(0)) revert OwnershipFixed();
+        if (_signedStorage().signed) revert OwnershipFixed();
         super.transferOwnership(newOwner);
     }
 
@@ -182,7 +171,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @dev Renouncing signed ownership would permanently disable the fixed Safe's owner-only
     ///      operations without changing destination authority.
     function renounceOwnership() public virtual override {
-        if (_signedStorage().graph != bytes32(0)) revert OwnershipFixed();
+        if (_signedStorage().signed) revert OwnershipFixed();
         super.renounceOwnership();
     }
 
@@ -193,7 +182,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @dev Anyone can recover a failed send without another Safe transaction. Clearing pending
     ///      state and marking bootstrap roll back if the retry fails.
     function retryBootstrap(bytes calldata body) external payable {
-        _graph();
+        _requireSigned();
         (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLib.bootstrapTarget(body);
         SignedTransmitterStorage storage $ = _signedStorage();
         if ($.pendingBootstrap[chainKey] != keccak256(body)) revert NoPendingBootstrap(chainKey);
@@ -256,7 +245,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         override
         returns (uint256)
     {
-        if (_signedStorage().graph != bytes32(0)) revert SignedQuoteRequired();
+        if (_signedStorage().signed) revert SignedQuoteRequired();
         return super.quoteMessage(recipient, payload, attributes);
     }
 
@@ -269,7 +258,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         override
         returns (uint256)
     {
-        if (_signedStorage().graph != bytes32(0)) revert SignedQuoteRequired();
+        if (_signedStorage().signed) revert SignedQuoteRequired();
         return super.quoteBootstrap(payload, attributes);
     }
 
@@ -277,7 +266,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @dev Sharing the send builder, including live nested approval collection, prevents
     ///      quotes from omitting evidence bytes or pricing a different message.
     function quoteSignedMessage(SafeTxEvidence calldata evidence) external view returns (uint256) {
-        _graph();
+        _requireSigned();
         evidence;
         (bytes memory recipient, bytes memory wire, bytes[] memory attributes) =
             SignedTransmitterLib.quoteMessage(msg.data[4:]);
@@ -293,7 +282,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         view
         returns (uint256 fee, bytes memory body)
     {
-        _graph();
+        _requireSigned();
         evidence;
         bytes32 chainKey;
         bytes[] memory attributes;
@@ -324,7 +313,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         view
         returns (bytes32 leafHash, bytes memory destination, bytes[] memory attributes, bytes memory wire, uint256 fee)
     {
-        _graph();
+        _requireSigned();
         bytes32 root;
         (root, leafHash, destination, attributes, wire) = SignedTransmitterLib.relay(msg.data[4:]);
         SignedTransmitterStorage storage $ = _signedStorage();
@@ -346,19 +335,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /// @inheritdoc ISignedTransmitterInit
     function isSigned() external view returns (bool) {
-        return _signedStorage().graph != bytes32(0);
-    }
-
-    /// @notice Return the creation-graph hash, or zero for a plain transmitter.
-    function authorityGraph() external view returns (bytes32) {
-        return _signedStorage().graph;
-    }
-
-    /// @notice Return the ABI-encoded creation authority records forwarded in signed
-    ///         bootstraps.
-    /// @dev Receivers initialize from this snapshot, even if the source Safe later changes owners.
-    function creationRecords() external view returns (bytes memory) {
-        return _signedStorage().records;
+        return _signedStorage().signed;
     }
 
     /// @notice Report whether the owner has registered a root on this transmitter.

@@ -43,10 +43,6 @@ interface ISignedTransmitterView {
     /// @dev Receiver prediction must preserve the salt selected at conduit creation rather than
     ///      inventing a new destination address.
     function conduitSalt() external view returns (bytes32);
-    /// @notice Return the transmitter's encoded creation authority records.
-    /// @dev Signed bootstraps carry those records so the receiver can reconstruct its fixed
-    ///      verification authority.
-    function creationRecords() external view returns (bytes memory);
     /// @notice Report whether this conduit has already bootstrapped a destination chain.
     /// @dev The builder must reject a new bootstrap for a destination the transmitter already
     ///      considers initialized.
@@ -92,8 +88,8 @@ library SignedTransmitterLib {
 
     /// @notice Consume the staged bootstrap and build its body, destination key, route and
     ///         attributes.
-    /// @dev The transceiver needs both signed setup authorization and creation records to
-    ///      derive and initialize the destination receiver.
+    /// @dev The destination needs the signed setup authorization and the Safe's live records to
+    ///      initialize the receiver.
     function consumeBootstrap(bytes calldata callData)
         external
         returns (bytes memory body, bytes32 chainKey, bytes memory route, bytes[] memory attributes)
@@ -180,10 +176,10 @@ library SignedTransmitterLib {
         wire = abi.encode(WIRE_STANDALONE, evidence);
     }
 
-    /// @notice Validate the bootstrap target, collect nested approvals and package the creation
-    ///         records with its evidence.
-    /// @dev The receiver needs both authorization and its complete authority snapshot to
-    ///      perform initialization independently of the provider.
+    /// @notice Validate the bootstrap target, collect nested approvals and package the Safe's
+    ///         live authority records with its evidence.
+    /// @dev The receiver stores those records, so a chain bootstrapped after an owner change
+    ///      starts with the current owners.
     function _bootstrap(address safe, SafeTxEvidence memory evidence)
         private
         view
@@ -191,7 +187,8 @@ library SignedTransmitterLib {
     {
         (chainKey, route, attributes) = _target(evidence);
         _collect(safe, evidence);
-        bytes memory records = ISignedTransmitterView(address(this)).creationRecords();
+        bytes memory records =
+            IConduitTransceiver(ISignedTransmitterView(address(this)).transceiver()).signedAuthority(safe);
         body = abi.encode(SignedBootstrap(evidence, abi.decode(records, (SafeAuthorityRecord[]))));
     }
 

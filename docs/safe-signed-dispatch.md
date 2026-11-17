@@ -111,7 +111,8 @@ Authority:
 - **D17.** Empty nested payloads count only with independently verified signed direct-approval
   evidence. The receiver does not check the signing library's address or code hash. `v = 1`
   is rejected at every level. `v = 27/28` and `v = 31/32` are supported, including mixed sets.
-- **D18.** #108 fixes authority at the receiver. Source owner and threshold changes remain
+- **D18.** #108 fixes authority at the receiver to the owner graph its bootstrap carried,
+  read live when that bootstrap was sent. Source owner and threshold changes remain
   possible, and the transmitter accepts sends and root registrations authorized by the
   live Safe. A delivery that fails the receiver's stored quorum reverts without consuming
   receiver state. The provider can retain it for retry where supported. #109 delivers
@@ -266,8 +267,8 @@ Cases:
   requires ascending signer addresses.
 - **Q3.3** Traverse depth first from the root, in owner order. Emit each Safe record on
   first visit and reject cycles.
-- **Q3.4** For #108, bootstrap carries the fixed creation authority records. Authority
-  counters for later changes are #109 scope.
+- **Q3.4** For #108, bootstrap carries the Safe's live authority records, which the
+  receiver keeps. Later changes are #109 scope.
 - **Q3.5** Reject invalid thresholds, zero and sentinel owners, duplicate owners, duplicate
   or unreachable records, and inconsistent owner kinds.
 - **Q3.6** Classify empty code and the EIP-7702 delegation indicator as EOA. For other
@@ -283,8 +284,9 @@ Cases:
   `safeStates[childSafe].swapOwner(prevOwner, oldOwner, newOwner)` on the selected record.
   The signed state is ERC-7201 namespaced so it does not freeze the base's sequential
   layout ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
-- **Q3.10** Derive the graph onchain from live `getOwners()` and `getThreshold()` at
-  transmitter creation. Creation does not enforce nested Safe implementation identity.
+- **Q3.10** Derive the graph onchain from live `getOwners()` and `getThreshold()` at each
+  signed bootstrap. Transmitter creation derives it too, only to fail early for a Safe whose
+  graph does not derive. Derivation does not enforce nested Safe implementation identity.
 
 ### Q4. Authenticated receiver bootstrap
 
@@ -300,8 +302,9 @@ authorization before source execution (D22).
 - **Q4.3** The signed envelope carries
   `(SIGNED_BOOTSTRAP, owner, userSalt, sourceTransmitter, body)`, with
   `body = abi.encode(SignedBootstrap)` using a single struct with the `SafeTxEvidence`
-  followed by the canonical creation authority records. The transmitter retains the original
-  `userSalt` and records from creation and forwards them automatically. The signed Safe
+  followed by the Safe's canonical live authority records. The transmitter retains the
+  original `userSalt` from creation, reads the records when it sends, and forwards both. The
+  signed Safe
   bootstrap call needs no separate salt or graph argument. The destination validates the
   records, including that the root Safe is `owner`, and recomputes `graphHash` from them.
   It verifies the source and destination bindings, Safe quorum, leaf proof and execution
@@ -437,8 +440,8 @@ Cases:
 - **Q7.1** The receiver adds no resource caps on gas, owner counts, graph depth, proof
   length, call batch size, signature blobs or nested evidence. Normal chain execution
   limits apply.
-- **Q7.2** At `createTransmitter` and receiver bootstrap, use the same authority graph
-  validity rules so a signed transmitter cannot commit to an invalid graph.
+- **Q7.2** The source derivation and receiver bootstrap apply the same authority graph
+  validity rules, so a signed transmitter cannot send an invalid graph.
 - **Q7.3** The provider enforces its payload size limit. Quote and send the full encoded
   payload under Q6.10.
 - **Q7.4** The transmitter adds no payload size cap, including for standalone sends (O3).
@@ -511,8 +514,9 @@ Cases:
 - **O8.** Deadlines must cover provider latency (OP Stack L2 to L1 waits out the challenge
   period). The window does not bound `finalize` of a commitment. Anyone chooses the execution
   moment within the window, so narrow windows limit MEV on parameter changes.
-- **O9.** Resolved in D18. Source owner changes remain allowed. Receivers continue using
-  their creation graph until an authority update is supported and applied under #109.
+- **O9.** Resolved in D18. Source owner changes remain allowed. Each receiver keeps the graph
+  its bootstrap carried until an authority update is supported and applied under #109; a
+  chain bootstrapped after a change starts with the changed owners.
 - **O10.** #109 owns applying parent and child authority changes before retrying pending
   messages, including the counter and validity rules for that retry.
 - **O11.** No atomicity across destinations: a two-chain upgrade can stay half applied.

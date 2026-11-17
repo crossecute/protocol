@@ -85,6 +85,10 @@ interface IConduitTransceiver {
 
     /// @notice Where this conduit's receiver will sit on a chain that does not report it.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) external view returns (bytes memory);
+
+    /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty for
+    ///         an owner without a compatible guard.
+    function signedAuthority(address owner) external view returns (bytes memory);
 }
 
 /// @title TransmitterBase

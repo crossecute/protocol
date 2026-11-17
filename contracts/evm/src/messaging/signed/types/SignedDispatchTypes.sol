@@ -47,7 +47,7 @@ struct SafeTxEvidence {
 }
 
 /// @notice The body of a signed bootstrap envelope: the signed `bootstrap` call, then the
-///         transmitter's creation records in canonical order.
+///         Safe's live authority records in canonical order, read when the bootstrap was sent.
 struct SignedBootstrap {
     SafeTxEvidence evidence;
     SafeAuthorityRecord[] records;

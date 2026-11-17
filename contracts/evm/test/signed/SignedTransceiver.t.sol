@@ -63,15 +63,12 @@ contract SignedTransceiverTest is HyperlaneFixture {
     }
 
     /// @notice Build the fixture Safe's canonical authority records.
-    /// @dev Address-prediction assertions need the same ownership snapshot that signed creation
-    ///      derives.
+    /// @dev Bootstrap bodies carry these records as the receiver's authority.
     function _records() internal view returns (SafeAuthorityRecord[] memory) {
         return Records.list(Records.record(address(safe), 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
-    /// @notice Hash the fixture creation records.
-    /// @dev The graph commitment is the additional salt input separating signed conduits from
-    ///      plain ones.
+    /// @notice Hash the fixture records, as a receiver stores them.
     function _graph() internal view returns (bytes32) {
         return SafeAuthorityGraph.hash(_records());
     }
@@ -87,8 +84,6 @@ contract SignedTransceiverTest is HyperlaneFixture {
         address conduit = t.createTransmitter(SALT);
 
         SignedTransmitter st = SignedTransmitter(payable(conduit));
-        assertEq(st.authorityGraph(), _graph());
-        assertEq(st.creationRecords(), abi.encode(_records()));
         assertEq(st.conduitSalt(), SALT, "the caller's salt is kept");
         assertTrue(st.isSigned());
         assertEq(conduit, ext(address(t)).predictConduit(address(safe), SALT, t.localChainKey()));
@@ -116,15 +111,15 @@ contract SignedTransceiverTest is HyperlaneFixture {
     ///      compatibility.
     function test_noGuardAnIncompatibleGuardOrAnEoaGetPlain() public {
         vm.prank(address(safe));
-        assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).authorityGraph(), bytes32(0));
+        assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).isSigned(), false);
 
         guard.setAdvertises(false);
         safe.setGuard(address(guard));
         vm.prank(address(safe));
-        assertEq(SignedTransmitter(payable(t.createTransmitter(keccak256("2")))).authorityGraph(), bytes32(0));
+        assertEq(SignedTransmitter(payable(t.createTransmitter(keccak256("2")))).isSigned(), false);
 
         vm.prank(address(0xE0A));
-        assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).authorityGraph(), bytes32(0));
+        assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).isSigned(), false);
     }
 
     /// @notice Change the source guard after creating a conduit.
@@ -135,7 +130,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
         vm.prank(address(safe));
         SignedTransmitter st = SignedTransmitter(payable(t.createTransmitter(SALT)));
         safe.setGuard(address(0));
-        assertEq(st.authorityGraph(), _graph());
+        assertTrue(st.isSigned());
         vm.prank(address(safe));
         vm.expectRevert();
         st.sendMessage(Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(st)), hex"00", new bytes[](0));

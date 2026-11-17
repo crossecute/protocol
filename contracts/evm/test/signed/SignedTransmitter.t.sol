@@ -122,7 +122,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
     }
 
     /// @notice Build a three-address owner array in the supplied order.
-    /// @dev The fixture's live owner order must match its creation authority snapshot.
+    /// @dev The fixture's live owner order is what a bootstrap carries.
     function _addrs(address a, address b, address c) internal pure returns (address[] memory r) {
         r = new address[](3);
         (r[0], r[1], r[2]) = (a, b, c);
@@ -209,11 +209,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
     /* ================================== bootstrap ================================ */
 
-    /// @notice Decode a sent bootstrap and compare its authorization, authority records and
-    ///         quote.
-    /// @dev The destination must receive the same signed setup and snapshot that source
-    ///      creation committed to.
-    function test_aSignedBootstrapCarriesTheSignedCallAndTheCreationRecords() public {
+    /// @notice Decode a sent bootstrap and compare its authorization and authority records.
+    /// @dev The destination must receive the signed setup and the Safe's live authority.
+    function test_aSignedBootstrapCarriesTheSignedCallAndTheLiveRecords() public {
         SafeTxEvidence memory evidence = _bootstrap();
         (address owner, bytes32 salt, bytes32 transmitter, bytes memory body) = this.decodeSigned(_lastBody());
         assertEq(owner, address(safe));
@@ -222,10 +220,24 @@ contract SignedTransmitterTest is HyperlaneFixture {
         SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
         assertEq(bootstrap.evidence.signedSafeTx.safeTx.data, evidence.signedSafeTx.safeTx.data);
         assertEq(bootstrap.evidence.signedSafeTx.signatures, evidence.signedSafeTx.signatures);
-        assertEq(keccak256(abi.encode(bootstrap.records)), st.authorityGraph());
+        assertEq(abi.encode(bootstrap.records), ext(address(t)).signedAuthority(address(safe)));
         assertTrue(st.isBootstrapped(remote));
         assertEq(st.destinationReceiverOn(remote), abi.encodePacked(_receiverAddress()));
         assertEq(st.pendingBootstrap(remote), bytes32(0));
+    }
+
+    /// @notice Change the Safe's owners after creation, then bootstrap.
+    /// @dev The bootstrap carries the owners live when it is sent, not those at creation.
+    function test_aBootstrapAfterAnOwnerChangeCarriesTheLiveRecords() public {
+        bytes memory atCreation = ext(address(t)).signedAuthority(address(safe));
+        safe.setOwners(_addrs(vm.addr(1), vm.addr(2), vm.addr(7)), 2);
+        bytes memory live = ext(address(t)).signedAuthority(address(safe));
+        assertTrue(keccak256(live) != keccak256(atCreation));
+
+        _bootstrap();
+        (,,, bytes memory body) = this.decodeSigned(_lastBody());
+        assertEq(abi.encode(abi.decode(body, (SignedBootstrap)).records), live);
+        assertEq(st.destinationReceiverOn(remote), abi.encodePacked(_receiverAddress()));
     }
 
     /// @notice Expose signed-bootstrap envelope decoding through an external helper.
@@ -332,7 +344,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
     /// @dev Signed-mode restrictions must not change the inherited plain ownership behavior.
     function test_plainOwnershipCanStillBeRenounced() public {
         SignedTransmitter plain = SignedTransmitter(payable(t.createTransmitter(keccak256("plain"))));
-        assertEq(plain.authorityGraph(), bytes32(0));
+        assertFalse(plain.isSigned());
         plain.renounceOwnership();
         assertEq(plain.owner(), address(0));
     }
@@ -629,7 +641,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         parent.setGuard(address(guard));
         vm.prank(address(parent));
         SignedTransmitter nested = SignedTransmitter(payable(t.createTransmitter(SALT)));
-        SafeAuthorityRecord[] memory records = abi.decode(nested.creationRecords(), (SafeAuthorityRecord[]));
+        SafeAuthorityRecord[] memory records =
+            abi.decode(ext(address(t)).signedAuthority(address(parent)), (SafeAuthorityRecord[]));
         assertEq(records.length, 2);
         assertEq(records[1].safe, address(child));
 

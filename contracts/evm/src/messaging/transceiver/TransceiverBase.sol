@@ -153,13 +153,14 @@ abstract contract TransceiverBase is TransceiverCore {
     ///
     /// @dev Signed mode (#108) when the caller is a Safe whose transaction guard advertises
     ///      `ICrossecuteGuard`, at the same address a plain conduit of `(owner, salt)` would have.
-    ///      The mode is fixed here; a guard installed or removed later does not change it.
+    ///      The mode is fixed here; a guard installed or removed later does not change it. The
+    ///      owner graph is derived here only to check it derives; bootstraps read it again.
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one conduit.
     /// @return conduit The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address conduit) {
-        bytes memory records = TransceiverExtension(address(this)).signedAuthority(msg.sender);
+        bool signed = TransceiverExtension(address(this)).signedAuthority(msg.sender).length != 0;
         conduit = _createConduit(msg.sender, salt, localChainKey, address(0), new Call[](0));
-        if (records.length != 0) ISignedTransmitterInit(conduit).initializeSigned(records);
+        if (signed) ISignedTransmitterInit(conduit).initializeSigned();
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.

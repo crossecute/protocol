@@ -28,7 +28,7 @@ contract GraphHarness {
     }
 }
 
-/// @dev Canonical derivation and validation of the creation graph (#108 "Owner and nested-Safe
+/// @dev Canonical derivation and validation of the owner graph (#108 "Owner and nested-Safe
 ///      composition"): depth first from the root in `getOwners()` order, one record per Safe.
 contract SafeAuthorityGraphTest is Test {
     GraphHarness h = new GraphHarness();

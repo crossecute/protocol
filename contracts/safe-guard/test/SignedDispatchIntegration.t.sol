@@ -272,7 +272,8 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     function test_bootstrapCanArriveBeforeSourceExecution() public {
         _create();
         SafeTxEvidence memory e = _bootstrapEvidence(BASE);
-        bytes memory body = abi.encode(SignedBootstrap(e, abi.decode(st.creationRecords(), (SafeAuthorityRecord[]))));
+        bytes memory records = TransceiverExtension(address(source)).signedAuthority(address(safe));
+        bytes memory body = abi.encode(SignedBootstrap(e, abi.decode(records, (SafeAuthorityRecord[]))));
         uint256 nonce = safe.nonce();
         vm.chainId(BASE);
         vm.prank(address(mailbox));
@@ -283,7 +284,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         );
         vm.chainId(SOURCE);
         assertEq(safe.nonce(), nonce);
-        assertEq(_receiver(BASE).authorityGraph(), st.authorityGraph());
+        assertEq(_receiver(BASE).authorityGraph(), keccak256(records));
         _execute(e);
         _deliverBootstrap(BASE, mailbox.sentLength() - 1);
     }

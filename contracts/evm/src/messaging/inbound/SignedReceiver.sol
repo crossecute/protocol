@@ -22,7 +22,7 @@ import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISigne
 
 /// @title SignedReceiver
 /// @notice A receiver that can be created in signed mode (#108): it stores its source Safe's
-///         creation authority and executes only what that authority signed, delivered by its
+///         authority as its bootstrap carried it and executes only what that authority signed, delivered by its
 ///         provider or submitted by anyone.
 ///
 /// @dev Plain until `initializeSigned`, which the transceiver calls right after arming the
@@ -73,7 +73,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
         }
     }
 
-    /// @notice Return whether this receiver has a nonzero creation-graph commitment.
+    /// @notice Return whether this receiver stores a graph, which signed initialization sets.
     /// @dev Message handling and access checks use this flag to retain plain behavior until
     ///      signed initialization has completed.
     function _isSigned() internal view returns (bool) {
@@ -269,8 +269,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     }
 
     /// @notice Return the stored Safe authority records in canonical order.
-    /// @dev This exposes the receiver's actual verification snapshot so callers can inspect it
-    ///      and reproduce the creation-graph hash.
+    /// @dev Owners confirm this before relying on the receiver; it hashes to `authorityGraph`.
     function authorityRecords() external view returns (SafeAuthorityRecord[] memory) {
         return _signedStorage().authority.readRecords();
     }

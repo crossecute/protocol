@@ -19,9 +19,10 @@ home, whichever chain the owner picks. Receivers elsewhere never learn who or wh
 is: they authenticate the origin address, fixed by CREATE2 at creation and unmoved by a
 change of owner or of a multisig's signers. Rotating a compromised key is one transaction,
 not N with a live attacker in the gaps. A signed receiver is the exception: it stores the
-source Safe's owner graph from creation, and owner changes do not reach it until authority
-updates ([#109](https://github.com/crossecute/protocol/issues/109)) land, after which each
-destination applies them.
+source Safe's owner graph as it was when that receiver's bootstrap was sent, and later owner
+changes do not reach it until authority updates
+([#109](https://github.com/crossecute/protocol/issues/109)) land, after which each destination
+applies them.
 
 **One decision, one authorization, one fan-out.** A change touching six chains is one payload,
 approved once, dispatched from one transaction on the conduit's home. Team and DAO process stops
