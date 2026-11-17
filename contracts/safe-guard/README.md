@@ -9,6 +9,8 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | Path | What it holds |
 | --- | --- |
 | `src/CrossecuteGuard.sol` | The guard: `sendMessage` and `bootstrap` staging, consumption and cleanup, module rejection of both selectors and of `registerRoot`, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
+| `src/authority/SourceAuthorityGuard.sol` | #109's source half, inherited by the guard: per-Safe authority state over the receivers' `ReceiverAuthority` library, executed heads, `stageUpdate` staging, activation, ownership changes, `selectAuthority`, and the calls an activated Safe may not make |
+| `src/authority/ISourceAuthorityGuard.sol`, `AuthorityUpdateTypes.sol` | The source authority interface and its selection and update types |
 | `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their events and errors; above it, the file-level `SafeTx` and `SignedSafeTx` structs the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 | `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
@@ -16,6 +18,7 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | `test/SafeFixture.sol` | Real Safe 1.5.0 proxies, owner signing (EOA and nested Safe owners), owner-signed installation |
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
+| `test/SourceAuthority*.sol` | Activation, ownership changes, selectAuthority, protected calls and nested-Safe adoption against real Safe 1.5.0 proxies |
 | `test/*.t.sol` | `sendMessage` lifecycle, rerun for `bootstrap` in `Bootstrap.t.sol`, leaf publication and `registerRoot`, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
 
 `ICrossecuteGuard`, `GuardDiscovery`, `SafeHashes` and `SafeBatchExecutor` import nothing from the policy engine and
