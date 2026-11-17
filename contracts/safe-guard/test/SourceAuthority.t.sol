@@ -411,14 +411,32 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         _execWith(safe, evil, 0, "", Enum.Operation.DelegateCall, signatures);
     }
 
-    function testActivatedSafeCannotReachItselfThroughABatch() public {
+    function testActivatedSafeCannotReachProtectedMutationsThroughABatch() public {
         _activated();
-        bytes memory batchData = abi.encodeCall(
-            multiSend.multiSend, (_multiSendEntry(address(safe), abi.encodeCall(safe.changeThreshold, (1))))
-        );
-        bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
-        vm.expectRevert(SourceAuthorityGuard.BatchSelfCallDenied.selector);
-        _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
+        address firstOwner = safe.getOwners()[0];
+        bytes[8] memory mutations = [
+            abi.encodeCall(safe.addOwnerWithThreshold, (vm.addr(KEY_D), 2)),
+            abi.encodeCall(safe.removeOwner, (address(1), firstOwner, 2)),
+            abi.encodeCall(safe.swapOwner, (address(1), firstOwner, vm.addr(KEY_D))),
+            abi.encodeCall(safe.changeThreshold, (1)),
+            abi.encodeCall(safe.setGuard, (address(0))),
+            abi.encodeCall(safe.setModuleGuard, (address(0))),
+            abi.encodeCall(safe.setFallbackHandler, (address(0))),
+            abi.encodeCall(safe.enableModule, (address(0xCAFE)))
+        ];
+        for (uint256 target = 0; target < 2; ++target) {
+            for (uint256 prefix = 0; prefix < 2; ++prefix) {
+                for (uint256 mutation = 0; mutation < mutations.length; ++mutation) {
+                    bytes memory packed = _multiSendEntry(target == 0 ? address(0) : address(safe), mutations[mutation]);
+                    if (prefix != 0) packed = bytes.concat(_multiSendEntry(address(0xCAFE), ""), packed);
+                    bytes memory batchData = abi.encodeCall(multiSend.multiSend, (packed));
+                    bytes memory signatures =
+                        _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
+                    vm.expectRevert(SourceAuthorityGuard.BatchSelfCallDenied.selector);
+                    _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
+                }
+            }
+        }
     }
 
     function testActivatedSafeStillCallsOthersAndBatchesThem() public {

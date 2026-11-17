@@ -139,8 +139,8 @@ library AuthorityUpdateEncoding {
         return target == guard && selector == ISourceAuthorityGuard.registerOwnershipChange.selector;
     }
 
-    /// @notice Whether any call of a multiSend batch targets `target`.
-    function batchCalls(bytes memory data, address target) internal pure returns (bool) {
+    /// @notice Whether a MultiSendCallOnly batch delegatecalled by `safe` calls that Safe.
+    function batchCallsSelf(bytes memory data, address safe) internal pure returns (bool) {
         bytes memory packed = abi.decode(Bytes.arguments(data, MULTISEND_SELECTOR), (bytes));
         for (uint256 at; at < packed.length;) {
             uint256 next = _nextEntry(packed, at);
@@ -148,7 +148,8 @@ library AuthorityUpdateEncoding {
             assembly ("memory-safe") {
                 to := shr(96, mload(add(add(packed, 0x21), at)))
             }
-            if (to == target) return true;
+            // MultiSendCallOnly resolves a zero destination to its execution context.
+            if (to == address(0) || to == safe) return true;
             at = next;
         }
         return false;

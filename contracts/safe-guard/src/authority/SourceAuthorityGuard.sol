@@ -226,7 +226,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         if (safeTx.to == safe) revert SelfCallDenied();
         if (safeTx.operation == 0) return;
         if (safeTx.to == MULTISEND_CALL_ONLY) {
-            if (AuthorityUpdateEncoding.batchCalls(safeTx.data, safe)) revert BatchSelfCallDenied();
+            if (AuthorityUpdateEncoding.batchCallsSelf(safeTx.data, safe)) revert BatchSelfCallDenied();
         } else if (safeTx.to != SIGN_MESSAGE_LIB) {
             revert DelegatecallDenied(safeTx.to);
         }
