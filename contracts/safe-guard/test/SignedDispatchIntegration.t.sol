@@ -24,7 +24,12 @@ import {Provenance} from "crossecute/registry/Provenance.sol";
 import {Proxy} from "crossecute/conduit/Proxy.sol";
 import {ProxyDeployer, PROXY_DEPLOYER} from "crossecute/conduit/ProxyDeployer.sol";
 import {DispatchLeaves} from "crossecute/messaging/signed/DispatchLeaves.sol";
-import {SafeTxEvidence, ExecutionLeaf} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
+import {SafeAuthority} from "crossecute/messaging/signed/SafeAuthority.sol";
+import {
+    SafeTxEvidence,
+    ExecutionLeaf,
+    WIRE_STANDALONE
+} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {MockHyperlaneMailbox} from "evm-test/protocols/hyperlane/MockHyperlaneMailbox.sol";
 import {unseeded} from "evm-test/RegistrySeed.sol";
 
@@ -258,13 +263,18 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     }
 
     /// @notice Rotate an owner of the real Safe, then bootstrap a new chain and dispatch to it.
-    /// @dev The new chain stores the rotated graph: a send signed by the previous quorum is
-    ///      rejected there, the new quorum's send executes, and the chain bootstrapped earlier
-    ///      keeps its graph.
+    /// @dev The new chain stores the rotated graph: a send and a root registration signed by the
+    ///      previous quorum are rejected there, by direct submission and provider delivery; the
+    ///      new quorum's standalone send and Merkle leaf execute; and the chain bootstrapped
+    ///      earlier keeps its graph.
     function test_aChainBootstrappedAfterARotationTrustsTheRotatedOwners() public {
         _create();
         _bootstrap(BASE);
         SafeTxEvidence memory stale = _message(ARBITRUM, safe.nonce() + 1);
+        ExecutionLeaf memory leaf = _leaf(ARBITRUM, 0);
+        SafeTxEvidence memory staleRegistration = _evidence(
+            address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (DispatchLeaves.hash(leaf))), safe.nonce() + 1
+        );
 
         address[] memory owners = safe.getOwners();
         keys[vm.addr(KEY_D)] = KEY_D;
@@ -280,14 +290,33 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         assertEq(ra.authorityGraph(), rotated);
         assertTrue(_receiver(BASE).authorityGraph() != rotated);
 
+        bytes memory notOwner = abi.encodeWithSelector(SafeAuthority.NotAnOwner.selector, address(safe), owners[0]);
         vm.chainId(ARBITRUM);
-        vm.expectRevert();
+        vm.expectRevert(notOwner);
         ra.submitMessage(stale);
+        vm.expectRevert(notOwner);
+        ra.submitLeaf(staleRegistration, leaf, new bytes32[](0));
+        vm.expectRevert(notOwner);
+        vm.prank(address(mailbox));
+        HyperlaneReceiver(payable(address(ra)))
+            .handle(uint32(SOURCE), bytes32(uint256(uint160(address(st)))), abi.encode(WIRE_STANDALONE, stale));
         vm.chainId(SOURCE);
 
         _execute(_message(ARBITRUM, safe.nonce()));
         _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
         assertEq(effect.hits(), 1);
+
+        bytes[] memory leaves = new bytes[](1);
+        leaves[0] =
+            abi.encode(leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls, leaf.attributes);
+        bytes32 root = guard.publishLeaves(leaves);
+        SafeTxEvidence memory registration =
+            _evidence(address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), safe.nonce());
+        _execute(registration);
+        // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
+        st.relayLeaf{value: st.quoteRelay(registration, leaf, new bytes32[](0))}(registration, leaf, new bytes32[](0));
+        _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
+        assertEq(effect.hits(), 2);
     }
 
     /// @notice Direct submission requires neither provider delivery nor source registration.
