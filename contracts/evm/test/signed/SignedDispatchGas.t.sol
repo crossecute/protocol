@@ -177,7 +177,7 @@ contract SignedDispatchGasTest is Test {
         bytes memory body = abi.encode(SignedBootstrap(e, records));
         _cold(receiver);
         uint256 g = gasleft();
-        SignedReceiver(payable(receiver)).initializeSigned(SOURCE, SAFE, keccak256(abi.encode(records)), body);
+        SignedReceiver(payable(receiver)).initializeSigned(SOURCE, SAFE, body);
         emit log_named_uint("initializeSignedGas", g - gasleft());
         emit log_named_uint("bootstrapBodyBytes", body.length);
     }

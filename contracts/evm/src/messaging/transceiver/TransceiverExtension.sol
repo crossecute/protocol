@@ -212,15 +212,6 @@ contract TransceiverExtension is TransceiverCore {
         return _predictConduit(owner, salt, homeChainKey);
     }
 
-    /// @notice `predictConduit` for a signed conduit, whose salt also commits to `graph`.
-    function predictConduit(address owner, bytes32 salt, bytes32 homeChainKey, bytes32 graph)
-        external
-        view
-        returns (address)
-    {
-        return _predictConduit(owner, salt, homeChainKey, graph);
-    }
-
     /// @notice The creation records `createTransmitter` gives `owner`'s transmitter,
     ///         `abi.encode(SafeAuthorityRecord[])`, or empty for a plain one. Their keccak256 is the graph.
     /// @dev Here rather than in the transceiver for its size. Derived from live Safe state, so

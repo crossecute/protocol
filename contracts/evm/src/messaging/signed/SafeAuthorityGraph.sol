@@ -24,8 +24,6 @@ library SafeAuthorityGraph {
     error NonCanonicalAuthorityGraph();
 
     /// @notice Hash the encoded ordered Safe authority records.
-    /// @dev Signed conduit addresses commit to this hash, so a different owner graph must
-    ///      derive a different signed address.
     function hash(SafeAuthorityRecord[] memory records) internal pure returns (bytes32) {
         return keccak256(abi.encode(records));
     }

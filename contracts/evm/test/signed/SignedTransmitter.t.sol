@@ -173,11 +173,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return Erc7930.encodeEvm(REMOTE_CHAIN_ID, _receiverAddress());
     }
 
-    /// @notice Predict the remote receiver using the creation Safe, salt and authority graph.
-    /// @dev The send and bootstrap fixture must agree with the transceiver's signed address
-    ///      derivation.
+    /// @notice Predict the remote receiver from the creation Safe and salt.
+    /// @dev The send and bootstrap fixture must agree with the transceiver's derivation.
     function _receiverAddress() internal view returns (address) {
-        return address(bytes20(t.predictReceiver(remote, address(safe), SALT, st.authorityGraph())));
+        return address(bytes20(t.predictReceiver(remote, address(safe), SALT)));
     }
 
     /// @notice Encode a zero-counter bootstrap authorizing one setup leaf.
@@ -635,10 +634,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(records[1].safe, address(child));
 
         BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(
-                REMOTE_CHAIN_ID,
-                address(bytes20(t.predictReceiver(remote, address(parent), SALT, nested.authorityGraph())))
-            ),
+            Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(bytes20(t.predictReceiver(remote, address(parent), SALT)))),
             block.timestamp,
             block.timestamp + 1 days,
             abi.encode(new Call[](0))

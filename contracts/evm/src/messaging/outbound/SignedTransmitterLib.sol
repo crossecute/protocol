@@ -43,10 +43,6 @@ interface ISignedTransmitterView {
     /// @dev Receiver prediction must preserve the salt selected at conduit creation rather than
     ///      inventing a new destination address.
     function conduitSalt() external view returns (bytes32);
-    /// @notice Return the transmitter's creation-graph commitment.
-    /// @dev The builder includes the same authority commitment when predicting the destination
-    ///      receiver.
-    function authorityGraph() external view returns (bytes32);
     /// @notice Return the transmitter's encoded creation authority records.
     /// @dev Signed bootstraps carry those records so the receiver can reconstruct its fixed
     ///      verification authority.
@@ -90,7 +86,7 @@ library SignedTransmitterLib {
     }
 
     error AlreadyBootstrapped(bytes32 destinationChainKey);
-    /// @dev The destination reports its receiver, and no report carries the graph yet.
+    /// @dev The destination reports its receiver; signed receivers are created only where it is derived.
     error SignedReceiverNotDerivable(bytes32 destinationChainKey);
     error WrongBootstrapTarget(bytes destination);
 
@@ -229,7 +225,7 @@ library SignedTransmitterLib {
         if (self.isBootstrapped(chainKey)) revert AlreadyBootstrapped(chainKey);
         IConduitTransceiver t = IConduitTransceiver(self.transceiver());
         if (t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
-        bytes memory predicted = t.predictReceiver(chainKey, self.deployer(), self.conduitSalt(), self.authorityGraph());
+        bytes memory predicted = t.predictReceiver(chainKey, self.deployer(), self.conduitSalt());
         if (keccak256(io.addr) != keccak256(predicted)) revert WrongBootstrapTarget(leaf.destination);
     }
 

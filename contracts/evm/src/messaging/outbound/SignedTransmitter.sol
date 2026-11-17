@@ -28,7 +28,7 @@ import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.
 abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, ISignedTransmitterInit {
     /// @custom:storage-location erc7201:crossecute.storage.SignedTransmitter
     struct SignedTransmitterStorage {
-        // `abi.encode(SafeAuthorityRecord[])` at creation; its keccak256 is the graph in the conduit salt.
+        // `abi.encode(SafeAuthorityRecord[])` at creation; its keccak256 is the graph.
         bytes records;
         // Nonzero exactly in signed mode.
         bytes32 graph;
@@ -193,13 +193,13 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @dev Anyone can recover a failed send without another Safe transaction. Clearing pending
     ///      state and marking bootstrap roll back if the retry fails.
     function retryBootstrap(bytes calldata body) external payable {
-        bytes32 graph = _graph();
+        _graph();
         (bytes32 chainKey, bytes memory route, bytes[] memory attributes) = SignedTransmitterLib.bootstrapTarget(body);
         SignedTransmitterStorage storage $ = _signedStorage();
         if ($.pendingBootstrap[chainKey] != keccak256(body)) revert NoPendingBootstrap(chainKey);
         delete $.pendingBootstrap[chainKey];
 
-        _markBootstrapped(chainKey, route, graph);
+        _markBootstrapped(chainKey, route);
         IConduitTransceiver t = IConduitTransceiver(transceiver);
         uint256 fee = t.quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
         _requireFunded(fee);
@@ -344,17 +344,19 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* =================================== views ================================== */
 
+    /// @inheritdoc ISignedTransmitterInit
+    function isSigned() external view returns (bool) {
+        return _signedStorage().graph != bytes32(0);
+    }
+
     /// @notice Return the creation-graph hash, or zero for a plain transmitter.
-    /// @dev Address prediction and callers inspecting signed mode need the exact authority
-    ///      commitment retained at creation.
     function authorityGraph() external view returns (bytes32) {
         return _signedStorage().graph;
     }
 
     /// @notice Return the ABI-encoded creation authority records forwarded in signed
     ///         bootstraps.
-    /// @dev Receivers must initialize from the same snapshot used to derive this transmitter's
-    ///      address, even if the source Safe later changes owners.
+    /// @dev Receivers initialize from this snapshot, even if the source Safe later changes owners.
     function creationRecords() external view returns (bytes memory) {
         return _signedStorage().records;
     }

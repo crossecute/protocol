@@ -26,9 +26,7 @@ import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISigne
 ///         provider or submitted by anyone.
 ///
 /// @dev Plain until `initializeSigned`, which the transceiver calls right after arming the
-///      receiver with its plain initializer and no calls, in the same transaction. A receiver
-///      at a signed address is never left plain: its address commits to the graph, so only the
-///      signed bootstrap path creates it.
+///      receiver with its plain initializer and no calls, in the same transaction.
 ///
 /// @dev In signed mode the source transmitter's address grants nothing: `execute`, `commit`,
 ///      `cancel` and `revokeGateway` answer only to this receiver's own calls, made by verified
@@ -60,7 +58,6 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     error NotSigned();
     error NotParentTransceiver(address caller);
     error AlreadySigned();
-    error AuthorityGraphMismatch(bytes32 expected, bytes32 carried);
     error RootIsNotOwner(address owner, address root);
     error UnknownWire(uint256 format);
     error ConflictingLeaf(uint256 nonce);
@@ -85,30 +82,17 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /* ================================ initializing ============================== */
 
-    /// @notice Hash the creation records carried in the encoded signed bootstrap.
-    /// @dev The transceiver needs this value to derive the receiver address before
-    ///      initialization validates those records.
-    /// @inheritdoc ISignedReceiverInit
-    function bootstrapGraph(bytes calldata body) external pure returns (bytes32) {
-        return SafeAuthorityGraph.hash(abi.decode(body, (SignedBootstrap)).records);
-    }
-
     /// @notice Validate and store the source authority, verify the bootstrap and run its setup
     ///         calls.
-    /// @dev Binding the source owner and graph to the derived address prevents authority
-    ///      substitution. Any failed check or setup call reverts initialization atomically.
-    function initializeSigned(uint256 sourceChainId, address owner, bytes32 graph, bytes calldata body)
-        external
-        nonReentrant
-    {
+    /// @dev Any failed check or setup call reverts initialization atomically.
+    function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external nonReentrant {
         if (msg.sender != parentTransceiver) revert NotParentTransceiver(msg.sender);
         SignedReceiverStorage storage $ = _signedStorage();
         if ($.graph != bytes32(0)) revert AlreadySigned();
 
         SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
         SafeAuthorityRecord[] memory records = bootstrap.records;
-        bytes32 carried = SafeAuthorityGraph.hash(records);
-        if (carried != graph) revert AuthorityGraphMismatch(graph, carried);
+        bytes32 graph = SafeAuthorityGraph.hash(records);
         $.authority.store(records, sourceChainId);
         if (records[0].safe != owner) revert RootIsNotOwner(owner, records[0].safe);
         $.graph = graph;
@@ -279,9 +263,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /* =================================== views ================================== */
 
-    /// @notice Return the stored creation-graph hash, or zero for a plain receiver.
-    /// @dev Callers can identify signed mode and compare its fixed authority commitment with
-    ///      the address derivation.
+    /// @notice Return the stored graph hash, or zero for a plain receiver.
     function authorityGraph() external view returns (bytes32) {
         return _signedStorage().graph;
     }

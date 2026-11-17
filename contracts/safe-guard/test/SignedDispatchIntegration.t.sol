@@ -182,23 +182,18 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     /// @notice Create and fund the actual signed transmitter through a signed Safe call.
     function _create() internal {
         _execute(_evidence(address(source), abi.encodeCall(source.createTransmitter, (USER_SALT)), safe.nonce()));
-        bytes32 graph = keccak256(TransceiverExtension(address(source)).signedAuthority(address(safe)));
         st = SignedTransmitter(
             payable(TransceiverExtension(address(source))
-                    .predictConduit(address(safe), USER_SALT, ChainKey.forEvm(SOURCE), graph))
+                    .predictConduit(address(safe), USER_SALT, ChainKey.forEvm(SOURCE)))
         );
-        assertTrue(st.authorityGraph() != bytes32(0));
+        assertTrue(st.isSigned());
         vm.deal(address(st), 100 ether);
     }
 
-    /// @notice Predict the signed receiver using retained creation records.
+    /// @notice Predict the signed receiver from the owner and user salt.
     function _receiver(uint256 chain) internal view returns (SignedReceiver) {
         return SignedReceiver(
-            payable(address(
-                    bytes20(
-                        source.predictReceiver(ChainKey.forEvm(chain), address(safe), USER_SALT, st.authorityGraph())
-                    )
-                ))
+            payable(address(bytes20(source.predictReceiver(ChainKey.forEvm(chain), address(safe), USER_SALT))))
         );
     }
 

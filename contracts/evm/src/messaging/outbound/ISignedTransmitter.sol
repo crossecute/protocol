@@ -33,8 +33,10 @@ interface ISignedTransmitter {
 ///         it with its plain initializer.
 interface ISignedTransmitterInit {
     /// @notice Store the encoded creation records and enable signed mode once.
-    /// @dev The transceiver uses the same records to derive conduit addresses and initialize
-    ///      destination authority, so signed sends must retain that snapshot.
+    /// @dev Signed bootstraps forward these records as the receivers' authority.
     /// @param records The creation records, `abi.encode(SafeAuthorityRecord[])`, whose hash is the graph.
     function initializeSigned(bytes calldata records) external;
+
+    /// @notice Whether this transmitter is in signed mode.
+    function isSigned() external view returns (bool);
 }

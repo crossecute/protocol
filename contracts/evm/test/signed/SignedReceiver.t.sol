@@ -143,7 +143,7 @@ contract SignedReceiverTest is Test {
     /// @dev Ordinary setup helpers must satisfy the caller restriction so tests isolate other
     ///      validation rules.
     function _initialize(address r, bytes memory body) internal {
-        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, _graph(), body);
+        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, body);
     }
 
     /// @notice Deploy and initialize a signed receiver with an observable setup call.
@@ -180,22 +180,16 @@ contract SignedReceiverTest is Test {
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NotParentTransceiver.selector, address(0xBAD)));
-        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, _graph(), body);
+        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, body);
     }
 
-    /// @notice Initialize with a mismatched graph commitment or source owner.
-    /// @dev Neither the authority snapshot nor its root Safe may be substituted after address
-    ///      derivation.
-    function test_substitutedRecordsOrAnotherOwnerRefuse() public {
+    /// @notice Initialize with records rooted at a Safe other than the conduit's owner.
+    /// @dev The stored authority must be the owner's.
+    function test_recordsRootedAtAnotherSafeRefuse() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_bootstrapLeaf(r, _calls("x")), _quorum());
-        vm.expectRevert(
-            abi.encodeWithSelector(SignedReceiver.AuthorityGraphMismatch.selector, keccak256("g"), _graph())
-        );
-        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, keccak256("g"), body);
-
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.RootIsNotOwner.selector, address(0x1), SAFE));
-        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), _graph(), body);
+        SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), body);
     }
 
     /// @notice Submit bootstrap evidence naming a different destination receiver.

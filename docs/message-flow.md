@@ -21,7 +21,7 @@ contract is right.
 **The home chain is a property of the conduit.** Any chain can be home: an owner picks one
 per conduit by calling `createTransmitter` there, and it is part of the conduit's address. A
 Safe whose transaction guard advertises `ICrossecuteGuard` gets a Safe-signed conduit instead,
-whose address also commits to its owner graph
+at the same address
 ([`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation)).
 Every chain runs one transceiver per provider, which creates transmitters for conduits homed
 on its chain and receivers for conduits homed elsewhere. Everything below reads "home" and

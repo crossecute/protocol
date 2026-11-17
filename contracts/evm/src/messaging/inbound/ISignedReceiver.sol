@@ -30,19 +30,13 @@ interface ISignedReceiver {
 ///         armed first with its plain initializer and no calls, then `initializeSigned` in the
 ///         same transaction.
 interface ISignedReceiverInit {
-    /// @notice Return the hash of the creation authority records encoded in a signed bootstrap.
-    /// @dev The transceiver needs this commitment to derive signed conduit addresses before
-    ///      deploying the receiver; record validation happens during initialization.
-    function bootstrapGraph(bytes calldata body) external pure returns (bytes32);
-
     /// @notice Store the source authority, verify its signed bootstrap and execute the
     ///         receiver's setup.
     /// @dev The transceiver must finish this immediately after plain initialization so a
-    ///      signed-address receiver is never exposed with plain authorization.
+    ///      receiver created from a signed bootstrap is never exposed with plain authorization.
     /// @param sourceChainId The EIP-155 id of the home chain, which is the Safe domain's.
     /// @param owner The conduit's owner, which the root record must name.
-    /// @param graph The graph hash the conduit's address commits to.
-    function initializeSigned(uint256 sourceChainId, address owner, bytes32 graph, bytes calldata body) external;
+    function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external;
 
     /// @notice Require the supplied body to be a valid repeat of this receiver's original
     ///         bootstrap.

@@ -272,9 +272,8 @@ Cases:
   or unreachable records, and inconsistent owner kinds.
 - **Q3.6** Classify empty code and the EIP-7702 delegation indicator as EOA. For other
   owner addresses, require valid Safe owner and threshold data.
-- **Q3.7** Hash the canonical creation records as
-  `graphHash = keccak256(abi.encode(authorityRecords))`. Include `graphHash` in the outer
-  signed conduit salt preimage in Q4.7.
+- **Q3.7** Hash the canonical records as `graphHash = keccak256(abi.encode(authorityRecords))`.
+  The hash identifies a stored graph; no conduit address commits to it (Q4.7).
 - **Q3.8** The root node is the transmitter's owner Safe.
 - **Q3.9** [`NestedOwnerManagerLib.sol`](../contracts/evm/src/messaging/signed/NestedOwnerManagerLib.sol)
   holds one `SafeOwnerState` per Safe, with a linked owner list and threshold. Keep the
@@ -294,9 +293,8 @@ for `bootstrap(bytes,bytes[])`. The bootstrap leaf commits to the receiver, exec
 and exact setup calls. It omits the execution nonce. The provider can deliver a valid
 authorization before source execution (D22).
 
-- **Q4.1** For #108, use the creation authority commitment and registered source
-  deployment inputs to verify the signed source transmitter address. Q4.7 covers
-  how the receiver binds the source mode into bootstrap and address derivation.
+- **Q4.1** Verify the signed source transmitter address with the plain derivation and the
+  registered source deployment inputs (Q4.7).
 - **Q4.2** The EIP-155 source chain ID in the Safe domain must match the authenticated
   origin and source chain key.
 - **Q4.3** The signed envelope carries
@@ -318,21 +316,20 @@ authorization before source execution (D22).
   its window succeeds silently.
 - **Q4.6** Bootstrap carries no historical authority updates. Initialized receivers apply
   later updates in sequence under #109.
-- **Q4.7** The envelope kind selects one of these outer CREATE2 salt preimages.
+- **Q4.7** Signed and plain conduits share one outer CREATE2 salt preimage.
 
   ```solidity
-  plainSalt = keccak256(abi.encode(owner, userSalt, homeChainKey));
-  signedSalt = keccak256(abi.encode(owner, userSalt, homeChainKey, graphHash));
+  conduitSalt = keccak256(abi.encode(owner, userSalt, homeChainKey));
   ```
 
-  The fourth field separates the two preimages. The envelope needs no additional mode
-  tag or graph hash field. Use the authenticated home chain key and the registered source
-  transceiver and deployment inputs to derive the expected source transmitter. Check it
-  against the envelope before initialization. Signed mode requires a derivable source.
-  Derive the receiver with the same mode-specific salt and the destination's deployment
-  inputs, and require the signed bootstrap leaf to name that receiver. Both modes use the
-  shared implementation. Plain address predictions retain the existing formula when the
-  deployer and initcode are unchanged.
+  A transmitter's receivers sit at its address wherever both transceivers share a deployer.
+  The source transceiver sends a `SIGNED_BOOTSTRAP` envelope only for a conduit in signed
+  mode and a `BOOTSTRAP` envelope only for one in plain mode, so the envelope kind carries
+  the mode. Use the authenticated home chain key and the registered source transceiver and
+  deployment inputs to derive the expected source transmitter. Check it against the
+  envelope before initialization. Signed mode requires a derivable source. Derive the
+  receiver with the same salt and the destination's deployment inputs, and require the
+  signed bootstrap leaf to name that receiver. Both modes use the shared implementation.
 - **Q4.8** Measure the encoded bootstrap envelope and initialization gas against graph size.
 
 ### Q5. Recursive signature verification
@@ -600,9 +597,9 @@ How the pieces fit:
   the transceiver calls `initializeSigned`, right after arming it with the plain initializer
   and no calls, in the same transaction. Provider setup has one path for both modes. LayerZero
   OFT conduits are created by `LzOftConduitFactory`, which never selects signed mode.
-- **Conduit salt.** `TransceiverCore._conduitSalt` appends the graph hash for a signed conduit
-  (Q4.7). Every chain-specific address formula now overrides `_conduitAt(bytes32)`, so the
-  signed salt reuses it. `SignedConduitCreated(conduit, graph)` follows `ConduitCreated`.
+- **Conduit salt.** `TransceiverCore._conduitSalt` is the same for both modes (Q4.7). Every
+  chain-specific address formula overrides `_conduitAt(bytes32)`. The source transceiver's
+  bootstrap caller check also holds the envelope kind to the conduit's `isSigned()`.
 - **Wire formats.** A signed provider message leads with one word: `WIRE_STANDALONE` before
   `SafeTxEvidence`, or `WIRE_MERKLE` before `(SafeTxEvidence, ExecutionLeaf, bytes32[])` (D4).
   Each decoder then requires its signed selector.
@@ -625,8 +622,7 @@ Not in #108's implementation:
 - **Authority counters** are always zero: the bootstrap payload carries one and the receiver
   requires zero. Counters, rotations and the retry checks that depend on them are #109.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
-  Tron): the receiver report carries no graph, so the home could not find the transmitter.
-  The source refuses a signed bootstrap to a destination that reports its receiver. Non-EVM
+  Tron), which is outside #108's scope. The source refuses a signed bootstrap to a destination that reports its receiver. Non-EVM
   destinations are [#128](https://github.com/crossecute/protocol/issues/128).
 Completed #134 measurements and real-Safe integration evidence are in
 [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). No signed OFT,
