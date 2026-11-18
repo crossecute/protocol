@@ -6,6 +6,7 @@ import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {AuthorityGraph} from "crossecute/messaging/authority/AuthorityGraph.sol";
 import {AuthorityUpdateEncoding} from "crossecute/messaging/authority/AuthorityUpdateEncoding.sol";
 import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
+import {SafeAuthorityGraph} from "crossecute/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeQuorum} from "crossecute/messaging/signed/SafeQuorum.sol";
 import {Call} from "crossecute/messaging/Call.sol";
 import {
@@ -288,6 +289,33 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         assertEq(guard.selection(address(a)).authorityHash, _hash(earlier));
         assertEq(_head(b), bHead1);
         assertTrue(guard.executed(address(b), bHead0));
+    }
+
+    // Stored graphs stay acyclic
+
+    function testOwnershipChangeThatWouldStoreACycleRejects() public {
+        _activateA(bHead0);
+        bytes32 bHead = _head(b);
+        // Safe itself allows B to add its own parent A as an owner.
+        SafeOwner[] memory owners = new SafeOwner[](2);
+        owners[0] = SafeOwner(address(a), OWNER_SAFE);
+        owners[1] = SafeOwner(vm.addr(KEY_C), OWNER_EOA);
+        AuthorityGraph memory cyclic =
+            _graph(SafeAuthorityRecord(address(b), 1, owners), _aRecord(), guard.selection(address(a)).updateHead);
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = _call(address(b), abi.encodeCall(b.addOwnerWithThreshold, (address(a), 1)));
+        bytes memory data = _ownershipData(b, bHead, _hash(cyclic), mutations);
+        bytes memory sig =
+            _sign(_signersOf(KEY_C), _txHash(b, address(multiSend), 0, data, Enum.Operation.DelegateCall));
+        Batch.Call[] memory calls = _stagedCalls(
+            b, address(multiSend), data, Enum.Operation.DelegateCall, cyclic, new ChildUpdate[](0), sig, sig
+        );
+        uint256 nonce = b.nonce();
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.OwnerCycle.selector, address(b)));
+        batch.run(calls);
+        assertEq(b.nonce(), nonce);
+        assertEq(_head(b), bHead);
+        assertEq(b.getOwners().length, 1);
     }
 
     // Two signature sets
