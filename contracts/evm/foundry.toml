@@ -8,6 +8,8 @@ allow_paths = [".", "../safe-guard/src"]
 fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
+    # AuthorityVectors.t.sol replays the shared #109 vectors.
+    { access = "read", path = "../../docs/vectors" },
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
 ]
