@@ -7,6 +7,7 @@ import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol
 import {AuthorityGraph} from "./AuthorityGraph.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 import {IReceiverAuthority} from "./IReceiverAuthority.sol";
+import {AuthorityRecognition} from "./AuthorityRecognition.sol";
 import {AuthorityTransport} from "./AuthorityTransport.sol";
 import {ReceiverAuthority} from "./ReceiverAuthority.sol";
 
@@ -66,37 +67,39 @@ abstract contract ReceiverAuthorityTemplate is IReceiverAuthority {
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates
     ) external virtual {
-        _submitAuthority(evidence, newGraph, childUpdates);
-    }
-
-    function _submitAuthority(
-        SafeTxEvidence calldata evidence,
-        AuthorityGraph calldata newGraph,
-        ChildUpdate[] calldata childUpdates
-    ) internal {
+        (evidence, newGraph, childUpdates);
         AuthorityStorage storage $ = _authorityStorage();
         if ($.submitting) revert AuthoritySubmissionReentered();
         $.submitting = true;
-        _applyAuthority(evidence, newGraph, childUpdates);
+        _applyAuthority(msg.data[4:]);
         $.submitting = false;
     }
 
-    function _applyAuthority(
-        SafeTxEvidence calldata evidence,
-        AuthorityGraph calldata newGraph,
-        ChildUpdate[] calldata childUpdates
-    ) internal {
+    /// @inheritdoc IReceiverAuthority
+    function submitAuthorityBatch(bytes[] calldata submissions) external virtual {
+        submissions;
+        AuthorityStorage storage $ = _authorityStorage();
+        if ($.submitting) revert AuthoritySubmissionReentered();
+        $.submitting = true;
+        _applyAuthorityBatch(msg.data[4:]);
+        $.submitting = false;
+    }
+
+    function _authorityContext() private view returns (uint256 chainId, AuthorityRecognition.Context memory context) {
+        (chainId, context.safe) = _authoritySource();
+        (context.guard, context.multiSend) = _recognitionPins();
+    }
+
+    function _applyAuthorityBatch(bytes calldata args) internal {
         _requireAuthorityContextIdle();
-        ReceiverAuthority.SubmissionRequest memory request;
-        (request.sourceChainId, request.context.safe) = _authoritySource();
-        (request.context.guard, request.context.multiSend) = _recognitionPins();
-        request.evidence = evidence;
-        request.newGraph = newGraph;
-        request.childUpdates = childUpdates;
-        // forge-lint: disable-start(reentrancy-no-eth) a DELEGATECALL into the linked library, under the lock
-        bytes32 updateHash = AuthorityTransport.submit(_authority(), request);
-        // forge-lint: disable-end(reentrancy-no-eth)
-        emit AuthoritySelected(updateHash, _authority().selection.authorityHash);
+        (uint256 chainId, AuthorityRecognition.Context memory context) = _authorityContext();
+        AuthorityTransport.submitBatch(_authority(), chainId, context, args);
+    }
+
+    function _applyAuthority(bytes calldata args) internal {
+        _requireAuthorityContextIdle();
+        (uint256 chainId, AuthorityRecognition.Context memory context) = _authorityContext();
+        AuthorityTransport.submit(_authority(), chainId, context, args);
     }
 
     /// @dev Immutable source guard and MultiSendCallOnly addresses for source-call recognition.

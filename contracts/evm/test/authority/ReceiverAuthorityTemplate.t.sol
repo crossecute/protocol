@@ -8,6 +8,7 @@ import {Call} from "src/messaging/Call.sol";
 import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
 import {AuthorityMutations} from "src/messaging/authority/AuthorityMutations.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {IReceiverAuthority} from "src/messaging/authority/IReceiverAuthority.sol";
 import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
@@ -110,6 +111,102 @@ contract ReceiverAuthorityTemplateTest is ReceiverAuthorityTestBase {
         _submit(receiver, e1, bob);
         _submit(receiver, e2, alice);
         assertEq(receiver.selection().authorityHash, u2.newAuthorityHash);
+    }
+
+    function _handoffs() internal view returns (bytes[] memory submissions, bytes32 lastHead) {
+        address alice = vm.addr(ALICE_KEY);
+        address bob = vm.addr(BOB_KEY);
+        SafeTxEvidence memory first = _rotation(_update(receiver, CHAIN, bob), alice, bob, ALICE_KEY, 10, CHAIN);
+        SafeTxEvidence memory second = _rotation(
+            AuthorityUpdate(_hash(first), AuthorityUpdateEncoding.graphHash(CHAIN, _graph(alice))),
+            bob,
+            alice,
+            BOB_KEY,
+            12,
+            CHAIN
+        );
+        submissions = new bytes[](2);
+        submissions[0] = abi.encode(first, _graph(bob), new ChildUpdate[](0));
+        submissions[1] = abi.encode(second, _graph(alice), new ChildUpdate[](0));
+        lastHead = _hash(second);
+    }
+
+    function testBatchVerifiesEachSuccessorUnderItsPredecessorQuorum() public {
+        (bytes[] memory submissions, bytes32 lastHead) = _handoffs();
+        receiver.submitAuthorityBatch(submissions);
+        assertEq(receiver.selection().updateHead, lastHead);
+        assertEq(
+            receiver.selection().authorityHash, AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(ALICE_KEY)))
+        );
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        receiver.submitAuthorityBatch(submissions);
+    }
+
+    function testBatchFailureRollsBackTheHeadAndNewCacheEntries() public {
+        (bytes[] memory submissions,) = _handoffs();
+        bytes memory valid = submissions[1];
+        (SafeTxEvidence memory evidence, AuthorityGraph memory graph, ChildUpdate[] memory children) =
+            abi.decode(valid, (SafeTxEvidence, AuthorityGraph, ChildUpdate[]));
+        evidence.signedSafeTx.signatures = hex"01";
+        submissions[1] = abi.encode(evidence, graph, children);
+        vm.expectRevert();
+        receiver.submitAuthorityBatch(submissions);
+        assertEq(receiver.selection().updateHead, HEAD);
+        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
+        receiver.graph(AuthorityUpdateEncoding.graphHash(CHAIN, _graph(vm.addr(BOB_KEY))));
+        submissions[1] = valid;
+        receiver.submitAuthorityBatch(submissions);
+    }
+
+    function testBatchRejectsEmptyMalformedAndBusySubmissions() public {
+        vm.expectRevert(IReceiverAuthority.EmptyAuthorityBatch.selector);
+        receiver.submitAuthorityBatch(new bytes[](0));
+        (bool success,) =
+            address(receiver).call(abi.encodePacked(IReceiverAuthority.submitAuthorityBatch.selector, hex"01"));
+        assertFalse(success);
+        (bytes[] memory submissions,) = _handoffs();
+        receiver.setBusy(true);
+        vm.expectRevert("application context busy");
+        receiver.submitAuthorityBatch(submissions);
+        assertEq(receiver.selection().updateHead, HEAD);
+    }
+
+    function testEightyAggregateOwnersRemainValidWithinImmediateCaps() public {
+        AuthorityGraph memory next;
+        next.nodes = new AuthorityNode[](17);
+        SafeOwner[] memory rootOwners = new SafeOwner[](16);
+        Call[] memory mutations = new Call[](16);
+        for (uint256 i; i < 16; ++i) {
+            address child = address(uint160(0xB000 + i));
+            rootOwners[i] = SafeOwner(child, 1);
+            SafeOwner[] memory owners = new SafeOwner[](4);
+            for (uint256 j; j < 4; ++j) {
+                owners[j] = SafeOwner(vm.addr(1000 + 4 * i + j), OWNER_EOA);
+            }
+            next.nodes[i + 1] = AuthorityNode(SafeAuthorityRecord(child, 2, owners), bytes32(i + 1));
+        }
+        // The first swap installs the last child; later additions produce the graph's owner order.
+        mutations[0] = Call(
+            SAFE,
+            0,
+            abi.encodeWithSignature(
+                "swapOwner(address,address,address)", SENTINEL, vm.addr(ALICE_KEY), address(uint160(0xB00F))
+            )
+        );
+        for (uint256 i = 1; i < 16; ++i) {
+            mutations[i] = Call(
+                SAFE,
+                0,
+                abi.encodeWithSignature("addOwnerWithThreshold(address,uint256)", address(uint160(0xB00F - i)), 1)
+            );
+        }
+        next.nodes[0] = AuthorityNode(SafeAuthorityRecord(SAFE, 1, rootOwners), bytes32(0));
+        bytes32 hash = AuthorityUpdateEncoding.graphHash(CHAIN, next);
+        SafeTxEvidence memory evidence =
+            _sign(_ownershipTx(SAFE, AuthorityUpdate(HEAD, hash), mutations, 90), SAFE, CHAIN, ALICE_KEY);
+        receiver.submitAuthority(evidence, next, new ChildUpdate[](0));
+        assertEq(receiver.selection().authorityHash, hash);
+        assertEq(receiver.graph(hash).nodes.length, 17);
     }
 
     function testHugeSignedNonceDoesNotBlockLinkedLowerNonce() public {

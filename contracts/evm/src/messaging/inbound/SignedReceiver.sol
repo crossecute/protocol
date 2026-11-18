@@ -127,7 +127,14 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates
     ) external override nonReentrant {
-        _applyAuthority(evidence, newGraph, childUpdates);
+        (evidence, newGraph, childUpdates);
+        _applyAuthority(msg.data[4:]);
+    }
+
+    /// @inheritdoc ReceiverAuthorityTemplate
+    function submitAuthorityBatch(bytes[] calldata submissions) external override nonReentrant {
+        submissions;
+        _applyAuthorityBatch(msg.data[4:]);
     }
 
     function _recognitionPins() internal view override returns (address, address) {

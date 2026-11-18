@@ -5,8 +5,8 @@ import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes
 import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityEntry} from "./AuthorityGraph.sol";
 
-/// @notice One signed update of a descendant Safe: its activation, ownership change or
-///         selectAuthority.
+/// @notice One signed successor update of a descendant Safe: ownership change or
+///         selectAuthority. Activations are not accepted.
 /// @dev Its SafeTx hash is the position it creates. newGraphEntries are the entries of the
 ///      descendant's new graph, checked against the graph hash it signs, and name the positions
 ///      its nested Safe voters count under. newRecord is its new record and must hash to

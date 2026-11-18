@@ -197,6 +197,24 @@ whole tuple, including the variable-size graph, child updates and portable evide
 because independent relayers must recover the exact bytes the guard verified. No new
 size cap is added; provider and VM limits still apply.
 
+### Atomic receiver catch-up
+
+`submitAuthorityBatch(bytes[] submissions)` takes a nonempty list of standard authority
+submission tuples, each `abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])`.
+It holds the same receiver lock for the whole list. Each entry extends the selection the
+entry before it wrote and verifies under that predecessor's quorum. Any failed signature,
+graph, predecessor, decode or out-of-gas failure reverts the whole batch, including new
+cache entries, events and the exact-submission hash. Direct batch replays reject; a
+provider retry of the exact last accepted entry follows the existing acknowledgment rule.
+Both direct ABIs keep their nested decoders in the linked transport library, which also
+handles provider submissions. No application or finalization call runs between entries.
+
+The batch calldata costs `68 + 64n + sum(tuple lengths)` bytes for n entries, including
+the selector. Separate direct calls cost `4n + sum(tuple lengths)` bytes but require n
+transactions. The extra array offsets and lengths avoid repeating the verifier in each
+receiver and keep the existing singular ABI. No batch-count or total-evidence cap is added;
+callers must simulate the full catch-up against their receiver's selected head.
+
 ## Child positions
 
 Every Safe with the guard has its own linked update list. Each of its update heads

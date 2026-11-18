@@ -200,6 +200,10 @@ contract SignedReceiverTest is Test {
     function _selectionUpdate(AuthorityGraph memory next) internal returns (SafeTxEvidence memory) {
         bytes32 head = SignedReceiver(payable(receiver)).selection().updateHead;
         if (head == bytes32(0)) head = bytes32(uint256(1));
+        return _selectionUpdateAt(head, next);
+    }
+
+    function _selectionUpdateAt(bytes32 head, AuthorityGraph memory next) internal returns (SafeTxEvidence memory) {
         SafeTx memory tx_;
         tx_.to = address(0x1234);
         tx_.data = abi.encodeCall(
@@ -302,6 +306,45 @@ contract SignedReceiverTest is Test {
         _deliver(old);
     }
 
+    function test_batchCatchUpSharesProviderReplayState() public {
+        AuthorityGraph memory graph = Records.graph(_records());
+        SafeTxEvidence memory first = _selectionUpdate(graph);
+        SafeTxEvidence memory second =
+            _selectionUpdateAt(SafeHashes.transactionHash(first.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN), graph);
+        bytes[] memory submissions = new bytes[](2);
+        submissions[0] = abi.encode(first, graph, new ChildUpdate[](0));
+        submissions[1] = abi.encode(second, graph, new ChildUpdate[](0));
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        emit log_named_uint(
+            "authorityReceiverBatchTwoSelectionCalldataBytes",
+            abi.encodeCall(SignedReceiver.submitAuthorityBatch, (submissions)).length
+        );
+        uint256 g = gasleft();
+        r.submitAuthorityBatch(submissions);
+        emit log_named_uint("authorityReceiverBatchTwoSelectionGas", g - gasleft());
+        bytes32 head = SafeHashes.transactionHash(second.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+        assertEq(r.selection().updateHead, head);
+        _deliver(abi.encode(WIRE_AUTHORITY, submissions[1]));
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        r.submitAuthority(second, graph, new ChildUpdate[](0));
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, submissions[0]));
+        assertEq(r.selection().updateHead, head);
+    }
+
+    function test_measureAuthorityReceiverOwnerRotation() public {
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        bytes memory submission = abi.encode(update, next, new ChildUpdate[](0));
+        emit log_named_uint(
+            "authorityReceiverDirectCalldataBytes",
+            abi.encodeCall(SignedReceiver.submitAuthority, (update, next, new ChildUpdate[](0))).length
+        );
+        uint256 g = gasleft();
+        SignedReceiver(payable(receiver)).submitAuthority(update, next, new ChildUpdate[](0));
+        emit log_named_uint("authorityReceiverOwnerRotationGas", g - gasleft());
+        assertEq(submission.length + 96, abi.encode(WIRE_AUTHORITY, submission).length);
+    }
+
     function test_aThresholdUpdateUsesTheOldQuorumAndChangesFutureQuorums() public {
         AuthorityGraph memory next = Records.graph(_records());
         next.nodes[0].record.threshold = 3;
@@ -341,6 +384,42 @@ contract SignedReceiverTest is Test {
         vm.prank(vm.addr(1));
         ICommitFinalize(receiver).finalize(deferred);
         assertEq(sink.last(), "deferred");
+    }
+
+    function testFuzz_commitmentRepeatCancelAndConsumptionSurviveRotation(bool cancel) public {
+        Call[] memory deferred = abi.decode(_calls("retained"), (Call[]));
+        bytes32 commitment = Commitment.hashCalls(deferred);
+        Call[] memory commit = new Call[](1);
+        commit[0] = Call(receiver, 0, abi.encodeCall(ICommitFinalize.commit, (commitment)));
+        ISignedReceiver(receiver).submitMessage(_message(_here(receiver), abi.encode(commit)));
+        ISignedReceiver(receiver).submitMessage(_message(_here(receiver), abi.encode(commit)));
+        ReceiverBase base = ReceiverBase(payable(receiver));
+        assertEq(base.outstanding(commitment), 2);
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        SignedReceiver(payable(receiver)).submitAuthority(update, next, new ChildUpdate[](0));
+        assertEq(base.outstanding(commitment), 2);
+        if (cancel) {
+            Call[] memory calls = new Call[](1);
+            calls[0] = Call(receiver, 0, abi.encodeCall(ICancel.cancel, (commitment)));
+            ISignedReceiver(receiver)
+                .submitMessage(
+                    _signed(
+                        abi.encodeCall(
+                            IERC7786GatewaySource.sendMessage, (_here(receiver), abi.encode(calls), new bytes[](0))
+                        ),
+                        SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3))
+                    )
+                );
+        } else {
+            vm.prank(vm.addr(1));
+            base.finalize(deferred);
+            assertEq(base.outstanding(commitment), 1);
+            vm.prank(vm.addr(1));
+            base.finalize(deferred);
+        }
+        assertEq(base.outstanding(commitment), 0);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        base.finalize(deferred);
     }
 
     function test_bootstrapRejectsTheWrongGuardOrZeroHead() public {
@@ -787,7 +866,7 @@ contract SignedReceiverTest is Test {
     /// @dev A lock that protects only one route would leave cross-route reentrancy available.
     function test_reentrancyAcrossAllSignedEntryRoutes() public {
         for (uint256 outer; outer < 6; ++outer) {
-            for (uint256 inner; inner < 5; ++inner) {
+            for (uint256 inner; inner < 6; ++inner) {
                 _reentryScenario(outer, inner);
             }
         }
@@ -823,6 +902,10 @@ contract SignedReceiverTest is Test {
                         abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0)))
                     )
                 );
+            } else if (inner == 5) {
+                bytes[] memory submissions = new bytes[](1);
+                submissions[0] = abi.encode(update, next, new ChildUpdate[](0));
+                reentryCall = abi.encodeCall(SignedReceiver.submitAuthorityBatch, (submissions));
             } else {
                 reentryCall = abi.encodeCall(SignedReceiver.submitAuthority, (update, next, new ChildUpdate[](0)));
             }

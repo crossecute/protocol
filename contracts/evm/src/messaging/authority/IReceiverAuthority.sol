@@ -11,6 +11,8 @@ import {ChildUpdate} from "./ChildUpdate.sol";
 /// @dev The source identity is the receiver's own: its source chain and owner Safe. Its first
 ///      selection comes from its bootstrap, never from a submitted activation.
 interface IReceiverAuthority {
+    error EmptyAuthorityBatch();
+
     event AuthoritySelected(bytes32 indexed updateHead, bytes32 authorityHash);
 
     /// @notice Verify and apply the next signed update: a successor of the stored head.
@@ -21,6 +23,11 @@ interface IReceiverAuthority {
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates
     ) external;
+
+    /// @notice Apply consecutive authority submission tuples atomically.
+    /// @dev Each tuple is abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[]).
+    ///      Empty batches and replays reject.
+    function submitAuthorityBatch(bytes[] calldata submissions) external;
 
     function selection() external view returns (AuthoritySelection memory);
 
