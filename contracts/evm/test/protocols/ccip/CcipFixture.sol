@@ -72,20 +72,25 @@ abstract contract CcipFixture is ProviderGasFixture {
 
     MockCcipRouter internal router = new MockCcipRouter();
 
+    /// @notice The router every implementation is built with and the gateway it is granted.
+    function _ccipRouter() internal view virtual returns (address) {
+        return address(router);
+    }
+
     function _transceiverImplementation() internal override returns (address) {
-        return address(new CcipTransceiverHarness(address(router)));
+        return address(new CcipTransceiverHarness(_ccipRouter()));
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return CcipDeploy.receiverImplementation(address(router));
+        return CcipDeploy.receiverImplementation(_ccipRouter());
     }
 
     function _transmitterImplementation() internal override returns (address) {
-        return CcipDeploy.transmitterImplementation(address(router));
+        return CcipDeploy.transmitterImplementation(_ccipRouter());
     }
 
     function _deploy(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
-        return CcipDeploy.transceiver(d, address(router), uint64(homeId));
+        return CcipDeploy.transceiver(d, _ccipRouter(), uint64(homeId));
     }
 
     function _attributes() internal pure override returns (bytes[] memory) {
@@ -93,7 +98,7 @@ abstract contract CcipFixture is ProviderGasFixture {
     }
 
     function _gateway() internal view override returns (address) {
-        return address(router);
+        return _ccipRouter();
     }
 
     function _remoteProviderId() internal pure override returns (uint256) {

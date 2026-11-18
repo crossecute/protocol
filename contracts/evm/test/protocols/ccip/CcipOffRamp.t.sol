@@ -12,7 +12,14 @@ import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
+import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
+import {CcipPolicy} from "src/protocols/ccip/CcipPolicy.sol";
+import {IAny2EVMMessageReceiverV2} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiverV2.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {deployConduit} from "test/DeployProxy.sol";
+import {ext} from "test/Harness.sol";
+import {ProviderInboundFixture} from "test/protocols/ProviderBindingSpec.t.sol";
+import {CcipFixture} from "test/protocols/ccip/CcipFixture.sol";
 
 interface IRealOffRamp {
     struct StaticConfig {
@@ -99,23 +106,23 @@ contract CustomTestExecutor {
     }
 }
 
-contract CcipOffRampTest is Test {
-    uint64 private constant SOURCE = 15_971_525_489_660_198_786;
-    uint64 private constant DEST = 5_009_297_550_715_157_269;
-    address private constant SENDER = address(0xABCD);
-    address private constant ONRAMP = address(0xAAAA);
-    IRealOffRamp private offRamp;
-    CcipReceiver private receiver;
-    SignedTestCcv private defaultCcv;
-    SignedTestCcv private additionalCcv;
-    OffRampTarget private target;
+/// @notice The pinned upstream Router and OffRamp, a default and an additional signing CCV, and
+///         MessageV1 construction for any local CCIP receiver.
+abstract contract CcipOffRampFixture is Test {
+    uint64 internal constant SOURCE = 15_971_525_489_660_198_786;
+    uint64 internal constant DEST = 5_009_297_550_715_157_269;
+    address internal constant ONRAMP = address(0xAAAA);
+    IRealOffRamp internal offRamp;
+    address internal ccipRouter;
+    SignedTestCcv internal defaultCcv;
+    SignedTestCcv internal additionalCcv;
     uint64 private nonce;
 
-    function setUp() public {
+    function _deployOffRamp() internal {
         // Only the pinned upstream binary needs Cancun opcodes; protocol compilation remains Paris.
         vm.setEvmVersion("cancun");
         UncursedRmn rmn = new UncursedRmn();
-        address router = _deployBinary(
+        ccipRouter = _deployBinary(
             "router.bin",
             0x4b6f8b62c05cda2a60ff7a65b2ac80fe2ffc49cff2478f8992bb76e2ef8cf3da,
             abi.encode(address(0xBEEF), address(rmn))
@@ -130,7 +137,7 @@ contract CcipOffRampTest is Test {
         assertEq(offRamp.typeAndVersion(), "OffRamp 2.0.0");
         IRealRouter.Ramp[] memory adds = new IRealRouter.Ramp[](1);
         adds[0] = IRealRouter.Ramp(SOURCE, address(offRamp));
-        IRealRouter(router).applyRampUpdates(new IRealRouter.Ramp[](0), new IRealRouter.Ramp[](0), adds);
+        IRealRouter(ccipRouter).applyRampUpdates(new IRealRouter.Ramp[](0), new IRealRouter.Ramp[](0), adds);
         defaultCcv = new SignedTestCcv(vm.addr(1));
         additionalCcv = new SignedTestCcv(vm.addr(2));
         IRealOffRamp.SourceConfig[] memory configs = new IRealOffRamp.SourceConfig[](1);
@@ -138,15 +145,8 @@ contract CcipOffRampTest is Test {
         defaults[0] = address(defaultCcv);
         bytes[] memory onRamps = new bytes[](1);
         onRamps[0] = abi.encode(ONRAMP);
-        configs[0] = IRealOffRamp.SourceConfig(router, SOURCE, true, onRamps, defaults, new address[](0));
+        configs[0] = IRealOffRamp.SourceConfig(ccipRouter, SOURCE, true, onRamps, defaults, new address[](0));
         offRamp.applySourceChainConfigUpdates(configs);
-        receiver = CcipReceiver(
-            payable(deployConduit(
-                    address(new CcipReceiver(router)),
-                    abi.encodeCall(IReceiverInit.initialize, (SENDER, bytes32(uint256(SOURCE)), new Call[](0)))
-                ))
-        );
-        target = new OffRampTarget();
     }
 
     function _deployBinary(string memory file, bytes32 expectedHash, bytes memory args)
@@ -161,24 +161,19 @@ contract CcipOffRampTest is Test {
         require(deployed != address(0), "upstream binary deployment failed");
     }
 
-    function _message(bytes4 finality, uint32 gasLimit, uint256 value, address sender, address executor)
-        private
-        returns (bytes memory)
-    {
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call(address(target), value, abi.encodeCall(OffRampTarget.run, ()));
-        return _wire(Payload.encodeCalls(calls), finality, gasLimit, sender, executor);
-    }
-
-    function _wire(bytes memory data, bytes4 finality, uint32 gasLimit, address sender, address executor)
-        private
-        returns (bytes memory)
-    {
+    function _messageV1(
+        address to,
+        bytes memory data,
+        bytes4 finality,
+        uint32 gasLimit,
+        address sender,
+        address executor
+    ) internal returns (bytes memory) {
         MessageV1Codec.MessageV1 memory m;
         m.sourceChainSelector = SOURCE;
         m.destChainSelector = DEST;
         m.messageNumber = ++nonce;
-        m.executionGasLimit = 1_000_000;
+        m.executionGasLimit = 2_000_000;
         m.ccipReceiveGasLimit = gasLimit;
         m.finality = finality;
         address[] memory selected = new address[](1);
@@ -188,19 +183,19 @@ contract CcipOffRampTest is Test {
         m.onRampAddress = abi.encode(ONRAMP);
         m.offRampAddress = abi.encodePacked(address(offRamp));
         m.sender = abi.encode(sender);
-        m.receiver = abi.encodePacked(address(receiver));
+        m.receiver = abi.encodePacked(to);
         m.tokenTransfer = new MessageV1Codec.TokenTransferV1[](0);
         m.data = data;
         return MessageV1Codec._encodeMessageV1(m);
     }
 
-    function _proof(bytes memory message, uint256 key) private returns (bytes memory) {
+    function _proof(bytes memory message, uint256 key) internal returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, keccak256(message));
         return abi.encode(v, r, s);
     }
 
     function _attestations(bytes memory message, bool includeAdditional)
-        private
+        internal
         returns (address[] memory ccvs, bytes[] memory proofs)
     {
         ccvs = new address[](includeAdditional ? 2 : 1);
@@ -213,9 +208,40 @@ contract CcipOffRampTest is Test {
         }
     }
 
-    function _execute(bytes memory message, bool additional, uint32 gasOverride) private {
+    function _execute(bytes memory message, bool additional, uint32 gasOverride) internal {
         (address[] memory ccvs, bytes[] memory proofs) = _attestations(message, additional);
         offRamp.execute(message, ccvs, proofs, gasOverride);
+    }
+
+    /// @dev Upstream `Internal.MessageExecutionState`: 2 is SUCCESS, 3 is FAILURE.
+    function _state(bytes memory message) internal view returns (uint8) {
+        return offRamp.getExecutionState(keccak256(message));
+    }
+}
+
+contract CcipOffRampTest is CcipOffRampFixture {
+    address private constant SENDER = address(0xABCD);
+    CcipReceiver private receiver;
+    OffRampTarget private target;
+
+    function setUp() public {
+        _deployOffRamp();
+        receiver = CcipReceiver(
+            payable(deployConduit(
+                    address(new CcipReceiver(ccipRouter)),
+                    abi.encodeCall(IReceiverInit.initialize, (SENDER, bytes32(uint256(SOURCE)), new Call[](0)))
+                ))
+        );
+        target = new OffRampTarget();
+    }
+
+    function _message(bytes4 finality, uint32 gasLimit, uint256 value, address sender, address executor)
+        private
+        returns (bytes memory)
+    {
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(target), value, abi.encodeCall(OffRampTarget.run, ()));
+        return _messageV1(address(receiver), Payload.encodeCalls(calls), finality, gasLimit, sender, executor);
     }
 
     function _policy(bool additional, bytes4 allowed) private {
@@ -322,7 +348,8 @@ contract CcipOffRampTest is Test {
     function test_verifiedDeliveryCannotReenterReceiverExecution() public {
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(receiver), 0, abi.encodeCall(ReceiverBase.execute, (new Call[](0))));
-        bytes memory message = _wire(Payload.encodeCalls(calls), bytes4(0), 500_000, SENDER, address(0));
+        bytes memory message =
+            _messageV1(address(receiver), Payload.encodeCalls(calls), bytes4(0), 500_000, SENDER, address(0));
         _execute(message, false, 0);
         assertEq(offRamp.getExecutionState(keccak256(message)), 3);
         assertEq(target.calls(), 0);
@@ -364,5 +391,61 @@ contract CcipOffRampTest is Test {
         _execute(message, false, 0);
         assertEq(offRamp.getExecutionState(keccak256(message)), 3);
         assertEq(target.calls(), 0);
+    }
+}
+
+/// @notice The transceiver's own `ccipReceive` and policy, which do not come from the upstream
+///         helper, driven through the upstream OffRamp.
+contract CcipOffRampTransceiverTest is ProviderInboundFixture, CcipFixture, CcipOffRampFixture {
+    function setUp() public override {
+        _deployOffRamp();
+        super.setUp();
+    }
+
+    function _ccipRouter() internal view override returns (address) {
+        return ccipRouter;
+    }
+
+    function _bootstrapFrom(address sender) private returns (bytes memory) {
+        return _messageV1(transceiver, _bootstrap(), bytes4(0), 1_000_000, sender, address(0));
+    }
+
+    function _receiverCreated(bytes32 chainKey) private view returns (bool) {
+        return ext(transceiver).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey).code.length != 0;
+    }
+
+    function test_offRampDeliversABootstrapToTheTransceiver() public {
+        bytes32 chainKey = _wire();
+        assertTrue(IERC165(transceiver).supportsInterface(type(IAny2EVMMessageReceiverV2).interfaceId));
+        bytes memory message = _bootstrapFrom(ORIGIN_TRANSCEIVER);
+        _execute(message, false, 0);
+        assertEq(_state(message), 2);
+        address receiver = ext(transceiver).predictConduit(CONDUIT_OWNER, CONDUIT_SALT, chainKey);
+        assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), ORIGIN_TRANSMITTER);
+    }
+
+    function test_offRampRefusesABootstrapFromANonCounterpart() public {
+        bytes32 chainKey = _wire();
+        bytes memory message = _bootstrapFrom(address(0xBAD));
+        _execute(message, false, 0);
+        assertEq(_state(message), 3);
+        assertFalse(_receiverCreated(chainKey));
+    }
+
+    function test_offRampEnforcesTheTransceiversVerifierPolicy() public {
+        bytes32 chainKey = _wire();
+        CcipConfig.Policy memory p;
+        p.requiredCCVs = new address[](2);
+        p.requiredCCVs[1] = address(additionalCcv);
+        vm.prank(TransceiverBase(payable(transceiver)).owner());
+        CcipPolicy(transceiver).setCcipPolicy(SOURCE, abi.encode(ORIGIN_TRANSCEIVER), p);
+
+        bytes memory message = _bootstrapFrom(ORIGIN_TRANSCEIVER);
+        _execute(message, false, 0);
+        assertEq(_state(message), 3);
+        assertFalse(_receiverCreated(chainKey));
+        _execute(message, true, 0);
+        assertEq(_state(message), 2);
+        assertTrue(_receiverCreated(chainKey));
     }
 }
