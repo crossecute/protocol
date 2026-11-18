@@ -491,9 +491,9 @@ normal nonce/window checks pass, but never restores consumed/cancelled work.
 Activation takes two guarded steps, which may share one outer transaction. The Safe
 first sets both guards; the guard cannot hook the transaction that installs it. The Safe's
 quorum then signs and executes activate(initialGraphHash) with the initial graph staged.
-Until then the Safe is governed by its policies alone, as in #107, and no authority rule
-applies: activation reads live state, so an owner change before it cannot desynchronize the
-guard. The guard requires:
+Until then policy governs ordinary calls, subject to the execution lock and the
+restriction of the pinned MultiSend executor to authority changes. Activation reads live
+state, so a prior owner change does not leave it using a stale initial graph. The guard requires:
 
 - the guard in both the transaction and module guard slots, the singleton equal to a
   pinned Safe or SafeL2 singleton, the fallback handler equal to the pinned handler and no

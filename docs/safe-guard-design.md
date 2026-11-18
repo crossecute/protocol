@@ -27,7 +27,8 @@ activation, linked portable updates staged with stageUpdate, and ownership chang
 SafeTx through the pinned MultiSendCallOnly. Verification is the receivers' linked
 `ReceiverAuthority` library over each Safe's own state. The guard takes its pins at
 deployment: MultiSendCallOnly, SignMessageLib, the Safe and SafeL2 singletons and the fallback
-handler. A Safe that has not activated is governed by its policies alone, as described below.
+handler. Before activation, policies govern ordinary calls, subject to the execution lock
+and the restriction of the pinned MultiSend executor to authority changes.
 An activated Safe also needs both guard slots, which activation checks; the #107 baseline permits
 the module slot to stay optional. The
 [verification plan](safe-authority-verification-review.md) lists what remains.
@@ -113,8 +114,8 @@ Safe 1.5.0 increments the nonce and checks signatures, then calls the transactio
 it read before execution. After the inherited policy check, `CrossecuteGuard` does four
 things in the pre-hook, in this order:
 
-1. **Nesting.** If the calling Safe has a live staged record, revert. See
-   [Nesting](#nesting).
+1. **Nesting.** Require no live owner execution for this Safe, then hold its transaction
+   hash until the matching post-hook. See [Nesting](#nesting).
 2. **Staging.** If the top-level calldata selector is `sendMessage(bytes,bytes,bytes[])` or
    `bootstrap(bytes,bytes[])`, write a transient staged record for the calling Safe.
 3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
@@ -123,7 +124,7 @@ things in the pre-hook, in this order:
    published. See [Merkle leaf publication](#merkle-leaf-publication).
 
 The selectors differ, so one transaction triggers at most one of steps 2 to 4. The
-post-hook clears the calling Safe's staged record if one exists.
+post-hook checks the execution hash, clears any staged record, and releases the lock.
 
 ## Transient staged record
 

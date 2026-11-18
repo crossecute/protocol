@@ -22,11 +22,11 @@ batch ABI, which is an unpinned multicall, rather than a prescribed SDK ABI.
 
 | Source case | Measured gas | Batch calldata bytes | Submission bytes | Provider body bytes |
 | --- | ---: | ---: | ---: | ---: |
-| EOA threshold change | 596,692 | 2,276 | 1,696 | 1,792 |
-| Nested child adoption | 782,362 | 4,004 | 3,392 | 3,488 |
-| Cached child approval | 814,036 | 4,676 | 4,128 | 4,224 |
-| Two-level adoption | 911,877 | 4,484 | 3,776 | 3,872 |
-| Shared child adoption | 1,095,189 | 5,348 | 4,384 | 4,480 |
+| EOA threshold change | 598,100 | 2,276 | 1,696 | 1,792 |
+| Nested child adoption | 783,675 | 4,004 | 3,392 | 3,488 |
+| Cached child approval | 815,351 | 4,676 | 4,128 | 4,224 |
+| Two-level adoption | 913,077 | 4,484 | 3,776 | 3,872 |
+| Shared child adoption | 1,096,274 | 5,348 | 4,384 | 4,480 |
 
 Receiver tests compile the production code with Solidity 0.8.28, Paris and the
 legacy compiler pipeline. They time receiver calls using portable Safe signatures.

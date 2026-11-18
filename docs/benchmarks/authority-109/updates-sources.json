@@ -1,5 +1,5 @@
 {
-  "revision": "db947e1ad07ec48d31e0ed0090f9b9c797960f5e",
+  "revision": "a2b18b50a840b272f8c4079d16f40541fe632f70",
   "forge": "forge Version: 1.8.1",
   "sha256": {
     "contracts/evm/src/messaging/authority/AuthorityGraph.sol": "4308da3b1a7c2dd20cfec8300a32e8533b83e5560031ec12830dcdd2c7e7fa9c",
@@ -12,9 +12,9 @@
     "contracts/evm/src/messaging/authority/ReceiverAuthority.sol": "5cb42d452d268984d6b465de6bea38eb1d7dff0b48f9532c0fe319013c91cc66",
     "contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol": "a3c7cf841467b2b87394565a00f2857b34b555a40205f50095d23ade77018f62",
     "contracts/evm/src/messaging/inbound/SignedReceiver.sol": "3a009dfde8f3cb63df9b5aef0cbe5e025d17e764a3fe0ac095eabe3a9b613a6e",
-    "contracts/safe-guard/src/CrossecuteGuard.sol": "d1dc974eff701741f78f8d09ad2636c2b8c053ad8e355e9dc4d0ab8ff38c20c5",
-    "contracts/safe-guard/src/authority/SourceAuthorityGuard.sol": "12f8d2e7a9946fcd81f4b1a8f0f99c4a7325c661ced613ab362d65749bff6da1",
+    "contracts/safe-guard/src/CrossecuteGuard.sol": "67480075a21c24ae84118b8bdb0f4afc8bda8f65d4437c044e01e9afb86d8810",
+    "contracts/safe-guard/src/authority/SourceAuthorityGuard.sol": "7a046e1c992d818211a85a5b8b2748f3d1135da4bb1e0503e99eddcb941891da",
     "contracts/evm/test/signed/SignedReceiver.t.sol": "6d58d61a66b8630708ca777f86d86cb4d6896f71a16d9c9ad926ba999563d82a",
-    "contracts/safe-guard/test/SignedDispatchIntegration.t.sol": "8233ea24d385d9aed5d8aaed9d84f2d32baacc6f9d01e15b0e195b9873d4fa19"
+    "contracts/safe-guard/test/SignedDispatchIntegration.t.sol": "74062073849d8f1b0e3af48f3f43c412c517622456c4b91a343c7cc0576c060c"
   }
 }
