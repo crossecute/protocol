@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from archive import Archive, GRAPH, graph_literal
+from archive import Archive, GRAPH, SUBMISSION
 
 VECTORS = Path(__file__).resolve().parents[2] / 'docs/vectors/safe-authority-updates-109.json'
 
@@ -35,9 +35,37 @@ class ArchiveTest(unittest.TestCase):
 
     def put(self, vector, archive=None):
         archive = archive or self.archive
-        publication = archive.cast.hash(vector['submission'])
+        publication = archive.codec.hash(vector['submission'])
         archive.put_submission(vector['submission'], vector['update']['safeTxHash'], publication)
         return publication
+
+    @staticmethod
+    def native_graph(nodes):
+        return ([[[n['record']['safe'], n['record']['threshold'],
+                   [[o['owner'], o['kind']] for o in n['record']['owners']]], bytes.fromhex(n['position'][2:])]
+                 for n in nodes],)
+
+    def large_graph(self, count):
+        enc = self.encoder
+
+        def address(value):
+            return '0x' + f'{value:040x}'
+
+        nodes = []
+        for i in range(count):
+            safe = self.vector['sourceSafe'] if i == 0 else address(0x1000 + i)
+            owners = [(address(0x100000 + 16 * i + j), enc.OWNER_EOA) for j in range(15)]
+            if i == 0:
+                owners[0] = (enc.owner_of(1), enc.OWNER_EOA)
+            owners.append((address(0x1000 + i + 1), enc.OWNER_SAFE) if i + 1 < count
+                          else (address(0x100000 + 16 * i + 15), enc.OWNER_EOA))
+            nodes.append({'record': enc.record(safe, 1, owners),
+                          'position': enc.ZERO32 if i == 0 else enc.label(f'archive child {i}')})
+        # Independent cast-based vector encoders still handle each bounded record and the
+        # compact entries. The full graph must never pass through a process argument.
+        expected = enc.graph_hash(enc.graph_entries(nodes))
+        graph = self.native_graph(nodes)
+        return graph, expected
 
     def test_accepted_shared_vectors_recover_graph_and_exact_submission(self):
         for vector in self.vectors:
@@ -57,10 +85,8 @@ class ArchiveTest(unittest.TestCase):
         vector = self.vector
         # The selected bootstrap graph is an independent source for an activation witness.
         nodes = vector['bootstrap']['graph']['nodes']
-        graph = ([[[n['record']['safe'], n['record']['threshold'],
-                    [[o['owner'], o['kind']] for o in n['record']['owners']]], n['position']]
-                  for n in nodes],)
-        encoded = self.archive.cast.abi(GRAPH, graph_literal(graph))
+        graph = self.native_graph(nodes)
+        encoded = self.archive.codec.abi(GRAPH, graph)
         expected = vector['bootstrap']['graph']['graphHash']
         self.archive.put_graph(encoded, expected)
         self.put(vector)
@@ -71,6 +97,39 @@ class ArchiveTest(unittest.TestCase):
         self.assertEqual(recovery.get_graph(expected), encoded)
         self.assertEqual(recovery.chain_to(vector['update']['previousUpdateHash'], vector['update']['safeTxHash']),
                          [vector['submission']])
+
+    def test_cli_imports_and_recovers_graph_larger_than_process_argument_limit(self):
+        graph, expected = self.large_graph(53)
+        encoded = self.archive.codec.abi(GRAPH, graph)
+        self.assertEqual((len(encoded) - 2) // 2, 66240)
+        file = Path(self.directory.name) / 'graph.hex'
+        file.write_text(encoded)
+        command = [sys.executable, '-B', str(Path(__file__).with_name('archive.py')),
+                   '--archive', self.directory.name, '--chain', str(self.vector['sourceChainId']),
+                   '--guard', self.vector['guard'], '--safe', self.vector['sourceSafe']]
+        subprocess.run([*command, 'put-graph', '--file', str(file), '--hash', expected],
+                       check=True, capture_output=True, text=True)
+        recovered = subprocess.run([*command, 'get-graph', '--hash', expected],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(recovered.stdout.strip(), encoded)
+
+    def test_large_signed_submission_round_trips_without_argument_size_limit(self):
+        graph, expected = self.large_graph(107)
+        codec, enc = self.archive.codec, self.encoder
+        previous = self.vector['update']['previousUpdateHash']
+        data = enc.cast('calldata', 'selectAuthority((bytes32,bytes32))', f'({previous},{expected})')
+        tx = enc.safe_tx(self.vector['guard'], data, 0, 1)
+        head = enc.safe_tx_hash(tx, self.vector['sourceSafe'], self.vector['sourceChainId'])[2]
+        signatures = enc.signature_blob([enc.eoa(1)], head)
+        native_tx = tuple(bytes.fromhex(value[2:]) if name == 'data' else value
+                          for name, value in tx.items())
+        evidence = ((native_tx, bytes.fromhex(signatures[2:])), [])
+        submission = codec.abi(SUBMISSION, evidence, graph, [])
+        self.assertGreater((len(submission) - 2) // 2, 128 * 1024)
+        publication = codec.hash(submission)
+        self.archive.put_submission(submission, head, publication)
+        self.assertEqual(self.archive.chain_to(previous, head), [submission])
+        self.assertEqual(self.archive.get_graph(expected), codec.abi(GRAPH, graph))
 
     def test_missing_evidence_fails_then_restored_evidence_recovers(self):
         self.put(self.vector)
@@ -104,7 +163,7 @@ class ArchiveTest(unittest.TestCase):
 
     def test_hash_domain_and_head_mismatches_reject(self):
         v = self.vector
-        publication = self.archive.cast.hash(v['submission'])
+        publication = self.archive.codec.hash(v['submission'])
         with self.assertRaisesRegex(ValueError, 'publication hash'):
             self.archive.put_submission(v['submission'][:-2] + '01', v['update']['safeTxHash'], publication)
         with self.assertRaisesRegex(ValueError, 'SafeTx hash'):

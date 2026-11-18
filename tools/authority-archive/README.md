@@ -1,9 +1,25 @@
 # Authority evidence archive
 
 `archive.py` preserves full source graphs and exact portable update submissions for
-[#145](https://github.com/crossecute/protocol/pull/145). It uses Python's standard
-library and Foundry `cast` (tested with the repository's CI version, 1.8.1). It
-performs no RPC calls and sends no transactions.
+[#145](https://github.com/crossecute/protocol/pull/145). It uses the pinned `eth-abi`
+codec for in-process encoding/decoding and Foundry `cast` for selectors and Keccak
+(tested with the repository's CI version, 1.8.1). Hash inputs stream through stdin;
+full graphs and submissions never enter process arguments. Evidence size is limited
+by available resources, without an extra command-line argument ceiling. The archive
+format and on-chain encodings are unchanged. It performs no RPC calls and sends no
+transactions.
+
+## Setup
+
+Install the codec in a virtual environment, activate it, and put Foundry on PATH
+before running the commands below:
+
+```bash
+python3 -m venv /tmp/authority-archive-venv
+source /tmp/authority-archive-venv/bin/activate
+python3 -m pip install -r tools/authority-archive/requirements.txt
+PATH="$HOME/.foundry/bin:$PATH"
+```
 
 The archive is a local directory, scoped by source chain, guard and Safe. Graphs are
 keyed by authority hash; submissions are keyed by SafeTx head. Imports require an
@@ -107,6 +123,8 @@ PATH="$HOME/.foundry/bin:$PATH" python3 -B -m unittest discover -s tools/authori
 Tests recover accepted shared receiver vectors, import the activation/bootstrap
 graph, restore an independent backup, detect corrupted and missing files, reject
 wrong domains/hashes, and recover ordered catch-up after restoring a missing prefix.
+Large-input regressions import/retrieve a 66,240-byte graph through the CLI and
+preserve an exact signed submission larger than 128 KiB through catch-up retrieval.
 The generated successor uses the existing public vector-fixture keys and quorum.
 Solidity tests separately reject missing child links and catch-up prefixes, then
 accept restored evidence; out-of-gas tests cover interrupted batch rollback.

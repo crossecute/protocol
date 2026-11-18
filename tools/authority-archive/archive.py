@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline, content-checked authority archive. Requires Foundry cast; never sends transactions."""
+"""Offline, content-checked authority archive. Requires eth-abi and Foundry cast; never sends transactions."""
 import argparse
 import json
 import os
@@ -8,6 +8,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+from eth_abi import decode, encode
+from eth_abi.exceptions import DecodingError, EncodingError
+from eth_abi.grammar import parse
 
 RECORD = '(address,uint256,(address,uint8)[])'
 GRAPH = f'(({RECORD},bytes32)[])'
@@ -28,38 +32,41 @@ def hex_value(value, size=None):
     return '0x' + raw.hex()
 
 
-def record_literal(record):
-    safe, threshold, owners = record
-    return f'({safe},{threshold},[' + ','.join(f'({a},{k})' for a, k in owners) + '])'
+def raw(value):
+    return bytes.fromhex(hex_value(value)[2:]) if isinstance(value, str) else value
 
 
-def graph_literal(graph):
-    return '([' + ','.join(f'({record_literal(r)},{p})' for r, p in graph[0]) + '])'
-
-
-class Cast:
+class Codec:
     def __init__(self):
         self.path = shutil.which('cast')
         if not self.path:
             raise ValueError('Foundry cast must be on PATH')
 
-    def run(self, *args):
-        result = subprocess.run([self.path, *map(str, args)], capture_output=True, text=True)
+    def _run(self, *args, input=None):
+        result = subprocess.run([self.path, *args], input=input, capture_output=True, text=True)
         if result.returncode:
             raise ValueError('cast failed: ' + result.stderr.strip())
         return result.stdout.strip()
 
     def decode(self, types, data):
-        result = json.loads(self.run('abi-decode', '--json', f'f()({types})', data))
-        if not result['success']:
-            raise ValueError('ABI decoding failed')
-        return result['data']
+        try:
+            # Match Solidity's padding rules; graph ABI canonicality is checked by re-encoding.
+            return decode(self._types(types), raw(data), strict=False)
+        except DecodingError as error:
+            raise ValueError(f'ABI decoding failed: {error}') from error
 
     def abi(self, types, *values):
-        return self.run('abi-encode', f'f({types})', *values)
+        return '0x' + encode(self._types(types), values).hex()
+
+    @staticmethod
+    def _types(types):
+        return [component.to_type_str() for component in parse(f'({types})').components]
+
+    def selector(self, signature):
+        return raw(self._run('sig', signature))
 
     def hash(self, data):
-        return self.run('keccak', data).lower()
+        return self._run('keccak', input='0x' + raw(data).hex()).lower()
 
 
 class Archive:
@@ -70,7 +77,7 @@ class Archive:
         self.guard = hex_value(guard, 20)
         self.safe = hex_value(safe, 20)
         self.root = Path(directory) / str(chain) / self.guard / self.safe
-        self.cast = Cast()
+        self.codec = Codec()
 
     def path(self, kind, key):
         return self.root / kind / (hex_value(key, 32)[2:] + '.json')
@@ -107,18 +114,17 @@ class Archive:
             raise ValueError(f'missing {kind} object: {key}') from None
 
     def graph_info(self, encoded):
-        graph, = self.cast.decode(GRAPH, hex_value(encoded))
+        graph, = self.codec.decode(GRAPH, hex_value(encoded))
         nodes = graph[0]
         if not nodes or hex_value(nodes[0][0][0], 20) != self.safe:
             raise ValueError('graph root differs from archive Safe')
-        canonical = self.cast.abi(GRAPH, graph_literal(graph))
+        canonical = self.codec.abi(GRAPH, graph)
         if canonical.lower() != encoded.lower():
             raise ValueError('noncanonical graph ABI')
-        entries = [(self.cast.hash(self.cast.abi(RECORD, record_literal(r))), p) for r, p in nodes]
-        text = '[' + ','.join(f'({h},{p})' for h, p in entries) + ']'
-        digest = self.cast.hash(self.cast.abi('bytes32,uint256,(bytes32,bytes32)[]',
-                                            self.cast.hash('0x' + b'Crossecute.AuthorityGraph.v1'.hex()),
-                                            self.chain, text))
+        entries = [(raw(self.codec.hash(self.codec.abi(RECORD, r))), p) for r, p in nodes]
+        digest = self.codec.hash(self.codec.abi('bytes32,uint256,(bytes32,bytes32)[]',
+                                              raw(self.codec.hash(b'Crossecute.AuthorityGraph.v1')),
+                                              self.chain, entries))
         return digest
 
     def put_graph(self, encoded, expected):
@@ -135,46 +141,45 @@ class Archive:
         return encoded
 
     def submission_info(self, submission):
-        evidence, graph, _ = self.cast.decode(SUBMISSION, hex_value(submission))
+        evidence, graph, _ = self.codec.decode(SUBMISSION, hex_value(submission))
         tx = evidence[0][0]
         to, value, data, operation, *rest = tx
         operation = int(operation)
-        raw = bytes.fromhex(data[2:])
-        select = self.cast.run('sig', 'selectAuthority((bytes32,bytes32))')
-        register = self.cast.run('sig', 'registerOwnershipChange((bytes32,bytes32))')
-        if operation == 0 and hex_value(to, 20) == self.guard and data[:10] == select:
-            update_data = '0x' + raw[4:].hex()
-        elif operation == 1 and data[:10] == self.cast.run('sig', 'multiSend(bytes)'):
-            packed, = self.cast.decode('bytes', '0x' + raw[4:].hex())
-            packed = bytes.fromhex(packed[2:])
+        select = self.codec.selector('selectAuthority((bytes32,bytes32))')
+        register = self.codec.selector('registerOwnershipChange((bytes32,bytes32))')
+        if operation == 0 and hex_value(to, 20) == self.guard and data[:4] == select:
+            update_data = data[4:]
+        elif operation == 1 and data[:4] == self.codec.selector('multiSend(bytes)'):
+            packed, = self.codec.decode('bytes', data[4:])
             if len(packed) < 85 or packed[0] != 0 or '0x' + packed[1:21].hex() != self.guard:
                 raise ValueError('unrecognized ownership registration')
             length = int.from_bytes(packed[53:85], 'big')
             call = packed[85:85 + length]
-            if int.from_bytes(packed[21:53], 'big') or len(call) != length or '0x' + call[:4].hex() != register:
+            if int.from_bytes(packed[21:53], 'big') or len(call) != length or call[:4] != register:
                 raise ValueError('unrecognized ownership registration')
-            update_data = '0x' + call[4:].hex()
+            update_data = call[4:]
         else:
             raise ValueError('not an authority successor')
         if int(value):
             raise ValueError('authority transaction has nonzero value')
-        (previous, authority), = self.cast.decode('(bytes32,bytes32)', update_data)
-        encoded_graph = self.cast.abi(GRAPH, graph_literal(graph))
+        (previous, authority), = self.codec.decode('(bytes32,bytes32)', update_data)
+        previous, authority = '0x' + previous.hex(), '0x' + authority.hex()
+        encoded_graph = self.codec.abi(GRAPH, graph)
         if self.graph_info(encoded_graph) != authority:
             raise ValueError('submission graph differs from signed authority hash')
-        domain_type = self.cast.hash('0x' + b'EIP712Domain(uint256 chainId,address verifyingContract)'.hex())
-        domain = self.cast.hash(self.cast.abi('bytes32,uint256,address', domain_type, self.chain, self.safe))
-        tx_type = self.cast.hash('0x' + ('SafeTx(address to,uint256 value,bytes data,uint8 operation,'
-                                      'uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,'
-                                      'address refundReceiver,uint256 nonce)').encode().hex())
-        struct = self.cast.hash(self.cast.abi('bytes32,address,uint256,bytes32,uint8,uint256,uint256,uint256,address,address,uint256',
-                                             tx_type, to, value, self.cast.hash(data), operation, *rest))
-        head = self.cast.hash('0x1901' + domain[2:] + struct[2:])
+        domain_type = raw(self.codec.hash(b'EIP712Domain(uint256 chainId,address verifyingContract)'))
+        domain = self.codec.hash(self.codec.abi('bytes32,uint256,address', domain_type, self.chain, self.safe))
+        tx_type = raw(self.codec.hash(b'SafeTx(address to,uint256 value,bytes data,uint8 operation,'
+                                      b'uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,'
+                                      b'address refundReceiver,uint256 nonce)'))
+        struct = self.codec.hash(self.codec.abi('bytes32,address,uint256,bytes32,uint8,uint256,uint256,uint256,address,address,uint256',
+                                               tx_type, to, value, raw(self.codec.hash(data)), operation, *rest))
+        head = self.codec.hash(b'\x19\x01' + raw(domain) + raw(struct))
         return head, previous, authority, encoded_graph
 
     def put_submission(self, submission, head, publication):
         head, publication = hex_value(head, 32), hex_value(publication, 32)
-        if self.cast.hash(hex_value(submission)) != publication:
+        if self.codec.hash(hex_value(submission)) != publication:
             raise ValueError('submission differs from expected publication hash')
         actual, _, authority, graph = self.submission_info(submission)
         if actual != head:
@@ -191,7 +196,7 @@ class Archive:
             seen.add(cursor)
             obj = self.read('updates', cursor)
             submission = obj['submission']
-            if self.cast.hash(submission) != hex_value(obj['publicationHash'], 32):
+            if self.codec.hash(submission) != hex_value(obj['publicationHash'], 32):
                 raise ValueError('corrupt submission object')
             actual, previous, _, _ = self.submission_info(submission)
             if actual != cursor:
@@ -235,6 +240,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, KeyError, IndexError, TypeError) as error:
+    except (ValueError, OSError, KeyError, IndexError, TypeError, EncodingError) as error:
         print(f'archive: {error}', file=sys.stderr)
         sys.exit(1)
