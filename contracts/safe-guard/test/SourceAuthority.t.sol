@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
+import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
+import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {AuthorityGraph} from "crossecute/messaging/authority/AuthorityGraph.sol";
@@ -63,6 +66,156 @@ contract SourceAuthorityTest is SourceAuthorityBase {
     function _activated() internal returns (bytes32 head) {
         _activate(safe, _ab());
         head = _head(safe);
+    }
+
+    function testOrdinaryBatchCannotForgeActivationHooksAndChangeOwners() public {
+        AuthorityGraph memory graph = _graph(_record(safe));
+        bytes memory activation = abi.encodeCall(ISourceAuthorityGuard.activate, (_hash(graph)));
+        bytes32 activationHash = _txHash(safe, address(guard), 0, activation, Enum.Operation.Call);
+        bytes memory portable = _sign(_ab(), activationHash);
+        bytes memory packed = bytes.concat(
+            _multiSendEntry(address(guard), _preHook(address(guard), activation, portable)),
+            _multiSendEntry(
+                address(guard), abi.encodeCall(ISafeTransactionGuard.checkAfterExecution, (activationHash, true))
+            ),
+            _multiSendEntry(
+                address(safe), abi.encodeCall(safe.swapOwner, (address(1), safe.getOwners()[0], vm.addr(KEY_D)))
+            )
+        );
+        bytes memory data = abi.encodeCall(multiSend.multiSend, (packed));
+        bytes memory executing = _sign(_ab(), _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
+        Batch.Call[] memory calls = _stagedCalls(
+            safe,
+            address(multiSend),
+            data,
+            Enum.Operation.DelegateCall,
+            graph,
+            new ChildUpdate[](0),
+            executing,
+            portable
+        );
+        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        batch.run(calls);
+        assertEq(_head(safe), bytes32(0));
+        assertFalse(safe.isOwner(vm.addr(KEY_D)));
+    }
+
+    function _preHook(address to, bytes memory data, bytes memory signatures) private pure returns (bytes memory) {
+        return abi.encodeCall(
+            ISafeTransactionGuard.checkTransaction,
+            (to, 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), signatures, address(0))
+        );
+    }
+
+    function _beginOrdinaryExecution() private returns (bytes32 expected) {
+        bytes memory data = hex"12345678";
+        expected = _txHashAt(safe, address(0), 0, data, Enum.Operation.Call, safe.nonce() - 1);
+        vm.prank(address(safe));
+        ISafeTransactionGuard(address(guard))
+            .checkTransaction(
+                address(0), 0, data, Operation.CALL, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            );
+    }
+
+    function testOrdinaryExecutionRejectsForgedPostHook() public {
+        this.probeOrdinaryExecutionLock(0);
+    }
+
+    function testOrdinaryExecutionBlocksStageOverwrite() public {
+        this.probeOrdinaryExecutionLock(1);
+        _activate(safe, _ab());
+        assertTrue(guard.executed(address(safe), _head(safe)));
+    }
+
+    /// @dev Keep the pre-hook and probes in one EVM transaction under Forge isolation.
+    function probeOrdinaryExecutionLock(uint8 mode) external {
+        AuthorityGraph memory graph = _graph(_record(safe));
+        bytes32 expected = _beginOrdinaryExecution();
+        if (mode == 0) {
+            bytes32 forged = bytes32(uint256(1));
+            vm.prank(address(safe));
+            vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.HashMismatch.selector, expected, forged));
+            guard.checkAfterExecution(forged, true);
+        } else if (mode == 1) {
+            vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.SafeBusy.selector, address(safe)));
+            guard.stageUpdate(address(safe), graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
+        } else {
+            vm.prank(address(safe));
+            vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
+            ISafeModuleGuard(address(guard))
+                .checkModuleTransaction(address(0), 0, hex"12345678", Operation.CALL, address(0xCAFE));
+        }
+        vm.prank(address(safe));
+        guard.checkAfterExecution(expected, true);
+    }
+
+    function testOrdinaryNestedExecutionRejectsAndRollsBackLock() public {
+        uint256 nonce = safe.nonce();
+        bytes memory payload = hex"12345678";
+        bytes memory signatures = _sign(_ab(), _txHashAt(safe, address(0), 0, payload, Enum.Operation.Call, nonce + 1));
+        bytes memory nested = _executeCall(safe, address(0), payload, Enum.Operation.Call, signatures).data;
+        signatures = _sign(_ab(), _txHash(safe, address(safe), 0, nested, Enum.Operation.Call));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
+        _execWith(safe, address(safe), 0, nested, Enum.Operation.Call, signatures);
+        assertEq(safe.nonce(), nonce);
+        _activate(safe, _ab());
+    }
+
+    function testOrdinarySequentialExecutionsReleaseLock() public {
+        bytes memory data = hex"12345678";
+        uint256 nonce = safe.nonce();
+        Batch.Call[] memory calls = new Batch.Call[](2);
+        for (uint256 i = 0; i < calls.length; ++i) {
+            bytes memory signatures = _sign(_ab(), _txHashAt(safe, address(0), 0, data, Enum.Operation.Call, nonce + i));
+            calls[i] = _executeCall(safe, address(0), data, Enum.Operation.Call, signatures);
+        }
+        batch.run(calls);
+        assertEq(safe.nonce(), nonce + 2);
+    }
+
+    function testPostHookWithoutOwnerExecutionRejects() public {
+        vm.prank(address(safe));
+        vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NoLiveRecord.selector, address(safe)));
+        guard.checkAfterExecution(bytes32(uint256(1)), true);
+    }
+
+    function testOrdinaryExecutionRejectsModuleHookReentry() public {
+        this.probeOrdinaryExecutionLock(2);
+    }
+
+    function testOrdinaryExecutionByAnotherSafeCanNest() public {
+        uint256[] memory keys = new uint256[](3);
+        (keys[0], keys[1], keys[2]) = (KEY_A, KEY_B, KEY_C);
+        Safe other = _guarded(keys, 2);
+        bytes memory payload = hex"12345678";
+        bytes memory signatures = _sign(_ab(), _txHash(other, address(0), 0, payload, Enum.Operation.Call));
+        bytes memory nested = _executeCall(other, address(0), payload, Enum.Operation.Call, signatures).data;
+        uint256 nonce = other.nonce();
+        signatures = _sign(_ab(), _txHash(safe, address(other), 0, nested, Enum.Operation.Call));
+        assertTrue(_execWith(safe, address(other), 0, nested, Enum.Operation.Call, signatures));
+        assertEq(other.nonce(), nonce + 1);
+    }
+
+    function testOrdinaryMultiSendRejectsBeforeAndAfterActivation() public {
+        for (uint256 phase = 0; phase < 2; ++phase) {
+            for (uint256 op = 0; op < 2; ++op) {
+                bytes memory data = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(address(0xCAFE), "")));
+                bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, data, Enum.Operation(op));
+                uint256 nonce = safe.nonce();
+                vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+                _execWith(safe, address(multiSend), 0, data, Enum.Operation(op), signatures);
+                assertEq(safe.nonce(), nonce);
+            }
+            if (phase == 0) _activate(safe, _ab());
+        }
+    }
+
+    function testModuleMultiSendRejects() public {
+        bytes memory data = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(address(0xCAFE), "")));
+        vm.prank(address(safe));
+        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        ISafeModuleGuard(address(guard))
+            .checkModuleTransaction(address(multiSend), 0, data, Operation.DELEGATECALL, address(0xCAFE));
     }
 
     // Activation
@@ -504,20 +657,22 @@ contract SourceAuthorityTest is SourceAuthorityBase {
                     bytes memory batchData = abi.encodeCall(multiSend.multiSend, (packed));
                     bytes memory signatures =
                         _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
-                    vm.expectRevert(SourceAuthorityGuard.BatchSelfCallDenied.selector);
+                    vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
                     _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
                 }
             }
         }
     }
 
-    function testActivatedSafeStillCallsOthersAndBatchesThem() public {
+    function testActivatedSafeStillCallsOthersButRejectsOrdinaryBatches() public {
         _activated();
         vm.deal(address(safe), 1 ether);
         address recipient = address(0xCAFE);
         assertTrue(_exec(safe, _ab(), recipient, 1, "", Enum.Operation.Call));
         bytes memory batchData = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(recipient, "")));
-        assertTrue(_exec(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall));
+        bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
+        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
         assertEq(guard.selection(address(safe)).authorityHash, _hash(_graph(_record(safe))));
     }
 

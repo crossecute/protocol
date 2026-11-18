@@ -392,8 +392,8 @@ intermediate threshold changes do not request new signatures. One batch advances
 linked head once. Because registration and mutation are one SafeTx, a failure reverts
 both together with the nonce, and nothing spans two transactions. Updates of several
 Safes may share one outer transaction. The pre-hook allows this exact ownership batch
-as the only exception to the existing MultiSendCallOnly self-call ban; other batches
-stay blocked, and no generic allowance for Safe self-targets is implied.
+as the only permitted use of the pinned MultiSendCallOnly executor. Other owner batches
+and all module batches reject, including before activation.
 
 Source execution, cancellation and nonce consumption do not revoke a signed update's
 portable authorization. A helper's ability to execute batches does not itself
@@ -415,13 +415,14 @@ policies allow, so its owners, threshold, guards, handler, modules and singleton
 through a recognized update:
 
 - any call to the Safe itself;
-- any delegatecall except to the pinned MultiSendCallOnly and SignMessageLib;
-- a MultiSendCallOnly batch with a call to the Safe itself, other than the one ownership
-  batch.
+- any delegatecall except to the pinned SignMessageLib or the recognized ownership batch;
+- any ordinary use of the pinned MultiSendCallOnly executor.
 
-A Safe's own live record, authority or staged call, rejects any further owner transaction of
-that Safe in the same outer transaction, and stageUpdate for it. A Safe that has not
-activated is governed by its policies alone, as in #107.
+Every owner execution holds a per-Safe lock until its matching post-hook. During that
+execution, further owner transactions, guarded module transactions and stageUpdate for
+the same Safe reject. Separate executions after cleanup and executions by other Safes
+remain allowed. The lock and the restriction of MultiSend to authority changes apply
+before activation as well; other unactivated calls remain governed by policy.
 
 ## Parent responsibility and accepted authorization
 

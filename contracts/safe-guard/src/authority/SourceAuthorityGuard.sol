@@ -75,7 +75,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     error PositionNotExecuted(address safe, bytes32 position);
     error SelfCallDenied();
     error DelegatecallDenied(address target);
-    error BatchSelfCallDenied();
+    error OrdinaryBatchDenied();
     error FinalOwnersMismatch();
     error AuthorityHashMismatch(bytes32 live, bytes32 txHash);
 
@@ -103,8 +103,8 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     }
 
     /// @inheritdoc ISourceAuthorityGuard
-    /// @dev A Safe with a live record, authority or staged-call, cannot be staged for: this is the
-    ///      per-Safe nesting lock (X10). A later stage replaces an earlier unconsumed one.
+    /// @dev Staging rejects during any owner execution under the per-Safe lock (X10).
+    ///      A later stage replaces an earlier unconsumed one.
     function stageUpdate(
         address sourceSafe,
         AuthorityGraph calldata newGraph,
@@ -133,7 +133,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         _requireMarker(ReceiverAuthority.UpdateKind.Selection);
     }
 
-    /// @dev Whether the host has a live staged-call record for `safe`.
+    /// @dev Whether the host has a live owner execution for `safe`.
     function _executionLive(address safe) internal view virtual returns (bool);
 
     function _activated(address safe) internal view returns (bool) {
@@ -153,6 +153,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         ReceiverAuthority.State storage $ = $authority[safe];
         bool activated = $.selection.authorityHash != bytes32(0);
         if (!_isAuthorityCall(safeTx)) {
+            if (safeTx.to == MULTISEND_CALL_ONLY) revert OrdinaryBatchDenied();
             if (activated) _requireInsideProtectedCalls(safe, safeTx);
             return false;
         }
@@ -239,16 +240,14 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             && AuthorityUpdateEncoding.isOwnershipBatch(address(this), safeTx.data);
     }
 
-    /// @dev What an activated Safe may not do, whatever its policies allow: call itself, delegatecall
-    ///      anything but the pinned helpers, or reach itself through a MultiSendCallOnly batch.
+    /// @dev Ordinary MultiSend calls reject before this check. An activated Safe may neither call
+    ///      itself nor delegatecall anything but the pinned signing library outside an update.
     ///      Together these keep owners, threshold, guards, handler, modules and singleton fixed
     ///      outside a recognized update.
     function _requireInsideProtectedCalls(address safe, SafeTx memory safeTx) private view {
         if (safeTx.to == safe) revert SelfCallDenied();
         if (safeTx.operation == 0) return;
-        if (safeTx.to == MULTISEND_CALL_ONLY) {
-            if (AuthorityUpdateEncoding.batchCallsSelf(safeTx.data, safe)) revert BatchSelfCallDenied();
-        } else if (safeTx.to != SIGN_MESSAGE_LIB) {
+        if (safeTx.to != SIGN_MESSAGE_LIB) {
             revert DelegatecallDenied(safeTx.to);
         }
     }

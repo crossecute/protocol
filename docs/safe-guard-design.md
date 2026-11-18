@@ -58,10 +58,11 @@ These are settled. The sections below describe each in full.
   `sendMessage` and `bootstrap`. It pins no guard address and never falls back to an unsigned send.
 - **Unconsumed records.** A staged call that nobody consumes succeeds and is cleared in the
   post-hook, including a call to an unrelated contract that shares the selector.
-- **Nesting.** While a Safe has a live staged record, every nested owner execution by that
-  Safe is rejected, before and after consumption, until the post-hook clears it.
-- **No other staging paths.** A staged selector inside a single signed MultiSend and any module
-  transaction stage nothing. With the module guard installed, a module transaction with either
+- **Nesting.** Every owner execution holds a per-Safe lock until its matching post-hook,
+  even if it stages no record. Same-Safe owner and guarded module reentry rejects.
+- **MultiSend.** The pinned executor is accepted only for a recognized authority-change
+  batch. Ordinary owner batches and module batches reject, including before activation.
+- **No other staging paths.** Module transactions stage nothing. With the module guard installed, a module transaction with either
   staged selector, or with `registerRoot(bytes32)`, is rejected for every target.
 - **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
   cached, recognized by operation and selector alone, with no target or code-hash check. One
@@ -234,12 +235,14 @@ transmitter or receiver can import them.
 
 ## Nesting
 
-While a Safe has a live staged record, the guard rejects any nested owner execution by
-that same Safe, before and after consumption, until the post-hook clears the record. A
-separately signed execution after cleanup in the same parent transaction proceeds. Verifying
+Every owner execution holds a per-Safe transient lock, including calls that stage no
+message or authority record. Same-Safe owner and guarded module reentry and stageUpdate
+reject until the matching post-hook clears the lock. A post-hook without a live execution
+or with another transaction hash rejects. A separately signed execution after cleanup in
+the same parent transaction proceeds. Verifying
 a nested Safe owner's signature calls that Safe's signature validator, not
 `execTransaction`, so it never reaches the owner hook. Execution by a different Safe is
-subject to that Safe's own record and the inherited policy check.
+subject to that Safe's own lock and the inherited policy check.
 
 ## Module execution
 
