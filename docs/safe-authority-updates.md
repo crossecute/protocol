@@ -37,8 +37,10 @@ trusted provider seed every receiver (#148).
 A receiver starts from its bootstrap. The Safe's transmitter sends the guard's current
 selection: its updateHead and the selected graph. The bootstrap caller supplies the
 graph, and the transmitter requires its hash to equal the guard's
-selection(safe).authorityHash, so the graph matches the head without a guard graph-readback
-entry point. A signed bootstrap reverts until the Safe has [activated](#activation). The
+selection(safe).authorityHash, so the graph matches the head without depending on graph
+readback. The source guard also exposes graph(sourceSafe, authorityHash), returning
+authenticated current or retained graphs from that Safe's cache. Readback never derives
+a live child snapshot, advances a head or replaces a missing transition proof. A signed bootstrap reverts until the Safe has [activated](#activation). The
 destination stores the head and graph on the provider's and source transceiver's
 authentication: signatures cannot prove a carried graph. Owners confirm a receiver's
 selection and graph before relying on it. The root's record equals its live owners,

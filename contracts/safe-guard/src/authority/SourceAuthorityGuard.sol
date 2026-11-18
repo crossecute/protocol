@@ -93,6 +93,11 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     }
 
     /// @inheritdoc ISourceAuthorityGuard
+    function graph(address sourceSafe, bytes32 authorityHash) external view returns (AuthorityGraph memory) {
+        return $authority[sourceSafe].graph(authorityHash);
+    }
+
+    /// @inheritdoc ISourceAuthorityGuard
     function executed(address sourceSafe, bytes32 updateHead) external view returns (bool) {
         return $heads[sourceSafe][updateHead] != bytes32(0);
     }

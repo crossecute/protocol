@@ -205,8 +205,13 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
 
     function testAdoptsAChildRotationOnceItExecuted() public {
         _activateA(bHead0);
+        bytes32 parentHash = guard.selection(address(a)).authorityHash;
         ChildUpdate memory child = _runBSwap(KEY_C, KEY_D);
         bytes32 bHead1 = _head(b);
+        AuthorityGraph memory retained = guard.graph(address(a), parentHash);
+        assertEq(retained.nodes[1].record.owners[0].owner, vm.addr(KEY_C));
+        assertEq(retained.nodes[1].position, bHead0);
+        assertEq(guard.selection(address(a)).authorityHash, parentHash);
 
         AuthorityGraph memory next = _aGraph(_record(b), bHead1);
         ChildUpdate[] memory children = new ChildUpdate[](1);

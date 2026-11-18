@@ -55,6 +55,10 @@ interface ISourceAuthorityGuard {
     /// @notice Source-side selection for a Safe, separate from destination selections.
     function selection(address sourceSafe) external view returns (AuthoritySelection memory);
 
+    /// @notice Read a graph authenticated for sourceSafe, including retained past graphs.
+    /// @dev Readback does not change the selected graph or prove any later child transition.
+    function graph(address sourceSafe, bytes32 authorityHash) external view returns (AuthorityGraph memory);
+
     /// @notice Whether updateHead is a position sourceSafe executed on this chain.
     /// @dev Written at activation and whenever one of the Safe's updates executes, so a Safe's
     ///      executed heads form one list with no forks. Covers every executed head, not only the

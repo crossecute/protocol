@@ -301,6 +301,23 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         assertTrue(safe.isOwner(vm.addr(KEY_D)));
     }
 
+    function testGraphReadbackRetainsAuthenticatedSnapshotsWithoutSelectingThem() public {
+        _activated();
+        bytes32 initialHash = guard.selection(address(safe)).authorityHash;
+        AuthorityGraph memory initial = guard.graph(address(safe), initialHash);
+        assertEq(_hash(initial), initialHash);
+        AuthorityGraph memory next = _changeOwners(vm.addr(KEY_D), 3, _ab());
+        bytes32 head = _head(safe);
+        assertEq(_hash(guard.graph(address(safe), _hash(next))), _hash(next));
+        assertEq(_hash(guard.graph(address(safe), initialHash)), initialHash);
+        assertEq(_head(safe), head);
+        assertEq(guard.selection(address(safe)).authorityHash, _hash(next));
+        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
+        guard.graph(address(safe), bytes32(uint256(0xBAD)));
+        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
+        guard.graph(address(0xBAD), initialHash);
+    }
+
     function testOwnershipChangeNeedsTheStagedGraph() public {
         _activated();
         AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
