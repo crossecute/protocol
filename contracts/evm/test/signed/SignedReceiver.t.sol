@@ -478,6 +478,29 @@ contract SignedReceiverTest is Test {
         assertEq(r.selection().updateHead, head);
     }
 
+    function test_missingCatchUpPrefixRejectsUntilEvidenceIsRestored() public {
+        AuthorityGraph memory graph = Records.graph(_records());
+        SafeTxEvidence memory first = _selectionUpdate(graph);
+        bytes32 firstHead = SafeHashes.transactionHash(first.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+        SafeTxEvidence memory second = _selectionUpdateAt(firstHead, graph);
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        bytes32 originalHead = r.selection().updateHead;
+        bytes32 originalGraph = r.authorityGraph();
+        bytes[] memory submissions = new bytes[](1);
+        submissions[0] = abi.encode(second, graph, new ChildUpdate[](0));
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        r.submitAuthorityBatch(submissions);
+        assertEq(r.selection().updateHead, originalHead);
+        assertEq(r.authorityGraph(), originalGraph);
+
+        submissions = new bytes[](2);
+        submissions[0] = abi.encode(first, graph, new ChildUpdate[](0));
+        submissions[1] = abi.encode(second, graph, new ChildUpdate[](0));
+        r.submitAuthorityBatch(submissions);
+        assertEq(r.selection().updateHead, SafeHashes.transactionHash(second.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
+        _deliver(abi.encode(WIRE_AUTHORITY, submissions[1]));
+    }
+
     /// @dev T18: running out of gas partway through verification or storage leaves no partial
     ///      authority, cache or replay state on any route, and the same submission then applies.
     function test_outOfGasAuthoritySubmissionLeavesNoPartialState() public {

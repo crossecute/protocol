@@ -27,6 +27,9 @@ jobs:
 
       - run: forge --version
 
+      - name: Check authority archive and retrieval
+        run: python3 -B -m unittest discover -s ../../tools/authority-archive -v
+
       - run: forge fmt --check
 
       - run: forge build

@@ -56,6 +56,25 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         assertEq(position, _hash(b2, _b()));
     }
 
+    function test_missingChildLinkRejectsUntilEvidenceIsRestored() public {
+        (SafeTxEvidence memory b1, AuthorityGraph memory g1) = _b1(BOB);
+        (SafeTxEvidence memory b2, AuthorityGraph memory g2) = _b2(b1);
+        AuthorityGraph memory next = _graph(_rA0(), _node(g2.nodes[0].record, _hash(b2, _b())), _node(_rC0(), _pC0()));
+        bytes32 head = receiver.selection().updateHead;
+        _expectSelectA(
+            next,
+            _children(_childUpdate(b2, g2)),
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPredecessor.selector, 0)
+        );
+        assertEq(receiver.selection().updateHead, head);
+        (, bytes32 beforePosition) = receiver.selectedNode(1);
+        assertEq(beforePosition, _pB0());
+
+        _selectA(next, _children(_childUpdate(b1, g1), _childUpdate(b2, g2)));
+        (, bytes32 afterPosition) = receiver.selectedNode(1);
+        assertEq(afterPosition, _hash(b2, _b()));
+    }
+
     function test_rejectsChildBehindOrOffItsStoredPosition() public {
         (SafeTxEvidence memory b1, AuthorityGraph memory g1) = _b1(BOB);
         (SafeTxEvidence memory b2, AuthorityGraph memory g2) = _b2(b1);
