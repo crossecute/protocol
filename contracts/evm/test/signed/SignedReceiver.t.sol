@@ -193,10 +193,14 @@ contract SignedReceiverTest is Test {
         }
     }
 
-    function _updateEvidence(SafeTx memory tx_) internal returns (SafeTxEvidence memory evidence) {
+    function _updateEvidence(SafeTx memory tx_) internal returns (SafeTxEvidence memory) {
+        return _updateEvidence(tx_, _quorum());
+    }
+
+    function _updateEvidence(SafeTx memory tx_, Sig[] memory sigs) internal returns (SafeTxEvidence memory evidence) {
         tx_.nonce = ++nonceSeq;
         evidence.signedSafeTx.safeTx = tx_;
-        evidence.signedSafeTx.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(tx_, SAFE, SOURCE_CHAIN));
+        evidence.signedSafeTx.signatures = SafeSigs.blob(sigs, SafeHashes.transactionHash(tx_, SAFE, SOURCE_CHAIN));
     }
 
     function _selectionUpdate(AuthorityGraph memory next) internal returns (SafeTxEvidence memory) {
@@ -215,12 +219,22 @@ contract SignedReceiverTest is Test {
         return _updateEvidence(tx_);
     }
 
-    function _ownerUpdate() internal returns (SafeTxEvidence memory evidence, AuthorityGraph memory next) {
+    function _ownerUpdate() internal returns (SafeTxEvidence memory, AuthorityGraph memory) {
+        return _ownerSwap(1, 7, _quorum());
+    }
+
+    /// @dev Swaps the first owner slot of the fixture record from `fromKey` to `toKey`.
+    function _ownerSwap(uint256 fromKey, uint256 toKey, Sig[] memory sigs)
+        internal
+        returns (SafeTxEvidence memory evidence, AuthorityGraph memory next)
+    {
         next = Records.graph(_records());
-        next.nodes[0].record.owners[0].owner = vm.addr(7);
+        next.nodes[0].record.owners[0].owner = vm.addr(toKey);
         Call[] memory mutations = new Call[](1);
         mutations[0] = Call(
-            SAFE, 0, abi.encodeWithSignature("swapOwner(address,address,address)", address(1), vm.addr(1), vm.addr(7))
+            SAFE,
+            0,
+            abi.encodeWithSignature("swapOwner(address,address,address)", address(1), vm.addr(fromKey), vm.addr(toKey))
         );
         SafeTx memory tx_;
         tx_.to = address(0x5678);
@@ -234,7 +248,7 @@ contract SignedReceiverTest is Test {
             ),
             mutations
         );
-        evidence = _updateEvidence(tx_);
+        evidence = _updateEvidence(tx_, sigs);
     }
 
     function test_anAuthorityUpdateChangesDispatchVerificationAndRejectsReplay() public {
@@ -554,6 +568,100 @@ contract SignedReceiverTest is Test {
         base.finalize(deferred);
     }
 
+    /// @dev T22: a retry authenticates under the selected graph before the replay record answers.
+    function test_messageRetriesReverifyUnderTheSelectedGraph() public {
+        SafeTxEvidence memory kept = _signed(
+            abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("kept"), new bytes[](0))),
+            SafeSigs.two(SafeSigs.eoa(2), SafeSigs.eoa(3))
+        );
+        SafeTxEvidence memory retired = _message(_here(receiver), _calls("retired"));
+        ISignedReceiver(receiver).submitMessage(kept);
+        ISignedReceiver(receiver).submitMessage(retired);
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        SignedReceiver(payable(receiver)).submitAuthority(update, next, new ChildUpdate[](0));
+
+        vm.recordLogs();
+        _deliver(abi.encode(WIRE_STANDALONE, kept));
+        ISignedReceiver(receiver).submitMessage(kept);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 2);
+        assertEq(logs[0].topics[0], ISignedReceiver.DuplicateMessage.selector);
+        assertEq(logs[1].topics[0], ISignedReceiver.DuplicateMessage.selector);
+
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        _deliver(abi.encode(WIRE_STANDALONE, retired));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        ISignedReceiver(receiver).submitMessage(retired);
+        assertEq(sink.hits(), 3);
+    }
+
+    /// @dev T22: the leaf nonce and its execution records carry across an authority change; a root
+    ///      signed by the removed owner stops authorizing, including repeats of executed leaves.
+    function test_leafOrderAndExecutionRecordsSurviveAnAuthorityChange() public {
+        ExecutionLeaf memory l0 = _leaf(0, _calls("a"));
+        ExecutionLeaf memory l1 = _leaf(1, _calls("b"));
+        (SafeTxEvidence memory oldRoot, bytes32[][] memory p) = _register(_two(l0, l1));
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        ISignedReceiver(receiver).submitLeaf(oldRoot, l0, p[0]);
+        bytes32 executed = r.executionAt(0);
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        r.submitAuthority(update, next, new ChildUpdate[](0));
+
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        ISignedReceiver(receiver).submitLeaf(oldRoot, l1, p[1]);
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        _deliver(abi.encode(WIRE_MERKLE, oldRoot, l0, p[0]));
+
+        ExecutionLeaf memory conflicting = _leaf(0, _calls("c"));
+        (SafeTxEvidence memory newRoot, bytes32[][] memory q) =
+            _register(_two(conflicting, l1), SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3)));
+        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.ConflictingLeaf.selector, 0));
+        ISignedReceiver(receiver).submitLeaf(newRoot, conflicting, q[0]);
+        _deliver(abi.encode(WIRE_MERKLE, newRoot, l1, q[1]));
+        assertEq(r.nextNonce(), 2);
+        assertEq(r.executionAt(0), executed);
+        assertEq(sink.last(), "b");
+        assertEq(sink.hits(), 3);
+    }
+
+    /// @dev T22: a return to the earlier owners revives their unexecuted approvals but never
+    ///      re-runs executed or cancelled work.
+    function test_returningToEarlierOwnersRevivesOnlyUnconsumedApprovals() public {
+        Call[] memory deferred = abi.decode(_calls("deferred"), (Call[]));
+        bytes32 commitment = Commitment.hashCalls(deferred);
+        Call[] memory commit = new Call[](1);
+        commit[0] = Call(receiver, 0, abi.encodeCall(ICommitFinalize.commit, (commitment)));
+        Call[] memory cancel = new Call[](1);
+        cancel[0] = Call(receiver, 0, abi.encodeCall(ICancel.cancel, (commitment)));
+        SafeTxEvidence memory committed = _message(_here(receiver), abi.encode(commit));
+        SafeTxEvidence memory cancelled = _message(_here(receiver), abi.encode(cancel));
+        SafeTxEvidence memory pending = _message(_here(receiver), _calls("pending"));
+        ISignedReceiver(receiver).submitMessage(committed);
+        ISignedReceiver(receiver).submitMessage(cancelled);
+
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        (SafeTxEvidence memory away, AuthorityGraph memory rotated) = _ownerUpdate();
+        r.submitAuthority(away, rotated, new ChildUpdate[](0));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        r.submitMessage(pending);
+        (SafeTxEvidence memory back, AuthorityGraph memory original) =
+            _ownerSwap(7, 1, SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3)));
+        r.submitAuthority(back, original, new ChildUpdate[](0));
+        assertEq(r.authorityGraph(), _graph());
+        assertTrue(r.selection().updateHead != bytes32(uint256(1)));
+
+        r.submitMessage(pending);
+        assertEq(sink.last(), "pending");
+        vm.recordLogs();
+        r.submitMessage(committed);
+        _deliver(abi.encode(WIRE_STANDALONE, cancelled));
+        assertEq(vm.getRecordedLogs().length, 2);
+        assertEq(ReceiverBase(payable(receiver)).outstanding(commitment), 0);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        ReceiverBase(payable(receiver)).finalize(deferred);
+        assertEq(sink.hits(), 2);
+    }
+
     function test_bootstrapRejectsTheWrongGuardOrZeroHead() public {
         address r = _plainReceiver();
         SignedBootstrap memory bootstrap = abi.decode(_bootstrapBody(_calls("x")), (SignedBootstrap));
@@ -744,7 +852,11 @@ contract SignedReceiverTest is Test {
     /// @notice Build a tree, sign its root registration and return proofs for every leaf.
     /// @dev Receiver tests need independently generated membership evidence without requiring a
     ///      source registration transaction.
-    function _register(ExecutionLeaf[] memory leaves)
+    function _register(ExecutionLeaf[] memory leaves) internal returns (SafeTxEvidence memory, bytes32[][] memory) {
+        return _register(leaves, _quorum());
+    }
+
+    function _register(ExecutionLeaf[] memory leaves, Sig[] memory sigs)
         internal
         returns (SafeTxEvidence memory evidence, bytes32[][] memory proofs)
     {
@@ -756,7 +868,7 @@ contract SignedReceiverTest is Test {
         for (uint256 i; i < leaves.length; ++i) {
             proofs[i] = MerkleBuilder.proof(hashes, i);
         }
-        evidence = _signed(abi.encodeCall(ISignedTransmitter.registerRoot, (MerkleBuilder.root(hashes))), _quorum());
+        evidence = _signed(abi.encodeCall(ISignedTransmitter.registerRoot, (MerkleBuilder.root(hashes))), sigs);
     }
 
     /// @notice Wrap a single execution leaf in an array.
