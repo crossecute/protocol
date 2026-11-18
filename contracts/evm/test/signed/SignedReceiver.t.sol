@@ -478,6 +478,75 @@ contract SignedReceiverTest is Test {
         assertEq(r.selection().updateHead, head);
     }
 
+    /// @dev T18: running out of gas partway through verification or storage leaves no partial
+    ///      authority, cache or replay state on any route, and the same submission then applies.
+    function test_outOfGasAuthoritySubmissionLeavesNoPartialState() public {
+        (SafeTxEvidence memory first, AuthorityGraph memory rotated) = _ownerUpdate();
+        bytes32 rotatedHash = AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, rotated);
+        SafeTx memory tx_;
+        tx_.to = address(0x1234);
+        tx_.data = abi.encodeCall(
+            ISourceAuthorityGuard.selectAuthority,
+            (AuthorityUpdate(SafeHashes.transactionHash(first.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN), rotatedHash))
+        );
+        SafeTxEvidence memory second = _updateEvidence(tx_, SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3)));
+        bytes[] memory submissions = new bytes[](2);
+        submissions[0] = abi.encode(first, rotated, new ChildUpdate[](0));
+        submissions[1] = abi.encode(second, rotated, new ChildUpdate[](0));
+        bytes32 secondHead = SafeHashes.transactionHash(second.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+
+        bytes[3] memory calls = [
+            abi.encodeCall(SignedReceiver.submitAuthority, (first, rotated, new ChildUpdate[](0))),
+            abi.encodeCall(
+                HyperlaneReceiver.handle,
+                (HOME_DOMAIN, bytes32(uint256(uint160(TRANSMITTER))), abi.encode(WIRE_AUTHORITY, submissions[0]))
+            ),
+            abi.encodeCall(SignedReceiver.submitAuthorityBatch, (submissions))
+        ];
+        bytes32 firstHead = SafeHashes.transactionHash(first.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+        bytes32 recordHash = AuthorityUpdateEncoding.recordHash(rotated.nodes[0].record);
+        for (uint256 route; route < 3; ++route) {
+            _checkOutOfGas(
+                calls[route],
+                route == 1 ? address(mailbox) : address(this),
+                rotatedHash,
+                recordHash,
+                route == 2 ? secondHead : firstHead
+            );
+        }
+    }
+
+    function _checkOutOfGas(bytes memory data, address caller, bytes32 graphHash, bytes32 recordHash, bytes32 head)
+        private
+    {
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        uint256 snapshot = vm.snapshotState();
+        vm.prank(caller);
+        uint256 g = gasleft();
+        (bool ok,) = receiver.call(data);
+        uint256 used = g - gasleft();
+        assertTrue(ok);
+        assertTrue(vm.revertToState(snapshot));
+        for (uint256 part = 1; part < 16; part += 2) {
+            vm.prank(caller);
+            // forge-lint: disable-next-line(return-bomb) the callee is the receiver under test
+            (ok,) = receiver.call{gas: used * part / 16}(data);
+            assertFalse(ok);
+            assertEq(r.selection().updateHead, bytes32(uint256(1)));
+            assertEq(r.authorityGraph(), _graph());
+            vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
+            r.graph(graphHash);
+            vm.expectRevert(ReceiverAuthority.RecordNotCached.selector);
+            r.record(recordHash);
+        }
+        vm.prank(caller);
+        (ok,) = receiver.call(data);
+        assertTrue(ok);
+        assertEq(r.authorityGraph(), graphHash);
+        assertEq(r.selection().updateHead, head);
+        assertTrue(vm.revertToState(snapshot));
+    }
+
     function test_measureAuthorityReceiverOwnerRotation() public {
         (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
         bytes memory submission = abi.encode(update, next, new ChildUpdate[](0));
