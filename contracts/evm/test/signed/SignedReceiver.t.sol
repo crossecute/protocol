@@ -8,6 +8,7 @@ import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAut
 import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
+import {AuthorityRecognition} from "src/messaging/authority/AuthorityRecognition.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
 import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
@@ -15,6 +16,7 @@ import {IReceiverInit, ReceiverBase, ICommitFinalize, ICancel} from "src/messagi
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
+import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {SafeAuthorityRecord, SafeOwner, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
@@ -281,6 +283,136 @@ contract SignedReceiverTest is Test {
         _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0))));
         assertEq(SignedReceiver(payable(receiver)).selection().updateHead, bytes32(uint256(1)));
         _deliver(abi.encode(WIRE_AUTHORITY, valid));
+    }
+
+    enum AuthorityFault {
+        WrongHelper,
+        WrongGuard,
+        UnknownSelector,
+        NonzeroValue,
+        WrongOperation,
+        WrongSourceChain,
+        WrongSourceSafe,
+        ChangedGraph,
+        ProposedOwnerSignature,
+        RepeatedSigner,
+        ShortSignatures,
+        ApprovedHash,
+        EoaContractSignature,
+        MissingSigner
+    }
+
+    function _faultyAuthority(SafeTxEvidence memory update, AuthorityGraph memory next, AuthorityFault fault)
+        private
+        returns (SafeTxEvidence memory, bytes4 errorSelector)
+    {
+        SafeTx memory tx_ = update.signedSafeTx.safeTx;
+        if (fault == AuthorityFault.WrongHelper) {
+            tx_.to = address(0x5679);
+            errorSelector = AuthorityRecognition.NotAnAuthorityCall.selector;
+        } else if (fault == AuthorityFault.WrongGuard) {
+            (AuthorityUpdate memory change, Call[] memory mutations) =
+                AuthorityUpdateEncoding.decodeOwnershipBatch(address(0x1234), SAFE, tx_.data);
+            tx_.data = AuthorityUpdateEncoding.ownershipBatchData(address(0x1235), SAFE, change, mutations);
+            errorSelector = AuthorityUpdateEncoding.InvalidOwnershipBatch.selector;
+        } else if (fault == AuthorityFault.UnknownSelector) {
+            tx_.to = address(0x1234);
+            tx_.operation = 0;
+            tx_.data = hex"deadbeef";
+            errorSelector = AuthorityRecognition.UnknownGuardSelector.selector;
+        } else if (fault == AuthorityFault.NonzeroValue) {
+            tx_.value = 1;
+            errorSelector = AuthorityRecognition.NotAnAuthorityCall.selector;
+        } else if (fault == AuthorityFault.WrongOperation) {
+            tx_.operation = 0;
+            errorSelector = AuthorityRecognition.NotAnAuthorityCall.selector;
+        }
+        update = _updateEvidence(tx_);
+        bytes32 hash = SafeHashes.transactionHash(update.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+        if (fault == AuthorityFault.WrongSourceChain || fault == AuthorityFault.WrongSourceSafe) {
+            hash = SafeHashes.transactionHash(
+                update.signedSafeTx.safeTx,
+                fault == AuthorityFault.WrongSourceSafe ? address(0x5AFF) : SAFE,
+                fault == AuthorityFault.WrongSourceChain ? SOURCE_CHAIN + 1 : SOURCE_CHAIN
+            );
+            update.signedSafeTx.signatures = SafeSigs.blob(_quorum(), hash);
+            errorSelector = SafeQuorum.NotAnOwner.selector;
+        } else if (fault == AuthorityFault.ChangedGraph) {
+            next.nodes[0].record.threshold = 1;
+            errorSelector = ReceiverAuthority.ReplacementHashMismatch.selector;
+        } else if (fault == AuthorityFault.ProposedOwnerSignature) {
+            update.signedSafeTx.signatures = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3)), hash);
+            errorSelector = SafeQuorum.NotAnOwner.selector;
+        } else if (fault == AuthorityFault.RepeatedSigner) {
+            update.signedSafeTx.signatures = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(1)), hash);
+            errorSelector = SafeQuorum.SignersNotAscending.selector;
+        } else if (fault == AuthorityFault.ShortSignatures) {
+            update.signedSafeTx.signatures = hex"01";
+            errorSelector = SafeSignaturesUtils.SignaturesTooShort.selector;
+        } else if (fault == AuthorityFault.ApprovedHash) {
+            update.signedSafeTx.signatures[64] = 0x01;
+            errorSelector = SafeSignaturesUtils.ApprovedHashUnsupported.selector;
+        } else if (fault == AuthorityFault.EoaContractSignature) {
+            update.signedSafeTx.signatures =
+                SafeSigs.blob(SafeSigs.two(SafeSigs.nested(vm.addr(1), hex"01"), SafeSigs.eoa(3)), hash);
+            errorSelector = SafeQuorum.NotAnOwner.selector;
+        } else if (fault == AuthorityFault.MissingSigner) {
+            update.signedSafeTx.signatures = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), hash);
+            errorSelector = SafeSignaturesUtils.SignaturesTooShort.selector;
+        }
+        return (update, errorSelector);
+    }
+
+    function _submitAuthorityRoute(uint256 route, SafeTxEvidence memory update, AuthorityGraph memory next) private {
+        if (route == 0) {
+            SignedReceiver(payable(receiver)).submitAuthority(update, next, new ChildUpdate[](0));
+        } else if (route == 1) {
+            _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0))));
+        } else {
+            bytes[] memory submissions = new bytes[](1);
+            submissions[0] = abi.encode(update, next, new ChildUpdate[](0));
+            SignedReceiver(payable(receiver)).submitAuthorityBatch(submissions);
+        }
+    }
+
+    function test_authorityFaultsRejectAcrossAllSubmissionRoutes() public {
+        uint256 snapshot = vm.snapshotState();
+        for (uint256 fault = 0; fault <= uint256(type(AuthorityFault).max); ++fault) {
+            for (uint256 route = 0; route < 3; ++route) {
+                emit log_named_uint("authority fault", fault);
+                emit log_named_uint("submission route", route);
+                _checkAuthorityFault(AuthorityFault(fault), route);
+                assertTrue(vm.revertToState(snapshot));
+            }
+        }
+        assertTrue(vm.deleteStateSnapshot(snapshot));
+    }
+
+    function _checkAuthorityFault(AuthorityFault fault, uint256 route) private {
+        (SafeTxEvidence memory valid, AuthorityGraph memory next) = _ownerUpdate();
+        bytes memory validSubmission = abi.encode(valid, next, new ChildUpdate[](0));
+        bytes32 validGraph = AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next);
+        SafeTxEvidence memory invalid = abi.decode(abi.encode(valid), (SafeTxEvidence));
+        bytes4 errorSelector;
+        (invalid, errorSelector) = _faultyAuthority(invalid, next, fault);
+        vm.expectPartialRevert(errorSelector);
+        _submitAuthorityRoute(route, invalid, next);
+
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        assertEq(r.selection().updateHead, bytes32(uint256(1)));
+        assertEq(r.authorityGraph(), _graph());
+        assertEq(keccak256(abi.encode(r.authorityRecords())), keccak256(abi.encode(_records())));
+        assertEq(r.nextNonce(), 0);
+        assertEq(sink.hits(), 1);
+        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
+        r.graph(validGraph);
+        bytes32 rejectedRecord = AuthorityUpdateEncoding.recordHash(next.nodes[0].record);
+        vm.expectRevert(ReceiverAuthority.RecordNotCached.selector);
+        r.record(rejectedRecord);
+
+        _deliver(abi.encode(WIRE_AUTHORITY, validSubmission));
+        assertEq(r.authorityGraph(), validGraph);
+        assertEq(r.selection().updateHead, SafeHashes.transactionHash(valid.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
     }
 
     function test_bootstrapHeadAloneDoesNotAuthenticateAuthorityRetry() public {
