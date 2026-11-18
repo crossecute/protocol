@@ -13,6 +13,7 @@ import {Client} from "@ccip/libraries/Client.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderTransmitterSpec,
@@ -82,7 +83,7 @@ contract CcipTransceiverSendTest is
 ///         `lzReceive`), so `isSourceTransmitter` inside `ccipReceive` is the only
 ///         authentication check here. `CcipReceiver` keeps no per-origin state, so every
 ///         non-source sender is refused the same way regardless of `sourceChainSelector`.
-contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
+contract CcipReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, CcipFixture {
     /// @dev `abi.decode(sender, (address))` validates the high bytes and reverts without data.
     function _wideSenderRevert(bytes32) internal pure override returns (bytes memory) {
         return "";

@@ -15,7 +15,7 @@ import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
-import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
+import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
@@ -78,6 +78,14 @@ abstract contract LzFixture is ProviderGasFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return LzDeploy.receiverImplementation(address(endpoint));
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new LzReceiver(address(endpoint), guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {

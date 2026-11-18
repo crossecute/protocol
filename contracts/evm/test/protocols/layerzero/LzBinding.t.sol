@@ -18,6 +18,7 @@ import {Payload} from "src/messaging/Payload.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
+    ProviderSignedLockSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
     ProviderTransmitterSpec,
@@ -116,7 +117,7 @@ abstract contract LzWriteOncePeerCheck is Test {
 
 /// @notice LayerZero rejects a wrong sender inside the vendored OApp SDK, before `_lzReceive`
 ///         and therefore this protocol's own code ever runs (the R3.3 exception).
-contract LzReceiveTest is ProviderWideSenderSpec, LzFixedPeerCheck, LzFixture {
+contract LzReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, LzFixedPeerCheck, LzFixture {
     function test_thePeerHasNoSetter() public {
         _assertPeerIsFixed(receiver, BASE_EID, SOURCE_TRANSMITTER);
     }

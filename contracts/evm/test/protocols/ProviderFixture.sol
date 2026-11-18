@@ -68,6 +68,10 @@ abstract contract ProviderConduitFixture is Test {
 ///         suites inherit its one concrete fixture, so each fact about a provider is written
 ///         once.
 abstract contract ProviderFixture is ProviderConduitFixture {
+    /// @notice A new receiver implementation with the given authority pins, so signed mode can
+    ///         initialize.
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly) internal virtual returns (address);
+
     /// @notice A new implementation of the provider's plain transceiver, wrapped in its harness.
     function _transceiverImplementation() internal virtual returns (address);
 
