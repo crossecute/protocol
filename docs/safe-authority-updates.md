@@ -37,10 +37,10 @@ trusted provider seed every receiver (#148).
 A receiver starts from its bootstrap. The Safe's transmitter sends the guard's current
 selection: its updateHead and the selected graph. The bootstrap caller supplies the
 graph, and the transmitter requires its hash to equal the guard's
-selection(safe).authorityHash, so the graph matches the head without depending on graph
-readback. The source guard also exposes graph(sourceSafe, authorityHash), returning
-authenticated current or retained graphs from that Safe's cache. Readback never derives
-a live child snapshot, advances a head or replaces a missing transition proof. A signed bootstrap reverts until the Safe has [activated](#activation). The
+selection(safe).authorityHash. The source guard stores only that selection, executed-head
+record hashes and publication hashes. Full source graphs are caller-supplied witnesses,
+available from staging calldata and published update submissions. A signed bootstrap
+reverts until the Safe has [activated](#activation). The
 destination stores the head and graph on the provider's and source transceiver's
 authentication: signatures cannot prove a carried graph. Owners confirm a receiver's
 selection and graph before relying on it. The root's record equals its live owners,
@@ -323,10 +323,14 @@ unset permit plain mode only; setting just one is rejected. There is no destinat
 contract. A chain without the canonical MultiSendCallOnly is unsupported until a new
 generation.
 
-Each Safe's authority state is the receivers' own: the guard keeps a `ReceiverAuthority`
-state per Safe and runs the receivers' verification on it, so source and destinations accept
-the same updates. The guard adds the source-only facts: each Safe's executed heads with the
-record at each, the Safe's live configuration, and the rules for its calls.
+The guard keeps only an `AuthoritySelection` per Safe. Each update supplies currentGraph,
+whose source-chain graph hash must equal the selected authority hash before any supplied
+owners or child positions are trusted. ReceiverAuthority shares one transition verifier
+between this authenticated memory witness and receivers' stored full authority. The guard
+also keeps each executed head's root record hash and each published submission hash, and
+checks the Safe's live configuration and protected-call rules. Receivers retain full records
+and graph entries for ordinary message verification; application messages carry no extra
+authority witness.
 
 ```solidity
 activate(bytes32 authorityHash)
@@ -334,6 +338,7 @@ registerOwnershipChange(AuthorityUpdate update)
 selectAuthority(AuthorityUpdate update)
 stageUpdate(
     address sourceSafe,
+    AuthorityGraph currentGraph,
     AuthorityGraph newGraph,
     ChildUpdate[] childUpdates,
     bytes portableSignatures,          // always the full set destinations verify
@@ -344,8 +349,11 @@ executed(address sourceSafe, bytes32 updateHead) -> bool
 ```
 
 The signed calls carry hashes only. stageUpdate, called earlier in the same outer
-transaction, supplies the new graph and child updates those hashes commit to and the
-signatures destinations verify. portableSignatures is always supplied, even when it
+transaction, supplies the current graph, the new graph and child updates those hashes
+commit to, and the signatures destinations verify. Activation has no current graph to
+authenticate and does not use currentGraph; callers supply an empty graph. For successors,
+currentGraph must match the selected hash, including owner order, kinds, threshold and
+every descendant position. portableSignatures is always supplied, even when it
 equals the executing signatures; nestedApprovals are the signed signMessage
 transactions behind empty nested signatures. Anyone may call it. The guard holds the
 data in transient storage for that Safe's next guarded transaction, under its
@@ -354,7 +362,11 @@ belongs to the policy engine's context extension, which allows one extension per
 blob. On execution the guard emits portableSignatures and nestedApprovals;
 destinations receive those with newGraph and childUpdates, never Safe's executing
 signatures. Updates therefore execute as multicall([stageUpdate, execTransaction])
-through any multicall contract. It is not pinned: skipped or wrong staging only makes
+through any multicall contract. The variable-size currentGraph is source-only calldata:
+it authenticates the old owners and child positions without persistent source records.
+It is not included in receiver update or application wire messages. The current
+[measurements](benchmarks/authority-109/updates.md) report its source calldata cost.
+The multicall is not pinned: skipped or wrong staging only makes
 the guard revert, and transient data ends with the transaction. A plain
 execTransaction, as the Safe UI sends it, reverts for lack of staged data; owners can
 still sign there.

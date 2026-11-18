@@ -9,7 +9,7 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 | Path | What it holds |
 | --- | --- |
 | `src/CrossecuteGuard.sol` | The guard: `sendMessage` and `bootstrap` staging, consumption and cleanup, module rejection of both selectors and of `registerRoot`, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
-| `src/authority/SourceAuthorityGuard.sol` | #109's source half, inherited by the guard: per-Safe authority state over the receivers' `ReceiverAuthority` library, executed heads, `stageUpdate` staging, activation, ownership changes, `selectAuthority`, full portable submission publication and its hash lookup, authenticated graph readback and the calls an activated Safe may not make |
+| `src/authority/SourceAuthorityGuard.sol` | #109's source half, inherited by the guard: per-Safe selection hashes, executed-head record hashes, publication hashes, witness staging, activation, ownership changes, `selectAuthority`, full portable submission events and protected-call rules. Shared ReceiverAuthority verification authenticates the supplied current graph; receivers retain full authority records. |
 | `src/authority/ISourceAuthorityGuard.sol`, `AuthorityUpdateTypes.sol` | The source authority interface and its selection and update types |
 | `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their events and errors; above it, the file-level `SafeTx` and `SignedSafeTx` structs the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
@@ -86,10 +86,10 @@ signatures are two EOA signatures (130 bytes) plus a policy extension of the giv
 
 | Extension bytes | Staging and cleanup |
 | ---: | ---: |
-| 0 | 16,179 gas |
-| 1,024 | 31,441 gas |
-| 10,240 | 168,713 gas |
-| 102,400 | 1,470,766 gas |
+| 0 | 16,263 gas |
+| 1,024 | 31,526 gas |
+| 10,240 | 168,827 gas |
+| 102,400 | 1,471,173 gas |
 
 The calldata is not staged, but the guard copies it into memory to build the `SafeTx` and
 hashes it for the execution lock and staged record. With the same two signatures and a
@@ -97,9 +97,9 @@ hashes it for the execution lock and staged record. With the same two signatures
 
 | Payload bytes | Staging and cleanup |
 | ---: | ---: |
-| 1,024 | 16,637 gas |
-| 10,240 | 21,018 gas |
-| 102,400 | 64,726 gas |
+| 1,024 | 16,723 gas |
+| 10,240 | 21,118 gas |
+| 102,400 | 64,973 gas |
 
 A `bootstrap` takes the same staging and cleanup path. There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in
@@ -111,10 +111,10 @@ calldata per leaf of this size (the leaf, its offset and its length):
 
 | Leaves | Publication |
 | ---: | ---: |
-| 1 | 56,191 gas |
-| 3 | 69,501 gas |
-| 16 | 153,063 gas |
-| 256 | 1,848,709 gas |
+| 1 | 56,232 gas |
+| 3 | 69,545 gas |
+| 16 | 153,121 gas |
+| 256 | 1,849,034 gas |
 
 ```bash
 forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationGasTest' -vv

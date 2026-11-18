@@ -24,8 +24,9 @@ and how they connect. Where the two disagree, the contract is right.
 [`SourceAuthorityGuard`](../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
 source half of the [authority design](safe-authority-updates.md#source-guard-and-mutation-batch):
 activation, linked portable updates staged with stageUpdate, and ownership changes as one
-SafeTx through the pinned MultiSendCallOnly. Verification is the receivers' linked
-`ReceiverAuthority` library over each Safe's own state. The guard takes its pins at
+SafeTx through the pinned MultiSendCallOnly. The guard stores selection hashes and
+authenticates a caller-supplied currentGraph before using the linked ReceiverAuthority
+transition verifier. Receivers keep full records and graph entries. The guard takes its pins at
 deployment: MultiSendCallOnly, SignMessageLib, the Safe and SafeL2 singletons and the fallback
 handler. Before activation, policies govern ordinary calls, subject to the execution lock
 and the restriction of the pinned MultiSend executor to authority changes.
