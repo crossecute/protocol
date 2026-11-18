@@ -644,8 +644,10 @@ How the pieces fit:
 
 Not in #108's implementation:
 
-- **Authority tooling and live deployment validation** remain #109 work. Direct submitAuthority, provider relay/quote and receiver
-  rotation are integrated; SDK execution and durable evidence retrieval tooling remain.
+- **Authority tooling and live deployment validation.** #109 integrates direct submitAuthority,
+  provider relay/quote, receiver rotation and offline [evidence archives](../tools/authority-archive/README.md).
+  [SDK execution](https://github.com/crossecute/sdk/issues/14), archive-service operation
+  and live provider validation remain separate delivery work.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
   Tron), which is outside #108's scope. The source refuses a signed bootstrap to a
   destination that reports its receiver. Non-EVM destinations are [#128](https://github.com/crossecute/protocol/issues/128).

@@ -102,8 +102,9 @@ the seventh; what they mean for an operator is in the README.
   those live configurations. #109 now implements source activation and updates, receiver
   bootstrap and selected-graph verification, publication, provider relay/quote and atomic
   direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
-  remaining durable archives and evidence retrieval, external SDK execution tooling and
-  live-provider validation. Current authority update
+  external [SDK execution tooling](https://github.com/crossecute/sdk/issues/14),
+  archive-service operation and live-provider validation. The offline
+  [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
   measurements are in [updates.md](benchmarks/authority-109/updates.md).
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's

@@ -14,7 +14,8 @@ source-call recognition is one library shared by both. Signed receivers seed the
 from bootstrap, accept direct linked updates and verify application dispatch against the
 selected graph. Quote and bootstrap check the supplied witness against the source guard.
 Provider authority relay/quote adapters and exact authenticated provider retries are implemented.
-SDK execution tooling, durable evidence retrieval and deployment validation remain. No deployment is claimed. The
+Offline [archive and retrieval tooling](../tools/authority-archive/README.md) preserves graph witnesses and exact submissions.
+SDK execution tooling, archive-service operation and deployment validation remain. No deployment is claimed. The
 [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work)
 lists what remains.
 
@@ -166,8 +167,12 @@ an executed ownership change or selection, alongside `AuthorityUpdateExecuted`.
 using the staged portable signatures and nested approvals, never the source execution
 signature set. `publishedAuthority(sourceSafe, updateHead)` retains its keccak256 hash.
 Activation publishes no relayable submission. Publication and all its writes revert if
-source execution fails. Calldata and events provide archival inputs, but a durable
-archive and evidence retrieval tooling remain separate work.
+source execution fails. The [archive utility](../tools/authority-archive/README.md) imports
+full graphs and exact submissions against source hashes, retrieves selected witnesses and
+ordered catch-up chains, and rejects missing or corrupt evidence. Activation graphs must
+be preserved from staging calldata or a bootstrap, since activation publishes no full
+submission. Operators provide finalized inputs, independent backups and restoration
+checks. The utility does not run an indexer or replace on-chain signature verification.
 
 Anyone may call `relayAuthority(recipient, submission, attributes)` on a signed
 transmitter. `quoteAuthority` takes the same arguments. Both hash the carried SafeTx in
