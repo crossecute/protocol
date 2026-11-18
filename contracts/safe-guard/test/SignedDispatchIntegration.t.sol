@@ -263,13 +263,39 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         AuthorityGraph memory graph,
         ChildUpdate[] memory children
     ) internal returns (SafeTxEvidence memory evidence) {
+        Batch.Call[] memory calls;
+        (evidence, calls) = _authorityCalls(account, to, data, op, graph, children);
+        bytes32 digest = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(account), SOURCE);
+        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
+            vm.expectEmit(true, true, false, true, address(guard));
+            emit AuthorityPublished(address(account), digest, abi.encode(evidence, graph, children));
+        }
+        batch.run(calls);
+        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
+            assertEq(
+                guard.publishedAuthority(address(account), digest), keccak256(abi.encode(evidence, graph, children))
+            );
+        } else {
+            assertEq(guard.publishedAuthority(address(account), digest), bytes32(0));
+        }
+        selectedGraphs[address(account)] = abi.encode(graph);
+    }
+
+    function _authorityCalls(
+        Safe account,
+        address to,
+        bytes memory data,
+        Enum.Operation op,
+        AuthorityGraph memory graph,
+        ChildUpdate[] memory children
+    ) internal returns (SafeTxEvidence memory evidence, Batch.Call[] memory calls) {
         evidence.signedSafeTx.safeTx = _safeTx(account, to, data, op);
         bytes32 digest = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(account), SOURCE);
         _prepareAt(account, digest);
         evidence.signedSafeTx.signatures = _graphSign(account, digest);
         evidence.nestedApprovals =
             NestedApprovalCollector.collect(address(account), digest, evidence.signedSafeTx.signatures);
-        Batch.Call[] memory calls = new Batch.Call[](2);
+        calls = new Batch.Call[](2);
         calls[0] = Batch.Call(
             address(guard),
             abi.encodeCall(
@@ -286,19 +312,6 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
             ),
             false
         );
-        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
-            vm.expectEmit(true, true, false, true, address(guard));
-            emit AuthorityPublished(address(account), digest, abi.encode(evidence, graph, children));
-        }
-        batch.run(calls);
-        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
-            assertEq(
-                guard.publishedAuthority(address(account), digest), keccak256(abi.encode(evidence, graph, children))
-            );
-        } else {
-            assertEq(guard.publishedAuthority(address(account), digest), bytes32(0));
-        }
-        selectedGraphs[address(account)] = abi.encode(graph);
     }
 
     function _safeTx(Safe account, address to, bytes memory data, Enum.Operation op)
@@ -756,6 +769,105 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         _execute(_message(BASE, safe.nonce()));
         _deliverMessage(BASE, mailbox.sentLength() - 1);
         assertEq(effect.hits(), 1);
+    }
+
+    function _measureAuthority(uint256 shape) internal {
+        Safe child = _selectGraph(shape);
+        _create();
+        _bootstrap(BASE);
+        AuthorityGraph memory next = abi.decode(selectedGraphs[address(safe)], (AuthorityGraph));
+        ChildUpdate[] memory children = new ChildUpdate[](shape == 0 ? 0 : 1);
+        address target = address(guard);
+        Enum.Operation op = Enum.Operation.Call;
+        bytes memory data;
+        if (shape == 0) {
+            next.nodes[0].record.threshold = 3;
+            Call[] memory mutations = new Call[](1);
+            mutations[0] = Call(address(safe), 0, abi.encodeCall(safe.changeThreshold, (3)));
+            data = AuthorityUpdateEncoding.ownershipBatchData(
+                address(guard),
+                address(safe),
+                AuthorityUpdate(
+                    guard.selection(address(safe)).updateHead, AuthorityUpdateEncoding.graphHash(SOURCE, next)
+                ),
+                mutations
+            );
+            target = address(multiSend);
+            op = Enum.Operation.DelegateCall;
+        } else {
+            while (keys[child.getOwners()[0]] == 0) child = Safe(payable(child.getOwners()[0]));
+            AuthorityGraph memory childGraph = abi.decode(selectedGraphs[address(child)], (AuthorityGraph));
+            childGraph.nodes[0].record.threshold = 1;
+            Call[] memory mutations = new Call[](1);
+            mutations[0] = Call(address(child), 0, abi.encodeCall(child.changeThreshold, (1)));
+            SafeTxEvidence memory change = _authorityTransaction(
+                child,
+                address(multiSend),
+                AuthorityUpdateEncoding.ownershipBatchData(
+                    address(guard),
+                    address(child),
+                    AuthorityUpdate(
+                        guard.selection(address(child)).updateHead,
+                        AuthorityUpdateEncoding.graphHash(SOURCE, childGraph)
+                    ),
+                    mutations
+                ),
+                Enum.Operation.DelegateCall,
+                childGraph
+            );
+            children[0] = ChildUpdate(
+                address(child), change, childGraph.nodes[0].record, AuthorityUpdateEncoding.entries(childGraph)
+            );
+            for (uint256 i = 0; i < next.nodes.length; ++i) {
+                if (next.nodes[i].record.safe == address(child)) {
+                    next.nodes[i] =
+                        AuthorityNode(childGraph.nodes[0].record, guard.selection(address(child)).updateHead);
+                }
+            }
+            if (shape == 2) cached[address(child)] = true;
+            data = abi.encodeCall(
+                guard.selectAuthority,
+                (AuthorityUpdate(
+                        guard.selection(address(safe)).updateHead, AuthorityUpdateEncoding.graphHash(SOURCE, next)
+                    ))
+            );
+        }
+        (SafeTxEvidence memory evidence, Batch.Call[] memory calls) =
+            _authorityCalls(safe, target, data, op, next, children);
+        emit log_named_uint("authorityShape", shape);
+        uint256 g = gasleft();
+        batch.run(calls);
+        emit log_named_uint("authoritySourceBatchGas", g - gasleft());
+        emit log_named_uint("authoritySourceBatchCalldataBytes", abi.encodeCall(batch.run, (calls)).length);
+        bytes memory submission = abi.encode(evidence, next, children);
+        emit log_named_uint("authoritySubmissionBytes", submission.length);
+        bytes memory recipient = Erc7930.encodeEvm(BASE, address(_receiver(BASE)));
+        uint256 fee = st.quoteAuthority(recipient, submission, new bytes[](0));
+        // forge-lint: disable-next-line(arbitrary-send-eth) fixture transmitter and exact quoted fee
+        st.relayAuthority{value: fee}(recipient, submission, new bytes[](0));
+        emit log_named_uint("authorityProviderBytes", mailbox.sent(mailbox.sentLength() - 1).body.length);
+        _deliverMessage(BASE, mailbox.sentLength() - 1);
+        assertEq(_receiver(BASE).selection().authorityHash, AuthorityUpdateEncoding.graphHash(SOURCE, next));
+    }
+
+    function test_measureAuthorityEoaRotation() public {
+        _measureAuthority(0);
+    }
+
+    function test_measureAuthorityNestedAdoption() public {
+        _measureAuthority(1);
+    }
+
+    function test_measureAuthorityCachedChildAdoption() public {
+        _measureAuthority(2);
+    }
+
+    function test_measureAuthorityTwoLevelAdoption() public {
+        _measureAuthority(3);
+    }
+
+    function test_measureAuthoritySharedChildAdoption() public {
+        _measureAuthority(4);
     }
 
     /// @notice Report source operation gas and complete provider sizes for each graph shape.
