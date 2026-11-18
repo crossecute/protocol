@@ -503,8 +503,10 @@ Cases:
 - **Q8.7** Merkle relayers read the transmitter's used state and the receiver's `nextNonce`
   to pick a leaf to relay.
 - **Q8.8** #109 requires availability of graph/authentication witnesses for intended
-  updates. On-chain version history is not required; optional exact-content caches
-  do not select authority. Late destinations authenticate from a recognized anchor.
+  updates. Cached content does not prove historical child positions. Retained children
+  advance from positions in the selected graph through supplied forward links; intermediate
+  positions are not reusable checkpoints. Late destinations start from their bootstrap's
+  head and selected graph.
 - **Q8.9** Retryable destination failures include early delivery, a future Merkle nonce,
   insufficient funds or gas, and some target reverts. An expired or conflicting leaf, invalid
   signatures, `v = 1`, missing evidence or a wrong destination needs a corrected submission
@@ -643,7 +645,7 @@ How the pieces fit:
 Not in #108's implementation:
 
 - **Authority tooling and live deployment validation** remain #109 work. Direct submitAuthority, provider relay/quote and receiver
-  rotation are integrated; SDK execution and checkpoint/recovery tooling remain.
+  rotation are integrated; SDK execution and durable evidence retrieval tooling remain.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
   Tron), which is outside #108's scope. The source refuses a signed bootstrap to a
   destination that reports its receiver. Non-EVM destinations are [#128](https://github.com/crossecute/protocol/issues/128).

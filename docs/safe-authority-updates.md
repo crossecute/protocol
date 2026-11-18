@@ -14,7 +14,7 @@ source-call recognition is one library shared by both. Signed receivers seed the
 from bootstrap, accept direct linked updates and verify application dispatch against the
 selected graph. Quote and bootstrap check the supplied witness against the source guard.
 Provider authority relay/quote adapters and exact authenticated provider retries are implemented.
-SDK execution tooling, checkpoint/recovery tooling and deployment validation remain. No deployment is claimed. The
+SDK execution tooling, durable evidence retrieval and deployment validation remain. No deployment is claimed. The
 [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work)
 lists what remains.
 
@@ -81,10 +81,13 @@ selected hash on its own.
 The graph hash covers one entry per Safe: the hash of that Safe's SafeAuthorityRecord
 and its position. A receiver stores each record once under its hash and the graph as its
 entry list, so an update writes only the records it changes plus 64 bytes per Safe.
-Graph data can also be supplied against the selected hash. Caches of authenticated
-child states may anchor later transition proofs; a cache entry never chooses a
-parent's authority. A late receiver needs no past updates, since it starts from the
-current head; lost source lineage still needs durable copies of past updates (Y7/Y8).
+Graph data can also be supplied against the selected hash. Record and graph caches
+provide content readback; proof verification starts only from positions in the selected
+graph and proceeds forward through the supplied child updates. Intermediate positions
+are local to that verification and are not reusable checkpoints. A later position may
+have exactly the owners and threshold of an earlier position, but still needs its valid
+forward links and distinct update head. A late receiver starts from its bootstrap's
+head; lost source lineage still needs durable copies of past updates (Y7/Y8).
 
 ## Linked, universally reusable updates
 
@@ -164,7 +167,7 @@ using the staged portable signatures and nested approvals, never the source exec
 signature set. `publishedAuthority(sourceSafe, updateHead)` retains its keccak256 hash.
 Activation publishes no relayable submission. Publication and all its writes revert if
 source execution fails. Calldata and events provide archival inputs, but a durable
-archive and checkpoint recovery tooling remain separate work.
+archive and evidence retrieval tooling remain separate work.
 
 Anyone may call `relayAuthority(recipient, submission, attributes)` on a signed
 transmitter. `quoteAuthority` takes the same arguments. Both hash the carried SafeTx in

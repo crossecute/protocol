@@ -102,7 +102,7 @@ the seventh; what they mean for an operator is in the README.
   those live configurations. #109 now implements source activation and updates, receiver
   bootstrap and selected-graph verification, publication, provider relay/quote and atomic
   direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
-  remaining checkpoint/recovery APIs, durable archives, external SDK execution tooling,
+  remaining durable archives and evidence retrieval, external SDK execution tooling,
   shared vector ingestion and live-provider validation. Current authority update
   measurements are in [updates.md](benchmarks/authority-109/updates.md).
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
