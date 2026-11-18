@@ -86,6 +86,16 @@ Policies are read at execution time. Updates apply to pending messages as well a
 ones, and can prevent pending messages from executing or relax their requirements. Plan
 policy changes with the sending side and pending-message state before applying them.
 
+A custom verifier policy on a receiver can stop its conduit permanently. The receiver
+accepts policy changes only from itself and its source transmitter on the home chain, so
+the only way to change its policy is a self-call delivered under that same policy. If a
+required verifier stops attesting, or fewer optional verifiers than the threshold still
+attest, the message that would reset the policy cannot be delivered either. Set a custom
+verifier on a receiver only when its availability for the conduit's whole life is
+acceptable. Finality settings cannot lock a receiver this way, since full finality is
+always allowed. A transceiver's owner sets its policy directly, so a transceiver policy
+locks only if the owner is itself reached through a locked receiver.
+
 ## Custom execution and No Exec
 
 Set `executor` to a custom executor address, or to `Client.NO_EXECUTION_ADDRESS` to opt

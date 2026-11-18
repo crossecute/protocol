@@ -397,7 +397,9 @@ initially disabled for every outbound lane. Before the transceiver owner calls
    failure is not evidence that fallback to V2 is safe.
 3. Check the configured CCVs, executor, and finality modes on that lane. Confirm that
    receiver/transceiver inbound policies are satisfiable, including automatic reports
-   which still send without attributes.
+   which still send without attributes. A receiver policy that becomes unsatisfiable also
+   blocks the message that would reset it
+   ([options guide](../../../docs/ccip-v2.md#configure-inbound-policies)).
 4. Validate actual delivery, full-finality rejection of faster requests, policy updates
    with pending messages, No Exec/manual execution, and delivery gas on the target VM.
 5. Store the results in this file or a linked versioned record and use its content hash

@@ -282,6 +282,28 @@ contract CcipOffRampTest is CcipOffRampFixture {
         assertEq(defaultCcv.verified(), 1);
     }
 
+    /// @dev The receiver's only route to its policy is a message that must satisfy that policy.
+    function test_anUnsatisfiablePolicyBlocksItsOwnReset() public {
+        _policy(true, bytes4(0));
+        CcipConfig.Policy memory defaults;
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(
+            address(receiver), 0, abi.encodeCall(CcipPolicy.setCcipPolicy, (SOURCE, abi.encode(SENDER), defaults))
+        );
+        bytes memory reset =
+            _messageV1(address(receiver), Payload.encodeCalls(calls), bytes4(0), 500_000, SENDER, address(0));
+
+        _execute(reset, false, 0);
+        assertEq(_state(reset), 3);
+        (address[] memory required,,,) = receiver.getCCVsAndFinalityConfig(SOURCE, abi.encode(SENDER));
+        assertEq(required.length, 2);
+
+        _execute(reset, true, 0);
+        assertEq(_state(reset), 2);
+        (required,,,) = receiver.getCCVsAndFinalityConfig(SOURCE, abi.encode(SENDER));
+        assertEq(required.length, 0);
+    }
+
     function test_optionalVerifierThresholdIsEnforcedByUpstreamOffRamp() public {
         CcipConfig.Policy memory p;
         p.optionalCCVs = new address[](1);

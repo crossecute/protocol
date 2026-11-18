@@ -35,7 +35,8 @@ contract CcipReceiver is ProviderReceiver, CCIPReceiver, CcipPolicy {
     }
 
     /// @dev Delivery accepts only (homeOrigin, sourceTransmitter), so a policy under any other key
-    ///      would be stored but never read.
+    ///      would be stored but never read. A change arrives as a self-call delivered under the
+    ///      current policy, so a policy whose verifiers stop attesting also blocks its own reset.
     function _authorizeCcipPolicyChange(uint64 source, address sender) internal view override {
         if (!isAuthorizedCaller(msg.sender)) revert NotSourceTransmitter();
         if (bytes32(uint256(source)) != homeOrigin || !isSourceTransmitter(sender)) revert InvalidCcipPolicy();

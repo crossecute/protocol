@@ -574,7 +574,8 @@ upstream message into memory; other providers retain their calldata decode path.
 Transmitters and all CCIP transceiver variants support opt-in V3 message attributes.
 The transceiver owner must enable a verified outbound lane first. Receiver policies
 remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/ccip-v2.md)
-for defaults, authority and pending-message effects.
+for defaults, authority, pending-message effects, and why a custom verifier policy can
+stop a receiver permanently.
 [Local validation](docs/ccip-v2-validation.md) covers the options and actual OffRamp
 behavior; [deployment issue #118](https://github.com/crossecute/protocol/issues/118) tracks live-lane
 and native-execution checks before production enablement.
