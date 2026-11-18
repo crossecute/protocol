@@ -18,18 +18,19 @@ test transmitter, and an end-to-end test joining the two is
 argued in the NatSpec of the contract that implements it. This file says what the pieces are
 and how they connect. Where the two disagree, the contract is right.
 
-## Planned authority-update extension (#109)
+## Authority updates (#109)
 
-This file describes the implemented #107 guard. The
-[authority design](safe-authority-updates.md#source-guard-and-mutation-batch) owns
-#109's source lifecycle: activation, linked portable updates staged with
-stageUpdate, and ownership changes as one SafeTx through MultiSendCallOnly. The abstract
-[source interface](../contracts/safe-guard/src/authority/ISourceAuthorityGuard.sol)
-and [fail-closed template](../contracts/safe-guard/src/authority/SourceAuthorityGuardTemplate.sol)
-are not implemented by current CrossecuteGuard. Production #109 requires both
-guard slots; this baseline permits the module slot to remain optional.
-See the [verification plan](safe-authority-verification-review.md) for integration
-checks rather than interpreting scaffold selectors as deployed guard capabilities.
+`CrossecuteGuard` also inherits
+[`SourceAuthorityGuard`](../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
+source half of the [authority design](safe-authority-updates.md#source-guard-and-mutation-batch):
+activation, linked portable updates staged with stageUpdate, and ownership changes as one
+SafeTx through the pinned MultiSendCallOnly. Verification is the receivers' linked
+`ReceiverAuthority` library over each Safe's own state. The guard takes its pins at
+deployment: MultiSendCallOnly, SignMessageLib, the Safe and SafeL2 singletons and the fallback
+handler. A Safe that has not activated is governed by its policies alone, as described below.
+An activated Safe also needs both guard slots, which activation checks; the #107 baseline permits
+the module slot to stay optional. The
+[verification plan](safe-authority-verification-review.md) lists what remains.
 
 ## Decisions
 

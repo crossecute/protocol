@@ -7,11 +7,12 @@ Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
 [review findings](planning/safe-authority-review-109.md) own security disposition, and
 [benchmarks](benchmarks/authority-109/README.md) own measurements/reproduction.
 
-**Status:** design plus non-deployable scaffold. Current receivers/guards are not
-wired to the new interfaces. The source template reverts; the receiver authority
-library authenticates graphs, child updates and votes but leaves source-call
-recognition to an abstract hook. No production rotation or deployment is claimed. The
-scaffold types and interfaces follow this file. The
+**Status:** the source guard implements activation, ownership changes, selectAuthority and
+the protected-call rules, tested against real Safe 1.5.0 proxies. The receiver authority
+library, which the guard also runs, authenticates graphs, child updates and votes, and
+source-call recognition is one library shared by both. Current receivers are not wired to
+the library, and the source integration lists below remain. No production rotation or
+deployment is claimed. The
 [verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
 lists what remains.
 
@@ -234,11 +235,17 @@ alone do not.
 ## Source guard and mutation batch
 
 The operations belong to the shared deterministic guard, not a separate authority
-manager. The guard compiles in its helper, singleton and handler pins, including
-Safe 1.5.0's MultiSendCallOnly, with no setter (X13). Destination code compiles in only
-MultiSendCallOnly's and the guard's addresses, the same for every source chain, which
-recognizing an ownership change needs. There is no destination registry contract. A
-chain without the canonical MultiSendCallOnly is unsupported until a new generation.
+manager. The guard fixes its pins at deployment, with no setter (X13): MultiSendCallOnly,
+SignMessageLib, the Safe and SafeL2 singletons and the fallback handler. Destination code
+compiles in only MultiSendCallOnly's and the guard's addresses, the same for every source
+chain, which recognizing an ownership change needs. There is no destination registry
+contract. A chain without the canonical MultiSendCallOnly is unsupported until a new
+generation.
+
+Each Safe's authority state is the receivers' own: the guard keeps a `ReceiverAuthority`
+state per Safe and runs the receivers' verification on it, so source and destinations accept
+the same updates. The guard adds the source-only facts: each Safe's executed heads with the
+record at each, the Safe's live configuration, and the rules for its calls.
 
 ```solidity
 activate(bytes32 authorityHash)
@@ -314,6 +321,30 @@ Source execution, cancellation and nonce consumption do not revoke a signed upda
 portable authorization. A helper's ability to execute batches does not itself
 validate a linked authority update.
 
+The guard does the work in the pre-hook, before the Safe executes: it recognizes the call,
+takes the staged data, verifies it, writes the new selection and executed head, and sets a
+live record for the Safe. activate, registerOwnershipChange and selectAuthority are markers
+the Safe calls during execution; each reverts unless the pre-hook recognized the calling
+Safe's transaction as that kind. The post-hook requires the executed hash to be the
+recognized one and the Safe's final owners and threshold to equal the stored root record. A
+failure anywhere reverts the whole SafeTx, so the selection, the head and the nonce move
+together or not at all.
+
+### Protected calls
+
+Once a Safe has activated, the guard refuses these owner transactions whatever the Safe's
+policies allow, so its owners, threshold, guards, handler, modules and singleton change only
+through a recognized update:
+
+- any call to the Safe itself;
+- any delegatecall except to the pinned MultiSendCallOnly and SignMessageLib;
+- a MultiSendCallOnly batch with a call to the Safe itself, other than the one ownership
+  batch.
+
+A Safe's own live record, authority or staged call, rejects any further owner transaction of
+that Safe in the same outer transaction, and stageUpdate for it. A Safe that has not
+activated is governed by its policies alone, as in #107.
+
 ## Parent responsibility and accepted authorization
 
 Only A's explicitly signed graph update changes A's tracked children. Independent
@@ -379,24 +410,37 @@ normal nonce/window checks pass, but never restores consumed/cancelled work.
 ## Activation
 
 Activation takes two guarded steps, which may share one outer transaction. The Safe
-first sets the guard; the guard cannot hook the transaction that installs it, and
-until activation it allows only activate. The Safe's quorum then signs and executes
-activate(initialGraphHash). The guard requires:
+first sets both guards; the guard cannot hook the transaction that installs it. The Safe's
+quorum then signs and executes activate(initialGraphHash) with the initial graph staged.
+Until then the Safe is governed by its policies alone, as in #107, and no authority rule
+applies: activation reads live state, so an owner change before it cannot desynchronize the
+guard. The guard requires:
 
-- transaction and module guards, recognized singleton/handler/module configuration
-  and handler matching (X11);
-- the initial graph's root record equal to the Safe's live owners and threshold, so a
-  Safe that has changed owners since creation can activate;
-- every Safe owner already activated, and the initial graph naming each descendant at
-  a position that Safe executed, with its record there;
+- the guard in both the transaction and module guard slots, the singleton equal to a
+  pinned Safe or SafeL2 singleton, the fallback handler equal to the pinned handler and no
+  enabled module (X11). After activation a call to the Safe itself is refused, so no
+  module can be enabled later;
+- the initial graph's root record equal to the Safe's live owners, in `getOwners()` order,
+  and threshold, so a Safe that has changed owners since creation can activate;
+- every named descendant at a position that Safe executed, with its record there. A Safe
+  owner that has not activated has no executed position, so this also requires every Safe
+  owner to be activated;
 - the portable check under the root's live record, each descendant counted under the
   position the initial graph names.
 
-The activation's SafeTx hash is the Safe's first head, recorded as executed. The
-initial graph names each Safe owner at its current position. No creation proof is
-checked: destinations never receive an activation, since each receiver starts from
-the head and graph its bootstrap carries. Whether the guard can instead activate a
-Safe on its first guarded transaction, without a signed step, is open (#148).
+The activation's SafeTx hash is the Safe's first head, recorded as executed. The initial
+graph names each Safe owner at its current position. No creation proof is checked:
+destinations never receive an activation, since each receiver starts from the head and
+graph its bootstrap carries.
+
+Activating a Safe automatically on its first guarded transaction, with no signed step, was
+evaluated (#148) and is not adopted. The guard would have to derive the initial graph. A Safe
+owner that has not activated would either block the Safe's unrelated transaction or be
+recorded EOA-kind, which silently drops that owner's contract signatures from every later
+quorum. The first head would also be an arbitrary transaction's hash, and the portable check
+would run on a transaction that was signed for something else. A separate activation costs
+one transaction, makes the owners state the graph, and fails before any parent depends on
+it.
 
 ## Invariants and resource behavior
 

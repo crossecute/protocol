@@ -31,9 +31,9 @@ tracker are removed from the current tree.
 | X3/X5/X8/X9/X12 | Former global-history/refresh/counter mechanisms removed; no such active requirements remain. |
 | X4/X14 | The root authenticates an update under its stored record; each descendant votes under the position the update names, proven by child updates from the stored position. Lagging/new-chain risks are Y2/Y3 and accepted snapshot staleness is D94/D96. |
 | X6/X7 | Old commitment invalidation questions superseded by D92 permanent accepted authorization subject to explicit cancellation/consumption. |
-| X10 | Same-Safe nested execution/staging overwrite: stageUpdate's transient record must sit under the guard's per-Safe nesting lock before source integration. |
-| X11 | Activation must name/verify singleton, both guards, handler and enabled modules; slot installation alone is insufficient. |
-| X13 | Default/helper/configuration governance must not gain an unreviewed way to replace authenticated owner authority. Decided: helper, singleton and handler pins are fixed at guard deployment, with no setter and no owner or governance override. Changing one means a new guard; guard migration is out of scope. Enforcement is production work. No executor pin: with the one-transaction ownership change no executor holds an invariant. |
+| X10 | Same-Safe nested execution/staging overwrite. Implemented: a Safe's live record, staged call or authority update, rejects stageUpdate for it and any nested owner execution by it, and staged data is consumed by one transaction. |
+| X11 | Activation must name/verify singleton, both guards, handler and enabled modules; slot installation alone is insufficient. Implemented at activation: both slots hold the guard, the singleton and handler are pinned, and no module is enabled; self-calls are refused afterwards, so none can be enabled later. |
+| X13 | Default/helper/configuration governance must not gain an unreviewed way to replace authenticated owner authority. Decided: helper, singleton and handler pins are fixed at guard deployment, with no setter and no owner or governance override. Changing one means a new guard; guard migration is out of scope. Enforced through constructor immutables. No executor pin: with the one-transaction ownership change no executor holds an invariant. |
 
 ## Other decisions
 
@@ -74,8 +74,9 @@ tracker are removed from the current tree.
 
 | Topic | What is missing |
 | --- | --- |
-| Verification hooks | The receiver authority library authenticates graphs, child updates and votes. Source-call recognition is still an abstract hook; the test fixture mocks it. |
-| Automatic activation | Whether the guard can activate a Safe on its first guarded transaction instead of a signed activate (#148). |
+| Verification hooks | The receiver authority library authenticates graphs, child updates and votes, and `AuthorityRecognition` recognizes the signed source call for the guard and the test fixture. Receivers still need their `_recognizeUpdate` pointed at it with the pinned addresses. |
+| Automatic activation | Evaluated and not adopted (#148): the guard would derive the initial graph, so a Safe owner that has not activated would block an unrelated transaction or be recorded EOA-kind, and the first head would be an arbitrary transaction's hash. A signed activation costs one transaction and keeps the graph the owners' statement. Awaiting confirmation. |
+| Pre-activation restrictions | The task list said the guard allows only activate until a Safe activates. The guard does not restrict an unactivated Safe: #107 and #108 flows keep working, and nothing is lost because activation reads live state. Awaiting confirmation. |
 
 ## Decision lineage
 
