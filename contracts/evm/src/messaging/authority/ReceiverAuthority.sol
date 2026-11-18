@@ -109,6 +109,7 @@ library ReceiverAuthority {
     error ZeroCommitment();
     error PreviousUpdateMismatch();
     error ReplacementHashMismatch();
+    error CurrentAuthorityMismatch();
     error GraphNotCached();
     error RecordNotCached();
     error TooManyGraphOwners(address safe);
@@ -184,13 +185,24 @@ library ReceiverAuthority {
     {
         if ($.selection.authorityHash == bytes32(0)) revert UnseededAuthority();
         AuthorityEntry[] memory stored = $.graphs[$.selection.authorityHash];
-        ProvenTable memory table = ProvenTable(new ProvenPosition[](stored.length + extra), stored.length - 1);
-        voters = record($, stored[0].recordHash);
-        for (uint256 i = 1; i < stored.length; ++i) {
-            SafeAuthorityRecord memory kept = record($, stored[i].recordHash);
-            table.rows[i - 1] = ProvenPosition(kept.safe, stored[i].position, stored[i].recordHash, kept, true);
+        SafeAuthorityRecord[] memory records = new SafeAuthorityRecord[](stored.length);
+        for (uint256 i; i < stored.length; ++i) {
+            records[i] = record($, stored[i].recordHash);
         }
-        positions = VoterPositions(table, stored);
+        return _voters(records, stored, extra);
+    }
+
+    function _voters(SafeAuthorityRecord[] memory records, AuthorityEntry[] memory entries, uint256 extra)
+        private
+        pure
+        returns (SafeAuthorityRecord memory voters, VoterPositions memory positions)
+    {
+        ProvenTable memory table = ProvenTable(new ProvenPosition[](records.length + extra), records.length - 1);
+        for (uint256 i = 1; i < records.length; ++i) {
+            table.rows[i - 1] =
+                ProvenPosition(records[i].safe, entries[i].position, entries[i].recordHash, records[i], true);
+        }
+        return (records[0], VoterPositions(table, entries));
     }
 
     /// @notice Store the head and selected graph a bootstrap carried, once.
@@ -222,17 +234,17 @@ library ReceiverAuthority {
     ///      `live` with each descendant counted at the position the graph names. The caller has
     ///      checked that every named position is an executed head with that record.
     /// @return updateHash The activation's SafeTx hash, the Safe's first head.
-    function activate(
-        State storage $,
+    function verifyActivation(
         uint256 sourceChainId,
         address sourceSafe,
         SafeTxEvidence memory evidence,
         AuthorityGraph memory initial,
         SafeAuthorityRecord memory live,
         RecognizedUpdate memory recognized
-    ) external returns (bytes32 updateHash) {
-        if ($.selection.authorityHash != bytes32(0)) revert AlreadySeeded();
-        if (recognized.kind != UpdateKind.Activation) revert ActivationKindRequired();
+    ) external view returns (bytes32 updateHash) {
+        if (recognized.kind != UpdateKind.Activation) {
+            revert ActivationKindRequired();
+        }
         updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
         if (updateHash == bytes32(0)) revert ZeroCommitment();
         _requireRoot(sourceSafe, initial);
@@ -251,29 +263,30 @@ library ReceiverAuthority {
                 ProvenPosition(records[i].safe, entries[i].position, entries[i].recordHash, records[i], false);
         }
         _verifyVotes(sourceChainId, updateHash, evidence, VoteContext(sourceSafe, live, VoterPositions(table, entries)));
-        _store($, initial, entries, recognized.update.newAuthorityHash);
-        $.selection = AuthoritySelection(updateHash, recognized.update.newAuthorityHash);
     }
 
-    /// @notice Verify and apply the next signed update: a successor of the stored head.
-    /// @return updateHash The new head, the update's SafeTx hash.
-    function applyUpdate(State storage $, UpdateRequest memory request) external returns (bytes32 updateHash) {
-        return _applyUpdate(
-            $,
-            request.sourceChainId,
-            request.sourceSafe,
-            request.evidence,
-            request.newGraph,
-            request.childUpdates,
-            request.recognized
-        );
+    /// @notice Verify a source update using the exact graph committed by its current selection.
+    /// @dev The guard persists only the returned selection hashes; receivers use the same
+    ///      transition check against their stored full graph.
+    function verifyUpdate(
+        AuthoritySelection memory current,
+        AuthorityGraph memory currentGraph,
+        UpdateRequest memory request
+    ) external view returns (bytes32 updateHash) {
+        AuthorityEntry[] memory entries = AuthorityUpdateEncoding.entries(currentGraph);
+        if (AuthorityUpdateEncoding.graphHash(request.sourceChainId, entries) != current.authorityHash) {
+            revert CurrentAuthorityMismatch();
+        }
+        _requireRoot(request.sourceSafe, currentGraph);
+        (SafeAuthorityRecord memory voters, VoterPositions memory positions) =
+            _voters(_requireCanonical(currentGraph), entries, request.childUpdates.length);
+        (updateHash,) = _verifyUpdate(current, request, VoteContext(request.sourceSafe, voters, positions));
     }
 
     function submit(State storage $, SubmissionRequest memory request) external returns (bytes32 updateHash) {
         Recognized memory recognized =
             AuthorityRecognition.recognizeUpdates(request.context, request.evidence, request.childUpdates);
-        updateHash = _applyUpdate(
-            $,
+        UpdateRequest memory update = UpdateRequest(
             request.sourceChainId,
             request.context.safe,
             request.evidence,
@@ -281,37 +294,36 @@ library ReceiverAuthority {
             request.childUpdates,
             recognized
         );
+        (SafeAuthorityRecord memory voters, VoterPositions memory positions) =
+            _storedVoters($, request.childUpdates.length);
+        AuthorityEntry[] memory entries;
+        (updateHash, entries) = _verifyUpdate($.selection, update, VoteContext(request.context.safe, voters, positions));
+        _store($, request.newGraph, entries, recognized.root.update.newAuthorityHash);
+        $.selection = AuthoritySelection(updateHash, recognized.root.update.newAuthorityHash);
     }
 
-    function _applyUpdate(
-        State storage $,
-        uint256 sourceChainId,
-        address sourceSafe,
-        SafeTxEvidence memory evidence,
-        AuthorityGraph memory newGraph,
-        ChildUpdate[] memory childUpdates,
-        Recognized memory recognized
-    ) private returns (bytes32 updateHash) {
-        _requireRoot(sourceSafe, newGraph);
-        updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
+    function _verifyUpdate(AuthoritySelection memory current, UpdateRequest memory request, VoteContext memory previous)
+        private
+        view
+        returns (bytes32 updateHash, AuthorityEntry[] memory newEntries)
+    {
+        _requireRoot(request.sourceSafe, request.newGraph);
+        updateHash =
+            SafeHashes.transactionHash(request.evidence.signedSafeTx.safeTx, request.sourceSafe, request.sourceChainId);
         if (updateHash == bytes32(0)) revert ZeroCommitment();
-        if ($.selection.authorityHash == bytes32(0)) revert UnseededAuthority();
-        if (recognized.root.kind == UpdateKind.Activation) revert ActivationNotAccepted();
-        if (recognized.children.length != childUpdates.length) revert ChildRecognitionMismatch();
-        AuthorityUpdate memory update = recognized.root.update;
+        if (current.authorityHash == bytes32(0)) revert UnseededAuthority();
+        if (request.recognized.root.kind == UpdateKind.Activation) revert ActivationNotAccepted();
+        if (request.recognized.children.length != request.childUpdates.length) revert ChildRecognitionMismatch();
+        AuthorityUpdate memory update = request.recognized.root.update;
         // Also the replay check: each head commits to its predecessor, so heads never repeat
         // and an accepted update cannot match the stored head again.
-        if (update.previousUpdateHash != $.selection.updateHead) revert PreviousUpdateMismatch();
+        if (update.previousUpdateHash != current.updateHead) revert PreviousUpdateMismatch();
         if (update.newAuthorityHash == bytes32(0)) revert ZeroCommitment();
-        AuthorityEntry[] memory newEntries = AuthorityUpdateEncoding.entries(newGraph);
-        if (AuthorityUpdateEncoding.graphHash(sourceChainId, newEntries) != update.newAuthorityHash) {
+        newEntries = AuthorityUpdateEncoding.entries(request.newGraph);
+        if (AuthorityUpdateEncoding.graphHash(request.sourceChainId, newEntries) != update.newAuthorityHash) {
             revert ReplacementHashMismatch();
         }
-        _authenticate($, sourceChainId, updateHash, recognized, evidence, newGraph, newEntries, childUpdates);
-
-        // Validation precedes writes.
-        _store($, newGraph, newEntries, update.newAuthorityHash);
-        $.selection = AuthoritySelection(updateHash, update.newAuthorityHash);
+        _authenticate(request, updateHash, newEntries, previous);
     }
 
     function _requireRoot(address sourceSafe, AuthorityGraph memory authority) private pure {
@@ -346,28 +358,22 @@ library ReceiverAuthority {
     ///      vote on this update. Signatures follow the graph because each descendant votes under
     ///      the position newGraph names for it.
     function _authenticate(
-        State storage $,
-        uint256 sourceChainId,
+        UpdateRequest memory request,
         bytes32 updateHash,
-        Recognized memory recognized,
-        SafeTxEvidence memory evidence,
-        AuthorityGraph memory newGraph,
         AuthorityEntry[] memory newEntries,
-        ChildUpdate[] memory childUpdates
+        VoteContext memory previous
     ) private view {
-        SafeAuthorityRecord[] memory records = _requireCanonical(newGraph);
-        AuthorityEntry[] storage stored = $.graphs[$.selection.authorityHash];
+        SafeAuthorityRecord[] memory records = _requireCanonical(request.newGraph);
         // The root votes under its stored record, never the new one (T6).
-        (SafeAuthorityRecord memory voters, VoterPositions memory positions) = _storedVoters($, childUpdates.length);
-        ProvenTable memory table = positions.table;
-        if (recognized.root.kind == UpdateKind.OwnershipChange) {
-            AuthorityMutations.applyMutations(voters, recognized.root.mutations, records[0]);
-        } else if (stored[0].recordHash != newEntries[0].recordHash) {
+        ProvenTable memory table = previous.positions.table;
+        if (request.recognized.root.kind == UpdateKind.OwnershipChange) {
+            AuthorityMutations.applyMutations(previous.voters, request.recognized.root.mutations, records[0]);
+        } else if (previous.positions.entries[0].recordHash != newEntries[0].recordHash) {
             revert RootRecordMismatch();
         }
         uint256 seeds = table.count;
-        for (uint256 i; i < childUpdates.length; ++i) {
-            _proveChildUpdate(sourceChainId, table, childUpdates[i], recognized.children[i], i);
+        for (uint256 i; i < request.childUpdates.length; ++i) {
+            _proveChildUpdate(request.sourceChainId, table, request.childUpdates[i], request.recognized.children[i], i);
         }
         for (uint256 i = 1; i < records.length; ++i) {
             address safe = records[i].safe;
@@ -387,7 +393,10 @@ library ReceiverAuthority {
             if (!table.rows[i].used) revert UnusedChildUpdate(i - seeds);
         }
         _verifyVotes(
-            sourceChainId, updateHash, evidence, VoteContext(records[0].safe, voters, VoterPositions(table, newEntries))
+            request.sourceChainId,
+            updateHash,
+            request.evidence,
+            VoteContext(records[0].safe, previous.voters, VoterPositions(table, newEntries))
         );
     }
 

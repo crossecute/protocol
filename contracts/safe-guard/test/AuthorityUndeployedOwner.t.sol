@@ -71,7 +71,6 @@ contract AuthorityUndeployedOwnerTest is SourceAuthorityBase {
 
     function _selectCalls(AuthorityGraph memory graph, Signer[] memory signers)
         private
-        view
         returns (bytes32 digest, bytes memory signatures, Batch.Call[] memory calls)
     {
         bytes memory data =

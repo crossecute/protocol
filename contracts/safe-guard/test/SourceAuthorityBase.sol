@@ -21,6 +21,7 @@ import {SafeFixture} from "./SafeFixture.sol";
 ///      `multicall([stageUpdate, execTransaction])` through `Batch`.
 abstract contract SourceAuthorityBase is SafeFixture {
     Batch internal batch;
+    mapping(bytes32 authorityHash => bytes graph) internal graphWitnesses;
 
     function setUp() public virtual override {
         super.setUp();
@@ -127,14 +128,23 @@ abstract contract SourceAuthorityBase is SafeFixture {
         ChildUpdate[] memory children,
         bytes memory executing,
         bytes memory portable
-    ) internal view returns (Batch.Call[] memory calls) {
+    ) internal returns (Batch.Call[] memory calls) {
+        graphWitnesses[_hash(graph)] = abi.encode(graph);
+        AuthorityGraph memory currentGraph = _currentGraph(safe);
         calls = new Batch.Call[](2);
         calls[0] = Batch.Call(
             address(guard),
-            abi.encodeCall(guard.stageUpdate, (address(safe), graph, children, portable, new NestedSafeApproval[](0))),
+            abi.encodeCall(
+                guard.stageUpdate, (address(safe), currentGraph, graph, children, portable, new NestedSafeApproval[](0))
+            ),
             false
         );
         calls[1] = _executeCall(safe, to, data, op, executing);
+    }
+
+    function _currentGraph(Safe safe) internal view returns (AuthorityGraph memory current) {
+        bytes32 authorityHash = guard.selection(address(safe)).authorityHash;
+        if (authorityHash != bytes32(0)) current = abi.decode(graphWitnesses[authorityHash], (AuthorityGraph));
     }
 
     function _executeCall(Safe safe, address to, bytes memory data, Enum.Operation op, bytes memory signatures)
@@ -153,7 +163,6 @@ abstract contract SourceAuthorityBase is SafeFixture {
 
     function _activationCalls(Safe safe, AuthorityGraph memory graph, Signer[] memory signers)
         internal
-        view
         returns (Batch.Call[] memory)
     {
         bytes memory data = abi.encodeCall(ISourceAuthorityGuard.activate, (_hash(graph)));

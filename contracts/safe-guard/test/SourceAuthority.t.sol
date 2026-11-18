@@ -30,7 +30,7 @@ contract Stager {
 
     function sendMessage(bytes calldata, bytes calldata, bytes[] calldata) external {
         AuthorityGraph memory graph;
-        GUARD.stageUpdate(msg.sender, graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
+        GUARD.stageUpdate(msg.sender, graph, graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
     }
 }
 
@@ -138,7 +138,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             guard.checkAfterExecution(forged, true);
         } else if (mode == 1) {
             vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.SafeBusy.selector, address(safe)));
-            guard.stageUpdate(address(safe), graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
+            guard.stageUpdate(address(safe), graph, graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
         } else {
             vm.prank(address(safe));
             vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.NestedExecution.selector, address(safe)));
@@ -258,10 +258,11 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         AuthorityGraph memory graph = _graph(_record(safe));
         bytes memory data = abi.encodeCall(ISourceAuthorityGuard.activate, (_hash(graph)));
         bytes memory signatures = _signFor(safe, _ab(), address(guard), 0, data, Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.AlreadyActivated.selector, address(safe)));
-        _execStaged(
+        Batch.Call[] memory calls = _stagedCalls(
             safe, address(guard), data, Enum.Operation.Call, graph, new ChildUpdate[](0), signatures, signatures
         );
+        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.AlreadyActivated.selector, address(safe)));
+        batch.run(calls);
     }
 
     function testActivationRejectsGraphThatIsNotTheLiveOwners() public {
@@ -454,21 +455,66 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         assertTrue(safe.isOwner(vm.addr(KEY_D)));
     }
 
-    function testGraphReadbackRetainsAuthenticatedSnapshotsWithoutSelectingThem() public {
+    function testSuppliedCurrentGraphMustMatchSelection() public {
         _activated();
-        bytes32 initialHash = guard.selection(address(safe)).authorityHash;
-        AuthorityGraph memory initial = guard.graph(address(safe), initialHash);
-        assertEq(_hash(initial), initialHash);
+        AuthorityGraph memory initial = _currentGraph(safe);
         AuthorityGraph memory next = _changeOwners(vm.addr(KEY_D), 3, _ab());
         bytes32 head = _head(safe);
-        assertEq(_hash(guard.graph(address(safe), _hash(next))), _hash(next));
-        assertEq(_hash(guard.graph(address(safe), initialHash)), initialHash);
+        bytes memory data = abi.encodeCall(guard.selectAuthority, (AuthorityUpdate(head, _hash(next))));
+        Signer[] memory signers = new Signer[](3);
+        (signers[0], signers[1], signers[2]) = (_eoa(KEY_D), _eoa(KEY_B), _eoa(KEY_C));
+        bytes memory signatures = _signFor(safe, signers, address(guard), 0, data, Enum.Operation.Call);
+        Batch.Call[] memory calls = _stagedCalls(
+            safe, address(guard), data, Enum.Operation.Call, next, new ChildUpdate[](0), signatures, signatures
+        );
+        calls[0].data = abi.encodeCall(
+            guard.stageUpdate,
+            (address(safe), initial, next, new ChildUpdate[](0), signatures, new NestedSafeApproval[](0))
+        );
+        vm.expectRevert(ReceiverAuthority.CurrentAuthorityMismatch.selector);
+        batch.run(calls);
         assertEq(_head(safe), head);
         assertEq(guard.selection(address(safe)).authorityHash, _hash(next));
-        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
-        guard.graph(address(safe), bytes32(uint256(0xBAD)));
-        vm.expectRevert(ReceiverAuthority.GraphNotCached.selector);
-        guard.graph(address(0xBAD), initialHash);
+        _execStaged(safe, address(guard), data, Enum.Operation.Call, next, new ChildUpdate[](0), signatures, signatures);
+    }
+
+    function testFuzzCurrentWitnessCannotChangeAuthenticatedFields(uint8 field) public {
+        _activated();
+        AuthorityGraph memory current = _currentGraph(safe);
+        AuthorityGraph memory forged = abi.decode(abi.encode(current), (AuthorityGraph));
+        field = uint8(bound(field, 0, 5));
+        if (field == 0) {
+            forged.nodes[0].record.safe = address(0xBAD);
+        } else if (field == 1) {
+            forged.nodes[0].record.threshold = 1;
+        } else if (field == 2) {
+            forged.nodes[0].record.owners[0].owner = vm.addr(KEY_D);
+        } else if (field == 3) {
+            forged.nodes[0].position = bytes32(uint256(1));
+        } else if (field == 4) {
+            (forged.nodes[0].record.owners[0], forged.nodes[0].record.owners[1]) =
+            (forged.nodes[0].record.owners[1], forged.nodes[0].record.owners[0]);
+        } else {
+            forged.nodes[0].record.owners[0].kind = 1;
+        }
+        bytes32 head = _head(safe);
+        bytes memory data = abi.encodeCall(guard.selectAuthority, (AuthorityUpdate(head, _hash(current))));
+        bytes memory signatures = _signFor(safe, _ab(), address(guard), 0, data, Enum.Operation.Call);
+        Batch.Call[] memory calls = _stagedCalls(
+            safe, address(guard), data, Enum.Operation.Call, current, new ChildUpdate[](0), signatures, signatures
+        );
+        calls[0].data = abi.encodeCall(
+            guard.stageUpdate,
+            (address(safe), forged, current, new ChildUpdate[](0), signatures, new NestedSafeApproval[](0))
+        );
+        uint256 nonce = safe.nonce();
+        vm.expectRevert(ReceiverAuthority.CurrentAuthorityMismatch.selector);
+        batch.run(calls);
+        assertEq(safe.nonce(), nonce);
+        assertEq(_head(safe), head);
+        _execStaged(
+            safe, address(guard), data, Enum.Operation.Call, current, new ChildUpdate[](0), signatures, signatures
+        );
     }
 
     function testOwnershipChangeNeedsTheStagedGraph() public {
@@ -484,8 +530,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
         bytes memory data = _ownershipData(safe, bytes32(uint256(1)), _hash(next), _addOwner(vm.addr(KEY_D), 2));
         bytes memory signatures = _sign(_ab(), _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NotActivated.selector, address(safe)));
-        _execStaged(
+        Batch.Call[] memory calls = _stagedCalls(
             safe,
             address(multiSend),
             data,
@@ -495,6 +540,8 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             signatures,
             signatures
         );
+        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NotActivated.selector, address(safe)));
+        batch.run(calls);
     }
 
     function testOwnershipChangeRejectsWrongPredecessor() public {
@@ -502,8 +549,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
         bytes memory data = _ownershipData(safe, bytes32(uint256(7)), _hash(next), _addOwner(vm.addr(KEY_D), 2));
         bytes memory signatures = _sign(_ab(), _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
-        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
-        _execStaged(
+        Batch.Call[] memory calls = _stagedCalls(
             safe,
             address(multiSend),
             data,
@@ -513,6 +559,8 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             signatures,
             signatures
         );
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        batch.run(calls);
     }
 
     function testOwnershipChangeRejectsGraphThatIsNotTheMutationResult() public {
@@ -520,8 +568,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
         bytes memory data = _ownershipData(safe, _head(safe), _hash(next), _addOwner(vm.addr(KEY_D), 3));
         bytes memory signatures = _sign(_ab(), _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
-        vm.expectRevert(AuthorityMutations.MutationResultMismatch.selector);
-        _execStaged(
+        Batch.Call[] memory calls = _stagedCalls(
             safe,
             address(multiSend),
             data,
@@ -531,6 +578,8 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             signatures,
             signatures
         );
+        vm.expectRevert(AuthorityMutations.MutationResultMismatch.selector);
+        batch.run(calls);
     }
 
     function testNewOwnerCannotSignItsOwnInstallation() public {
@@ -542,9 +591,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         bytes memory data = _ownershipData(safe, _head(safe), _hash(next), _addOwner(vm.addr(KEY_D), 2));
         bytes memory signatures =
             _sign(signers, _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall));
-        // Safe checks live owners before the guard runs; the guard checks the stored record.
-        vm.expectRevert("GS026");
-        _execStaged(
+        Batch.Call[] memory calls = _stagedCalls(
             safe,
             address(multiSend),
             data,
@@ -554,6 +601,8 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             signatures,
             signatures
         );
+        vm.expectRevert("GS026");
+        batch.run(calls);
     }
 
     function testSuccessiveUpdatesLink() public {
@@ -575,8 +624,11 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         bytes memory data =
             abi.encodeCall(ISourceAuthorityGuard.selectAuthority, (AuthorityUpdate(_head(safe), _hash(next))));
         bytes memory signatures = _sign(_ab(), _txHash(safe, address(guard), 0, data, Enum.Operation.Call));
+        Batch.Call[] memory calls = _stagedCalls(
+            safe, address(guard), data, Enum.Operation.Call, next, new ChildUpdate[](0), signatures, signatures
+        );
         vm.expectRevert(ReceiverAuthority.RootRecordMismatch.selector);
-        _execStaged(safe, address(guard), data, Enum.Operation.Call, next, new ChildUpdate[](0), signatures, signatures);
+        batch.run(calls);
     }
 
     function testStagedDataIsConsumedByOneTransaction() public {
@@ -595,7 +647,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         calls[0] = Batch.Call(
             address(guard),
             abi.encodeCall(
-                guard.stageUpdate, (address(safe), same, new ChildUpdate[](0), first, new NestedSafeApproval[](0))
+                guard.stageUpdate, (address(safe), same, same, new ChildUpdate[](0), first, new NestedSafeApproval[](0))
             ),
             false
         );

@@ -16,16 +16,14 @@ import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "./ISourceAuthorityGuard.sol";
 
 /// @notice The source half of #109: per-Safe authority state, activation, linked updates and the
-///         rules that keep an activated Safe's live owners equal to its stored root record.
-/// @dev Verification is `ReceiverAuthority`, the library every receiver runs, over each Safe's own
-///      `State`. This contract adds what only the source knows: the executed heads of each Safe,
+///         rules that keep an activated Safe's live owners equal to its selected root record.
+/// @dev ReceiverAuthority verifies a supplied current graph against the stored selection hash.
+///      Full records stay in receiver storage. This contract adds the executed heads of each Safe,
 ///      the Safe's live configuration, and the calls an activated Safe may make. A host calls
 ///      `_authorityPreHook` from its owner pre-hook and `_authorityPostHook` from its post-hook.
 ///      The three source calls are markers: the pre-hook does the work and the call only proves,
 ///      for the calling Safe, that its transaction was recognized.
 abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
-    using ReceiverAuthority for ReceiverAuthority.State;
-
     /// @dev Fixed at deployment, with no setter (X13). A zero singleton pin is unused.
     struct Pins {
         address multiSendCallOnly;
@@ -33,6 +31,14 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         address singleton;
         address singletonL2;
         address fallbackHandler;
+    }
+
+    struct StagedUpdate {
+        AuthorityGraph currentGraph;
+        AuthorityGraph newGraph;
+        ChildUpdate[] childUpdates;
+        bytes portableSignatures;
+        NestedSafeApproval[] nestedApprovals;
     }
 
     bytes32 private constant NAMESPACE = keccak256("crossecute.guard.authority");
@@ -53,7 +59,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     address private immutable _FALLBACK_HANDLER;
 
     // solhint-disable-next-line private-vars-leading-underscore
-    mapping(address safe => ReceiverAuthority.State) private $authority;
+    mapping(address safe => AuthoritySelection) private $authority;
     /// @dev The record hash of each head a Safe executed. Written only when its update executes.
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address safe => mapping(bytes32 head => bytes32 recordHash)) private $heads;
@@ -89,12 +95,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
 
     /// @inheritdoc ISourceAuthorityGuard
     function selection(address sourceSafe) external view returns (AuthoritySelection memory) {
-        return $authority[sourceSafe].selection;
-    }
-
-    /// @inheritdoc ISourceAuthorityGuard
-    function graph(address sourceSafe, bytes32 authorityHash) external view returns (AuthorityGraph memory) {
-        return $authority[sourceSafe].graph(authorityHash);
+        return $authority[sourceSafe];
     }
 
     /// @inheritdoc ISourceAuthorityGuard
@@ -107,6 +108,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     ///      A later stage replaces an earlier unconsumed one.
     function stageUpdate(
         address sourceSafe,
+        AuthorityGraph calldata currentGraph,
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates,
         bytes calldata portableSignatures,
@@ -115,7 +117,10 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         if (_authorityLive(sourceSafe) || _executionLive(sourceSafe)) {
             revert SafeBusy(sourceSafe);
         }
-        _tstoreBytes(_stageId(sourceSafe), abi.encode(newGraph, childUpdates, portableSignatures, nestedApprovals));
+        _tstoreBytes(
+            _stageId(sourceSafe),
+            abi.encode(StagedUpdate(currentGraph, newGraph, childUpdates, portableSignatures, nestedApprovals))
+        );
     }
 
     /// @inheritdoc ISourceAuthorityGuard
@@ -137,7 +142,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     function _executionLive(address safe) internal view virtual returns (bool);
 
     function _activated(address safe) internal view returns (bool) {
-        return $authority[safe].selection.authorityHash != bytes32(0);
+        return $authority[safe].authorityHash != bytes32(0);
     }
 
     function _authorityLive(address safe) internal view returns (bool) {
@@ -150,8 +155,8 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     ///      owners.
     function _authorityPreHook(SafeTx memory safeTx) internal returns (bool isUpdate) {
         address safe = msg.sender;
-        ReceiverAuthority.State storage $ = $authority[safe];
-        bool activated = $.selection.authorityHash != bytes32(0);
+        AuthoritySelection storage selected = $authority[safe];
+        bool activated = selected.authorityHash != bytes32(0);
         if (!_isAuthorityCall(safeTx)) {
             if (safeTx.to == MULTISEND_CALL_ONLY) revert OrdinaryBatchDenied();
             if (activated) _requireInsideProtectedCalls(safe, safeTx);
@@ -160,13 +165,11 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         ReceiverAuthority.RecognizedUpdate memory recognized = AuthorityRecognition.recognize(
             AuthorityRecognition.Context(address(this), MULTISEND_CALL_ONLY, safe), safeTx
         );
-        (
-            AuthorityGraph memory newGraph,
-            ChildUpdate[] memory childUpdates,
-            bytes memory portableSignatures,
-            NestedSafeApproval[] memory approvals
-        ) = _consumeStage(safe);
-        SafeTxEvidence memory evidence = SafeTxEvidence(SignedSafeTx(safeTx, portableSignatures), approvals);
+        StagedUpdate memory staged = _consumeStage(safe);
+        AuthorityGraph memory newGraph = staged.newGraph;
+        ChildUpdate[] memory childUpdates = staged.childUpdates;
+        SafeTxEvidence memory evidence =
+            SafeTxEvidence(SignedSafeTx(safeTx, staged.portableSignatures), staged.nestedApprovals);
 
         bytes32 updateHash;
         if (recognized.kind == ReceiverAuthority.UpdateKind.Activation) {
@@ -174,7 +177,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             if (childUpdates.length != 0) revert ActivationChildUpdates();
             _requireSupportedConfiguration(safe);
             _requireNamedPositionsExecuted(newGraph);
-            updateHash = $.activate(
+            updateHash = ReceiverAuthority.verifyActivation(
                 block.chainid, safe, evidence, newGraph, _liveRecord(safe, newGraph.nodes[0].record), recognized
             );
         } else {
@@ -196,10 +199,14 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
                     revert PositionNotExecuted(child, position);
                 }
             }
-            updateHash = $.applyUpdate(
+            updateHash = ReceiverAuthority.verifyUpdate(
+                selected,
+                staged.currentGraph,
                 ReceiverAuthority.UpdateRequest(block.chainid, safe, evidence, newGraph, childUpdates, all)
             );
         }
+        selected.updateHead = updateHash;
+        selected.authorityHash = recognized.update.newAuthorityHash;
         $heads[safe][updateHash] = AuthorityUpdateEncoding.recordHash(newGraph.nodes[0].record);
         _tstoreLive(safe, updateHash, recognized.kind, newGraph.nodes[0].record);
         if (recognized.kind != ReceiverAuthority.UpdateKind.Activation) {
@@ -208,14 +215,17 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             // forge-lint: disable-next-line(reentrancy-events) preceding calls are linked verification and static Safe reads
             emit AuthorityPublished(safe, updateHash, submission);
         }
-        // forge-lint: disable-next-line(reentrancy-events) the earlier calls are the linked library and staticcalls to the caller
-        emit AuthorityUpdateExecuted(safe, updateHash, $.selection.authorityHash, portableSignatures, approvals);
+        // forge-lint: disable-start(reentrancy-events) fixed verification and Safe staticcalls run under the owner-execution lock
+        emit AuthorityUpdateExecuted(
+            safe, updateHash, selected.authorityHash, staged.portableSignatures, staged.nestedApprovals
+        );
+        // forge-lint: disable-end(reentrancy-events)
         return true;
     }
 
     /// @dev The calling Safe's post-hook. For a live update, the executed transaction must be the
-    ///      one recognized and the Safe's final owners and threshold must be the stored root
-    ///      record, or the whole Safe transaction reverts.
+    ///      one recognized and the Safe's final owners and threshold must match the recognized
+    ///      root record, or the whole Safe transaction reverts.
     function _authorityPostHook(bytes32 txHash) internal {
         address safe = msg.sender;
         bytes32 id = _liveId(safe);
@@ -334,14 +344,11 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         return keccak256(abi.encode(ISafe(payable(safe)).getThreshold(), ISafe(payable(safe)).getOwners()));
     }
 
-    function _consumeStage(address safe)
-        private
-        returns (AuthorityGraph memory, ChildUpdate[] memory, bytes memory, NestedSafeApproval[] memory)
-    {
+    function _consumeStage(address safe) private returns (StagedUpdate memory) {
         bytes memory staged = _tloadBytes(_stageId(safe));
         if (staged.length == 0) revert NoStagedUpdate(safe);
         _tstoreBytes(_stageId(safe), "");
-        return abi.decode(staged, (AuthorityGraph, ChildUpdate[], bytes, NestedSafeApproval[]));
+        return abi.decode(staged, (StagedUpdate));
     }
 
     function _liveId(address safe) private pure returns (bytes32) {

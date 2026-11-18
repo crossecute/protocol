@@ -26,11 +26,13 @@ interface ISourceAuthorityGuard {
     /// @notice Supplies what the next activation or update of sourceSafe commits to and the
     ///         signatures destinations will verify. Callable by anyone, held for the current
     ///         transaction only.
-    /// @dev newGraph must hash to the signed graph hash. Every descendant position it names
+    /// @dev currentGraph must match selection(sourceSafe).authorityHash for an update; activation
+    ///      does not use it. newGraph must hash to the signed graph hash. Every descendant position it names
     ///      must satisfy executed(). portableSignatures is always the full set destinations
     ///      verify, even when it equals the executing signatures.
     function stageUpdate(
         address sourceSafe,
+        AuthorityGraph calldata currentGraph,
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates,
         bytes calldata portableSignatures,
@@ -54,10 +56,6 @@ interface ISourceAuthorityGuard {
 
     /// @notice Source-side selection for a Safe, separate from destination selections.
     function selection(address sourceSafe) external view returns (AuthoritySelection memory);
-
-    /// @notice Read a graph authenticated for sourceSafe, including retained past graphs.
-    /// @dev Readback does not change the selected graph or prove any later child transition.
-    function graph(address sourceSafe, bytes32 authorityHash) external view returns (AuthorityGraph memory);
 
     /// @notice Whether updateHead is a position sourceSafe executed on this chain.
     /// @dev Written at activation and whenever one of the Safe's updates executes, so a Safe's

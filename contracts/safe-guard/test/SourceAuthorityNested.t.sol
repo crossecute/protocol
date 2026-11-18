@@ -6,6 +6,7 @@ import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {AuthorityGraph} from "crossecute/messaging/authority/AuthorityGraph.sol";
 import {AuthorityUpdateEncoding} from "crossecute/messaging/authority/AuthorityUpdateEncoding.sol";
 import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
+import {ReceiverAuthority} from "crossecute/messaging/authority/ReceiverAuthority.sol";
 import {SafeAuthorityGraph} from "crossecute/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeQuorum} from "crossecute/messaging/signed/SafeQuorum.sol";
 import {Call} from "crossecute/messaging/Call.sol";
@@ -137,7 +138,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         ChildUpdate[] memory children,
         bytes memory executing,
         bytes memory portable
-    ) internal view returns (Batch.Call[] memory) {
+    ) internal returns (Batch.Call[] memory) {
         bytes memory data = abi.encodeCall(
             ISourceAuthorityGuard.selectAuthority, (AuthorityUpdate(_head(a), _hash(next)))
         );
@@ -209,7 +210,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         bytes32 parentHash = guard.selection(address(a)).authorityHash;
         ChildUpdate memory child = _runBSwap(KEY_C, KEY_D);
         bytes32 bHead1 = _head(b);
-        AuthorityGraph memory retained = guard.graph(address(a), parentHash);
+        AuthorityGraph memory retained = _currentGraph(a);
         assertEq(retained.nodes[1].record.owners[0].owner, vm.addr(KEY_C));
         assertEq(retained.nodes[1].position, bHead0);
         assertEq(guard.selection(address(a)).authorityHash, parentHash);
@@ -221,6 +222,30 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         bytes memory sig = _selectSig(next, KEY_D);
         batch.run(_selectCalls(next, children, sig, sig));
         assertEq(guard.selection(address(a)).authorityHash, _hash(next));
+    }
+
+    function testCurrentWitnessRejectsStaleChildPositionWithUnchangedRootOwners() public {
+        _activateA(bHead0);
+        AuthorityGraph memory old = _currentGraph(a);
+        ChildUpdate memory child = _runBSwap(KEY_C, KEY_D);
+        AuthorityGraph memory next = _aGraph(_record(b), _head(b));
+        ChildUpdate[] memory children = new ChildUpdate[](1);
+        children[0] = child;
+        bytes memory signatures = _selectSig(next, KEY_D);
+        batch.run(_selectCalls(next, children, signatures, signatures));
+        bytes32 head = _head(a);
+        bytes memory data = abi.encodeCall(guard.selectAuthority, (AuthorityUpdate(head, _hash(next))));
+        signatures = _selectSig(next, KEY_D);
+        Batch.Call[] memory calls = _selectCalls(next, new ChildUpdate[](0), signatures, signatures);
+        calls[0].data = abi.encodeCall(
+            guard.stageUpdate, (address(a), old, next, new ChildUpdate[](0), signatures, new NestedSafeApproval[](0))
+        );
+        uint256 nonce = a.nonce();
+        vm.expectRevert(ReceiverAuthority.CurrentAuthorityMismatch.selector);
+        batch.run(calls);
+        assertEq(a.nonce(), nonce);
+        assertEq(_head(a), head);
+        batch.run(_selectCalls(next, new ChildUpdate[](0), signatures, signatures));
     }
 
     function testRejectsAChildUpdateThatNeverExecuted() public {

@@ -297,12 +297,16 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         evidence.signedSafeTx.signatures = _graphSign(account, digest);
         evidence.nestedApprovals =
             NestedApprovalCollector.collect(address(account), digest, evidence.signedSafeTx.signatures);
+        AuthorityGraph memory current;
+        if (selectedGraphs[address(account)].length != 0) {
+            current = abi.decode(selectedGraphs[address(account)], (AuthorityGraph));
+        }
         calls = new Batch.Call[](2);
         calls[0] = Batch.Call(
             address(guard),
             abi.encodeCall(
                 guard.stageUpdate,
-                (address(account), graph, children, evidence.signedSafeTx.signatures, evidence.nestedApprovals)
+                (address(account), current, graph, children, evidence.signedSafeTx.signatures, evidence.nestedApprovals)
             ),
             false
         );
