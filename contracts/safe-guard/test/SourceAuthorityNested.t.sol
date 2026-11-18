@@ -251,6 +251,40 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         assertEq(guard.selection(address(a)).authorityHash, _hash(next));
     }
 
+    function testRemovedSafeCanBeReaddedAtAnEarlierExecutedPosition() public {
+        _activateA(bHead0);
+        SafeAuthorityRecord memory oldB = _record(b);
+        ChildUpdate memory change = _runBSwap(KEY_C, KEY_D);
+        bytes32 bHead1 = _head(b);
+        AuthorityGraph memory adopted = _aGraph(_record(b), bHead1);
+        ChildUpdate[] memory children = new ChildUpdate[](1);
+        children[0] = change;
+        bytes memory sig = _selectSig(adopted, KEY_D);
+        batch.run(_selectCalls(adopted, children, sig, sig));
+
+        AuthorityGraph memory lower = _aGraph(_record(b), bHead1);
+        lower.nodes[0].record.threshold = 1;
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = _call(address(a), abi.encodeCall(a.changeThreshold, (1)));
+        _execOwnershipChange(a, lower, mutations, _aSigners(KEY_D));
+
+        SafeOwner[] memory onlyA = new SafeOwner[](1);
+        onlyA[0] = SafeOwner(vm.addr(KEY_A), OWNER_EOA);
+        AuthorityGraph memory removed = _graph(SafeAuthorityRecord(address(a), 1, onlyA));
+        mutations[0] = _call(address(a), abi.encodeCall(a.removeOwner, (vm.addr(KEY_A), address(b), 1)));
+        _execOwnershipChange(a, removed, mutations, _signersOf(KEY_A));
+
+        SafeOwner[] memory restored = new SafeOwner[](2);
+        restored[0] = SafeOwner(address(b), OWNER_SAFE);
+        restored[1] = SafeOwner(vm.addr(KEY_A), OWNER_EOA);
+        AuthorityGraph memory earlier = _graph(SafeAuthorityRecord(address(a), 1, restored), oldB, bHead0);
+        mutations[0] = _call(address(a), abi.encodeCall(a.addOwnerWithThreshold, (address(b), 1)));
+        _execOwnershipChange(a, earlier, mutations, _signersOf(KEY_A));
+        assertEq(guard.selection(address(a)).authorityHash, _hash(earlier));
+        assertEq(_head(b), bHead1);
+        assertTrue(guard.executed(address(b), bHead0));
+    }
+
     // Two signature sets
 
     function testPortableSetMayDifferFromTheExecutingSet() public {

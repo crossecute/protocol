@@ -222,15 +222,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         returns (AuthorityGraph memory next)
     {
         next = _withNewOwner(owner, threshold);
-        _execStaged(
-            safe,
-            address(multiSend),
-            _ownershipData(safe, _head(safe), _hash(next), _addOwner(owner, threshold)),
-            Enum.Operation.DelegateCall,
-            next,
-            new ChildUpdate[](0),
-            signers
-        );
+        _execOwnershipChange(safe, next, _addOwner(owner, threshold), signers);
     }
 
     function testOwnershipChangeAdvancesTheHeadAndTheOwners() public {
@@ -244,6 +236,69 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         assertTrue(selection.updateHead != first);
         assertTrue(guard.executed(address(safe), first));
         assertTrue(guard.executed(address(safe), selection.updateHead));
+    }
+
+    function testThresholdChangeMidBatchUsesOnePreBatchQuorum() public {
+        _activated();
+        address[] memory original = safe.getOwners();
+        Call[] memory mutations = new Call[](3);
+        mutations[0] = _call(address(safe), abi.encodeCall(safe.changeThreshold, (3)));
+        mutations[1] = _call(address(safe), abi.encodeCall(safe.removeOwner, (original[1], original[2], 2)));
+        mutations[2] = _call(address(safe), abi.encodeCall(safe.addOwnerWithThreshold, (vm.addr(KEY_D), 2)));
+        AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
+        SafeOwner[] memory owners = new SafeOwner[](3);
+        for (uint256 i = 0; i < owners.length; ++i) {
+            owners[i] = next.nodes[0].record.owners[i];
+        }
+        next.nodes[0].record.owners = owners;
+        uint256 nonce = safe.nonce();
+        _execStaged(
+            safe,
+            address(multiSend),
+            _ownershipData(safe, _head(safe), _hash(next), mutations),
+            Enum.Operation.DelegateCall,
+            next,
+            new ChildUpdate[](0),
+            _ab()
+        );
+        assertEq(safe.nonce(), nonce + 1);
+        assertEq(safe.getThreshold(), 2);
+        assertEq(safe.getOwners().length, 3);
+        assertTrue(safe.isOwner(vm.addr(KEY_D)));
+        assertFalse(safe.isOwner(original[2]));
+        assertEq(guard.selection(address(safe)).authorityHash, _hash(next));
+    }
+
+    function testPostStateMismatchRollsBackPublicationOwnersAndNonce() public {
+        bytes32 previous = _activated();
+        AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 3);
+        bytes memory data = _ownershipData(safe, previous, _hash(next), _addOwner(vm.addr(KEY_D), 3));
+        bytes32 digest = _txHash(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall);
+        bytes memory signatures = _sign(_ab(), digest);
+        Batch.Call[] memory calls = _stagedCalls(
+            safe,
+            address(multiSend),
+            data,
+            Enum.Operation.DelegateCall,
+            next,
+            new ChildUpdate[](0),
+            signatures,
+            signatures
+        );
+        uint256 nonce = safe.nonce();
+        // Fault injection exercises the post-hook independently of the mutation derivation.
+        vm.mockCall(address(safe), abi.encodeCall(safe.getOwners, ()), abi.encode(safe.getOwners()));
+        vm.expectRevert(SourceAuthorityGuard.FinalOwnersMismatch.selector);
+        batch.run(calls);
+        vm.clearMockedCalls();
+        assertEq(safe.nonce(), nonce);
+        assertFalse(safe.isOwner(vm.addr(KEY_D)));
+        assertEq(guard.selection(address(safe)).updateHead, previous);
+        assertFalse(guard.executed(address(safe), digest));
+        assertEq(guard.publishedAuthority(address(safe), digest), bytes32(0));
+        batch.run(calls);
+        assertEq(guard.selection(address(safe)).updateHead, digest);
+        assertTrue(safe.isOwner(vm.addr(KEY_D)));
     }
 
     function testOwnershipChangeNeedsTheStagedGraph() public {

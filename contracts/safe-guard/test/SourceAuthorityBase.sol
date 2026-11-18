@@ -201,6 +201,23 @@ abstract contract SourceAuthorityBase is SafeFixture {
         );
     }
 
+    function _execOwnershipChange(
+        Safe safe,
+        AuthorityGraph memory next,
+        Call[] memory mutations,
+        Signer[] memory signers
+    ) internal {
+        _execStaged(
+            safe,
+            address(multiSend),
+            _ownershipData(safe, _head(safe), _hash(next), mutations),
+            Enum.Operation.DelegateCall,
+            next,
+            new ChildUpdate[](0),
+            signers
+        );
+    }
+
     function _call(address target, bytes memory data) internal pure returns (Call memory) {
         return Call(target, 0, data);
     }
