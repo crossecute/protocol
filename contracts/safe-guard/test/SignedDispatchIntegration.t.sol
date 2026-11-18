@@ -24,6 +24,8 @@ import {SignedTransmitter} from "crossecute/messaging/outbound/SignedTransmitter
 import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {SignedReceiver} from "crossecute/messaging/inbound/SignedReceiver.sol";
 import {Call} from "crossecute/messaging/Call.sol";
+import {Commitment} from "crossecute/messaging/Commitment.sol";
+import {ICommitFinalize, ICancel, ReceiverBase} from "crossecute/messaging/inbound/ReceiverBase.sol";
 import {Erc7930} from "crossecute/addressing/Erc7930.sol";
 import {ChainKey} from "crossecute/addressing/ChainKey.sol";
 import {ChainRegistry} from "crossecute/registry/ChainRegistry.sol";
@@ -399,6 +401,23 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         Safe child = _selectGraph(1);
         _create();
         _bootstrap(BASE);
+        Call[] memory deferred = abi.decode(_calls(1), (Call[]));
+        bytes32 pending = Commitment.hashCalls(ChainKey.forEvm(BASE), deferred);
+        Call[] memory approvals = new Call[](2);
+        approvals[0] = Call(address(_receiver(BASE)), 0, abi.encodeCall(ICommitFinalize.commit, (pending)));
+        approvals[1] = approvals[0];
+        _execute(
+            _evidence(
+                address(st),
+                abi.encodeCall(
+                    st.sendMessage,
+                    (Erc7930.encodeEvm(BASE, address(_receiver(BASE))), abi.encode(approvals), new bytes[](0))
+                ),
+                safe.nonce()
+            )
+        );
+        _deliverMessage(BASE, mailbox.sentLength() - 1);
+        assertEq(_receiver(BASE).outstanding(pending), 2);
         bytes32 parentHash = guard.selection(address(safe)).authorityHash;
         AuthorityGraph memory childGraph = _liveGraph(child);
         childGraph.nodes[0].record.threshold = 1;
@@ -473,6 +492,32 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         vm.chainId(SOURCE);
         _deliverMessage(BASE, sent);
         assertEq(effect.hits(), 1);
+        SignedReceiver baseReceiver = _receiver(BASE);
+        vm.chainId(BASE);
+        assertEq(baseReceiver.outstanding(pending), 2);
+        vm.prank(address(0xBAD));
+        baseReceiver.finalize(deferred);
+        assertEq(baseReceiver.outstanding(pending), 1);
+        assertEq(effect.hits(), 2);
+        vm.chainId(SOURCE);
+        Call[] memory cancellation = new Call[](1);
+        cancellation[0] = Call(address(_receiver(BASE)), 0, abi.encodeCall(ICancel.cancel, (pending)));
+        _execute(
+            _evidence(
+                address(st),
+                abi.encodeCall(
+                    st.sendMessage,
+                    (Erc7930.encodeEvm(BASE, address(_receiver(BASE))), abi.encode(cancellation), new bytes[](0))
+                ),
+                safe.nonce()
+            )
+        );
+        _deliverMessage(BASE, mailbox.sentLength() - 1);
+        vm.chainId(BASE);
+        assertEq(baseReceiver.outstanding(pending), 0);
+        vm.expectRevert(ReceiverBase.CommitmentMismatch.selector);
+        baseReceiver.finalize(deferred);
+        vm.chainId(SOURCE);
     }
 
     /// @notice Rotate an owner of the real Safe, then bootstrap a new chain and dispatch to it.
