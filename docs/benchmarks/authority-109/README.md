@@ -4,6 +4,9 @@ Measured 2026-11-13 using the existing #107/#108 destination verifier in the #10
 planning checkout. This does not implement #109 contracts or select graph bounds.
 All 43 configurations passed verification and wrong-digest rejection controls.
 
+Current source update execution, atomic catch-up and production-Paris receiver
+measurements are in [updates.md](updates.md).
+
 For the [16-owner transfer-size comparison](analysis-16.md), see its separate table.
 For the expanded 32-owner measurements, exact transfer wire sizes and transport
 implications, see [32-owner analysis](analysis-32.md). The tables below retain the

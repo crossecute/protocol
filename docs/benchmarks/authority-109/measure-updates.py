@@ -65,7 +65,7 @@ for name, prefix, gas in [
     rows.append(["receiver-paris", name, values[gas], values[prefix + "CalldataBytes"], "", ""])
 assert before == source_hashes(), "source files changed while measurements ran"
 with (OUT / "updates.csv").open("w", newline="") as output:
-    writer = csv.writer(output)
+    writer = csv.writer(output, lineterminator="\n")
     writer.writerow(["scope", "case", "measured_gas", "calldata_bytes", "submission_bytes", "provider_bytes"])
     writer.writerows(rows)
 manifest = {

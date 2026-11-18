@@ -1,0 +1,319 @@
+2026-11-18T16:05:48.913357Z  WARN foundry_common::preprocessor: failed preprocessing err=solar reported errors:
+
+error: identifier `AccessControlUnauthorizedAccount` already declared
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:13:11
+   │
+13 │     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
+   │           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:13:11
+   │
+13 │     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `AccessControlBadConfirmation` already declared
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:20:11
+   │
+20 │     error AccessControlBadConfirmation();
+   │           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:20:11
+   │
+20 │     error AccessControlBadConfirmation();
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `RoleData` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:52:12
+   │
+52 │     struct RoleData {
+   │            ━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:52:12
+   │
+52 │     struct RoleData {
+   ╰╴           ━━━━━━━━
+
+error: identifier `DEFAULT_ADMIN_ROLE` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:57:29
+   │
+57 │     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+   │                             ━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:57:29
+   │
+57 │     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+   ╰╴                            ━━━━━━━━━━━━━━━━━━
+
+error: identifier `AccessControlStorage` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:61:12
+   │
+61 │     struct AccessControlStorage {
+   │            ━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:61:12
+   │
+61 │     struct AccessControlStorage {
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `InitializableStorage` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:65:12
+   │
+65 │     struct InitializableStorage {
+   │            ━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:65:12
+   │
+65 │     struct InitializableStorage {
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `InvalidInitialization` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:82:11
+   │
+82 │     error InvalidInitialization();
+   │           ━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:82:11
+   │
+82 │     error InvalidInitialization();
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `NotInitializing` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:87:11
+   │
+87 │     error NotInitializing();
+   │           ━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:87:11
+   │
+87 │     error NotInitializing();
+   ╰╴          ━━━━━━━━━━━━━━━
+
+error: identifier `OAppCoreStorage` already declared
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:18:12
+   │
+18 │     struct OAppCoreStorage {
+   │            ━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:18:12
+   │
+18 │     struct OAppCoreStorage {
+   ╰╴           ━━━━━━━━━━━━━━━
+
+error: identifier `endpoint` already declared
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:33:43
+   │
+33 │     ILayerZeroEndpointV2 public immutable endpoint;
+   │                                           ━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:33:43
+   │
+33 │     ILayerZeroEndpointV2 public immutable endpoint;
+   ╰╴                                          ━━━━━━━━
+2026-11-18T16:05:51.210967Z  WARN foundry_common::preprocessor: failed preprocessing err=solar reported errors:
+
+error: identifier `AccessControlUnauthorizedAccount` already declared
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:13:11
+   │
+13 │     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
+   │           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:13:11
+   │
+13 │     error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `AccessControlBadConfirmation` already declared
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:20:11
+   │
+20 │     error AccessControlBadConfirmation();
+   │           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts/contracts/access/IAccessControl.sol:20:11
+   │
+20 │     error AccessControlBadConfirmation();
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `RoleData` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:52:12
+   │
+52 │     struct RoleData {
+   │            ━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:52:12
+   │
+52 │     struct RoleData {
+   ╰╴           ━━━━━━━━
+
+error: identifier `DEFAULT_ADMIN_ROLE` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:57:29
+   │
+57 │     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+   │                             ━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:57:29
+   │
+57 │     bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+   ╰╴                            ━━━━━━━━━━━━━━━━━━
+
+error: identifier `AccessControlStorage` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:61:12
+   │
+61 │     struct AccessControlStorage {
+   │            ━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/access/AccessControlUpgradeable.sol:61:12
+   │
+61 │     struct AccessControlStorage {
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `InitializableStorage` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:65:12
+   │
+65 │     struct InitializableStorage {
+   │            ━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:65:12
+   │
+65 │     struct InitializableStorage {
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `InvalidInitialization` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:82:11
+   │
+82 │     error InvalidInitialization();
+   │           ━━━━━━━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:82:11
+   │
+82 │     error InvalidInitialization();
+   ╰╴          ━━━━━━━━━━━━━━━━━━━━━
+
+error: identifier `NotInitializing` already declared
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:87:11
+   │
+87 │     error NotInitializing();
+   │           ━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol:87:11
+   │
+87 │     error NotInitializing();
+   ╰╴          ━━━━━━━━━━━━━━━
+
+error: identifier `OAppCoreStorage` already declared
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:18:12
+   │
+18 │     struct OAppCoreStorage {
+   │            ━━━━━━━━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:18:12
+   │
+18 │     struct OAppCoreStorage {
+   ╰╴           ━━━━━━━━━━━━━━━
+
+error: identifier `endpoint` already declared
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:33:43
+   │
+33 │     ILayerZeroEndpointV2 public immutable endpoint;
+   │                                           ━━━━━━━━
+   ╰╴
+note: previous declaration declared here
+   ╭▸ lib/layerzero-oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol:33:43
+   │
+33 │     ILayerZeroEndpointV2 public immutable endpoint;
+   ╰╴                                          ━━━━━━━━
+Compiling 70 files with Solc 0.8.28
+Solc 0.8.28 finished in 8.79s
+Compiler run successful with warnings:
+Warning (2519): This declaration shadows an existing declaration.
+   --> test/signed/SignedFixtures.sol:203:24:
+    |
+203 |     function eoaOwners(uint256[] memory pks) internal pure returns (SafeOwner[] memory owners) {
+    |                        ^^^^^^^^^^^^^^^^^^^^
+Note: The shadowed declaration is here:
+   --> test/signed/SignedFixtures.sol:255:5:
+    |
+255 |     function pks(uint256 a, uint256 b, uint256 c) internal pure returns (uint256[] memory p) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+Note: The shadowed declaration is here:
+   --> test/signed/SignedFixtures.sol:263:5:
+    |
+263 |     function pks(uint256 a, uint256 b) internal pure returns (uint256[] memory p) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (5740): Unreachable code.
+   --> src/messaging/transceiver/TransceiverBase.sol:410:86:
+    |
+410 |             _quoteMessage(_recipientOn(destinationChainKey), envelope, attributes) + _bootstrapFee[destinationChainKey];
+    |                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (5740): Unreachable code.
+   --> src/messaging/transceiver/TransceiverBase.sol:572:9:
+    |
+572 |         _reporting = false;
+    |         ^^^^^^^^^^^^^^^^^^
+
+Warning (5740): Unreachable code.
+   --> src/messaging/outbound/TransmitterBase.sol:272:9:
+    |
+272 |         _requireFunded(fee);
+    |         ^^^^^^^^^^^^^^^^^^^
+
+Warning (5740): Unreachable code.
+   --> src/messaging/outbound/TransmitterBase.sol:274:9:
+    |
+274 |         emit MessageSent(
+    |         ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (5740): Unreachable code.
+   --> src/messaging/outbound/TransmitterBase.sol:471:13:
+    |
+471 |             return;
+    |             ^^^^^^^
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/signed/SignedReceiver.t.sol:136:5:
+    |
+136 |     function _bootstrapBody(bytes memory setup) internal view returns (bytes memory) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+   --> test/signed/SignedReceiver.t.sol:174:5:
+    |
+174 |     function test_bootstrapEncodingStatesItsSizeIncrease() public view {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Ran 2 tests for test/signed/SignedReceiver.t.sol:SignedReceiverTest
+[PASS] test_batchCatchUpSharesProviderReplayState() (gas: 651671)
+Logs:
+  authorityReceiverBatchTwoSelectionCalldataBytes: 3012
+  authorityReceiverBatchTwoSelectionGas: 258670
+
+[PASS] test_measureAuthorityReceiverOwnerRotation() (gas: 546093)
+Logs:
+  authorityReceiverDirectCalldataBytes: 1764
+  authorityReceiverOwnerRotationGas: 468773
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 4.58ms (3.53ms CPU time)
+
+Ran 1 test suite in 13.92ms (4.58ms CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+2026-11-18T16:06:00.100112Z  WARN evm::traces: failed to flush signature cache err=failed to create file "/home/carter/.foundry/cache/signatures": Read-only file system (os error 30)

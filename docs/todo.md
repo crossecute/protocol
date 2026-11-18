@@ -99,7 +99,12 @@ the seventh; what they mean for an operator is in the README.
   [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). The inherited
   200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
   gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
-  those live configurations. Authority updates remain #109.
+  those live configurations. #109 now implements source activation and updates, receiver
+  bootstrap and selected-graph verification, publication, provider relay/quote and atomic
+  direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
+  remaining checkpoint/recovery APIs, durable archives, external SDK execution tooling,
+  shared vector ingestion and live-provider validation. Current authority update
+  measurements are in [updates.md](benchmarks/authority-109/updates.md).
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
   tests check its root against a vector computed with `cast` and its proofs against

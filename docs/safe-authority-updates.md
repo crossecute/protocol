@@ -15,7 +15,7 @@ from bootstrap, accept direct linked updates and verify application dispatch aga
 selected graph. Quote and bootstrap check the supplied witness against the source guard.
 Provider authority relay/quote adapters and exact authenticated provider retries are implemented.
 SDK execution tooling, checkpoint/recovery tooling and deployment validation remain. No deployment is claimed. The
-[verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
+[verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work)
 lists what remains.
 
 ## Receiver authority, seeded by bootstrap
