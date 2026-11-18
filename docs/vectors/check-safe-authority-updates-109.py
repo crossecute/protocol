@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Generate/check offline baseline Safe hash vectors and #109 semantic cases.
+"""Generate/check offline Safe hash vectors, #109 receiver vectors and semantic cases.
 
-Requires Foundry cast on PATH or CODEX_SAFE_VECTOR_CAST. No RPC is used.
-Fixture private key 1 is public test material. New #109 ABI vectors await ABI freeze.
+Requires Foundry cast on PATH or CODEX_SAFE_VECTOR_CAST. No RPC is used. Every hash,
+encoding and signature here comes from cast, independently of the Solidity encoders;
+contracts/evm/test/authority/AuthorityVectors.t.sol replays the file. Fixture private
+keys 1 to 4 are public test material.
 """
 import argparse
 import json
@@ -64,6 +66,25 @@ def typed_digest(domain_hash, struct_hash):
     return digest_hex('0x1901' + domain_hash[2:] + struct_hash[2:])
 
 
+def safe_tx_hash(fields, safe, chain_id):
+    """(struct preimage, struct hash, digest) of a Safe 1.5.0 SafeTx."""
+    preimage = abi('bytes32,address,uint256,bytes32,uint8,uint256,uint256,'
+                   'uint256,address,address,uint256', TX_TYPEHASH,
+                   fields['to'], fields['value'], digest_hex(fields['data']),
+                   fields['operation'], fields['safeTxGas'], fields['baseGas'],
+                   fields['gasPrice'], fields['gasToken'],
+                   fields['refundReceiver'], fields['nonce'])
+    struct_hash = digest_hex(preimage)
+    return preimage, struct_hash, typed_digest(domain(chain_id, safe)[1], struct_hash)
+
+
+def safe_message_hash(parent_hash, safe, chain_id):
+    """(struct preimage, struct hash, digest) of the handler's SafeMessage over abi.encode(parent)."""
+    preimage = abi('bytes32,bytes32', MSG_TYPEHASH, digest_hex(parent_hash))
+    struct_hash = digest_hex(preimage)
+    return preimage, struct_hash, typed_digest(domain(chain_id, safe)[1], struct_hash)
+
+
 def signed_vector(name, safe, chain_id, preimage, struct_hash, message_digest):
     signer = cast('wallet', 'address', '--private-key', KEY)
     raw = cast('wallet', 'sign', '--private-key', KEY, '--no-hash', message_digest)
@@ -79,6 +100,353 @@ def signed_vector(name, safe, chain_id, preimage, struct_hash, message_digest):
     }
 
 
+# #109 receiver vectors. Addresses below are fixture values with no deployed code; the
+# Solidity replay pins the receiver to VECTOR_GUARD and VECTOR_MULTISEND.
+GRAPH_DOMAIN = typehash('Crossecute.AuthorityGraph.v1')
+SOURCE_CHAIN = 10
+VECTOR_GUARD = '0x4444444444444444444444444444444444444444'
+VECTOR_MULTISEND = '0x6666666666666666666666666666666666666666'
+EOA_ROOT = SAFE
+NESTED_ROOT = '0x7777777777777777777777777777777777777777'
+SHARED_ROOT = '0x8888888888888888888888888888888888888888'
+CHILD_B = CHILD
+CHILD_C = '0x3333333333333333333333333333333333333333'
+CHILD_D = '0x5555555555555555555555555555555555555555'
+SENTINEL = '0x0000000000000000000000000000000000000001'
+ZERO32 = '0x' + '00' * 32
+OWNER_EOA, OWNER_SAFE = 0, 1
+
+RECORD_T = '(address,uint256,(address,uint8)[])'
+NODE_T = f'({RECORD_T},bytes32)'
+GRAPH_T = f'({NODE_T}[])'
+ENTRY_T = '(bytes32,bytes32)'
+TX_T = '(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)'
+SIGNED_T = f'({TX_T},bytes)'
+APPROVAL_T = f'(address,bytes32,{SIGNED_T})'
+EVIDENCE_T = f'({SIGNED_T},{APPROVAL_T}[])'
+CHILD_T = f'(address,{EVIDENCE_T},{RECORD_T},{ENTRY_T}[])'
+BOOTSTRAP_T = '(address,bytes32,bytes,bytes)'
+CALL_T = '(address,uint256,bytes)'
+
+_ADDRESSES = {}
+
+
+def key(n):
+    return '0x' + f'{n:064x}'
+
+
+def owner_of(n):
+    if n not in _ADDRESSES:
+        _ADDRESSES[n] = cast('wallet', 'address', '--private-key', key(n))
+    return _ADDRESSES[n]
+
+
+def label(text):
+    return typehash(text)
+
+
+def record(safe, threshold, owners):
+    return {'safe': safe, 'threshold': threshold,
+            'owners': [{'owner': o, 'kind': k} for o, k in owners]}
+
+
+def record_tuple(r):
+    owners = ','.join(f"({o['owner']},{o['kind']})" for o in r['owners'])
+    return f"({r['safe']},{r['threshold']},[{owners}])"
+
+
+def record_hash(r):
+    return digest_hex(abi(RECORD_T, record_tuple(r)))
+
+
+def graph_tuple(nodes):
+    return '([' + ','.join(f"({record_tuple(n['record'])},{n['position']})" for n in nodes) + '])'
+
+
+def graph_entries(nodes):
+    return [{'recordHash': record_hash(n['record']), 'position': n['position']} for n in nodes]
+
+
+def entries_tuple(entries):
+    return '[' + ','.join(f"({e['recordHash']},{e['position']})" for e in entries) + ']'
+
+
+def graph_hash(entries):
+    return digest_hex(abi(f'bytes32,uint256,{ENTRY_T}[]', GRAPH_DOMAIN, SOURCE_CHAIN,
+                          entries_tuple(entries)))
+
+
+def graph_json(nodes):
+    entries = graph_entries(nodes)
+    return {'nodes': nodes, 'entries': entries, 'graphHash': graph_hash(entries)}
+
+
+def safe_tx(to, data, operation, nonce):
+    return {'to': to, 'value': 0, 'data': data, 'operation': operation,
+            'safeTxGas': 0, 'baseGas': 0, 'gasPrice': 0,
+            'gasToken': ZERO, 'refundReceiver': ZERO, 'nonce': nonce}
+
+
+def safe_tx_tuple(t):
+    return (f"({t['to']},{t['value']},{t['data']},{t['operation']},{t['safeTxGas']},"
+            f"{t['baseGas']},{t['gasPrice']},{t['gasToken']},{t['refundReceiver']},{t['nonce']})")
+
+
+def mutation(safe, signature, *args):
+    return {'target': safe, 'value': 0, 'call': signature,
+            'data': cast('calldata', signature, *args)}
+
+
+def multisend_entry(to, data):
+    return '00' + to[2:].lower() + '00' * 32 + f'{(len(data) - 2) // 2:064x}' + data[2:]
+
+
+def ownership_batch(safe, previous, new, mutations):
+    registration = cast('calldata', 'registerOwnershipChange((bytes32,bytes32))',
+                        f'({previous},{new})')
+    packed = multisend_entry(VECTOR_GUARD, registration)
+    packed += ''.join(multisend_entry(safe, m['data']) for m in mutations)
+    return cast('calldata', 'multiSend(bytes)', '0x' + packed)
+
+
+def eoa(n, signed_hash=None):
+    return {'kind': 'eoa', 'key': n, 'signedHash': signed_hash}
+
+
+def nested(safe, signers, domain_chain=SOURCE_CHAIN, domain_safe=None):
+    return {'kind': 'safe', 'safe': safe, 'signers': signers,
+            'domainChain': domain_chain, 'domainSafe': domain_safe or safe}
+
+
+def contract_entry_for(owner, payload):
+    return {'kind': 'contract', 'owner': owner, 'payload': payload}
+
+
+def approved(owner):
+    return {'kind': 'approved', 'owner': owner}
+
+
+def signature_blob(signers, digest, reverse_payloads=False, offset_shift=0, keep_order=False):
+    """Safe 1.5.0 blob: 65-byte static entries by ascending owner, then length-prefixed
+    contract payloads, each at the offset its entry's `s` names."""
+    items = []
+    for signer in signers:
+        if signer['kind'] == 'eoa':
+            sig = cast('wallet', 'sign', '--private-key', key(signer['key']), '--no-hash',
+                       signer['signedHash'] or digest)
+            items.append((owner_of(signer['key']), sig[2:], None))
+        elif signer['kind'] == 'safe':
+            child_digest = safe_message_hash(digest, signer['domainSafe'], signer['domainChain'])[2]
+            items.append((signer['safe'], None, signature_blob(signer['signers'], child_digest)[2:]))
+        elif signer['kind'] == 'contract':
+            items.append((signer['owner'], None, signer['payload'][2:]))
+        else:
+            items.append((signer['owner'], signer['owner'][2:].lower().rjust(64, '0')
+                          + '00' * 32 + '01', None))
+    if not keep_order:
+        items.sort(key=lambda item: int(item[0], 16))
+    payloads = [item for item in items if item[2] is not None]
+    if reverse_payloads:
+        payloads.reverse()
+    offsets, dynamic, at = {}, '', len(items) * 65
+    for item in payloads:
+        offsets[id(item)] = at
+        dynamic += f'{len(item[2]) // 2:064x}' + item[2]
+        at += 32 + len(item[2]) // 2
+    static = ''
+    for item in items:
+        if item[2] is None:
+            static += item[1]
+        else:
+            static += (item[0][2:].lower().rjust(64, '0')
+                       + f'{offsets[id(item)] + offset_shift:064x}' + '00')
+    return '0x' + static + dynamic
+
+
+def error_data(signature, *args):
+    return cast('calldata', signature, *args)
+
+
+def reject(signature, *args):
+    """Expected revert. With args, the exact revert data; without, the selector only."""
+    expect = {'result': 'reject', 'error': signature,
+              'errorSelector': cast('sig', signature)}
+    if args:
+        expect['revertData'] = error_data(signature, *args)
+    return expect
+
+
+def child_update(child, previous, signers, new_record, mutations, nonce):
+    nodes = [{'record': new_record, 'position': ZERO32}]
+    graph = graph_json(nodes)
+    t = safe_tx(VECTOR_MULTISEND, ownership_batch(child, previous, graph['graphHash'], mutations), 1, nonce)
+    digest = safe_tx_hash(t, child, SOURCE_CHAIN)[2]
+    signatures = signature_blob(signers, digest)
+    encoded = (f"({child},(({safe_tx_tuple(t)},{signatures}),[]),"
+               f"{record_tuple(new_record)},{entries_tuple(graph['entries'])})")
+    return {
+        'sourceSafe': child, 'previousUpdateHash': previous,
+        'newAuthorityHash': graph['graphHash'], 'mutations': mutations,
+        'safeTx': t, 'safeTxHash': digest, 'signatures': signatures,
+        'newRecord': new_record, 'newGraphEntries': graph['entries'],
+    }, encoded
+
+
+def receiver_vector(vid, family, description, safe, boot_nodes, boot_head, new_nodes,
+                    signers, expect, nonce, mutations=None, children=(), blob=None,
+                    signed_chain=SOURCE_CHAIN):
+    boot = graph_json(boot_nodes)
+    new = graph_json(new_nodes)
+    bootstrap = abi(BOOTSTRAP_T, f"({VECTOR_GUARD},{boot_head},{abi(GRAPH_T, graph_tuple(boot_nodes))},"
+                                 f"{abi(CALL_T + '[]', '[]')})")
+    if mutations is None:
+        kind = 'selectAuthority'
+        data = cast('calldata', 'selectAuthority((bytes32,bytes32))', f"({boot_head},{new['graphHash']})")
+        t = safe_tx(VECTOR_GUARD, data, 0, nonce)
+    else:
+        kind = 'ownershipChange'
+        t = safe_tx(VECTOR_MULTISEND, ownership_batch(safe, boot_head, new['graphHash'], mutations), 1, nonce)
+    digest = safe_tx_hash(t, safe, SOURCE_CHAIN)[2]
+    signed = digest if signed_chain == SOURCE_CHAIN else safe_tx_hash(t, safe, signed_chain)[2]
+    signatures = blob(signed) if blob else signature_blob(signers, signed)
+    child_json = [c[0] for c in children]
+    submission = abi(f'{EVIDENCE_T},{GRAPH_T},{CHILD_T}[]',
+                     f"(({safe_tx_tuple(t)},{signatures}),[])", graph_tuple(new_nodes),
+                     '[' + ','.join(c[1] for c in children) + ']')
+    if expect == 'accept':
+        expect = {'result': 'accept', 'updateHead': digest, 'authorityHash': new['graphHash']}
+    return {
+        'id': vid, 'family': family, 'description': description,
+        'sourceChainId': SOURCE_CHAIN, 'sourceSafe': safe,
+        'guard': VECTOR_GUARD, 'multiSendCallOnly': VECTOR_MULTISEND,
+        'bootstrap': {'updateHead': boot_head, 'graph': boot, 'encoded': bootstrap},
+        'update': {'kind': kind, 'previousUpdateHash': boot_head,
+                   'newAuthorityHash': new['graphHash'], 'mutations': mutations or [],
+                   'safeTx': t, 'safeTxHash': digest, 'signatures': signatures},
+        'newGraph': new, 'childUpdates': child_json,
+        'submission': submission, 'expect': expect,
+    }
+
+
+def receiver_vectors():
+    k1, k2, k3, k4 = (owner_of(n) for n in (1, 2, 3, 4))
+    vectors = []
+
+    # One Safe, three EOA owners, threshold 2.
+    eoa_root = record(EOA_ROOT, 2, [(k1, OWNER_EOA), (k2, OWNER_EOA), (k3, OWNER_EOA)])
+    eoa_nodes = [{'record': eoa_root, 'position': ZERO32}]
+    eoa_head = label('vector:eoa-root:head-0')
+
+    def eoa_vector(vid, family, description, signers, expect, **kw):
+        new_nodes = kw.pop('new_nodes', eoa_nodes)
+        vectors.append(receiver_vector(vid, family, description, EOA_ROOT, eoa_nodes, eoa_head,
+                                       new_nodes, signers, expect, nonce=len(vectors), **kw))
+
+    eoa_vector('eoa-select', 'eoa', 'Two of three EOA owners sign a selectAuthority.',
+               [eoa(1), eoa(3)], 'accept')
+    eoa_vector('eoa-below-threshold', 'threshold', 'One signature for a threshold of two.',
+               [eoa(1)], reject('SignaturesTooShort(address)', EOA_ROOT))
+    eoa_vector('eoa-descending-signers', 'eoa', 'Signers out of ascending owner order.',
+               [eoa(1), eoa(3)], reject('SignersNotAscending(address)', EOA_ROOT),
+               blob=lambda d: signature_blob(
+                   sorted([eoa(1), eoa(3)], key=lambda e: -int(owner_of(e['key']), 16)), d,
+                   keep_order=True))
+    eoa_vector('eoa-approved-hash', 'eoa', 'A v=1 approved-hash entry, which portable checks refuse.',
+               [approved(k1), eoa(3)], reject('ApprovedHashUnsupported(address)', EOA_ROOT))
+    eoa_vector('eoa-contract-signature', 'mixed',
+               'A v=0 contract entry naming an EOA-kind owner.',
+               [contract_entry_for(k1, '0x' + '11' * 65), eoa(3)],
+               reject('NotAnOwner(address,address)', EOA_ROOT, k1))
+    eoa_vector('eoa-wrong-chain', 'wrong-domain', 'Owners sign the SafeTx digest for chain 1.',
+               [eoa(1), eoa(3)], reject('NotAnOwner(address,address)'), signed_chain=1)
+
+    swapped = record(EOA_ROOT, 2, [(k4, OWNER_EOA), (k2, OWNER_EOA), (k3, OWNER_EOA)])
+    swap = [mutation(EOA_ROOT, 'swapOwner(address,address,address)', SENTINEL, k1, k4)]
+    eoa_vector('eoa-swap-owner', 'eoa', 'The stored quorum swaps owner 1 for owner 4.',
+               [eoa(1), eoa(3)], 'accept', mutations=swap,
+               new_nodes=[{'record': swapped, 'position': ZERO32}])
+    eoa_vector('eoa-new-owner-self-install', 'stale-snapshot',
+               'The proposed owner 4 signs its own installation.',
+               [eoa(4), eoa(3)], reject('NotAnOwner(address,address)', EOA_ROOT, k4), mutations=swap,
+               new_nodes=[{'record': swapped, 'position': ZERO32}])
+    raised = record(EOA_ROOT, 3, [(k1, OWNER_EOA), (k2, OWNER_EOA), (k3, OWNER_EOA)])
+    eoa_vector('threshold-raise', 'threshold', 'The stored threshold-2 quorum raises it to 3.',
+               [eoa(1), eoa(3)], 'accept',
+               mutations=[mutation(EOA_ROOT, 'changeThreshold(uint256)', 3)],
+               new_nodes=[{'record': raised, 'position': ZERO32}])
+
+    # Root with an EOA owner and Safe owner B (one EOA owner), threshold 2.
+    b0 = record(CHILD_B, 1, [(k2, OWNER_EOA)])
+    nested_root = record(NESTED_ROOT, 2, [(k1, OWNER_EOA), (CHILD_B, OWNER_SAFE)])
+    b_head = label('vector:child-b:head-0')
+    nested_nodes = [{'record': nested_root, 'position': ZERO32}, {'record': b0, 'position': b_head}]
+    nested_head = label('vector:nested-root:head-0')
+
+    def nested_vector(vid, family, description, signers, expect, **kw):
+        new_nodes = kw.pop('new_nodes', nested_nodes)
+        vectors.append(receiver_vector(vid, family, description, NESTED_ROOT, nested_nodes,
+                                       nested_head, new_nodes, signers, expect,
+                                       nonce=len(vectors), **kw))
+
+    nested_vector('mixed-inline-nested', 'mixed',
+                  'An EOA owner and Safe owner B, whose own owner signs inline.',
+                  [eoa(1), nested(CHILD_B, [eoa(2)])], 'accept')
+    nested_vector('nested-wrong-chain', 'wrong-domain',
+                  "B's owner signs B's SafeMessage for chain 11.",
+                  [eoa(1), nested(CHILD_B, [eoa(2)], domain_chain=11)],
+                  reject('NotAnOwner(address,address)'))
+    nested_vector('nested-wrong-safe', 'wrong-domain',
+                  "B's owner signs the SafeMessage of the root instead of B's.",
+                  [eoa(1), nested(CHILD_B, [eoa(2)], domain_safe=NESTED_ROOT)],
+                  reject('NotAnOwner(address,address)'))
+    nested_vector('nested-stale-owner', 'stale-snapshot',
+                  "Owner 4 signs for B, but the stored B record still names owner 2.",
+                  [eoa(1), nested(CHILD_B, [eoa(4)])],
+                  reject('NotAnOwner(address,address)', CHILD_B, k4))
+
+    b1 = record(CHILD_B, 1, [(k4, OWNER_EOA)])
+    b_swap = [mutation(CHILD_B, 'swapOwner(address,address,address)', SENTINEL, k2, k4)]
+    adopted = child_update(CHILD_B, b_head, [eoa(2)], b1, b_swap, 0)
+    adopted_nodes = [{'record': nested_root, 'position': ZERO32},
+                     {'record': b1, 'position': adopted[0]['safeTxHash']}]
+    nested_vector('nested-adopt-child-update', 'nested',
+                  "The root adopts B's rotation from owner 2 to 4; B votes under its new position.",
+                  [eoa(1), nested(CHILD_B, [eoa(4)])], 'accept',
+                  new_nodes=adopted_nodes, children=[adopted])
+    nested_vector('nested-adopt-old-owner-votes', 'stale-snapshot',
+                  "The same adoption, but B's vote comes from its replaced owner 2.",
+                  [eoa(1), nested(CHILD_B, [eoa(2)])],
+                  reject('NotAnOwner(address,address)', CHILD_B, k2),
+                  new_nodes=adopted_nodes, children=[adopted])
+
+    # Root owners: EOA 1, Safe C, Safe D; C owns D as well, so D is shared.
+    d0 = record(CHILD_D, 1, [(k3, OWNER_EOA)])
+    c0 = record(CHILD_C, 1, [(CHILD_D, OWNER_SAFE), (k2, OWNER_EOA)])
+    shared_root = record(SHARED_ROOT, 2, [(k1, OWNER_EOA), (CHILD_C, OWNER_SAFE), (CHILD_D, OWNER_SAFE)])
+    shared_nodes = [{'record': shared_root, 'position': ZERO32},
+                    {'record': c0, 'position': label('vector:child-c:head-0')},
+                    {'record': d0, 'position': label('vector:child-d:head-0')}]
+    shared_head = label('vector:shared-root:head-0')
+    two_level = [nested(CHILD_C, [nested(CHILD_D, [eoa(3)])]), nested(CHILD_D, [eoa(3)])]
+
+    def shared_vector(vid, family, description, expect, **kw):
+        vectors.append(receiver_vector(vid, family, description, SHARED_ROOT, shared_nodes,
+                                       shared_head, shared_nodes, two_level, expect,
+                                       nonce=len(vectors), **kw))
+
+    shared_vector('multilevel-shared', 'multilevel-shared',
+                  'C signs through D two levels down, and D signs directly; D is enumerated once.',
+                  'accept')
+    shared_vector('dynamic-offsets-reordered', 'dynamic-offset',
+                  'The same signatures with the contract payloads stored in reverse order.',
+                  'accept', blob=lambda d: signature_blob(two_level, d, reverse_payloads=True))
+    shared_vector('dynamic-offset-into-static', 'dynamic-offset',
+                  'A contract entry whose offset points inside the static part.',
+                  reject('MalformedContractSignature(address)', SHARED_ROOT),
+                  blob=lambda d: signature_blob(two_level, d, offset_shift=-(2 * 65)))
+    return vectors
+
+
 def generate():
     vectors = []
     fields = {'to': '0x3333333333333333333333333333333333333333',
@@ -90,23 +458,12 @@ def generate():
         ('safe-tx-chain10', 10, SAFE),
         ('safe-tx-other-safe', 1, CHILD),
     ]:
-        preimage = abi('bytes32,address,uint256,bytes32,uint8,uint256,uint256,'
-                       'uint256,address,address,uint256', TX_TYPEHASH,
-                       fields['to'], fields['value'], digest_hex(fields['data']),
-                       fields['operation'], fields['safeTxGas'], fields['baseGas'],
-                       fields['gasPrice'], fields['gasToken'],
-                       fields['refundReceiver'], fields['nonce'])
-        struct_hash = digest_hex(preimage)
-        vector = signed_vector(name, safe, chain_id, preimage, struct_hash,
-                               typed_digest(domain(chain_id, safe)[1], struct_hash))
+        vector = signed_vector(name, safe, chain_id, *safe_tx_hash(fields, safe, chain_id))
         vector['safeTx'] = dict(fields)
         vectors.append(vector)
     parent_hash = vectors[0]['digest']
     for name, child in [('nested-child', CHILD), ('nested-root-revisited', SAFE)]:
-        preimage = abi('bytes32,bytes32', MSG_TYPEHASH, digest_hex(parent_hash))
-        struct_hash = digest_hex(preimage)
-        vector = signed_vector(name, child, 1, preimage, struct_hash,
-                               typed_digest(domain(1, child)[1], struct_hash))
+        vector = signed_vector(name, child, 1, *safe_message_hash(parent_hash, child, 1))
         vector['parentHash'] = parent_hash
         vector['message'] = parent_hash
         vectors.append(vector)
@@ -120,12 +477,16 @@ def generate():
     root_blob = contract_signature(CHILD, child_blob)
     return {
         'schema': 'crossecute-authority-review-v1',
-        'status': 'Offline baseline crypto vectors; semantic #109 expectations, not Solidity test results.',
-        'abiCoverage': 'Existing SafeTx and SafeMessage hashes only; new #109 ABI/domain tags are not frozen.',
+        'status': ('cryptoVectors and receiverVectors are replayed by '
+                   'contracts/evm/test/authority/AuthorityVectors.t.sol; semanticCases are '
+                   'prose expectations covered by the acceptance matrix, not executed here.'),
+        'abiCoverage': ('SafeTx and SafeMessage hashes; #109 record and graph hashes, '
+                        'ownership batches, child updates, bootstraps and full receiver submissions.'),
         'fixturePrivateKey': KEY,
         'types': {'domain': DOMAIN_TYPE, 'safeTx': TX_TYPE, 'safeMessage': MSG_TYPE},
         'typeHashes': {'domain': DOMAIN_TYPEHASH, 'safeTx': TX_TYPEHASH, 'safeMessage': MSG_TYPEHASH},
         'cryptoVectors': vectors,
+        'receiverVectors': receiver_vectors(),
         'finiteRepeatedSafeProof': {
             'status': 'Encoded nested-signature bytes only: these records form a cycle, which #109 rejects as a stored graph.',
             'rootSafe': SAFE, 'rootDigest': vectors[0]['digest'],
@@ -260,6 +621,19 @@ def verify(data):
         assert len(blob) == offset + 32 + length
         blob = blob[offset + 32:]
     assert blob.hex() == data['cryptoVectors'][-1]['rawSafeSignature'][2:]
+    vectors = {v['id']: v for v in data['receiverVectors']}
+    assert len(vectors) == len(data['receiverVectors'])
+    families = {'eoa', 'nested', 'mixed', 'multilevel-shared', 'dynamic-offset',
+                'stale-snapshot', 'wrong-domain', 'threshold'}
+    assert {v['family'] for v in vectors.values()} == families
+    for v in vectors.values():
+        assert v['newGraph']['graphHash'] == graph_hash(v['newGraph']['entries'])
+        assert v['update']['safeTxHash'] == safe_tx_hash(v['update']['safeTx'], v['sourceSafe'], v['sourceChainId'])[2]
+        if v['expect']['result'] == 'accept':
+            assert v['expect']['updateHead'] == v['update']['safeTxHash']
+            assert v['expect']['authorityHash'] == v['newGraph']['graphHash']
+    assert (vectors['dynamic-offsets-reordered']['update']['signatures']
+            != vectors['multilevel-shared']['update']['signatures'])
 
 
 def main():
@@ -275,7 +649,8 @@ def main():
         assert actual == expected, 'Corpus differs from regenerated offline vectors'
         verify(actual)
     print(f"Verified {len(expected['cryptoVectors'])} hash vectors, "
-          f"{2 * len(expected['cryptoVectors'])} signatures; "
+          f"{2 * len(expected['cryptoVectors'])} signatures, "
+          f"{len(expected['receiverVectors'])} receiver vectors; "
           f"{len(expected['semanticCases'])} semantic case definitions (not executed).")
 
 

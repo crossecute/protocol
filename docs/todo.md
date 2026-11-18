@@ -102,8 +102,8 @@ the seventh; what they mean for an operator is in the README.
   those live configurations. #109 now implements source activation and updates, receiver
   bootstrap and selected-graph verification, publication, provider relay/quote and atomic
   direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
-  remaining durable archives and evidence retrieval, external SDK execution tooling,
-  shared vector ingestion and live-provider validation. Current authority update
+  remaining durable archives and evidence retrieval, external SDK execution tooling and
+  live-provider validation. Current authority update
   measurements are in [updates.md](benchmarks/authority-109/updates.md).
 - **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
   tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
